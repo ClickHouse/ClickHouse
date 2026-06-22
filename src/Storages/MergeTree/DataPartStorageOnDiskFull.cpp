@@ -2,13 +2,10 @@
 
 #include <Disks/IDiskTransaction.h>
 #include <Disks/SingleDiskVolume.h>
-#include <IO/PackedFilesReader.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadPipeline.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Interpreters/Context.h>
-#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -53,11 +50,6 @@ bool DataPartStorageOnDiskFull::exists() const
 
 bool DataPartStorageOnDiskFull::existsFile(const std::string & name) const
 {
-    if (looksLikePackedSkipIndexFile(name))
-    {
-        if (const auto * reader = getSkipIndicesPackedReader(); reader && reader->exists(name))
-            return true;
-    }
     return volume->getDisk()->existsFile(fs::path(root_path) / part_dir / name);
 }
 
@@ -99,11 +91,6 @@ Poco::Timestamp DataPartStorageOnDiskFull::getFileLastModified(const String & fi
 
 size_t DataPartStorageOnDiskFull::getFileSize(const String & file_name) const
 {
-    if (looksLikePackedSkipIndexFile(file_name))
-    {
-        if (const auto * reader = getSkipIndicesPackedReader(); reader && reader->exists(file_name))
-            return reader->getFileSize(file_name);
-    }
     return volume->getDisk()->getFileSize(fs::path(root_path) / part_dir / file_name);
 }
 
@@ -135,43 +122,22 @@ String DataPartStorageOnDiskFull::getUniqueId() const
     return disk->getUniqueId(fs::path(getRelativePath()) / "checksums.txt");
 }
 
-void DataPartStorageOnDiskFull::prepareRead(
+std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFile(
     const std::string & name,
     const ReadSettings & settings,
     std::optional<size_t> read_hint,
-    ReadPipeline & pipeline) const
+    std::optional<size_t> file_size) const
 {
-    if (looksLikePackedSkipIndexFile(name))
-    {
-        if (const auto * reader = getSkipIndicesPackedReader(); reader && reader->exists(name))
-        {
-            /// Packed substreams skip the disk's normal pipeline (filesystem cache,
-            /// async prefetch, etc.) and read through PackedFilesReader::readFile, which
-            /// already opens the archive via the underlying disk and wraps the result with
-            /// ReadBufferFromFileView at the right offset.
-            ReadPipeline::BufferCreator creator =
-                [reader, name, read_hint](const StoredObject &, const ReadSettings & s, bool, bool)
-                {
-                    return reader->readFile(name, s, read_hint);
-                };
-            pipeline.setSource(std::move(creator), StoredObjects{StoredObject{}}, settings);
-            return;
-        }
-    }
-    volume->getDisk()->prepareRead(fs::path(root_path) / part_dir / name, settings, read_hint, pipeline);
+    return volume->getDisk()->readFile(fs::path(root_path) / part_dir / name, settings, read_hint, file_size);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFileIfExists(
     const std::string & name,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint) const
+    std::optional<size_t> read_hint,
+    std::optional<size_t> file_size) const
 {
-    if (looksLikePackedSkipIndexFile(name))
-    {
-        if (const auto * reader = getSkipIndicesPackedReader(); reader && reader->exists(name))
-            return reader->readFile(name, settings, read_hint);
-    }
-    return volume->getDisk()->readFileIfExists(fs::path(root_path) / part_dir / name, settings, read_hint);
+    return volume->getDisk()->readFileIfExists(fs::path(root_path) / part_dir / name, settings, read_hint, file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskFull::writeFile(
@@ -181,7 +147,7 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskFull::writeFile(
     const WriteSettings & settings)
 {
     if (transaction)
-        return transaction->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
+        return transaction->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings, /* autocommit = */ false);
     return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
 }
 

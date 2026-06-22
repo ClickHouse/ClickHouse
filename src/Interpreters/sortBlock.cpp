@@ -1,7 +1,5 @@
 #include <Interpreters/sortBlock.h>
 
-#include <algorithm>
-
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
@@ -196,17 +194,8 @@ void getBlockSortPermutationImpl(const Block & block, const SortDescription & de
             {
                 column->updatePermutation(direction, stability, limit, nan_direction_hint, permutation, ranges);
             }
-
-#ifndef NDEBUG
-            /// updatePermutation must keep `equal_ranges` sorted in ascending order of `from`; the limit
-            /// shortcuts above (and IColumn::updatePermutationImpl) rely on it. Catch violators early.
-            chassert(std::ranges::is_sorted(ranges, {}, &EqualRange::from),
-                "updatePermutation returned equal_ranges not sorted by `from`");
-#endif
         }
     }
-}
-
 }
 
 bool isIdentityPermutation(const IColumn::Permutation & permutation, size_t limit)
@@ -261,9 +250,6 @@ bool isIdentityPermutation(const IColumn::Permutation & permutation, size_t limi
 
     return true;
 }
-
-namespace
-{
 
 template <typename Comparator>
 bool isAlreadySortedImpl(size_t rows, Comparator compare)
@@ -350,10 +336,6 @@ void checkSortedWithPermutation(const Block & block, const SortDescription & des
 void sortBlock(Block & block, const SortDescription & description, UInt64 limit, IColumn::PermutationSortStability stability)
 {
     IColumn::Permutation permutation;
-
-#ifndef NDEBUG
-    block.checkNumberOfRows();
-#endif
     getBlockSortPermutationImpl(block, description, stability, limit, permutation);
 
 #ifndef NDEBUG

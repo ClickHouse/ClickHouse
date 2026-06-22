@@ -4,8 +4,9 @@ sidebar_label: 'dense_rank'
 sidebar_position: 7
 slug: /sql-reference/window-functions/dense_rank
 title: 'dense_rank'
-doc_type: 'reference'
 ---
+
+# dense_rank
 
 Ranks the current row within its partition without gaps. In other words, if the value of any new row encountered is equal to the value of one of the previous rows then it will receive the next successive rank without any gaps in ranking.
 
@@ -33,7 +34,9 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 The following example is based on the example provided in the video instructional [Ranking window functions in ClickHouse](https://youtu.be/Yku9mmBYm_4?si=XIMu1jpYucCQEoXA).
 
-```sql title="Query"
+Query:
+
+```sql
 CREATE TABLE salaries
 (
     `team` String,
@@ -53,13 +56,15 @@ INSERT INTO salaries FORMAT Values
     ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
 ```
 
-```sql title="Query"
+```sql
 SELECT player, salary,
        dense_rank() OVER (ORDER BY salary DESC) AS dense_rank
 FROM salaries;
 ```
 
-```response title="Response"
+Result:
+
+```response
    ┌─player──────────┬─salary─┬─dense_rank─┐
 1. │ Gary Chen       │ 195000 │          1 │
 2. │ Robert George   │ 195000 │          1 │

@@ -27,12 +27,12 @@ class LogCluster:
         if not self.url:
             url = Secret.Config(
                 name=self.URL_SECRET,
-                type=Secret.Type.AWS_SSM_PARAMETER,
+                type=Secret.Type.AWS_SSM_VAR,
             ).get_value()
             self.url = "https://" + url.removeprefix("https://")
         passwd = Secret.Config(
             name=self.PASSWD_SECRET,
-            type=Secret.Type.AWS_SSM_PARAMETER,
+            type=Secret.Type.AWS_SSM_VAR,
         ).get_value()
         if not self.url:
             print("ERROR: failed to retrive password for LogCluster")
@@ -78,10 +78,6 @@ class LogCluster:
             "query": query,
             "date_time_input_format": "best_effort",
             "send_logs_level": "warning",
-            # Override the per-user memory limit from the cluster's default
-            # profile, which otherwise aborts large INSERTs with
-            # "User memory limit exceeded" via the OvercommitTracker.
-            "max_memory_usage_for_user": 0,
         }
         if db_name:
             params["database"] = db_name

@@ -6,7 +6,6 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/ProfileEvents.h>
@@ -228,8 +227,8 @@ MarkRanges RangesInPatchParts::getIntersectingRanges(const String & patch_name, 
 
     for (const auto & range : ranges)
     {
-        const auto * left = std::lower_bound(patch_ranges.begin(), patch_ranges.end(), range.begin, [](const MarkRange & r, UInt64 value) { return r.end < value; });
-        const auto * right = std::upper_bound(patch_ranges.begin(), patch_ranges.end(), range.end, [](UInt64 value, const MarkRange & r) { return value < r.begin; });
+        auto left = std::lower_bound(patch_ranges.begin(), patch_ranges.end(), range.begin, [](const MarkRange & r, UInt64 value) { return r.end < value; });
+        auto right = std::upper_bound(patch_ranges.begin(), patch_ranges.end(), range.end, [](UInt64 value, const MarkRange & r) { return value < r.begin; });
 
         res.insert(left, right);
     }
@@ -255,10 +254,10 @@ MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkR
     auto metadata_snapshot = patch_part->getMetadataSnapshot();
     const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
 
-    auto it = std::ranges::find_if(
-        secondary_indices,
-        [&](const auto & index)
-        { return index.isImplicitlyCreated() && index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name; });
+    auto it = std::ranges::find_if(secondary_indices, [&](const auto & index)
+    {
+        return index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name;
+    });
 
     if (it == secondary_indices.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected minmax index for {} column", column_name);
@@ -266,10 +265,9 @@ MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkR
     if (it->type != "minmax")
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected minmax index for {} column, got: {}", column_name, it->type);
 
-    static const MergeTreeSettings default_settings;
-    auto index_ptr = MergeTreeIndexFactory::instance().get(*it, default_settings);
+    auto index_ptr = MergeTreeIndexFactory::instance().get(*it);
     /// Check that index exists in data part. It may be absent for parts created in earlier versions.
-    if (!index_ptr->getDeserializedFormat(patch_part->checksums, index_ptr->getFileName(), &patch_part->getDataPartStorage()))
+    if (!index_ptr->getDeserializedFormat(patch_part->checksums, index_ptr->getFileName()))
         return {};
 
     size_t total_marks_without_final = patch_part->index_granularity->getMarksCountWithoutFinal();
@@ -300,12 +298,12 @@ MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkR
         if (ranges[i].begin == last_mark)
             continue;
 
-        reader.read(ranges[i].begin, nullptr, granule);
+        reader.read(ranges[i].begin, granule);
         std::tie(stats.min, stats.max) = getMinMaxValues(*granule);
 
         for (size_t j = ranges[i].begin + 1; j < last_mark; ++j)
         {
-            reader.read(j, nullptr, granule);
+            reader.read(j, granule);
             auto [min, max] = getMinMaxValues(*granule);
 
             stats.min = std::min(stats.min, min);
@@ -316,7 +314,7 @@ MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkR
     return result;
 }
 
-static bool intersects(const MinMaxStat & lhs, const MinMaxStat & rhs)
+bool intersects(const MinMaxStat & lhs, const MinMaxStat & rhs)
 {
     return (lhs.min <= rhs.min && rhs.min <= lhs.max) || (rhs.min <= lhs.min && lhs.min <= rhs.max);
 }
