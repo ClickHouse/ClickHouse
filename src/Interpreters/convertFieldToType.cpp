@@ -657,16 +657,28 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                         ElementType v;
                         if constexpr (std::is_same_v<ElementType, Int8>)
                         {
-                            /// Truncate (wrap) the numeric field to Int8, matching how `toInt8` / `CAST(... AS Int8)`
-                            /// and the Array(Int8) conversion handle out-of-range values (e.g. 128 -> -128).
-                            /// Range-checking here would diverge from how those types behave.
+                            /// Reject out-of-range and non-finite values via the same accurate numeric conversion
+                            /// used elsewhere in this function (`convertNumericType`). This is consistent across
+                            /// integer and floating-point fields and avoids undefined behaviour from casting an
+                            /// out-of-range or non-finite Float64 to a narrow integer. `accurate::convertNumeric`
+                            /// range-checks finite values but lets NaN/inf fall through, so guard them explicitly.
                             const Field & elem = src_container[i];
+                            bool converted = false;
                             if (elem.getType() == Field::Types::Float64)
-                                v = static_cast<Int8>(static_cast<Int64>(elem.safeGet<Float64>()));
+                            {
+                                const Float64 f = elem.safeGet<Float64>();
+                                converted = isFinite(f) && accurate::convertNumeric(f, v);
+                            }
                             else if (elem.getType() == Field::Types::UInt64)
-                                v = static_cast<Int8>(elem.safeGet<UInt64>());
+                                converted = accurate::convertNumeric(elem.safeGet<UInt64>(), v);
                             else
-                                v = static_cast<Int8>(elem.safeGet<Int64>());
+                                converted = accurate::convertNumeric(elem.safeGet<Int64>(), v);
+
+                            if (!converted)
+                                throw Exception(
+                                    ErrorCodes::TYPE_MISMATCH,
+                                    "Value {} is out of range or not finite for QBit(Int8)",
+                                    applyVisitor(FieldVisitorToString(), elem));
                         }
                         else
                             v = static_cast<const ElementType>(src_container[i].template safeGet<ElementType>());

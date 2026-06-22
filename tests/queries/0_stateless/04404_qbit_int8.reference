@@ -21,3 +21,4 @@ TEST out-of-range values wrap to Int8, consistently with Int8 / Array(Int8)
 [-128,127,0,44]
 [-128,127,0,44]
 [-128,127,0,44]
+TEST non-finite floats are rejected (consistent with Array(Int8))

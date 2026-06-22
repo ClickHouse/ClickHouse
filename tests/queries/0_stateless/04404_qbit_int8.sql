@@ -65,3 +65,8 @@ SELECT vec FROM qbits_8;
 DROP TABLE qbits_8;
 -- ... and through CAST
 SELECT CAST([128, -129, 256, 300] AS QBit(Int8, 4));
+
+SELECT 'TEST non-finite floats are rejected (consistent with Array(Int8))';
+SELECT CAST([nan] AS Array(Int8)); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT CAST([nan] AS QBit(Int8, 1)); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT CAST([inf] AS QBit(Int8, 1)); -- { serverError CANNOT_CONVERT_TYPE }
