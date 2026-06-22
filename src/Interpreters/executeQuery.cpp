@@ -12,6 +12,7 @@
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SignalHandlers.h>
+#include <Common/Stopwatch.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
@@ -2146,6 +2147,15 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             fuzz_context->setSetting("max_result_rows", Field(UInt64(1000)));
             fuzz_context->setSetting("max_result_bytes", Field(UInt64(10 * 1024 * 1024)));  /// 10 MiB
 
+            /// The fuzzer rewrites numeric literals to boundary values (1 MiB +/- 1, INT_MAX, ...),
+            /// so a seed `numbers(100)` can become `numbers(1048576)` and the resulting INSERT grinds
+            /// through ~1M rows of fuzzer-generated columns in the part writer (minutes under
+            /// sanitizers). max_execution_time only fires between pipeline tasks, so a single heavy
+            /// block can blow past it. Bound the read side instead: stop reading (break, do not throw)
+            /// after enough rows to keep exercising the query structure without a runaway data volume.
+            fuzz_context->setSetting("max_rows_to_read", Field(UInt64(100000)));
+            fuzz_context->setSetting("read_overflow_mode", Field("break"));
+
             fuzz_context->setCurrentQueryId("");
             if (!fuzzed_query_params.empty())
                 fuzz_context->setQueryParameters(fuzzed_query_params);
@@ -2166,6 +2176,23 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
                         result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
                     }
                     CompletedPipelineExecutor executor(result.second.pipeline);
+
+                    /// A single in-flight fuzzed query (e.g. a heavy INSERT) only checks its own
+                    /// time limit between pipeline tasks, so without a cancel callback it ignores the
+                    /// outer query's KILL/timeout and server shutdown and can run for minutes, tripping
+                    /// the stress test hung check. Poll the same conditions the loop guard uses, plus a
+                    /// wall-clock deadline, and cancel the executor (it runs on a separate thread).
+                    Stopwatch fuzzed_query_watch;
+                    executor.setCancelCallback(
+                        [&fuzzed_query_watch, &process_list_element]()
+                        {
+                            if (CurrentMetrics::get(CurrentMetrics::IsServerShuttingDown))
+                                return true;
+                            if (process_list_element && !process_list_element->checkTimeLimitSoft())
+                                return true;
+                            return fuzzed_query_watch.elapsedMilliseconds() > 30000;
+                        },
+                        /*interactive_timeout_ms=*/100);
                     executor.execute();
                 }
             }
