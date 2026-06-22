@@ -718,8 +718,11 @@ void DatabaseOrdinary::eraseAsyncLoadState(const String & table_name)
 
 StoragePtr DatabaseOrdinary::detachTableUnlocked(const String & table_name)
 {
+    /// Detach first: if the base throws (e.g. UNKNOWN_TABLE) the table is not
+    /// detached, so its async-load state must stay intact. Erase only on success.
+    auto table = DatabaseWithOwnTablesBase::detachTableUnlocked(table_name);
     eraseAsyncLoadState(table_name);
-    return DatabaseWithOwnTablesBase::detachTableUnlocked(table_name);
+    return table;
 }
 
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
