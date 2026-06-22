@@ -20,7 +20,7 @@ DROP TABLE t_values_nested;
 -- after the named tuple has been reordered, not before.
 DROP TABLE IF EXISTS t_values_null_default;
 CREATE TABLE t_values_null_default (t Tuple(a UInt8, b String)) ENGINE = Memory;
-INSERT INTO t_values_null_default VALUES (tuple('b', 'a')('x', NULL)) SETTINGS input_format_null_as_default = 1;
+INSERT INTO t_values_null_default SETTINGS input_format_null_as_default = 1 VALUES (tuple('b', 'a')('x', NULL));
 -- `a` is NULL in the source and must become the UInt8 default 0; `b` must keep 'x'.
 SELECT t.a, t.b FROM t_values_null_default;
 DROP TABLE t_values_null_default;
