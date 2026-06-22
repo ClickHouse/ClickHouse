@@ -161,7 +161,7 @@ void listFilesWithRegexpMatchingImpl(
     std::vector<std::string> & result,
     bool recursive,
     size_t depth,
-    std::unordered_set<std::string> * matched_paths)
+    std::unordered_set<std::string> & matched_paths)
 {
     if (depth > MAX_LIST_FILES_RECURSION_DEPTH)
         throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
@@ -186,8 +186,7 @@ void listFilesWithRegexpMatchingImpl(
             fs::path absolute_path = fs::absolute(path_for_ls + for_match);
             absolute_path = absolute_path.lexically_normal(); /// ensure that the resulting path is normalized (e.g., removes any redundant slashes or . and .. segments)
             const auto normalized_path = absolute_path.lexically_normal().string();
-            const bool inserted = !matched_paths || matched_paths->insert(normalized_path).second;
-            if (inserted)
+            if (matched_paths.insert(normalized_path).second)
             {
                 result.push_back(normalized_path);
 
@@ -266,18 +265,12 @@ void listFilesWithRegexpMatchingImpl(
             if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
             {
                 const auto normalized_path = fs::path(it->path()).lexically_normal().string();
-                const bool inserted = !matched_paths || !matched_paths->contains(normalized_path);
-                if (inserted)
+                if (matched_paths.insert(normalized_path).second)
                 {
                     std::error_code size_ec;
                     const auto file_size = it->file_size(size_ec);
                     if (size_ec)
-                    {
                         continue;
-                    }
-
-                    if (matched_paths)
-                        matched_paths->insert(normalized_path);
 
                     result.push_back(normalized_path);
                     total_bytes_to_read += file_size;
@@ -324,18 +317,11 @@ std::vector<std::string> listFilesWithRegexpMatching(
 
     for (const auto & for_match_expanded : for_match_paths_expanded)
     {
-        /// Enable de-duplication only for patterns that contain `/**`.
-        /// It avoids duplicates caused by `/**` zero-depth matching, while preserving the historical behavior
-        /// of producing duplicates across overlapping brace expansions like `{*.csv,a.csv}`.
-        if (for_match_expanded.contains("/**"))
-        {
-            std::unordered_set<std::string> matched_paths;
-            listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false, 0, &matched_paths);
-        }
-        else
-        {
-            listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false, 0, nullptr);
-        }
+        /// A fresh set per expanded pattern de-duplicates the paths produced by `/**` zero-depth matching,
+        /// while still preserving the historical behavior of producing duplicates across overlapping brace
+        /// expansions like `{*.csv,a.csv}` (each alternative gets its own set).
+        std::unordered_set<std::string> matched_paths;
+        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false, 0, matched_paths);
     }
 
     return result;
