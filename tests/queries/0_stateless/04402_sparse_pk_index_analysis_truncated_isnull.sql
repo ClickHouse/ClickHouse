@@ -1,15 +1,15 @@
--- Tags: no-random-merge-tree-settings
--- no-random-merge-tree-settings: truncation of suffix PK columns depends on fixed index_granularity and the skip-suffix ratio.
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- no-random-merge-tree-settings: truncation of suffix PK columns depends on a fixed index_granularity and the skip-suffix ratio.
+-- EXPLAIN indexes output differs under parallel replicas, so enable_parallel_replicas = 0 is pinned per query.
 
 -- A nullable suffix PK column `b` is dropped from the in-memory primary index because the
--- high-cardinality prefix `a` (unique per granule, so its distinct-mark ratio of ~0.99 clears the
--- 0.9 threshold) triggers primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns. The
--- ratio must be in (0, 1): optimizeIndexColumns (IMergeTreeDataPart.cpp:1454) only drops suffix
--- columns when 0 < ratio < 1, so 0.0 would leave `b` loaded and follow the normal present-column
--- path. Filtering on `b IS NULL` / `b IS NOT NULL` then references a key column absent from the
--- sparse representation, exercising the `!is_key_col_present` branch of FUNCTION_IS_NULL in sparse
--- index analysis. primary_key_lazy_load = 0 keeps primary_key_bytes_in_memory populated so the
--- shape assertion below is deterministic.
+-- high-cardinality prefix `a` (unique per granule, distinct-mark ratio ~0.99 clears the 0.9 threshold)
+-- triggers primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns. The ratio must be in
+-- (0, 1): optimizeIndexColumns (IMergeTreeDataPart.cpp:1454) only drops suffix columns when
+-- 0 < ratio < 1, so the control table at 0.0 keeps `b` loaded. Filtering on `b IS NULL` /
+-- `b IS NOT NULL` then references a key column absent from the sparse representation, exercising the
+-- `!is_key_col_present` branch of FUNCTION_IS_NULL/FUNCTION_IS_NOT_NULL in sparse index analysis
+-- (KeyCondition.cpp:5854). primary_key_lazy_load = 0 keeps primary_key_bytes_in_memory populated.
 
 DROP TABLE IF EXISTS t_sparse_pk_trunc_isnull;
 DROP TABLE IF EXISTS t_full_pk_isnull;
@@ -28,16 +28,55 @@ SETTINGS index_granularity = 1, primary_key_ratio_of_unique_prefix_values_to_ski
 INSERT INTO t_sparse_pk_trunc_isnull SELECT number, if(number % 7 = 0, NULL, number) FROM numbers(100);
 INSERT INTO t_full_pk_isnull SELECT number, if(number % 7 = 0, NULL, number) FROM numbers(100);
 
--- Prove `b` is actually skipped: the truncated index keeps fewer bytes in memory than the full one.
--- If suffix truncation stops dropping `b`, both sides become equal and this assertion fails.
+-- Guard the premise: `b` must actually be dropped from the sparse index, otherwise the queries
+-- below would follow the present-column path instead of the `!is_key_col_present` branch.
 SELECT 'b skipped from sparse index',
        (SELECT sum(primary_key_bytes_in_memory) FROM system.parts WHERE active AND database = currentDatabase() AND table = 't_sparse_pk_trunc_isnull')
        < (SELECT sum(primary_key_bytes_in_memory) FROM system.parts WHERE active AND database = currentDatabase() AND table = 't_full_pk_isnull');
 
-SELECT count() FROM t_sparse_pk_trunc_isnull WHERE b IS NULL SETTINGS use_lightweight_primary_key_index_analysis = 1;
-SELECT count() FROM t_sparse_pk_trunc_isnull WHERE b IS NULL SETTINGS use_lightweight_primary_key_index_analysis = 0;
-SELECT count() FROM t_sparse_pk_trunc_isnull WHERE b IS NOT NULL SETTINGS use_lightweight_primary_key_index_analysis = 1;
-SELECT count() FROM t_sparse_pk_trunc_isnull WHERE b IS NOT NULL SETTINGS use_lightweight_primary_key_index_analysis = 0;
+-- { echoOn }
+
+-- Filtering only on the truncated suffix `b`: the `!is_key_col_present` branch returns unknown, so
+-- no granule is pruned (Granules: 100/100). The lightweight path (=1) must match the legacy path (=0).
+EXPLAIN indexes = 1
+SELECT count() FROM t_sparse_pk_trunc_isnull
+WHERE b IS NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0;
+
+SELECT count() FROM t_sparse_pk_trunc_isnull
+WHERE b IS NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0;
+
+EXPLAIN indexes = 1
+SELECT count() FROM t_sparse_pk_trunc_isnull
+WHERE b IS NOT NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0;
+
+SELECT count() FROM t_sparse_pk_trunc_isnull
+WHERE b IS NOT NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0;
+
+-- Constraining the present prefix `a` alongside the truncated-suffix IS NULL/IS NOT NULL: pruning
+-- still fires on `a` (Granules: 11/100), and the lightweight path matches the legacy path.
+EXPLAIN indexes = 1
+SELECT count() FROM t_sparse_pk_trunc_isnull
+WHERE a >= 90 AND b IS NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0;
+
+SELECT count() FROM t_sparse_pk_trunc_isnull
+WHERE a >= 90 AND b IS NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0;
+
+EXPLAIN indexes = 1
+SELECT count() FROM t_sparse_pk_trunc_isnull
+WHERE a >= 90 AND b IS NOT NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0;
+
+SELECT count() FROM t_sparse_pk_trunc_isnull
+WHERE a >= 90 AND b IS NOT NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0;
+
+-- { echoOff }
 
 DROP TABLE t_sparse_pk_trunc_isnull;
 DROP TABLE t_full_pk_isnull;
