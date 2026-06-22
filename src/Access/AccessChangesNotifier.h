@@ -36,14 +36,6 @@ public:
     scope_guard subscribeForChanges(const UUID & id, const OnChangedHandler & handler);
     scope_guard subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler);
 
-    using OnBatchFinishedHandler = std::function<void()>;
-
-    /// Subscribes for the end of a notification batch: the handler is called once after sendNotifications()
-    /// has dispatched all the per-entity notifications queued so far. Lets subscribers coalesce expensive
-    /// per-entity recomputations into a single one per batch (e.g. a full refresh delivers one notification
-    /// per entity, but the derived state only needs to be rebuilt once).
-    scope_guard subscribeForBatchFinished(const OnBatchFinishedHandler & handler);
-
     /// Called by access storages after a new access entity has been added.
     void onEntityAdded(const UUID & id, const AccessEntityPtr & new_entity);
 
@@ -62,7 +54,6 @@ private:
     {
         std::unordered_map<UUID, std::list<OnChangedHandler>> by_id;
         std::list<OnChangedHandler> by_type[static_cast<size_t>(AccessEntityType::MAX)];
-        std::list<OnBatchFinishedHandler> on_batch_finished;
         std::mutex mutex;
     };
 
@@ -73,7 +64,7 @@ private:
     {
         UUID id;
         AccessEntityPtr entity;
-        AccessEntityType type{};
+        AccessEntityType type;
     };
     std::queue<Event> queue;
     std::mutex queue_mutex;
