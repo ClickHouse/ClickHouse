@@ -4645,8 +4645,10 @@ Possible values: true, false
     DECLARE(Bool, optimize_or_like_chain, false, R"(
 Optimize multiple OR LIKE into multiMatchAny. This optimization should not be enabled by default, because it defies index analysis in some cases.
 )", 0) \
-    DECLARE(Bool, optimize_rewrite_has_phrase_or_chain, true, R"(
-Coalesce a chain of `hasPhrase` calls on the same column joined by `OR` into a single `hasAnyPhrases` call, so the column is tokenized once instead of once per phrase. For example, `hasPhrase(c, 'p0') OR hasPhrase(c, 'p1')` becomes `hasAnyPhrases(c, ['p0', 'p1'])`. The rewrite preserves results and text-index usage.
+    DECLARE(Bool, optimize_rewrite_has_phrase_or_chain, false, R"(
+Coalesce a chain of `hasPhrase` calls on the same column joined by `OR` into a single `hasAnyPhrases` call, so the column is tokenized once instead of once per phrase. For example, `hasPhrase(c, 'p0') OR hasPhrase(c, 'p1')` becomes `hasAnyPhrases(c, ['p0', 'p1'])`.
+
+Disabled by default: rewriting `hasPhrase` is not always beneficial. A text index may be able to answer `hasPhrase` without reading the column, whereas `hasAnyPhrases` reads the column to verify every row. Enable it for the brute-force (no text index) path, where tokenizing the column once per query instead of once per phrase is a clear win.
 )", 0) \
     DECLARE(Bool, optimize_rewrite_has_phrase_and_chain, false, R"(
 Coalesce a chain of `hasPhrase` calls on the same column joined by `AND` into a single `hasAllPhrases` call. For example, `hasPhrase(c, 'p0') AND hasPhrase(c, 'p1')` becomes `hasAllPhrases(c, ['p0', 'p1'])`.

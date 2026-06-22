@@ -16,9 +16,10 @@ namespace DB
   * (even an explicit `'splitByNonAlpha'`), because the former binds to the text index's tokenizer
   * while the latter is always evaluated with the named tokenizer - they are not interchangeable.
   *
-  * `OR` coalescing is gated by `optimize_rewrite_has_phrase_or_chain` (on by default); `AND` coalescing
-  * by `optimize_rewrite_has_phrase_and_chain` (off by default, because an `AND` chain short-circuits and
-  * coalescing it can regress selective filters).
+  * `OR` coalescing is gated by `optimize_rewrite_has_phrase_or_chain`; `AND` coalescing by
+  * `optimize_rewrite_has_phrase_and_chain`. Both are off by default: auto-rewriting `hasPhrase` is not
+  * always beneficial (a text index may answer `hasPhrase` without reading the column), and an `AND` chain
+  * additionally short-circuits, so coalescing it can regress selective filters.
   */
 class CoalesceHasPhrasePass final : public IQueryTreePass
 {

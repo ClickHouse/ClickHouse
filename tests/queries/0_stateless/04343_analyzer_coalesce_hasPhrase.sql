@@ -1,9 +1,14 @@
 -- Verifies the CoalesceHasPhrasePass rewrite of hasPhrase OR/AND chains into hasAnyPhrases/hasAllPhrases.
--- OR coalescing is on by default (optimize_rewrite_has_phrase_or_chain); AND coalescing is off by
--- default (optimize_rewrite_has_phrase_and_chain) because AND short-circuits and coalescing it can regress.
+-- Both OR (optimize_rewrite_has_phrase_or_chain) and AND (optimize_rewrite_has_phrase_and_chain) coalescing
+-- are off by default (auto-rewriting hasPhrase is not always beneficial); the tests enable them explicitly.
 SET enable_analyzer = 1;
 
-SELECT '-- OR chain over the same column -> hasAnyPhrases';
+SELECT '-- OR chain is NOT coalesced by default';
+EXPLAIN QUERY TREE run_passes=1
+SELECT materialize('the quick brown fox jumps over the lazy dog') AS s
+WHERE hasPhrase(s, 'quick brown') OR hasPhrase(s, 'lazy dog');
+
+SELECT '-- OR chain over the same column -> hasAnyPhrases (when enabled)';
 EXPLAIN QUERY TREE run_passes=1
 SELECT materialize('the quick brown fox jumps over the lazy dog') AS s
 WHERE hasPhrase(s, 'quick brown') OR hasPhrase(s, 'lazy dog') OR hasPhrase(s, 'fox jumps')

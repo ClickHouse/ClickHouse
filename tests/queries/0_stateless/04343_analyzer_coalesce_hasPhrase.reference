@@ -1,4 +1,36 @@
--- OR chain over the same column -> hasAnyPhrases
+-- OR chain is NOT coalesced by default
+QUERY id: 0
+  PROJECTION COLUMNS
+    s String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: materialize, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            CONSTANT id: 4, constant_value: \'the quick brown fox jumps over the lazy dog\', constant_value_type: String
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: system.one
+  WHERE
+    FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 7, nodes: 2
+          FUNCTION id: 8, function_name: hasPhrase, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 9, nodes: 2
+                FUNCTION id: 10, function_name: materialize, function_type: ordinary, result_type: String
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      CONSTANT id: 12, constant_value: \'the quick brown fox jumps over the lazy dog\', constant_value_type: String
+                CONSTANT id: 13, constant_value: \'quick brown\', constant_value_type: String
+          FUNCTION id: 14, function_name: hasPhrase, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 15, nodes: 2
+                FUNCTION id: 10, function_name: materialize, function_type: ordinary, result_type: String
+                  ARGUMENTS
+                    LIST id: 11, nodes: 1
+                      CONSTANT id: 12, constant_value: \'the quick brown fox jumps over the lazy dog\', constant_value_type: String
+                CONSTANT id: 16, constant_value: \'lazy dog\', constant_value_type: String
+-- OR chain over the same column -> hasAnyPhrases (when enabled)
 QUERY id: 0
   PROJECTION COLUMNS
     s String

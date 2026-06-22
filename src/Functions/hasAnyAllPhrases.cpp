@@ -324,8 +324,9 @@ Checks if the `input` contains any of the `phrases`, where each phrase is matche
 
 It is equivalent to `hasPhrase(input, phrases[1]) OR hasPhrase(input, phrases[2]) OR ...`, but
 tokenizes the `input` only once for all phrases instead of once per phrase. The query analyzer
-automatically rewrites a chain of `OR`-ed `hasPhrase` calls on the same column into `hasAnyPhrases`
-(controlled by the setting `optimize_rewrite_has_phrase_or_chain`, enabled by default).
+can rewrite a chain of `OR`-ed `hasPhrase` calls on the same column into `hasAnyPhrases`, but this is
+disabled by default (setting `optimize_rewrite_has_phrase_or_chain`) because rewriting `hasPhrase` is
+not always beneficial when a text index can answer `hasPhrase` directly.
 
 :::note
 Column `input` should have a [text index](../../engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
