@@ -34,12 +34,31 @@ EXCLUDE_VERSIONS="${EXCLUDE_VERSIONS-25.8}"
 
 GH() { command gh "$@"; }
 
+# Fail-close validator for a required read: the payload must parse as JSON, else
+# abort. An empty JSON array ([]) is a legitimate result (no runs / no PRs) and
+# passes; an empty string or garbled output (API/auth outage) does not. Call in
+# the main shell (`need_json "$X" "desc" || exit 3`) — exiting inside a command
+# substitution would only kill the subshell.
+need_json() {  # need_json <payload> <description>
+    if ! printf '%s' "$1" | python3 -c 'import sys, json; json.load(sys.stdin)' 2>/dev/null; then
+        echo "ERROR: could not fetch $2 (API/auth failure or invalid JSON) — aborting (fail-close)." >&2
+        return 1
+    fi
+}
+
 # ---- preflight self-check (fail-close: no fabricated data) -------------------
 if ! command -v gh >/dev/null 2>&1; then
     echo "ERROR: gh CLI not found on PATH." >&2; exit 2
 fi
 if ! GH auth status >/dev/null 2>&1; then
     echo "ERROR: gh is not authenticated (run: command gh auth login)." >&2; exit 2
+fi
+# Prove the repo is readable up front. `gh api repos/<repo>` exits non-zero on a
+# not-found / no-access / API outage (unlike `gh pr list`, which returns [] exit 0),
+# so this single check stops an auth/connectivity failure from later surfacing as a
+# valid-but-empty result that reads as "no failures / guard clear".
+if ! GH api "repos/$REPO" --jq '.full_name' >/dev/null 2>&1; then
+    echo "ERROR: cannot read repo $REPO (not found / no access / API outage) — aborting (fail-close)." >&2; exit 2
 fi
 
 NOW_EPOCH="$(date -u +%s)"
@@ -143,7 +162,9 @@ SINCE="$(python3 -c 'import datetime,sys; print((datetime.datetime.now(datetime.
 
 echo "== 3a. AutoReleases runs since $SINCE (the scheduler that should release) =="
 AR_RUNS="$(GH run list --repo "$REPO" --workflow auto_releases.yml --created ">=$SINCE" -L 60 \
-    --json databaseId,conclusion,status,createdAt 2>/dev/null)"
+    --json databaseId,conclusion,status,createdAt 2>/dev/null)" \
+    || { echo "ERROR: failed to list AutoReleases runs (gh exited non-zero) — aborting (fail-close)." >&2; exit 3; }
+need_json "$AR_RUNS" "AutoReleases run list" || exit 3
 n_guard=0; n_runner=0; n_other=0; n_ok=0
 printf "   %-12s %-12s %-12s %s\n" "date" "conclusion" "class" "run-id"
 while IFS=$'\t' read -r id concl stat created; do
@@ -183,19 +204,35 @@ echo "   tally: GUARD=$n_guard  RUNNER=$n_runner  OTHER=$n_other  ok=$n_ok"
 echo
 
 echo "== 3b. CreateRelease runs since $SINCE (manual dispatches / matrix calls) =="
-GH run list --repo "$REPO" --workflow create_release.yml --created ">=$SINCE" -L 40 \
-    --json databaseId,conclusion,status,createdAt,event \
-    --jq '.[] | "   \(.createdAt[0:10])  \(.conclusion // .status)  \(.event)  \(.databaseId)"' 2>/dev/null \
-    || echo "   (none)"
+CR_RUNS="$(GH run list --repo "$REPO" --workflow create_release.yml --created ">=$SINCE" -L 40 \
+    --json databaseId,conclusion,status,createdAt,event 2>/dev/null)" \
+    || { echo "ERROR: failed to list CreateRelease runs (gh exited non-zero) — aborting (fail-close)." >&2; exit 3; }
+need_json "$CR_RUNS" "CreateRelease run list" || exit 3
+printf '%s' "$CR_RUNS" | python3 -c '
+import sys, json
+runs = json.load(sys.stdin)
+if not runs:
+    print("   (none in window)")
+for r in runs:
+    print("   {}  {}  {}  {}".format(
+        (r.get("createdAt") or "")[:10], r.get("conclusion") or r.get("status"),
+        r.get("event"), r.get("databaseId")))
+'
 echo
 
 # ============================================================================
 # 4. Live guard re-check — exactly the query auto_release.py runs
 # ============================================================================
 echo "== 4. Guard query NOW (open PRs matching \"Update version_date.tsv\") =="
-GUARD="$(GH pr list --repo "$REPO" --state open --search "Update version_date.tsv" \
-    --json number,title,author,headRefName \
-    --jq '.[] | "   #\(.number)  [\(.author.login)]  \(.headRefName)  \(.title)"' 2>/dev/null)"
+GUARD_JSON="$(GH pr list --repo "$REPO" --state open --search "Update version_date.tsv" \
+    --json number,title,author,headRefName 2>/dev/null)" \
+    || { echo "ERROR: failed to run guard query (gh exited non-zero) — aborting (fail-close)." >&2; exit 3; }
+need_json "$GUARD_JSON" "guard PR query" || exit 3
+GUARD="$(printf '%s' "$GUARD_JSON" | python3 -c '
+import sys, json
+for p in json.load(sys.stdin):
+    print("   #{}  [{}]  {}  {}".format(p["number"], p["author"]["login"], p["headRefName"], p["title"]))
+')"
 if [[ -z "$GUARD" ]]; then
     echo "   [] — guard is CLEAR; AutoReleaseInfo will not RuntimeError on this check."
 else
