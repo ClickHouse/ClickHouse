@@ -1,3 +1,0 @@
-src/Core/ServerSettings.cpp
-src/DataTypes/EnumValues.cpp
-src/Interpreters/ConcurrentHashJoin.cpp
