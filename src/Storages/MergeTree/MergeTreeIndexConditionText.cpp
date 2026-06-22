@@ -914,6 +914,13 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
+        /// A needle with token separators is invalid for hasToken at row level (BAD_ARGUMENTS; hasTokenOrNull
+        /// returns NULL). The index would instead tokenize it into several tokens and silently replace the
+        /// predicate, hiding that behaviour. Bypass the index so the row-level function runs. The separator
+        /// rule matches HasTokenImpl: a separator is any ASCII non-alphanumeric character.
+        if (std::ranges::any_of(value_field.safeGet<String>(), [](unsigned char c) { return isASCII(c) && !isAlphaNumericASCII(c); }))
+            return false;
+
         auto tokens = stringToTokens(value_field);
         if (tokens.empty())
         {
