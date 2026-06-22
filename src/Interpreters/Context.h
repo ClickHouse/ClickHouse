@@ -102,6 +102,7 @@ class Cluster;
 class Compiler;
 class MarkCache;
 class UniqueKeyIndexCache;
+class DeleteBitmapCache;
 class PrimaryIndexCache;
 class PageCache;
 class MMappedFileCache;
@@ -1416,6 +1417,14 @@ public:
     void updateUniqueKeyIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<UniqueKeyIndexCache> getUniqueKeyIndexCache() const;
     void clearUniqueKeyIndexCache() const;
+
+    /// UNIQUE KEY delete-bitmap cache. Registration mirrors `setMarkCache` /
+    /// `setPrimaryIndexCache`. `max_cache_size_in_bytes == 0` leaves the
+    /// cache unregistered — callers get `nullptr` from `getDeleteBitmapCache`.
+    void setDeleteBitmapCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
+    void updateDeleteBitmapCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<DeleteBitmapCache> getDeleteBitmapCache() const;
+    void clearDeleteBitmapCache() const;
 
     void setPrimaryIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
     void updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
