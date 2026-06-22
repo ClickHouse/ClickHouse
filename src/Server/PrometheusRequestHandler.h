@@ -12,7 +12,7 @@ class IServer;
 class PrometheusMetricsWriter;
 class WriteBufferFromHTTPServerResponse;
 
-/// Handles requests for prometheus protocols (metrics, write, read, query).
+/// Handles requests for prometheus protocols (/metrics and /api/v1/*).
 class PrometheusRequestHandler : public HTTPRequestHandler
 {
 public:

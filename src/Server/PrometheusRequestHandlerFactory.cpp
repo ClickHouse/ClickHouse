@@ -122,7 +122,7 @@ namespace
     {
         PrometheusRequestHandlerConfig res;
         res.type = PrometheusRequestHandlerConfig::Type::APIv1;
-        res.time_series_table_name = parseTableNameFromConfig(config, config_prefix);
+        parseTableNameFromConfig(config, config_prefix, res);
         parseCommonConfig(config, res);
         parseUserFromConfig(config, config_prefix, res);
         return res;

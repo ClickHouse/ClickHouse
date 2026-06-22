@@ -41,7 +41,7 @@ struct PrometheusRequestHandlerConfig
     bool expose_histograms = false;
     bool expose_dimensional_metrics = false;
 
-    /// Settings for types Query, Write, Read:
+    /// Settings for types APIv1, Query, Write, Read:
     QualifiedTableName time_series_table_name;
 
     size_t keep_alive_timeout = 0;

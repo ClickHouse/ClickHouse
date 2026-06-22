@@ -434,12 +434,12 @@ public:
             auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
             PrometheusHTTPProtocolAPI protocol{table, context};
 
-            String uri_path = uri;
-            if (const auto query_pos = uri_path.find('?'); query_pos != String::npos)
-                uri_path.resize(query_pos);
-
             /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
             /// endpoint works both bare ("/api/v1/query") and behind a configured prefix ("/prefix/api/v1/query").
+            /// Use the decoded path without the query string (matching APIv1Impl::getImpl) so a
+            /// percent-encoded label name in ".../label/<name>/values" is read correctly.
+            const String uri_path = Poco::URI(uri).getPath();
+
             if (uri_path.ends_with("/query_range"))
             {
                 String query = params->get("query", "");
@@ -555,21 +555,28 @@ private:
     static std::optional<String> extractLabelValuesName(std::string_view uri_path)
     {
         static constexpr std::string_view values_suffix = "/values";
-        static constexpr std::string_view label_marker = "/label/";
+        static constexpr std::string_view label_segment = "/label";
 
         if (!uri_path.ends_with(values_suffix))
             return std::nullopt;
 
-        size_t marker_pos = uri_path.rfind(label_marker);
-        if (marker_pos == std::string_view::npos)
+        /// Strip the "/values" suffix, leaving "<prefix>/label/<name>".
+        std::string_view without_values = uri_path.substr(0, uri_path.size() - values_suffix.size());
+
+        /// A label name never contains '/', so it is the last path segment.
+        size_t name_slash = without_values.rfind('/');
+        if (name_slash == std::string_view::npos)
             return std::nullopt;
 
-        size_t start_pos = marker_pos + label_marker.size();
-        size_t end_pos = uri_path.size() - values_suffix.size();
-        if (end_pos <= start_pos)
+        std::string_view label_name = without_values.substr(name_slash + 1);
+        if (label_name.empty())
             return std::nullopt;
 
-        return String{uri_path.substr(start_pos, end_pos - start_pos)};
+        /// The segment before the name must be "/label".
+        if (!without_values.substr(0, name_slash).ends_with(label_segment))
+            return std::nullopt;
+
+        return String{label_name};
     }
 };
 
