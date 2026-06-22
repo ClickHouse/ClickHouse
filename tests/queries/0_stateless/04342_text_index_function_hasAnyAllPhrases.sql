@@ -134,3 +134,26 @@ INSERT INTO tab VALUES (1, 'hello错误502需要处理kitty'), (2, 'taichi张三
 SELECT groupArray(id) FROM tab WHERE hasAnyPhrases(message, ['错误502', 'hello world'], 'asciiCJK');
 SELECT groupArray(id) FROM tab WHERE hasAllPhrases(message, ['错误502', '需要处理'], 'asciiCJK');
 DROP TABLE tab;
+
+SELECT '-- regression: index with a preprocessor (lower) applies it to column AND phrases on the index path';
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (id UInt32, message String, INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(message)))
+ENGINE = MergeTree ORDER BY (id);
+INSERT INTO tab VALUES (1, 'Foo BaR Baz'), (2, 'Quick Brown Fox'), (3, 'no match here');
+SELECT groupArray(id) FROM tab WHERE hasAnyPhrases(message, ['fOO bAR', 'BROWN fox']);
+SELECT groupArray(id) FROM tab WHERE hasAllPhrases(message, ['foo bar', 'bar baz']);
+SELECT groupArray(id) FROM tab WHERE hasAnyPhrases(message, ['nope']);
+SELECT '---- the hasPhrase OR rewrite agrees with the un-rewritten query (both case-insensitive via the index)';
+SELECT groupArray(id) FROM tab WHERE hasPhrase(message, 'fOO bAR') OR hasPhrase(message, 'BROWN fox') SETTINGS optimize_rewrite_has_phrase_or_chain = 1;
+SELECT groupArray(id) FROM tab WHERE hasPhrase(message, 'fOO bAR') OR hasPhrase(message, 'BROWN fox') SETTINGS optimize_rewrite_has_phrase_or_chain = 0;
+DROP TABLE tab;
+
+SELECT '-- regression: index with a non-default tokenizer (ngrams) is used by the 2-arg functions on the index path';
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (id UInt32, message String, INDEX idx(message) TYPE text(tokenizer = ngrams(3)))
+ENGINE = MergeTree ORDER BY (id);
+INSERT INTO tab VALUES (1, 'abcdef'), (2, 'uvwxyz'), (3, 'nomatch');
+SELECT groupArray(id) FROM tab WHERE hasAnyPhrases(message, ['bcd', 'wxy']);
+SELECT groupArray(id) FROM tab WHERE hasAllPhrases(message, ['bcd', 'cde']);
+SELECT groupArray(id) FROM tab WHERE hasPhrase(message, 'bcd') OR hasPhrase(message, 'wxy') SETTINGS optimize_rewrite_has_phrase_or_chain = 1;
+DROP TABLE tab;

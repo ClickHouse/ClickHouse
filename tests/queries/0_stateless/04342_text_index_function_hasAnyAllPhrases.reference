@@ -42,3 +42,14 @@ hasAnyPhrases/hasAllPhrases with a 3rd tokenizer argument bypasses the index (4 
 ---- asciiCJK
 [1,3,4]
 [1]
+-- regression: index with a preprocessor (lower) applies it to column AND phrases on the index path
+[1,2]
+[1]
+[]
+---- the hasPhrase OR rewrite agrees with the un-rewritten query (both case-insensitive via the index)
+[1,2]
+[1,2]
+-- regression: index with a non-default tokenizer (ngrams) is used by the 2-arg functions on the index path
+[1,2]
+[1]
+[1,2]

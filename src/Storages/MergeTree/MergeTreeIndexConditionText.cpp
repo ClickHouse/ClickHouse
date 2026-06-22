@@ -280,7 +280,17 @@ TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const Acti
     if (!traverseAtomNode(rpn_node, rpn_element))
         return nullptr;
 
-    if (rpn_element.text_search_queries.size() != 1)
+    if (rpn_element.text_search_queries.empty())
+        return nullptr;
+
+    /// Normally one search query maps to one direct-read virtual column. `hasAnyPhrases` is the exception:
+    /// it builds a multi-query FUNCTION_HAS_ANY_ELEMENTS (one all-tokens query per phrase) and never gets a
+    /// virtual column (its direct read mode is None), but it still needs the index tokenizer/preprocessor
+    /// applied to the row-level call. Return a representative query so the optimizer can identify the index.
+    /// Other multi-query elements (IN, hasAny, match, multiSearchAny, ...) do not need this and keep
+    /// returning nullptr.
+    if (rpn_element.text_search_queries.size() != 1
+        && rpn_element.text_search_queries.front()->function_name != "hasAnyPhrases")
         return nullptr;
 
     return rpn_element.text_search_queries.front();
