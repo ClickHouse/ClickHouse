@@ -38,6 +38,7 @@
 #include <Common/TLDListsHolder.h>
 #include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/Jemalloc.h>
@@ -128,6 +129,9 @@ namespace ServerSetting
     extern const ServerSettingsString mark_cache_policy;
     extern const ServerSettingsUInt64 mark_cache_size;
     extern const ServerSettingsDouble mark_cache_size_ratio;
+    extern const ServerSettingsString unique_key_bitmap_cache_policy;
+    extern const ServerSettingsUInt64 unique_key_bitmap_cache_size_bytes;
+    extern const ServerSettingsDouble unique_key_bitmap_cache_size_ratio;
     extern const ServerSettingsString iceberg_metadata_files_cache_policy;
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_size;
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_max_entries;
@@ -143,6 +147,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_parts_cleaning_thread_pool_size;
     extern const ServerSettingsUInt64 max_server_memory_usage;
     extern const ServerSettingsDouble max_server_memory_usage_to_ram_ratio;
+    extern const ServerSettingsUInt64 max_temporary_data_on_disk_size;
     extern const ServerSettingsUInt64 max_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_thread_pool_size;
     extern const ServerSettingsUInt64 max_unexpected_parts_loading_thread_pool_size;
@@ -454,7 +459,12 @@ void LocalServer::tryInitPath()
 
     global_context->setPath(fs::path(path) / "");
 
-    global_context->setTemporaryStoragePath(fs::path(path) / "tmp" / "", 1_GiB);
+    /// clickhouse-local keeps a generous default limit on temporary data to guard against
+    /// runaway queries filling up the disk. It can be raised, or lifted entirely with a value of 0,
+    /// via the `max_temporary_data_on_disk_size` server setting.
+    const auto & max_temporary_data_on_disk_size = server_settings[ServerSetting::max_temporary_data_on_disk_size];
+    global_context->setTemporaryStoragePath(
+        fs::path(path) / "tmp" / "", max_temporary_data_on_disk_size.changed ? max_temporary_data_on_disk_size.value : 1_TiB);
     global_context->setFlagsPath(fs::path(path) / "flags" / "");
 
     global_context->setUserFilesPath(""); /// user's files are everywhere
@@ -1014,6 +1024,17 @@ void LocalServer::processConfig()
     }
     global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
 
+    /// UNIQUE KEY delete-bitmap cache. Zero size disables.
+    String unique_key_bitmap_cache_policy_name = server_settings[ServerSetting::unique_key_bitmap_cache_policy];
+    size_t unique_key_bitmap_cache_size = server_settings[ServerSetting::unique_key_bitmap_cache_size_bytes];
+    double unique_key_bitmap_cache_size_ratio = server_settings[ServerSetting::unique_key_bitmap_cache_size_ratio];
+    if (unique_key_bitmap_cache_size > max_cache_size)
+    {
+        unique_key_bitmap_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered UNIQUE KEY delete-bitmap cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(unique_key_bitmap_cache_size));
+    }
+    global_context->setDeleteBitmapCache(unique_key_bitmap_cache_policy_name, unique_key_bitmap_cache_size, unique_key_bitmap_cache_size_ratio);
+
     String index_uncompressed_cache_policy = server_settings[ServerSetting::index_uncompressed_cache_policy];
     size_t index_uncompressed_cache_size = server_settings[ServerSetting::index_uncompressed_cache_size];
     double index_uncompressed_cache_size_ratio = server_settings[ServerSetting::index_uncompressed_cache_size_ratio];
@@ -1432,6 +1453,13 @@ int mainEntryClickHouseLocal(int argc, char ** argv);
 int mainEntryClickHouseLocal(int argc, char ** argv)
 {
     DB::MainThreadStatus::getInstance();
+
+    /// Join global-pool threads before the statics they may have accessed are destroyed.
+    /// That way, accesses happen-before destruction.
+    SCOPE_EXIT_SAFE({
+        DB::StaticThreadPool::shutdownAll();
+        GlobalThreadPool::shutdown();
+    });
 
     try
     {
