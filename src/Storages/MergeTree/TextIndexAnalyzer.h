@@ -12,6 +12,19 @@ namespace DB
 class TextIndexAnalyzer
 {
 public:
+    struct ReadableRows
+    {
+    public:
+        explicit ReadableRows(std::vector<RowsRange> ranges_);
+        std::optional<RowsRange> clipRowsRange(const RowsRange & rows_range) const;
+        PostingList clipPostings(const PostingList & postings);
+        size_t getSizeInBytes() const;
+
+    private:
+        std::vector<RowsRange> ranges;
+        PostingList ranges_bitmap;
+    };
+
     /// Per-query mutable analysis state. Updated as the dictionary scan delivers
     /// token info, missing-token notifications, and materialized posting lists.
     struct QueryBuilder
@@ -35,17 +48,9 @@ public:
         void markFailed();
         void markBypassed();
         void addMissingToken();
-
-        /// `readable_ranges`/`readable_postings` describe the rows still
-        /// readable after the analysis of the primary key and prior skip indexes.
-        void addTokenInfo(
-            std::string_view token,
-            TokenPostingsInfoPtr token_info,
-            const std::vector<RowsRange> & readable_ranges,
-            const PostingList & readable_bitmap);
-
-        void addRowsRange(RowsRange token_rows_range, const std::vector<RowsRange> & readable_ranges);
-        void addPostings(PostingListPtr token_postings, const PostingList & readable_bitmap);
+        void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, ReadableRows * readable);
+        void addRowsRange(RowsRange token_rows_range, ReadableRows * readable);
+        void addPostings(PostingListPtr token_postings, ReadableRows * readable);
         bool needReadPostings() const { return num_read_postings < tokens.size(); }
     };
 
@@ -108,12 +113,8 @@ private:
     absl::flat_hash_set<String> missing_tokens;
     /// Tokens whose posting list has been added (embedded or read from disk).
     absl::flat_hash_set<String> tokens_with_postings;
-    /// Row ranges still readable after the analysis of the primary key and prior skip indexes,
-    /// sorted and non-overlapping. Empty means the whole part is readable (no clipping is applied).
-    std::vector<RowsRange> readable_row_ranges;
-    /// The same readable rows as a single combined bitmap (built once from `readable_row_ranges`),
-    /// used to clip materialized token postings. Unset when the whole part is readable.
-    PostingList readable_postings;
+    /// Row ranges still readable after the analysis of the primary key and prior skip indexes.
+    std::optional<ReadableRows> readable_rows;
 };
 
 }

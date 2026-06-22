@@ -19,19 +19,23 @@ namespace ErrorCodes
 }
 
 
-/// Returns the tightest single interval covering `span ∩ readable`, or `nullopt`
-/// if `span` does not overlap any readable range. `readable` is sorted and non-overlapping.
-static std::optional<RowsRange> clipToReadableRanges(RowsRange span, const std::vector<RowsRange> & readable)
+TextIndexAnalyzer::ReadableRows::ReadableRows(std::vector<RowsRange> ranges_)
+    : ranges(std::move(ranges_))
+{
+}
+
+std::optional<RowsRange> TextIndexAnalyzer::ReadableRows::clipRowsRange(const RowsRange & rows_range) const
 {
     /// First readable range whose end reaches the span begin; ranges before it cannot overlap.
-    auto it = std::lower_bound(readable.begin(), readable.end(), span.begin,
+    auto it = std::lower_bound(
+        ranges.begin(), ranges.end(), rows_range.begin,
         [](const RowsRange & range, size_t value) { return range.end < value; });
 
     std::optional<RowsRange> clipped;
-    for (; it != readable.end() && it->begin <= span.end; ++it)
+    for (; it != ranges.end() && it->begin <= rows_range.end; ++it)
     {
-        size_t begin = std::max(span.begin, it->begin);
-        size_t end = std::min(span.end, it->end);
+        size_t begin = std::max(rows_range.begin, it->begin);
+        size_t end = std::min(rows_range.end, it->end);
 
         if (begin > end)
             continue;
@@ -43,6 +47,24 @@ static std::optional<RowsRange> clipToReadableRanges(RowsRange span, const std::
     }
 
     return clipped;
+}
+
+PostingList TextIndexAnalyzer::ReadableRows::clipPostings(const PostingList & postings)
+{
+    if (ranges_bitmap.isEmpty())
+    {
+        /// Lazily build the single combined bitmap of readable rows used to clip token postings.
+        /// `addRangeClosed` stores contiguous ranges as run containers, so this stays compact (O(number of ranges)).
+        for (const auto & range : ranges)
+            ranges_bitmap.addRangeClosed(static_cast<UInt32>(range.begin), static_cast<UInt32>(range.end));
+    }
+
+    return postings & ranges_bitmap;
+}
+
+size_t TextIndexAnalyzer::ReadableRows::getSizeInBytes() const
+{
+    return ranges.capacity() * sizeof(RowsRange) + ranges_bitmap.getSizeInBytes();
 }
 
 void TextIndexAnalyzer::QueryBuilder::markFailed()
@@ -65,11 +87,7 @@ void TextIndexAnalyzer::QueryBuilder::addMissingToken()
         markFailed();
 }
 
-void TextIndexAnalyzer::QueryBuilder::addTokenInfo(
-    std::string_view token,
-    TokenPostingsInfoPtr token_info,
-    const std::vector<RowsRange> & readable_ranges,
-    const PostingList & readable_bitmap)
+void TextIndexAnalyzer::QueryBuilder::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, ReadableRows * readable)
 {
     if (is_failed)
         return;
@@ -81,21 +99,21 @@ void TextIndexAnalyzer::QueryBuilder::addTokenInfo(
 
     chassert(!token_info->ranges.empty());
     RowsRange token_rows_range(token_info->ranges.front().begin, token_info->ranges.back().end);
-    addRowsRange(token_rows_range, readable_ranges);
+    addRowsRange(token_rows_range, readable);
 
     if (token_info->embedded_postings)
-        addPostings(token_info->embedded_postings, readable_bitmap);
+        addPostings(token_info->embedded_postings, readable);
 }
 
-void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range, const std::vector<RowsRange> & readable_ranges)
+void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range, ReadableRows * readable)
 {
     if (is_failed)
         return;
 
     /// Clip the token's row range to the rows that are still readable.
-    if (!readable_ranges.empty())
+    if (readable)
     {
-        auto clipped_range = clipToReadableRanges(token_rows_range, readable_ranges);
+        auto clipped_range = readable->clipRowsRange(token_rows_range);
 
         if (!clipped_range)
         {
@@ -127,7 +145,7 @@ void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range, c
     }
 }
 
-void TextIndexAnalyzer::QueryBuilder::addPostings(PostingListPtr token_postings, const PostingList & readable_bitmap)
+void TextIndexAnalyzer::QueryBuilder::addPostings(PostingListPtr token_postings, ReadableRows * readable)
 {
     if (is_failed)
         return;
@@ -140,9 +158,9 @@ void TextIndexAnalyzer::QueryBuilder::addPostings(PostingListPtr token_postings,
     PostingList clipped;
     const PostingList * postings_to_fold = token_postings.get();
 
-    if (!readable_bitmap.isEmpty() && (!postings || query->search_mode == TextSearchMode::Any))
+    if (readable && (!postings || query->search_mode == TextSearchMode::Any))
     {
-        clipped = *token_postings & readable_bitmap;
+        clipped = readable->clipPostings(*token_postings);
         postings_to_fold = &clipped;
     }
 
@@ -198,34 +216,35 @@ void TextIndexAnalyzer::addMissingToken(std::string_view token)
 void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info)
 {
     all_token_infos[token] = token_info;
+    auto * readable = readable_rows.has_value() ? &readable_rows.value() : nullptr;
+
     if (token_info->embedded_postings)
         tokens_with_postings.emplace(token);
 
     processTokenOperation(token, [&](QueryBuilder & query_builder)
     {
-        query_builder.addTokenInfo(token, token_info, readable_row_ranges, readable_postings);
+
+        query_builder.addTokenInfo(token, token_info, readable);
     });
 }
 
 void TextIndexAnalyzer::addPostings(std::string_view token, PostingListPtr postings)
 {
     tokens_with_postings.emplace(token);
+    auto * readable = readable_rows.has_value() ? &readable_rows.value() : nullptr;
 
     processTokenOperation(token, [&](QueryBuilder & query_builder)
     {
-        query_builder.addPostings(postings, readable_postings);
+        query_builder.addPostings(postings, readable);
     });
 }
 
 void TextIndexAnalyzer::setReadableRows(std::vector<RowsRange> readable_ranges)
 {
-    readable_row_ranges = std::move(readable_ranges);
-    readable_postings.clear();
+    readable_rows.reset();
 
-    /// Build the single combined bitmap of readable rows used to clip token postings.
-    /// `addRangeClosed` stores contiguous ranges as run containers, so this stays compact (O(number of ranges)).
-    for (const auto & range : readable_row_ranges)
-        readable_postings.addRangeClosed(static_cast<UInt32>(range.begin), static_cast<UInt32>(range.end));
+    if (!readable_ranges.empty())
+        readable_rows.emplace(std::move(readable_ranges));
 }
 
 bool TextIndexAnalyzer::addTokenToPatterns(std::string_view token)
@@ -464,8 +483,7 @@ size_t TextIndexAnalyzer::memoryUsageBytes() const
     for (const auto & token : tokens_with_postings)
         result += token.capacity();
 
-    result += readable_row_ranges.capacity() * sizeof(RowsRange);
-    result += readable_postings.getSizeInBytes();
+    result += readable_rows.has_value() ? readable_rows->getSizeInBytes() : 0;
     return result;
 }
 
