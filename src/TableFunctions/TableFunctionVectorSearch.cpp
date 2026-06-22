@@ -171,10 +171,11 @@ StoragePtr TableFunctionVectorSearch::executeImpl(
     bool is_insert_query) const
 {
     auto source_table_ptr = DatabaseCatalog::instance().getTable(StorageID{source_database, source_table}, context);
+    const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(source_table_ptr.get());
 
     /// Engine guard: only MergeTree-family sources are supported. Distributed parents must be
     /// reached via `remote(...)` so the table function dispatches to a concrete shard.
-    if (dynamic_cast<MergeTreeData *>(source_table_ptr.get()) == nullptr)
+    if (merge_tree_data == nullptr)
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
@@ -182,6 +183,7 @@ StoragePtr TableFunctionVectorSearch::executeImpl(
             "use remote(...) to dispatch to a Distributed table's shards.");
     }
 
+    auto storage_settings = merge_tree_data->getSettings();
     auto metadata_snapshot = source_table_ptr->getInMemoryMetadataPtr(context, false);
     const auto & indices = metadata_snapshot->getSecondaryIndices();
 
@@ -198,7 +200,7 @@ StoragePtr TableFunctionVectorSearch::executeImpl(
         }
 
         const auto & index_desc = indices.getByName(source_index_name);
-        auto index_helper = MergeTreeIndexFactory::instance().get(index_desc);
+        auto index_helper = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_desc, *storage_settings);
 
         if (!index_helper->isVectorSimilarityIndex())
         {
@@ -217,7 +219,7 @@ StoragePtr TableFunctionVectorSearch::executeImpl(
 
         for (const auto & index_desc : indices)
         {
-            auto index_helper = MergeTreeIndexFactory::instance().get(index_desc);
+            auto index_helper = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_desc, *storage_settings);
             if (index_helper->isVectorSimilarityIndex())
                 vector_index_names.push_back(index_desc.name);
         }
@@ -242,7 +244,7 @@ StoragePtr TableFunctionVectorSearch::executeImpl(
         resolved_index_name = vector_index_names.front();
     }
 
-    auto vector_index = MergeTreeIndexFactory::instance().get(indices.getByName(resolved_index_name));
+    auto vector_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, indices.getByName(resolved_index_name), *storage_settings);
     auto columns = getActualTableStructure(context, is_insert_query);
     StorageID storage_id(getDatabaseName(), table_name);
 

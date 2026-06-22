@@ -80,7 +80,7 @@ RowScorer::ScoreResult VectorScorer::scorePart(const DataPartPtr & part, const P
 {
     /// Current vector search is not supported for partially materialzied indexes,
     /// because fallback to exact search is not implemented yet.
-    if (!vector_index->getDeserializedFormat(part->checksums, vector_index->getFileName()))
+    if (!vector_index->getDeserializedFormat(part->checksums, vector_index->getFileName(), &part->getDataPartStorage()))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Part {} of table {} does not have files of the vector similarity index '{}'. "
