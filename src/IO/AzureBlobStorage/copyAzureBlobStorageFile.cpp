@@ -91,7 +91,6 @@ namespace
         size_t max_single_part_upload_size;
 
         size_t normal_part_size;
-        size_t num_parts = 0;
         /// One block id per part, indexed by part number so that `completeMultipartUpload`
         /// commits the blocks in the right order regardless of the order parts finish in.
         Strings block_ids;
@@ -148,7 +147,6 @@ namespace
 
             /// We've calculated the size of a normal part (the final part can be smaller).
             normal_part_size = part_size;
-            num_parts = (total_size + normal_part_size - 1) / normal_part_size;
         }
 
     public:
@@ -251,6 +249,7 @@ namespace
         {
             calculatePartSize();
 
+            size_t num_parts = (total_size + normal_part_size - 1) / normal_part_size;
             block_ids.resize(num_parts);
 
             size_t position = offset;
