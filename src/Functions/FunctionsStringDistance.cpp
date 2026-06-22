@@ -325,18 +325,32 @@ struct BlockMyersEditDistance
     struct PatternMasksASCII
     {
         static constexpr size_t W = sizeof(Word) * 8;
+        // Needles up to stack_blocks * W chars keep the pattern table on the stack,
+        // avoiding a per-row heap allocation in the hot edit-distance loop.
+        static constexpr size_t stack_blocks = 8;
         UInt32 num_blocks = 0;
-        VectorWithMemoryTracking<Word> tbl; // flat: tbl[c * num_blocks + k] = bitmask of positions of char c in block k
+        Word stack_tbl[256 * stack_blocks]; // NOLINT(*-member-init): only the used [0, 256*num_blocks) range is filled in build()
+        VectorWithMemoryTracking<Word> heap_tbl; // used only for needles longer than stack_blocks * W
+        Word * tbl = nullptr; // points into stack_tbl or heap_tbl; flat: tbl[c * num_blocks + k] = bitmask of positions of char c in block k
 
         void build(const UInt8 * needle, UInt32 m)
         {
             num_blocks = (m + W - 1) / W;
-            tbl.assign(256 * num_blocks, Word(0));
+            if (num_blocks <= stack_blocks)
+            {
+                tbl = stack_tbl;
+                std::fill_n(tbl, 256 * num_blocks, Word(0));
+            }
+            else
+            {
+                heap_tbl.assign(256 * num_blocks, Word(0));
+                tbl = heap_tbl.data();
+            }
             for (UInt32 i = 0; i < m; ++i)
                 tbl[needle[i] * num_blocks + i / W] |= Word(1) << (i % W);
         }
 
-        const Word * operator[](UInt8 c) const { return tbl.data() + c * num_blocks; }
+        const Word * operator[](UInt8 c) const { return tbl + c * num_blocks; }
     };
 
     struct PatternMasksUTF8
@@ -402,15 +416,32 @@ struct BlockMyersEditDistance
         PatternMasks PM_tbl;
         PM_tbl.build(needle, needle_len);
 
+        // 5 * 128 * sizeof(Word) bytes of stack (5 KB for Word=UInt64): VP/VN here plus
+        // HP/HN/D0 below. Covers needles up to 128*64 = 8192 chars and avoids a per-row
+        // heap allocation in the hot loop for common needle lengths.
+        constexpr size_t stack_limit = 128;
+
         // As in the non-blocked version, but this time per block:
         // VP all ones, VN all zeros encodes that the first column's edit distances equal the row index (0,1,2,...,m).
-        VectorWithMemoryTracking<Word> VP(num_blocks, ~Word(0));
-        VectorWithMemoryTracking<Word> VN(num_blocks, Word(0));
+        Word vp_scratch[stack_limit]; // NOLINT(*-member-init)
+        Word vn_scratch[stack_limit]; // NOLINT(*-member-init)
+        VectorWithMemoryTracking<Word> vp_heap; // used only for needles longer than stack_limit * W
+        VectorWithMemoryTracking<Word> vn_heap;
+        Word * VP = vp_scratch;
+        Word * VN = vn_scratch;
+        if (num_blocks > stack_limit)
+        {
+            vp_heap.assign(num_blocks, ~Word(0));
+            vn_heap.assign(num_blocks, Word(0));
+            VP = vp_heap.data();
+            VN = vn_heap.data();
+        }
+        else
+        {
+            std::fill_n(VP, num_blocks, ~Word(0));
+            std::fill_n(VN, num_blocks, Word(0));
+        }
         UInt32 score = needle_len;
-
-        // 3 * 128 * sizeof(Word) bytes of stack (3 KB for Word=UInt64).
-        // Covers needles up to 128*64 = 8192 chars
-        constexpr size_t stack_limit = 128;
 
         VectorWithMemoryTracking<Word> hp_heap;
         VectorWithMemoryTracking<Word> hn_heap;
