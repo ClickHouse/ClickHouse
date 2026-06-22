@@ -296,7 +296,7 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t 
     , zxid(storage->zxid)
     , nodes_digest(storage->nodes_digest)
 {
-    node_stream = storage->beginWritingSnapshot();
+    node_stream = storage->nodes_storage->beginWritingSnapshot();
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();
     session_and_auth = storage->committed_session_and_auth;
@@ -312,7 +312,7 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(
     , zxid(storage->zxid)
     , nodes_digest(storage->nodes_digest)
 {
-    node_stream = storage->beginWritingSnapshot();
+    node_stream = storage->nodes_storage->beginWritingSnapshot();
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();
     session_and_auth = storage->committed_session_and_auth;
@@ -321,7 +321,7 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(
 KeeperStorageSnapshot::~KeeperStorageSnapshot()
 {
     if (node_stream)
-        storage->finishWritingSnapshot(std::move(node_stream));
+        storage->nodes_storage->finishWritingSnapshot(std::move(node_stream));
 }
 
 SnapshotFileInfoPtr

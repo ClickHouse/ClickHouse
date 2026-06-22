@@ -1875,7 +1875,7 @@ void KeeperStateMachine::recalculateStorageStats()
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     LOG_INFO(log, "Recalculating storage stats");
-    storage->recalculateStats();
+    storage->nodes_storage->recalculateStats();
     LOG_INFO(log, "Done recalculating storage stats");
 }
 

@@ -650,12 +650,12 @@ void StorageRunner::runBenchmark()
                 std::lock_guard lock(state_machine_storage_mutex);
                 if (snapshot_enabled.load())
                 {
-                    storage->finishWritingSnapshot(std::move(stream_for_snapshot));
+                    storage->nodes_storage->finishWritingSnapshot(std::move(stream_for_snapshot));
                     snapshot_enabled.store(false);
                 }
                 else
                 {
-                    stream_for_snapshot = storage->beginWritingSnapshot();
+                    stream_for_snapshot = storage->nodes_storage->beginWritingSnapshot();
                     snapshot_enabled.store(true);
                 }
             }
@@ -681,7 +681,7 @@ void StorageRunner::runBenchmark()
     /// destructor asserts !snapshot_mode via clearOutdatedNodes.
     if (snapshot_enabled.load())
     {
-        storage->finishWritingSnapshot(std::move(stream_for_snapshot));
+        storage->nodes_storage->finishWritingSnapshot(std::move(stream_for_snapshot));
         snapshot_enabled.store(false);
     }
 

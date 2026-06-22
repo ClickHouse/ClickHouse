@@ -940,7 +940,7 @@ struct SetupNodeCollector
     {
         std::lock_guard lock(nodes_mutex);
 
-        if (initial_storage->getCommittedNodeSlow(path))
+        if (initial_storage->nodes_storage->getCommittedNodeSimple(path))
             return;
 
         new_nodes = true;

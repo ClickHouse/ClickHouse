@@ -9,15 +9,15 @@
 #include <Coordination/SessionExpiryQueue.h>
 #include <Coordination/SnapshotableHashTable.h>
 #include <Coordination/KeeperCommon.h>
+#include <Coordination/KeeperNodesStorage.h>
 #include <Coordination/KeeperReadThreadPool.h>
+#include <Coordination/KeeperStorage_fwd.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/SharedMutex.h>
 #include <Common/Concepts.h>
 
 #include <base/defines.h>
 #include <memory>
-
-#include <Coordination/CompactChildrenSet.h>
 
 namespace DB
 {
@@ -29,40 +29,17 @@ struct KeeperSnapshotReader;
 
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
 
-/// Iterator over nodes in KeeperStorage, frozen at the moment in time when
-/// KeeperNodeStreamForSnapshot was created. Creation locks storage_mutex but is relatively fast,
-/// then the long-running iteration can proceed after the mutex is unlocked.
-struct KeeperNodeStreamForSnapshot
-{
-    /// Total number of nodes that `next` will report. Storage must provide it in advance.
-    size_t node_count = 0;
-
-    virtual bool next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats) = 0;
-
-    virtual ~KeeperNodeStreamForSnapshot() { chassert(node_count == 0); }
-};
-
-struct KeeperStorageStats
-{
-    uint64_t nodes_count = 0;
-    uint64_t approximate_data_size = 0;
-
-    uint64_t total_watches_count = 0;
-    uint64_t watched_paths_count = 0;
-    uint64_t sessions_with_watches_count = 0;
-    uint64_t session_with_ephemeral_nodes_count = 0;
-    uint64_t total_emphemeral_nodes_count = 0;
-    int64_t last_committed_zxid = 0;
-};
-
-[[noreturn]] void onStorageInconsistency(std::string_view message);
-
 /// Keeper state machine almost equal to the ZooKeeper's state machine.
 /// Implements all logic of operations, data changes, sessions allocation.
 /// In-memory and not generally thread safe, though preprocessRequest and processRequest can run in parallel.
-/// Split into two parts:
-///  * KeeperStorageImpl is responsible for the storing and manipulating the actual nodes, which
-///    usually take lots of memory/space and need to be careful about performance.
+/// Split into 3 parts:
+///  * KeeperNodesStorage interface, with two implementations to choose from. Stores the actual
+///    nodes, which usually take lots of memory/space and need to be careful about performance.
+///    Manages committed and uncommitted state.
+///  * KeeperStorageImpl<KeeperNodesStorage> (template) implements execution of all the types of
+///    user requests. Talks to KeeperNodesStorage to manipulate the nodes, talks to KeeperStorage
+///    to report deltas and digest. (It's a template to try to go fast, but we haven't actually
+///    benchmarked it against a maybe simpler inheritance-based implementation.)
 ///  * KeeperStorage base class that manages everything else: sessions, watches, set of ephemeral
 ///    nodes, ACLs, digest, deltas.
 class KeeperStorage
@@ -110,8 +87,10 @@ public:
 
     using Delta = KeeperDelta;
     using Operation = KeeperDelta::Operation;
-    using DeltaIterator = std::list<KeeperStorage::Delta>::const_iterator;
+    using DeltaIterator = std::list<KeeperStorage::Delta>::iterator;
     using DeltaRange = std::ranges::subrange<DeltaIterator>;
+
+    KeeperNodesStorage * nodes_storage = nullptr;
 
     mutable std::mutex transaction_mutex;
 
@@ -187,14 +166,7 @@ public:
     KeeperDigest getNodesDigest(bool committed, bool lock_transaction_mutex) const;
 
     /// Introspection function mostly used in 4-letter commands
-    virtual KeeperStorageStats getStorageStats() const = 0;
-
-    /// (A little slower than accessing `container` directly, so most request processing should
-    ///  be a template and use KeeperStorageImpl instead.)
-    virtual bool getCommittedNodeSlow(std::string_view path, KeeperNodeStats * out_stats = nullptr, std::string * out_data = nullptr) = 0;
-
-    /// Directly create a committed node. Used to set up system nodes and by tests.
-    virtual bool addSystemNodeIfNotExists(std::string_view path, const KeeperNodeStats & stats, std::string_view data, bool update_parent_num_children, uint64_t * out_digest) = 0;
+    KeeperStorageStats getStorageStats() const;
 
     uint64_t getTotalWatchesCount() const;
 
@@ -236,16 +208,6 @@ protected:
     int64_t getNextZXIDLocked() const TSA_REQUIRES(transaction_mutex);
 
     std::atomic<bool> initialized{false};
-
-    /// Does only createStreams-finishStreams on `reader`, the caller does everything before and after that.
-    virtual void loadNodesFromSnapshot(KeeperSnapshotReader & reader, uint64_t * out_digest) = 0;
-
-    virtual void commitDelta(const Delta & delta, uint64_t * digest) = 0;
-    virtual void cleanupUncommittedState(int64_t commit_zxid) = 0;
-    virtual void rollbackUncommittedDelta(const Delta & delta) = 0;
-    virtual void cleanupAfterRollback(std::vector<uint64_t> rollbacked_zxids) = 0;
-    /// Call to calculate digest after preparing all uncommitted changes for a given zxid.
-    virtual uint64_t updateNodesDigest(uint64_t current_digest, uint64_t zxid) const = 0;
 
 public:
     struct UncommittedState
@@ -304,13 +266,6 @@ public:
     /// TODO: When we have chunked snapshots, probably pass a ThreadPool here.
     void loadFromSnapshot(KeeperSnapshotReader & reader) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
-    /// Caller must hold storage mutex.
-    /// At most one stream can exist at any given time.
-    /// Stream must be destroyed using finishWritingSnapshot (with storage mutex held), otherwise
-    /// destructor fails assert.
-    virtual std::unique_ptr<KeeperNodeStreamForSnapshot> beginWritingSnapshot() = 0;
-    virtual void finishWritingSnapshot(std::unique_ptr<KeeperNodeStreamForSnapshot> stream) = 0;
-
     /// Process a batch of local read requests (no deltas, no commit).
     virtual KeeperResponsesForSessions processLocalRequests(
         const KeeperRequestsForSessions & requests,
@@ -348,8 +303,6 @@ public:
         const Coordination::ZooKeeperRequestPtr & zk_request,
         const Coordination::Response * response,
         int64_t session_id);
-
-    virtual void recalculateStats() = 0;
 
     std::pair<KeeperResponsesForSessions, Int64> processWatchesImpl(
         std::string_view path, Coordination::Event event_type);

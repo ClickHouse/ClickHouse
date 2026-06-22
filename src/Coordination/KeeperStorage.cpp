@@ -32,6 +32,7 @@
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStorage.h>
 #include <Coordination/KeeperStorageImpl.h>
+#include <Coordination/KeeperMemNodesStorage.h>
 
 #include <limits>
 #include <shared_mutex>
@@ -277,7 +278,7 @@ KeeperStorage::KeeperStorage(
 
 std::unique_ptr<KeeperStorage> KeeperStorage::create(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes)
 {
-    std::unique_ptr<KeeperStorage> res = std::make_unique<KeeperStorageImpl>(tick_time_ms, superdigest_, keeper_context_);
+    std::unique_ptr<KeeperStorage> res = std::make_unique<KeeperMemoryStorage>(tick_time_ms, superdigest_, keeper_context_);
     if (initialize_system_nodes)
         res->initializeSystemNodes();
     return res;
@@ -289,9 +290,9 @@ void KeeperStorage::initializeSystemNodes()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes initialized twice");
 
     // insert root system path if it isn't already inserted
-    addSystemNodeIfNotExists(
+    nodes_storage->addSystemNodeIfNotExists(
         "/", /*stats=*/{}, /*data=*/ "", /*update_parent_num_children=*/ false, &nodes_digest);
-    addSystemNodeIfNotExists(
+    nodes_storage->addSystemNodeIfNotExists(
         keeper_system_path, /*stats=*/{}, /*data=*/ "", /*update_parent_num_children=*/ true, &nodes_digest);
 
     // insert child system nodes
@@ -301,7 +302,7 @@ void KeeperStorage::initializeSystemNodes()
 
         /// Don't update digest and parent num_children (keep it at 0) to keep digest constant,
         /// independent of server version and configuration.
-        addSystemNodeIfNotExists(
+        nodes_storage->addSystemNodeIfNotExists(
             path, /*stats=*/{}, data, /*update_parent_num_children=*/ false, /*out_digest=*/ nullptr);
     }
 
@@ -316,7 +317,7 @@ void KeeperStorage::loadFromSnapshot(KeeperSnapshotReader & reader)
     bool recalculate_digest = reader.nodes_digest == 0 && keeper_context->digestEnabled();
     nodes_digest = reader.nodes_digest;
 
-    loadNodesFromSnapshot(reader, recalculate_digest ? &nodes_digest : nullptr);
+    nodes_storage->loadNodesFromSnapshot(reader, this, recalculate_digest ? &nodes_digest : nullptr);
 
     acl_map = std::move(reader.acl_map);
     zxid = reader.commit_zxid;
@@ -382,7 +383,7 @@ void KeeperStorage::UncommittedState::addDeltas(std::list<Delta> new_deltas)
 
 void KeeperStorage::UncommittedState::cleanup(int64_t commit_zxid)
 {
-    storage.cleanupUncommittedState(commit_zxid);
+    storage.nodes_storage->cleanupUncommittedState(commit_zxid);
 
     for (auto it = session_and_auth.begin(); it != session_and_auth.end();)
     {
@@ -469,7 +470,7 @@ void KeeperStorage::UncommittedState::rollback(std::list<Delta> rollback_deltas)
                 },
                 delta.operation);
 
-            storage.rollbackUncommittedDelta(delta);
+            storage.nodes_storage->rollbackUncommittedDelta(delta);
         }
         else if (const auto * add_auth = std::get_if<AddAuthDelta>(&delta.operation))
         {
@@ -491,7 +492,7 @@ void KeeperStorage::UncommittedState::rollback(std::list<Delta> rollback_deltas)
         }
     }
 
-    storage.cleanupAfterRollback(std::move(rollbacked_zxids));
+    storage.nodes_storage->cleanupAfterRollback(std::move(rollbacked_zxids));
 }
 
 void KeeperStorage::UncommittedState::forEachAuthInSession(int64_t session_id, std::function<void(const AuthID &)> func) const
@@ -570,7 +571,7 @@ Coordination::Error KeeperStorage::commit(KeeperStorage::DeltaRange deltas)
     auto digest_on_commit = keeper_context->digestEnabled() && keeper_context->digestEnabledOnCommit();
     uint64_t digest_change = 0;
     uint64_t * digest = digest_on_commit ? &digest_change : nullptr;
-    for (const auto & delta : deltas)
+    for (auto & delta : deltas)
     {
         auto result = std::visit(
             [&, &path = delta.path]<typename DeltaType>(const DeltaType & operation) -> Coordination::Error
@@ -624,7 +625,7 @@ Coordination::Error KeeperStorage::commit(KeeperStorage::DeltaRange deltas)
             delta.operation);
 
         if (!delta.path.empty())
-            commitDelta(delta, digest);
+            nodes_storage->commitDelta(delta, digest);
 
         if (result != Coordination::Error::ZOK)
         {
@@ -674,7 +675,7 @@ bool KeeperStorage::checkCommittedACL(std::string_view path, int32_t permission,
     {
         std::shared_lock lock(storage_mutex);
         KeeperNodeStats stats;
-        if (getCommittedNodeSlow(path, &stats))
+        if (nodes_storage->getCommittedNodeSimple(path, &stats))
             acl_id = stats.acl_id;
     }
 
@@ -1060,7 +1061,7 @@ KeeperResponsesForSessions KeeperStorage::setWatches(
     for (const auto & path : watches_paths)
     {
         KeeperNodeStats stats;
-        if (!getCommittedNodeSlow(path, &stats))
+        if (!nodes_storage->getCommittedNodeSimple(path, &stats))
             add_watch_response(path, Coordination::Event::DELETED);
         else if (stats.mzxid <= last_zxid)
             add_watch(path, watches, WatchType::WATCH);
@@ -1071,7 +1072,7 @@ KeeperResponsesForSessions KeeperStorage::setWatches(
     for (const auto & path : list_watches_paths)
     {
         KeeperNodeStats stats;
-        if (!getCommittedNodeSlow(path, &stats))
+        if (!nodes_storage->getCommittedNodeSimple(path, &stats))
             add_watch_response(path, Coordination::Event::DELETED);
         else if (stats.pzxid <= last_zxid)
             add_watch(path, list_watches, WatchType::LIST_WATCH);
@@ -1081,7 +1082,7 @@ KeeperResponsesForSessions KeeperStorage::setWatches(
 
     for (const auto & path : exist_watches_paths)
     {
-        if (getCommittedNodeSlow(path))
+        if (nodes_storage->getCommittedNodeSimple(path))
             add_watch_response(path, Coordination::Event::CREATED);
         else
             add_watch(path, watches, WatchType::WATCH);
@@ -1168,6 +1169,23 @@ void KeeperStorage::prepareAddAuth(std::shared_ptr<KeeperStorage::AuthID> new_au
     auto & uncommitted_auth = uncommitted_state.session_and_auth[session_id];
     uncommitted_auth.push_back(std::pair{staging_.zxid, new_auth});
     staging_.deltas.emplace_back(staging_.zxid, AddAuthDelta{session_id, std::move(new_auth)});
+}
+
+KeeperStorageStats KeeperStorage::getStorageStats() const
+{
+    std::shared_lock lock(storage_mutex);
+    KeeperStorageStats res
+    {
+        .total_watches_count = getTotalWatchesCount(),
+        .watched_paths_count = watches.size() + list_watches.size() + persistent_watches.size() + persistent_list_watches.size()
+        + persistent_recursive_watches.size(),
+        .sessions_with_watches_count = sessions_and_watchers.size(),
+        .session_with_ephemeral_nodes_count = committed_ephemerals.size(),
+        .total_emphemeral_nodes_count = committed_ephemeral_nodes,
+        .last_committed_zxid = getZXID(),
+    };
+    nodes_storage->getNodeStorageStats(res);
+    return res;
 }
 
 }

@@ -401,7 +401,7 @@ TYPED_TEST(CoordinationTest, SnapshotableHashMapDataSize)
     EXPECT_EQ(hello.getApproximateDataSize(), 0);
 
     /// Node
-    using Node = typename TestFixture::Storage::Node;
+    using Node = DB::KeeperMemNode;
     DB::SnapshotableHashTable<Node> world;
     Node n1;
     n1.setData("1234");
@@ -457,7 +457,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)
     addNode(storage, "/hello1", "world", 1, acl_id1);
     addNode(storage, "/hello2", "somedata", 3, acl_id2);
     const int64_t large_seq_num = static_cast<int64_t>(std::numeric_limits<int32_t>::max()) + 100;
-    storage.container.updateValue("/", [&](typename Storage::Node & node) { node.stats.setSeqNum(large_seq_num); });
+    storage.nodes.container.updateValue("/", [&](typename Storage::Node & node) { node.stats.setSeqNum(large_seq_num); });
     storage.session_id_counter = 5;
     TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 2;
     storage.committed_ephemerals[3] = {"/hello2"};
@@ -481,14 +481,14 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)
     auto restored_storage = std::make_unique<Storage>(500, "", this->keeper_context);
     manager.deserializeSnapshotFromBuffer(debuf, *restored_storage);
 
-    EXPECT_EQ(restored_storage->container.size(), 6);
-    EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 3);
-    EXPECT_EQ(restored_storage->container.getValue("/hello1").getChildren().size(), 0);
-    EXPECT_EQ(restored_storage->container.getValue("/hello2").getChildren().size(), 0);
+    EXPECT_EQ(restored_storage->nodes.container.size(), 6);
+    EXPECT_EQ(restored_storage->nodes.container.getValue("/").getChildren().size(), 3);
+    EXPECT_EQ(restored_storage->nodes.container.getValue("/hello1").getChildren().size(), 0);
+    EXPECT_EQ(restored_storage->nodes.container.getValue("/hello2").getChildren().size(), 0);
 
-    EXPECT_EQ(restored_storage->container.getValue("/").getData(), "");
-    EXPECT_EQ(restored_storage->container.getValue("/hello1").getData(), "world");
-    EXPECT_EQ(restored_storage->container.getValue("/hello2").getData(), "somedata");
+    EXPECT_EQ(restored_storage->nodes.container.getValue("/").getData(), "");
+    EXPECT_EQ(restored_storage->nodes.container.getValue("/hello1").getData(), "world");
+    EXPECT_EQ(restored_storage->nodes.container.getValue("/hello2").getData(), "somedata");
     EXPECT_EQ(restored_storage->session_id_counter, 7);
     EXPECT_EQ(restored_storage->getZXID(), 2);
     EXPECT_EQ(restored_storage->committed_ephemerals.size(), 2);
@@ -497,14 +497,14 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)
     EXPECT_EQ(restored_storage->session_and_timeout.size(), 2);
 
     /// Verify ACL round-trip
-    EXPECT_EQ(restored_storage->container.getValue("/hello1").stats.acl_id, acl_id1);
-    EXPECT_EQ(restored_storage->container.getValue("/hello2").stats.acl_id, acl_id2);
+    EXPECT_EQ(restored_storage->nodes.container.getValue("/hello1").stats.acl_id, acl_id1);
+    EXPECT_EQ(restored_storage->nodes.container.getValue("/hello2").stats.acl_id, acl_id2);
     auto restored_acls = restored_storage->acl_map.convertNumber(acl_id2);
     EXPECT_EQ(restored_acls.size(), 1);
     EXPECT_EQ(restored_acls[0].scheme, "digest");
 
     /// Verify seq_num round-trip (int64_t, value > INT32_MAX)
-    EXPECT_EQ(restored_storage->container.find("/")->value.stats.getSeqNum(), large_seq_num);
+    EXPECT_EQ(restored_storage->nodes.container.find("/")->value.stats.getSeqNum(), large_seq_num);
 }
 
 TYPED_TEST(CoordinationTest, TestStorageSnapshotMoreWrites)
@@ -535,7 +535,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotMoreWrites)
         addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
     }
 
-    EXPECT_EQ(storage.container.size(), 104);
+    EXPECT_EQ(storage.nodes.container.size(), 104);
 
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
     manager.serializeSnapshotBufferToDisk(*buf, 50);
@@ -545,10 +545,10 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotMoreWrites)
     auto restored_storage = std::make_unique<Storage>(500, "", this->keeper_context);
     manager.deserializeSnapshotFromBuffer(debuf, *restored_storage);
 
-    EXPECT_EQ(restored_storage->container.size(), 54);
+    EXPECT_EQ(restored_storage->nodes.container.size(), 54);
     for (size_t i = 0; i < 50; ++i)
     {
-        EXPECT_EQ(restored_storage->container.getValue("/hello_" + std::to_string(i)).getData(), "world_" + std::to_string(i));
+        EXPECT_EQ(restored_storage->nodes.container.getValue("/hello_" + std::to_string(i)).getData(), "world_" + std::to_string(i));
     }
 }
 
@@ -590,11 +590,11 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotManySnapshots)
     auto restored_storage = std::make_unique<Storage>(500, "", this->keeper_context);
     manager.restoreFromLatestSnapshot(*restored_storage);
 
-    EXPECT_EQ(restored_storage->container.size(), 254);
+    EXPECT_EQ(restored_storage->nodes.container.size(), 254);
 
     for (size_t i = 0; i < 250; ++i)
     {
-        EXPECT_EQ(restored_storage->container.getValue("/hello_" + std::to_string(i)).getData(), "world_" + std::to_string(i));
+        EXPECT_EQ(restored_storage->nodes.container.getValue("/hello_" + std::to_string(i)).getData(), "world_" + std::to_string(i));
     }
 }
 
@@ -618,32 +618,32 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotMode)
         DB::KeeperStorageSnapshot snapshot(&storage, 50, nullptr, this->keeper_context->getWriteSnapshotVersion());
         for (size_t i = 0; i < 50; ++i)
         {
-            storage.container.updateValue(fmt::format("/hello_{}", i), [&](auto & node) { node.setData(fmt::format("wrld_{}", i)); });
+            storage.nodes.container.updateValue(fmt::format("/hello_{}", i), [&](auto & node) { node.setData(fmt::format("wrld_{}", i)); });
         }
         for (size_t i = 0; i < 50; ++i)
         {
-            EXPECT_EQ(storage.container.getValue(fmt::format("/hello_{}", i)).getData(), fmt::format("wrld_{}", i));
+            EXPECT_EQ(storage.nodes.container.getValue(fmt::format("/hello_{}", i)).getData(), fmt::format("wrld_{}", i));
         }
         for (size_t i = 0; i < 50; ++i)
         {
             if (i % 2 == 0)
-                storage.container.erase(fmt::format("/hello_{}", i));
+                storage.nodes.container.erase(fmt::format("/hello_{}", i));
         }
-        EXPECT_EQ(storage.container.size(), 29);
-        EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 104);
-        EXPECT_EQ(storage.container.snapshotSizeWithVersion().second, 1);
+        EXPECT_EQ(storage.nodes.container.size(), 29);
+        EXPECT_EQ(storage.nodes.container.snapshotSizeWithVersion().first, 104);
+        EXPECT_EQ(storage.nodes.container.snapshotSizeWithVersion().second, 1);
         auto buf = manager.serializeSnapshotToBuffer(snapshot);
         manager.serializeSnapshotBufferToDisk(*buf, 50);
     }
     EXPECT_TRUE(fs::exists(fmt::format("./snapshots/snapshot_50.bin{}", this->extension)));
-    EXPECT_EQ(storage.container.size(), 29);
-    EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 29);
+    EXPECT_EQ(storage.nodes.container.size(), 29);
+    EXPECT_EQ(storage.nodes.container.snapshotSizeWithVersion().first, 29);
     for (size_t i = 0; i < 50; ++i)
     {
         if (i % 2 != 0)
-            EXPECT_EQ(storage.container.getValue(fmt::format("/hello_{}", i)).getData(), fmt::format("wrld_{}", i));
+            EXPECT_EQ(storage.nodes.container.getValue(fmt::format("/hello_{}", i)).getData(), fmt::format("wrld_{}", i));
         else
-            EXPECT_FALSE(storage.container.contains(fmt::format("/hello_{}", i)));
+            EXPECT_FALSE(storage.nodes.container.contains(fmt::format("/hello_{}", i)));
     }
 
     auto restored_storage = std::make_unique<Storage>(500, "", this->keeper_context);
@@ -651,7 +651,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotMode)
 
     for (size_t i = 0; i < 50; ++i)
     {
-        EXPECT_EQ(restored_storage->container.getValue(fmt::format("/hello_{}", i)).getData(), fmt::format("world_{}", i));
+        EXPECT_EQ(restored_storage->nodes.container.getValue(fmt::format("/hello_{}", i)).getData(), fmt::format("world_{}", i));
     }
 }
 
@@ -720,14 +720,14 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     auto restored_storage = std::make_unique<Storage>(500, "", this->keeper_context);
     new_manager.deserializeSnapshotFromBuffer(debuf, *restored_storage);
 
-    EXPECT_EQ(restored_storage->container.size(), 6);
-    EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 3);
-    EXPECT_EQ(restored_storage->container.getValue("/hello1").getChildren().size(), 0);
-    EXPECT_EQ(restored_storage->container.getValue("/hello2").getChildren().size(), 0);
+    EXPECT_EQ(restored_storage->nodes.container.size(), 6);
+    EXPECT_EQ(restored_storage->nodes.container.getValue("/").getChildren().size(), 3);
+    EXPECT_EQ(restored_storage->nodes.container.getValue("/hello1").getChildren().size(), 0);
+    EXPECT_EQ(restored_storage->nodes.container.getValue("/hello2").getChildren().size(), 0);
 
-    EXPECT_EQ(restored_storage->container.getValue("/").getData(), "");
-    EXPECT_EQ(restored_storage->container.getValue("/hello1").getData(), "world");
-    EXPECT_EQ(restored_storage->container.getValue("/hello2").getData(), "somedata");
+    EXPECT_EQ(restored_storage->nodes.container.getValue("/").getData(), "");
+    EXPECT_EQ(restored_storage->nodes.container.getValue("/hello1").getData(), "world");
+    EXPECT_EQ(restored_storage->nodes.container.getValue("/hello2").getData(), "somedata");
     EXPECT_EQ(restored_storage->session_id_counter, 7);
     EXPECT_EQ(restored_storage->getZXID(), 2);
     EXPECT_EQ(restored_storage->committed_ephemerals.size(), 2);
@@ -806,8 +806,8 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotBlockACL)
         auto restored_storage = std::make_unique<Storage>(500, "", this->keeper_context);
         manager.deserializeSnapshotFromBuffer(debuf, *restored_storage);
 
-        EXPECT_EQ(restored_storage->container.size(), 5);
-        EXPECT_EQ(restored_storage->container.getValue(path).stats.acl_id, acl_id);
+        EXPECT_EQ(restored_storage->nodes.container.size(), 5);
+        EXPECT_EQ(restored_storage->nodes.container.getValue(path).stats.acl_id, acl_id);
     }
 
     {
@@ -816,8 +816,8 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotBlockACL)
         auto restored_storage = std::make_unique<Storage>(500, "", this->keeper_context);
         manager.deserializeSnapshotFromBuffer(debuf, *restored_storage);
 
-        EXPECT_EQ(restored_storage->container.size(), 5);
-        EXPECT_EQ(restored_storage->container.getValue(path).stats.acl_id, 0);
+        EXPECT_EQ(restored_storage->nodes.container.size(), 5);
+        EXPECT_EQ(restored_storage->nodes.container.getValue(path).stats.acl_id, 0);
     }
 }
 
@@ -964,7 +964,7 @@ TEST(KeeperMemorySnapshotApplyTest, ApplySnapshotReplacesCommittedState)
     state_machine->pre_commit(1, old_entry->get_buf());
     state_machine->commit(1, old_entry->get_buf());
 
-    DB::KeeperStorageImpl snapshot_storage(500, "", ctx);
+    DB::KeeperMemoryStorage snapshot_storage(500, "", ctx);
     addNode(snapshot_storage, "/committed", "from_snapshot");
     TSA_SUPPRESS_WARNING_FOR_WRITE(snapshot_storage.zxid) = 1;
 
@@ -1009,7 +1009,7 @@ TEST(KeeperMemorySnapshotApplyTest, ApplySnapshotPreservesPreprocessedTailAboveS
 
     changelog.end_of_append_batch(0, 0);
 
-    DB::KeeperStorageImpl snapshot_storage(500, "", ctx);
+    DB::KeeperMemoryStorage snapshot_storage(500, "", ctx);
     addNode(snapshot_storage, "/committed", "base");
     TSA_SUPPRESS_WARNING_FOR_WRITE(snapshot_storage.zxid) = 1;
 
@@ -1056,7 +1056,7 @@ TEST(KeeperMemorySnapshotApplyTest, ApplySnapshotPreservesEphemeralTailForCloseP
 
     changelog.end_of_append_batch(0, 0);
 
-    DB::KeeperStorageImpl snapshot_storage(500, "", ctx);
+    DB::KeeperMemoryStorage snapshot_storage(500, "", ctx);
     addNode(snapshot_storage, "/base", "base");
     TSA_SUPPRESS_WARNING_FOR_WRITE(snapshot_storage.zxid) = 1;
 
@@ -1091,7 +1091,7 @@ TEST(KeeperMemorySnapshotApplyTest, CorruptSnapshotPrefixFailsBeforeDroppingStor
     state_machine->pre_commit(1, old_entry->get_buf());
     state_machine->commit(1, old_entry->get_buf());
 
-    DB::KeeperStorageImpl snapshot_storage(500, "", ctx);
+    DB::KeeperMemoryStorage snapshot_storage(500, "", ctx);
     addNode(snapshot_storage, "/replacement", "replacement");
     TSA_SUPPRESS_WARNING_FOR_WRITE(snapshot_storage.zxid) = 1;
 
@@ -1149,7 +1149,7 @@ void saveInstallSnapshot(
     uint64_t idx,
     const std::string & marker)
 {
-    DB::KeeperStorageImpl storage(500, "", ctx);
+    DB::KeeperMemoryStorage storage(500, "", ctx);
     addNode(storage, marker, marker);
     TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = idx;
     nuraft::snapshot snap(idx, 0, std::make_shared<nuraft::cluster_config>());
@@ -1440,7 +1440,7 @@ TEST(KeeperMemorySnapshotApplyTest, QueuedSameIndexCreateAdoptsRegisteredInstall
         EXPECT_EQ(sm1->last_snapshot()->get_last_log_idx(), 1);
 
         /// Save a state-equivalent install of 5 (committed prefix /n1../n5); no apply (NuRaft covered skip).
-        DB::KeeperStorageImpl install5(500, "", ctx);
+        DB::KeeperMemoryStorage install5(500, "", ctx);
         for (uint64_t idx = 1; idx <= 5; ++idx)
             addNode(install5, fmt::format("/n{}", idx), "v");
         TSA_SUPPRESS_WARNING_FOR_WRITE(install5.zxid) = 5;

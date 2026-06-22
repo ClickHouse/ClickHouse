@@ -4,7 +4,6 @@
 
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Coordination/KeeperStateMachine.h>
-#include <Coordination/KeeperStorage.h>
 
 LogEntryPtr getLogEntry(const std::string & s, size_t term)
 {
@@ -41,6 +40,36 @@ getLogEntryFromZKRequest(size_t term, int64_t session_id, int64_t zxid, const Co
     request_for_session.request = request;
     auto buffer = DB::KeeperStateMachine::getZooKeeperLogEntry(request_for_session);
     return nuraft::cs_new<nuraft::log_entry>(term, buffer);
+}
+
+void addNode(DB::KeeperStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner, DB::ACLId acl_id)
+{
+    DB::KeeperNodeStats stats;
+    if (ephemeral_owner)
+        stats.setEphemeralOwner(ephemeral_owner);
+    stats.acl_id = acl_id;
+    storage.nodes_storage->addSystemNodeIfNotExists(path, stats, data, /*update_parent_num_children=*/true, /*out_digest=*/nullptr);
+}
+
+Coordination::ACLs getUncommittedACLs(DB::KeeperStorage & storage, std::string_view path)
+{
+    Coordination::ACLId acl_id = 0;
+    DB::KeeperNodeStats stats;
+    if (storage.nodes_storage->getUncommittedNodeSimple(path, &stats))
+        acl_id = stats.acl_id;
+    return storage.acl_map.convertNumber(acl_id);
+}
+
+bool committedNodeExists(DB::KeeperStorage & storage, std::string_view path)
+{
+    return storage.nodes_storage->getCommittedNodeSimple(path);
+}
+
+std::string committedNodeData(DB::KeeperStorage & storage, std::string_view path)
+{
+    std::string data;
+    EXPECT_TRUE(storage.nodes_storage->getCommittedNodeSimple(path, /*out_stats=*/nullptr, &data));
+    return data;
 }
 
 #endif

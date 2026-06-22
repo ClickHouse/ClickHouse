@@ -11,6 +11,8 @@
 #include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperStorage.h>
 #include <Coordination/KeeperStorageImpl.h>
+#include <Coordination/KeeperMemNodesStorage.h>
+#include <Coordination/KeeperStorage_fwd.h>
 #include <Coordination/KeeperCommon.h>
 
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -96,39 +98,15 @@ public:
 };
 
 /// Creates a committed node.
-inline void addNode(DB::KeeperStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner = 0, DB::ACLId acl_id = 0)
-{
-    DB::KeeperNodeStats stats;
-    if (ephemeral_owner)
-        stats.setEphemeralOwner(ephemeral_owner);
-    stats.acl_id = acl_id;
-    storage.addSystemNodeIfNotExists(path, stats, data, /*update_parent_num_children=*/true, /*out_digest=*/nullptr);
-}
+void addNode(DB::KeeperStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner = 0, DB::ACLId acl_id = 0);
 
-/// Reads from the uncommitted state, which is implementation-specific, so this is templated by the
-/// storage type (similar to the request handlers in KeeperStorageImpl.cpp).
-template <typename Storage>
-Coordination::ACLs getUncommittedACLs(Storage & storage, std::string_view path)
-{
-    const auto * node = storage.getUncommittedNode(path).get();
-    Coordination::ACLId acl_id = node ? node->stats.acl_id : 0;
-    return storage.acl_map.convertNumber(acl_id);
-}
+Coordination::ACLs getUncommittedACLs(DB::KeeperStorage & storage, std::string_view path);
 
 /// Committed-node helpers that only use the implementation-agnostic KeeperStorage API.
-inline bool committedNodeExists(DB::KeeperStorage & storage, std::string_view path)
-{
-    return storage.getCommittedNodeSlow(path);
-}
+bool committedNodeExists(DB::KeeperStorage & storage, std::string_view path);
+std::string committedNodeData(DB::KeeperStorage & storage, std::string_view path);
 
-inline std::string committedNodeData(DB::KeeperStorage & storage, std::string_view path)
-{
-    std::string data;
-    EXPECT_TRUE(storage.getCommittedNodeSlow(path, /*out_stats=*/nullptr, &data));
-    return data;
-}
-
-using Implementation = testing::Types<TestParam<DB::KeeperStorageImpl, true>, TestParam<DB::KeeperStorageImpl, false>>;
+using Implementation = testing::Types<TestParam<DB::KeeperMemoryStorage, true>, TestParam<DB::KeeperMemoryStorage, false>>;
 TYPED_TEST_SUITE(CoordinationTest, Implementation);
 
 using LogEntryPtr = nuraft::ptr<nuraft::log_entry>;
