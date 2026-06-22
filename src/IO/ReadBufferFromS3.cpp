@@ -615,7 +615,10 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
         /// One file read issues many ranged GETs; if the object is overwritten between them we would
         /// stitch bytes from two generations, so reject on ETag drift. Skip pinned-version reads
         /// (?versionId=): immutable, and expected_etag (the current version's HEAD) would falsely mismatch.
-        if (version_id.empty() && !expected_etag.empty() && response_etag != expected_etag)
+        /// Also skip when the GET response carries no ETag: it gives nothing to compare, and S3/GCS
+        /// always return one, so an empty response_etag only happens for backends (or test mocks)
+        /// that omit it - treating that as a mismatch would reject every such read.
+        if (version_id.empty() && !expected_etag.empty() && !response_etag.empty() && response_etag != expected_etag)
             throw Exception(
                 ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
                 "S3 object {}/{} was replaced during read (etag changed from {} to {}); "
