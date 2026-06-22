@@ -1428,9 +1428,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     /// since the initiator is the authority on split topology.
     const bool need_split = is_local_plan_initiator || !is_parallel_reading_from_replicas;
 
-    /// For non-initiator replicas with local plan, keep a copy of all parts before splitting.
+    /// Only the local-plan follower path needs all parts replicated across per-split pools
+    /// (each split reads from a copy and filters down to its assigned subset). The legacy
+    /// single-pool path (`parallel_replicas_local_plan=0`) consumes `parts_with_ranges` exactly
+    /// once with a `std::move`, so a separate copy would just be wasted work on the legacy
+    /// in-order parallel-replica hot path.
     RangesInDataParts all_parts_for_replicas;
-    if (is_parallel_reading_from_replicas && !is_local_plan_initiator)
+    if (is_local_plan_follower)
         all_parts_for_replicas = parts_with_ranges;
 
     std::vector<RangesInDataParts> split_parts_and_ranges;
@@ -1555,9 +1559,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     }
     else if (is_parallel_reading_from_replicas)
     {
-        /// parallel_replicas_local_plan=0: old behavior, single pool with all parts.
+        /// parallel_replicas_local_plan=0: old behavior, single pool with all parts. We never
+        /// took the local-plan-follower branch above, so `parts_with_ranges` is still intact —
+        /// move it directly into the only pool that will consume it (no copy needed).
         pipes.emplace_back(readInOrder(
-            std::move(all_parts_for_replicas), index_build_context, column_names, pool_settings, read_type,
+            std::move(parts_with_ranges), index_build_context, column_names, pool_settings, read_type,
             input_order_info->limit));
     }
     else /* local reading case */
