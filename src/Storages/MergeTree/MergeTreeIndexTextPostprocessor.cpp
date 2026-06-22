@@ -98,41 +98,14 @@ ColumnPtr MergeTreeIndexTextPostprocessor::processTokensArrayBatch(const ColumnA
 {
     chassert(actions); /// Always called when hasActions() is true.
 
-    const IColumn::Offsets & src_offsets = tokens->getOffsets();
-    const size_t num_rows = src_offsets.size();
-
     /// Apply the postprocessor on all token strings across all rows in one execution.
     const ColumnString * flat_tokens = typeid_cast<const ColumnString *>(tokens->getDataPtr().get());
     chassert(flat_tokens); /// Array(String) data column must be ColumnString
     ColumnPtr flat_transformed = processTokensBatch(flat_tokens);
 
-    /// Rebuild the ColumnArray with updated offsets.
-    /// Tokens transformed to empty string are filtered out (e.g. stop words).
-    ColumnString::MutablePtr result_data = ColumnString::create();
-    result_data->reserve(flat_transformed->size());
-    ColumnArray::ColumnOffsets::MutablePtr result_offsets_col = ColumnArray::ColumnOffsets::create();
-    result_offsets_col->reserve(num_rows);
-    IColumn::Offsets & result_offsets = result_offsets_col->getData();
-
-    size_t flat_idx = 0;
-    size_t write_offset = 0;
-    for (size_t row = 0; row < num_rows; ++row)
-    {
-        const size_t row_end = src_offsets[row];
-        while (flat_idx < row_end)
-        {
-            std::string_view ref = flat_transformed->getDataAt(flat_idx);
-            if (!ref.empty())
-            {
-                result_data->insertData(ref.data(), ref.size());
-                ++write_offset;
-            }
-            ++flat_idx;
-        }
-        result_offsets.push_back(write_offset);
-    }
-
-    return ColumnArray::create(std::move(result_data), std::move(result_offsets_col));
+    /// The transform maps each token 1:1, so the original offsets still apply and can be reused.
+    /// Tokens transformed to empty string (e.g. stop words) are skipped in addDocumentsFromArray.
+    return ColumnArray::create(flat_transformed->convertToFullColumnIfConst(), tokens->getOffsetsPtr());
 }
 
 ActionsDAG MergeTreeIndexTextPostprocessor::getOriginalActionsDAG(

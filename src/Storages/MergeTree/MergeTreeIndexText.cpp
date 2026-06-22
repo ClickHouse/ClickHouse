@@ -1592,6 +1592,9 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
                 continue;
 
             const std::string_view ref = column_data.getDataAt(element_idx);
+            if (ref.empty())
+                continue;
+
             if constexpr (tokenize)
                 granule_builder.addDocument(ref);
             else
