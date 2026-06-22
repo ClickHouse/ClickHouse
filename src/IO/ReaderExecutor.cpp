@@ -2746,6 +2746,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
             geom_entry.tier = cache->tier();
             geom_entry.head_align = cache->fetchHeadAlignment();
             geom_entry.tail_align = cache->fetchTailAlignment();
+            geom_entry.whole_cell = cache->fillsWholeCell();
             BufEntry buf_entry;
             buf_entry.provider = cache.get();
             buf_entry.object = pr.object;

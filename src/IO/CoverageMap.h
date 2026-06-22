@@ -21,6 +21,11 @@ struct GeometryEntry
     /// (`ICacheProvider::fetch{Head,Tail}Alignment`); `1` = no over-read.
     size_t head_align = 1;
     size_t tail_align = 1;
+    /// Cell is written WHOLE (first-writer-wins, e.g. page) vs incrementally
+    /// appended (fs). A whole-cell tier fills only when a connection covers the
+    /// entire cell. Separate from `tail_align` so a tier can fetch a wide cell
+    /// without being first-writer-wins.
+    bool whole_cell = false;
     VectorWithMemoryTracking<ByteRange> resident;
     VectorWithMemoryTracking<ByteRange> aligned_miss;
 };

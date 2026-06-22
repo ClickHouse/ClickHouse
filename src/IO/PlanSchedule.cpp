@@ -88,10 +88,10 @@ VectorWithMemoryTracking<PlanSchedule::WriteTarget> writeTargetsFor(
     for (size_t ei = 0; ei < g.entries.size(); ++ei)
     {
         const auto & e = g.entries[ei];
-        /// A whole-block tier (page, `tail_align > 1`, first-writer-wins) is
-        /// fillable only if the connection covers the whole cell; an incremental
-        /// tier (fs) appends whatever prefix the connection covers.
-        const bool whole_block = e.tail_align > 1;
+        /// A whole-cell tier (page, first-writer-wins) is fillable only if the
+        /// connection covers the whole cell; an incremental tier (fs) appends
+        /// whatever prefix the connection covers.
+        const bool whole_block = e.whole_cell;
         for (const auto & m : e.aligned_miss)
         {
             if (whole_block ? !contains(conn, m) : !overlaps(conn, m))

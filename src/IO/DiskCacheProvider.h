@@ -172,10 +172,16 @@ public:
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
     bool populatesOnMiss() const override { return !cache_settings.read_if_exists_otherwise_bypass; }
 
-    /// A miss segment is created at the `boundary_alignment` floor and its
-    /// write buffer appends from that floor, so the fetch head must reach it.
-    /// The tail fills incrementally - no tail rounding.
-    size_t fetchHeadAlignment() const override { return cache->getBoundaryAlignment(); }
+    /// Round a miss fetch to the whole cache SEGMENT at both edges, so a cold miss
+    /// populates a full segment (head AND tail, beyond the served range) and
+    /// concurrent readers of any part of it fetch the SAME segment and dedup on its
+    /// downloader - the disk analogue of the page tier rounding to a whole block.
+    /// `fetchWindowAt` clamps each edge to the miss run, so a partially-cached
+    /// segment fills only its missing part. NOT first-writer-wins: the segment is
+    /// still incrementally appended (`fillsWholeCell()` stays false), so a connection
+    /// covering only a prefix appends it.
+    size_t fetchHeadAlignment() const override { return cache->getMaxFileSegmentSize(); }
+    size_t fetchTailAlignment() const override { return cache->getMaxFileSegmentSize(); }
 
     /// One `cache->get` (no segment creation): each resident sub-range becomes
     /// a `HitEntry`, each gap a cache-aligned writer-null `MissEntry`. A

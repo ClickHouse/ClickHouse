@@ -134,6 +134,7 @@ public:
     /// completion), so both fetch edges round to `block_size`.
     size_t fetchHeadAlignment() const override { return block_size; }
     size_t fetchTailAlignment() const override { return block_size; }
+    bool fillsWholeCell() const override { return true; }
 
     CacheViewPtr planResidencyView(
         const StoredObject & object, size_t object_file_offset, ByteRange range_in_file) override;

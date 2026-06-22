@@ -127,6 +127,14 @@ public:
     /// later); `1` for incrementally-fillable tiers.
     virtual size_t fetchTailAlignment() const { return 1; }
 
+    /// Whether a cell is written WHOLE (first-writer-wins, never completed later -
+    /// the page cache) vs incrementally appended (the filesystem cache). A
+    /// whole-cell tier is a fill target only when a connection covers the ENTIRE
+    /// cell; an incremental tier appends whatever prefix is covered. Kept separate
+    /// from `fetchTailAlignment` so a tier can round its fetch to a wide cell
+    /// WITHOUT being treated as first-writer-wins.
+    virtual bool fillsWholeCell() const { return false; }
+
     virtual String name() const = 0;
 
     /// Read-only residency probe over a (typically large) look-ahead range:
