@@ -417,12 +417,11 @@ TEST_F(ReaderExecutorCacheChain, ColdPopulatesAllLayers)
         << "warm chain must serve everything without touching the source";
 }
 
-/// The put lane is the deferred-fill path: with a `CacheFiller` pool, deferred fills and
-/// promotes route through the per-executor FIFO lane (one in flight). This asserts the lane
-/// serves CORRECT bytes (cold and warm) and actually POPULATES the chain (the warm re-read is
-/// cheaper than fully cold), i.e. it writes without corrupting the read path and the executor
-/// dtor drains it.
-TEST_F(ReaderExecutorCacheChain, PutLanePopulatesCacheLikePutMachines)
+/// With a prefetch pool the gap fills and promotes run INLINE on the read thread (the put
+/// lane is gone). This asserts the cache is populated CORRECTLY (cold and warm): the warm
+/// re-read is fully served from the chain (cheaper than cold), i.e. the inline writes
+/// populate without corrupting the read path.
+TEST_F(ReaderExecutorCacheChain, InlineFillPopulatesCacheFully)
 {
     constexpr size_t segment_size = 64;
     constexpr size_t block_size = 16;
@@ -446,27 +445,25 @@ TEST_F(ReaderExecutorCacheChain, PutLanePopulatesCacheLikePutMachines)
     opts.min_bytes_for_seek = 0;
     opts.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
     opts.prefetch_pool = pool;
-    opts.cache_filler_pool = pool;   /// defer fills -> the put lane
 
     const size_t src_before_cold = sourceRequestsSoFar();
     {
         ReaderExecutor cold(source, objects, caches, opts);
-        EXPECT_EQ(drainAll(cold), content) << "lane: cold scan serves all bytes";
-    }   /// dtor drains the lane (FIFO, in order)
+        EXPECT_EQ(drainAll(cold), content) << "cold scan serves all bytes";
+    }   /// inline fills already landed on the read thread
     const size_t cold_source = sourceRequestsSoFar() - src_before_cold;
 
     const size_t src_before_warm = sourceRequestsSoFar();
     {
         ReaderExecutor warm(source, objects, caches, opts);
-        EXPECT_EQ(drainAll(warm), content) << "lane: warm scan serves all bytes (cache + source)";
+        EXPECT_EQ(drainAll(warm), content) << "warm scan serves all bytes (cache + source)";
     }
     const size_t warm_source = sourceRequestsSoFar() - src_before_warm;
 
     EXPECT_GT(cold_source, 0u) << "cold scan must hit the source";
     EXPECT_EQ(warm_source, 0u)
-        << "the lane never abandons a fill (backpressure) AND flushPutLaneOverlapping serializes "
-           "the same-segment writer across consecutive windows, so the chain is fully populated "
-           "and the warm re-read touches the source 0 times";
+        << "the inline fills populate the whole chain (same-thread writes, in window order), "
+           "so the warm re-read touches the source 0 times";
 }
 
 /// Regression: a cold `readBigAt` of a small range strictly inside a page-cache

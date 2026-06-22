@@ -87,11 +87,6 @@ public:
         /// boundary (encrypted sources, prefetch path only). See `decryptFetchedAhead`.
         bool decrypt_ahead = false;
         std::shared_ptr<PrefetchThreadPool> prefetch_pool;
-        /// The `CacheFiller` pool that drives deferred cache-fill / write-back
-        /// (put) steps, kept separate from `prefetch_pool` so cache-fill work
-        /// does not compete with read-ahead fetches for the same slots. Null =>
-        /// put steps run synchronously inline.
-        std::shared_ptr<PrefetchThreadPool> cache_filler_pool;
         std::shared_ptr<LongConnectionLimit> long_connection_limit;
         std::shared_ptr<ReaderExecutorLog> reader_executor_log;
     };
@@ -499,26 +494,19 @@ private:
         /// worker (same PHYSICAL node labels). Empty unless `decrypt_ahead` is on
         /// for an encrypted source. `fetched` stays ciphertext for the cache-fill.
         ChainedBuffers plaintext_fetched;
-        /// The put step's inputs (set at retrigger): NON-OWNING views of the
-        /// writers this put fills (the schedule's fill targets overlapping the
-        /// window). The writers stay in the shared `read_plan.bufs`; the put lane's
-        /// single in-flight slot serializes writes, so referencing them in place is
-        /// race-free and the reap returns nothing. `fill_chain` is the assembled
-        /// window (refcounted nodes shared with the served slice).
+        /// The fill step's inputs: NON-OWNING views of the writers this fill targets
+        /// (the schedule's fill targets overlapping the window). The writers stay in the
+        /// shared `read_plan.bufs`; the fill runs inline on the read thread, so referencing
+        /// them in place is race-free. `fill_chain` is the assembled window (refcounted
+        /// nodes shared with the served slice).
         VectorWithMemoryTracking<WriterView> writer_views;
         ChainedBuffers fill_chain;
-        /// SE put-lane: a promote is STRICTLY optional - if the pool rejects its schedule,
-        /// the lane skips it (`PromoteSkipped`, writers returned) rather than running it
-        /// inline like a fill, so a warm serve never waits on promote bookkeeping.
-        bool put_optional = false;
-        /// Which byte counter the put step credits: fills count
-        /// `BytesPushedToCacheAsync`, deferred promotes count `BytesPromoted`.
-        Stats::Counter put_bytes_counter = Stats::BytesPushedToCacheAsync;
-        /// Strategy-A pin taken by the PUT step over the partial segment it
-        /// just filled, held until the reap: the foreground finalize runs
-        /// BEFORE the deferred fill, so its `writerPinAt` finds a still-empty
-        /// segment - without this, an eviction sweep between the fill landing
-        /// and the next read would drop it.
+        /// Which byte counter the fill credits (`BytesPushedToCacheSync`).
+        Stats::Counter put_bytes_counter = Stats::BytesPushedToCacheSync;
+        /// Strategy-A pin taken by the fill step over the partial segment it just
+        /// filled, held until the reap: the foreground finalize runs BEFORE the fill,
+        /// so its `writerPinAt` finds a still-empty segment - without this, an eviction
+        /// sweep between the fill landing and the next read would drop it.
         CacheWriter::CacheSegmentPin fill_pin;
         /// Queue-wait probe for the put step (into `PutWaitMicroseconds`).
         Stopwatch put_wait;
@@ -782,50 +770,15 @@ private:
 
     // ─── Deferred puts / promotes ────────────────────────────────────────
 
-    /// The retrigger verb: turn a just-collected machine into its PUT step.
-    /// BORROW the overlapping writers from `read_plan.bufs` (joining any
-    /// earlier put still holding them), hand it the assembled chain, then enqueue
-    /// it on the `put_lane` (the sole deferred-fill path).
+    /// Turn a just-collected machine into its cache fill: record NON-OWNING views of the
+    /// overlapping fill-target writers in `read_plan.bufs`, hand it the assembled chain,
+    /// then run the fill INLINE on the read thread (a failed fill logged, never thrown).
     void schedulePutStep(std::shared_ptr<FetchMachine> m, const ChainedBuffers & assembled);
 
-    /// Return a put machine's borrowed writers home and fold its stats in
-    /// (logging a failed step - never the client's error).
+    /// After the inline fill: fold the segment pin and stats in, and mark the retrieve
+    /// `Done` once its whole job is fetched (logging a failed step - never the client's
+    /// error).
     void reapPutMachine(FetchMachine & m);
-
-    /// Enqueue a prepared put machine (writers already borrowed, `run_step` set) onto the
-    /// `put_lane` and arm the head if idle. Foreground-only.
-    void enqueuePutLane(std::shared_ptr<FetchMachine> m);
-
-    /// Promote the lane's head pending machine to `in_flight` and schedule it on the put
-    /// runner; if the pool rejects it, run it inline here on the foreground and try the next
-    /// (the item is provably not started). No-op while `stopping` or already in flight.
-    void armPutLaneHead();
-
-    /// Reap the lane's completed in-flight machine (writers home, stats, pin, Done) on the
-    /// QUERY thread, then re-arm the next. `wait` joins a still-running in-flight and drains
-    /// the whole lane (plan rebuild / destruction); `!wait` returns while one is running.
-    void sweepPutLane(bool wait);
-
-    /// Apply + reap every lane put whose target writers overlap `window` BEFORE the
-    /// foreground reads that range, so `recreditCommittedPrefixes` sees the grown committed
-    /// prefix instead of re-fetching the head from the source. Two lane puts may view the
-    /// same writer, so the in-flight (worker) one is JOINED first, then the queued ones run
-    /// inline on the foreground in FIFO order - a shared writer is thus written by at most one
-    /// at a time.
-    void flushPutLaneOverlapping(ByteRange window);
-
-    /// Whether a pending or in-flight put already writes `writer` - the post-borrow
-    /// analog of "the writer is on loan". The deferred promote skips a writer a fill
-    /// already covers, so a promote never re-writes a cell a pending fill will fill.
-    bool putLaneClaims(const CacheWriter * writer) const;
-
-    /// The deferred promote: borrow the FASTER-tier writers overlapping
-    /// `range` that are currently home into a put-only machine fed by the
-    /// served chain slice (refcounted, no copy). STRICTLY optional with no
-    /// ladder: any contention means the promote is SKIPPED outright
-    /// (`PromoteSkipped`) - a later read can regenerate it - so a warm serve
-    /// never waits. The pool-less executor keeps the synchronous `maybePromote`.
-    void schedulePromoteStep(CacheTier from_tier, ByteRange range, const ChainedBuffers & bytes, Stats & out_stats);
 
     /// Promote a range just served from `from_tier` up into every populatable
     /// faster cache (they all miss it, since `from_tier` was the fastest
@@ -991,14 +944,6 @@ private:
     /// Created in the constructor from `Options::prefetch_pool`; null without a pool.
     /// Drives the FETCH machines only.
     std::unique_ptr<FetchMachineRunner> runner;
-    /// The `CacheFiller` pool, held only so `put_runner` outlives the machines it
-    /// drives. Separate from `prefetch_pool` so deferred cache-fill (put) work does
-    /// not compete with read-ahead fetches.
-    std::shared_ptr<PrefetchThreadPool> cache_filler_pool;
-    /// The machine driver over `cache_filler_pool` for the deferred PUT machines
-    /// (cache fills + promotes). Created from `Options::cache_filler_pool`; null
-    /// without a pool, in which case put steps run synchronously inline.
-    std::unique_ptr<FetchMachineRunner> put_runner;
     /// Single source of truth for "is a background machine in flight". The
     /// machine is co-owned with the pool job; the worker reads and writes ONLY
     /// the machine payload, and the foreground reclaims it through the
@@ -1009,26 +954,6 @@ private:
     /// Cancelled machines whose queued step may still be picked up by the
     /// pool. The destructor waits on each; running calls sweep finished ones.
     VectorWithMemoryTracking<std::shared_ptr<FetchMachine>> abandoned_machines;
-    static constexpr size_t MAX_PUT_MACHINES = 2;
-
-    /// The per-executor deferred-PUT lane: the sole deferred cache-fill / write-back path.
-    /// A FIFO of pending put `FetchMachine`s with at most ONE in flight, so one executor's
-    /// cache fills apply strictly in enqueue (offset) order on the shared `CacheFiller` pool,
-    /// while the pool still runs DIFFERENT executors' fills concurrently. The lane's async
-    /// budget is bounded by `MAX_PUT_MACHINES` (over it `enqueuePutLane` applies backpressure
-    /// by draining the in-flight put synchronously). FOREGROUND-ONLY: the worker never touches
-    /// the lane (the foreground drives re-arm on its next sweep), so no lock is needed.
-    /// `applied_items` is the one cross-thread field (worker-bumped, foreground-read) - a
-    /// scheduling watermark, NOT a bytes-present authority (that stays
-    /// `CacheWriter::committed()` / `covers()`).
-    struct PutLane
-    {
-        DequeWithMemoryTracking<std::shared_ptr<FetchMachine>> pending;
-        std::shared_ptr<FetchMachine> in_flight;
-        std::atomic<size_t> applied_items{0};
-        bool stopping = false;
-    };
-    PutLane put_lane;
 
     /// Connection state. The Strategy-A pin holding the partial cache segment
     /// under the live fill frontier non-evictable across windows: re-pointed at
