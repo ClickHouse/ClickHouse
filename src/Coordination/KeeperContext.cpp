@@ -201,6 +201,7 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
     digest_enabled = config.getBool("keeper_server.digest_enabled", false);
     digest_enabled_on_commit = config.getBool("keeper_server.digest_enabled_on_commit", false);
     ignore_system_path_on_startup = config.getBool("keeper_server.ignore_system_path_on_startup", false);
+    remove_orphaned_nodes_on_startup = config.getBool("keeper_server.remove_orphaned_nodes_on_startup", false);
 
     initializeFeatureFlags(config);
     initializeDisks(config);
@@ -316,6 +317,16 @@ bool KeeperContext::digestEnabled() const
 bool KeeperContext::digestEnabledOnCommit() const
 {
     return digest_enabled_on_commit;
+}
+
+bool KeeperContext::removeOrphanedNodesOnStartup() const
+{
+    return remove_orphaned_nodes_on_startup;
+}
+
+void KeeperContext::setRemoveOrphanedNodesOnStartup(bool remove_orphaned_nodes_on_startup_)
+{
+    remove_orphaned_nodes_on_startup = remove_orphaned_nodes_on_startup_;
 }
 
 void KeeperContext::setDigestEnabled(bool digest_enabled_)

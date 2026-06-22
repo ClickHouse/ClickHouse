@@ -1,5 +1,7 @@
 #include <filesystem>
 #include <memory>
+#include <unordered_set>
+#include <fmt/ranges.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Coordination/CoordinationSettings.h>
@@ -37,6 +39,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CORRUPTED_DATA;
     extern const int KEEPER_EXCEPTION;
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int UNKNOWN_SNAPSHOT;
@@ -604,13 +607,146 @@ void KeeperStorageSnapshot<Storage>::deserialize(
     {
         LOG_TRACE(getLogger("KeeperSnapshotManager"), "Building structure for children nodes");
 
+        /// Pass 1: Identify orphan roots — nodes whose parent doesn't exist in the container
+        std::unordered_set<std::string> orphan_paths;
+
         for (const auto & itr : storage.container)
         {
             if (itr.key != "/")
             {
                 auto parent_path = Coordination::parentNodePath(itr.key);
-                storage.container.updateValue(
-                    parent_path, [path = itr.key](typename Storage::Node & value) { value.addChild(Coordination::getBaseNodeName(path)); });
+                if (storage.container.find(parent_path) == storage.container.end())
+                    orphan_paths.insert(std::string(itr.key));
+            }
+        }
+
+        /// Expand orphan set to include all descendants of orphan roots.
+        /// A node whose ancestor is an orphan is itself an orphan.
+        if (!orphan_paths.empty())
+        {
+            for (const auto & itr : storage.container)
+            {
+                if (itr.key == "/" || orphan_paths.contains(std::string(itr.key)))
+                    continue;
+
+                auto path = Coordination::parentNodePath(itr.key);
+                while (path != "/")
+                {
+                    if (orphan_paths.contains(std::string(path)))
+                    {
+                        orphan_paths.insert(std::string(itr.key));
+                        break;
+                    }
+                    path = Coordination::parentNodePath(path);
+                }
+            }
+        }
+
+        /// Pass 2: Build parent-child relationships for non-orphan nodes only
+        if (orphan_paths.empty())
+        {
+            for (const auto & itr : storage.container)
+            {
+                if (itr.key != "/")
+                {
+                    auto parent_path = Coordination::parentNodePath(itr.key);
+                    storage.container.updateValue(
+                        parent_path, [path = itr.key](typename Storage::Node & value) { value.addChild(Coordination::getBaseNodeName(path)); });
+                }
+            }
+        }
+        else
+        {
+            for (const auto & itr : storage.container)
+            {
+                if (itr.key != "/" && !orphan_paths.contains(std::string(itr.key)))
+                {
+                    auto parent_path = Coordination::parentNodePath(itr.key);
+                    storage.container.updateValue(
+                        parent_path, [path = itr.key](typename Storage::Node & value) { value.addChild(Coordination::getBaseNodeName(path)); });
+                }
+            }
+        }
+
+        /// Handle orphaned nodes — removal requires both:
+        /// 1. `remove_orphaned_nodes_on_startup` config option enabled (opt-in)
+        /// 2. digest disabled (to avoid digest mismatch during rolling upgrades)
+        if (!orphan_paths.empty())
+        {
+            const bool remove_enabled = keeper_context->removeOrphanedNodesOnStartup();
+            const bool can_remove = remove_enabled && !keeper_context->digestEnabled();
+
+            if (can_remove)
+            {
+                /// Identify orphan roots for concise logging
+                std::vector<std::string> orphan_roots;
+                for (const auto & p : orphan_paths)
+                {
+                    auto parent = std::string(Coordination::parentNodePath(p));
+                    if (!orphan_paths.contains(parent))
+                        orphan_roots.push_back(p);
+                }
+                std::sort(orphan_roots.begin(), orphan_roots.end());
+
+                LOG_WARNING(
+                    getLogger("KeeperSnapshotManager"),
+                    "Removing {} orphaned nodes ({} orphan roots) from snapshot. Roots: [{}]",
+                    orphan_paths.size(),
+                    orphan_roots.size(),
+                    fmt::join(orphan_roots, ", "));
+
+                for (const auto & orphan : orphan_paths)
+                {
+                    auto node_it = storage.container.find(orphan);
+                    if (node_it == storage.container.end())
+                        continue;
+
+                    /// Decrement ACL usage count
+                    storage.acl_map.removeUsage(node_it->value.acl_id);
+
+                    /// Clean up ephemeral tracking
+                    if (node_it->value.stats.ephemeralOwner() != 0)
+                    {
+                        --storage.committed_ephemeral_nodes;
+                        auto ep_it = storage.committed_ephemerals.find(node_it->value.stats.ephemeralOwner());
+                        if (ep_it != storage.committed_ephemerals.end())
+                        {
+                            ep_it->second.erase(orphan);
+                            if (ep_it->second.empty())
+                                storage.committed_ephemerals.erase(ep_it);
+                        }
+                    }
+
+                    storage.container.erase(orphan);
+                }
+
+                /// Fix stale numChildren for all surviving nodes.
+                /// Children were rebuilt from scratch in Pass 2 but numChildren comes from the serialized snapshot,
+                /// so they can diverge when orphaned nodes were present.
+                for (const auto & itr : storage.container)
+                {
+                    auto actual = static_cast<int32_t>(itr.value.getChildren().size());
+                    if (itr.value.numChildren() != actual)
+                    {
+                        storage.container.updateValue(
+                            itr.key,
+                            [actual](typename Storage::Node & value) { value.setNumChildren(actual); });
+                    }
+                }
+            }
+            else
+            {
+                const char * reason = !remove_enabled
+                    ? "remove_orphaned_nodes_on_startup is disabled"
+                    : "digest is enabled (set digest_enabled=false)";
+
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "Found {} orphaned nodes in snapshot but cannot remove them: {}. "
+                    "Set 'keeper_server.remove_orphaned_nodes_on_startup' to true and "
+                    "'keeper_server.digest_enabled' to false to allow removal",
+                    orphan_paths.size(),
+                    reason);
             }
         }
 

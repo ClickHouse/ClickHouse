@@ -55,6 +55,9 @@ public:
     void setDigestEnabled(bool digest_enabled_);
     bool digestEnabledOnCommit() const;
 
+    bool removeOrphanedNodesOnStartup() const;
+    void setRemoveOrphanedNodesOnStartup(bool remove_orphaned_nodes_on_startup_);
+
     DiskPtr getLatestLogDisk() const;
     DiskPtr getLogDisk() const;
     std::vector<DiskPtr> getOldLogDisks() const;
@@ -155,6 +158,7 @@ private:
     bool ignore_system_path_on_startup{false};
     bool digest_enabled{true};
     bool digest_enabled_on_commit{false};
+    bool remove_orphaned_nodes_on_startup{false};
 
     std::shared_ptr<DiskSelector> disk_selector;
 
