@@ -5,6 +5,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNothing.h>
 #include <Common/FunctionDocumentation.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -40,7 +41,13 @@ TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & argumen
         return {};
 
     auto column_needles = arguments[arg_needles].column;
-    if (!column_needles || column_needles->empty())
+    if (!column_needles)
+        return {};
+
+    /// At plan time, constant columns coming from ActionsDAG nodes are normalized to size 0
+    /// (see ActionsDAG::addColumn). For non-const columns we can only extract a value when
+    /// there's at least one row.
+    if (!isColumnConst(*column_needles) && column_needles->empty())
         return {};
 
     Field needles_field = (*column_needles)[0];
@@ -48,7 +55,7 @@ TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & argumen
         return {};
 
     TokensWithPosition search_tokens;
-    std::vector<String> tokens_array;
+    VectorWithMemoryTracking<String> tokens_array;
 
     if (needles_field.getType() == Field::Types::String)
     {

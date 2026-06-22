@@ -1,6 +1,7 @@
 import glob
 import json as json_module
 import os
+import platform
 import signal
 import subprocess
 import sys
@@ -74,9 +75,9 @@ class ClickHouseProc:
         self.user_files_path = f"{self.run_path0}/user_files"
         self.test_output_file = f"{temp_dir}/test_result.txt"
         self.command = f"clickhouse-server --config-file {self.config_file} --pid-file {self.pid_file} -- --path {self.run_path0} --user_files_path {self.user_files_path} --top_level_domains_path {self.ch_config_dir}/top_level_domains --logger.stderr {self.log_dir}/stderr.log"
-        self.ch_config_dir_replica_1 = f"/etc/clickhouse-server1"
+        self.ch_config_dir_replica_1 = "/etc/clickhouse-server1"
         self.config_file_replica_1 = f"{self.ch_config_dir_replica_1}/config.xml"
-        self.ch_config_dir_replica_2 = f"/etc/clickhouse-server2"
+        self.ch_config_dir_replica_2 = "/etc/clickhouse-server2"
         self.config_file_replica_2 = f"{self.ch_config_dir_replica_2}/config.xml"
         self.pid_file = f"{self.ch_config_dir}/clickhouse-server.pid"
         self.pid_file_replica_1 = (
@@ -97,7 +98,7 @@ class ClickHouseProc:
         self.proc_1 = None
         self.proc_2 = None
         self.pid = 0
-        nproc = int(Utils.cpu_count() / 2)
+        int(Utils.cpu_count() / 2)
         self.minio_proc = None
         self.azurite_proc = None
         self.kafka_proc = None
@@ -198,21 +199,22 @@ class ClickHouseProc:
             )
         print(f"Started setup_kafka.sh asynchronously with PID {self.kafka_proc.pid}")
 
-        for _ in range(60):
-            res = Shell.check(
-                "rpk topic list --brokers 127.0.0.1:9092",
-                verbose=True,
-            )
-            if res:
-                return True
-            time.sleep(1)
-        print("Failed to start Kafka")
-        return False
+        # setup_kafka.sh exits 0 only after broker AND schema registry are ready,
+        # so wait on the script itself. Its own timeout is 60s; pad here.
+        try:
+            returncode = self.kafka_proc.wait(timeout=90)
+        except subprocess.TimeoutExpired:
+            print("Failed to start Kafka: setup_kafka.sh did not finish in time")
+            return False
+        if returncode != 0:
+            print(f"setup_kafka.sh exited with code {returncode}")
+            return False
+        return True
 
     @staticmethod
     def log_cluster_config():
         return Shell.check(
-            f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --config-logs-export-cluster ./tmp_ci/etc/clickhouse-server/config.d/system_logs_export.yaml",
+            "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --config-logs-export-cluster ./tmp_ci/etc/clickhouse-server/config.d/system_logs_export.yaml",
             verbose=True,
         )
 
@@ -280,7 +282,7 @@ class ClickHouseProc:
         """
         Start ClickHouse server with config installed with _install_config()
         """
-        print(f"Starting ClickHouse server")
+        print("Starting ClickHouse server")
         # check binary available and do decompression in the meantime
         assert Shell.check("clickhouse --version", verbose=True)
         self.pid_file = f"{temp_dir}/clickhouse-server.pid"
@@ -297,12 +299,12 @@ class ClickHouseProc:
             stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
             Utils.print_formatted_error("Failed to start ClickHouse", stdout, stderr)
             return False
-        print(f"ClickHouse server process started -> wait ready")
+        print("ClickHouse server process started -> wait ready")
         res = self.wait_ready()
         if res:
-            print(f"ClickHouse server ready")
+            print("ClickHouse server ready")
         else:
-            print(f"ClickHouse server NOT ready")
+            print("ClickHouse server NOT ready")
 
         self._flush_system_logs()
         self.save_system_metadata_files_from_remote_database_disk()
@@ -417,7 +419,7 @@ profiles:
     @staticmethod
     def stop_log_exports():
         return Shell.check(
-            f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --stop-log-replication",
+            "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --stop-log-replication",
             verbose=True,
         )
 
@@ -455,7 +457,7 @@ profiles:
         # set profile file for the server (not needed for per-test coverage,
         # which uses system.coverage_log instead of .profraw files)
         if not self.is_per_test_coverage:
-            os.environ["LLVM_PROFILE_FILE"] = f"ft-server-%m.profraw"
+            os.environ["LLVM_PROFILE_FILE"] = "ft-server-%m.profraw"
 
         env = os.environ.copy()
         env["TSAN_OPTIONS"] = " ".join(
@@ -634,7 +636,7 @@ profiles:
             try:
                 self.pid = int(Shell.get_output(f"cat {pid_file}").strip())
                 break
-            except Exception as e:
+            except Exception:
                 Utils.sleep(1)
             i += 1
         if self.pid is None:
@@ -642,7 +644,7 @@ profiles:
             return False
         for attempt in range(attempts):
             res, out, err = Shell.get_res_stdout_stderr(
-                f'clickhouse-client --port {port} --query "select 1"', verbose=True
+                f'clickhouse-client --port {port} --receive_timeout=5 --query "select 1"', verbose=True
             )
             if out.strip() == "1":
                 print(f"Server replica {replica_num} ready")
@@ -821,9 +823,23 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
         self.save_system_metadata_files_from_remote_database_disk()
 
-        print("Terminate ClickHouse processes")
+        self.stop_server(force=force)
 
-        Shell.check(f"ps -ef | grep  clickhouse")
+        return self
+
+    def stop_server(self, force=False):
+        """Gracefully stop only the ClickHouse server processes.
+
+        Unlike `terminate`, this leaves the auxiliary services (Redpanda/Kafka,
+        MinIO and its webhooks) running. It is used between bugfix-validation
+        iterations so the server binary can be swapped and restarted without
+        tearing down the rest of the test environment: otherwise a changed test
+        relying on Kafka or MinIO webhooks would pass under the first build type
+        and spuriously "reproduce" a bug under the next one.
+        """
+        print("Stop ClickHouse processes")
+
+        Shell.check("ps -ef | grep  clickhouse")
         for proc, pid_file, pid, run_path in (
             (self.proc, self.pid_file, self.pid_0, self.run_path0),
             (self.proc_1, self.pid_file_replica_1, self.pid_1, self.run_path1),
@@ -855,6 +871,16 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
         return self
 
+    def clean_logs(self):
+        """
+        Remove server logs from `log_dir`.
+
+        Used between bugfix validation iterations to keep logs from different
+        build types from being mixed together.
+        """
+        Utils.clean_dir(Path(self.log_dir))
+        return self
+
     @staticmethod
     def _chmod(files):
         for file in files:
@@ -872,6 +898,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 res += self.debug_artifacts
                 res += self.dump_system_tables()
                 res += self._collect_core_dumps()
+                res += self._collect_diagnostic_reports()
                 res += self._get_logs_archive_coordination()
                 if Path(self.MINIO_LOG).exists():
                     res.append(self.MINIO_LOG)
@@ -900,6 +927,22 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         for run_dir in sorted(p_temp_dir.glob("run_r*")):
             result.extend(ClickHouseService.collect_cores(run_dir))
         return result
+
+    @staticmethod
+    def _collect_diagnostic_reports() -> List[str]:
+        # macOS writes .ips crash reports to /Library/Logs/DiagnosticReports as
+        # root. Grant read access so the runner can list and read the files
+        # in place; the darwin fast-test pre-hook wipes the directory under
+        # sudo before the run, so anything we see here belongs to the current
+        # run even if the previous runner was terminated unexpectedly.
+        if platform.system() != "Darwin":
+            return []
+        reports_dir = Path("/Library/Logs/DiagnosticReports")
+        Shell.check(
+            f"sudo chmod -R a+rX {reports_dir}",
+            verbose=True,
+        )
+        return [str(p) for p in reports_dir.glob("*.ips")]
 
     @classmethod
     def _get_logs_archive_coordination(cls):
@@ -1089,6 +1132,12 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 result.set_status(Result.Status.OK)
             else:
                 result.set_status(Result.Status.FAIL)
+            # These are server-log / runner health checks, not test cases.
+            # The bugfix-validation inverter uses this label so a clean check
+            # (OK) is left as-is instead of being flipped into a spurious
+            # failure. A failing check still flips like a test (a fatal on the
+            # validated binary is the bug reproducing).
+            result.set_label(Result.Label.LOG_CHECK)
         return results
 
     def dump_system_tables(self):
@@ -1115,7 +1164,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             "minio_audit_logs",
             "minio_server_logs",
         ]
-        ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT = 10_000_000
+        ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT = 20_000_000
 
         command_args = self.LOGS_SAVER_CLIENT_OPTIONS
         # command_args += f" --config-file={self.ch_config_dir}/config.xml"
@@ -1138,7 +1187,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         #
         #   [2]: https://github.com/ClickHouse/ClickHouse/issues/77320
         #
-        command_args_post = f"-- --zookeeper.implementation=testkeeper"
+        command_args_post = "-- --zookeeper.implementation=testkeeper"
 
         Utils.clean_dir(p_temp_dir / "system_tables")
         res = True
@@ -1155,7 +1204,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             for cache_status_path in cache_status_files:
                 Shell.check(f"rm {cache_status_path}", verbose=True)
 
-        scraping_system_table = Result(name=f"Scraping system tables", status=Result.Status.OK)
+        scraping_system_table = Result(name="Scraping system tables", status=Result.Status.OK)
         for table in TABLES:
             path_arg = f" --path {self.run_path0}"
             res, stdout, stderr = Shell.get_res_stdout_stderr(
@@ -1317,7 +1366,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
     @staticmethod
     def set_random_timezone():
         tz = Shell.get_output(
-            f"rg -v '#' /usr/share/zoneinfo/zone.tab  | awk '{{print $3}}' | shuf | head -n1"
+            "rg -v '#' /usr/share/zoneinfo/zone.tab  | awk '{print $3}' | shuf | head -n1"
         )
         print(f"Chosen random timezone: {tz}")
         assert tz, "Failed to get random TZ"
@@ -1365,7 +1414,7 @@ if __name__ == "__main__":
             res = ch.start_azurite()
         else:
             raise ValueError(f"Unknown command: {command}")
-    except Exception as e:
+    except Exception:
         print(f"ERROR: Failed to do [{command}]")
         traceback.print_exc()
 

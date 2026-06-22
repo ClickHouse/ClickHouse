@@ -119,7 +119,7 @@ namespace DB
 class WorkloadResourceManager : public IResourceManager
 {
 public:
-    explicit WorkloadResourceManager(IWorkloadEntityStorage & storage_);
+    explicit WorkloadResourceManager(std::shared_ptr<IWorkloadEntityStorage> storage_);
     ~WorkloadResourceManager() override;
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config) override;
     bool hasResource(const String & resource_name) const override;
@@ -250,7 +250,7 @@ private:
 
     private:
         const ClassifierSettings settings;
-        WorkloadResourceManager * resource_manager;
+        WorkloadResourceManager * resource_manager{};
         mutable std::mutex mutex;
         struct Attachment
         {
@@ -271,7 +271,9 @@ private:
     void topologicallySortedWorkloadsImpl(Workload * workload, std::unordered_set<Workload *> & visited, std::vector<Workload *> & sorted_workloads);
     std::vector<Workload *> topologicallySortedWorkloads();
 
-    IWorkloadEntityStorage & storage;
+    /// Hold shared ownership of the storage so it cannot be destroyed during lazy initialization,
+    /// which may run concurrently with server shutdown. The storage is only accessed in the constructor.
+    std::shared_ptr<IWorkloadEntityStorage> storage;
     scope_guard subscription;
 
     mutable std::mutex mutex;

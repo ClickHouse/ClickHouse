@@ -52,6 +52,18 @@ if (CLICKHOUSE_PGO_PROFILE_PATH)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fprofile-use=${CLICKHOUSE_PGO_PROFILE_PATH}")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fprofile-use=${CLICKHOUSE_PGO_PROFILE_PATH}")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fprofile-use=${CLICKHOUSE_PGO_PROFILE_PATH}")
+    # When a function's CFG hash at use time does not match what was recorded
+    # in the profile, clang's PGO backend emits `-Wbackend-plugin` with text
+    # like "function control flow change detected (hash mismatch)" and
+    # discards the stale counts for that function. This is expected to
+    # happen for some functions because the instrumented build runs without
+    # ThinLTO (required by IR instrumentation) while the use build enables
+    # ThinLTO, which can perturb individual function bodies before profile
+    # matching. Under the project-wide `-Werror` policy these informational
+    # warnings would otherwise abort the whole build, so demote them to
+    # plain warnings here.
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-error=backend-plugin")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=backend-plugin")
 endif()
 
 # Apply BOLT linker flags

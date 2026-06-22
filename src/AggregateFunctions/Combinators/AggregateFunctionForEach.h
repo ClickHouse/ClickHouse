@@ -84,7 +84,7 @@ private:
 
             char * new_state = arena.alignedAlloc(allocation_size, nested_func->alignOfData());
 
-            size_t i;
+            size_t i = 0;
             try
             {
                 for (i = 0; i < new_size; ++i)

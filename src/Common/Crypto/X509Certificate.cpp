@@ -2,6 +2,8 @@
 
 #include <base/scope_guard.h>
 
+#include <ctime>
+
 
 #if USE_SSL
 
@@ -56,7 +58,7 @@ X509Certificate::X509Certificate(const std::string & path)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "PEM_read_bio_X509 failed for file {}: {}", path, getOpenSSLErrors());
 }
 
-X509Certificate::List readCertificatesFromBIO(const BIO_ptr & bio, const std::string & source_description)
+static X509Certificate::List readCertificatesFromBIO(const BIO_ptr & bio, const std::string & source_description)
 {
     X509Certificate::List certs;
 
@@ -224,6 +226,29 @@ std::string X509Certificate::expiresOn() const
     return reinterpret_cast<char *>(not_before->data);
 }
 
+static time_t asn1TimeToTimeT(const ASN1_TIME * time)
+{
+    if (!time)
+        return 0;
+
+    struct tm tm_time{};
+    if (ASN1_TIME_to_tm(time, &tm_time) != 1)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "ASN1_TIME_to_tm failed: {}", getOpenSSLErrors());
+
+    /// ASN1_TIME_to_tm yields a broken-down time in UTC, so convert it back with timegm (not mktime).
+    return timegm(&tm_time);
+}
+
+time_t X509Certificate::notBefore() const
+{
+    return asn1TimeToTimeT(X509_get0_notBefore(certificate));
+}
+
+time_t X509Certificate::notAfter() const
+{
+    return asn1TimeToTimeT(X509_get0_notAfter(certificate));
+}
+
 const X509Certificate::Subjects::container & X509Certificate::Subjects::at(Type type_) const
 {
     return subjects[static_cast<size_t>(type_)];
@@ -281,7 +306,7 @@ bool X509Certificate::Subjects::operator==(const X509Certificate::Subjects & rhs
     return true;
 }
 
-X509Certificate::Subjects X509Certificate::extractAllSubjects()
+X509Certificate::Subjects X509Certificate::extractAllSubjects() const
 {
     Subjects subjects;
 

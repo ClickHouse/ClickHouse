@@ -1,11 +1,9 @@
 import pytest
 import time
 import uuid
-import os
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
-from helpers.mock_servers import start_mock_servers
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -29,30 +27,30 @@ def setup_node():
 
 def test_partition_by():
     result = node1.query(
-        f"select * from url('http://nginx:80/test_1', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')"
+        "select * from url('http://nginx:80/test_1', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')"
     )
     assert result.strip() == "3\t2\t1"
     result = node1.query(
-        f"select * from url('http://nginx:80/test_2', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')"
+        "select * from url('http://nginx:80/test_2', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')"
     )
     assert result.strip() == "1\t3\t2"
     result = node1.query(
-        f"select * from url('http://nginx:80/test_3', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')"
+        "select * from url('http://nginx:80/test_3', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')"
     )
     assert result.strip() == "1\t2\t3"
 
 
 def test_url_cluster():
     result = node1.query(
-        f"select * from urlCluster('test_cluster_two_shards', 'http://nginx:80/test_1', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')"
+        "select * from urlCluster('test_cluster_two_shards', 'http://nginx:80/test_1', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')"
     )
     assert result.strip() == "3\t2\t1"
     result = node1.query(
-        f"select * from urlCluster('test_cluster_two_shards', 'http://nginx:80/test_2', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')"
+        "select * from urlCluster('test_cluster_two_shards', 'http://nginx:80/test_2', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')"
     )
     assert result.strip() == "1\t3\t2"
     result = node1.query(
-        f"select * from urlCluster('test_cluster_two_shards', 'http://nginx:80/test_3', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')"
+        "select * from urlCluster('test_cluster_two_shards', 'http://nginx:80/test_3', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')"
     )
     assert result.strip() == "1\t2\t3"
 
@@ -80,12 +78,12 @@ def test_url_cluster_secure():
 
 def test_url_cluster_with_named_collection():
     result = node1.query(
-        f"select * from urlCluster(test_cluster_one_shard_three_replicas_localhost, test_url)"
+        "select * from urlCluster(test_cluster_one_shard_three_replicas_localhost, test_url)"
     )
     assert result.strip() == "3\t2\t1"
 
     result = node1.query(
-        f"select * from urlCluster(test_cluster_one_shard_three_replicas_localhost, test_url, structure='auto')"
+        "select * from urlCluster(test_cluster_one_shard_three_replicas_localhost, test_url, structure='auto')"
     )
     assert result.strip() == "3\t2\t1"
 
@@ -95,29 +93,29 @@ def test_table_function_url_access_rights():
 
     expected_error = "necessary to have the grant READ ON URL"
     assert expected_error in node1.query_and_get_error(
-        f"SELECT * FROM url('http://nginx:80/test_1', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')",
+        "SELECT * FROM url('http://nginx:80/test_1', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')",
         user="u1",
     )
 
     expected_error = "necessary to have the grant READ ON URL"
     assert expected_error in node1.query_and_get_error(
-        f"SELECT * FROM url('http://nginx:80/test_1', 'TSV')", user="u1"
+        "SELECT * FROM url('http://nginx:80/test_1', 'TSV')", user="u1"
     )
 
     expected_error = "necessary to have the grant READ ON URL"
     assert expected_error in node1.query_and_get_error(
-        f"DESCRIBE TABLE url('http://nginx:80/test_1', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')",
+        "DESCRIBE TABLE url('http://nginx:80/test_1', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')",
         user="u1",
     )
 
     expected_error = "necessary to have the grant READ ON URL"
     assert expected_error in node1.query_and_get_error(
-        f"DESCRIBE TABLE url('http://nginx:80/test_1', 'TSV')", user="u1"
+        "DESCRIBE TABLE url('http://nginx:80/test_1', 'TSV')", user="u1"
     )
 
     node1.query("GRANT READ ON URL TO u1")
     assert node1.query(
-        f"DESCRIBE TABLE url('http://nginx:80/test_1', 'TSV')",
+        "DESCRIBE TABLE url('http://nginx:80/test_1', 'TSV')",
         user="u1",
     ) == TSV(
         [

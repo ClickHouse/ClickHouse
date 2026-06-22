@@ -230,6 +230,12 @@ static inline auto createHandlersFactoryFromConfig(
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
+            else if (handler_type == "schema")
+            {
+                auto handler = createWebUIHandlerFactory<SchemaWebUIRequestHandler>(server, config, prefix + "." + key, common_headers_override);
+                handler->addFiltersFromConfig(config, prefix + "." + key);
+                main_handler_factory->addHandler(std::move(handler));
+            }
             else if (handler_type == "js")
             {
                 /// `JavaScriptWebUIRequestHandler` serves a fixed set of embedded JS/CSS
@@ -393,6 +399,12 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     factory.addPathToHints("/jemalloc");
     factory.addHandler(jemalloc_handler);
 
+    auto schema_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<SchemaWebUIRequestHandler>>(server);
+    schema_handler->attachNonStrictPath("/schema");
+    schema_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/schema");
+    factory.addHandler(schema_handler);
+
     auto processors_profile_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ProcessorsProfileWebUIRequestHandler>>(server);
     processors_profile_handler->attachNonStrictPath("/processors-profile");
     processors_profile_handler->allowGetAndHeadRequest();
@@ -434,7 +446,7 @@ void addDefaultHandlersFactory(
     /// builds via `addCommonDefaultHandlersFactory`). The interserver port has a
     /// different (HMAC) trust model and is typically less-firewalled inside the
     /// cluster, so exposing an interactive PTY shell there would punch a hole
-    /// through that boundary even when the experimental gate is open.
+    /// through that boundary even when `enable_webterminal` is set.
     auto webterminal_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebTerminalRequestHandler>>(server);
     webterminal_handler->attachNonStrictPath("/webterminal");
     webterminal_handler->allowGetAndHeadRequest();

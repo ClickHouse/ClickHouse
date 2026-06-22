@@ -236,7 +236,7 @@ struct ConversionImpl
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
             /// Proportion of control-metric
-            Float64 p1;
+            Float64 p1 = 0;
 
             if constexpr (const_p1)
             {
