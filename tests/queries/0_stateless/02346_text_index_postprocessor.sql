@@ -1,5 +1,5 @@
--- Tests the postprocessor argument in text indexes.
--- The postprocessor transforms each token individually after tokenization.
+-- Tests the postprocessor argument in text indexes: how each token is transformed and filtered
+-- (basic expressions, stop-words, empty-token mapping) plus postprocessor validation.
 
 DROP TABLE IF EXISTS tab;
 
@@ -264,161 +264,67 @@ SELECT count() FROM tab WHERE hasAnyTokens(val, ['stop']) OR id = 1;
 
 DROP TABLE tab;
 
-SELECT '10. Index-build path and row-scan path agree when postprocessor drops tokens.';
+SELECT '10. Negative tests.';
 
-CREATE TABLE tab (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
-
-SYSTEM STOP MERGES tab;
-
--- Old parts written before the index was added; these use the row-scan path.
-INSERT INTO tab VALUES (1, 'the quick'), (2, 'hello');
-
-ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = if(val = 'the', '', val));
-
--- New parts written after the index; these use the index lookup path.
-INSERT INTO tab VALUES (3, 'the world'), (4, 'test');
-
--- Stop word 'the' must return 0 across both old parts (row-scan) and new parts (index).
-SELECT count() FROM tab WHERE hasToken(val, 'the');
--- Real tokens must be found consistently regardless of which path is used.
-SELECT count() FROM tab WHERE hasToken(val, 'hello');  -- row 2, old part (row-scan)
-SELECT count() FROM tab WHERE hasToken(val, 'test');   -- row 4, new part (index)
--- Rows containing 'the' as a stop word are still indexed for their other tokens.
-SELECT count() FROM tab WHERE hasToken(val, 'quick');  -- row 1, old part (row-scan)
-SELECT count() FROM tab WHERE hasToken(val, 'world');  -- row 3, new part (index)
-
-SYSTEM START MERGES tab;
-DROP TABLE tab;
-
-SELECT '11. Array tokenizer + postprocessor: has() / hasAll() / hasAny() use postprocessor via hint mode.';
--- The index stores postprocessed (lower-cased) elements.
--- has/hasAll/hasAny apply the postprocessor to the needle for the index lookup (hint mode),
--- then re-evaluate the original predicate at row level.
-
-CREATE TABLE tab
-(
-    id UInt64,
-    val Array(String),
-    INDEX idx(val) TYPE text(tokenizer = 'array', postprocessor = lower(val))
-)
-ENGINE = MergeTree ORDER BY id;
-
-INSERT INTO tab VALUES (1, ['Foo']), (2, ['BAR']), (3, ['baz']);
-
-SELECT count() FROM tab WHERE has(val, 'Foo');   -- 1: index finds 'foo', row-level has(['Foo'], 'Foo') → true
-SELECT count() FROM tab WHERE has(val, 'BAR');   -- 1: index finds 'bar', row-level has(['BAR'], 'BAR') → true
-SELECT count() FROM tab WHERE has(val, 'foo');   -- 0: index finds 'foo' (hint), row-level has(['Foo'], 'foo') → false
-SELECT count() FROM tab WHERE has(val, 'xyz');   -- 0
-
-DROP TABLE tab;
-
-SELECT '12. String tokenizer + non-commutative postprocessor: row-scan matches index.';
--- The postprocessor strips the suffix 'ing' from each token (token-level operation).
--- Applying the postprocessor to the whole haystack string ('running walking') gives
--- 'running walking' (no match at end), not ['runn', 'walk']. The rewrite to
--- has(arrayMap(pp, splitByNonAlpha(val)), pp(needle)) ensures correctness on both paths.
-
+SELECT '- The postprocessor expression must reference the index column';
 CREATE TABLE tab
 (
     id UInt64,
     val String,
-    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = replaceRegexpAll(val, 'ing$', ''))
+    other_str String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(other_str))
+)
+ENGINE = MergeTree ORDER BY tuple();  -- { serverError UNKNOWN_IDENTIFIER }
+
+SELECT '- The postprocessor expression must be a function, not an identifier';
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = val)
+)
+ENGINE = MergeTree ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
+
+SELECT '- The postprocessor expression must return String';
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = length(val))
+)
+ENGINE = MergeTree ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
+
+SELECT '- The postprocessor must not contain non-deterministic functions';
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = concat(val, toString(rand())))
+)
+ENGINE = MergeTree ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
+
+SELECT '- The postprocessor must not contain arrayJoin';
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = arrayJoin(array(val)))
+)
+ENGINE = MergeTree ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
+
+SELECT '- A postprocessor that produces a token containing separator characters throws BAD_ARGUMENTS at query time';
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = concat(val, ' x'))
 )
 ENGINE = MergeTree ORDER BY id;
 
-INSERT INTO tab VALUES (1, 'running walking'), (2, 'cat dog');
+INSERT INTO tab VALUES (1, 'foo');
 
--- 'running' → strip 'ing' → 'runn'; searching 'running' → 'runn' → found in row 1.
-SELECT count() FROM tab WHERE hasToken(val, 'running');  -- 1
--- 'walking' → strip 'ing' → 'walk'; searching 'walking' → 'walk' → found in row 1.
-SELECT count() FROM tab WHERE hasToken(val, 'walking');  -- 1
--- 'cat' → no suffix → 'cat'; found in row 2.
-SELECT count() FROM tab WHERE hasToken(val, 'cat');      -- 1
--- 'run' → no suffix → 'run'; index stores 'runn', not 'run' → not found.
-SELECT count() FROM tab WHERE hasToken(val, 'run');      -- 0
--- Multi-token: both tokens must match after postprocessor.
-SELECT count() FROM tab WHERE hasAllTokens(val, 'running walking');  -- 1
-SELECT count() FROM tab WHERE hasAllTokens(val, 'running cat');      -- 0
+SELECT count() FROM tab WHERE hasToken(val, 'foo');  -- { serverError BAD_ARGUMENTS }
 
-DROP TABLE tab;
-
-SELECT '13. Partially materialized index.';
-
--- The index is added after the initial insert, so old parts have no index.
--- The postprocessor is applied to the needle at the query plan level in both cases:
--- for new parts the index is used; for old parts the postprocessed needle is used in a row scan.
-DROP TABLE IF EXISTS tab;
-CREATE TABLE tab (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
-
-SYSTEM STOP MERGES tab;
-
-INSERT INTO tab VALUES (1, 'foo'), (2, 'bar');
-
-ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(val));
-
-INSERT INTO tab VALUES (3, 'baz'), (4, 'QUX');
-
--- Old parts (no index): row-level scan uses the postprocessed (lowercased) needle.
-SELECT count() FROM tab WHERE hasToken(val, 'foo');
-SELECT count() FROM tab WHERE hasToken(val, 'FOO');
-SELECT count() FROM tab WHERE hasToken(val, 'bar');
--- New parts (with index): postprocessed needle used for index lookup.
-SELECT count() FROM tab WHERE hasToken(val, 'baz');
-SELECT count() FROM tab WHERE hasToken(val, 'QUX');
-SELECT count() FROM tab WHERE hasToken(val, 'qux');
-SELECT count() FROM tab WHERE hasToken(val, 'xyz');
-
-SYSTEM START MERGES tab;
-DROP TABLE tab;
-
-SELECT '14. Partially materialized index + postprocessor: haystack is postprocessed on row-scan too.';
-
--- The postprocessor is applied to the haystack on the row-scan path as well, so unindexed (old) parts
--- match the same rows as indexed (new) parts. lower('FOO')='foo' on both paths, and the needle is
--- lowered to 'foo', so each needle matches both its old and new row: count 2 (independent of whether
--- the index is read).
-
-CREATE TABLE tab (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
-
-SYSTEM STOP MERGES tab;
-
-INSERT INTO tab VALUES (1, 'FOO'), (2, 'BAR');  -- old parts: no index, uppercase data
-
-ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(val));
-
-INSERT INTO tab VALUES (3, 'FOO'), (4, 'BAR');  -- new parts: with index, same data
-
--- Old row-scan and new index both postprocess to 'foo'/'bar', so each needle matches both rows.
-SELECT count() FROM tab WHERE hasToken(val, 'FOO');  -- 2
-SELECT count() FROM tab WHERE hasToken(val, 'BAR');  -- 2
-SELECT count() FROM tab WHERE hasToken(val, 'xyz');  -- 0
-
-SYSTEM START MERGES tab;
-DROP TABLE tab;
-
-SELECT '15. Partially materialized index + non-trivial postprocessor: haystack postprocessed on row-scan.';
-
--- A postprocessor that significantly transforms tokens (here: strips the suffix "ing") is applied to
--- the haystack on the row-scan path too, so an unindexed part matches the same rows as an indexed one.
--- 'running' → 'runn' on both paths, and the needle is postprocessed to 'runn', so both rows match.
-
-CREATE TABLE tab (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
-
-SYSTEM STOP MERGES tab;
-
-INSERT INTO tab VALUES (1, 'running'), (2, 'cat');  -- old parts: no index
-
-ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = replaceRegexpAll(val, 'ing$', ''));
-
-INSERT INTO tab VALUES (3, 'running'), (4, 'cat');  -- new parts: with index
-
--- 'running' → 'runn' on both row-scan and index paths → both rows match: 2.
-SELECT count() FROM tab WHERE hasToken(val, 'running');  -- 2
--- 'cat' is unchanged by the postprocessor → both rows match: 2.
-SELECT count() FROM tab WHERE hasToken(val, 'cat');      -- 2
-SELECT count() FROM tab WHERE hasToken(val, 'xyz');      -- 0
-
-SYSTEM START MERGES tab;
 DROP TABLE tab;
 
 DROP TABLE IF EXISTS tab;

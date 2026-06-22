@@ -74,37 +74,10 @@ started	1
 1
 1
 1
-10. Index-build path and row-scan path agree when postprocessor drops tokens.
-0
-1
-1
-1
-1
-11. Array tokenizer + postprocessor: has() / hasAll() / hasAny() use postprocessor via hint mode.
-1
-1
-0
-0
-12. String tokenizer + non-commutative postprocessor: row-scan matches index.
-1
-1
-1
-0
-1
-0
-13. Partially materialized index.
-1
-1
-1
-1
-1
-1
-0
-14. Partially materialized index + postprocessor: haystack is postprocessed on row-scan too.
-2
-2
-0
-15. Partially materialized index + non-trivial postprocessor: haystack postprocessed on row-scan.
-2
-2
-0
+10. Negative tests.
+- The postprocessor expression must reference the index column
+- The postprocessor expression must be a function, not an identifier
+- The postprocessor expression must return String
+- The postprocessor must not contain non-deterministic functions
+- The postprocessor must not contain arrayJoin
+- A postprocessor that produces a token containing separator characters throws BAD_ARGUMENTS at query time
