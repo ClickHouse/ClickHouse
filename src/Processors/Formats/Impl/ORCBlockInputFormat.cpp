@@ -13,9 +13,15 @@
 #    include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #    include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
 #    include <Interpreters/Context.h>
+#    include <Core/Settings.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool use_orc_metadata_cache;
+}
 
 namespace ErrorCodes
 {
@@ -231,6 +237,48 @@ void registerInputFormatORC(FormatFactory & factory)
                 res = std::make_shared<ORCBlockInputFormat>(buf, std::make_shared<const Block>(sample), settings);
 
             return res;
+        });
+    factory.registerRandomAccessInputFormatWithMetadata(
+        "ORC",
+        [](ReadBuffer & buf,
+           const Block & sample,
+           const FormatSettings & settings,
+           const ReadSettings & read_settings,
+           bool is_remote_fs,
+           FormatParserSharedResourcesPtr,
+           FormatFilterInfoPtr format_filter_info,
+           const std::optional<RelativePathWithMetadata> & object_with_metadata,
+           const ContextPtr & context) -> InputFormatPtr
+        {
+            /// The metadata cache (serialized file tail) is only usable by the native fast decoder.
+            /// For the Arrow-based reader we fall back to reading the footer normally.
+            if (!settings.orc.use_fast_decoder)
+                return std::make_shared<ORCBlockInputFormat>(buf, std::make_shared<const Block>(sample), settings);
+
+            const bool has_file_size = isBufferWithFileSize(buf);
+            auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(&buf);
+            const bool use_prefetch = is_remote_fs && read_settings.remote_fs_settings.prefetch && has_file_size && seekable_in
+                && seekable_in->checkIfActuallySeekable() && seekable_in->supportsReadAt() && settings.seekable_read;
+            const size_t min_bytes_for_seek = use_prefetch ? read_settings.remote_fs_settings.min_bytes_for_seek : 0;
+            /// Honor the `use_orc_metadata_cache` setting here so it gates both the
+            /// object-storage path (which also checks it before choosing this creator)
+            /// and the local `file()` path (whose `StorageFile` gate is format-agnostic
+            /// and always routes through `getInputWithMetadata`).
+            /// `tryGet` keeps the creator usable from contexts that don't initialise the
+            /// cache (e.g. the client side of `INSERT ... FROM INFILE`); there we just
+            /// don't memoise the footer — the format works correctly with a null cache.
+            ORCMetadataCachePtr metadata_cache;
+            if (context->getSettingsRef()[Setting::use_orc_metadata_cache])
+                metadata_cache = context->tryGetORCMetadataCache();
+            return std::make_shared<NativeORCBlockInputFormat>(
+                buf,
+                std::make_shared<const Block>(sample),
+                settings,
+                use_prefetch,
+                min_bytes_for_seek,
+                format_filter_info,
+                metadata_cache,
+                object_with_metadata);
         });
     factory.markFormatSupportsSubsetOfColumns("ORC");
 

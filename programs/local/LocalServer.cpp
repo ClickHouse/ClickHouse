@@ -137,6 +137,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 parquet_metadata_cache_size;
     extern const ServerSettingsUInt64 parquet_metadata_cache_max_entries;
     extern const ServerSettingsDouble parquet_metadata_cache_size_ratio;
+    extern const ServerSettingsString orc_metadata_cache_policy;
+    extern const ServerSettingsUInt64 orc_metadata_cache_size;
+    extern const ServerSettingsUInt64 orc_metadata_cache_max_entries;
+    extern const ServerSettingsDouble orc_metadata_cache_size_ratio;
     extern const ServerSettingsUInt64 max_active_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_io_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_io_thread_pool_size;
@@ -1126,6 +1130,18 @@ void LocalServer::processConfig()
         LOG_INFO(log, "Lowered Parquet metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(parquet_metadata_cache_size));
     }
     global_context->setParquetMetadataCache(parquet_metadata_cache_policy, parquet_metadata_cache_size, parquet_metadata_cache_max_entries, parquet_metadata_cache_size_ratio);
+#endif
+#if USE_ORC
+    String orc_metadata_cache_policy = server_settings[ServerSetting::orc_metadata_cache_policy];
+    size_t orc_metadata_cache_size = server_settings[ServerSetting::orc_metadata_cache_size];
+    size_t orc_metadata_cache_max_entries = server_settings[ServerSetting::orc_metadata_cache_max_entries];
+    double orc_metadata_cache_size_ratio = server_settings[ServerSetting::orc_metadata_cache_size_ratio];
+    if (orc_metadata_cache_size > max_cache_size)
+    {
+        orc_metadata_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered ORC metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(orc_metadata_cache_size));
+    }
+    global_context->setORCMetadataCache(orc_metadata_cache_policy, orc_metadata_cache_size, orc_metadata_cache_max_entries, orc_metadata_cache_size_ratio);
 #endif
 
     Names allowed_disks_table_engines;

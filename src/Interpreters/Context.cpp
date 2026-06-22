@@ -54,6 +54,7 @@
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
+#include <Processors/Formats/Impl/ORCMetadataCache.h>
 #include <Storages/StreamingStorageRegistry.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
@@ -579,6 +580,9 @@ struct ContextSharedPart : boost::noncopyable
 #endif
 #if USE_PARQUET
     mutable ParquetMetadataCachePtr parquet_metadata_cache TSA_GUARDED_BY(mutex);   /// Cache of deserialized parquet metadata files.
+#endif
+#if USE_ORC
+    mutable ORCMetadataCachePtr orc_metadata_cache TSA_GUARDED_BY(mutex);   /// Cache of serialized ORC file tails.
 #endif
     AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
     mutable PageCachePtr page_cache TSA_GUARDED_BY(mutex);                            /// Userspace page cache.
@@ -4650,6 +4654,60 @@ std::shared_ptr<ParquetMetadataCache> Context::tryGetParquetMetadataCache() cons
 void Context::clearParquetMetadataCache() const
 {
     auto cache = getParquetMetadataCache();
+
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
+}
+#endif
+
+#if USE_ORC
+void Context::setORCMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->orc_metadata_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ORC metadata cache has been already created.");
+
+    shared->orc_metadata_cache = std::make_shared<ORCMetadataCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
+}
+
+void Context::updateORCMetadataCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->orc_metadata_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ORC metadata cache was not created yet.");
+
+    size_t size = config.getUInt64("orc_metadata_cache_size", DEFAULT_ORC_METADATA_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("orc_metadata_cache_max_entries", DEFAULT_ORC_METADATA_CACHE_MAX_ENTRIES);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered ORC metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->orc_metadata_cache->setMaxSizeInBytes(size);
+    shared->orc_metadata_cache->setMaxCount(max_entries);
+}
+
+std::shared_ptr<ORCMetadataCache> Context::getORCMetadataCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->orc_metadata_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ORC metadata cache was not created yet.");
+    return shared->orc_metadata_cache;
+}
+
+std::shared_ptr<ORCMetadataCache> Context::tryGetORCMetadataCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->orc_metadata_cache;
+}
+
+void Context::clearORCMetadataCache() const
+{
+    auto cache = getORCMetadataCache();
 
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)

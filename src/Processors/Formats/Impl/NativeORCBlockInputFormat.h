@@ -13,6 +13,8 @@
 #include <boost/algorithm/string.hpp>
 #include <orc/OrcFile.hh>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Processors/Formats/Impl/ORCMetadataCache.h>
 
 namespace DB
 {
@@ -71,7 +73,9 @@ public:
         const FormatSettings & format_settings_,
         bool use_prefetch_,
         size_t min_bytes_for_seek_,
-        FormatFilterInfoPtr format_filter_info_);
+        FormatFilterInfoPtr format_filter_info_,
+        ORCMetadataCachePtr metadata_cache_ = nullptr,
+        const std::optional<RelativePathWithMetadata> & object_with_metadata_ = std::nullopt);
 
     String getName() const override { return "ORCBlockInputFormat"; }
 
@@ -110,6 +114,8 @@ private:
     const bool use_prefetch;
     const size_t min_bytes_for_seek;
     FormatFilterInfoPtr format_filter_info;
+    ORCMetadataCachePtr metadata_cache;
+    const std::optional<RelativePathWithMetadata> object_with_metadata;
 
     std::vector<int> selected_stripes;
     size_t read_iterator{};
