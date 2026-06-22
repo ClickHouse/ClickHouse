@@ -724,8 +724,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                     continue;
 
                 auto edges = getApplicableExpressions(left->relations, right->relations);
-                bool connected = hasEquiConnection(edges, left->relations, right->relations)
-                    || query_graph.areTransitivelyConnected(left->relations, right->relations);
+                bool transitively_connected = query_graph.areTransitivelyConnected(left->relations, right->relations);
+                bool connected = hasEquiConnection(edges, left->relations, right->relations) || transitively_connected;
                 if (!connected && best_plan)
                     continue;
 
@@ -733,7 +733,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                 auto current_cost = computeJoinCost(left, right, selectivity);
                 if (!best_plan || current_cost < best_plan->cost)
                 {
-                    if (join_kind == JoinKind::Inner && !connected)
+                    if (join_kind == JoinKind::Inner && edges.empty() && !transitively_connected)
                         join_kind = JoinKind::Cross;
                     auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());
                     JoinOperator join_operator(join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified);
