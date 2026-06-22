@@ -40,7 +40,9 @@ namespace RequestChecksum
 {
 enum class Algorithm
 {
-    None,
+    /// The SDK's `Content-MD5` path, not a flexible `x-amz-checksum-*`; the helpers below skip it.
+    /// With checksums disabled it means no checksum at all.
+    MD5,
     CRC32,
     SHA256,
 };
@@ -53,7 +55,7 @@ inline Aws::S3::Model::ChecksumAlgorithm toSDKAlgorithm(Algorithm algorithm)
             return Model::ChecksumAlgorithm::CRC32;
         case Algorithm::SHA256:
             return Model::ChecksumAlgorithm::SHA256;
-        case Algorithm::None:
+        case Algorithm::MD5:
             break;
     }
     UNREACHABLE();
@@ -69,7 +71,7 @@ inline void setPartChecksum(Model::CompletedPart & part, Algorithm algorithm, co
         case Algorithm::SHA256:
             part.SetChecksumSHA256(checksum);
             return;
-        case Algorithm::None:
+        case Algorithm::MD5:
             break;
     }
     UNREACHABLE();
@@ -85,7 +87,7 @@ inline void setRequestChecksum(Model::UploadPartRequest & req, Algorithm algorit
         case Algorithm::SHA256:
             req.SetChecksumSHA256(checksum);
             return;
-        case Algorithm::None:
+        case Algorithm::MD5:
             break;
     }
     UNREACHABLE();
@@ -100,18 +102,18 @@ inline std::string calculateChecksum(Model::UploadPartRequest & req, Algorithm a
             return Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateCRC32(*(req.GetBody())));
         case Algorithm::SHA256:
             return Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateSHA256(*(req.GetBody())));
-        case Algorithm::None:
+        case Algorithm::MD5:
             break;
     }
     UNREACHABLE();
 }
 
-Algorithm getUploadChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket);
+Algorithm getUploadChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket, bool checksum_disabled);
 
 template <typename R>
 inline void setChecksumAlgorithm(R & request, Algorithm algorithm)
 {
-    if (algorithm == Algorithm::None)
+    if (algorithm == Algorithm::MD5)
         return;
 
     if constexpr (requires { request.SetChecksumAlgorithm(Model::ChecksumAlgorithm::CRC32); })
@@ -194,7 +196,7 @@ public:
 
     void setUploadChecksumAlgorithm(RequestChecksum::Algorithm algorithm)
     {
-        if (algorithm == RequestChecksum::Algorithm::None)
+        if (algorithm == RequestChecksum::Algorithm::MD5)
             return;
 
         upload_checksum_algorithm = algorithm;
@@ -203,7 +205,7 @@ public:
 
     bool hasRequestChecksum() const
     {
-        return is_s3express_bucket || upload_checksum_algorithm != RequestChecksum::Algorithm::None;
+        return is_s3express_bucket || upload_checksum_algorithm != RequestChecksum::Algorithm::MD5;
     }
 
 protected:
@@ -212,7 +214,7 @@ protected:
     mutable ApiMode api_mode{ApiMode::AWS};
     mutable bool checksum = true;
     bool is_s3express_bucket = false;
-    RequestChecksum::Algorithm upload_checksum_algorithm = RequestChecksum::Algorithm::None;
+    RequestChecksum::Algorithm upload_checksum_algorithm = RequestChecksum::Algorithm::MD5;
 };
 
 class CopyObjectRequest : public ExtendedRequest<Model::CopyObjectRequest>

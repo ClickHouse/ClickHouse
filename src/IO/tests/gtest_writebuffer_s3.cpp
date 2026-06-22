@@ -964,7 +964,12 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmValidationAndNormalization)
 
     ASSERT_EQ("CRC32", request_settings[S3RequestSetting::upload_checksum_algorithm].value);
 
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "MD5";
+    /// `MD5` is valid and upper-cased.
+    getSettings()[Setting::s3_upload_checksum_algorithm] = "md5";
+    request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ true);
+    ASSERT_EQ("MD5", request_settings[S3RequestSetting::upload_checksum_algorithm].value);
+
+    getSettings()[Setting::s3_upload_checksum_algorithm] = "MD4";
 
     EXPECT_THROW({
         try
@@ -974,7 +979,7 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmValidationAndNormalization)
         catch (const DB::Exception & e)
         {
             ASSERT_EQ(ErrorCodes::INVALID_SETTING_VALUE, e.code());
-            EXPECT_THAT(e.what(), testing::HasSubstr("only supports CRC32 and SHA256"));
+            EXPECT_THAT(e.what(), testing::HasSubstr("only supports CRC32, SHA256 and MD5"));
             throw;
         }
     }, DB::Exception);

@@ -5,6 +5,7 @@
 #include <IO/S3Defines.h>
 #include <IO/S3RequestSettings.h>
 #include <Interpreters/Context.h>
+#include <Common/Crypto/OpenSSLInitializer.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/Throttler.h>
@@ -244,12 +245,19 @@ void S3RequestSettings::validateUploadSettings()
             "Setting storage_class has invalid value {} which only supports STANDARD and INTELLIGENT_TIERING",
             (*this)[S3RequestSetting::storage_class_name].value);
 
-    NameSet upload_checksum_algorithms {"CRC32", "SHA256"};
-    if (!(*this)[S3RequestSetting::upload_checksum_algorithm].value.empty() && !upload_checksum_algorithms.contains((*this)[S3RequestSetting::upload_checksum_algorithm]))
+    const auto & upload_checksum_algorithm = (*this)[S3RequestSetting::upload_checksum_algorithm].value;
+    NameSet upload_checksum_algorithms {"CRC32", "SHA256", "MD5"};
+    if (!upload_checksum_algorithm.empty() && !upload_checksum_algorithms.contains(upload_checksum_algorithm))
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting upload_checksum_algorithm has invalid value {} which only supports CRC32 and SHA256",
-            (*this)[S3RequestSetting::upload_checksum_algorithm].value);
+            "Setting upload_checksum_algorithm has invalid value {} which only supports CRC32, SHA256 and MD5",
+            upload_checksum_algorithm);
+
+    /// No `MD5` under FIPS — it would silently send no checksum.
+    if (upload_checksum_algorithm == "MD5" && OpenSSLInitializer::instance().isFIPSEnabled())
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting upload_checksum_algorithm cannot be MD5 when FIPS mode is enabled; use CRC32 or SHA256");
 
     /// TODO: it's possible to set too small limits.
     /// We can check that max possible object size is not too small.

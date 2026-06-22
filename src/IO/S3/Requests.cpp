@@ -4,6 +4,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/Crypto/OpenSSLInitializer.h>
 #include <IO/S3RequestSettings.h>
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/core/utils/xml/XmlSerializer.h>
@@ -19,18 +20,29 @@ namespace DB::S3RequestSetting
 namespace DB::S3
 {
 
-RequestChecksum::Algorithm RequestChecksum::getUploadChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket)
+RequestChecksum::Algorithm RequestChecksum::getUploadChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket, bool checksum_disabled)
 {
     if (is_s3express_bucket)
         return RequestChecksum::Algorithm::CRC32;
 
+    /// Explicit `CRC32`/`SHA256` override `s3_disable_checksum`.
+    /// `MD5` only defers to `Content-MD5`, so disabling checksums still suppresses it.
     const auto & algorithm = request_settings[DB::S3RequestSetting::upload_checksum_algorithm].value;
     if (algorithm == "CRC32")
         return RequestChecksum::Algorithm::CRC32;
     if (algorithm == "SHA256")
         return RequestChecksum::Algorithm::SHA256;
+    if (algorithm == "MD5")
+        return RequestChecksum::Algorithm::MD5;
 
-    return RequestChecksum::Algorithm::None;
+    if (checksum_disabled)
+        return RequestChecksum::Algorithm::MD5;
+
+    /// FIPS has no `MD5`: the SDK drops `Content-MD5` silently and Object Lock uploads get rejected.
+    if (OpenSSLInitializer::instance().isFIPSEnabled())
+        return RequestChecksum::Algorithm::SHA256;
+
+    return RequestChecksum::Algorithm::MD5;
 }
 
 Aws::Http::HeaderValueCollection CopyObjectRequest::GetRequestSpecificHeaders() const
