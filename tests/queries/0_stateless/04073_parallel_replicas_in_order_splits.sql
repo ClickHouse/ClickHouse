@@ -48,4 +48,14 @@ SELECT
     num_sources >= 4
 FROM (EXPLAIN PIPELINE SELECT a FROM t_in_order_splits ORDER BY a DESC);
 
+-- Correctness: the split assignment must cover every row exactly once for both directions.
+-- Pipeline-shape checks above don't catch this — a regression that dropped or duplicated
+-- ranges while keeping `num_sources` at 4 would still satisfy them. `count` + `sum` against
+-- the known data baseline (a = 0..999999) fails immediately under drop or duplication.
+SELECT 'in-order count+sum', count() = 1000000, sum(a) = 499999500000
+FROM (SELECT a FROM t_in_order_splits ORDER BY a);
+
+SELECT 'reverse-order count+sum', count() = 1000000, sum(a) = 499999500000
+FROM (SELECT a FROM t_in_order_splits ORDER BY a DESC);
+
 DROP TABLE t_in_order_splits;
