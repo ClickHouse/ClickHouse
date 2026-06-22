@@ -157,7 +157,7 @@ std::vector<FilenameTable> parseCovMapFilenames(
                     CompressionMethod::Zlib, reinterpret_cast<const char *>(fp), compressed_len,
                     uncompressed.data(), uncompressed_len);
             }
-            catch (...)
+            catch (...) /// Ok: skip coverage records that fail to decompress, matching the zlib path below.
             {
                 continue;
             }

@@ -58,7 +58,7 @@ private:
     void writeTrailer();
 
     libdeflate_compressor * compressor = nullptr;
-    CompressionMethod method;
+    CompressionMethod method = CompressionMethod::None;
     /// CRC32 (gzip) or Adler32 (zlib), updated as data is consumed.
     uint32_t checksum = 0;
     uint64_t total_in = 0;
