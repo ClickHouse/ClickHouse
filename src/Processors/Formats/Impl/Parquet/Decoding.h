@@ -10,6 +10,11 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace DB
+{
+class ColumnLowCardinality;
+}
+
 namespace DB::Parquet
 {
 
@@ -47,6 +52,7 @@ struct Dictionary
     bool isInitialized() const;
     double getAverageValueSize() const;
     void index(const ColumnUInt32 & indexes_col, IColumn & out);
+    void insertIndexesIntoLowCardinalityColumn(const ColumnUInt32 & indexes_col, ColumnLowCardinality & out);
     void decode(parq::Encoding::type encoding, const PageDecoderInfo & info, size_t num_values, std::span<const char> data_, const IDataType & raw_decoded_type);
 };
 

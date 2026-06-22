@@ -7,6 +7,8 @@
 
 namespace DB
 {
+    struct FormatSettings;
+
     struct PrewhereInfo;
     using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 
@@ -25,13 +27,15 @@ namespace DB
         /// It can contain more columns than were requested if format doesn't support
         /// reading subset of columns.
         Block format_header;
+        /// Columns that are read by `IInputFormat` only to evaluate `PREWHERE`/row-level filters.
+        /// They are not exposed in `source_header`.
+        Block format_filter_input_header;
         /// Description of columns for format_header. Used for inserting defaults.
         ColumnsDescription columns_description;
         /// Columns to request from IInputFormat.
-        /// Includes columns to read from file and columns outputted by the prewhere expression
+        /// Includes columns to read from file and columns produced by the prewhere expression
         /// (the prewhere columns are not necessarily at the end of the list).
-        /// Doesn't include columns that are only used as prewhere input; IInputFormat should deduce
-        /// them from prewhere expression.
+        /// Doesn't include columns that are only used as prewhere input.
         NamesAndTypesList requested_columns;
         /// The list of requested virtual columns.
         NamesAndTypesList requested_virtual_columns;
@@ -75,15 +79,11 @@ namespace DB
 
     /// Get all needed information for reading from data in some input format.
     ///
-    /// `supports_tuple_elements` controls how tuple element access is handled, e.g. "t.x".
-    /// If true, we'll request "t.x" from the format, expecting it to interpret the dot correctly.
-    /// If false, we'll ask the format to read the whole tuple "t"; then the needed subcolumns are
-    /// extracted by ExtractColumnsTransform later in the pipeline.
-    /// For subcolumns that are not tuple elements (e.g. dynamic subcolumns "json_column.some_map_key"
-    /// or special subcolumns like "nullable.null" for null map), we request the whole column either way.
-    /// Note: currently `supports_tuple_elements` just means ParquetV3BlockInputFormat; if in future
-    /// we add support for other subcolumn types in ParquetV3BlockInputFormat, we can just rename
-    /// this bool instead of adding another one.
+    /// `supports_tuple_elements` controls whether the format can read some subcolumns directly.
+    /// If true, we'll request tuple elements such as `t.x`, and fixed `JSON`/`Dynamic` subcolumns
+    /// when the type declares them. Unsupported subcolumns still fall back to the storage column
+    /// and are extracted by `ExtractColumnsTransform` later in the pipeline.
+    /// Note: currently `supports_tuple_elements` just means `ParquetV3BlockInputFormat`.
     ReadFromFormatInfo prepareReadingFromFormat(
         const Strings & requested_columns,
         const StorageSnapshotPtr & storage_snapshot,
@@ -94,6 +94,16 @@ namespace DB
 
     /// Returns columns_to_read from file.
     Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns);
+
+    /// Returns columns that file-like storages can use in `PREWHERE` for this exact format.
+    /// Top-level columns come from metadata. Format-readable subcolumns are added only for
+    /// formats whose reader can consume the corresponding subpath directly.
+    NameSet getSupportedPrewhereColumnsForFormat(
+        const StorageMetadataPtr & metadata_snapshot,
+        const ContextPtr & context,
+        const String & format_name,
+        const std::optional<FormatSettings> & format_settings,
+        const NamesAndTypesList & exclude);
 
     ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info);
 

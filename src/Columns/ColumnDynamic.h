@@ -69,32 +69,92 @@ private:
     friend class COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>;
 
     explicit ColumnDynamic(size_t max_dynamic_types_);
-    ColumnDynamic(MutableColumnPtr variant_column_, const DataTypePtr & variant_type_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {});
-    ColumnDynamic(MutableColumnPtr variant_column_, const VariantInfo & variant_info_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {});
+    ColumnDynamic(
+        MutableColumnPtr variant_column_,
+        const DataTypePtr & variant_type_,
+        size_t max_dynamic_types_,
+        size_t global_max_dynamic_types_,
+        const StatisticsPtr & statistics_ = {},
+        bool dynamic_structure_is_fixed_ = false);
+    ColumnDynamic(
+        MutableColumnPtr variant_column_,
+        const VariantInfo & variant_info_,
+        size_t max_dynamic_types_,
+        size_t global_max_dynamic_types_,
+        const StatisticsPtr & statistics_ = {},
+        bool dynamic_structure_is_fixed_ = false);
 
 public:
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
     using Base = COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>;
-    static Ptr create(const ColumnPtr & variant_column_, const VariantInfo & variant_info_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {})
+    static Ptr create(
+        const ColumnPtr & variant_column_,
+        const VariantInfo & variant_info_,
+        size_t max_dynamic_types_,
+        size_t global_max_dynamic_types_,
+        const StatisticsPtr & statistics_ = {},
+        bool dynamic_structure_is_fixed_ = false)
     {
-        return ColumnDynamic::create(variant_column_->assumeMutable(), variant_info_, max_dynamic_types_, global_max_dynamic_types_, statistics_);
+        return ColumnDynamic::create(
+            variant_column_->assumeMutable(),
+            variant_info_,
+            max_dynamic_types_,
+            global_max_dynamic_types_,
+            statistics_,
+            dynamic_structure_is_fixed_);
     }
 
-    static MutablePtr create(MutableColumnPtr variant_column_, const VariantInfo & variant_info_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {})
+    static MutablePtr create(
+        MutableColumnPtr variant_column_,
+        const VariantInfo & variant_info_,
+        size_t max_dynamic_types_,
+        size_t global_max_dynamic_types_,
+        const StatisticsPtr & statistics_ = {},
+        bool dynamic_structure_is_fixed_ = false)
     {
-        return Base::create(std::move(variant_column_), variant_info_, max_dynamic_types_, global_max_dynamic_types_, statistics_);
+        return Base::create(
+            std::move(variant_column_),
+            variant_info_,
+            max_dynamic_types_,
+            global_max_dynamic_types_,
+            statistics_,
+            dynamic_structure_is_fixed_);
     }
 
-    static MutablePtr create(MutableColumnPtr variant_column_, const DataTypePtr & variant_type_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {})
+    static MutablePtr create(
+        MutableColumnPtr variant_column_,
+        const DataTypePtr & variant_type_,
+        size_t max_dynamic_types_,
+        size_t global_max_dynamic_types_,
+        const StatisticsPtr & statistics_ = {},
+        bool dynamic_structure_is_fixed_ = false)
     {
-        return Base::create(std::move(variant_column_), variant_type_, max_dynamic_types_, global_max_dynamic_types_, statistics_);
+        return Base::create(
+            std::move(variant_column_),
+            variant_type_,
+            max_dynamic_types_,
+            global_max_dynamic_types_,
+            statistics_,
+            dynamic_structure_is_fixed_);
     }
 
-    static ColumnPtr create(ColumnPtr variant_column_, const DataTypePtr & variant_type, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {})
+    static ColumnPtr create(
+        ColumnPtr variant_column_,
+        const DataTypePtr & variant_type,
+        size_t max_dynamic_types_,
+        size_t global_max_dynamic_types_,
+        const StatisticsPtr & statistics_ = {},
+        bool dynamic_structure_is_fixed_ = false)
     {
-        return create(variant_column_->assumeMutable(), variant_type, max_dynamic_types_, global_max_dynamic_types_, statistics_);
+        return create(
+            variant_column_->assumeMutable(),
+            variant_type,
+            max_dynamic_types_,
+            global_max_dynamic_types_,
+            statistics_,
+            dynamic_structure_is_fixed_);
     }
 
     static MutablePtr create(size_t max_dynamic_types_ = MAX_DYNAMIC_TYPES_LIMIT)
@@ -117,12 +177,18 @@ public:
     MutableColumnPtr cloneEmpty() const override
     {
         /// Keep current dynamic structure
-        return Base::create(variant_column->cloneEmpty(), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
+        return Base::create(variant_column->cloneEmpty(), variant_info, max_dynamic_types, global_max_dynamic_types, statistics, dynamic_structure_is_fixed);
     }
 
     MutableColumnPtr cloneResized(size_t size) const override
     {
-        return Base::create(variant_column->cloneResized(size), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
+        return Base::create(
+            variant_column->cloneResized(size),
+            variant_info,
+            max_dynamic_types,
+            global_max_dynamic_types,
+            statistics,
+            dynamic_structure_is_fixed);
     }
 
     size_t size() const override
@@ -158,6 +224,9 @@ public:
 
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
+    void insertTypedValueFrom(const IColumn & src, const DataTypePtr & type, size_t n);
+    std::optional<ColumnVariant::Discriminator> findVariantDiscriminatorForType(const DataTypePtr & type, bool require_storage_compatible = false) const;
+    void insertValueIntoVariantFrom(ColumnVariant::Discriminator discriminator, const IColumn & src, size_t n);
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src_, size_t n) override;
@@ -212,7 +281,13 @@ public:
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
-        return create(variant_column_ptr->filter(filt, result_size_hint), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
+        return create(
+            variant_column_ptr->filter(filt, result_size_hint),
+            variant_info,
+            max_dynamic_types,
+            global_max_dynamic_types,
+            statistics,
+            dynamic_structure_is_fixed);
     }
 
     void filter(const Filter & filt) override
@@ -228,17 +303,35 @@ public:
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
-        return create(variant_column_ptr->permute(perm, limit), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
+        return create(
+            variant_column_ptr->permute(perm, limit),
+            variant_info,
+            max_dynamic_types,
+            global_max_dynamic_types,
+            statistics,
+            dynamic_structure_is_fixed);
     }
 
     ColumnPtr index(const IColumn & indexes, size_t limit) const override
     {
-        return create(variant_column_ptr->index(indexes, limit), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
+        return create(
+            variant_column_ptr->index(indexes, limit),
+            variant_info,
+            max_dynamic_types,
+            global_max_dynamic_types,
+            statistics,
+            dynamic_structure_is_fixed);
     }
 
     ColumnPtr replicate(const Offsets & replicate_offsets) const override
     {
-        return create(variant_column_ptr->replicate(replicate_offsets), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
+        return create(
+            variant_column_ptr->replicate(replicate_offsets),
+            variant_info,
+            max_dynamic_types,
+            global_max_dynamic_types,
+            statistics,
+            dynamic_structure_is_fixed);
     }
 
     VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override
@@ -247,7 +340,14 @@ public:
         VectorWithMemoryTracking<MutableColumnPtr> scattered_columns;
         scattered_columns.reserve(num_columns);
         for (auto & scattered_variant_column : scattered_variant_columns)
-            scattered_columns.emplace_back(create(std::move(scattered_variant_column), variant_info, max_dynamic_types, global_max_dynamic_types, statistics));
+            scattered_columns.emplace_back(
+                create(
+                    std::move(scattered_variant_column),
+                    variant_info,
+                    max_dynamic_types,
+                    global_max_dynamic_types,
+                    statistics,
+                    dynamic_structure_is_fixed));
 
         return scattered_columns;
     }
@@ -505,6 +605,9 @@ private:
     /// (for example, max_dynamic_types can be reduced in `chooseDynamicStructureForMerge`
     /// or `takeExactDynamicStructureFrom` before merge of different Dynamic columns).
     size_t global_max_dynamic_types;
+    /// True when the current variant layout was selected deliberately and must not be
+    /// widened during insertion. Merge result columns rely on this for stable serialization.
+    bool dynamic_structure_is_fixed = false;
 
     /// Size statistics of each variants from MergeTree data part.
     /// Used in `chooseDynamicStructureForMerge` and set during deserialization.

@@ -5,12 +5,15 @@
 
 #if USE_PARQUET
 
+#include <Columns/ColumnsCommon.h>
+#include <Columns/FilterDescription.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
+#include <Interpreters/ExpressionActions.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/VarInt.h>
 #include <IO/copyData.h>
@@ -25,6 +28,78 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+void filterMissingValues(BlockMissingValues & missing_values, const IColumnFilter & filter, size_t rows_before_filter)
+{
+    if (missing_values.empty())
+        return;
+
+    BlockMissingValues filtered_missing_values(missing_values.getNumColumns());
+    size_t filtered_row_idx = 0;
+    for (size_t row_idx = 0; row_idx < rows_before_filter; ++row_idx)
+    {
+        if (!filter[row_idx])
+            continue;
+
+        for (size_t column_idx = 0; column_idx < missing_values.getNumColumns(); ++column_idx)
+        {
+            const auto & bitmask = missing_values.getDefaultsBitmask(column_idx);
+            if (row_idx < bitmask.size() && bitmask.test(row_idx))
+                filtered_missing_values.setBit(column_idx, filtered_row_idx);
+        }
+
+        ++filtered_row_idx;
+    }
+
+    missing_values = std::move(filtered_missing_values);
+}
+
+void composeRowNumberFilter(ChunkInfoRowNumbers & row_numbers, const IColumnFilter & filter, size_t rows_before_filter)
+{
+    if (filter.size() != rows_before_filter)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot compose row-number filter of size {} with chunk of {} rows",
+            filter.size(),
+            rows_before_filter);
+
+    if (!row_numbers.applied_filter)
+    {
+        row_numbers.applied_filter.emplace(filter.begin(), filter.end());
+        return;
+    }
+
+    auto & previous_filter = *row_numbers.applied_filter;
+    size_t filter_pos = 0;
+    for (auto & value : previous_filter)
+    {
+        if (!value)
+            continue;
+
+        if (filter_pos >= filter.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough rows in filter while composing row-number filter");
+
+        if (!filter[filter_pos])
+            value = 0;
+
+        ++filter_pos;
+    }
+
+    if (filter_pos != filter.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many rows in filter while composing row-number filter");
+}
+
+void updateRowNumberInfoAfterFilter(Chunk & chunk, const IColumnFilter & filter, size_t rows_before_filter)
+{
+    auto row_numbers = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
+    if (row_numbers)
+        composeRowNumberFilter(*row_numbers, filter, rows_before_filter);
+}
+
 }
 
 static Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
@@ -100,6 +175,16 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             reader->reader.file_metadata = getFileMetadata(reader->reader.prefetcher);
             reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
             reader->init(parser_shared_resources, buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt);
+
+            if (reader->reader.isPrewhereDeferred() && format_filter_info->prewhere_info)
+            {
+                const auto & prewhere_info = *format_filter_info->prewhere_info;
+                deferred_prewhere_actions = std::make_shared<ExpressionActions>(prewhere_info.prewhere_actions.clone());
+                deferred_prewhere_column_name = prewhere_info.prewhere_column_name;
+
+                Block transformed_header = prewhere_info.prewhere_actions.updateHeader(getPort().getHeader());
+                deferred_prewhere_filter_column_position = transformed_header.getPositionByName(deferred_prewhere_column_name);
+            }
         }
     }
 }
@@ -118,6 +203,75 @@ parquet::format::FileMetaData ParquetV3BlockInputFormat::getFileMetadata(Parquet
     {
         return Parquet::Reader::readFileMetaData(prefetcher);
     }
+}
+
+bool ParquetV3BlockInputFormat::applyDeferredPrewhere(Chunk & chunk)
+{
+    if (!deferred_prewhere_actions)
+        return true;
+
+    const size_t rows_before = chunk.getNumRows();
+    Columns input_columns = chunk.detachColumns();
+    const Block & header = getPort().getHeader();
+    Block block = header.cloneWithColumns(input_columns);
+    deferred_prewhere_actions->execute(block, rows_before);
+
+    const ColumnPtr filter_column = block.getByPosition(deferred_prewhere_filter_column_position).column;
+
+    Columns columns;
+    columns.reserve(header.columns());
+    for (size_t i = 0; i < header.columns(); ++i)
+    {
+        const auto & column = header.getByPosition(i);
+        if (auto position = block.findPositionByName(column.name))
+            columns.push_back(block.getByPosition(*position).column);
+        else
+            columns.push_back(std::move(input_columns[i]));
+    }
+
+    ConstantFilterDescription constant_filter_description(*filter_column);
+
+    if (constant_filter_description.always_true)
+    {
+        chunk.setColumns(std::move(columns), rows_before);
+        return true;
+    }
+
+    if (constant_filter_description.always_false)
+    {
+        previous_block_missing_values.clear();
+        return false;
+    }
+
+    FilterDescription filter_description(*filter_column);
+    const IColumnFilter & filter = *filter_description.data;
+    const size_t rows_after = filter_description.countBytesInFilter();
+
+    if (rows_after == 0)
+    {
+        previous_block_missing_values.clear();
+        return false;
+    }
+
+    if (rows_after != rows_before)
+    {
+        for (auto & column : columns)
+        {
+            if (isColumnConst(*column))
+                column = column->cut(0, rows_after);
+            else
+                column = filter_description.filter(*column, rows_after);
+        }
+    }
+
+    chunk.setColumns(std::move(columns), rows_after);
+    if (rows_after != rows_before)
+    {
+        filterMissingValues(previous_block_missing_values, filter, rows_before);
+        updateRowNumberInfoAfterFilter(chunk, filter, rows_before);
+    }
+
+    return true;
 }
 
 Chunk ParquetV3BlockInputFormat::read()
@@ -141,10 +295,21 @@ Chunk ParquetV3BlockInputFormat::read()
     }
 
     initializeIfNeeded();
-    auto res = reader->read();
-    previous_block_missing_values = res.block_missing_values;
-    previous_approx_bytes_read_for_chunk = res.virtual_bytes_read;
-    return std::move(res.chunk);
+
+    while (true)
+    {
+        auto res = reader->read();
+        if (!res.chunk)
+            return {};
+
+        previous_block_missing_values = std::move(res.block_missing_values);
+        previous_approx_bytes_read_for_chunk = res.virtual_bytes_read;
+
+        if (!applyDeferredPrewhere(res.chunk))
+            continue;
+
+        return std::move(res.chunk);
+    }
 }
 
 std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat::getMatchedBuckets() const
@@ -198,6 +363,9 @@ void ParquetV3BlockInputFormat::resetParser()
         std::lock_guard lock(reader_mutex);
         reader.reset();
     }
+    deferred_prewhere_actions.reset();
+    deferred_prewhere_column_name.clear();
+    deferred_prewhere_filter_column_position = 0;
     previous_block_missing_values.clear();
     IInputFormat::resetParser();
 }
@@ -552,8 +720,9 @@ void registerParquetSchemaReader(FormatFactory & factory)
         [](const FormatSettings & settings)
         {
             return fmt::format(
-                "schema_inference_make_columns_nullable={};enable_json_parsing={}",
+                "schema_inference_make_columns_nullable={};schema_inference_make_json_columns_nullable={};enable_json_parsing={}",
                 settings.schema_inference_make_columns_nullable,
+                settings.schema_inference_make_json_columns_nullable,
                 settings.parquet.enable_json_parsing);
         });
 }

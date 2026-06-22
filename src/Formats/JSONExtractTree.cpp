@@ -1686,16 +1686,27 @@ public:
         }
 
         auto element_type_name = element_type->getName();
-        if (column_dynamic.addNewVariant(element_type, element_type_name))
+        auto global_discriminator = column_dynamic.findVariantDiscriminatorForType(element_type);
+        DataTypePtr variant_type_for_insert;
+        if (global_discriminator)
+            variant_type_for_insert = variant_types[*global_discriminator];
+
+        if (!global_discriminator && column_dynamic.addNewVariant(element_type, element_type_name))
         {
-            auto it = json_extract_nodes_cache.find(element_type_name);
+            global_discriminator = variant_info.variant_name_to_discriminator.at(element_type_name);
+            variant_type_for_insert = element_type;
+        }
+
+        if (global_discriminator)
+        {
+            const auto & variant_type_name = variant_info.variant_names[*global_discriminator];
+            auto it = json_extract_nodes_cache.find(variant_type_name);
             if (it == json_extract_nodes_cache.end())
-                it = json_extract_nodes_cache.emplace(element_type_name, buildJSONExtractTree<JSONParser>(element_type, "Dynamic inference")).first;
-            auto global_discriminator = variant_info.variant_name_to_discriminator.at(element_type_name);
-            auto & variant = variant_column.getVariantByGlobalDiscriminator(global_discriminator);
+                it = json_extract_nodes_cache.emplace(variant_type_name, buildJSONExtractTree<JSONParser>(variant_type_for_insert, "Dynamic inference")).first;
+            auto & variant = variant_column.getVariantByGlobalDiscriminator(*global_discriminator);
             if (!it->second->insertResultToColumn(variant, element, insert_settings, format_settings, error))
                 return false;
-            variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(global_discriminator));
+            variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(*global_discriminator));
             variant_column.getOffsets().push_back(variant.size() - 1);
             return true;
         }

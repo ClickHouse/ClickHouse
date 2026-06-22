@@ -118,7 +118,8 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         context,
         configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
         query_info.row_level_filter,
-        query_info.prewhere_info);
+        query_info.prewhere_info,
+        info.format_filter_input_header);
 
     for (size_t i = 0; i < num_streams; ++i)
     {

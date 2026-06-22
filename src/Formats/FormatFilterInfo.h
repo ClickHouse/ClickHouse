@@ -55,7 +55,8 @@ struct FormatFilterInfo
         const ContextPtr & context_,
         ColumnMapperPtr column_mapper_,
         FilterDAGInfoPtr row_level_filter_,
-        PrewhereInfoPtr prewhere_info_);
+        PrewhereInfoPtr prewhere_info_,
+        Block additional_columns_ = {});
 
     FormatFilterInfo();
 

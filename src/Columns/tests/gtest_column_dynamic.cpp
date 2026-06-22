@@ -923,6 +923,64 @@ TEST(ColumnDynamic, InsertRangeFromOverflow9)
     ASSERT_EQ(field, Field(Array({Field(42)})));
 }
 
+TEST(ColumnDynamic, InsertRangeFromRestoresGlobalLimitWhenSharedVariantIsEmpty)
+{
+    auto column_from = ColumnDynamic::create(2);
+    column_from->insert(Field(42.42));
+
+    auto base_column_to = ColumnDynamic::create(1);
+    base_column_to->insert(Field("str"));
+    ASSERT_TRUE(base_column_to->getSharedVariant().empty());
+
+    auto column_to_holder = ColumnDynamic::create(
+        base_column_to->getVariantColumnPtr(),
+        base_column_to->getVariantInfo(),
+        base_column_to->getMaxDynamicTypes(),
+        2)->assumeMutable();
+    auto & column_to = assert_cast<ColumnDynamic &>(*column_to_holder);
+    ASSERT_EQ(column_to.getMaxDynamicTypes(), 1);
+    ASSERT_EQ(column_to.getGlobalMaxDynamicTypes(), 2);
+
+    column_to.insertRangeFrom(*column_from, 0, 1);
+    ASSERT_TRUE(column_to.getVariantInfo().variant_name_to_discriminator.contains("Float64"));
+    ASSERT_EQ(column_to.getSharedVariant().size(), 0);
+    ASSERT_NE(column_to.getVariantColumn().globalDiscriminatorAt(column_to.size() - 1), column_to.getSharedVariantDiscriminator());
+    ASSERT_EQ(column_to[column_to.size() - 1], Field(42.42));
+}
+
+TEST(ColumnDynamic, InsertRangeFromKeepsStructureChosenForMergeWhenSharedVariantIsEmpty)
+{
+    auto source_for_structure = ColumnDynamic::create(2);
+    source_for_structure->insert(Field(42));
+
+    VectorWithMemoryTracking<ColumnPtr> source_columns;
+    source_columns.push_back(std::move(source_for_structure));
+
+    auto column_to = ColumnDynamic::create(2);
+    column_to->chooseDynamicStructureForMerge(source_columns, std::nullopt);
+    ASSERT_EQ(column_to->getMaxDynamicTypes(), 1);
+    ASSERT_EQ(column_to->getGlobalMaxDynamicTypes(), 2);
+    ASSERT_TRUE(column_to->getSharedVariant().empty());
+
+    auto column_from = ColumnDynamic::create(2);
+    column_from->insert(Field(42.42));
+
+    IColumn::Filter empty_filter;
+    auto filtered_column_holder = column_to->filter(empty_filter, 0)->assumeMutable();
+    auto & filtered_column = assert_cast<ColumnDynamic &>(*filtered_column_holder);
+    filtered_column.insertRangeFrom(*column_from, 0, 1);
+    ASSERT_FALSE(filtered_column.getVariantInfo().variant_name_to_discriminator.contains("Float64"));
+    ASSERT_EQ(filtered_column.getSharedVariant().size(), 1);
+    ASSERT_EQ(filtered_column.getVariantColumn().globalDiscriminatorAt(filtered_column.size() - 1), filtered_column.getSharedVariantDiscriminator());
+    ASSERT_EQ(filtered_column[filtered_column.size() - 1], Field(42.42));
+
+    column_to->insertRangeFrom(*column_from, 0, 1);
+    ASSERT_FALSE(column_to->getVariantInfo().variant_name_to_discriminator.contains("Float64"));
+    ASSERT_EQ(column_to->getSharedVariant().size(), 1);
+    ASSERT_EQ(column_to->getVariantColumn().globalDiscriminatorAt(column_to->size() - 1), column_to->getSharedVariantDiscriminator());
+    ASSERT_EQ((*column_to)[column_to->size() - 1], Field(42.42));
+}
+
 TEST(ColumnDynamic, SerializeDeserializeFromArena1)
 {
     auto column = ColumnDynamic::create(254);

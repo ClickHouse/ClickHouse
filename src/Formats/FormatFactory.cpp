@@ -236,8 +236,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.prefer_block_bytes = settings[Setting::input_format_parquet_prefer_block_bytes];
     format_settings.parquet.output_compression_method = settings[Setting::output_format_parquet_compression_method];
     format_settings.parquet.output_compression_level = settings[Setting::output_format_compression_level];
-
-
+    format_settings.parquet.output_json_as_variant = settings[Setting::output_format_parquet_json_as_variant];
     format_settings.parquet.parallel_encoding = settings[Setting::output_format_parquet_parallel_encoding];
     format_settings.parquet.data_page_size = settings[Setting::output_format_parquet_data_page_size];
     format_settings.parquet.write_batch_size = settings[Setting::output_format_parquet_batch_size];

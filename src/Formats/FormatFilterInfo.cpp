@@ -61,11 +61,13 @@ FormatFilterInfo::FormatFilterInfo(
     const ContextPtr & context_,
     ColumnMapperPtr column_mapper_,
     FilterDAGInfoPtr row_level_filter_,
-    PrewhereInfoPtr prewhere_info_)
+    PrewhereInfoPtr prewhere_info_,
+    Block additional_columns_)
     : filter_actions_dag(filter_actions_dag_)
     , context(context_)
     , row_level_filter(std::move(row_level_filter_))
     , prewhere_info(std::move(prewhere_info_))
+    , additional_columns(std::move(additional_columns_))
     , column_mapper(column_mapper_)
 {
     bool use_query_condition_cache = context_->getSettingsRef()[Setting::use_query_condition_cache];
@@ -82,7 +84,7 @@ FormatFilterInfo::FormatFilterInfo() = default;
 
 bool FormatFilterInfo::hasFilter() const
 {
-    return filter_actions_dag != nullptr;
+    return filter_actions_dag != nullptr || row_level_filter != nullptr || prewhere_info != nullptr;
 }
 
 Block FormatFilterInfo::buildKeyConditionInputs(
@@ -121,9 +123,14 @@ void FormatFilterInfo::initKeyConditionOnce(const Block & keys)
                 if (!ctx)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Context has expired");
 
-                Block all_inputs = buildKeyConditionInputs(keys, prewhere_info, row_level_filter);
+                Block all_inputs = keys;
+                for (const auto & col : additional_columns)
+                    if (!all_inputs.has(col.name))
+                        all_inputs.insert(col);
+                all_inputs = buildKeyConditionInputs(std::move(all_inputs), prewhere_info, row_level_filter);
+
                 for (const auto & col : all_inputs)
-                    if (!keys.has(col.name))
+                    if (!keys.has(col.name) && !additional_columns.has(col.name))
                         additional_columns.insert(col);
 
                 ColumnsWithTypeAndName columns = all_inputs.getColumnsWithTypeAndName();

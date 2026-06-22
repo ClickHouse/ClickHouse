@@ -1,5 +1,7 @@
 #include <Processors/Formats/Impl/Parquet/Write.h>
+#include <Processors/Formats/Impl/Parquet/UUIDUtils.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
+#include <Processors/Formats/Impl/Parquet/VariantUtils.h>
 #include <arrow/util/key_value_metadata.h>
 #include <parquet/encoding.h>
 #include <parquet/schema.h>
@@ -9,7 +11,13 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <xxhash.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -474,20 +482,7 @@ struct ConverterUUID
 
         for (size_t i = 0; i < count; ++i)
         {
-            UUID res = column.getData()[offset + i];
-            auto * bytes = reinterpret_cast<uint8_t *>(&res);
-
-            if constexpr (std::endian::native == std::endian::little)
-            {
-                std::reverse(bytes, bytes + 8);
-                std::reverse(bytes + 8, bytes + 16);
-            }
-            else
-            {
-                std::swap_ranges(bytes, bytes + 8, bytes + 8);
-            }
-
-            swapped_buf[i] = res;
+            swapped_buf[i] = encodeParquetUUID(column.getData()[offset + i]);
             buf[i].ptr = reinterpret_cast<const uint8_t *>(&swapped_buf[i]);
         }
         return buf.data();
@@ -1276,7 +1271,6 @@ void writeColumnChunkBody(
         case TypeIndex::Object:
             writeColumnImpl<parquet::ByteArrayType>(s, options, out, ConverterJSON(s.primitive_column, s.type, format_settings));
             break;
-
         #define F(source_type) \
             writeColumnImpl<parquet::FLBAType>( \
                 s, options, out, ConverterNumberAsFixedString<source_type>(s.primitive_column))
@@ -1434,11 +1428,81 @@ static void writePageIndex(FileWriteState & file, WriteBuffer & out)
     }
 }
 
+static String appendVariantTypeHintPath(std::string_view parent_path, std::string_view child)
+{
+    return appendVariantMetadataPath(parent_path, child);
+}
+
+static void collectVariantTypeHintsForMetadata(
+    const DataTypePtr & type,
+    const WriteOptions & options,
+    const String & path,
+    Poco::JSON::Object::Ptr variant_type_hints,
+    bool is_top_level = false)
+{
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        String type_hint = getVariantTypeHintForMetadata(type.get());
+        if (!type_hint.empty())
+        {
+            if (!isStoredJSONVariantTypeHint(type_hint) || options.output_json_as_variant)
+                variant_type_hints->set(path, type_hint);
+            return;
+        }
+
+        collectVariantTypeHintsForMetadata(nullable->getNestedType(), options, path, variant_type_hints, is_top_level);
+        return;
+    }
+
+    if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+    {
+        collectVariantTypeHintsForMetadata(low_cardinality->getDictionaryType(), options, path, variant_type_hints);
+        return;
+    }
+
+    if (typeid_cast<const DataTypeDynamic *>(type.get()))
+    {
+        variant_type_hints->set(path, getVariantTypeHintForMetadata(type.get()));
+        return;
+    }
+
+    if (const auto * object = typeid_cast<const DataTypeObject *>(type.get()))
+    {
+        if (options.output_json_as_variant && object->getSchemaFormat() == DataTypeObject::SchemaFormat::JSON)
+            variant_type_hints->set(path, getVariantTypeHintForMetadata(type.get()));
+        return;
+    }
+
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        collectVariantTypeHintsForMetadata(array->getNestedType(), options, appendVariantTypeHintPath(path, "element"), variant_type_hints);
+        return;
+    }
+
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        for (size_t i = 0; i < tuple->getElements().size(); ++i)
+            collectVariantTypeHintsForMetadata(
+                tuple->getElement(i),
+                options,
+                appendVariantTypeHintPath(path, tuple->getNameByPosition(i + 1)),
+                variant_type_hints);
+        return;
+    }
+
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        collectVariantTypeHintsForMetadata(map->getKeyType(), options, appendVariantTypeHintPath(path, "key"), variant_type_hints);
+        collectVariantTypeHintsForMetadata(map->getValueType(), options, appendVariantTypeHintPath(path, "value"), variant_type_hints);
+    }
+}
+
 void writeFileFooter(FileWriteState & file,
     SchemaElements schema,
     const WriteOptions & options,
     WriteBuffer & out,
-    const Block & header)
+    const Block & header,
+    const VariantWrapperPaths & variant_wrapper_paths)
 {
     chassert(file.offset != 0);
     chassert(file.current_row_group.row_group.columns.empty());
@@ -1532,6 +1596,42 @@ void writeFileFooter(FileWriteState & file,
             meta.key_value_metadata.push_back(std::move(key_value));
             meta.__isset.key_value_metadata = true;
         }
+    }
+
+    Poco::JSON::Object::Ptr variant_type_hints = new Poco::JSON::Object;
+    for (const auto & [column_name, type] : header.getNamesAndTypesList())
+        collectVariantTypeHintsForMetadata(type, options, column_name, variant_type_hints, /*is_top_level=*/ true);
+
+    if (variant_type_hints->size() != 0)
+    {
+        std::ostringstream // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            oss;
+        Poco::JSON::Stringifier::stringify(variant_type_hints, oss);
+
+        parquet::format::KeyValue key_value;
+        key_value.__set_key(String(CLICKHOUSE_VARIANT_TYPE_HINTS_METADATA_KEY));
+        key_value.__set_value(oss.str());
+
+        meta.key_value_metadata.push_back(std::move(key_value));
+        meta.__isset.key_value_metadata = true;
+    }
+
+    if (!variant_wrapper_paths.empty())
+    {
+        Poco::JSON::Array::Ptr wrapper_paths = new Poco::JSON::Array;
+        for (const auto & path : variant_wrapper_paths)
+            wrapper_paths->add(path);
+
+        std::ostringstream // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            oss;
+        Poco::JSON::Stringifier::stringify(wrapper_paths, oss);
+
+        parquet::format::KeyValue key_value;
+        key_value.__set_key(String(CLICKHOUSE_VARIANT_WRAPPER_PATHS_METADATA_KEY));
+        key_value.__set_value(oss.str());
+
+        meta.key_value_metadata.push_back(std::move(key_value));
+        meta.__isset.key_value_metadata = true;
     }
 
     size_t footer_size = serializeThriftStruct(meta, out);

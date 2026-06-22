@@ -39,6 +39,7 @@ The table below shows how Parquet data types match ClickHouse [data types](/sql-
 | `INT96` | [DateTime64(9, 'UTC')](/sql-reference/data-types/datetime64.md) |
 | `BYTE_ARRAY`, `UTF8`, `ENUM`, `BSON` | [String](/sql-reference/data-types/string.md) |
 | `JSON` | [JSON](/sql-reference/data-types/newjson.md) |
+| `VARIANT` | [JSON](/sql-reference/data-types/newjson.md) by default when `input_format_parquet_enable_json_parsing = 1`; ClickHouse type-hint metadata can preserve [Dynamic](/sql-reference/data-types/dynamic.md) for files written from `Dynamic`; can also be read into [String](/sql-reference/data-types/string.md) |
 | `FIXED_LEN_BYTE_ARRAY` | [FixedString](/sql-reference/data-types/fixedstring.md) |
 | `DECIMAL` | [Decimal](/sql-reference/data-types/decimal.md) |
 | `LIST` | [Array](/sql-reference/data-types/array.md) |
@@ -77,6 +78,69 @@ For some Parquet types there's no closely matching ClickHouse type. We read them
 * `TIME` (time of day) is read as a timestamp. E.g. `10:23:13.000` becomes `1970-01-01 10:23:13.000`.
 * `TIMESTAMP`/`TIME` with `isAdjustedToUTC=false` is a local wall-clock time (year, month, day, hour, minute, second and subsecond fields in a local timezone, regardless of what specific time zone is considered local), same as SQL `TIMESTAMP WITHOUT TIME ZONE`. ClickHouse reads it as if it were a UTC timestamp instead. E.g. `2025-09-29 18:42:13.000` (representing a reading of a local wall clock) becomes `2025-09-29 18:42:13.000` (`DateTime64(3, 'UTC')` representing a point in time). If converted to String, it shows the correct year, month, day, hour, minute, second and subsecond, which can then be interpreted as being in some local timezone instead of UTC. Counterintuitively, changing the type from `DateTime64(3, 'UTC')` to `DateTime64(3)` would not help as both types represent a point in time rather than a clock reading, but `DateTime64(3)` would incorrectly be formatted using local timezone.
 * `INTERVAL` is currently read as `FixedString(12)` with raw binary representation of the time interval, as encoded in Parquet file.
+
+## Parquet `VARIANT` {#parquet-variant}
+
+ClickHouse can read and write Parquet columns annotated with the `VARIANT` logical type.
+
+Parquet `VARIANT` is not the same thing as the ClickHouse [`Variant(T1, T2, ...)`](/sql-reference/data-types/variant.md) data type. Parquet `VARIANT` is meant for semi-structured JSON-like data, while ClickHouse `Variant(T1, T2, ...)` is for values that can have one of several pre-defined types.
+
+### Schema inference {#parquet-variant-schema-inference}
+
+When schema inference is used and the file has no ClickHouse type-hint metadata, a Parquet `VARIANT` column is inferred as:
+
+* [`Dynamic`](/sql-reference/data-types/dynamic.md) if `input_format_parquet_enable_json_parsing = 0`.
+* [`JSON`](/sql-reference/data-types/newjson.md) if `input_format_parquet_enable_json_parsing = 1`.
+
+Files written by ClickHouse can store `ClickHouse.variant_type_hints` metadata. This metadata preserves whether a Parquet `VARIANT` column came from `Dynamic`, `JSON`, or a full `JSON(...)` type with declared paths and settings.
+
+You can also read the same column into:
+
+* [`JSON`](/sql-reference/data-types/newjson.md) or `Nullable(JSON)` if you want structured JSON output.
+* [`String`](/sql-reference/data-types/string.md) or `Nullable(String)` if you want the JSON representation as text.
+
+Accessing `Dynamic` or `JSON` subcolumns read from Parquet `VARIANT` through subqueries currently requires `enable_analyzer = 1`.
+
+### Writing `Dynamic` and `JSON` {#parquet-variant-writing-dynamic-and-json}
+
+ClickHouse writes:
+
+* [`Dynamic`](/sql-reference/data-types/dynamic.md) columns as Parquet `VARIANT`.
+* [`JSON`](/sql-reference/data-types/newjson.md) columns as Parquet `JSON` by default.
+* [`JSON`](/sql-reference/data-types/newjson.md) columns as Parquet `VARIANT` if `output_format_parquet_json_as_variant = 1`.
+
+When writing Parquet `VARIANT`, ClickHouse uses the Parquet `VARIANT` wrapper with `metadata` and `value` fields, and adds a `typed_value` field when it can shred stable structure out of the payload. This keeps the file compatible with readers that understand Parquet `VARIANT` while still preserving mixed or ambiguous values in the residual `value` field.
+
+### `max_dynamic_paths` interaction {#parquet-variant-max-dynamic-paths}
+
+If `output_format_parquet_json_as_variant = 1`, the `JSON(max_dynamic_paths=N, ...)` type parameter affects how much of the `JSON` structure is shredded into `typed_value`:
+
+* Explicit typed paths declared in the `JSON(...)` type are always preserved in the shredded schema.
+* Up to `N` additional inferred dynamic paths are selected for shredding.
+* Remaining paths are kept in the residual `value` payload, so no data is lost.
+
+The inferred dynamic paths are chosen by frequency in the written data, with path name used as a deterministic tie-breaker.
+
+This is especially useful for semi-structured data:
+
+* `JSON` objects can be written as Parquet `VARIANT` when `output_format_parquet_json_as_variant = 1`, and later read back as `JSON`, `Dynamic`, or `String`.
+* `Dynamic` values with mixed scalars, arrays, tuples, and nested objects are preserved.
+* Empty objects and arrays are preserved when reading through the native Parquet reader.
+
+Example:
+
+```sql
+SET output_format_parquet_json_as_variant = 1;
+
+INSERT INTO FUNCTION file('data.parquet', Parquet)
+SELECT
+    1 AS id,
+    CAST('{"a":1,"c":["x",2],"extra":"keep"}' AS JSON) AS var;
+
+SELECT id, toJSONString(var)
+FROM file('data.parquet', Parquet, 'id UInt64, var JSON')
+ORDER BY id;
+```
 
 ## Geo types (GeoParquet) {#geo-types}
 
@@ -160,13 +224,14 @@ To exchange data with Hadoop, you can use the [`HDFS table engine`](/engines/tab
 | `input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference` | Skip columns with unsupported types while schema inference for format Parquet                                                                                                                                                      | `0`         |
 | `input_format_parquet_max_block_size`                                          | Max block size for parquet reader.                                                                                                                                                                                                | `65409`     |
 | `input_format_parquet_prefer_block_bytes`                                      | Average block bytes output by parquet reader                                                                                                                                                                                      | `16744704`  |
-| `input_format_parquet_enable_json_parsing`                                      | When reading Parquet files, parse JSON columns as ClickHouse JSON Column.                                                                                                                                                                                      | `1`  |
+| `input_format_parquet_enable_json_parsing`                                     | When reading Parquet files, parse Parquet `JSON` columns as ClickHouse `JSON`. Also makes schema inference read Parquet `VARIANT` columns as ClickHouse `JSON` instead of `Dynamic`.                                         | `1`         |
 | `input_format_parquet_allow_geoparquet_parser`                                  | When reading Parquet files, recognize the GeoParquet `geo` metadata and decode geometry columns (WKB or WKT, per the column's declared encoding) as ClickHouse geo data types. If `0`, geometry columns are exposed as their raw physical (`String`) representation.                                                                                                                                              | `1`         |
 | `output_format_parquet_row_group_size`                                         | Target row group size in rows.                                                                                                                                                                                                      | `1000000`   |
 | `output_format_parquet_row_group_size_bytes`                                   | Target row group size in bytes, before compression.                                                                                                                                                                                  | `536870912` |
 | `output_format_parquet_string_as_string`                                       | Use Parquet String type instead of Binary for String columns.                                                                                                                                                                      | `1`         |
 | `output_format_parquet_fixed_string_as_fixed_byte_array`                       | Use Parquet FIXED_LEN_BYTE_ARRAY type instead of Binary for FixedString columns.                                                                                                                                                  | `1`         |
 | `output_format_parquet_compression_method`                                     | Compression method for Parquet output format. Supported codecs: snappy, lz4, brotli, zstd, gzip, none (uncompressed)                                                                                                              | `zstd`      |
+| `output_format_parquet_json_as_variant`                                        | Write ClickHouse `JSON` columns as Parquet `VARIANT` instead of Parquet `JSON`. `Dynamic` columns are always written as Parquet `VARIANT`.                                                                                       | `0`         |
 | `output_format_parquet_parallel_encoding`                                      | Do Parquet encoding in multiple threads.                                                                                                                                          | `1`         |
 | `output_format_parquet_data_page_size`                                         | Target page size in bytes, before compression.                                                                                                                                                                                      | `1048576`   |
 | `output_format_parquet_batch_size`                                             | Check page size every this many rows. Consider decreasing if you have columns with average values size above a few KBs.                                                                                                              | `1024`      |
