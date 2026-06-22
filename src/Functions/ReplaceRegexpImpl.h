@@ -9,11 +9,6 @@
 #include <base/types.h>
 #include <re2/regexp.h>
 
-#include <cstring>
-#include <memory>
-#include <optional>
-#include <vector>
-
 namespace DB
 {
 
