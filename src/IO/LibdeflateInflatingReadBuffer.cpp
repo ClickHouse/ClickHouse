@@ -22,12 +22,20 @@ namespace
     constexpr size_t DEFLATE_WINDOW = 32768;
     /// Max compressed bytes pulled into in_buf per refill (bounds memory regardless of nested buffer size).
     constexpr size_t INPUT_CHUNK = 1u << 20;
+    /// Upper bound on the output buffer. libdeflate's streaming decoder only suspends at DEFLATE block
+    /// boundaries, so a block whose uncompressed size exceeds the current buffer forces us to grow until
+    /// the whole block fits. Capping the buffer keeps a crafted stream with one enormous block (a
+    /// decompression bomb) from driving input-controlled memory growth; we fail closed past this bound.
+    /// No real-world encoder emits a single block anywhere near this large.
+    constexpr size_t MAX_OUTPUT_BUFFER = 256ull << 20; /// 256 MiB
 
     /// gzip header flag bits (RFC 1952).
     constexpr uint8_t GZIP_FHCRC = 1 << 1;
     constexpr uint8_t GZIP_FEXTRA = 1 << 2;
     constexpr uint8_t GZIP_FNAME = 1 << 3;
     constexpr uint8_t GZIP_FCOMMENT = 1 << 4;
+    /// Bits 5..7 of FLG are reserved and must be zero (RFC 1952, section 2.3.1).
+    constexpr uint8_t GZIP_FRESERVED = 0xE0;
 
     uint32_t readLE32(const char * p)
     {
@@ -121,26 +129,60 @@ bool LibdeflateInflatingReadBuffer::parseHeader()
         if (static_cast<uint8_t>(p[2]) != 8)
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Unsupported gzip compression method");
         const uint8_t flg = static_cast<uint8_t>(p[3]);
+        if (flg & GZIP_FRESERVED)
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Reserved gzip header flag bits are set");
+
+        /// CRC-32 of all header bytes up to (but not including) the optional FHCRC field, used to verify
+        /// FHCRC when present (RFC 1952). It is accumulated incrementally as bytes are consumed, because
+        /// fillInput() may discard already-read bytes from in_buf when it compacts, so we cannot defer the
+        /// CRC to a single pass over the whole header at the end.
+        uint32_t header_crc = libdeflate_crc32(0, in_buf.data() + in_pos, 10);
         in_pos += 10;
 
         if (flg & GZIP_FEXTRA)
         {
             if (!ensureInput(2))
                 throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Truncated gzip header (FEXTRA)");
+            header_crc = libdeflate_crc32(header_crc, in_buf.data() + in_pos, 2);
             const size_t xlen = static_cast<uint8_t>(in_buf[in_pos]) | (static_cast<size_t>(static_cast<uint8_t>(in_buf[in_pos + 1])) << 8);
             in_pos += 2;
             if (!ensureInput(xlen))
                 throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Truncated gzip header (extra)");
+            header_crc = libdeflate_crc32(header_crc, in_buf.data() + in_pos, xlen);
             in_pos += xlen;
         }
         if (flg & GZIP_FNAME)
-            do { if (!ensureInput(1)) throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Truncated gzip header (name)"); } while (in_buf[in_pos++] != 0);
+        {
+            uint8_t c = 0;
+            do
+            {
+                if (!ensureInput(1))
+                    throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Truncated gzip header (name)");
+                c = static_cast<uint8_t>(in_buf[in_pos]);
+                header_crc = libdeflate_crc32(header_crc, in_buf.data() + in_pos, 1);
+                ++in_pos;
+            } while (c != 0);
+        }
         if (flg & GZIP_FCOMMENT)
-            do { if (!ensureInput(1)) throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Truncated gzip header (comment)"); } while (in_buf[in_pos++] != 0);
+        {
+            uint8_t c = 0;
+            do
+            {
+                if (!ensureInput(1))
+                    throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Truncated gzip header (comment)");
+                c = static_cast<uint8_t>(in_buf[in_pos]);
+                header_crc = libdeflate_crc32(header_crc, in_buf.data() + in_pos, 1);
+                ++in_pos;
+            } while (c != 0);
+        }
         if (flg & GZIP_FHCRC)
         {
             if (!ensureInput(2))
                 throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Truncated gzip header (hcrc)");
+            const uint16_t stored_crc = static_cast<uint8_t>(in_buf[in_pos])
+                | static_cast<uint16_t>(static_cast<uint8_t>(in_buf[in_pos + 1]) << 8);
+            if (stored_crc != static_cast<uint16_t>(header_crc & 0xFFFF))
+                throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "gzip header CRC16 mismatch");
             in_pos += 2;
         }
         checksum = 0; /* CRC32 initial value */
@@ -157,6 +199,8 @@ bool LibdeflateInflatingReadBuffer::parseHeader()
         const uint8_t flg = static_cast<uint8_t>(in_buf[in_pos + 1]);
         if ((cmf & 0x0f) != 8)
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Unsupported zlib compression method");
+        if ((cmf >> 4) > 7)
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Invalid zlib window size (CINFO > 7)");
         if (((static_cast<unsigned>(cmf) << 8) | flg) % 31 != 0)
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Bad zlib header check bits");
         if (flg & 0x20)
@@ -268,7 +312,13 @@ bool LibdeflateInflatingReadBuffer::nextImpl()
                     case LIBDEFLATE_STREAM_NEED_OUTPUT:
                         if (out_used == 0)
                         {
-                            /* A single block exceeds the output buffer: grow it (preserving the window) and retry. */
+                            /* A single block exceeds the output buffer: grow it (preserving the window) and retry,
+                             * but fail closed instead of growing without bound for a decompression bomb. */
+                            if (memory.size() + out_capacity > MAX_OUTPUT_BUFFER)
+                                throw Exception(
+                                    ErrorCodes::CANNOT_DECOMPRESS,
+                                    "A single {} DEFLATE block does not fit into the {}-byte decompression buffer limit",
+                                    gzip ? "gzip" : "zlib", MAX_OUTPUT_BUFFER);
                             memory.resize(memory.size() + out_capacity);
                             continue;
                         }
