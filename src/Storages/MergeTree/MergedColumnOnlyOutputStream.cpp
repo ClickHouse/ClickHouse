@@ -22,7 +22,8 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     CompressionCodecPtr default_codec,
     MergeTreeIndexGranularityPtr index_granularity_ptr,
     size_t part_uncompressed_bytes,
-    WrittenOffsetSubstreams * written_offset_substreams)
+    WrittenOffsetSubstreams * written_offset_substreams,
+    PackedFilesWriter * external_packed_skip_indices_writer)
     : IMergedBlockOutputStream(
           std::move(data_settings),
           data_part->getDataPartStoragePtr(),
@@ -50,6 +51,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
 
     /// This stream is used only by merge and mutation, never inserts
     writer_settings.apply_adaptive_codec = (*storage_settings)[MergeTreeSetting::allow_experimental_adaptive_codec_selection];
+    writer_settings.external_packed_skip_indices_writer = external_packed_skip_indices_writer;
 
     writer = createMergeTreeDataPartWriter(
         data_part->getType(),

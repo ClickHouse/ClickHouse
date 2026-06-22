@@ -669,6 +669,22 @@ namespace ErrorCodes
     ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge = '';
     ```
     )", 0) \
+    DECLARE(NonZeroUInt64, text_index_dictionary_block_size, 512, R"(
+    Default dictionary block size for text indexes.
+    Can be overridden by explicit `dictionary_block_size` index argument.
+    )", 0) \
+    DECLARE(Bool, text_index_dictionary_block_frontcoding_compression, true, R"(
+    Default front-coding compression for text index dictionary blocks.
+    Can be overridden by explicit `dictionary_block_frontcoding_compression` index argument.
+    )", 0) \
+    DECLARE(NonZeroUInt64, text_index_posting_list_block_size, 1048576, R"(
+    Default posting list block size for text indexes (rows).
+    Can be overridden by explicit `posting_list_block_size` index argument.
+    )", 0) \
+    DECLARE(TextIndexPostingListCodec, text_index_posting_list_codec, TextIndexPostingListCodec::None, R"(
+    Default posting list codec for text indexes.
+    Can be overridden by explicit `posting_list_codec` index argument.
+    )", 0) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
     Minimum time to wait before trying to select parts to merge again after no
     parts were selected. A lower setting will trigger selecting tasks in
@@ -1907,6 +1923,38 @@ namespace ErrorCodes
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
     Supported statistics types: basic, tdigest, countmin, minmax, uniq.
     )", 0) \
+    DECLARE(UInt64, packed_skip_index_max_bytes, 0, R"(
+    Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
+    chain) below which a skip-index substream is bundled into a single `skp_idx.packed`
+    archive per part instead of being written as a separate `skp_idx_<name>.idx2` / `.mrk2`
+    file. Substreams larger than this stay in the legacy per-file layout. The decision is
+    made independently per substream at write time, so a single part can have small indices
+    (e.g. `minmax`) packed and large ones (e.g. a heavy `bloom_filter`) per-file. Set to 0
+    to disable packing entirely (default).
+
+    Each skip-index substream actually consists of a data file and a marks file; both buffer
+    in memory up to the threshold before the spill decision is made. So peak memory while
+    writing scales with `2 * packed_skip_index_max_bytes * (number of substreams that stay
+    below the threshold)`.
+
+    Full-text indices are not supported by this setting and are never packed.
+
+    Packing reduces inode pressure when many skip indices are defined on a table (for example
+    with `add_minmax_index_for_numeric_columns`).
+
+    The on-disk format is self-describing: readers detect `skp_idx.packed` and serve packed
+    substreams from inside it transparently. Changing this setting affects newly written parts
+    only; existing parts retain whatever layout they had at write time.
+
+    Known limitation: `system.data_skipping_indices.data_uncompressed_bytes` and
+    `system.parts.secondary_indices_uncompressed_bytes` report the compressed size for packed
+    substreams (the archive index doesn't store uncompressed sizes). This is cosmetic in
+    monitoring with one functional consequence:
+    `distributed_index_analysis_min_indexes_bytes_to_activate` compares against
+    `data_uncompressed`, so a packed index that compresses well (`set` or `bloom_filter` over
+    strings) may not cross the activation threshold even if the real uncompressed size would.
+    The fallback is the normal query plan, not a wrong result.
+    )", EXPERIMENTAL) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in
     the partition or sorting key.
@@ -2665,6 +2713,25 @@ std::vector<std::string_view> MergeTreeSettings::getAllRegisteredNames() const
         setting_names.emplace_back(setting.getName());
     }
     return setting_names;
+}
+
+std::vector<std::string_view> MergeTreeSettings::getAllAliasNames() const
+{
+    std::vector<std::string_view> alias_names;
+    const auto & settings_to_aliases = MergeTreeSettingsImpl::Traits::settingsToAliases();
+    for (const auto & [_, aliases] : settings_to_aliases)
+        alias_names.insert(alias_names.end(), aliases.begin(), aliases.end());
+    return alias_names;
+}
+
+std::string_view MergeTreeSettings::getDescription(std::string_view name) const
+{
+    return impl->getDescription(name);
+}
+
+SettingsTierType MergeTreeSettings::getTier(std::string_view name) const
+{
+    return impl->getTier(name);
 }
 
 void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata)
