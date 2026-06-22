@@ -5,11 +5,13 @@ import random
 import re
 import sys
 import uuid
+from collections import namedtuple
 from typing import Dict
 from datetime import datetime
 
 import pytest
 
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry, wait_condition
 
@@ -1149,7 +1151,7 @@ def test_skip_rmv_backup():
     assert not os.path.exists(
         os.path.join(
             get_path_to_backup(backup_name),
-            "data/test/target/",
+            f"data/test/target/",
         )
     )
 
@@ -1157,7 +1159,7 @@ def test_skip_rmv_backup():
     instance.query("SYSTEM REFRESH VIEW restored.view")
     instance.query("SYSTEM WAIT VIEW restored.view")
 
-    assert int(instance.query("SELECT count(*) FROM restored.target")) == size
+    assert int(instance.query(f"SELECT count(*) FROM restored.target")) == size
 
 
 def test_rmv_append_backup():
@@ -1181,12 +1183,12 @@ def test_rmv_append_backup():
     assert os.path.exists(
         os.path.join(
             get_path_to_backup(backup_name),
-            "data/test/target/",
+            f"data/test/target/",
         )
     )
     instance.query(f"RESTORE DATABASE test AS restored FROM {backup_name}")
 
-    assert int(instance.query("SELECT count(*) FROM restored.target")) >= size
+    assert int(instance.query(f"SELECT count(*) FROM restored.target")) >= size
 
 
 def test_temporary_table():
@@ -1508,7 +1510,7 @@ def test_projection():
     create_and_fill_table(n=3)
 
     instance.query("ALTER TABLE test.table ADD PROJECTION prjmax (SELECT MAX(x))")
-    instance.query("INSERT INTO test.table VALUES (100, 'a'), (101, 'b')")
+    instance.query(f"INSERT INTO test.table VALUES (100, 'a'), (101, 'b')")
 
     assert (
         instance.query(
@@ -1728,6 +1730,7 @@ def test_backup_all(exclude_system_log_tables):
             "crash_log",
             "text_log",
             "metric_log",
+            "histogram_metric_log",
             "filesystem_cache_log",
             "filesystem_read_prefetches_log",
             "asynchronous_metric_log",

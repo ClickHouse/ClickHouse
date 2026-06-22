@@ -1,9 +1,5 @@
 #pragma once
 
-#include "config.h"
-
-#if USE_ARROWFLIGHT
-
 #include <Interpreters/Session.h>
 #include <Server/IServer.h>
 
@@ -11,11 +7,6 @@
 
 #include <arrow/flight/server_middleware.h>
 #include <arrow/flight/server.h>
-
-namespace DB::ArrowFlight
-{
-class CallsData;
-}
 
 namespace DB
 {
@@ -27,16 +18,12 @@ class AuthMiddleware : public arrow::flight::ServerMiddleware
 {
 public:
     explicit AuthMiddleware(std::shared_ptr<Session> session_, const std::string & token_, const std::string & username_,
-                            ArrowFlight::CallsData & calls_data_,
-                            const std::string & session_id_ = "", bool session_close_ = false,
-                            std::chrono::steady_clock::duration session_timeout_ = std::chrono::steady_clock::duration{0})
+                            const std::string & session_id_ = "", bool session_close_ = false)
         : session(session_)
         , token(token_)
         , username(username_)
-        , calls_data(calls_data_)
         , session_id(session_id_)
         , session_close(session_close_)
-        , session_timeout(session_timeout_)
     {
     }
 
@@ -47,8 +34,6 @@ public:
 
     const std::string & getUsername() const { return username; }
     const std::shared_ptr<Session> & getSession() const { return session; }
-    const std::string & getSessionId() const { return session_id; }
-    std::chrono::steady_clock::duration getSessionTimeout() const { return session_timeout; }
 
     void SendingHeaders(arrow::flight::AddCallHeaders * outgoing_headers) override;
     void CallCompleted(const arrow::Status & /*status*/) override;
@@ -59,10 +44,8 @@ private:
     std::shared_ptr<Session> session;
     std::string token;
     std::string username;
-    ArrowFlight::CallsData & calls_data;
     const std::string session_id;
     const bool session_close;
-    const std::chrono::steady_clock::duration session_timeout;
 };
 
 class AuthMiddlewareFactory : public arrow::flight::ServerMiddlewareFactory
@@ -95,10 +78,9 @@ class AuthMiddlewareFactory : public arrow::flight::ServerMiddlewareFactory
     };
 
 public:
-    explicit AuthMiddlewareFactory(IServer & server_, ArrowFlight::CallsData & calls_data_)
+    explicit AuthMiddlewareFactory(IServer & server_)
         : server(server_)
         , token_storage(server_.config())
-        , calls_data(calls_data_)
     {}
 
     arrow::Status StartCall(
@@ -109,9 +91,6 @@ public:
     private:
         IServer & server;
         TokenStorage token_storage;
-        ArrowFlight::CallsData & calls_data;
 };
 
 }
-
-#endif
