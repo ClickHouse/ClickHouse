@@ -83,16 +83,25 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
     /// latter matters because re-applying the query's SETTINGS runs InterpreterSetQuery::
     /// executeForCurrentContext, which calls resetSettingsToDefaultValue on `default_settings` and
     /// would reset a fuzz-context cap back to its (unbounded) default.
+    /// Erase *every* matching entry, not just the first: ParserSetQuery appends one entry per
+    /// occurrence, so a repeated `SETTINGS max_rows_to_read = 0, max_rows_to_read = 0` would leave the
+    /// second copy behind to re-apply the override on top of the pinned fuzz context after re-parse.
+    auto is_stripped_name = [&](std::string_view name)
+    {
+        for (const auto & stripped : setting_names)
+            if (stripped == name)
+                return true;
+        return false;
+    };
     visitAllNodes(
         ast,
         [&](IAST & node)
         {
             if (auto * set_query = node.as<ASTSetQuery>())
-                for (const auto & name : setting_names)
-                {
-                    set_query->changes.removeSetting(name);
-                    std::erase(set_query->default_settings, name);
-                }
+            {
+                std::erase_if(set_query->changes, [&](const SettingChange & change) { return is_stripped_name(change.name); });
+                std::erase_if(set_query->default_settings, [&](const String & name) { return is_stripped_name(name); });
+            }
         });
 
     visitAllNodes(ast, [](IAST & node) { pruneEmptySettingsOwner(node); });

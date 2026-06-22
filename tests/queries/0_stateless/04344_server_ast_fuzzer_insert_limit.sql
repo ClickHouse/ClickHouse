@@ -19,6 +19,11 @@ SETTINGS max_rows_to_read = 0, read_overflow_mode = 'throw', max_execution_time 
 SELECT sum(number) FROM numbers(100)
 SETTINGS max_rows_to_read = DEFAULT, read_overflow_mode = DEFAULT, max_execution_time = DEFAULT, max_result_rows = DEFAULT;
 
+-- Repeated override: the parser appends one entry per occurrence, so a strip that removed only the
+-- first copy would leave the second `max_rows_to_read = 0` to re-open the read cap on re-parse.
+SELECT sum(number) FROM numbers(100)
+SETTINGS max_rows_to_read = 0, max_rows_to_read = 0, read_overflow_mode = 'throw';
+
 DROP TABLE IF EXISTS t_04344;
 CREATE TABLE t_04344 (a UInt64, b String, c Array(UInt64)) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_04344 SELECT number, toString(number), range(number % 8) FROM numbers(100)

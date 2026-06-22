@@ -547,6 +547,33 @@ bool settingNamePresent(const ASTPtr & ast, std::string_view name)
     return false;
 }
 
+/// Count how many times `name` appears across `changes` and `default_settings` in every SETTINGS node.
+/// ParserSetQuery appends one entry per occurrence (no de-duplication), so a repeated override yields a
+/// count > 1; the strip transform must bring it to 0, erasing every copy rather than just the first.
+size_t countSettingOccurrences(const ASTPtr & ast, std::string_view name)
+{
+    size_t count = 0;
+    std::vector<const IAST *> nodes{ast.get()};
+    while (!nodes.empty())
+    {
+        const auto * node = nodes.back();
+        nodes.pop_back();
+        if (const auto * set_query = node->as<ASTSetQuery>())
+        {
+            for (const auto & change : set_query->changes)
+                if (change.name == name)
+                    ++count;
+            for (const auto & default_name : set_query->default_settings)
+                if (default_name == name)
+                    ++count;
+        }
+        for (const auto & child : node->children)
+            if (child)
+                nodes.push_back(child.get());
+    }
+    return count;
+}
+
 }
 
 /// The server-side AST fuzzer strips its safety-limit settings from a fuzzed query so they cannot be
@@ -676,5 +703,60 @@ TEST(RemoveSettingsFromQuery, StripsResetToDefaultOverrides)
         EXPECT_TRUE(settingNamePresent(ast, "max_threads")) << "dropped a non-safety `= DEFAULT`";
         EXPECT_FALSE(settingNamePresent(ast, "max_rows_to_read")) << "kept a safety `= DEFAULT`";
         EXPECT_FALSE(hasEmptySettingsNode(ast)) << "query: " << query;
+    }
+}
+
+/// ParserSetQuery appends a SettingChange for every occurrence, so a SETTINGS clause may repeat a
+/// safety setting. The strip transform must erase *all* copies: if it removed only the first, the
+/// surviving duplicate would re-apply the override (`max_rows_to_read = 0`) on top of the pinned
+/// fuzz context in executeQueryImpl after re-parse, re-opening the unbounded read.
+TEST(RemoveSettingsFromQuery, StripsRepeatedOverrides)
+{
+    static constexpr std::string_view safety_settings[] = {
+        "max_rows_to_read",
+        "read_overflow_mode",
+        "max_execution_time",
+        "max_memory_usage",
+        "max_result_rows",
+        "max_result_bytes",
+    };
+
+    /// Each clause repeats a safety setting (direct `= value`, `= DEFAULT`, or a mix). Covers SELECT,
+    /// SELECT-UNION (ASTQueryWithOutput), INSERT and a subquery.
+    const std::vector<String> queries = {
+        "SELECT sum(number) FROM numbers(100) "
+        "SETTINGS max_rows_to_read = 0, max_rows_to_read = 0, read_overflow_mode = 'throw'",
+        "SELECT 1 UNION ALL SELECT 2 "
+        "SETTINGS max_rows_to_read = 0, max_execution_time = 0, max_rows_to_read = DEFAULT",
+        "INSERT INTO t SELECT number FROM numbers(100) "
+        "SETTINGS read_overflow_mode = 'throw', max_rows_to_read = 0, read_overflow_mode = DEFAULT",
+        "SELECT * FROM (SELECT number FROM numbers(100) "
+        "SETTINGS max_rows_to_read = 0, max_rows_to_read = DEFAULT) SETTINGS max_execution_time = 0",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        /// Sanity: the duplicate really is parsed as two separate entries before the strip.
+        ASSERT_GT(countSettingOccurrences(ast, "max_rows_to_read"), 1u) << "setup: " << query;
+
+        removeSettingsFromQuery(ast, safety_settings);
+
+        /// Every copy of every safety setting must be gone, in either list, in any clause.
+        for (const auto & name : safety_settings)
+            EXPECT_EQ(0u, countSettingOccurrences(ast, name))
+                << "safety setting '" << name << "' survived (count > 0) for: " << query;
+
+        EXPECT_FALSE(hasEmptySettingsNode(ast)) << "empty SETTINGS left for: " << query;
+
+        /// The serialized query still re-parses and carries no residual override.
+        const String formatted = ast->formatWithSecretsOneLine();
+        EXPECT_EQ(String::npos, formatted.find("max_rows_to_read")) << "kept a safety setting: " << formatted;
+        ParserQuery reparser(formatted.data() + formatted.size());
+        ASTPtr reparsed = parseQuery(reparser, formatted, "", 0, 0, 0);
+        EXPECT_NE(nullptr, reparsed) << "did not re-parse: " << formatted;
     }
 }
