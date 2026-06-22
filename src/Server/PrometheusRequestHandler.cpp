@@ -438,7 +438,9 @@ public:
             if (const auto query_pos = uri_path.find('?'); query_pos != String::npos)
                 uri_path.resize(query_pos);
 
-            if (uri_path.ends_with("/api/v1/query_range"))
+            /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
+            /// endpoint works both bare ("/api/v1/query") and behind a configured prefix ("/prefix/api/v1/query").
+            if (uri_path.ends_with("/query_range"))
             {
                 String query = params->get("query", "");
                 String start = params->get("start", "");
@@ -462,7 +464,7 @@ public:
 
                 protocol.executePromQLQuery(getOutputStream(response), params);
             }
-            else if (uri_path.ends_with("/api/v1/query"))
+            else if (uri_path.ends_with("/query"))
             {
                 String query = params->get("query", "");
                 String time = params->get("time", "");
@@ -481,15 +483,15 @@ public:
 
                 protocol.executePromQLQuery(getOutputStream(response), params);
             }
-            else if (uri_path.ends_with("/api/v1/format_query"))
+            else if (uri_path.ends_with("/format_query"))
             {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The format_query endpoint is not implemented");
             }
-            else if (uri_path.ends_with("/api/v1/parse_query"))
+            else if (uri_path.ends_with("/parse_query"))
             {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The parse_query endpoint is not implemented");
             }
-            else if (uri_path.ends_with("/api/v1/series"))
+            else if (uri_path.ends_with("/series"))
             {
                 String match = params->get("match[]", "");
                 String start = params->get("start", "");
@@ -499,7 +501,7 @@ public:
 
                 protocol.getSeries(getOutputStream(response), match, start, end);
             }
-            else if (uri_path.ends_with("/api/v1/labels"))
+            else if (uri_path.ends_with("/labels"))
             {
                 String match = params->get("match[]", "");
                 String start = params->get("start", "");
@@ -507,26 +509,13 @@ public:
 
                 protocol.getLabels(getOutputStream(response), match, start, end);
             }
-            else if (uri_path.contains("/api/v1/label/") && uri_path.ends_with("/values"))
+            else if (auto label_name = extractLabelValuesName(uri_path))
             {
-                // Extract label name from URI: /api/v1/label/<name>/values
-                size_t start_pos = uri_path.find("/api/v1/label/") + 14; // length of "/api/v1/label/"
-                size_t end_pos = uri_path.rfind("/values");
-                if (end_pos == String::npos || end_pos <= start_pos)
-                {
-                    LOG_ERROR(log(), "No matching endpoint found for URI: {}, method: {}", uri, request.getMethod());
-                    response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-                    writeString(R"({"status":"error","errorType":"not_found","error":"API endpoint not found"})", getOutputStream(response));
-                    return;
-                }
-
-                String label_name = uri_path.substr(start_pos, end_pos - start_pos);
-
                 String match = params->get("match[]", "");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
 
-                protocol.getLabelValues(getOutputStream(response), label_name, match, start, end);
+                protocol.getLabelValues(getOutputStream(response), *label_name, match, start, end);
             }
             else
             {
@@ -558,6 +547,29 @@ public:
 
             LOG_ERROR(log(), "Error executing query: {}", e.displayText());
         }
+    }
+
+private:
+    /// Extracts the label name from a label-values endpoint path ".../label/<name>/values".
+    /// Returns std::nullopt when `uri_path` isn't a valid label-values endpoint.
+    static std::optional<String> extractLabelValuesName(std::string_view uri_path)
+    {
+        static constexpr std::string_view values_suffix = "/values";
+        static constexpr std::string_view label_marker = "/label/";
+
+        if (!uri_path.ends_with(values_suffix))
+            return std::nullopt;
+
+        size_t marker_pos = uri_path.rfind(label_marker);
+        if (marker_pos == std::string_view::npos)
+            return std::nullopt;
+
+        size_t start_pos = marker_pos + label_marker.size();
+        size_t end_pos = uri_path.size() - values_suffix.size();
+        if (end_pos <= start_pos)
+            return std::nullopt;
+
+        return String{uri_path.substr(start_pos, end_pos - start_pos)};
     }
 };
 
@@ -597,15 +609,17 @@ public:
     }
 
 private:
-    /// Selects the implementation for a request based on its path.
+    /// Selects the implementation for a request based on the trailing segment of its path,
+    /// so the same endpoint works both bare ("/api/v1/write") and behind a configured prefix
+    /// ("/prefix/api/v1/write").
     Impl & getImpl(const HTTPServerRequest & request)
     {
         /// Get the decoded URL path (without the query string).
         const String path = Poco::URI(request.getURI()).getPath();
 
-        if (path.ends_with("/api/v1/write"))
+        if (path.ends_with("/write"))
             return write_impl;
-        if (path.ends_with("/api/v1/read"))
+        if (path.ends_with("/read"))
             return read_impl;
 
         /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values)
