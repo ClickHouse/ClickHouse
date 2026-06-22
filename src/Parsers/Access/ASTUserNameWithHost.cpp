@@ -19,6 +19,18 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+    /// `ParserUserNameWithHost` stores the host pattern as a string `ASTLiteral`, and the user name as either an
+    /// identifier (possibly a query parameter) or a string `ASTLiteral`. Any other shape would later reach the
+    /// `LOGICAL_ERROR` branch in `ASTUserNameWithHost::getStringFromAST`, so reject it at the JSON boundary.
+    bool isStringLiteral(const ASTPtr & ast)
+    {
+        const auto * literal = ast->as<ASTLiteral>();
+        return literal && literal->value.getType() == Field::Types::String;
+    }
+}
+
 void ASTUserNameWithHost::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     username->format(ostr, settings);
@@ -210,11 +222,25 @@ void ASTUserNameWithHost::readJSON(const Poco::JSON::Object & json)
     username = r.readChild("username");
     if (!username)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required field 'username' during AST JSON deserialization");
+    if (!username->as<ASTIdentifier>() && !isStringLiteral(username))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Field 'username' must be an identifier or a string literal during AST JSON deserialization of "
+            "ASTUserNameWithHost, got '{}'",
+            username->getID());
     children.emplace_back(username);
 
     host_pattern = r.readChild("host_pattern");
     if (host_pattern)
+    {
+        if (!isStringLiteral(host_pattern))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Field 'host_pattern' must be a string literal during AST JSON deserialization of ASTUserNameWithHost, "
+                "got '{}'",
+                host_pattern->getID());
         children.emplace_back(host_pattern);
+    }
 }
 
 }
