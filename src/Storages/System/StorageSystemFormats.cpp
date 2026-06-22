@@ -1,4 +1,6 @@
 #include <Columns/IColumn.h>
+#include <Core/Field.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
@@ -24,6 +26,10 @@ ColumnsDescription StorageSystemFormats::getColumnsDescription()
         {"prefers_large_blocks", std::make_shared<DataTypeUInt8>(), "The format will write larger blocks into output and generate larger blocks on input."},
         {"supports_append", std::make_shared<DataTypeUInt8>(), "It's possible to append into a single file with this format."},
         {"supports_subsets_of_columns", std::make_shared<DataTypeUInt8>(), "The input format can recognize when certain columns are omitted."},
+        {"description", std::make_shared<DataTypeString>(), "A high-level description of what the format is."},
+        {"examples", std::make_shared<DataTypeString>(), "Usage examples."},
+        {"introduced_in", std::make_shared<DataTypeString>(), "The ClickHouse version in which the format was first introduced, in the form major.minor."},
+        {"related", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The names of related formats."},
     };
 }
 
@@ -60,6 +66,16 @@ void StorageSystemFormats::fillData(MutableColumns & res_columns, ContextPtr con
         res_columns[10]->insert(prefers_large_blocks);
         res_columns[11]->insert(supports_append);
         res_columns[12]->insert(supports_subset_of_columns);
+
+        const auto & documentation = creators.documentation;
+        res_columns[13]->insert(documentation.description);
+        res_columns[14]->insert(documentation.examplesAsString());
+        res_columns[15]->insert(documentation.introducedInAsString());
+
+        Array related;
+        for (const auto & related_name : documentation.related)
+            related.push_back(related_name);
+        res_columns[16]->insert(related);
     }
 }
 

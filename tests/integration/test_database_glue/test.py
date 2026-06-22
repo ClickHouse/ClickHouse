@@ -8,10 +8,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pyarrow as pa
 import pytest
-import urllib3
 import pytz
-from datetime import datetime, timedelta
-from minio import Minio
+from datetime import timedelta
 from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
@@ -30,7 +28,7 @@ from pyiceberg.types import (
     DecimalType,
 )
 
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers
 
 import boto3
@@ -597,7 +595,7 @@ def test_empty_table(started_cluster):
     catalog = load_catalog_impl(started_cluster)
     catalog.create_namespace(root_namespace)
 
-    table = create_table(catalog, root_namespace, table_name)
+    create_table(catalog, root_namespace, table_name)
 
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
     assert len(node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`")) == 0
@@ -899,7 +897,7 @@ def test_show_tables_optimization(started_cluster):
         f"Get table information for table {root_namespace}.{table_name}"
     )
 
-    node.query(f"SYSTEM ENABLE FAILPOINT lightweight_show_tables")
+    node.query("SYSTEM ENABLE FAILPOINT lightweight_show_tables")
     node.query(f"SHOW TABLES FROM {CATALOG_NAME}", timeout=5)
 
 def test_table_without_metadata_location(started_cluster):
@@ -1029,7 +1027,7 @@ def test_check_database(started_cluster):
 
     try:
         node.query(
-            f"SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
+            "SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
         )
     
         assert "fault when checking database" in node.query_and_get_error(
@@ -1037,7 +1035,7 @@ def test_check_database(started_cluster):
         )
     finally:
         node.query(
-            f"SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
+            "SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
         )
 
 def test_sts_smoke(started_cluster):
@@ -1106,6 +1104,83 @@ def test_sts_smoke(started_cluster):
     )
 
     # Query should succeed with correct session name
+    result = node.query(f"SELECT sum(value) FROM {db_name_success}.`{root_namespace}.{table_name}`")
+    assert result.strip() == "60", f"Expected sum to be 60 but got: {result}"
+
+    # Cleanup
+    node.query(f"DROP DATABASE IF EXISTS {db_name_fail} SYNC")
+    node.query(f"DROP DATABASE IF EXISTS {db_name_success} SYNC")
+
+
+def test_sts_external_id(started_cluster):
+    """Test that `aws_external_id` reaches the STS AssumeRole request from the
+    Glue catalog database engine. The mock STS only vends working credentials
+    when the supplied ExternalId matches, so the negative case fails purely on
+    the external id (the role session name is correct in both cases)."""
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_sts_external_id_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="value", field_type=DoubleType(), required=False),
+    )
+    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), DEFAULT_SORT_ORDER, dir=table_name)
+
+    data = [
+        {"id": "row1", "value": 10.0},
+        {"id": "row2", "value": 20.0},
+        {"id": "row3", "value": 30.0},
+    ]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    # Negative: correct role session name but wrong external id - should fail.
+    db_name_fail = f"db_fail_{test_ref.replace('-', '_')}"
+    create_clickhouse_glue_database(
+        started_cluster,
+        node,
+        db_name_fail,
+        additional_settings={
+            "aws_role_arn": "arn::role",
+            "aws_role_session_name": "miniorole",
+            "aws_external_id": "wrong_external_id",
+        },
+        query_settings={},
+        with_credentials=False,
+    )
+
+    try:
+        result = node.query(
+            f"SELECT sum(value) FROM {db_name_fail}.`{root_namespace}.{table_name}` "
+            f"SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 1000"
+        )
+        assert False, f"Expected query to fail with wrong external id but got result: {result}"
+    except Exception as e:
+        error_str = str(e)
+        assert "403" in error_str or "Failed to get object info" in error_str or "HTTP response code: 403" in error_str, \
+            f"Expected 403 error but got: {error_str}"
+
+    # Positive: correct role session name and external id - should succeed.
+    db_name_success = f"db_success_{test_ref.replace('-', '_')}"
+    create_clickhouse_glue_database(
+        started_cluster,
+        node,
+        db_name_success,
+        additional_settings={
+            "aws_role_arn": "arn::role",
+            "aws_role_session_name": "miniorole",
+            "aws_external_id": "miniexternalid",
+        },
+        query_settings={},
+        with_credentials=False,
+    )
+
     result = node.query(f"SELECT sum(value) FROM {db_name_success}.`{root_namespace}.{table_name}`")
     assert result.strip() == "60", f"Expected sum to be 60 but got: {result}"
 
