@@ -104,7 +104,7 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
 
     /// Reject unsupported types before validate can throw a confusing type-specific error
     /// get() already throws INCORRECT_QUERY for unknown types, exactly as validate
-    auto index_helper = MergeTreeIndexFactory::instance().get(index_desc, *merge_tree->getSettings());
+    auto index_helper = MergeTreeIndexFactory::instance().get(metadata, index_desc, *merge_tree->getSettings());
     if (index_helper->isTextIndex() || index_helper->isVectorSimilarityIndex())
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
