@@ -124,6 +124,35 @@ void checkDistributedReadSupported(const QueryPlan::Node & root)
     }
 }
 
+/// True if every equi-join key pair has a common supertype. Must run before preCalculateKeys()
+/// mutates the join step. Key selection mirrors JoinStepLogical::preCalculateKeys.
+static bool shuffleJoinKeysHaveCommonType(const JoinOperator & join_info)
+{
+    for (const auto & expr : join_info.expression)
+    {
+        auto [predicate_op, lhs, rhs] = expr.asBinaryPredicate();
+        if (predicate_op != JoinConditionOperator::Equals)
+            continue;
+        if (!((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft())))
+            continue;
+
+        const auto & left_type = lhs.getType();
+        const auto & right_type = rhs.getType();
+        if (left_type->equals(*right_type))
+            continue;
+
+        try
+        {
+            getLeastSupertype(DataTypes{left_type, right_type});
+        }
+        catch (const Exception &)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 /// Replaces LogicalJoin step with a subtree like this:
 ///
 ///   GatherExchange
@@ -208,6 +237,11 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
             "Estimated number of rows in right source: {}. Using {} buckets for shuffle join",
             row_count_b.transform(toString<UInt64>).value_or("unknown"),
             bucket_count);
+
+        /// Keep type-incompatible joins single-node. Must precede preCalculateKeys(): bailing after
+        /// it would leave the step with an input no child produces (LOGICAL_ERROR on deserialize).
+        if (!shuffleJoinKeysHaveCommonType(join_info))
+            return;
 
         /// Extract expressions for calculating join on keys
         auto key_dags = join_step->preCalculateKeys(source_a->step->getOutputHeader(), source_b->step->getOutputHeader());

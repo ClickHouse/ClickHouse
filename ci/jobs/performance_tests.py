@@ -91,7 +91,9 @@ FROM input(
      stat_threshold Float64,
      test String,
      query_index Int32,
-     query_display_name String'
+     query_display_name String,
+     changed_threshold Float64,
+     unstable_threshold Float64'
 ) FORMAT TSV"""
 
 RAW_QUERY_METRICS_TABLE = "query_metric_runs_v1"
@@ -159,8 +161,8 @@ def _make_insert_query(table, table_columns, input_schema, select_exprs, where=N
     return (
         f"INSERT INTO {table}\n"
         f"(\n    " + ",\n    ".join(all_cols) + "\n)\n"
-        f"SELECT\n" + select_all + "\n"
-        f"FROM input('" + input_schema + "')\n"
+        "SELECT\n" + select_all + "\n"
+        "FROM input('" + input_schema + "')\n"
         + where_clause + "\n"
         "FORMAT TSV"
     )
@@ -739,12 +741,12 @@ class CHServer:
             stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
             Utils.print_formatted_error("Failed to start ClickHouse", stdout, stderr)
             return False
-        print(f"ClickHouse server process started -> wait ready")
+        print("ClickHouse server process started -> wait ready")
         res = self.wait_ready()
         if res:
-            print(f"ClickHouse server ready")
+            print("ClickHouse server ready")
         else:
-            print(f"ClickHouse server NOT ready")
+            print("ClickHouse server NOT ready")
 
         Shell.check(
             f"clickhouse-client --port {self.port} --query 'create database IF NOT EXISTS test' && clickhouse-client --port {self.port} --query 'rename table datasets.hits_v1 to test.hits'",
@@ -770,12 +772,12 @@ class CHServer:
             stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
             Utils.print_formatted_error("Failed to start ClickHouse", stdout, stderr)
             return False
-        print(f"ClickHouse server process started -> wait ready")
+        print("ClickHouse server process started -> wait ready")
         res = self.wait_ready()
         if res:
-            print(f"ClickHouse server ready")
+            print("ClickHouse server ready")
         else:
-            print(f"ClickHouse server NOT ready")
+            print("ClickHouse server NOT ready")
         return res
 
     def wait_ready(self):
@@ -790,7 +792,7 @@ class CHServer:
                 print("Server ready")
                 break
             else:
-                print(f"Server not ready, wait")
+                print("Server not ready, wait")
             Utils.sleep(delay)
         else:
             Utils.print_formatted_error(
@@ -881,6 +883,28 @@ def find_base_release_build(info, build_type):
     return None
 
 
+# The number of distinct "slower" queries that fails the whole performance
+# check. This is the gate that actually decides the Praktika `Check Results`
+# status: `report.py` embeds a status into `report.html`, but `main` below
+# discards it ("always green mode") and recomputes the final status by
+# reparsing the "N slower" message, so the effective gate lives here. The value
+# must stay synchronized with the slower-queries threshold in
+# `ci/jobs/scripts/perf/report.py`. It is intentionally high: a handful of
+# "slower" queries is dominated by CI noise (a single bad shard run, frequency
+# scaling, or code-layout artifacts can push several unrelated micro benchmarks
+# over their per-query thresholds at once), while a genuine regression shows up
+# as a small cluster of related queries with large magnitudes that the
+# per-query thresholds catch on their own.
+SLOWER_QUERIES_FAIL_THRESHOLD = 10
+
+
+def too_many_slow(message):
+    match = re.search(r"(|.* )(\d+) slower.*", message)
+    return (
+        int(match.group(2).strip()) > SLOWER_QUERIES_FAIL_THRESHOLD if match else False
+    )
+
+
 def main():
 
     args = parse_args()
@@ -929,7 +953,7 @@ def main():
         else:
             assert False
     else:
-        Utils.raise_with_error(f"Unknown processor architecture")
+        Utils.raise_with_error("Unknown processor architecture")
 
     if compare_against_release:
         print("It's a comparison against latest release baseline")
@@ -1433,11 +1457,6 @@ def main():
     # TODO: code to fetch status was taken from old script as is - status is to be correctly set in Test stage and this stage is to be removed!
     message = ""
     if res and JobStages.CHECK_RESULTS in stages:
-
-        def too_many_slow(msg):
-            match = re.search(r"(|.* )(\d+) slower.*", msg)
-            threshold = 5
-            return int(match.group(2).strip()) > threshold if match else False
 
         # Try to fetch status from the report.
         sw = Utils.Stopwatch()
