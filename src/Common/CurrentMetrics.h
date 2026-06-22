@@ -73,8 +73,8 @@ namespace CurrentMetrics
     class Increment
     {
     private:
-        std::atomic<Value> * what;
-        Value amount;
+        std::atomic<Value> * what{};
+        Value amount{};
 
         Increment(std::atomic<Value> * what_, Value amount_)
             : what(what_), amount(amount_)

@@ -38,7 +38,7 @@ struct PrometheusRequestHandlerConfig
     bool expose_histograms = false;
     bool expose_dimensional_metrics = false;
 
-    /// Settings for types RemoteWrite, RemoteRead:
+    /// Settings for types RemoteWrite, RemoteRead, QueryAPI.
     QualifiedTableName time_series_table_name;
     bool enable_table_name_url_routing = false;
 

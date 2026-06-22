@@ -350,7 +350,7 @@ private:
                 reinterpret_cast<const uint8_t *>(&data_vec[data_new_offset]));
 
             bech32_data input_5bit;
-            bech32::Encoding encoding;
+            bech32::Encoding encoding = bech32::Encoding::INVALID;
 
             if (have_encoding_variant)
             {

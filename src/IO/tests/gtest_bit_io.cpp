@@ -223,7 +223,7 @@ INSTANTIATE_TEST_SUITE_P(Simple,
     })
 );
 
-TestCaseParameter primes_case(uint8_t repeat_times, UInt64 pattern)
+static TestCaseParameter primes_case(uint8_t repeat_times, UInt64 pattern)
 {
     std::vector<std::pair<uint8_t, UInt64>> test_data;
 

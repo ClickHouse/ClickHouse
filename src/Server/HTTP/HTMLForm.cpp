@@ -222,7 +222,7 @@ void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
         {
             std::string name = params["name"];
             std::string value;
-            char ch;
+            char ch = 0;
 
             while (in.read(ch))
             {

@@ -101,9 +101,9 @@ struct MergeTreeReadTaskInfo
     /// Parent part of the projection part
     DataPartPtr parent_part;
     /// For `part_index` virtual column
-    size_t part_index_in_query;
+    size_t part_index_in_query{};
     /// For `part_starting_offset` virtual column
-    size_t part_starting_offset_in_query;
+    size_t part_starting_offset_in_query{};
     /// Alter converversionss that should be applied on-fly for part.
     AlterConversionsPtr alter_conversions;
     /// `_part_offset` mapping used to merge projections with `_part_offset`.
@@ -213,6 +213,12 @@ public:
     /// them, so they must not be attributed to the PREWHERE predicate in the QueryConditionCache.
     /// See Issue #104781.
     bool readersChainCanSkipMarksBeforePrewhere() const;
+
+    /// Returns true if on-fly mutations or patch parts are applied earlier in the readers chain
+    /// than PREWHERE (and therefore than the downstream WHERE filter too). When true, a mark may be
+    /// fully filtered by the mutation rather than by the predicate, so it must not be attributed to
+    /// the PREWHERE or WHERE predicate in the QueryConditionCache.
+    bool appliesMutationsBeforePrewhere() const;
 
     Readers releaseReaders() { return std::move(readers); }
 

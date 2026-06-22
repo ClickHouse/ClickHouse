@@ -492,7 +492,7 @@ private:
 };
 
 
-DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, StoragePtr storage)
+static DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, StoragePtr storage)
 {
     auto constraints = metadata->getConstraints();
 
@@ -1453,10 +1453,13 @@ Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
     if (!constraints.empty())
         result.addSink(std::make_shared<CheckConstraintsTransform>(inner_table_id, header, constraints, insert_context));
 
+    const bool has_dependent_materialized_views = !dependent_views.at(view_id).empty();
+
     if (auto * window_view = dynamic_cast<StorageWindowView *>(inner_storage.get()))
     {
         auto sink = std::make_shared<PushingToWindowViewSink>(std::make_shared<const Block>(window_view->getInputHeader()), *window_view, insert_context);
         sink->setRuntimeData(thread_groups.at(view_id));
+        sink->setHasDependentMaterializedViews(has_dependent_materialized_views);
         result.addSink(std::move(sink));
     }
     else if (dynamic_cast<StorageMaterializedView *>(inner_storage.get()))
@@ -1468,6 +1471,7 @@ Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
     {
         auto sink = inner_storage->write(select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_context, async_insert);
         sink->setRuntimeData(thread_groups.at(view_id));
+        sink->setHasDependentMaterializedViews(has_dependent_materialized_views);
         result.addSink(std::move(sink));
     }
 
@@ -1530,7 +1534,7 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
 }
 
 
-String getCleanQueryAst(const ASTPtr q, ContextPtr context)
+static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 {
     String res = q->formatWithSecretsOneLine();
     if (auto masker = SensitiveDataMasker::getInstance())

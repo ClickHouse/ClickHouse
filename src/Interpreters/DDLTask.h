@@ -38,7 +38,7 @@ using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransac
 struct HostID
 {
     String host_name;
-    UInt16 port;
+    UInt16 port{};
 
     HostID() = default;
 

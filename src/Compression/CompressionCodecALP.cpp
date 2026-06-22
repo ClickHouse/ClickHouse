@@ -2,6 +2,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/ICompressionCodec.h>
+#include <Compression/registerCompressionCodecs.h>
 
 #include <DataTypes/IDataType.h>
 #include <IO/WriteHelpers.h>
@@ -240,7 +241,7 @@ template <FLOAT T>
 class ALPCodecEncoder
 {
 public:
-    ALPCodecEncoder() = default;
+    ALPCodecEncoder() = default; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
 
     UInt32 encode(const char * source, const UInt32 source_size, char * dest)
     {
@@ -297,7 +298,10 @@ private:
     };
 
     VectorWithMemoryTracking<EncodingParams> param_candidates;
-    BlockState block;
+    /// `BlockState` contains tens of KiB of buffers (`encoded_floats`, `bitpacked`, `exceptions`) that
+    /// are overwritten by `encodeBlockToState` before being read. Default-initialization here would
+    /// zero them on every chunk on the compression hot path; skip it deliberately.
+    BlockState block; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
 
     char * encodeBlock(const char * source, const UInt16 float_count, char * dest)
     {
@@ -499,7 +503,7 @@ private:
         }
 
         // Sort estimations by occurred times desc, exponent asc, fraction asc
-        std::array<Estimation, ALP_PARAMS_ESTIMATION_SAMPLES> estimations;
+        std::array<Estimation, ALP_PARAMS_ESTIMATION_SAMPLES> estimations{};
         UInt32 estimation_count = 0;
         for (const auto & [_, estimation] : estimations_map)
             estimations[estimation_count++] = estimation;
@@ -790,7 +794,7 @@ UInt32 CompressionCodecALP::doDecompressData(const char * source, UInt32 source_
             ALP_BLOCK_MAX_FLOAT_COUNT, block_float_count);
 
     source_size -= ALP_CODEC_HEADER_SIZE;
-    UInt32 dest_size;
+    UInt32 dest_size = 0;
 
     switch (data_float_width)
     {

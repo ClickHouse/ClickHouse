@@ -244,9 +244,9 @@ protected:
         if (name.empty())
             return false;
 
-        /// Some parameters (database, default_format, everything used in the code above) do not
-        /// belong to the Settings class.
-        static const NameSet reserved_param_names{"user", "password", "quota_key", "stacktrace", "role", "query_id"};
+        /// Some parameters (default_format, everything used in the code above) do not belong to the
+        /// Settings class.
+        static const NameSet reserved_param_names{"user", "password", "quota_key", "stacktrace", "role", "query_id", "database", "table"};
         return !reserved_param_names.contains(name);
     }
 
@@ -284,6 +284,47 @@ protected:
         context->setCurrentQueryId(query_id);
     }
 
+    /// Resolves the time series table for the current request. Each of the database and table names comes
+    /// either from the configuration or from the URL query parameter 'database' and 'table'.
+    /// A query parameter can't override a value set in the configuration.
+    /// If the database isn't set, the table name is treated as a possibly-qualified  `database.table` name,
+    /// and if the table name is not a qualified name then the database name falls back to "default".
+    StorageID getTimeSeriesTableID()
+    {
+        QualifiedTableName full_name;
+        full_name.database = config().time_series_table_name.database;
+        full_name.table = config().time_series_table_name.table;
+
+        if (params->has("database"))
+        {
+            if (!full_name.database.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The database is set in the configuration of this prometheus handler and cannot be overridden by the 'database' query parameter");
+            full_name.database = params->get("database");
+        }
+
+        if (params->has("table"))
+        {
+            if (!full_name.table.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The table is set in the configuration of this prometheus handler and cannot be overridden by the 'table' query parameter");
+            full_name.table = params->get("table");
+        }
+
+        if (full_name.table.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The time series table name is not set; specify it in the configuration or in the 'table' query parameter");
+
+        if (full_name.database.empty())
+        {
+            full_name = QualifiedTableName::parseFromString(full_name.table);
+            if (full_name.database.empty())
+                full_name.database = "default";
+        }
+
+        return StorageID{full_name};
+    }
+
     void onException() override
     {
         // So that the next requests on the connection have to always start afresh in case of exceptions.
@@ -316,7 +357,6 @@ public:
         checkHTTPHeader(request, "Content-Type", "application/x-protobuf");
         checkHTTPHeader(request, "Content-Encoding", "snappy");
 
-
         prometheus::WriteRequest write_request;
 
         {
@@ -328,8 +368,10 @@ public:
         }
 
         const bool is_dynamic_routing = config().enable_table_name_url_routing;
-        auto table_name = resolveTableNameFromRequest(config(), request);
-        auto table = DatabaseCatalog::instance().getTable(StorageID{table_name}, context);
+        auto table_id = is_dynamic_routing
+            ? StorageID{resolveTableNameFromRequest(config(), request)}
+            : getTimeSeriesTableID();
+        auto table = DatabaseCatalog::instance().getTable(table_id, context);
         auto time_series_storage = storagePtrToTimeSeries(table);
         if (is_dynamic_routing)
         {
@@ -377,7 +419,7 @@ public:
         checkHTTPHeader(request, "Content-Type", "application/x-protobuf");
         checkHTTPHeader(request, "Content-Encoding", "snappy");
 
-        auto table = DatabaseCatalog::instance().getTable(StorageID{config().time_series_table_name}, context);
+        auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
         PrometheusRemoteReadProtocol protocol{table, context};
 
         prometheus::ReadRequest read_request;
@@ -442,17 +484,14 @@ public:
         if (name.empty())
             return false;
 
-        /// Some parameters (database, default_format, everything used in the code above) do not
-        /// belong to the Settings class.
-        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step"};
+        /// Some parameters (default_format, everything used in the code above) do not belong to the
+        /// Settings class.
+        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "database", "table"};
         return !reserved_param_names.contains(name);
     }
 
     void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) override
     {
-        auto table = DatabaseCatalog::instance().getTable(StorageID{config().time_series_table_name}, context);
-        PrometheusHTTPProtocolAPI protocol{table, context};
-
         const String & uri = request.getURI();
         LOG_DEBUG(log(), "Processing Query API request: method={}, uri={}", request.getMethod(), uri);
 
@@ -460,6 +499,9 @@ public:
 
         try
         {
+            auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+            PrometheusHTTPProtocolAPI protocol{table, context};
+
             if (uri.starts_with("/api/v1/query_range"))
             {
                 String query = params->get("query", "");

@@ -50,21 +50,21 @@ namespace
         return res;
     }
 
-    /// Extracts a qualified table name from the config. It can be set either as
-    ///     <table>mydb.prometheus</table>
-    /// or
-    ///     <database>mydb</database>
-    ///     <table>prometheus</table>
-    QualifiedTableName parseTableNameFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    /// Reads the database and table names of the time series table from the configuration.
+    /// If either the database name or the table name isn't set in the configuration then we take it from the URL
+    /// query parameters 'database' or 'table'.
+    void parseTableNameFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, PrometheusRequestHandlerConfig & res)
     {
-        QualifiedTableName res;
-        res.table = config.getString(config_prefix + ".table", "prometheus");
-        res.database = config.getString(config_prefix + ".database", "");
-        if (res.database.empty())
-            res = QualifiedTableName::parseFromString(res.table);
-        if (res.database.empty())
-            res.database = "default";
-        return res;
+        res.time_series_table_name.database = config.getString(config_prefix + ".database", "");
+        res.time_series_table_name.table = config.getString(config_prefix + ".table", "");
+
+        /// When the table is given as a qualified `database.table` name, we resolve it now and set the database name
+        /// so it can't be overridden by URL query parameters.
+        if (res.time_series_table_name.database.empty() && !res.time_series_table_name.table.empty())
+        {
+            if (auto parsed = QualifiedTableName::tryParseFromString(res.time_series_table_name.table); parsed && !parsed->database.empty())
+                res.time_series_table_name = *parsed;
+        }
     }
 
     /// Parses a configuration like this:
@@ -74,7 +74,7 @@ namespace
     {
         PrometheusRequestHandlerConfig res;
         res.type = PrometheusRequestHandlerConfig::Type::RemoteWrite;
-        res.time_series_table_name = parseTableNameFromConfig(config, config_prefix);
+        parseTableNameFromConfig(config, config_prefix, res);
         if (config.has(config_prefix + ".enable_table_name_url_routing"))
             res.enable_table_name_url_routing = config.getBool(config_prefix + ".enable_table_name_url_routing");
         parseCommonConfig(config, res);
@@ -88,7 +88,7 @@ namespace
     {
         PrometheusRequestHandlerConfig res;
         res.type = PrometheusRequestHandlerConfig::Type::RemoteRead;
-        res.time_series_table_name = parseTableNameFromConfig(config, config_prefix);
+        parseTableNameFromConfig(config, config_prefix, res);
         parseCommonConfig(config, res);
         if (config.has(config_prefix + ".user"))
         {
@@ -105,7 +105,7 @@ namespace
     {
         PrometheusRequestHandlerConfig res;
         res.type = PrometheusRequestHandlerConfig::Type::QueryAPI;
-        res.time_series_table_name = parseTableNameFromConfig(config, config_prefix);
+        parseTableNameFromConfig(config, config_prefix, res);
         parseCommonConfig(config, res);
         if (config.has(config_prefix + ".user"))
         {

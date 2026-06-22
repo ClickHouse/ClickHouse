@@ -34,6 +34,7 @@ target_compile_options (_poco_xml
         -Wno-cast-qual
         -Wno-covered-switch-default
         -Wno-deprecated-dynamic-exception-spec
+        -Wno-disabled-macro-expansion
         -Wno-implicit-fallthrough
         -Wno-missing-noreturn
         -Wno-old-style-cast

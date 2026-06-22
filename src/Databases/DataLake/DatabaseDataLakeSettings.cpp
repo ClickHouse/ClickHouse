@@ -30,11 +30,13 @@ namespace ErrorCodes
     DECLARE(String, region, "", "Region for Glue catalog", 0) \
     DECLARE(String, aws_role_arn, "", "Role arn for AWS connection for Glue catalog", 0) \
     DECLARE(String, aws_role_session_name, "", "Role session name for AWS connection for Glue catalog", 0) \
+    DECLARE(String, aws_external_id, "", "External id for the AWS STS AssumeRole trust policy for Glue catalog", 0) \
     DECLARE(String, storage_endpoint, "", "Object storage endpoint", 0) \
     DECLARE(S3UriStyle, storage_uri_style, S3UriStyle::AUTO, "URL style used when constructing object storage URLs from catalog-provided table locations. Use 'virtual_hosted' when the object storage server requires the bucket in the hostname (e.g. https://bucket.endpoint.com/path/)", 0) \
     DECLARE(String, onelake_tenant_id, "", "Tenant id from azure", 0) \
     DECLARE(String, onelake_client_id, "", "Client id from azure", 0) \
     DECLARE(String, onelake_client_secret, "", "Client secret from azure", 0) \
+    DECLARE(Bool, onelake_use_blob_endpoint, true, "Use the Blob endpoint (.blob.fabric.microsoft.com) for OneLake. When disabled, the DFS endpoint (.dfs.fabric.microsoft.com) is used instead", 0) \
     DECLARE(String, google_project_id, "", "Google Cloud project ID for BigLake. Required for BigLake catalog. Used in x-goog-user-project header. If not set and google_adc_quota_project_id is provided, it latter will be used", 0) \
     DECLARE(String, google_service_account, "", "Google Cloud service account email for metadata service authentication. Default: 'default'. Only used when ADC credentials are not provided", 0) \
     DECLARE(String, google_metadata_service, "", "Google Cloud metadata service endpoint for token retrieval. Default: 'metadata.google.internal'. Only used when ADC credentials are not provided", 0) \
@@ -63,10 +65,7 @@ DatabaseDataLakeSettings::DatabaseDataLakeSettings(const DatabaseDataLakeSetting
 {
 }
 
-DatabaseDataLakeSettings::DatabaseDataLakeSettings(DatabaseDataLakeSettings && settings) noexcept
-    : impl(std::make_unique<DatabaseDataLakeSettingsImpl>(std::move(*settings.impl)))
-{
-}
+DatabaseDataLakeSettings::DatabaseDataLakeSettings(DatabaseDataLakeSettings && settings) noexcept = default;
 
 DatabaseDataLakeSettings::~DatabaseDataLakeSettings() = default;
 
