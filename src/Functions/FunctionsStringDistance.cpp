@@ -322,6 +322,7 @@ struct ByteEditDistanceMyersImpl
 template <bool is_utf8, typename Word = UInt64>
 struct BlockMyersEditDistance
 {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init,hicpp-member-init): stack_tbl is scratch; only the used range is filled in build() before any read, and value-initializing it would zero 16 KB per row.
     struct PatternMasksASCII
     {
         static constexpr size_t W = sizeof(Word) * 8;
@@ -329,7 +330,7 @@ struct BlockMyersEditDistance
         // avoiding a per-row heap allocation in the hot edit-distance loop.
         static constexpr size_t stack_blocks = 8;
         UInt32 num_blocks = 0;
-        Word stack_tbl[256 * stack_blocks]; // NOLINT(*-member-init): only the used [0, 256*num_blocks) range is filled in build()
+        Word stack_tbl[256 * stack_blocks]; // scratch table; only [0, 256*num_blocks) is filled in build() before any read
         VectorWithMemoryTracking<Word> heap_tbl; // used only for needles longer than stack_blocks * W
         Word * tbl = nullptr; // points into stack_tbl or heap_tbl; flat: tbl[c * num_blocks + k] = bitmask of positions of char c in block k
 
