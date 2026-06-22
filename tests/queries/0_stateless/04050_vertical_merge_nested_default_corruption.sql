@@ -70,3 +70,40 @@ OPTIMIZE TABLE t_nested_chain FINAL;
 SELECT id, `n.a`, `n.b`, `n.c`, `n.d` FROM t_nested_chain ORDER BY id;
 
 DROP TABLE t_nested_chain;
+
+-- A Nested subcolumn whose DEFAULT references a subcolumn (`m.keys`) of an expired column (`m`).
+-- `collectIdentifierNames` returns the subcolumn name `m.keys`, while the expired set holds the
+-- physical storage column name `m`. The identifier must be resolved back to its storage column
+-- before the lookup; otherwise `n.b` is not expired and the vertical merge fails to materialize
+-- the missing subcolumn (writing Nested offsets inconsistent with its sibling `n.a`).
+-- The merge must complete and the sibling `n.a` must remain intact.
+DROP TABLE IF EXISTS t_nested_subcol;
+
+CREATE TABLE t_nested_subcol (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1;
+
+SYSTEM STOP MERGES t_nested_subcol;
+
+INSERT INTO t_nested_subcol VALUES (1, [10,20]);
+INSERT INTO t_nested_subcol VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_subcol ADD COLUMN m Map(String, String);
+ALTER TABLE t_nested_subcol ADD COLUMN `n.b` Array(String) DEFAULT m.keys;
+
+SYSTEM START MERGES t_nested_subcol;
+OPTIMIZE TABLE t_nested_subcol FINAL;
+
+-- Sibling data must survive the merge into a single part.
+-- (`n.b` itself is not selected: a DEFAULT referencing a subcolumn of a missing column is a
+--  separate, pre-existing read-path limitation independent of the merge corruption fixed here.)
+SELECT count(), countDistinct(_part) FROM t_nested_subcol;
+SELECT id, `n.a` FROM t_nested_subcol ORDER BY id;
+
+DROP TABLE t_nested_subcol;

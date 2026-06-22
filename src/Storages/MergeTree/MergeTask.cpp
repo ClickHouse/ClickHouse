@@ -681,7 +681,16 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
                     for (const auto & identifier : identifiers)
                     {
-                        if (expired_columns.contains(identifier))
+                        /// An identifier in the DEFAULT expression may reference a subcolumn (e.g. `m.keys`),
+                        /// while `expired_columns` holds physical storage column names (e.g. `m`). Resolve the
+                        /// identifier back to its storage column before the lookup. Identifiers that are not
+                        /// columns at all (e.g. lambda parameters) are ignored.
+                        auto resolved = columns_desc.tryGetColumn(
+                            GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), identifier);
+                        if (!resolved)
+                            continue;
+
+                        if (expired_columns.contains(resolved->getNameInStorage()))
                         {
                             expired_columns.emplace(storage_column.name);
                             changed = true;
