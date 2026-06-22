@@ -262,6 +262,10 @@ public:
             Bucket,
             MapBucketsInfo,
 
+            /// Derived, data-independent quantized codes of a dense vector column (see the `Quantize` codec).
+            /// Written from the full-precision data and exposed as the readable subcolumn `<column>.quantized`.
+            QuantizedCodes,
+
             Regular,
         };
 
