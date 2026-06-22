@@ -80,7 +80,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString google_adc_refresh_token;
     extern const DatabaseDataLakeSettingsString google_adc_quota_project_id;
     extern const DatabaseDataLakeSettingsString google_adc_credentials_file;
-    extern const DatabaseDataLakeSettingsBool polaris_style_paths;
+    extern const DatabaseDataLakeSettingsBool force_add_bucket;
 }
 
 namespace Setting
@@ -500,8 +500,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 {
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withSchema().withLocation().withDataLakeSpecificProperties();
-    if (settings[DatabaseDataLakeSetting::polaris_style_paths])
-        table_metadata.withPolarisStyleAbfssPaths();
+    if (settings[DatabaseDataLakeSetting::force_add_bucket])
+        table_metadata.withForceAddBucket();
 
     /// This is added to test that lightweight queries like 'SHOW TABLES' dont end up fetching the table
     fiu_do_on(FailPoints::lightweight_show_tables,
@@ -875,8 +875,8 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
 {
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withLocation().withSchema();
-    if (settings[DatabaseDataLakeSetting::polaris_style_paths])
-        table_metadata.withPolarisStyleAbfssPaths();
+    if (settings[DatabaseDataLakeSetting::force_add_bucket])
+        table_metadata.withForceAddBucket();
 
     const auto [namespace_name, table_name] = DataLake::parseTableName(name);
 
