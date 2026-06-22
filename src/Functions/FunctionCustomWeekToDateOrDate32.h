@@ -38,9 +38,16 @@ public:
     /// is set — a runtime-setting-dependent choice the DSL can't express.
     String getSignatureString() const override
     {
-        /// The optional mode and timezone arguments are always constant
-        /// (see IFunctionCustomWeek::getArgumentsThatAreAlwaysConstant); encode both as `const`.
-        return "(Date | Date32 | DateTime | DateTime64 | String, [const UInt8], [const String]) -> Date";
+        /// The optional `mode` and `timezone` arguments are positional (see
+        /// `IFunctionCustomWeek::checkArguments`): argument 2 is always the `week_mode` (`UInt8`)
+        /// and argument 3 the `timezone` (`String`); both are always constant
+        /// (see `IFunctionCustomWeek::getArgumentsThatAreAlwaysConstant`), so encode them as `const`.
+        /// Spell the legal arities as explicit alternatives rather than two independent optional
+        /// groups `[const UInt8], [const String]`, which would let a two-argument call skip the
+        /// `UInt8` mode and bind a timezone string in the mode position.
+        return "(Date | Date32 | DateTime | DateTime64 | String) -> Date"
+               " OR (Date | Date32 | DateTime | DateTime64 | String, const UInt8) -> Date"
+               " OR (Date | Date32 | DateTime | DateTime64 | String, const UInt8, const String) -> Date";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
