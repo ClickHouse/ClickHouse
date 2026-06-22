@@ -40,6 +40,24 @@ struct ReplaceStringImpl
             return;
         }
 
+        /// One-byte needle and one-byte replacement in "replace all" mode: every match keeps the
+        /// string layout, so offsets are unchanged and we can copy the buffer once and flip matching
+        /// bytes in place. The needle must be non-NUL so ColumnString row terminators stay intact.
+        if constexpr (replace == ReplaceStringTraits::Replace::All)
+        {
+            if (needle.size() == 1 && replacement.size() == 1 && needle[0] != static_cast<char>(0))
+            {
+                res_data.assign(haystack_data.begin(), haystack_data.end());
+                res_offsets.assign(haystack_offsets.begin(), haystack_offsets.end());
+                const auto from = static_cast<UInt8>(needle[0]);
+                const auto to = static_cast<UInt8>(replacement[0]);
+                for (auto & c : res_data)
+                    if (c == from)
+                        c = to;
+                return;
+            }
+        }
+
         const UInt8 * const begin = haystack_data.data();
         const UInt8 * const end = haystack_data.data() + haystack_data.size();
         const UInt8 * pos = begin;
