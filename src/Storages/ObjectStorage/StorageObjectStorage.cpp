@@ -214,12 +214,15 @@ StorageObjectStorage::StorageObjectStorage(
         configuration->setSchemaHash(StorageObjectStorageConfiguration::computeSchemaHash(columns));
     }
 
+    /// Validate the configuration before schema/format inference, so that e.g. the HTTP host/header
+    /// filters are enforced before any inference network request reads remote data. The `url` table
+    /// function does the same in `TableFunctionURL::getActualTableStructure`.
+    configuration->check(context);
+
     if (need_resolve_columns_or_format)
         resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
     else
         validateSupportedColumns(columns, *configuration);
-
-    configuration->check(context);
 
     /// FIXME: We need to call getPathSample() lazily on select
     /// in case it failed to be initialized in constructor.
