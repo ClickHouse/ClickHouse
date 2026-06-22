@@ -5,6 +5,7 @@
 #include <Disks/IDiskTransaction.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
+#include <IO/Expect404ResponseScope.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/PackedFilesReader.h>
 #include <IO/PackedFilesWriter.h>
@@ -208,6 +209,10 @@ bool DataPartStorageOnDiskBase::looksLikeBrokenDetachedPartHasTheSameContent(con
 void DataPartStorageOnDiskBase::setRelativePath(const std::string & path)
 {
     part_dir = path;
+    /// Unlike rename/changeRootPath, this can repoint the storage at an unrelated directory whose
+    /// archive has a different index, so the cached reader must be dropped. The reset is safe for
+    /// concurrent readers because the reader is shared-owned: a reader still using it keeps it
+    /// alive until done.
     {
         std::lock_guard lock(skip_indices_packed_mutex);
         skip_indices_packed_probed = false;
@@ -693,13 +698,16 @@ void DataPartStorageOnDiskBase::rename(
     part_dir = new_part_dir;
     root_path = new_root_path;
 
-    /// The cached skp_idx.packed reader (if any) was constructed with the old absolute path and
-    /// would keep reading from there even after the directory move. Drop it so the next access
-    /// reloads from the new location.
+    /// A successfully-loaded reader stays valid: its archive index is path-independent and reads
+    /// resolve the archive's current location through readFile, so keep it (dropping it could also
+    /// race a concurrent query holding it). But a cached *miss* may be stale: a probe that ran while
+    /// this rename was in progress could have built packed_path from the old location and found no
+    /// file. Clear that stale miss (only when there is no reader) so the next access re-probes the
+    /// new path.
     {
         std::lock_guard lock(skip_indices_packed_mutex);
-        skip_indices_packed_probed = false;
-        skip_indices_packed_reader.reset();
+        if (!skip_indices_packed_reader)
+            skip_indices_packed_probed = false;
     }
 }
 
@@ -983,10 +991,12 @@ void DataPartStorageOnDiskBase::changeRootPath(const std::string & from_root, co
 
     root_path = to_root.substr(0, dst_size) + root_path.substr(prefix_size);
 
+    /// See rename: keep a successfully-loaded (path-independent) reader, but clear a stale cached
+    /// miss so the next access re-probes the new path.
     {
         std::lock_guard lock(skip_indices_packed_mutex);
-        skip_indices_packed_probed = false;
-        skip_indices_packed_reader.reset();
+        if (!skip_indices_packed_reader)
+            skip_indices_packed_probed = false;
     }
 }
 
@@ -1025,28 +1035,48 @@ bool DataPartStorageOnDiskBase::isCaseInsensitive() const
     return getDisk()->isCaseInsensitive();
 }
 
-const PackedFilesReader * DataPartStorageOnDiskBase::getSkipIndicesPackedReader() const
+std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndicesPackedReader() const
 {
     std::lock_guard lock(skip_indices_packed_mutex);
     if (skip_indices_packed_probed)
-        return skip_indices_packed_reader.get();
+        return skip_indices_packed_reader;
 
     auto component_guard = Coordination::setCurrentComponent("DataPartStorageOnDiskBase::getSkipIndicesPackedReader");
 
     const String packed_path = fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME);
     auto disk = volume->getDisk();
     if (disk->existsFile(packed_path))
-        skip_indices_packed_reader = std::make_unique<PackedFilesReader>(disk, packed_path, ReadSettings{});
+    {
+        /// On shared storage another replica may delete or relocate skp_idx.packed between the
+        /// existence check above and the open below, so the open fails with a "no such key" error.
+        /// Expect404ResponseScope keeps that 404 from being logged or counted as a DiskS3NoSuchKeyError
+        /// (which fails stress tests); catching alone is not enough. If the archive is still present
+        /// it is a genuine read error -> rethrow. Otherwise it was removed or moved: do NOT cache a
+        /// miss (return without setting probed), so the next access re-probes against the current
+        /// path -- after a rename the archive lives at the new path and must not be lost. A part that
+        /// genuinely has no archive is cached as a miss via the existsFile-false branch above, so this
+        /// does not loop.
+        Expect404ResponseScope scope;
+        try
+        {
+            skip_indices_packed_reader = std::make_shared<PackedFilesReader>(disk, packed_path, ReadSettings{});
+        }
+        catch (const Exception &)
+        {
+            if (disk->existsFile(packed_path))
+                throw;
+            return nullptr;
+        }
+    }
 
     skip_indices_packed_probed = true;
-    return skip_indices_packed_reader.get();
+    return skip_indices_packed_reader;
 }
 
 void DataPartStorageOnDiskBase::seedSkipIndicesPackedReader(const PackedFilesIO::Index & index) const
 {
     std::lock_guard lock(skip_indices_packed_mutex);
-    const String packed_path = fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME);
-    skip_indices_packed_reader = std::make_unique<PackedFilesReader>(volume->getDisk(), packed_path, index);
+    skip_indices_packed_reader = std::make_shared<PackedFilesReader>(index);
     skip_indices_packed_probed = true;
 }
 
@@ -1058,7 +1088,7 @@ void DataPartStorageOnDiskBase::seedSkipIndicesPackedReaderFrom(const IDataPartS
 
     /// Same-class access to the protected probe is allowed; this also triggers the source's lazy
     /// load if it hasn't been read yet.
-    const auto * source_archive = source_disk->getSkipIndicesPackedReader();
+    auto source_archive = source_disk->getSkipIndicesPackedReader();
     if (!source_archive)
         return;
 
@@ -1067,7 +1097,7 @@ void DataPartStorageOnDiskBase::seedSkipIndicesPackedReaderFrom(const IDataPartS
 
 bool DataPartStorageOnDiskBase::isFileInPackedSkipIndicesArchive(const std::string & name) const
 {
-    const auto * reader = getSkipIndicesPackedReader();
+    auto reader = getSkipIndicesPackedReader();
     return reader != nullptr && reader->exists(name);
 }
 
@@ -1085,7 +1115,7 @@ void DataPartStorageOnDiskBase::copyPackedSkipIndicesFilesInto(
     if (file_names.empty())
         return;
 
-    const auto * source_archive = getSkipIndicesPackedReader();
+    auto source_archive = getSkipIndicesPackedReader();
     if (!source_archive)
         return;
 
@@ -1115,7 +1145,7 @@ void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
     MergeTreeDataPartChecksums & checksums,
     bool sync) const
 {
-    const auto * source_archive = getSkipIndicesPackedReader();
+    auto source_archive = getSkipIndicesPackedReader();
     if (!source_archive)
         return;
 
