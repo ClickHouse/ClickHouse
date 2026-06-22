@@ -42,10 +42,11 @@ struct ReplaceStringImpl
 
         /// One-byte needle and one-byte replacement in "replace all" mode: every match keeps the
         /// string layout, so offsets are unchanged and we can copy the buffer once and flip matching
-        /// bytes in place. The needle must be non-NUL so ColumnString row terminators stay intact.
+        /// bytes in place. Row boundaries are defined by offsets (not by in-band terminators), which
+        /// we copy verbatim, so any needle byte is safe here.
         if constexpr (replace == ReplaceStringTraits::Replace::All)
         {
-            if (needle.size() == 1 && replacement.size() == 1 && needle[0] != static_cast<char>(0))
+            if (needle.size() == 1 && replacement.size() == 1)
             {
                 res_data.assign(haystack_data.begin(), haystack_data.end());
                 res_offsets.assign(haystack_offsets.begin(), haystack_offsets.end());

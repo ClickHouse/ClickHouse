@@ -43,3 +43,34 @@ SELECT replaceRegexpAll(materialize('a, b, c'), ', ', '|');
 
 -- FixedString haystack still works (separate code path, unchanged).
 SELECT replaceRegexpAll(materialize(toFixedString('a b c', 5)), ' ', '_');
+
+-- NUL byte cases. Row boundaries in ColumnString are defined by offsets, not by an in-band
+-- terminator, so the fast path is safe for a NUL needle and for NUL bytes inside the payload.
+-- Oracles are built with concat (no string-replace machinery) for an independent cross-check.
+
+-- NUL needle: replace embedded NUL bytes.
+SELECT replaceAll(materialize(concat('a', char(0), 'b', char(0), 'c')), char(0), '_') = 'a_b_c';
+-- Leading and trailing NUL needle (the byte that used to be the row terminator).
+SELECT replaceAll(materialize(concat(char(0), 'x', char(0))), char(0), '.') = '.x.';
+-- NUL inside the payload must be preserved when replacing a different byte.
+SELECT replaceAll(materialize(concat('a', char(0), ' b')), ' ', '_') = concat('a', char(0), '_b');
+
+-- Many-row cross-check: NUL needle, oracle via concat.
+SELECT count()
+FROM
+(
+    SELECT replaceAll(materialize(concat(toString(number), char(0), toString(number + 1))), char(0), '|') AS w,
+           concat(toString(number), '|', toString(number + 1)) AS oracle
+    FROM numbers(1000)
+)
+WHERE w != oracle;
+
+-- Many-row cross-check: NUL in payload preserved while replacing a different byte.
+SELECT count()
+FROM
+(
+    SELECT replaceAll(materialize(concat(toString(number), char(0), 'x y')), ' ', '_') AS w,
+           concat(toString(number), char(0), 'x_y') AS oracle
+    FROM numbers(1000)
+)
+WHERE w != oracle;
