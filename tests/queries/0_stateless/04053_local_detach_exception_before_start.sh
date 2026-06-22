@@ -39,8 +39,7 @@ run_local_interactive() {
 echo "=== Local: Detach mode: INSERT-SELECT returns query_id ==="
 OUT=$(run_local_interactive \
     "CREATE TABLE t_local_detach (x UInt64) ENGINE=Memory;" \
-    "INSERT INTO t_local_detach SELECT 99 SETTINGS allow_experimental_detach_queries=1, async_insert=0;" \
-    "SELECT * FROM t_local_detach;")
+    "INSERT INTO t_local_detach SELECT 99 SETTINGS allow_experimental_detach_queries=1, async_insert=0;")
 
 # The detached INSERT returns a single-column "query_id" block; verify it appeared.
 if echo "$OUT" | grep -q "query_id"; then
@@ -51,15 +50,12 @@ else
     exit 1
 fi
 
-# The subsequent SELECT joins the background thread (next sendQuery joins detached_query_thread)
-# so the row must be visible once it returns.
-if echo "$OUT" | grep -q "99"; then
-    echo "Inserted data visible after detach: yes"
-else
-    echo "Inserted data visible after detach: no"
-    echo "FAIL: Expected inserted value 99 to be visible after detach, got: $OUT"
-    exit 1
-fi
+# NOTE: we intentionally do not assert that a follow-up "SELECT * FROM t_local_detach" sees the
+# inserted row. `sendQuery` no longer blocks on a still-running detached query (blocking would
+# serialize every follow-up command behind it and defeat detached execution), so a follow-up
+# command is not ordered after the detached INSERT. Completion is guaranteed only when the
+# connection is destroyed (the destructor joins the background work). Background execution of the
+# INSERT itself is covered deterministically by 03812 over HTTP/native.
 
 # --- 2. ExceptionBeforeStart: INSERT into nonexistent table must return an error, not query_id ---
 echo "=== Local: ExceptionBeforeStart — error returned when query fails before start ==="
@@ -81,7 +77,7 @@ OUT_SEL=$(run_local_interactive \
     "SELECT 'sync_value';")
 
 # Detached SELECT returns the single-column "query_id" block (the value "42" is discarded). The
-# next query joins the background thread and then runs synchronously.
+# next query runs synchronously; it does not block on the detached SELECT.
 if echo "$OUT_SEL" | grep -q "query_id"; then
     echo "SELECT returned query_id: yes"
 else
@@ -90,7 +86,7 @@ else
     exit 1
 fi
 
-# The follow-up sync SELECT must still produce its result after the detached thread is joined.
+# The follow-up sync SELECT must still produce its result regardless of the detached SELECT.
 if echo "$OUT_SEL" | grep -q "sync_value"; then
     echo "Follow-up sync SELECT returned: yes"
 else

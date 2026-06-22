@@ -32,6 +32,28 @@ wait_for_count() {
     exit 1
 }
 
+# Wait until the given detached query_ids are no longer running. Polls system.processes instead of
+# a fixed sleep, which is timing-sensitive on loaded CI (the detached sleep(3) queries can take
+# longer than a hard wait once queueing and startup are added).
+wait_for_queries_gone() {
+    local max_wait=90
+    local waited=0
+    local ids_csv
+    ids_csv=$(printf "'%s'," "$@")
+    ids_csv=${ids_csv%,}
+    while [ "$waited" -lt "$max_wait" ]; do
+        local c
+        c=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id IN (${ids_csv})" 2>/dev/null || echo "0")
+        if [ "${c:-0}" -eq 0 ]; then
+            return 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    echo "FAIL: Waited ${max_wait}s for detached queries (${ids_csv}) to finish"
+    exit 1
+}
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS $TABLE"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE $TABLE (x UInt64) ENGINE=MergeTree() ORDER BY x"
 
@@ -220,7 +242,8 @@ else
     exit 1
 fi
 
-sleep 6  # Wait for the three sleep(3) queries above to finish before proceeding.
+# Wait for the three sleep(3) queries above to finish before proceeding.
+wait_for_queries_gone "$QID_PROC_HTTP" "$QID_PROC_NATIVE" "$QID_SELECT_HTTP"
 
 # --- ExceptionBeforeStart via duplicate query_id ---
 # A second request using the same query_id as a still-running detached query hits
@@ -256,7 +279,8 @@ else
     exit 1
 fi
 
-sleep 6  # Wait for both sleep(3) dup queries above to finish.
+# Wait for both sleep(3) dup queries above to finish.
+wait_for_queries_gone "$QID_DUP_HTTP" "$QID_DUP_NATIVE"
 
 # --- Inline SETTINGS in the query text trigger detach ---
 # The setting can be passed as SETTINGS clause inside the SQL itself, without URL params or client flags.
