@@ -44,6 +44,11 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
     /// FIXME why do we need a merge list element for projection parts at all?
     bool is_fake_projection_part = future_part->part_info == FAKE_RESULT_PART_FOR_PROJECTION;
 
+    /// Projection sub-merge elements borrow the parent merge entry's `thread_group` instead of
+    /// owning their own, so they must not run the background-memory-tracker cleanup in the
+    /// destructor (the parent entry does it once for the shared tracker).
+    owns_thread_group = !is_fake_projection_part;
+
     size_t normal_parts_count = 0;
     for (const auto & source_part : future_part->parts)
     {
@@ -132,7 +137,11 @@ const MemoryTracker & MergeListElement::getMemoryTracker() const
 
 MergeListElement::~MergeListElement()
 {
-    background_memory_tracker.adjustOnBackgroundTaskEnd(&getMemoryTracker());
+    /// Only the owner of `thread_group` adjusts the shared background-memory tracker.
+    /// Projection sub-merge elements borrow the parent merge entry's `thread_group`, and the
+    /// parent entry runs the cleanup once for it (see `owns_thread_group`).
+    if (owns_thread_group)
+        background_memory_tracker.adjustOnBackgroundTaskEnd(&getMemoryTracker());
 }
 
 }
