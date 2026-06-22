@@ -89,10 +89,7 @@ void TextIndexAnalyzer::QueryBuilder::addMissingToken()
 
 void TextIndexAnalyzer::QueryBuilder::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, ReadableRows * readable)
 {
-    if (is_failed)
-        return;
-
-    if (tokens.contains(token))
+    if (is_failed || tokens.contains(token))
         return;
 
     tokens[token] = token_info;
@@ -223,7 +220,6 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
 
     processTokenOperation(token, [&](QueryBuilder & query_builder)
     {
-
         query_builder.addTokenInfo(token, token_info, readable);
     });
 }
