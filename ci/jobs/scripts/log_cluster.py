@@ -78,10 +78,6 @@ class LogCluster:
             "query": query,
             "date_time_input_format": "best_effort",
             "send_logs_level": "warning",
-            # Override the per-user memory limit from the cluster's default
-            # profile, which otherwise aborts large INSERTs with
-            # "User memory limit exceeded" via the OvercommitTracker.
-            "max_memory_usage_for_user": 0,
         }
         if db_name:
             params["database"] = db_name
