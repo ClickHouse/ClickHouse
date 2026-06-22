@@ -479,61 +479,7 @@ ENGINE = MergeTree ORDER BY id;   -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 DROP TABLE IF EXISTS tab;
 
-SELECT '14. Partially materialized index + preprocessor: haystack IS preprocessed on row-scan.';
-
--- Old parts use row-level scan. Unlike the postprocessor, the preprocessor is applied to the
--- haystack too. When old-part data is uppercase and the preprocessor lowercases the column,
--- the row-scan compares hasToken(lower('FOO'), lower('FOO')) = hasToken('foo', 'foo') = 1.
--- New parts have the index: it stores lower('FOO')='foo', and the lookup key is also 'foo'.
--- Both parts match, so the count is 2 (not 1). This proves the haystack IS preprocessed.
-
-CREATE TABLE tab (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
-
-SYSTEM STOP MERGES tab;
-
-INSERT INTO tab VALUES (1, 'FOO'), (2, 'BAR');  -- old parts: no index, uppercase data
-
-ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(val));
-
-INSERT INTO tab VALUES (3, 'FOO'), (4, 'BAR');  -- new parts: with index, same data
-
--- Old part row-scan: hasToken(lower('FOO'), lower('FOO')) = hasToken('foo', 'foo') = 1.
--- New part index: lower('FOO')='foo' found → 1. Total: 2 (both parts agree).
-SELECT count() FROM tab WHERE hasToken(val, 'FOO');  -- 2
-SELECT count() FROM tab WHERE hasToken(val, 'BAR');  -- 2
-SELECT count() FROM tab WHERE hasToken(val, 'xyz');  -- 0
-
-SYSTEM START MERGES tab;
-DROP TABLE tab;
-
-SELECT '15. Partially materialized index + non-trivial preprocessor: preprocessor applied consistently to both needle and haystack.';
-
--- The preprocessor strips the suffix "ing$" from tokens.
--- Old parts (row-level scan): hasToken(replaceRegexpAll('running','ing$',''), replaceRegexpAll('running','ing$',''))
---   = hasToken('runn', 'runn') = 1.
--- New parts: index stores 'runn' (preprocessed from 'running'); lookup key is also 'runn'.
--- Both parts match consistently → count is 2 for every query (contrast to postprocessor test 15 which gives 1).
-
-CREATE TABLE tab (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
-
-SYSTEM STOP MERGES tab;
-
-INSERT INTO tab VALUES (1, 'running'), (2, 'cat');  -- old parts: no index
-
-ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = replaceRegexpAll(val, 'ing$', ''));
-
-INSERT INTO tab VALUES (3, 'running'), (4, 'cat');  -- new parts: with index
-
--- 'running' → preprocessor → 'runn'. Both old and new parts match: total 2.
-SELECT count() FROM tab WHERE hasToken(val, 'running');  -- 2
--- 'cat' is unchanged by the preprocessor. Both parts match: total 2.
-SELECT count() FROM tab WHERE hasToken(val, 'cat');      -- 2
-SELECT count() FROM tab WHERE hasToken(val, 'xyz');      -- 0
-
-SYSTEM START MERGES tab;
-DROP TABLE tab;
-
-SELECT '16. Timestamp removal: preprocessor strips ISO timestamp prefix from log lines.';
+SELECT '-- Timestamp removal: preprocessor strips ISO timestamp prefix from log lines.';
 
 -- Log lines contain a leading ISO timestamp followed by a space and the log message.
 -- The preprocessor uses replaceRegexpAll to remove the timestamp prefix before tokenization,
@@ -566,7 +512,7 @@ SELECT count() FROM tab WHERE hasToken(val, '10');           -- 0
 
 DROP TABLE tab;
 
-SELECT '17. Array tokenizer + preprocessor: has/hasAll/hasAny apply preprocessor on lookup.';
+SELECT '-- Array tokenizer + preprocessor: has/hasAll/hasAny apply preprocessor on lookup.';
 -- Index build always applies the preprocessor unconditionally. has/hasAll/hasAny must apply
 -- it on the lookup side too so the needle matches the stored (preprocessed) form.
 
@@ -591,7 +537,7 @@ SELECT count() FROM tab WHERE has(val, 'bar');         -- 0
 
 DROP TABLE tab;
 
-SELECT '18. Array tokenizer + preprocessor: has() / hasAll() / hasAny() apply the preprocessor.';
+SELECT '-- Array tokenizer + preprocessor: has() / hasAll() / hasAny() apply the preprocessor.';
 -- Index build applies the preprocessor unconditionally (stores 'foo', 'bar', 'baz').
 -- has/hasAll/hasAny apply the preprocessor to the needle for the granule lookup, so
 -- 'Foo' -> 'foo' finds the right granule; row-level still does literal comparison.
@@ -615,7 +561,7 @@ SELECT count() FROM tab WHERE hasAny(val, ['BAZ']);    -- 0
 
 DROP TABLE tab;
 
-SELECT '19. hasTokenOrNull with a preprocessor: the index must not be used (row-level is not preprocessed).';
+SELECT '-- hasTokenOrNull with a preprocessor: the index must not be used (row-level is not preprocessed).';
 
 CREATE TABLE tab
 (

@@ -10,7 +10,7 @@
 1
 0
 0
-3. Legacy predicates (hasPhrase / startsWith / endsWith) work correctly with a postprocessor.
+3. Predicates hasPhrase / startsWith / endsWith work correctly with a postprocessor.
 1
 1
 1

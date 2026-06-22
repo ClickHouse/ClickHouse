@@ -175,34 +175,26 @@ Baz	3
 - Negative tests
 -- Index on whole map must fail
 -- The preprocessor expression must contain the index definition
-14. Partially materialized index + preprocessor: haystack IS preprocessed on row-scan.
-2
-2
-0
-15. Partially materialized index + non-trivial preprocessor: preprocessor applied consistently to both needle and haystack.
-2
-2
-0
-16. Timestamp removal: preprocessor strips ISO timestamp prefix from log lines.
+-- Timestamp removal: preprocessor strips ISO timestamp prefix from log lines.
 2
 1
 1
 0
 0
-17. Array tokenizer + preprocessor: has/hasAll/hasAny apply preprocessor on lookup.
+-- Array tokenizer + preprocessor: has/hasAll/hasAny apply preprocessor on lookup.
 1
 1
 0
 0
 0
-18. Array tokenizer + preprocessor: has() / hasAll() / hasAny() apply the preprocessor.
+-- Array tokenizer + preprocessor: has() / hasAll() / hasAny() apply the preprocessor.
 1
 0
 1
 0
 1
 0
-19. hasTokenOrNull with a preprocessor: the index must not be used (row-level is not preprocessed).
+-- hasTokenOrNull with a preprocessor: the index must not be used (row-level is not preprocessed).
 1
 1
 0

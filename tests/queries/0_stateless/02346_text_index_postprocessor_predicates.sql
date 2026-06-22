@@ -53,7 +53,7 @@ SELECT count() FROM tab WHERE hasAny(val, ['xyz']);          -- 0
 
 DROP TABLE tab;
 
-SELECT '3. Legacy predicates (hasPhrase / startsWith / endsWith) work correctly with a postprocessor.';
+SELECT '3. Predicates hasPhrase / startsWith / endsWith work correctly with a postprocessor.';
 
 CREATE TABLE tab
 (
