@@ -2108,6 +2108,20 @@ class TestCase:
     def has_show_create_table_in_test(self):
         return not subprocess.call(["grep", "-iq", "show create", self.case_file])
 
+    def test_observes_create_query_text(self):
+        # True if the test would be perturbed by the client rewriting CREATE ... MergeTree
+        # queries (which the codec injection enables via --allow_merge_tree_settings):
+        # it inspects the stored/normalized query text, or its CREATE reparse is
+        # semantics-sensitive (AUTO_INCREMENT compatibility mode).
+        return not subprocess.call(
+            [
+                "grep",
+                "-iqE",
+                "show create|create_table_query|normalized_query|auto_increment",
+                self.case_file,
+            ]
+        )
+
     def add_effective_settings(self, client_options):
         new_options = ""
         if self.effective_settings:
@@ -2578,10 +2592,14 @@ class TestCase:
         # back to LZ4 for them, overriding the server default (ClientBase injects it
         # into CREATE ... MergeTree queries, and only if not already set). LZ4 has no
         # shell metacharacters, so it is safe in CLICKHOUSE_CLIENT_OPT for .sh tests.
-        # SHOW CREATE tests are skipped: the injected setting would change their output.
+        # The injection relies on --allow_merge_tree_settings, which makes the client
+        # rewrite CREATE ... MergeTree queries; skip tests that would observe the
+        # rewrite (SHOW CREATE / system.query_log / system.tables.create_table_query)
+        # or whose CREATE reparse changes semantics (AUTO_INCREMENT compatibility) —
+        # those are not codec-sensitive and pass under the server default unchanged.
         if (
             (has_no_random_settings_tag or has_no_random_merge_tree_settings_tag)
-            and not self.has_show_create_table_in_test()
+            and not self.test_observes_create_query_text()
             and "default_compression_codec" not in self.effective_merge_tree_settings
         ):
             self.effective_merge_tree_settings["default_compression_codec"] = "LZ4"
