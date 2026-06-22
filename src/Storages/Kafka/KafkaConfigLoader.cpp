@@ -9,13 +9,11 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/QueryProfiler.h>
+#include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <Common/setThreadName.h>
-#include <IO/S3/getAvailabilityZone.h>
 #include <csignal>
 
 namespace CurrentMetrics
@@ -39,7 +37,6 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_sasl_password;
     extern const KafkaSettingsString kafka_compression_codec;
     extern const KafkaSettingsInt64 kafka_compression_level;
-    extern const KafkaSettingsString kafka_autodetect_client_rack;
 }
 
 namespace ErrorCodes
@@ -138,7 +135,7 @@ rd_kafka_resp_err_t KafkaInterceptors<TStorageKafka>::rdKafkaOnNew(
     rd_kafka_t * rk, const rd_kafka_conf_t *, void * ctx, char * /*errstr*/, size_t /*errstr_size*/)
 {
     TStorageKafka * self = reinterpret_cast<TStorageKafka *>(ctx);
-    rd_kafka_resp_err_t status = {};
+    rd_kafka_resp_err_t status;
 
     status = rd_kafka_interceptor_add_on_thread_start(rk, "init-thread", rdKafkaOnThreadStart, ctx);
     if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
@@ -159,7 +156,7 @@ rd_kafka_resp_err_t KafkaInterceptors<TStorageKafka>::rdKafkaOnConfDup(
     rd_kafka_conf_t * new_conf, const rd_kafka_conf_t * /*old_conf*/, size_t /*filter_cnt*/, const char ** /*filter*/, void * ctx)
 {
     TStorageKafka * self = reinterpret_cast<TStorageKafka *>(ctx);
-    rd_kafka_resp_err_t status = {};
+    rd_kafka_resp_err_t status;
 
     // cppkafka copies configuration multiple times
     status = rd_kafka_conf_interceptor_add_on_conf_dup(new_conf, "init", rdKafkaOnConfDup, ctx);
@@ -399,25 +396,6 @@ void updateConfigurationFromConfig(
     if (kafka_settings[KafkaSetting::kafka_compression_level].changed)
         kafka_config.set("compression.level", kafka_settings[KafkaSetting::kafka_compression_level].toString());
 
-    auto autodetect_rack = kafka_settings[KafkaSetting::kafka_autodetect_client_rack].value;
-    if (!autodetect_rack.empty())
-    {
-        if (magic_enum::enum_contains<S3::AZFacilities>(autodetect_rack))
-        {
-            std::string rack
-                = S3::tryGetRunningAvailabilityZone(magic_enum::enum_cast<S3::AZFacilities>(autodetect_rack).value());
-            if (!rack.empty())
-            {
-                kafka_config.set("client.rack", rack);
-                LOG_TRACE(params.log, "client.rack set to {}.", rack);
-            }
-            else
-                LOG_ERROR(params.log, "Failed to determine client.rack via facility {}.", autodetect_rack);
-        }
-        else
-            LOG_ERROR(params.log, "Unknown kafka_autodetect_client_rack facility  {}. Expected one of AWS_ZONE_ID, AWS_ZONE_NAME, GCP_ZONE, CLICKHOUSE, AWS_ZONE_NAME_THEN_GCP_ZONE.", autodetect_rack);
-    }
-
 #if USE_KRB5
     if (kafka_config.has_property("sasl.kerberos.kinit.cmd"))
         LOG_WARNING(params.log, "sasl.kerberos.kinit.cmd configuration parameter is ignored.");
@@ -486,7 +464,7 @@ void updateConfigurationFromConfig(
         // This should be safe, since we wait the rdkafka object anyway.
         void * self = static_cast<void *>(&storage);
 
-        int status = 0;
+        int status;
 
         status
             = rd_kafka_conf_interceptor_add_on_new(kafka_config.get_handle(), "init", KafkaInterceptors<TKafkaStorage>::rdKafkaOnNew, self);
