@@ -864,6 +864,75 @@ private:
     std::unique_ptr<Poco::Net::HTTPServer> server;
 };
 
+/// Like FixedETagServer, but honors the `If-Match` conditional header the way S3/GCS do: if the
+/// request carries an `If-Match` that differs from the object's ETag, it responds 412 Precondition
+/// Failed (before sending any body) instead of 200. Used to exercise the server-enforced overwrite
+/// detection path, as opposed to FixedETagServer which ignores If-Match (the defense-in-depth path).
+class IfMatchAwareHandler : public Poco::Net::HTTPRequestHandler
+{
+public:
+    IfMatchAwareHandler(std::string body_, std::string etag_) : body(std::move(body_)), etag(std::move(etag_)) {}
+    void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
+    {
+        const std::string if_match = request.get("If-Match", "");
+        if (!if_match.empty() && if_match != etag)
+        {
+            const std::string error_body =
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                "<Error><Code>PreconditionFailed</Code>"
+                "<Message>At least one of the preconditions you specified did not hold.</Message>"
+                "<Condition>If-Match</Condition></Error>";
+            response.setContentType("application/xml");
+            response.setStatus(Poco::Net::HTTPResponse::HTTP_PRECONDITION_FAILED);
+            response.setContentLength(static_cast<std::streamsize>(error_body.size()));
+            auto & os = response.send();
+            os << error_body;
+            os.flush();
+            return;
+        }
+        response.set("ETag", etag);
+        response.setContentType("application/octet-stream");
+        response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+        response.setContentLength(static_cast<std::streamsize>(body.size()));
+        auto & os = response.send();
+        os << body;
+        os.flush();
+    }
+private:
+    std::string body;
+    std::string etag;
+};
+
+class IfMatchAwareHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
+{
+public:
+    IfMatchAwareHandlerFactory(std::string body_, std::string etag_) : body(std::move(body_)), etag(std::move(etag_)) {}
+    Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override
+    {
+        return new IfMatchAwareHandler(body, etag);
+    }
+private:
+    std::string body;
+    std::string etag;
+};
+
+class IfMatchAwareServer
+{
+public:
+    IfMatchAwareServer(std::string body, std::string etag)
+        : server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
+        , server(std::make_unique<Poco::Net::HTTPServer>(
+              new IfMatchAwareHandlerFactory(std::move(body), std::move(etag)),
+              *server_socket, new Poco::Net::HTTPServerParams()))
+    {
+        server->start();
+    }
+    std::string getUrl() const { return "http://" + server_socket->address().toString(); }
+private:
+    std::unique_ptr<Poco::Net::ServerSocket> server_socket;
+    std::unique_ptr<Poco::Net::HTTPServer> server;
+};
+
 std::shared_ptr<DB::S3::Client> createTestS3Client(const DB::S3::URI & uri)
 {
     DB::RemoteHostFilter remote_host_filter;
@@ -926,6 +995,8 @@ DB::ReadBufferFromS3 makeReadBuffer(
 
 /// The object's ETag changed between listing and reading (an in-place overwrite). The read must
 /// fail with S3_OBJECT_CHANGED_DURING_READ instead of returning bytes from the wrong generation.
+/// FixedETagServer ignores the If-Match header (returns 200 with the new ETag), so this exercises the
+/// client-side response-ETag comparison - the defense-in-depth layer for backends that drop If-Match.
 TEST(IOTestAwsS3Client, ReadDetectsObjectReplacedDuringRead)
 {
     const std::string body(128, 'x');
@@ -979,6 +1050,50 @@ TEST(IOTestAwsS3Client, ReadSkipsETagCheckForVersionedRead)
     /// version_id is pinned, so validation must be skipped and the read must succeed.
     auto read_buffer = makeReadBuffer(
         client, uri, body.size(), /* expected_etag= */ "\"etag-of-current-version\"", /* version_id= */ "some-version-id");
+
+    String content;
+    DB::readStringUntilEOF(content, read_buffer);
+    EXPECT_EQ(content, body);
+}
+
+/// Server-enforced overwrite detection: the backend honors If-Match and answers 412 Precondition
+/// Failed when the conditional GET's ETag no longer matches. The 412 must be mapped to
+/// S3_OBJECT_CHANGED_DURING_READ rather than surfacing as a generic S3 error.
+TEST(IOTestAwsS3Client, ReadMapsIfMatchPreconditionFailedToObjectChanged)
+{
+    const std::string body(128, 'x');
+    IfMatchAwareServer server(body, "\"etag-after-overwrite\"");
+    DB::S3::URI uri(server.getUrl() + "/bucket/live/data.parquet");
+    auto client = createTestS3Client(uri);
+    ASSERT_TRUE(client);
+
+    /// expected_etag (the listed generation) differs from the server's current ETag, so the
+    /// If-Match the read sends will not match and the server returns 412.
+    auto read_buffer = makeReadBuffer(client, uri, body.size(), /* expected_etag= */ "\"etag-at-listing\"");
+
+    String content;
+    try
+    {
+        DB::readStringUntilEOF(content, read_buffer);
+        FAIL() << "Expected S3_OBJECT_CHANGED_DURING_READ, but the read succeeded";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::S3_OBJECT_CHANGED_DURING_READ) << e.message();
+    }
+}
+
+/// When the conditional GET's If-Match matches the current ETag, the If-Match-honoring server returns
+/// the body normally - no spurious failure.
+TEST(IOTestAwsS3Client, ReadWithMatchingIfMatchSucceeds)
+{
+    const std::string body(128, 'x');
+    IfMatchAwareServer server(body, "\"etag-stable\"");
+    DB::S3::URI uri(server.getUrl() + "/bucket/live/data.parquet");
+    auto client = createTestS3Client(uri);
+    ASSERT_TRUE(client);
+
+    auto read_buffer = makeReadBuffer(client, uri, body.size(), /* expected_etag= */ "\"etag-stable\"");
 
     String content;
     DB::readStringUntilEOF(content, read_buffer);

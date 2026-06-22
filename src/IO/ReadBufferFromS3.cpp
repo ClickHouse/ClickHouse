@@ -10,6 +10,8 @@
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/Requests.h>
 
+#include <aws/core/http/HttpResponse.h>
+
 #include <Common/Stopwatch.h>
 #include <Common/HistogramMetrics.h>
 #include <Common/logger_useful.h>
@@ -558,6 +560,14 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     req.SetKey(key);
     if (!version_id.empty())
         req.SetVersionId(version_id);
+    /// Phase 1 of overwrite detection: make the GET conditional on the generation observed at read
+    /// setup. The server returns 412 Precondition Failed if the object was replaced in place, so
+    /// torn cross-generation bytes are never transferred (no extra round-trip - just a header). Only
+    /// for non-pinned reads with a known expected_etag (populated when s3_validate_etag_on_read is on);
+    /// pinned ?versionId= reads are immutable and need no condition. The success-path ETag comparison
+    /// below stays as defense-in-depth for backends that silently ignore If-Match.
+    else if (!expected_etag.empty())
+        req.SetIfMatch(expected_etag);
 
     S3::setClickhouseAttemptNumber(req, attempt);
 
@@ -649,6 +659,19 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
             blob_log_watch.elapsedMicroseconds(),
             static_cast<Int32>(error.GetErrorType()), error.GetMessage());
     }
+
+    /// A conditional GET (If-Match, set above) returns 412 Precondition Failed when the object was
+    /// replaced in place mid-read. Map it to the same error the success-path ETag comparison raises -
+    /// which processException does not retry - rather than a generic S3 error. S3Exception only keeps
+    /// the Aws::S3::S3Errors code, not the HTTP status, so the mapping must happen here from the error.
+    if (version_id.empty() && !expected_etag.empty()
+        && error.GetResponseCode() == Aws::Http::HttpResponseCode::PRECONDITION_FAILED)
+        throw Exception(
+            ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+            "S3 object {}/{} was replaced during read (If-Match on etag {} failed); "
+            "retry the query, or set s3_validate_etag_on_read=0 to disable this check",
+            bucket, key, expected_etag);
+
     throw S3Exception(error.GetMessage(), error.GetErrorType());
 }
 
