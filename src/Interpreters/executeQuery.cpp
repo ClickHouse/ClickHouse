@@ -69,6 +69,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
 #include <Parsers/ASTSystemQuery.h>
+#include <Parsers/stripQuerySettings.h>
 #include <QueryPipeline/printPipeline.h>
 #include <IO/Progress.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -1044,9 +1045,12 @@ static void validateAnalyzerSettings(ASTPtr ast, bool context_value)
 /// but executeQueryImpl re-applies the query's own SETTINGS on top of the context, so a seed or
 /// fuzzed `SETTINGS max_rows_to_read = 0` (etc.) would otherwise silently lift the guard. Stripping
 /// them from the AST before formatting makes the fuzz-context values authoritative.
+/// removeSettingsFromQuery also prunes any SETTINGS clause that becomes empty, so a clause holding
+/// only these caps does not re-serialize to a bare `SETTINGS` keyword (which would throw on re-parse
+/// and make the fuzzer silently skip the query instead of running it under the caps).
 static void stripFuzzerSafetyLimitSettings(const ASTPtr & ast)
 {
-    static const std::string_view limit_settings[] = {
+    static constexpr std::string_view limit_settings[] = {
         "max_rows_to_read",
         "read_overflow_mode",
         "max_execution_time",
@@ -1055,24 +1059,7 @@ static void stripFuzzerSafetyLimitSettings(const ASTPtr & ast)
         "max_result_bytes",
     };
 
-    std::vector<ASTPtr> nodes_to_process{ast};
-    while (!nodes_to_process.empty())
-    {
-        auto node = nodes_to_process.back();
-        nodes_to_process.pop_back();
-
-        if (auto * set_query = node->as<ASTSetQuery>())
-        {
-            for (const auto & name : limit_settings)
-                set_query->changes.removeSetting(name);
-        }
-
-        for (const auto & child : node->children)
-        {
-            if (child)
-                nodes_to_process.push_back(child);
-        }
-    }
+    removeSettingsFromQuery(ast, limit_settings);
 }
 
 class ImplicitTransactionControlExecutor

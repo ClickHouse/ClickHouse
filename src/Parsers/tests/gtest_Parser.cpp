@@ -12,6 +12,8 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/stripQuerySettings.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
@@ -496,3 +498,92 @@ INSTANTIATE_TEST_SUITE_P(
                 "WITH table_0 AS\n    (\n        SELECT\n            country,\n            city,\n            AVG(c + some_derived_value) AS _expr_0,\n            MAX(c + some_derived_value) AS aggr\n        FROM matches\n        WHERE (start_date > toDate('2023-05-30')) AND ((c + some_derived_value) > 0)\n        GROUP BY\n            country,\n            city\n    )\nSELECT\n    country,\n    city,\n    _expr_0,\n    aggr,\n    CONCAT(city, ' in ', country) AS place,\n    LEFT(country, 2) AS country_code\nFROM table_0\nORDER BY\n    aggr ASC,\n    country DESC\nLIMIT 20",
             },
         })));
+
+namespace
+{
+
+/// Walk the AST and fail if any node still owns an empty SETTINGS clause. Such a node serializes to a
+/// bare `SETTINGS` keyword (ASTSelectQuery / ASTInsertQuery / ASTQueryWithOutput formatters all print
+/// `SETTINGS ` whenever the node pointer is set), which throws on re-parse.
+bool hasEmptySettingsNode(const ASTPtr & ast)
+{
+    std::vector<const IAST *> nodes{ast.get()};
+    while (!nodes.empty())
+    {
+        const auto * node = nodes.back();
+        nodes.pop_back();
+        if (const auto * set_query = node->as<ASTSetQuery>())
+            if (set_query->changes.empty() && set_query->default_settings.empty() && set_query->query_parameters.empty())
+                return true;
+        for (const auto & child : node->children)
+            if (child)
+                nodes.push_back(child.get());
+    }
+    return false;
+}
+
+}
+
+/// The server-side AST fuzzer strips its safety-limit settings from a fuzzed query so they cannot be
+/// overridden. Before this was fixed, stripping the only settings in a clause left an empty SETTINGS
+/// node attached to its owner, which re-serialized to a bare `SETTINGS` keyword; re-parsing that
+/// threw, so the fuzzer silently skipped the query instead of running it under the caps. The transform
+/// must instead prune the empty node, leaving a query that still parses and executes.
+/// See `removeSettingsFromQuery` and `executeASTFuzzerQueries`.
+TEST(RemoveSettingsFromQuery, PrunesEmptySettingsAndKeepsQueryParseable)
+{
+    static constexpr std::string_view safety_settings[] = {
+        "max_rows_to_read",
+        "read_overflow_mode",
+        "max_execution_time",
+        "max_memory_usage",
+        "max_result_rows",
+        "max_result_bytes",
+    };
+
+    /// Each query carries ONLY the safety settings (in every SETTINGS clause), so stripping empties
+    /// the clause and the owner must be pruned. Covers the owners that re-apply query settings in
+    /// InterpreterSetQuery::applySettingsFromQuery: ASTSelectQuery, ASTSelectWithUnionQuery /
+    /// ASTQueryWithOutput, ASTInsertQuery, ASTExplainQuery, and a subquery clause.
+    const std::vector<String> override_only_queries = {
+        "SELECT sum(number) FROM numbers(100) SETTINGS max_rows_to_read = 0, read_overflow_mode = 'throw'",
+        "SELECT 1 UNION ALL SELECT 2 SETTINGS max_rows_to_read = 0, max_execution_time = 0",
+        "INSERT INTO t SELECT number FROM numbers(100) SETTINGS max_rows_to_read = 0, read_overflow_mode = 'throw'",
+        "EXPLAIN SELECT number FROM numbers(100) SETTINGS max_rows_to_read = 0",
+        "SELECT * FROM (SELECT number FROM numbers(100) SETTINGS max_rows_to_read = 0) SETTINGS max_execution_time = 0",
+    };
+
+    for (const auto & query : override_only_queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        removeSettingsFromQuery(ast, safety_settings);
+
+        /// No owner may keep an empty SETTINGS node.
+        EXPECT_FALSE(hasEmptySettingsNode(ast)) << "empty SETTINGS left for: " << query;
+
+        /// The serialized query must re-parse (this is exactly what failed before the fix: a bare
+        /// `SETTINGS` threw, so the fuzzer skipped the query instead of running it under the caps).
+        String formatted = ast->formatWithSecretsOneLine();
+        ParserQuery reparser(formatted.data() + formatted.size());
+        ASTPtr reparsed = parseQuery(reparser, formatted, "", 0, 0, 0);
+        EXPECT_NE(nullptr, reparsed) << "did not re-parse: " << formatted;
+    }
+
+    /// A clause that also holds a non-safety setting must keep that setting (and the SETTINGS clause).
+    {
+        const String query = "SELECT 1 SETTINGS max_rows_to_read = 0, max_threads = 4";
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        removeSettingsFromQuery(ast, safety_settings);
+
+        EXPECT_FALSE(hasEmptySettingsNode(ast)) << "query: " << query;
+        const String formatted = ast->formatWithSecretsOneLine();
+        EXPECT_NE(String::npos, formatted.find("max_threads")) << "dropped a non-safety setting: " << formatted;
+        EXPECT_EQ(String::npos, formatted.find("max_rows_to_read")) << "kept a safety setting: " << formatted;
+    }
+}
