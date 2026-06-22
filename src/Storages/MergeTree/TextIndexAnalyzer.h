@@ -35,8 +35,8 @@ public:
         void markFailed();
         void markBypassed();
         void addMissingToken();
-        void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info);
-        void addRowsRange(RowsRange token_rows_range);
+        void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, const std::vector<RowsRange> & readable_ranges);
+        void addRowsRange(RowsRange token_rows_range, const std::vector<RowsRange> & readable_ranges);
         void addPostings(PostingListPtr token_postings);
         bool needReadPostings() const { return num_read_postings < tokens.size(); }
     };
@@ -57,6 +57,8 @@ public:
     void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info);
     void addPostings(std::string_view token, PostingListPtr postings);
 
+    /// Pushes the row ranges still readable after the analysis of the primary key and prior skip indexes.
+    void setReadableRows(std::vector<RowsRange> readable_ranges);
     /// Attaches a scan-discovered `token` to every pattern query whose regex matches it.
     /// Returns true if any pattern matched.
     bool addTokenToPatterns(std::string_view token);
@@ -98,6 +100,9 @@ private:
     absl::flat_hash_set<String> missing_tokens;
     /// Tokens whose posting list has been added (embedded or read from disk).
     absl::flat_hash_set<String> tokens_with_postings;
+    /// Row ranges still readable after the analysis of the primary key and prior skip indexes,
+    /// sorted and non-overlapping. Empty means the whole part is readable (no clipping is applied).
+    std::vector<RowsRange> readable_row_ranges;
 };
 
 }

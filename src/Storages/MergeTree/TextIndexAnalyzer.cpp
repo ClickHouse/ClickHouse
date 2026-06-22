@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
+#include <algorithm>
 #include <cmath>
 
 namespace ProfileEvents
@@ -15,6 +16,33 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+
+/// Returns the tightest single interval covering `span ∩ readable`, or `nullopt`
+/// if `span` does not overlap any readable range. `readable` is sorted and non-overlapping.
+static std::optional<RowsRange> clipToReadableRanges(RowsRange span, const std::vector<RowsRange> & readable)
+{
+    /// First readable range whose end reaches the span begin; ranges before it cannot overlap.
+    auto it = std::lower_bound(readable.begin(), readable.end(), span.begin,
+        [](const RowsRange & range, size_t value) { return range.end < value; });
+
+    std::optional<RowsRange> clipped;
+    for (; it != readable.end() && it->begin <= span.end; ++it)
+    {
+        size_t begin = std::max(span.begin, it->begin);
+        size_t end = std::min(span.end, it->end);
+
+        if (begin > end)
+            continue;
+
+        if (!clipped)
+            clipped = RowsRange(begin, end);
+        else
+            clipped->end = end; /// extend the coarse single-interval cover to the last overlap
+    }
+
+    return clipped;
 }
 
 void TextIndexAnalyzer::QueryBuilder::markFailed()
@@ -37,7 +65,7 @@ void TextIndexAnalyzer::QueryBuilder::addMissingToken()
         markFailed();
 }
 
-void TextIndexAnalyzer::QueryBuilder::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info)
+void TextIndexAnalyzer::QueryBuilder::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, const std::vector<RowsRange> & readable_ranges)
 {
     if (is_failed)
         return;
@@ -49,16 +77,34 @@ void TextIndexAnalyzer::QueryBuilder::addTokenInfo(std::string_view token, Token
 
     chassert(!token_info->ranges.empty());
     RowsRange token_rows_range(token_info->ranges.front().begin, token_info->ranges.back().end);
-    addRowsRange(token_rows_range);
+    addRowsRange(token_rows_range, readable_ranges);
 
     if (token_info->embedded_postings)
         addPostings(token_info->embedded_postings);
 }
 
-void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range)
+void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range, const std::vector<RowsRange> & readable_ranges)
 {
     if (is_failed)
         return;
+
+    /// Clip the token's row range to the rows that are still readable.
+    if (!readable_ranges.empty())
+    {
+        auto clipped_range = clipToReadableRanges(token_rows_range, readable_ranges);
+
+        if (!clipped_range)
+        {
+            /// The token never occurs in a readable row.
+            if (query->search_mode == TextSearchMode::All)
+                markFailed();
+
+            /// In `Any` mode it simply contributes nothing to the union, so skip it.
+            return;
+        }
+
+        token_rows_range = *clipped_range;
+    }
 
     if (!rows_range)
     {
@@ -146,7 +192,7 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
 
     processTokenOperation(token, [&](QueryBuilder & query_builder)
     {
-        query_builder.addTokenInfo(token, token_info);
+        query_builder.addTokenInfo(token, token_info, readable_row_ranges);
     });
 }
 
@@ -158,6 +204,11 @@ void TextIndexAnalyzer::addPostings(std::string_view token, PostingListPtr posti
     {
         query_builder.addPostings(postings);
     });
+}
+
+void TextIndexAnalyzer::setReadableRows(std::vector<RowsRange> readable_ranges)
+{
+    readable_row_ranges = std::move(readable_ranges);
 }
 
 bool TextIndexAnalyzer::addTokenToPatterns(std::string_view token)
@@ -396,6 +447,7 @@ size_t TextIndexAnalyzer::memoryUsageBytes() const
     for (const auto & token : tokens_with_postings)
         result += token.capacity();
 
+    result += readable_row_ranges.capacity() * sizeof(RowsRange);
     return result;
 }
 
