@@ -85,7 +85,6 @@ allow_experimental_projection_optimization	1
 allow_experimental_prql_dialect	0
 allow_experimental_qbit_type	1
 allow_experimental_query_cache	1
-allow_experimental_query_deduplication	0
 allow_experimental_refreshable_materialized_view	1
 allow_experimental_s3queue	1
 allow_experimental_shared_merge_tree	1

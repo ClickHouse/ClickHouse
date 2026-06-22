@@ -43,3 +43,39 @@ ORDER BY tuple(id)
 UNIQUE KEY (id)
 SETTINGS index_granularity = 8192
 (id)
+CREATE TABLE default.uk_ttl_inline_pk
+(
+    `c0` Int32,
+    `ts` DateTime
+)
+ENGINE = MergeTree
+PRIMARY KEY tuple(c0)
+ORDER BY tuple(c0)
+UNIQUE KEY (c0)
+TTL ts + toIntervalDay(1)
+SETTINGS index_granularity = 8192
+CREATE TABLE default.uk_ttl_storage_pk
+(
+    `c0` Int32,
+    `ts` DateTime
+)
+ENGINE = MergeTree
+PRIMARY KEY (c0)
+ORDER BY (c0)
+UNIQUE KEY (c0)
+TTL ts + toIntervalDay(1)
+SETTINGS index_granularity = 8192
+CREATE TABLE default.uk_ttl_full
+(
+    `c0` UInt32,
+    `sk` UInt64,
+    `ts` DateTime
+)
+ENGINE = MergeTree
+PARTITION BY toDate(ts)
+PRIMARY KEY (c0, sk)
+ORDER BY (c0, sk)
+UNIQUE KEY (c0)
+SAMPLE BY sk
+TTL ts + toIntervalDay(1)
+SETTINGS index_granularity = 8192

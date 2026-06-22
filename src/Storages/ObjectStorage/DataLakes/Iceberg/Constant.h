@@ -72,6 +72,8 @@ DEFINE_ICEBERG_FIELD(main);
 DEFINE_ICEBERG_FIELD(operation);
 DEFINE_ICEBERG_FIELD(append);
 DEFINE_ICEBERG_FIELD(overwrite);
+DEFINE_ICEBERG_FIELD(delete);
+DEFINE_ICEBERG_FIELD(partition);
 DEFINE_ICEBERG_FIELD(file_sequence_number);
 DEFINE_ICEBERG_FIELD(snapshot_id);
 DEFINE_ICEBERG_FIELD(statistics);
@@ -83,6 +85,7 @@ DEFINE_ICEBERG_FIELD(lower_bounds);
 DEFINE_ICEBERG_FIELD(upper_bounds);
 DEFINE_ICEBERG_FIELD(partitions);
 DEFINE_ICEBERG_FIELD(key_metadata);
+DEFINE_ICEBERG_FIELD(replace);
 
 
 /// These variables replace `-` with underscore `_` to be compatible with c++ code.
@@ -127,9 +130,25 @@ DEFINE_ICEBERG_FIELD_ALIAS(added_position_deletes, added-position-deletes);
 DEFINE_ICEBERG_FIELD_ALIAS(added_files_size, added-files-size);
 DEFINE_ICEBERG_FIELD_ALIAS(total_data_files, total-data-files);
 DEFINE_ICEBERG_FIELD_ALIAS(changed_partition_count, changed-partition-count);
+DEFINE_ICEBERG_FIELD_ALIAS(added_equality_delete_files, added-equality-delete-files);
+DEFINE_ICEBERG_FIELD_ALIAS(added_equality_deletes, added-equality-deletes);
+DEFINE_ICEBERG_FIELD_ALIAS(removed_data_files, removed-data-files);
+DEFINE_ICEBERG_FIELD_ALIAS(removed_delete_files, removed-delete-files);
+DEFINE_ICEBERG_FIELD_ALIAS(removed_position_delete_files, removed-position-delete-files);
+DEFINE_ICEBERG_FIELD_ALIAS(removed_position_deletes, removed-position-deletes);
+DEFINE_ICEBERG_FIELD_ALIAS(removed_equality_delete_files, removed-equality-delete-files);
+DEFINE_ICEBERG_FIELD_ALIAS(removed_equality_deletes, removed-equality-deletes);
+DEFINE_ICEBERG_FIELD_ALIAS(removed_files_size, removed-files-size);
+DEFINE_ICEBERG_FIELD_ALIAS(deleted_data_files, deleted-data-files);
+DEFINE_ICEBERG_FIELD_ALIAS(deleted_records, deleted-records);
 DEFINE_ICEBERG_FIELD_ALIAS(total_delete_files, total-delete-files);
 DEFINE_ICEBERG_FIELD_ALIAS(total_position_deletes, total-position-deletes);
 DEFINE_ICEBERG_FIELD_ALIAS(total_equality_deletes, total-equality-deletes);
+/// Engine/version markers written into the snapshot summary by the producing engine.
+DEFINE_ICEBERG_FIELD_ALIAS(app_id, app-id);
+DEFINE_ICEBERG_FIELD_ALIAS(engine_name, engine-name);
+DEFINE_ICEBERG_FIELD_ALIAS(engine_version, engine-version);
+DEFINE_ICEBERG_FIELD_ALIAS(iceberg_version, iceberg-version);
 DEFINE_ICEBERG_FIELD_ALIAS(field_id, field-id);
 DEFINE_ICEBERG_FIELD_ALIAS(last_sequence_number, last-sequence-number);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_file, metadata-file);

@@ -135,7 +135,6 @@ namespace Setting
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
-    extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsBool compile_sort_description;
@@ -2628,7 +2627,6 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
     bool optimize_trivial_count =
         syntax_analyzer_result->optimize_trivial_count
         && (allow_experimental_parallel_reading_from_replicas == 0)
-        && !settings[Setting::allow_experimental_query_deduplication]
         && !empty_result_for_aggregation_by_empty_set
         && storage
         && storage->supportsTrivialCountOptimization(storage_snapshot, getContext())

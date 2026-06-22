@@ -100,21 +100,16 @@ SerializationPtr SimpleDataTypesCache::getSerialization(const String & type_name
     return type->getDefaultSerialization();
 }
 
-const SimpleDataTypesCache & SimpleDataTypesCache::instance()
-{
-    static SimpleDataTypesCache cache;
-    return cache;
-}
-
 const SimpleDataTypesCache & getSimpleDataTypesCache()
 {
-    return SimpleDataTypesCache::instance();
+    thread_local SimpleDataTypesCache cache;
+    return cache;
 }
 
 DataTypePtr DataTypesCache::getType(const String & type_name)
 {
-    /// Check the global immutable cache of simple types first.
-    if (const auto * elem = SimpleDataTypesCache::instance().findByName(type_name))
+    /// Check the thread-local cache of simple types first.
+    if (const auto * elem = getSimpleDataTypesCache().findByName(type_name))
         return elem->type;
 
     return getCacheElement(type_name).type;
@@ -122,8 +117,8 @@ DataTypePtr DataTypesCache::getType(const String & type_name)
 
 SerializationPtr DataTypesCache::getSerialization(const String & type_name)
 {
-    /// Check the global immutable cache of simple types first.
-    if (const auto * elem = SimpleDataTypesCache::instance().findByName(type_name))
+    /// Check the thread-local cache of simple types first.
+    if (const auto * elem = getSimpleDataTypesCache().findByName(type_name))
         return elem->serialization;
 
     return getCacheElement(type_name).serialization;

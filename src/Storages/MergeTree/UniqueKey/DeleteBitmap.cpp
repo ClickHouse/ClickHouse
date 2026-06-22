@@ -62,9 +62,9 @@ namespace
         return value;
     }
 
-    /// `{N}` slice of `delete_bitmap_{N}.rbm`, or empty view if `file_name`
+    /// `{csn}` slice of `delete_bitmap_{csn}.rbm`, or empty view if `file_name`
     /// doesn't match the prefix/suffix shape.
-    std::string_view extractBlockNumberPart(std::string_view file_name)
+    std::string_view extractCSNPart(std::string_view file_name)
     {
         if (file_name.size() <= FILE_PREFIX.size() + FILE_SUFFIX.size())
             return {};
@@ -509,36 +509,36 @@ DeleteBitmapInspection inspectDeleteBitmap(ReadBuffer & in, bool collect_values)
     return result;
 }
 
-std::string DeleteBitmap::fileNameForBlockNumber(UInt64 block_number)
+std::string DeleteBitmap::fileNameForCSN(BitmapVersion csn)
 {
-    return fmt::format("{}{}{}", FILE_PREFIX, block_number, FILE_SUFFIX);
+    return fmt::format("{}{}{}", FILE_PREFIX, csn, FILE_SUFFIX);
 }
 
 bool DeleteBitmap::isDeleteBitmapFile(std::string_view file_name)
 {
-    auto number_part = extractBlockNumberPart(file_name);
-    if (number_part.empty())
+    auto csn_part = extractCSNPart(file_name);
+    if (csn_part.empty())
         return false;
     /// `tryParse<UInt64>` accepts leading `+` and ignores leading zeros, so a
-    /// noncanonical name would resolve to the same block number as the
-    /// canonical one and confuse the later read. Require digit-only, then
-    /// round-trip against `fileNameForBlockNumber` to accept only the canonical form.
-    for (char c : number_part)
+    /// noncanonical name would resolve to the same csn as the canonical one
+    /// and confuse the later read. Require digit-only, then round-trip
+    /// against `fileNameForCSN` to accept only the canonical form.
+    for (char c : csn_part)
         if (c < '0' || c > '9')
             return false;
     UInt64 parsed = 0;
-    if (!tryParse<UInt64>(parsed, number_part))
+    if (!tryParse<UInt64>(parsed, csn_part))
         return false;
-    return fileNameForBlockNumber(parsed) == file_name;
+    return fileNameForCSN(parsed) == file_name;
 }
 
-UInt64 DeleteBitmap::parseBlockNumberFromFileName(std::string_view file_name)
+BitmapVersion DeleteBitmap::parseCSNFromFileName(std::string_view file_name)
 {
     /// Caller is expected to have screened the name via `isDeleteBitmapFile`.
     /// If they didn't, `parse<UInt64>` throws on a malformed slice rather than
     /// silently returning 0.
-    auto number_part = extractBlockNumberPart(file_name);
-    return parse<UInt64>(number_part);
+    auto csn_part = extractCSNPart(file_name);
+    return parse<BitmapVersion>(csn_part);
 }
 
 }
