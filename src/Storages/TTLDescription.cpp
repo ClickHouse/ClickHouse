@@ -84,9 +84,8 @@ namespace
 ///
 /// Higher-order functions (e.g. `arrayMap`) keep their lambda body in a separate inner DAG owned by a
 /// `FunctionCapture`. Executing the outer node on a synthetic empty array would reduce the lambda over
-/// zero rows and never reach the body, so we recurse into the lambda DAG instead - its inputs carry the
-/// AggregateFunction argument and captured columns. Only the type error is translated into a clear
-/// message; all other exceptions are rethrown.
+/// zero rows and never reach the body, so we recurse into the lambda DAG instead. Only the type error 
+/// is translated into a clear message; all other exceptions are rethrown.
 void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::string_view expression_kind)
 {
     for (const auto & node : actions_dag.getNodes())
@@ -280,6 +279,38 @@ static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndType
     return result;
 }
 
+/// Collect the argument expressions of every aggregate function found in the AST.
+static void collectAggregateFunctionArguments(const ASTPtr & ast, ASTs & arguments)
+{
+    if (const auto * function = ast->as<ASTFunction>(); function && AggregateUtils::isAggregateFunction(*function))
+    {
+        if (function->arguments)
+            for (const auto & argument : function->arguments->children)
+                arguments.push_back(argument);
+    }
+
+    for (const auto & child : ast->children)
+        collectAggregateFunctionArguments(child, arguments);
+}
+
+/// Validate the aggregate-function arguments of a `GROUP BY ... SET` assignment. These argument
+/// expressions (e.g. `toDateTime(ts)` in `SET out = max(toDateTime(ts))`) are evaluated later by
+/// TTLAggregationAlgorithm and are not part of the main TTL expression, so an unsupported
+/// AggregateFunction-state consumer there would otherwise pass CREATE TABLE and fail at merge time.
+static void checkTTLGroupBySetForAggregateFunctions(
+    const ASTPtr & assignment_expression, const NamesAndTypesList & columns, const ContextPtr & context)
+{
+    ASTs aggregate_arguments;
+    collectAggregateFunctionArguments(assignment_expression, aggregate_arguments);
+
+    for (const auto & argument : aggregate_arguments)
+    {
+        auto argument_ast = argument->clone();
+        auto argument_expression = buildExpressionAndSets(argument_ast, columns, context).expression;
+        checkTTLExpressionForAggregateFunctions(argument_expression, /*expression_kind=*/ "GROUP BY SET ");
+    }
+}
+
 ExpressionAndSets TTLDescription::buildExpression(const ContextPtr & context) const
 {
     auto ast = expression_ast->clone();
@@ -377,6 +408,9 @@ TTLDescription TTLDescription::getTTLFromAST(
                 if (!data.has_aggregate_function)
                     throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
                     "Invalid expression for assignment of column {}. Should contain an aggregate function", assignment.column_name);
+
+                if (!is_attach && !context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions])
+                    checkTTLGroupBySetForAggregateFunctions(ass_expression, columns.getAllPhysical(), context);
 
                 ass_expression = addTypeConversionToAST(std::move(ass_expression), columns.getPhysical(assignment.column_name).type->getName());
                 aggregations.emplace_back(assignment.column_name, std::move(ass_expression));

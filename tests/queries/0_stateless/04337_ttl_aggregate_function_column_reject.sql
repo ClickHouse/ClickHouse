@@ -199,6 +199,34 @@ TTL toDateTime(intDiv(ts, denom)) + INTERVAL 1 DAY;
 
 DROP TABLE test_ttl_intdiv;
 
+-- GROUP BY SET: an unsupported AggregateFunction consumer inside a SET aggregate argument must be
+-- rejected. The main TTL expression only depends on `d`, so the SET assignment expression is checked
+-- separately (it is executed later by the TTL aggregation algorithm).
+CREATE TABLE test_ttl_agg_group_by_set
+(
+    key UInt64,
+    d DateTime,
+    ts AggregateFunction(max, DateTime64(3)),
+    out DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY GROUP BY key SET out = max(toDateTime(ts)); -- { serverError BAD_TTL_EXPRESSION }
+
+-- Valid: a state-aware consumer inside a SET aggregate argument must be accepted.
+CREATE TABLE test_ttl_agg_group_by_set_finalize
+(
+    key UInt64,
+    d DateTime,
+    ts AggregateFunction(max, DateTime64(3)),
+    out DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY GROUP BY key SET out = max(toDateTime(finalizeAggregation(ts)));
+
+DROP TABLE test_ttl_agg_group_by_set_finalize;
+
 -- Valid: AggregateFunction column exists but is not referenced in TTL
 CREATE TABLE test_ttl_agg_not_referenced
 (
