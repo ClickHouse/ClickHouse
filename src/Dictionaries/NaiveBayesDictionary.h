@@ -93,22 +93,13 @@ public:
 
     Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
-    /// Classifies the input text and returns the most probable class.
-    UInt32 classifyText(std::string_view input) const
+    /// Invokes the given function with the concrete model, resolving the tokenizer-policy variant exactly
+    /// once. Callers that classify many rows do so under a single call so that the per-row hot path holds no
+    /// virtual or variant dispatch and can reuse one `NaiveBayesScratch`.
+    template <typename Func>
+    decltype(auto) visitModel(Func && func) const
     {
-        return std::visit([&](const auto & model) { return model.classify(input); }, *classifier);
-    }
-
-    /// Classifies the input text and returns the most probable class together with its probability.
-    std::pair<UInt32, double> classifyTextWithProb(std::string_view input) const
-    {
-        return std::visit([&](const auto & model) { return model.classifyWithProb(input); }, *classifier);
-    }
-
-    /// Classifies the input text and returns every class with its probability, sorted by probability descending.
-    std::vector<std::pair<UInt32, double>> classifyTextAllProbs(std::string_view input) const
-    {
-        return std::visit([&](const auto & model) { return model.classifyAllProbs(input); }, *classifier);
+        return std::visit(std::forward<Func>(func), *classifier);
     }
 
 private:

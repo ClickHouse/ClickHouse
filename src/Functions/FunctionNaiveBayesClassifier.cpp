@@ -45,17 +45,18 @@ void validateNBArguments(const IFunction & func, const ColumnsWithTypeAndName & 
         });
 }
 
-/// Drives the per-row work shared by the three Naive Bayes functions. The dictionary name (argument 0)
-/// is validated as a constant in getReturnTypeImpl, so the dictionary is resolved and the dictGet access
-/// right is checked once for the whole block; then the callback is invoked with the dictionary, the input
+/// Drives the per-row work shared by the three Naive Bayes functions. The dictionary name (argument 0) is
+/// validated as a constant in getReturnTypeImpl, so the dictionary is resolved and the dictGet access right
+/// is checked once for the whole block. The tokenizer-policy variant is then resolved once and a single
+/// scratch is reused across rows; the callback is invoked with the concrete model, that scratch, the input
 /// text, and the row index for every row.
-template <typename PerRow>
+template <typename ClassifyRow>
 void executeNaiveBayes(
     const ContextPtr & context,
     std::atomic<bool> & access_checked,
     const ColumnsWithTypeAndName & arguments,
     size_t input_rows_count,
-    PerRow && per_row)
+    ClassifyRow && classify_row)
 {
     if (input_rows_count == 0)
         return;
@@ -77,16 +78,22 @@ void executeNaiveBayes(
 
     ColumnPtr text_column = arguments[1].column->convertToFullColumnIfConst();
 
-    for (size_t i = 0; i < input_rows_count; ++i)
+    nb_dict->visitModel([&](const auto & model)
     {
-        const std::string_view text = text_column->getDataAt(i);
+        NaiveBayesScratch scratch;
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            const std::string_view text = text_column->getDataAt(i);
 
-        if (text.empty())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Input text is empty for dictionary {}. Please provide a non-empty string.", dictionary_name);
+            if (text.empty())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Input text is empty for dictionary {}. Please provide a non-empty string.",
+                    dictionary_name);
 
-        per_row(*nb_dict, text, i);
-    }
+            classify_row(model, scratch, text, i);
+        }
+    });
 }
 
 DataTypePtr makeClassProbTuple()
@@ -126,7 +133,8 @@ public:
         auto & data = result_column->getData();
 
         executeNaiveBayes(context, access_checked, arguments, input_rows_count,
-            [&](const NaiveBayesDictionary & dict, std::string_view text, size_t i) { data[i] = dict.classifyText(text); });
+            [&](const auto & model, NaiveBayesScratch & scratch, std::string_view text, size_t i)
+            { data[i] = model.classify(text, scratch); });
 
         return result_column;
     }
@@ -166,9 +174,9 @@ public:
         auto & prob_data = prob_col->getData();
 
         executeNaiveBayes(context, access_checked, arguments, input_rows_count,
-            [&](const NaiveBayesDictionary & dict, std::string_view text, size_t i)
+            [&](const auto & model, NaiveBayesScratch & scratch, std::string_view text, size_t i)
             {
-                auto [best_class, best_prob] = dict.classifyTextWithProb(text);
+                auto [best_class, best_prob] = model.classifyWithProb(text, scratch);
                 class_data[i] = best_class;
                 prob_data[i] = best_prob;
             });
@@ -216,9 +224,10 @@ public:
         auto & offsets = offsets_col->getData();
 
         executeNaiveBayes(context, access_checked, arguments, input_rows_count,
-            [&](const NaiveBayesDictionary & dict, std::string_view text, size_t i)
+            [&](const auto & model, NaiveBayesScratch & scratch, std::string_view text, size_t i)
             {
-                for (const auto & [class_id, prob] : dict.classifyTextAllProbs(text))
+                model.classifyAllProbs(text, scratch);
+                for (const auto & [class_id, prob] : scratch.probabilities)
                 {
                     class_data.push_back(class_id);
                     prob_data.push_back(prob);

@@ -224,8 +224,12 @@ ColumnPtr NaiveBayesDictionary::getColumn(
     auto result = ColumnUInt32::create(rows);
     auto & result_data = result->getData();
 
-    for (size_t i = 0; i < rows; ++i)
-        result_data[i] = classifyText(string_col->getDataAt(i));
+    visitModel([&](const auto & model)
+    {
+        NaiveBayesScratch scratch;
+        for (size_t i = 0; i < rows; ++i)
+            result_data[i] = model.classify(string_col->getDataAt(i), scratch);
+    });
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
     found_count.fetch_add(rows, std::memory_order_relaxed);
