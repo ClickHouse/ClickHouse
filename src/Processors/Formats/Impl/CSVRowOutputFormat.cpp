@@ -33,6 +33,9 @@ void CSVRowOutputFormat::writeLine(const std::vector<String> & values)
 
 void CSVRowOutputFormat::writePrefix()
 {
+    if (format_settings.csv.write_bom)
+        out.write("\xEF\xBB\xBF", 3);
+
     const auto & sample = getPort(PortKind::Main).getHeader();
 
     if (with_names)
