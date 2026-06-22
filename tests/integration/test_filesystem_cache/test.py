@@ -780,11 +780,11 @@ SETTINGS disk = disk(type = cache,
     )
     count = int(
         node.query(
-            """
+            f"""
     SYSTEM FLUSH LOGS;
     SELECT uniqExact(concat(key, toString(offset)))
     FROM system.filesystem_cache_log
-    WHERE read_type = 'READ_FROM_FS_AND_DOWNLOADED_TO_CACHE';
+    WHERE read_type = 'READ_FROM_FS_AND_DOWNLOADED_TO_CACHE' AND query_id = '{query_id}';
     """
         )
     )
