@@ -30,6 +30,9 @@ if wget --spider "${COVERAGE_URL}" 2>&1 | grep -q '200 OK'; then
 echo "Found coverage file at ${COVERAGE_URL}"
 wget --quiet "${COVERAGE_URL}" -O base_llvm_coverage.info
 FIRST_BASE_COMMIT="${TEST_COMMIT}"
+# Record which commit this baseline came from so line-number remapping
+# in print_newly_covered_code.py can compute git diffs against extras.
+echo "${TEST_COMMIT}" > base_llvm_coverage.sha
 FOUND=1
 break
 fi

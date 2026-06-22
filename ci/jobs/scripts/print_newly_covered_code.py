@@ -24,6 +24,7 @@ A handful of caveats are baked into the output of this script:
 """
 import os
 import re
+import subprocess
 import sys
 from collections import defaultdict
 from ci.praktika.result import Result
@@ -169,6 +170,90 @@ def _format_block_preview(rel: str, lines_in_block: list[int], context: int = 2)
     return out
 
 
+def _parse_extra_diff_hunks(diff_text: str) -> dict[str, list]:
+    """Parse a unified git diff (extra_sha -> primary_sha) into per-file hunk structures.
+
+    Each hunk contains:
+      old_start, old_count, new_start, new_count
+      removed:     set of old line numbers deleted going from extra to primary
+      context_map: {old_line: new_line} for lines that survived unchanged
+    """
+    file_hunks: dict[str, list] = {}
+    current_file = None
+    current_hunk = None
+    old_pos = new_pos = 0
+
+    re_file_hdr = re.compile(r"^\+\+\+ b/(.*)$")
+    re_hunk_hdr = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+
+    for line in diff_text.splitlines():
+        m = re_file_hdr.match(line)
+        if m:
+            path = m.group(1)
+            current_file = None if path == "/dev/null" else path
+            if current_file:
+                file_hunks.setdefault(current_file, [])
+            current_hunk = None
+            continue
+
+        m = re_hunk_hdr.match(line)
+        if m and current_file is not None:
+            old_start = int(m.group(1))
+            old_count = int(m.group(2)) if m.group(2) is not None else 1
+            new_start = int(m.group(3))
+            new_count = int(m.group(4)) if m.group(4) is not None else 1
+            current_hunk = {
+                "old_start": old_start,
+                "old_count": old_count,
+                "new_start": new_start,
+                "new_count": new_count,
+                "removed": set(),
+                "context_map": {},
+            }
+            file_hunks[current_file].append(current_hunk)
+            old_pos = old_start
+            new_pos = new_start
+            continue
+
+        if current_hunk is None or current_file is None:
+            continue
+
+        if line.startswith("-"):
+            current_hunk["removed"].add(old_pos)
+            old_pos += 1
+        elif line.startswith("+"):
+            new_pos += 1
+        elif line.startswith(" "):
+            current_hunk["context_map"][old_pos] = new_pos
+            old_pos += 1
+            new_pos += 1
+
+    return file_hunks
+
+
+def _remap_old_to_new(old_line: int, hunks: list) -> int | None:
+    """Map an old (extra baseline) line number to the primary baseline's coordinate system.
+
+    Returns None if the line was deleted between the two commits (not in primary).
+    Lines outside all hunks are shifted by the accumulated offset of preceding hunks.
+    """
+    offset = 0
+    for h in hunks:
+        hunk_old_end = h["old_start"] + h["old_count"] - 1
+        if old_line < h["old_start"]:
+            break
+        if old_line > hunk_old_end:
+            offset += h["new_count"] - h["old_count"]
+            continue
+        # Line is inside this hunk
+        if old_line in h["context_map"]:
+            return h["context_map"][old_line]
+        if old_line in h["removed"]:
+            return None  # deleted in primary
+        return old_line + offset  # fallback
+    return old_line + offset
+
+
 if __name__ == "__main__":
     BASE = os.environ.get("COVERAGE_BASE_INFO", f"{temp_dir}/base_llvm_coverage.info")
     # For partial runs (e.g. only stateless tests changed), llvm_coverage_job.py
@@ -200,32 +285,73 @@ if __name__ == "__main__":
     curr_data = _parse_info(CURR)
     print(f"  {len(curr_data)} files in current")
 
-    # Cross-validation: intersect the zero-coverage sets from all available
-    # extra master baselines. A line passes only if it is uncovered in every
-    # one of them (N-of-N). This filters out the run-to-run variance that makes
-    # background-work-dependent code (ZooKeeper, RabbitMQ, Backups, ...) flicker
-    # between covered and uncovered across master runs. We store only the
-    # intersection as a (rel, key) pair-set to keep peak memory low.
+    # Cross-validation: intersect the zero-coverage sets from all available extra
+    # master baselines (N-of-N). A line passes only if it is uncovered in every
+    # extra baseline. Each extra baseline was built from a different master commit
+    # (different binary), so line numbers may have shifted. We use git diffs to
+    # remap each extra baseline's line numbers to the primary baseline's coordinate
+    # system before intersecting, so the comparison is always apples-to-apples.
     extra_zero_lines: set[tuple[str, int]] | None = None
     extra_zero_fns: set[tuple[str, str]] | None = None
     extra_baselines_used = 0
 
+    # Read the commit SHA the primary baseline was built from (written by
+    # generate_diff_coverage_report.sh alongside base_llvm_coverage.info).
+    primary_sha_path = f"{temp_dir}/base_llvm_coverage.sha"
+    primary_sha = open(primary_sha_path).read().strip() if os.path.exists(primary_sha_path) else ""
+
     for extra_path in EXTRA_BASELINE_PATHS:
         if not (os.path.exists(extra_path) and os.path.getsize(extra_path) > 0):
             continue
-        print(f"Parsing extra baseline coverage from {extra_path} ...")
+
+        # Read the commit SHA this extra baseline was built from.
+        extra_sha_path = extra_path.replace(".info", ".sha")
+        extra_sha = open(extra_sha_path).read().strip() if os.path.exists(extra_sha_path) else ""
+
+        # Compute per-file line-number remapping from extra_sha -> primary_sha.
+        # For unchanged files (not in the diff) the mapping is identity (no remap needed).
+        file_hunks: dict[str, list] = {}
+        changed_file_count = 0
+        if primary_sha and extra_sha and primary_sha != extra_sha:
+            try:
+                diff_result = subprocess.run(
+                    ["git", "-C", repo_root, "diff", "--unified=0",
+                     f"{extra_sha}..{primary_sha}"],
+                    capture_output=True, text=True, timeout=120,
+                )
+                if diff_result.returncode == 0 and diff_result.stdout:
+                    file_hunks = _parse_extra_diff_hunks(diff_result.stdout)
+                    changed_file_count = len(file_hunks)
+            except Exception as _e:
+                print(f"  Warning: git diff failed for {os.path.basename(extra_path)}: {_e}")
+
+        print(
+            f"Parsing extra baseline coverage from {extra_path} "
+            f"(sha={extra_sha[:12] if extra_sha else 'unknown'}, "
+            f"{changed_file_count} files remapped) ..."
+        )
         _bx = _parse_info(extra_path)
         print(f"  {len(_bx)} files in {os.path.basename(extra_path)}")
+
         this_zero_lines: set[tuple[str, int]] = set()
         this_zero_fns: set[tuple[str, str]] = set()
         for _rel, _v in _bx.items():
+            hunks = file_hunks.get(_rel, [])
             for _ln, _cnt in _v["lines"].items():
-                if _cnt == 0:
+                if _cnt != 0:
+                    continue
+                if hunks:
+                    new_ln = _remap_old_to_new(_ln, hunks)
+                    if new_ln is None:
+                        continue  # line deleted in primary — not comparable
+                    this_zero_lines.add((_rel, new_ln))
+                else:
                     this_zero_lines.add((_rel, _ln))
             for _fn, _cnt in _v["fns"].items():
                 if _cnt == 0:
                     this_zero_fns.add((_rel, _fn))
         del _bx
+
         if extra_zero_lines is None:
             extra_zero_lines = this_zero_lines
             extra_zero_fns = this_zero_fns
@@ -240,7 +366,7 @@ if __name__ == "__main__":
         total_baselines = 1 + extra_baselines_used
         print(
             f"  cross-validation enabled across {total_baselines} master baselines "
-            f"(requiring uncovered in all of them): "
+            f"(line numbers remapped via git diff, requiring uncovered in all of them): "
             f"{len(extra_zero_lines):,} candidate lines / {len(extra_zero_fns):,} functions "
             f"survive the {extra_baselines_used}-way intersection"
         )

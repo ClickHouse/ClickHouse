@@ -44,6 +44,9 @@ def _download_extra_baselines(master_commits: list[str], first_base_commit: str)
         print(f"Downloading extra baseline #{slot} from {sha[:12]}...")
         rc = Shell.run(f"wget --quiet '{url}' -O '{dest}'", verbose=False)
         if rc == 0 and dest.exists() and dest.stat().st_size > 0:
+            # Write sidecar SHA so the analysis scripts can compute git diffs
+            # between this extra baseline's binary and the primary's binary.
+            (Path(TEMP_DIR) / f"base_llvm_coverage_{slot}.sha").write_text(sha)
             found += 1
             slot += 1
         else:
