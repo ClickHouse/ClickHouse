@@ -157,6 +157,14 @@ int64_t deserializeStorageData(Storage & storage, ReadBuffer & in, LoggerPtr log
             LOG_INFO(log, "Deserialized nodes from snapshot: {}", count);
     }
 
+    /// ZooKeeper snapshot format uses '/' as a loop terminator, not a serialized node.
+    /// Insert an empty root if the storage constructor didn't pre-insert it.
+    if (!storage.container.contains("/"))
+    {
+        typename Storage::Node root_node{};
+        storage.container.insertOrReplace("/", root_node);
+    }
+
     for (const auto & itr : storage.container)
     {
         if (itr.key != "/")

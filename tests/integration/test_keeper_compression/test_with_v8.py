@@ -21,7 +21,7 @@ cluster = ClickHouseCluster(__file__)
 node_v8 = cluster.add_instance(
     "node_v8",
     main_configs=[
-        "configs/keeper.xml",
+        "configs/keeper_v8_base.xml",
         "configs/keeper_with_compression.xml",
         "configs/keeper_v8_settings.xml",
     ],
