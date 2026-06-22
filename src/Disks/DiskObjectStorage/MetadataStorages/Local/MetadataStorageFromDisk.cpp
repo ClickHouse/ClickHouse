@@ -325,6 +325,12 @@ bool MetadataStorageFromDisk::hasPendingRemovalBlobs(const StoredObjects & blobs
     return objects_to_remove.containsAny(blobs);
 }
 
+size_t MetadataStorageFromDisk::getRemovalQueueSize() const
+{
+    std::lock_guard guard(removed_objects_mutex);
+    return objects_to_remove.size();
+}
+
 MetadataStorageFromDiskTransaction::MetadataStorageFromDiskTransaction(MetadataStorageFromDisk & metadata_storage_)
     : metadata_storage(metadata_storage_)
 {

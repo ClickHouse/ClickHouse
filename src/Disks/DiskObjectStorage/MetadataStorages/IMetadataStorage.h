@@ -293,6 +293,7 @@ public:
     virtual BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & /*cluster*/, int64_t /*max_count*/) { return {}; }
     virtual int64_t recordAsRemoved(const StoredObjects & /*blobs*/) { return 0; }
     virtual bool hasPendingRemovalBlobs(const StoredObjects & /*blobs*/) const { return false; }
+    virtual size_t getRemovalQueueSize() const { return 0; }
 
     struct BlobsReplication
     {
