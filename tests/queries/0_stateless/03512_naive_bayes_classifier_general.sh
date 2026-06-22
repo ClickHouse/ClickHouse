@@ -83,7 +83,7 @@ ORDER BY model_name, input_text
 "
 
 $CLICKHOUSE_CLIENT -q "
-SELECT model_name, input_text, result
+SELECT model_name, input_text, (result.1, round(result.2, 4))
 FROM
 (
     SELECT 'lang_byte_2' AS model_name, input_text, naiveBayesClassifierWithProb('lang_byte_2', input_text) AS result FROM input_texts
@@ -94,7 +94,7 @@ ORDER BY model_name, input_text
 "
 
 $CLICKHOUSE_CLIENT -q "
-SELECT model_name, input_text, result
+SELECT model_name, input_text, arrayMap(p -> (p.1, round(p.2, 4)), result)
 FROM
 (
     SELECT 'lang_byte_2' AS model_name, input_text, naiveBayesClassifierAllProbs('lang_byte_2', input_text) AS result FROM input_texts

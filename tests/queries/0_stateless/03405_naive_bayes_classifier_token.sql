@@ -34,11 +34,11 @@ SELECT naiveBayesClassifier('sentiment_token_1', 'This experience was a total di
 SELECT dictGet('sentiment_token_1', 'class_id', 'The interface is beautiful and intuitive');
 SELECT dictGet('sentiment_token_1', 'class_id', 'The app is awful and barely works');
 
-SELECT naiveBayesClassifierWithProb('sentiment_token_1', 'The interface is beautiful and intuitive');
-SELECT naiveBayesClassifierWithProb('sentiment_token_1', 'The app is awful and barely works');
+SELECT (w.1, round(w.2, 4)) FROM (SELECT naiveBayesClassifierWithProb('sentiment_token_1', 'The interface is beautiful and intuitive') AS w);
+SELECT (w.1, round(w.2, 4)) FROM (SELECT naiveBayesClassifierWithProb('sentiment_token_1', 'The app is awful and barely works') AS w);
 
-SELECT naiveBayesClassifierAllProbs('sentiment_token_1', 'The interface is beautiful and intuitive');
-SELECT naiveBayesClassifierAllProbs('sentiment_token_1', 'The app is awful and barely works');
+SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierAllProbs('sentiment_token_1', 'The interface is beautiful and intuitive'));
+SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierAllProbs('sentiment_token_1', 'The app is awful and barely works'));
 
 DROP DICTIONARY IF EXISTS sentiment_token_1;
 DROP TABLE IF EXISTS nb_sentiment_data;

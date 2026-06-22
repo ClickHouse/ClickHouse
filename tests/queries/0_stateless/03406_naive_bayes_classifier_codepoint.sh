@@ -45,11 +45,11 @@ $CLICKHOUSE_CLIENT -q "SELECT naiveBayesClassifier('lang_codepoint_1', 'Ella esc
 $CLICKHOUSE_CLIENT -q "SELECT dictGet('lang_codepoint_1', 'class_id', 'He forgot his umbrella at the cafe.')"
 $CLICKHOUSE_CLIENT -q "SELECT dictGet('lang_codepoint_1', 'class_id', 'Мы гуляли в парке до заката')"
 
-$CLICKHOUSE_CLIENT -q "SELECT naiveBayesClassifierWithProb('lang_codepoint_1', 'He forgot his umbrella at the cafe.')"
-$CLICKHOUSE_CLIENT -q "SELECT naiveBayesClassifierWithProb('lang_codepoint_1', 'Мы гуляли в парке до заката')"
+$CLICKHOUSE_CLIENT -q "SELECT (w.1, round(w.2, 4)) FROM (SELECT naiveBayesClassifierWithProb('lang_codepoint_1', 'He forgot his umbrella at the cafe.') AS w)"
+$CLICKHOUSE_CLIENT -q "SELECT (w.1, round(w.2, 4)) FROM (SELECT naiveBayesClassifierWithProb('lang_codepoint_1', 'Мы гуляли в парке до заката') AS w)"
 
-$CLICKHOUSE_CLIENT -q "SELECT naiveBayesClassifierAllProbs('lang_codepoint_1', 'He forgot his umbrella at the cafe.')"
-$CLICKHOUSE_CLIENT -q "SELECT naiveBayesClassifierAllProbs('lang_codepoint_1', 'Мы гуляли в парке до заката')"
+$CLICKHOUSE_CLIENT -q "SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierAllProbs('lang_codepoint_1', 'He forgot his umbrella at the cafe.'))"
+$CLICKHOUSE_CLIENT -q "SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierAllProbs('lang_codepoint_1', 'Мы гуляли в парке до заката'))"
 
 $CLICKHOUSE_CLIENT -q "DROP DICTIONARY IF EXISTS lang_codepoint_1"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS nb_codepoint_data"
