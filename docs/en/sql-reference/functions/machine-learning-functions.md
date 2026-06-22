@@ -22,145 +22,154 @@ The [stochasticLogisticRegression](/sql-reference/aggregate-functions/reference/
 
 ## naiveBayesClassifier {#naivebayesclassifier}
 
-Classifies input text using a Naive Bayes model with n-grams and Laplace smoothing. The model must be configured in ClickHouse before use.
+Classifies input text using a Naive Bayes classifier with n-grams and Laplace smoothing.
+
+The model is stored as a dictionary with the `NAIVE_BAYES` layout, backed by a ClickHouse table containing n-gram counts.
 
 **Syntax**
 
 ```sql
-naiveBayesClassifier(model_name, input_text);
+naiveBayesClassifier(dictionary_name, input_text)
+```
+
+This is equivalent to:
+```sql
+dictGet(dictionary_name, 'class_id', input_text)
 ```
 
 **Arguments**
 
-- `model_name` — Name of the pre-configured model. [String](../data-types/string.md)
-  The model must be defined in ClickHouse's configuration files (see below).
+- `dictionary_name` — Name of a dictionary with `NAIVE_BAYES` layout. [String](../data-types/string.md)
 - `input_text` — Text to classify. [String](../data-types/string.md)
   Input is processed exactly as provided (case/punctuation preserved).
 
 **Returned Value**
 - Predicted class ID as an unsigned integer. [UInt32](../data-types/int-uint.md)
-  Class IDs correspond to categories defined during model construction.
+  Class IDs correspond to categories defined in the training data.
 
-**Example**
+**Related functions**
 
-Classify text with a language detection model:
+Two companion functions share the same arguments and dictionary but return probabilities:
+
+- `naiveBayesClassifierWithProb(dictionary_name, input_text)` — returns a `Tuple(class_id UInt32, probability Float64)` for the predicted (most probable) class.
+- `naiveBayesClassifierAllProbs(dictionary_name, input_text)` — returns an `Array(Tuple(class_id UInt32, probability Float64))` of every class with its probability, sorted by probability descending.
+
+Probabilities are normalized with a numerically stable softmax and sum to `1.0` across classes.
+
+---
+
+### Setup {#setup}
+
+**Step 1: Create a source table** with n-gram counts:
+
 ```sql
-SELECT naiveBayesClassifier('language', 'How are you?');
+CREATE TABLE sentiment_ngrams
+(
+    class_id UInt32,
+    ngram String,
+    count UInt64
+) ENGINE = MergeTree ORDER BY (class_id, ngram);
+```
+
+**Step 2: Populate** with training data (n-gram counts per class):
+
+```sql
+INSERT INTO sentiment_ngrams VALUES
+    (0, 'good', 10), (0, 'great', 8), (0, 'excellent', 6),
+    (1, 'bad', 10), (1, 'terrible', 8), (1, 'awful', 6);
+```
+
+**Step 3: Create a dictionary** with the `NAIVE_BAYES` layout:
+
+```sql
+CREATE DICTIONARY sentiment_model
+(
+    ngram String,
+    class_id UInt32 DEFAULT 0,
+    count UInt64 DEFAULT 0
+)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'sentiment_ngrams'))
+LAYOUT(NAIVE_BAYES(n 1 mode 'token' alpha 1.0))
+LIFETIME(0);
+```
+
+**Step 4: Classify:**
+
+```sql
+SELECT naiveBayesClassifier('sentiment_model', 'this is great');
 ```
 ```response
-┌─naiveBayesClassifier('language', 'How are you?')─┐
-│ 0                                                │
-└──────────────────────────────────────────────────┘
+┌─naiveBayesClassifier('sentiment_model', 'this is great')─┐
+│ 0                                                        │
+└──────────────────────────────────────────────────────────┘
 ```
-*Result `0` might represent English, while `1` could indicate French - class meanings depend on your training data.*
+
+Or equivalently using `dictGet`:
+```sql
+SELECT dictGet('sentiment_model', 'class_id', 'this is great');
+```
+
+Text dominated by the negative class is classified as `1`:
+
+```sql
+SELECT naiveBayesClassifier('sentiment_model', 'this is terrible');
+```
+```response
+┌─naiveBayesClassifier('sentiment_model', 'this is terrible')─┐
+│ 1                                                           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Layout Parameters {#layout-parameters}
+
+| Parameter        | Description | Example | Default |
+| ---------------- | ----------- | ------- | ------- |
+| **n**            | N-gram size. `1` = unigrams, `2` = bigrams, `3` = trigrams. | `2` | *Required* |
+| **mode**         | Tokenization method: `byte` (raw bytes), `codepoint` (Unicode characters), or `token` (whitespace-delimited words). | `token` | *Required* |
+| **alpha**        | Laplace smoothing factor for unseen n-grams. | `0.5` | `1.0` |
+| **priors_mode**  | How class prior probabilities are determined: `uniform`, `proportional`, or `explicit`. See below. | `proportional` | `uniform` |
+| **priors**       | Explicit class priors, required when `priors_mode` is `explicit`. Must sum to `1.0`. | `'0=0.6,1=0.4'` | — |
+| **store_source** | Retain the source n-gram rows so `SELECT * FROM dictionary` works. Doubles memory. | `1` | `0` |
+
+**Prior modes:**
+- `uniform` (default) — equal probability across all classes.
+- `proportional` — derived from total n-gram counts per class.
+- `explicit` — probabilities given via the `priors` parameter, e.g. `priors '0=0.6,1=0.4'` (one entry per class, summing to `1.0`).
 
 ---
 
 ### Implementation Details {#implementation-details}
 
 **Algorithm**
-Uses Naive Bayes classification algorithm with [Laplace smoothing](https://en.wikipedia.org/wiki/Additive_smoothing) to handle unseen n-grams based on n-gram probabilities based on [this](https://web.stanford.edu/~jurafsky/slp3/4.pdf).
+Uses Naive Bayes classification with [Laplace smoothing](https://en.wikipedia.org/wiki/Additive_smoothing) based on n-gram probabilities per [Jurafsky & Martin, Chapter 4](https://web.stanford.edu/~jurafsky/slp3/4.pdf).
 
-**Key Features**
-- Supports n-grams of any size
-- Three tokenization modes:
-  - `byte`: Operates on raw bytes. Each byte is one token.
-  - `codepoint`: Operates on Unicode scalar values decoded from UTF‑8. Each codepoint is one token.
-  - `token`: Splits on runs of Unicode whitespace (regex \s+). Tokens are substrings of non‑whitespace; punctuation is part of the token if adjacent (e.g., "you?" is one token).
+**Tokenization modes:**
+- `byte`: Each byte is one token. Boundary markers: `0x01` (start), `0xFF` (end).
+- `codepoint`: Each Unicode scalar value is one token. Boundary markers: `U+10FFFE` (start), `U+10FFFF` (end).
+- `token`: Whitespace-delimited words. Boundary markers: `<s>` (start), `</s>` (end).
 
----
+For n > 1, the classifier pads the input with `(n - 1)` boundary tokens at each end before extracting n-grams.
 
-### Model Configuration {#model-configuration}
+**Source table format:**
+The source table must have three columns matching the dictionary structure:
+- `class_id` (`UInt32`) — the class label
+- `ngram` (`String`) — the n-gram text
+- `count` (`UInt64`) — occurrence count
 
-You can find sample source code for creating a Naive Bayes model for language detection [here](https://github.com/nihalzp/ClickHouse-NaiveBayesClassifier-Models).
-
-Additionally, sample models and their associated config files are available [here](https://github.com/nihalzp/ClickHouse-NaiveBayesClassifier-Models/tree/main/models).
-
-Here is an example configuration for a naive Bayes model in ClickHouse:
-
-```xml
-<clickhouse>
-    <nb_models>
-        <model>
-            <name>sentiment</name>
-            <path>/etc/clickhouse-server/config.d/sentiment.bin</path>
-            <n>2</n>
-            <mode>token</mode>
-            <alpha>1.0</alpha>
-            <priors>
-                <prior>
-                    <class>0</class>
-                    <value>0.6</value>
-                </prior>
-                <prior>
-                    <class>1</class>
-                    <value>0.4</value>
-                </prior>
-            </priors>
-        </model>
-    </nb_models>
-</clickhouse>
+**Updating models:**
+Since the model is a dictionary backed by a table, you can update the training data and reload:
+```sql
+INSERT INTO sentiment_ngrams VALUES (0, 'awesome', 5);
+SYSTEM RELOAD DICTIONARY sentiment_model;
 ```
 
-**Configuration Parameters**
-
-| Parameter  | Description                                                                                                     | Example                                                  | Default            |
-| ---------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ------------------ |
-| **name**   | Unique model identifier                                                                                         | `language_detection`                                     | *Required*         |
-| **path**   | Full path to model binary                                                                                       | `/etc/clickhouse-server/config.d/language_detection.bin` | *Required*         |
-| **mode**   | Tokenization method:<br/>- `byte`: Byte sequences<br/>- `codepoint`: Unicode characters<br/>- `token`: Word tokens | `token`                                                  | *Required*         |
-| **n**      | N-gram size (`token` mode):<br/>- `1`=single word<br/>- `2`=word pairs<br/>- `3`=word triplets                     | `2`                                                      | *Required*         |
-| **alpha**  | Laplace smoothing factor used during classification to address n-grams that do not appear in the model          | `0.5`                                                    | `1.0`              |
-| **priors** | Class probabilities (% of the documents belonging to a class)                                                                             | 60% class 0, 40% class 1                                 | Equal distribution |
-
-**Model Training Guide**
-
-**File Format**
-In human-readable format, for `n=1` and `token` mode, the model might look like this:
-```text
-<class_id> <n-gram> <count>
-0 excellent 15
-1 refund 28
-```
-
-For `n=3` and `codepoint` mode, it might look like:
-```text
-<class_id> <n-gram> <count>
-0 exc 15
-1 ref 28
-```
-
-Human-readable format is not used by ClickHouse directly; it must be converted to the binary format described below.
-
-**Binary Format Details**
-Each n-gram stored as:
-1. 4-byte `class_id` (UInt, little-endian)
-2. 4-byte `n-gram` bytes length (UInt, little-endian)
-3. Raw `n-gram` bytes
-4. 4-byte `count` (UInt, little-endian)
-
-**Preprocessing Requirements**
-Before the model is being created from the document corpus, the documents must be preprocessed to extract n-grams according to the specified `mode` and `n`. The following steps outline the preprocessing:
-1. **Add boundary markers at the start and end of each document based on tokenization mode:**
-   - **Byte**: `0x01` (start), `0xFF` (end)
-   - **Codepoint**: `U+10FFFE` (start), `U+10FFFF` (end)
-   - **Token**: `<s>` (start), `</s>` (end)
-
-   *Note:* `(n - 1)` tokens are added at both the beginning and the end of the document.
-
-2. **Example for `n=3` in `token` mode:**
-
-   - **Document:** `"ClickHouse is fast"`
-   - **Processed as:** `<s> <s> ClickHouse is fast </s> </s>`
-   - **Generated trigrams:**
-     - `<s> <s> ClickHouse`
-     - `<s> ClickHouse is`
-     - `ClickHouse is fast`
-     - `is fast </s>`
-     - `fast </s> </s>`
-
-
-To simplify model creation for `byte` and `codepoint` modes, it may be convenient to first tokenize the document into tokens (a list of `byte`s for `byte` mode and a list of `codepoint`s for `codepoint` mode). Then, append `n - 1` start tokens at the beginning and `n - 1` end tokens at the end of the document. Finally, generate the n-grams and write them to the serialized file.
+**Dictionary semantics:**
+This is a *computational* dictionary, so its lookup interface behaves accordingly:
+- `dictGet(dict, 'class_id', text)` classifies `text` (the key is an input to classify, not a stored key). Other attributes are not queryable.
+- `dictHas` always returns `1` — any text is classifiable.
 
 ---
 
