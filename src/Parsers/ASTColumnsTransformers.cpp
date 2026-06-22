@@ -7,7 +7,6 @@
 #include <Common/quoteString.h>
 #include <Common/re2.h>
 #include <IO/Operators.h>
-#include <stack>
 
 
 namespace DB
@@ -18,6 +17,60 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_COMPILE_REGEXP;
+}
+
+namespace
+{
+
+bool lambdaArgumentShadowsName(const ASTFunction & lambda, const String & name)
+{
+    if (!lambda.arguments || lambda.arguments->children.size() != 2)
+        return false;
+
+    const auto * lambda_args_tuple = lambda.arguments->children[0]->as<ASTFunction>();
+    if (!lambda_args_tuple || lambda_args_tuple->name != "tuple" || !lambda_args_tuple->arguments)
+        return false;
+
+    for (const auto & argument : lambda_args_tuple->arguments->children)
+    {
+        if (auto argument_name = tryGetIdentifierName(argument); argument_name && *argument_name == name)
+            return true;
+    }
+
+    return false;
+}
+
+void replaceLambdaArgument(ASTPtr & ast, const ASTPtr & replacement, const String & lambda_arg, bool is_masked = false)
+{
+    if (!ast)
+        return;
+
+    if (!is_masked)
+    {
+        if (auto arg_name = tryGetIdentifierName(ast); arg_name && *arg_name == lambda_arg)
+        {
+            ast = replacement->clone();
+            return;
+        }
+    }
+
+    if (auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
+    {
+        if (!function->arguments || function->arguments->children.size() != 2)
+            return;
+
+        replaceLambdaArgument(
+            function->arguments->children[1],
+            replacement,
+            lambda_arg,
+            is_masked || lambdaArgumentShadowsName(*function, lambda_arg));
+        return;
+    }
+
+    for (auto & child : ast->children)
+        replaceLambdaArgument(child, replacement, lambda_arg, is_masked);
+}
+
 }
 
 void ASTColumnsTransformerList::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -92,22 +145,7 @@ void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
         if (lambda)
         {
             auto body = lambda->as<const ASTFunction &>().arguments->children.at(1)->clone();
-            std::stack<ASTPtr> stack;
-            stack.push(body);
-            while (!stack.empty())
-            {
-                auto ast = stack.top();
-                stack.pop();
-                for (auto & child : ast->children)
-                {
-                    if (auto arg_name = tryGetIdentifierName(child); arg_name && arg_name == lambda_arg)
-                    {
-                        child = column->clone();
-                        continue;
-                    }
-                    stack.push(child);
-                }
-            }
+            replaceLambdaArgument(body, column, lambda_arg);
             column = body;
         }
         else
