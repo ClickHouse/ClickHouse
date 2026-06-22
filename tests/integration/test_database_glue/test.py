@@ -4,13 +4,12 @@ import os
 import random
 import uuid
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 
 import pyarrow as pa
 import pytest
-import urllib3
 import pytz
-from datetime import datetime, timedelta
-from minio import Minio
+from datetime import timedelta
 from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
@@ -29,7 +28,7 @@ from pyiceberg.types import (
     DecimalType,
 )
 
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers
 
 import boto3
@@ -596,7 +595,7 @@ def test_empty_table(started_cluster):
     catalog = load_catalog_impl(started_cluster)
     catalog.create_namespace(root_namespace)
 
-    table = create_table(catalog, root_namespace, table_name)
+    create_table(catalog, root_namespace, table_name)
 
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
     assert len(node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`")) == 0
@@ -707,6 +706,75 @@ def test_create(started_cluster):
     create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
     node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');", settings={"allow_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+
+def test_schema_evolution(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_schema_evolution_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String, y Int32)")
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('123', 1);", settings=write_settings)
+
+    node.query(f"ALTER TABLE {table_ref} ADD COLUMN z Nullable(String);", settings=write_settings)
+    assert "z" in node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
+    assert node.query(f"SELECT x, y, z FROM {table_ref} ORDER BY ALL", settings=write_settings) == "123\t1\t\\N\n"
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('456', 2, 'hello');", settings=write_settings)
+    assert (
+        node.query(f"SELECT x, y, z FROM {table_ref} ORDER BY ALL", settings=write_settings)
+        == "123\t1\t\\N\n456\t2\thello\n"
+    )
+
+    node.query(f"ALTER TABLE {table_ref} RENAME COLUMN z TO w;", settings=write_settings)
+    assert "w" in node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
+    assert (
+        node.query(f"SELECT x, y, w FROM {table_ref} ORDER BY ALL", settings=write_settings)
+        == "123\t1\t\\N\n456\t2\thello\n"
+    )
+
+
+def test_writes_schema_evolution_concurrent_add_columns(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_schema_evolution_concurrent_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String, y Int32)")
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('123', 1);", settings=write_settings)
+
+    num_columns = 10
+
+    def add_column(idx):
+        node.query(
+            f"ALTER TABLE {table_ref} ADD COLUMN col_{idx} Nullable(String);",
+            settings=write_settings,
+        )
+
+    with ThreadPoolExecutor(max_workers=num_columns) as executor:
+        list(executor.map(add_column, range(num_columns)))
+
+    description = node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
+    for idx in range(num_columns):
+        assert f"col_{idx}" in description, f"col_{idx} missing from:\n{description}"
+
+    columns = [line.split("\t")[0] for line in description.strip().split("\n")]
+    assert sorted(columns) == sorted(["x", "y"] + [f"col_{idx}" for idx in range(num_columns)])
+
+    select_cols = ", ".join(["x", "y"] + [f"col_{idx}" for idx in range(num_columns)])
+    expected = "123\t1" + "\t\\N" * num_columns + "\n"
+    assert node.query(f"SELECT {select_cols} FROM {table_ref} ORDER BY ALL", settings=write_settings) == expected
 
 
 def test_drop_table(started_cluster):
@@ -829,7 +897,7 @@ def test_show_tables_optimization(started_cluster):
         f"Get table information for table {root_namespace}.{table_name}"
     )
 
-    node.query(f"SYSTEM ENABLE FAILPOINT lightweight_show_tables")
+    node.query("SYSTEM ENABLE FAILPOINT lightweight_show_tables")
     node.query(f"SHOW TABLES FROM {CATALOG_NAME}", timeout=5)
 
 def test_table_without_metadata_location(started_cluster):
@@ -959,7 +1027,7 @@ def test_check_database(started_cluster):
 
     try:
         node.query(
-            f"SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
+            "SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
         )
     
         assert "fault when checking database" in node.query_and_get_error(
@@ -967,7 +1035,7 @@ def test_check_database(started_cluster):
         )
     finally:
         node.query(
-            f"SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
+            "SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
         )
 
 def test_sts_smoke(started_cluster):
@@ -1036,6 +1104,83 @@ def test_sts_smoke(started_cluster):
     )
 
     # Query should succeed with correct session name
+    result = node.query(f"SELECT sum(value) FROM {db_name_success}.`{root_namespace}.{table_name}`")
+    assert result.strip() == "60", f"Expected sum to be 60 but got: {result}"
+
+    # Cleanup
+    node.query(f"DROP DATABASE IF EXISTS {db_name_fail} SYNC")
+    node.query(f"DROP DATABASE IF EXISTS {db_name_success} SYNC")
+
+
+def test_sts_external_id(started_cluster):
+    """Test that `aws_external_id` reaches the STS AssumeRole request from the
+    Glue catalog database engine. The mock STS only vends working credentials
+    when the supplied ExternalId matches, so the negative case fails purely on
+    the external id (the role session name is correct in both cases)."""
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_sts_external_id_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="value", field_type=DoubleType(), required=False),
+    )
+    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), DEFAULT_SORT_ORDER, dir=table_name)
+
+    data = [
+        {"id": "row1", "value": 10.0},
+        {"id": "row2", "value": 20.0},
+        {"id": "row3", "value": 30.0},
+    ]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    # Negative: correct role session name but wrong external id - should fail.
+    db_name_fail = f"db_fail_{test_ref.replace('-', '_')}"
+    create_clickhouse_glue_database(
+        started_cluster,
+        node,
+        db_name_fail,
+        additional_settings={
+            "aws_role_arn": "arn::role",
+            "aws_role_session_name": "miniorole",
+            "aws_external_id": "wrong_external_id",
+        },
+        query_settings={},
+        with_credentials=False,
+    )
+
+    try:
+        result = node.query(
+            f"SELECT sum(value) FROM {db_name_fail}.`{root_namespace}.{table_name}` "
+            f"SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 1000"
+        )
+        assert False, f"Expected query to fail with wrong external id but got result: {result}"
+    except Exception as e:
+        error_str = str(e)
+        assert "403" in error_str or "Failed to get object info" in error_str or "HTTP response code: 403" in error_str, \
+            f"Expected 403 error but got: {error_str}"
+
+    # Positive: correct role session name and external id - should succeed.
+    db_name_success = f"db_success_{test_ref.replace('-', '_')}"
+    create_clickhouse_glue_database(
+        started_cluster,
+        node,
+        db_name_success,
+        additional_settings={
+            "aws_role_arn": "arn::role",
+            "aws_role_session_name": "miniorole",
+            "aws_external_id": "miniexternalid",
+        },
+        query_settings={},
+        with_credentials=False,
+    )
+
     result = node.query(f"SELECT sum(value) FROM {db_name_success}.`{root_namespace}.{table_name}`")
     assert result.strip() == "60", f"Expected sum to be 60 but got: {result}"
 
