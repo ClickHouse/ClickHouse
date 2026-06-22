@@ -6,6 +6,7 @@ import json
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
+from helpers.mock_servers import start_mock_servers
 
 cluster = ClickHouseCluster(__file__)
 URL_WILDCARD_EXPERIMENTAL_SETTING = "allow_experimental_url_wildcard_from_index_pages=1"
@@ -160,6 +161,39 @@ def test_url_wildcard_schema_inference_checks_headers_before_reading():
 
     stats = get_index_page_server_stats()
     assert stats == {}
+
+
+def test_url_wildcard_engine_checks_headers_before_reading():
+    reset_index_page_server_stats()
+
+    node1.query("DROP TABLE IF EXISTS url_wildcard_engine_forbidden_header")
+    error = node1.query_and_get_error(
+        "CREATE TABLE url_wildcard_engine_forbidden_header "
+        "ENGINE = URL("
+        "'http://resolver:8087/data/**/part*.tsv', "
+        "'TSV', "
+        "headers('X-Forbidden-Url-Wildcard'='1'))",
+        settings={"allow_experimental_url_wildcard_from_index_pages": 1},
+    )
+    assert "HTTP header" in error
+    assert "X-Forbidden-Url-Wildcard" in error
+    assert "http_forbid_headers" in error
+
+    # The header filter must be enforced before schema/format inference reads any index page.
+    stats = get_index_page_server_stats()
+    assert stats == {}
+
+
+def test_url_wildcard_time_virtual_column_is_null_without_last_modified():
+    # The mock index server never sends a `Last-Modified` header, so the modification time is
+    # unknown and `_time` must be reported as NULL rather than the default epoch `1970-01-01`.
+    result = node1.query(
+        with_url_wildcard_setting(
+            "SELECT any(_time) IS NULL "
+            "FROM url('http://resolver:8087/data/**/part*.tsv', 'TSV', 'x UInt64')"
+        )
+    )
+    assert result.strip() == "1"
 
 
 def test_url_wildcard_size_virtual_column():
@@ -447,6 +481,22 @@ def test_url_wildcard_limits_directory_traversal():
     )
     assert "Too many directories while expanding URL wildcard" in error
     assert "url_wildcard_max_directories_to_read" in error
+
+
+def test_url_wildcard_ignores_apache_sort_links():
+    # An Apache `mod_autoindex` page exposes ordering anchors such as `?C=N;O=D` that resolve to the
+    # current listing directory with only a different query. They must not be expanded as child
+    # directories: otherwise recursive expansion re-fetches the same page and exhausts the directory
+    # budget. With a tight budget the real files are still listed and read.
+    # With the fix only `apache_sort/` and `subdir/` are listed (2 directories). Without it, the three
+    # ordering anchors are also followed as directories, exceeding this tight budget.
+    result = node1.query(
+        with_url_wildcard_setting(
+            "SELECT sum(x) FROM url('http://resolver:8087/data/apache_sort/**/part*.tsv', 'TSV', 'x UInt64') "
+            "SETTINGS url_wildcard_max_directories_to_read=3"
+        )
+    )
+    assert result.strip() == "18"
 
 
 def test_url_wildcard_preserves_index_entry_query():

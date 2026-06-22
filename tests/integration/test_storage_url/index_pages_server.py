@@ -54,6 +54,8 @@ DATA_PARTS = {
     "/data/recursive_redirect_target/subdir/part1.tsv": "43\n",
     "/data/cross_origin_target/part1.tsv": "37\n",
     "/data/auth_failover/part1.tsv": "23\n",
+    "/data/apache_sort/subdir/part1.tsv": "7\n",
+    "/data/apache_sort/subdir/part2.tsv": "11\n",
 }
 
 SHARD_0_ARCHIVE = make_zip_file([("value.tsv", "101\n")])
@@ -218,6 +220,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             "/data/cross_origin_target/",
             "/data/archive_identity/",
             "/data/unknown_size_archive/",
+            "/data/apache_sort/",
+            "/data/apache_sort/subdir/",
         ):
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
@@ -252,6 +256,25 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/data/2025/":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n<a href=\"part2.tsv\">part2.tsv</a>\n"
+            self._send_html(body)
+            return
+
+        if path == "/data/apache_sort/":
+            # Mimic an Apache `mod_autoindex` page: ordering anchors that resolve to the current
+            # directory with only a different query string, alongside a real child directory. The
+            # ordering anchors must not be expanded as child directories (which would re-fetch this
+            # same page recursively), while the real `subdir/` must still be traversed.
+            body = (
+                "<a href=\"?C=N;O=D\">Name</a>\n"
+                "<a href=\"?C=M;O=A\">Last modified</a>\n"
+                "<a href=\"?C=S;O=A\">Size</a>\n"
+                "<a href=\"subdir/\">subdir/</a>\n"
+            )
+            self._send_html(body)
+            return
+
+        if path == "/data/apache_sort/subdir/":
             body = "<a href=\"part1.tsv\">part1.tsv</a>\n<a href=\"part2.tsv\">part2.tsv</a>\n"
             self._send_html(body)
             return
