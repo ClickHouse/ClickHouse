@@ -12,7 +12,6 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Core/ServerSettings.h>
-#include <Core/UUID.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/BackupLog.h>
@@ -32,7 +31,6 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/BackgroundSchedulePoolLog.h>
-#include <Interpreters/PredicateStatisticsLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetricLog.h>
@@ -61,7 +59,6 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Interpreters/SystemLogDefaultFlushPolicy.h>
 
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/DistributedCacheLog.h>
@@ -102,20 +99,6 @@ namespace ActionLocks
 
 namespace
 {
-
-/// Flush buffered text-log entries from the application's async logger, if any.
-///
-/// `BaseDaemon::flushTextLogs` is what `clickhouse-server` uses to drain its async log
-/// channels into `system.text_log`. `clickhouse-local`/`clickhouse-client` derive from
-/// `ClientApplicationBase` rather than `BaseDaemon`, so `BaseDaemon::instance()` would
-/// throw `std::bad_cast`; that exception used to escape `SystemLogs::flushAndShutdown`,
-/// leaving the saving threads alive while `~SystemLogQueue` ran `pthread_cond_destroy`,
-/// which hangs while there are waiters.
-void flushAsyncTextLogsIfPossible()
-{
-    if (auto base_daemon = BaseDaemon::tryGetInstance())
-        base_daemon->get().flushTextLogs();
-}
 
 constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 constexpr size_t DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
@@ -409,21 +392,6 @@ std::vector<ISystemLog *> SystemLogs::getAllLogs() const
     return result;
 }
 
-bool hasAnySystemLogConfigured(const Poco::Util::AbstractConfiguration & config)
-{
-#define CHECK_HAS_SYSTEM_LOG(log_type, member, descr) \
-    if (config.has(#member)) \
-        return true;
-
-    LIST_OF_ALL_SYSTEM_LOGS(CHECK_HAS_SYSTEM_LOG)
-    #if CLICKHOUSE_CLOUD
-        LIST_OF_CLOUD_SYSTEM_LOGS(CHECK_HAS_SYSTEM_LOG)
-    #endif
-#undef CHECK_HAS_SYSTEM_LOG
-
-    return false;
-}
-
 namespace
 {
 constexpr String getLowerCaseAndRemoveUnderscores(const String & name)
@@ -452,7 +420,7 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
     if (names.empty())
     {
         if (text_log)
-            flushAsyncTextLogsIfPossible();
+            BaseDaemon::instance().flushTextLogs();
 
         for (auto * log : getAllLogs())
         {
@@ -460,8 +428,6 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
 
             auto last_log_index = log->getLastLogIndex();
             logs_to_wait.push_back({log, last_log_index});
-            if (should_prepare_tables_anyway)
-                log->setManualFlushTargetIndex(last_log_index);
             log->notifyFlush(last_log_index, should_prepare_tables_anyway);
         }
     }
@@ -498,14 +464,12 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
             auto * log = it->second;
 
             if (log == text_log.get())
-                flushAsyncTextLogsIfPossible();
+                BaseDaemon::instance().flushTextLogs();
 
             log->flushBufferToLog(std::chrono::system_clock::now());
 
             const auto last_log_index = log->getLastLogIndex();
             logs_to_wait.push_back({log, last_log_index});
-            if (should_prepare_tables_anyway)
-                log->setManualFlushTargetIndex(last_log_index);
             log->notifyFlush(last_log_index, should_prepare_tables_anyway);
         }
     }
@@ -549,36 +513,9 @@ void SystemLogs::shutdown()
 
 void SystemLogs::handleCrash()
 {
-    /// Flush crash_log first since it's the most important log during a crash.
-    /// Other logs with flush_on_crash (e.g. query_log) can consume significant
-    /// time budget from the signal handler's 303-second timeout, potentially
-    /// preventing crash_log from being flushed if stack symbolization was slow.
-    /// Use try/catch so that a timeout in one log does not prevent flushing others.
-    if (crash_log)
-    {
-        try
-        {
-            crash_log->handleCrash();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-
     auto logs = getAllLogs();
     for (auto & log : logs)
-    {
-        try
-        {
-            if (log != crash_log.get())
-                log->handleCrash();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
+        log->handleCrash();
 }
 
 template <typename LogElement>
@@ -591,16 +528,9 @@ SystemLog<LogElement>::SystemLog(
     , log(getLogger("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")"))
     , table_id(settings_.queue_settings.database, settings_.queue_settings.table)
     , storage_def(settings_.engine)
-    , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>(context_->getConfigRef()))
+    , create_query(getCreateTableQuery()->formatWithSecretsOneLine())
 {
-    create_query = getCreateTableQuery()->formatWithSecretsOneLine();
-    chassert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
-}
-
-template <typename LogElement>
-SystemLog<LogElement>::~SystemLog()
-{
-    Base::stopFlushThread();
+    assert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
 }
 
 template <typename LogElement>
@@ -659,7 +589,6 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     UInt64 execute_insert_time = 0;
     UInt64 confirm_time = 0;
     size_t flush_size = to_flush.size();
-    bool is_manual_flush = flush_policy->isManualFlush(to_flush_end);
 
     try
     {
@@ -704,14 +633,6 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 
         auto insert = make_intrusive<ASTInsertQuery>();
         insert->table_id = table_id;
-
-        /// Explicitly specify column names to avoid mismatch when the table
-        /// has been altered (e.g. columns added) between prepareTable() and this INSERT.
-        auto columns_ast = make_intrusive<ASTExpressionList>();
-        for (const auto & name : block.getNames())
-            columns_ast->children.emplace_back(make_intrusive<ASTIdentifier>(name));
-        insert->columns = std::move(columns_ast);
-
         ASTPtr query_ptr = std::move(insert);
 
         // we need query context to do inserts to target table with MV containing subqueries or joins
@@ -733,15 +654,11 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         executor.start();
         executor.push(block);
         executor.finish();
-
-        flush_policy->afterFlush(io, is_manual_flush, flush_size);
         execute_insert_time = stopwatch.elapsedMilliseconds();
         stopwatch.restart();
     }
     catch (...)
     {
-        if (is_manual_flush)
-            flush_policy->cancelManualFlush();
         ProfileEvents::increment(ProfileEvents::SystemLogErrorOnFlush);
         tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to flush system log {} with {} entries up to offset {}",
             table_id.getNameForLogs(), to_flush.size(), to_flush_end));
@@ -867,7 +784,6 @@ void SystemLog<LogElement>::addSettingsForQuery(ContextMutablePtr & mutable_cont
     {
         /// We always want to deliver the data to the original table regardless of the MVs
         mutable_context->setSetting("materialized_views_ignore_errors", true);
-        flush_policy->addInsertSettings(mutable_context);
     }
     else if (query_kind == IAST::QueryKind::Rename)
     {
@@ -888,11 +804,7 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     auto new_columns_list = make_intrusive<ASTColumns>();
     auto ordinary_columns = LogElement::getColumnsDescription();
     auto alias_columns = LogElement::getNamesAndAliases();
-    /// S3-backed engines do not support alias columns; `shouldSkipAliasColumns` returns
-    /// `true` for `SharedSystemLogFlushPolicy` and for `DefaultSystemLogFlushPolicy` when
-    /// `default_system_log_flush_policy.skip_alias_columns` is set to `true` in config.
-    if (!flush_policy->shouldSkipAliasColumns())
-        ordinary_columns.setAliases(alias_columns);
+    ordinary_columns.setAliases(alias_columns);
 
     new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns));
 
@@ -903,22 +815,6 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
         "Storage to create table for " + LogElement::name(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     StorageWithComment & storage_with_comment = storage_with_comment_ast->as<StorageWithComment &>();
-
-    /// The default engine string wraps `PARTITION BY` / `ORDER BY` / `PRIMARY KEY` /
-    /// `SAMPLE BY` arguments in artificial parentheses so the parser accepts both
-    /// single-expression and tuple forms. Clear the `parenthesized` flag so the formatter
-    /// does not emit those artificial wrapping parens in `system.tables.engine_full`.
-    if (auto * storage = storage_with_comment.storage->as<ASTStorage>())
-    {
-        if (storage->partition_by)
-            storage->partition_by->setParenthesized(false);
-        if (storage->order_by)
-            storage->order_by->setParenthesized(false);
-        if (storage->primary_key)
-            storage->primary_key->setParenthesized(false);
-        if (storage->sample_by)
-            storage->sample_by->setParenthesized(false);
-    }
 
     create->set(create->storage, storage_with_comment.storage);
     create->set(create->comment, storage_with_comment.comment);
