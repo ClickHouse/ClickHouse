@@ -2572,6 +2572,20 @@ class TestCase:
         self.effective_settings = fixed_settings if fixed_settings else base_settings
         self.effective_merge_tree_settings = fixed_mt_settings if fixed_mt_settings else base_mt_settings
 
+        # The default compression codec is randomized at the server level (see the
+        # <compression> override in tests/config/install.sh). Tests that opt out of
+        # settings randomization expect the stable historical default, so pin the codec
+        # back to LZ4 for them, overriding the server default (ClientBase injects it
+        # into CREATE ... MergeTree queries, and only if not already set). LZ4 has no
+        # shell metacharacters, so it is safe in CLICKHOUSE_CLIENT_OPT for .sh tests.
+        # SHOW CREATE tests are skipped: the injected setting would change their output.
+        if (
+            (has_no_random_settings_tag or has_no_random_merge_tree_settings_tag)
+            and not self.has_show_create_table_in_test()
+            and "default_compression_codec" not in self.effective_merge_tree_settings
+        ):
+            self.effective_merge_tree_settings["default_compression_codec"] = "LZ4"
+
         self.base_url_params = (
             os.environ["CLICKHOUSE_URL_PARAMS"]
             if "CLICKHOUSE_URL_PARAMS" in os.environ
