@@ -10,7 +10,6 @@
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageSnapshot.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 

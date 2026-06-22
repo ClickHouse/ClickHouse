@@ -60,7 +60,7 @@ VirtualColumnsDescription StorageSystemProjections::createVirtuals()
     return desc;
 }
 
-class ProjectionsSource final : public ISource
+class ProjectionsSource : public ISource
 {
 public:
     ProjectionsSource(
@@ -123,7 +123,7 @@ protected:
                 const auto table = tables_it->table();
                 if (!table)
                     continue;
-                const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+                StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
                 if (!metadata_snapshot)
                     continue;
                 const auto & projections = metadata_snapshot->getProjections();
