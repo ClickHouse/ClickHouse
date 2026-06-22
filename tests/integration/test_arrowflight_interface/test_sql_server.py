@@ -11,6 +11,7 @@ from .flight_sql_client import (
     flight_descriptor,
     ActionCreatePreparedStatementRequest,
     CommandStatementUpdate,
+    CommandStatementIngest,
     DoPutUpdateResult,
     CancelStatus,
     SetSessionOptionsResult,

@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 -- Test for STID 1635-2ab2: constraint column substitution must not corrupt
 -- correlated column references in subqueries, causing "Bad cast from type
 -- DB::FunctionNode to DB::ColumnNode" crash.

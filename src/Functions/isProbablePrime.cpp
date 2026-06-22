@@ -28,7 +28,7 @@ constexpr unsigned default_rounds = 25;
 /// `std::numeric_limits<unsigned>::max()` and hang the stress test for half an hour, see #101354).
 constexpr unsigned max_rounds = 256;
 
-class FunctionIsProbablePrime final : public IFunction
+class FunctionIsProbablePrime : public IFunction
 {
 public:
     static constexpr auto name = "isProbablePrime";
