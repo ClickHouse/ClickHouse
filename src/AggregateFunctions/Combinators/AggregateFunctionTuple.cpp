@@ -443,7 +443,10 @@ public:
 void registerAggregateFunctionCombinatorTuple(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorTuple(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorTuple>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorTuple>(), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumTuple`), it makes the function take a single Tuple argument and aggregate each tuple element independently, producing a tuple of per-element results.",
+        .syntax = "<aggregate_function>Tuple",
+        .related = {"Array", "ForEach", "Map"}});
 }
 
 }
