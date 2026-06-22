@@ -78,7 +78,7 @@ class GH:
                 raise RuntimeError(
                     f"Failed to extract repository name from remote URL [{repo_url}]"
                 )
-            sha = Shell.get_output(f"git rev-parse HEAD", strict=True)
+            sha = Shell.get_output("git rev-parse HEAD", strict=True)
 
         assert repo_name
         print(repo_name)
@@ -648,7 +648,7 @@ class GH:
                 # Pass --repo so gh does not probe git remotes (Docker mounts can hit
                 # "detected dubious ownership" and fail comment creation).
                 cmd = f"gh pr comment {pr} --repo {repo} --body-file {temp_file_path}"
-                print(f"Create new comment")
+                print("Create new comment")
                 res = cls.do_command_with_retries(cmd)
             else:
                 print(
