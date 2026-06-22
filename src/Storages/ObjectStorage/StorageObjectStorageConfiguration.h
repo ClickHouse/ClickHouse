@@ -261,7 +261,7 @@ public:
         }
     }
 
-    virtual void checkAlterPartitionIsPossible(const PartitionCommands & /*commands*/) const
+    virtual void checkAlterPartitionIsPossible(ObjectStoragePtr /*object_storage*/, ContextPtr /*context*/, const PartitionCommands & /*commands*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter partition commands are not supported by storage {}", getEngineName());
     }

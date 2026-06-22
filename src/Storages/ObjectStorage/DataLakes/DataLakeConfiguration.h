@@ -180,9 +180,9 @@ public:
         current_metadata->checkAlterIsPossible(commands);
     }
 
-    void checkAlterPartitionIsPossible(const PartitionCommands & commands) const override
+    void checkAlterPartitionIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const PartitionCommands & commands) override
     {
-        assertInitialized();
+        lazyInitializeIfNeeded(object_storage, context);
         current_metadata->checkAlterPartitionIsPossible(commands);
     }
 
