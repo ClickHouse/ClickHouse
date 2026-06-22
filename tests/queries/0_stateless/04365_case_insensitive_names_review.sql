@@ -58,5 +58,20 @@ INSERT INTO Temp_review VALUES (7);
 SELECT v FROM Temp_review;
 DROP TEMPORARY TABLE Temp_review;
 
+SELECT '--- EXCEPT/REPLACE transformers (standard mode) ---';
+DROP TABLE IF EXISTS t_xform;
+CREATE TABLE t_xform (FirstName String, LastName String, Age Int32) ENGINE = Memory;
+INSERT INTO t_xform VALUES ('Alice', 'Smith', 30);
+-- Unquoted EXCEPT folds case-insensitively; quoted EXCEPT stays case-sensitive.
+SELECT * EXCEPT (firstname) FROM t_xform;
+SELECT * EXCEPT ("FirstName") FROM t_xform;
+-- Unquoted REPLACE folds case-insensitively.
+SELECT * REPLACE (0 AS age) FROM t_xform;
+-- STRICT EXCEPT/REPLACE: the consumption check still aligns when matched column differs by case.
+SELECT * EXCEPT STRICT (firstname) FROM t_xform;
+SELECT * REPLACE STRICT (0 AS age) FROM t_xform;
+
+DROP TABLE IF EXISTS t_xform;
+
 DROP TABLE IF EXISTS t_using_l;
 DROP TABLE IF EXISTS t_using_r;

@@ -53,33 +53,29 @@ StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
 
 String IDatabase::tryResolveTableNameCaseInsensitive(const String & name, ContextPtr context) const
 {
-    /// Two-pass: prefer an exact-case match; only fall back to case-insensitive when none exists.
+    /// Prefer the narrow exact-name lookup first: `getTablesIterator` may enumerate the entire
+    /// catalog (remote PostgreSQL / DataLake databases), which is far more expensive than a single
+    /// `tryGetTable` probe. The case-insensitive scan only fires when the exact lookup misses.
     /// This is what makes `information_schema.tables` work in standard mode — the database contains
     /// both `tables` and `TABLES`, but a literal lookup of `tables` matches `tables` exactly and
     /// avoids the otherwise-ambiguous case-insensitive scan.
+    if (tryGetTable(name, context))
+        return name;
+
     String found_name;
-    String exact_match;
     for (auto table_it = getTablesIterator(context); table_it->isValid(); table_it->next())
     {
         const auto & table_name = table_it->name();
-        if (table_name == name)
+        if (Poco::icompare(table_name, name) != 0)
+            continue;
+        if (!found_name.empty())
         {
-            exact_match = table_name;
-            break;
+            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                "Table name '{}' is ambiguous: matches multiple tables with different cases: '{}' and '{}'",
+                name, found_name, table_name);
         }
-        if (Poco::icompare(table_name, name) == 0)
-        {
-            if (!found_name.empty())
-            {
-                throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                    "Table name '{}' is ambiguous: matches multiple tables with different cases: '{}' and '{}'",
-                    name, found_name, table_name);
-            }
-            found_name = table_name;
-        }
+        found_name = table_name;
     }
-    if (!exact_match.empty())
-        return exact_match;
     return found_name;
 }
 

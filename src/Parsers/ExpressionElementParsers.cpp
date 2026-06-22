@@ -1998,6 +1998,9 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
             auto replacement = make_intrusive<ASTColumnsReplaceTransformer::Replacement>();
             replacement->name = getIdentifierName(ident);
+            /// Track double-quote so analyzer can apply `standard`-mode case-sensitivity rules.
+            if (const auto * ident_typed = ident->as<ASTIdentifier>())
+                replacement->name_is_double_quoted = ident_typed->getQuoteStyleAt(0) == IdentifierQuoteStyle::DoubleQuote;
             replacement->children.push_back(std::move(expr));
             replacements.emplace_back(std::move(replacement));
             return true;
@@ -2544,6 +2547,10 @@ bool ParserInterpolateElement::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     auto elem = make_intrusive<ASTInterpolateElement>();
     elem->column = ident->getColumnName();
+    /// Preserve quote style of the target so `INTERPOLATE ("MyCol" AS ...)` stays case-sensitive in
+    /// `standard` mode after the AST → query-tree round trip.
+    if (const auto * ident_typed = ident->as<ASTIdentifier>())
+        elem->column_is_double_quoted = ident_typed->getQuoteStyleAt(0) == IdentifierQuoteStyle::DoubleQuote;
     elem->expr = expr;
     elem->children.push_back(expr);
 

@@ -626,6 +626,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildInterpolateList(const ASTPtr & interpola
     {
         const auto & interpolate_element = expression->as<const ASTInterpolateElement &>();
         auto expression_to_interpolate = std::make_shared<IdentifierNode>(Identifier(interpolate_element.column));
+        /// Preserve `INTERPOLATE ("Col" AS ...)` case-sensitivity: rebuild the identifier with the
+        /// double-quote flag so the analyzer can apply standard-mode rules to the target.
+        if (interpolate_element.column_is_double_quoted)
+            expression_to_interpolate->setQuoteStyles({IdentifierQuoteStyle::DoubleQuote});
         auto interpolate_expression = buildExpression(interpolate_element.expr, context);
         auto interpolate_node = std::make_shared<InterpolateNode>(std::move(expression_to_interpolate), std::move(interpolate_expression));
 
@@ -1312,12 +1316,21 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
             else
             {
                 Names except_column_names;
+                std::vector<bool> target_is_double_quoted;
                 except_column_names.reserve(except_transformer->children.size());
+                target_is_double_quoted.reserve(except_transformer->children.size());
 
                 for (auto & except_transformer_child : except_transformer->children)
-                    except_column_names.push_back(except_transformer_child->as<ASTIdentifier &>().full_name);
+                {
+                    auto & ident = except_transformer_child->as<ASTIdentifier &>();
+                    except_column_names.push_back(ident.full_name);
+                    /// Preserve per-target quote style so `EXCEPT ("Col")` stays case-sensitive in
+                    /// `standard` mode while bare `EXCEPT (col)` folds case-insensitively.
+                    target_is_double_quoted.push_back(ident.getQuoteStyleAt(0) == IdentifierQuoteStyle::DoubleQuote);
+                }
 
-                column_transformers.emplace_back(std::make_shared<ExceptColumnTransformerNode>(std::move(except_column_names), except_transformer->is_strict));
+                column_transformers.emplace_back(std::make_shared<ExceptColumnTransformerNode>(
+                    std::move(except_column_names), except_transformer->is_strict, std::move(target_is_double_quoted)));
             }
         }
         else if (auto * replace_transformer = child->as<ASTColumnsReplaceTransformer>())
@@ -1328,7 +1341,12 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
             for (const auto & replace_transformer_child : replace_transformer->children)
             {
                 auto & replacement = replace_transformer_child->as<ASTColumnsReplaceTransformer::Replacement &>();
-                replacements.emplace_back(ReplaceColumnTransformerNode::Replacement{replacement.name, buildExpression(replacement.children[0], context)});
+                /// `ASTColumnsReplaceTransformer::Replacement` stores the target as a raw `name` string,
+                /// so look up the quote style on the optional accompanying `name_is_double_quoted` flag.
+                replacements.emplace_back(ReplaceColumnTransformerNode::Replacement{
+                    replacement.name,
+                    buildExpression(replacement.children[0], context),
+                    replacement.name_is_double_quoted});
             }
 
             column_transformers.emplace_back(std::make_shared<ReplaceColumnTransformerNode>(replacements, replace_transformer->is_strict));

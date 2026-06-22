@@ -175,7 +175,7 @@ class ExceptColumnTransformerNode final : public IColumnTransformerNode
 {
 public:
     /// Initialize except column transformer with column names
-    explicit ExceptColumnTransformerNode(Names except_column_names_, bool is_strict_);
+    explicit ExceptColumnTransformerNode(Names except_column_names_, bool is_strict_, std::vector<bool> is_double_quoted_ = {});
 
     /// Initialize except column transformer with regexp column matcher
     explicit ExceptColumnTransformerNode(std::shared_ptr<re2::RE2> column_matcher_);
@@ -195,7 +195,13 @@ public:
     }
 
     /// Returns true if except transformer match column name, false otherwise.
-    bool isColumnMatching(const std::string & column_name) const;
+    /// `standard_mode` enables case-insensitive matching for transformer targets that were not
+    /// double-quoted, so `SELECT * EXCEPT (firstname)` drops table column `FirstName`. Each target's
+    /// per-identifier double-quote flag is tracked separately (see `target_is_double_quoted`).
+    /// When `matched_target` is non-null and the match was via the COLUMN_LIST path, the original
+    /// target name (as written by the user) is written through it — STRICT bookkeeping uses this so
+    /// the per-target consumption check still aligns even when the actual column name differs by case.
+    bool isColumnMatching(const std::string & column_name, bool standard_mode = false, std::string * matched_target = nullptr) const;
 
     /** Get except column names.
       * Valid only for column list except transformer.
@@ -224,6 +230,10 @@ protected:
 private:
     ExceptColumnTransformerType except_transformer_type;
     Names except_column_names;
+    /// Parallel to `except_column_names`: true when the corresponding identifier was written
+    /// as `"Name"` rather than `Name` / `` `Name` ``. Targets pinned this way stay case-sensitive
+    /// even in `standard` mode. Empty when the transformer was built without quote tracking.
+    std::vector<bool> target_is_double_quoted;
     std::shared_ptr<re2::RE2> column_matcher;
     bool is_strict = false;
 
@@ -247,6 +257,10 @@ public:
     {
         std::string column_name;
         QueryTreeNodePtr expression_node;
+        /// `true` when the user wrote `REPLACE (expr AS "Col")`. Such targets stay case-sensitive in
+        /// `standard` mode while unquoted targets fold case-insensitively, matching how other
+        /// column references resolve.
+        bool is_double_quoted = false;
     };
 
     /// Initialize replace column transformer with replacements
@@ -283,8 +297,12 @@ public:
 
     /** Returns replacement expression if replacement is registered for expression name, null otherwise.
       * Returned replacement expression must be cloned by caller.
+      * `standard_mode` enables case-insensitive matching against replacements whose target was not
+      * double-quoted. When `matched_target` is non-null, the original target name (as written by the
+      * user) is written through it — STRICT bookkeeping uses this so the per-target consumption check
+      * still aligns when the matched column differs from the target by case.
       */
-    QueryTreeNodePtr findReplacementExpression(const std::string & expression_name);
+    QueryTreeNodePtr findReplacementExpression(const std::string & expression_name, bool standard_mode = false, std::string * matched_target = nullptr);
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
@@ -304,6 +322,9 @@ private:
     }
 
     Names replacements_names;
+    /// Parallel to `replacements_names`. Targets pinned with `"Name"` stay case-sensitive in
+    /// `standard` mode.
+    std::vector<bool> replacements_are_double_quoted;
     bool is_strict = false;
 
     static constexpr size_t replacements_child_index = 0;

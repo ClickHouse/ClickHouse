@@ -105,6 +105,9 @@ public:
         void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
         String name;
+        /// True when the user wrote `REPLACE (expr AS "Col")`. Quoted target stays case-sensitive in
+        /// `standard` mode while unquoted targets fold case-insensitively.
+        bool name_is_double_quoted = false;
 
     protected:
         void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

@@ -2588,10 +2588,16 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 if (apply_transformer_was_used || replace_transformer_was_used)
                     continue;
 
-                if (except_transformer->isColumnMatching(column_name))
+                std::string matched_target;
+                if (except_transformer->isColumnMatching(column_name, scope.isStandardMode(), &matched_target))
                 {
                     if (except_transformer->isStrict())
-                        strict_transformer_to_used_column_names[except_transformer].insert(column_name);
+                    {
+                        /// Use the original target spelling so the STRICT consumption check below
+                        /// stays correct even when the matched column differs from the target by case.
+                        strict_transformer_to_used_column_names[except_transformer].insert(
+                            matched_target.empty() ? column_name : matched_target);
+                    }
 
                     node = {};
                     break;
@@ -2602,14 +2608,16 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 if (apply_transformer_was_used || replace_transformer_was_used)
                     continue;
 
-                auto replace_expression = replace_transformer->findReplacementExpression(column_name);
+                std::string matched_replace_target;
+                auto replace_expression = replace_transformer->findReplacementExpression(column_name, scope.isStandardMode(), &matched_replace_target);
                 if (!replace_expression)
                     continue;
 
                 replace_transformer_was_used = true;
 
                 if (replace_transformer->isStrict())
-                    strict_transformer_to_used_column_names[replace_transformer].insert(column_name);
+                    strict_transformer_to_used_column_names[replace_transformer].insert(
+                        matched_replace_target.empty() ? column_name : matched_replace_target);
 
                 replace_transformer_mappings[column_name] = replace_expression;
 
@@ -4049,6 +4057,13 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
         auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
 
         auto column_to_interpolate_name = interpolate_node_typed.getExpressionName();
+        /// Preserve the quote style of `INTERPOLATE ("Col" AS ...)` — when the target was double-quoted
+        /// it must stay case-sensitive in `standard` mode, so it is registered only in the case-sensitive
+        /// expression-argument map, not in the lowercase index.
+        const auto * interpolate_target_identifier = interpolate_node_typed.getExpression()->as<IdentifierNode>();
+        const bool interpolate_target_is_double_quoted = interpolate_target_identifier
+            && !interpolate_target_identifier->getQuoteStyles().empty()
+            && interpolate_target_identifier->getQuoteStyles().front() == IdentifierQuoteStyle::DoubleQuote;
 
         resolveExpressionNode(interpolate_node_typed.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -4056,7 +4071,7 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
         IdentifierResolveScope & interpolate_scope = createIdentifierResolveScope(interpolation_to_resolve, &scope /*parent_scope*/);
 
         auto fake_column_node = std::make_shared<ColumnNode>(NameAndTypePair(column_to_interpolate_name, interpolate_node_typed.getExpression()->getResultType()), interpolate_node);
-        interpolate_scope.addExpressionArgument(column_to_interpolate_name, fake_column_node);
+        interpolate_scope.addExpressionArgument(column_to_interpolate_name, fake_column_node, interpolate_target_is_double_quoted);
 
         resolveExpressionNode(interpolation_to_resolve, interpolate_scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
     }
@@ -4630,7 +4645,14 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         if (auto * identifier_node = table_function_argument->as<IdentifierNode>())
         {
             const auto & unresolved_identifier = identifier_node->getIdentifier();
-            auto identifier_resolve_result = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::EXPRESSION}, scope, { .allow_to_resolve_niladic_functions = false });
+            IdentifierLookup table_function_arg_lookup{unresolved_identifier, IdentifierLookupContext::EXPRESSION};
+            /// Carry per-part double-quote info so a quoted argument like `format("format", 'x UInt8', '1')`
+            /// stays case-sensitive in `standard` mode and cannot bind to an unquoted alias of the same text.
+            const auto & arg_quote_styles = identifier_node->getQuoteStyles();
+            table_function_arg_lookup.is_part_double_quoted.reserve(arg_quote_styles.size());
+            for (auto style : arg_quote_styles)
+                table_function_arg_lookup.is_part_double_quoted.push_back(style == IdentifierQuoteStyle::DoubleQuote);
+            auto identifier_resolve_result = tryResolveIdentifier(table_function_arg_lookup, scope, { .allow_to_resolve_niladic_functions = false });
             auto resolved_identifier = std::move(identifier_resolve_result.resolved_identifier);
 
             if (resolved_identifier && resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)

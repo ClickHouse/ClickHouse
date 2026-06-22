@@ -53,6 +53,14 @@ void ASTWithElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     hash_state.update(is_materialized);
     if (name_is_double_quoted)
         hash_state.update(true);
+
+    /// `aliases` is stored as a side field (not in `children`), so `IAST::updateTreeHashImpl` never
+    /// sees it. Hash it explicitly here, including each output-alias identifier's double-quote
+    /// style, so `QueryResultCache::Key` can't collide queries that differ only by CTE output
+    /// aliases (e.g. `WITH cte(MyCol) AS (...)` vs `WITH cte("MyCol") AS (...)`).
+    if (aliases)
+        aliases->updateTreeHashImpl(hash_state, ignore_aliases);
+
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 

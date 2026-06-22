@@ -739,7 +739,16 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     const bool standard_mode = table_expression_data.standard_mode;
     /// Qualifier matches (db / table / alias) use per-part quoting; the column-name lookup uses the last part's
     auto part_case_insensitive = [&](size_t part) { return identifier_lookup.isPartCaseInsensitive(part, standard_mode); };
-    const bool column_case_insensitive = identifier_lookup.isLastPartCaseInsensitive(standard_mode);
+    /// The full-name check looks up the joined identifier text in the storage column map. A single
+    /// double-quoted part anywhere along the identifier pins it to case-sensitive — otherwise a
+    /// `"data".Name` lookup with unquoted `Name` would still fold to `Data.Name` here, ahead of a
+    /// later table that exposes the exact spelling.
+    bool full_name_case_insensitive = standard_mode;
+    for (size_t p = 0, n = identifier.getPartsSize(); p < n && full_name_case_insensitive; ++p)
+    {
+        if (identifier_lookup.isPartDoubleQuoted(p))
+            full_name_case_insensitive = false;
+    }
 
     auto strings_equal = [](const std::string & a, const std::string & b, bool case_insensitive)
     {
@@ -766,8 +775,8 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
         return false;
     }
 
-    /// Bind check keys off the base column (part 0); full-name check uses last-part quoting
-    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier), column_case_insensitive)
+    /// Bind check keys off the base column (part 0); full-name check requires every part to be unquoted.
+    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier), full_name_case_insensitive)
         || table_expression_data.canBindIdentifier(IdentifierView(identifier), part_case_insensitive(0)))
         return true;
 
@@ -1054,9 +1063,17 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     }
 
     const bool standard_mode = table_expression_data.standard_mode;
-    /// Qualifier matches (db / table / alias) use per-part quoting; the column-name lookup uses the last part's
+    /// Qualifier matches (db / table / alias) use per-part quoting.
     auto part_case_insensitive = [&](size_t part) { return identifier_lookup.isPartCaseInsensitive(part, standard_mode); };
-    const bool column_case_insensitive = identifier_lookup.isLastPartCaseInsensitive(standard_mode);
+    /// Full-name folded lookups require every part to be unquoted — a single double-quoted part
+    /// anywhere along the identifier pins the gate to case-sensitive so a later table with the
+    /// exact spelling is not pre-empted by a folded match here.
+    bool full_name_case_insensitive = standard_mode;
+    for (size_t p = 0, n = identifier.getPartsSize(); p < n && full_name_case_insensitive; ++p)
+    {
+        if (identifier_lookup.isPartDoubleQuoted(p))
+            full_name_case_insensitive = false;
+    }
 
     /// Local equality helper that honours per-part / alias quote-style for case sensitivity
     auto names_equal = [](const std::string & a, const std::string & b, bool case_insensitive)
@@ -1095,7 +1112,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
        * Storage alias works for subquery, table function as well.
        * 3. Try to bind identifier first parts to database name and table name, if true remove first two parts and try to get full identifier from table or throw exception.
        */
-    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier), column_case_insensitive))
+    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier), full_name_case_insensitive))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/);
 
     /// The bind check is keyed off the base column (part 0), not the trailing subcolumn part.

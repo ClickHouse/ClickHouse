@@ -26,3 +26,9 @@ val
 val
 --- Temporary table exact-case-first ---
 7
+--- EXCEPT/REPLACE transformers (standard mode) ---
+Smith	30
+Smith	30
+Alice	Smith	0
+Smith	30
+Alice	Smith	0

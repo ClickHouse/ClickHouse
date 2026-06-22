@@ -1,5 +1,7 @@
 #include <Analyzer/ColumnTransformers.h>
 
+#include <Poco/String.h>
+
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Common/re2.h>
@@ -116,10 +118,11 @@ ASTPtr ApplyColumnTransformerNode::toASTImpl(const ConvertToASTOptions & options
 
 /// ExceptColumnTransformerNode implementation
 
-ExceptColumnTransformerNode::ExceptColumnTransformerNode(Names except_column_names_, bool is_strict_)
+ExceptColumnTransformerNode::ExceptColumnTransformerNode(Names except_column_names_, bool is_strict_, std::vector<bool> is_double_quoted_)
     : IColumnTransformerNode(children_size)
     , except_transformer_type(ExceptColumnTransformerType::COLUMN_LIST)
     , except_column_names(std::move(except_column_names_))
+    , target_is_double_quoted(std::move(is_double_quoted_))
     , is_strict(is_strict_)
 {
 }
@@ -131,14 +134,31 @@ ExceptColumnTransformerNode::ExceptColumnTransformerNode(std::shared_ptr<re2::RE
 {
 }
 
-bool ExceptColumnTransformerNode::isColumnMatching(const std::string & column_name) const
+bool ExceptColumnTransformerNode::isColumnMatching(const std::string & column_name, bool standard_mode, std::string * matched_target) const
 {
     if (column_matcher)
         return re2::RE2::PartialMatch(column_name, *column_matcher);
 
-    for (const auto & name : except_column_names)
+    for (size_t i = 0, n = except_column_names.size(); i < n; ++i)
+    {
+        const auto & name = except_column_names[i];
         if (column_name == name)
+        {
+            if (matched_target)
+                *matched_target = name;
             return true;
+        }
+        /// In `standard` mode an unquoted EXCEPT target folds case-insensitively. Quoted targets
+        /// (tracked in the parallel `target_is_double_quoted` vector) stay case-sensitive even when
+        /// the surrounding query uses standard semantics.
+        const bool target_quoted = i < target_is_double_quoted.size() && target_is_double_quoted[i];
+        if (standard_mode && !target_quoted && Poco::icompare(column_name, name) == 0)
+        {
+            if (matched_target)
+                *matched_target = name;
+            return true;
+        }
+    }
 
     return false;
 }
@@ -182,7 +202,8 @@ bool ExceptColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs, Compar
     const auto & rhs_typed = assert_cast<const ExceptColumnTransformerNode &>(rhs);
     if (except_transformer_type != rhs_typed.except_transformer_type ||
         is_strict != rhs_typed.is_strict ||
-        except_column_names != rhs_typed.except_column_names)
+        except_column_names != rhs_typed.except_column_names ||
+        target_is_double_quoted != rhs_typed.target_is_double_quoted)
         return false;
 
     const auto & rhs_column_matcher = rhs_typed.column_matcher;
@@ -210,6 +231,18 @@ void ExceptColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState &
         hash_state.update(column_name);
     }
 
+    /// Mix in quote-style bits only when at least one target was quoted so the hash stays stable
+    /// for the common (unquoted) case.
+    bool any_quoted = false;
+    for (bool b : target_is_double_quoted)
+        if (b) { any_quoted = true; break; }
+    if (any_quoted)
+    {
+        hash_state.update(target_is_double_quoted.size());
+        for (bool b : target_is_double_quoted)
+            hash_state.update(static_cast<uint8_t>(b));
+    }
+
     if (column_matcher)
     {
         const auto & pattern = column_matcher->pattern();
@@ -223,7 +256,7 @@ QueryTreeNodePtr ExceptColumnTransformerNode::cloneImpl() const
     if (except_transformer_type == ExceptColumnTransformerType::REGEXP)
         return std::make_shared<ExceptColumnTransformerNode>(column_matcher);
 
-    return std::make_shared<ExceptColumnTransformerNode>(except_column_names, is_strict);
+    return std::make_shared<ExceptColumnTransformerNode>(except_column_names, is_strict, target_is_double_quoted);
 }
 
 ASTPtr ExceptColumnTransformerNode::toASTImpl(const ConvertToASTOptions & /* options */) const
@@ -237,8 +270,13 @@ ASTPtr ExceptColumnTransformerNode::toASTImpl(const ConvertToASTOptions & /* opt
     }
 
     ast_except_transformer->children.reserve(except_column_names.size());
-    for (const auto & name : except_column_names)
-        ast_except_transformer->children.push_back(make_intrusive<ASTIdentifier>(name));
+    for (size_t i = 0, n = except_column_names.size(); i < n; ++i)
+    {
+        auto identifier = make_intrusive<ASTIdentifier>(except_column_names[i]);
+        if (i < target_is_double_quoted.size() && target_is_double_quoted[i])
+            identifier->setQuoteStyles({IdentifierQuoteStyle::DoubleQuote});
+        ast_except_transformer->children.push_back(std::move(identifier));
+    }
 
     return ast_except_transformer;
 }
@@ -265,19 +303,40 @@ ReplaceColumnTransformerNode::ReplaceColumnTransformerNode(const std::vector<Rep
                 replacement.column_name);
 
         replacements_names.push_back(replacement.column_name);
+        replacements_are_double_quoted.push_back(replacement.is_double_quoted);
         replacement_expressions_nodes.push_back(replacement.expression_node);
     }
 }
 
-QueryTreeNodePtr ReplaceColumnTransformerNode::findReplacementExpression(const std::string & expression_name)
+QueryTreeNodePtr ReplaceColumnTransformerNode::findReplacementExpression(const std::string & expression_name, bool standard_mode, std::string * matched_target)
 {
-    auto it = std::find(replacements_names.begin(), replacements_names.end(), expression_name);
-    if (it == replacements_names.end())
-        return {};
+    auto exact_it = std::find(replacements_names.begin(), replacements_names.end(), expression_name);
+    if (exact_it != replacements_names.end())
+    {
+        size_t replacement_index = exact_it - replacements_names.begin();
+        if (matched_target)
+            *matched_target = replacements_names[replacement_index];
+        return getReplacements().getNodes()[replacement_index];
+    }
 
-    size_t replacement_index = it - replacements_names.begin();
-    auto & replacement_expressions_nodes = getReplacements().getNodes();
-    return replacement_expressions_nodes[replacement_index];
+    /// `standard` mode: also match an unquoted REPLACE target case-insensitively. Quoted targets
+    /// (`REPLACE (... AS "Col")`) are skipped from the case-insensitive scan.
+    if (standard_mode)
+    {
+        for (size_t i = 0, n = replacements_names.size(); i < n; ++i)
+        {
+            if (i < replacements_are_double_quoted.size() && replacements_are_double_quoted[i])
+                continue;
+            if (Poco::icompare(replacements_names[i], expression_name) == 0)
+            {
+                if (matched_target)
+                    *matched_target = replacements_names[i];
+                return getReplacements().getNodes()[i];
+            }
+        }
+    }
+
+    return {};
 }
 
 void ReplaceColumnTransformerNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
@@ -304,7 +363,9 @@ void ReplaceColumnTransformerNode::dumpTreeImpl(WriteBuffer & buffer, FormatStat
 bool ReplaceColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const ReplaceColumnTransformerNode &>(rhs);
-    return is_strict == rhs_typed.is_strict && replacements_names == rhs_typed.replacements_names;
+    return is_strict == rhs_typed.is_strict
+        && replacements_names == rhs_typed.replacements_names
+        && replacements_are_double_quoted == rhs_typed.replacements_are_double_quoted;
 }
 
 void ReplaceColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState & hash_state, CompareOptions) const
@@ -321,6 +382,16 @@ void ReplaceColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState 
         hash_state.update(replacement_name.size());
         hash_state.update(replacement_name);
     }
+
+    bool any_quoted = false;
+    for (bool b : replacements_are_double_quoted)
+        if (b) { any_quoted = true; break; }
+    if (any_quoted)
+    {
+        hash_state.update(replacements_are_double_quoted.size());
+        for (bool b : replacements_are_double_quoted)
+            hash_state.update(static_cast<uint8_t>(b));
+    }
 }
 
 QueryTreeNodePtr ReplaceColumnTransformerNode::cloneImpl() const
@@ -329,6 +400,7 @@ QueryTreeNodePtr ReplaceColumnTransformerNode::cloneImpl() const
 
     result_replace_transformer->is_strict = is_strict;
     result_replace_transformer->replacements_names = replacements_names;
+    result_replace_transformer->replacements_are_double_quoted = replacements_are_double_quoted;
 
     return result_replace_transformer;
 }
