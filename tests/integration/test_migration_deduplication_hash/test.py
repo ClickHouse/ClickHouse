@@ -377,3 +377,54 @@ def test_cleanup_consistent_across_directories_compatible(cluster):
         # A retry of the most recent insert, still inside the window, is deduplicated.
         node.query("INSERT INTO dedup_cleanup_compatible SETTINGS async_insert = 0 VALUES (toDate('2024-01-01'), 2, 'b')")
         assert node.query("SELECT count() FROM dedup_cleanup_compatible").strip() == "5"
+
+
+def test_new_unified_async_enable_follows_sync_window(cluster):
+    # Under new_unified_hash the async-insert enable gate follows the unified window
+    # (replicated_deduplication_window), not the legacy replicated_deduplication_window_for_async_inserts.
+    # So _for_async_inserts = 0 no longer disables async deduplication, and replicated_deduplication_window = 0 does.
+    node = cluster.instances["node_new"]
+
+    def two_identical_async_inserts(table):
+        for _ in range(2):
+            node.query(
+                f"INSERT INTO {table} "
+                f"SETTINGS async_insert = 1, wait_for_async_insert = 1, deduplicate_insert = 'enable' VALUES (1)"
+            )
+
+    # Legacy async window is 0 but the unified window is non-zero: async dedup stays ENABLED, so the
+    # two identical inserts collapse to one row.
+    create_legacy_zero = \
+"""
+    DROP TABLE IF EXISTS t_async_enable_legacy_zero SYNC;
+
+    CREATE TABLE t_async_enable_legacy_zero (key UInt32)
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/t_async_enable_legacy_zero', '{replica}')
+    ORDER BY key
+    SETTINGS replicated_deduplication_window_for_async_inserts = 0
+"""
+    with with_tables(
+        nodes=[node],
+        create_query=create_legacy_zero,
+        drop_query="DROP TABLE IF EXISTS t_async_enable_legacy_zero SYNC",
+    ):
+        two_identical_async_inserts("t_async_enable_legacy_zero")
+        assert node.query("SELECT count() FROM t_async_enable_legacy_zero").strip() == "1"
+
+    # Unified window is 0: async dedup is DISABLED, so both identical inserts land.
+    create_unified_zero = \
+"""
+    DROP TABLE IF EXISTS t_async_enable_unified_zero SYNC;
+
+    CREATE TABLE t_async_enable_unified_zero (key UInt32)
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/t_async_enable_unified_zero', '{replica}')
+    ORDER BY key
+    SETTINGS replicated_deduplication_window = 0
+"""
+    with with_tables(
+        nodes=[node],
+        create_query=create_unified_zero,
+        drop_query="DROP TABLE IF EXISTS t_async_enable_unified_zero SYNC",
+    ):
+        two_identical_async_inserts("t_async_enable_unified_zero")
+        assert node.query("SELECT count() FROM t_async_enable_unified_zero").strip() == "2"
