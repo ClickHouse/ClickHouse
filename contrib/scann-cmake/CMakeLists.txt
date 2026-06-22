@@ -242,6 +242,187 @@ if (NOT OS_LINUX)
 endif()
 
 # ---------------------------------------------------------------------------
+# Train the AH codebook on a sampled subset of residuals instead of the full
+# dataset.  Upstream ScaNN's ComputeResidualsImpl computes residuals for every
+# datapoint (e.g. ~2.9 GB for 1M x 768), which dominates index build time and
+# peak memory.  The residuals are used only as the codebook training set
+# (asymmetric_hashing2::TrainSingleMachine); the full dataset is still quantized
+# point-by-point in BuildLeafSearchers (which re-residualizes each point via
+# ResidualizeToFloat), so subsampling only the training set has negligible
+# recall impact.  getSampleSize() returns 20% of the dataset, clamped to
+# [100,000, 2,000,000].  The AH codebook is a set of 2-D, 16-center k-means whose
+# training-set requirement is essentially independent of the dataset size, so 20%
+# is ample; the floor keeps small datasets well-trained and the cap keeps build
+# time bounded for very large datasets.
+#
+# Implemented as build-directory patches rather than edits to the scann
+# submodule, mirroring the flags.cc / avx512.h patches above.  string(REPLACE)
+# uses bracket arguments so the multi-line C++ needs no escaping, and the whole
+# ComputeResidualsImpl body is replaced as a single anchor so the in-body
+# dataset.size() uses are rewritten while the function's other dataset.size()
+# uses are left untouched.
+
+# 1) getSampleSize declaration in dataset.h (header: include order wins).
+set(_ds_h_src "${SCANN_SOURCE_DIR}/scann/data_format/dataset.h")
+set(_ds_h_dst "${CMAKE_CURRENT_BINARY_DIR}/scann/data_format/dataset.h")
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/scann/data_format")
+configure_file("${_ds_h_src}" "${_ds_h_dst}" COPYONLY)
+file(READ "${_ds_h_dst}" _ds_h_content)
+string(REPLACE
+[==[namespace research_scann {
+
+template <typename T>
+class TypedDataset;]==]
+[==[namespace research_scann {
+
+size_t getSampleSize(size_t data_size);
+
+template <typename T>
+class TypedDataset;]==]
+    _ds_h_content "${_ds_h_content}")
+file(WRITE "${_ds_h_dst}" "${_ds_h_content}")
+
+# 2) getSampleSize definition in dataset.cc.
+set(_ds_cc_src "${SCANN_SOURCE_DIR}/scann/data_format/dataset.cc")
+set(_ds_cc_dst "${CMAKE_CURRENT_BINARY_DIR}/dataset.cc")
+configure_file("${_ds_cc_src}" "${_ds_cc_dst}" COPYONLY)
+file(READ "${_ds_cc_dst}" _ds_cc_content)
+string(REPLACE
+[==[namespace research_scann {
+
+shared_ptr<DocidCollectionInterface> Dataset::ReleaseDocids() {]==]
+[==[namespace research_scann {
+
+size_t getSampleSize(size_t data_size) {
+  // The AH codebook is 384 independent 2-D, 16-center k-means (num_dims_per_block=2,
+  // INT8_LUT16), whose training-set requirement is essentially independent of the
+  // dataset size, so a 20% sample is ample. Clamp it on both ends: a floor so small
+  // datasets are still trained on enough points (datasets below ~500k end up fully
+  // sampled, which is cheap), and a cap so huge datasets do not blow up build time or
+  // peak memory (2M samples already saturate the 2-D codebooks).
+  size_t sample_size = static_cast<size_t>(data_size / 5);  // 20%
+  sample_size = std::max(sample_size, static_cast<size_t>(100000));    // floor
+  sample_size = std::min(sample_size, static_cast<size_t>(2000000));   // cap
+  sample_size = std::min(sample_size, static_cast<size_t>(data_size));
+  return sample_size;
+}
+
+shared_ptr<DocidCollectionInterface> Dataset::ReleaseDocids() {]==]
+    _ds_cc_content "${_ds_cc_content}")
+file(WRITE "${_ds_cc_dst}" "${_ds_cc_content}")
+list(REMOVE_ITEM SCANN_SOURCES "${_ds_cc_src}")
+list(APPEND SCANN_SOURCES "${_ds_cc_dst}")
+
+# 3) Rewrite ComputeResidualsImpl in tree_ah_hybrid_residual.cc to sample.
+set(_tahr_src "${SCANN_SOURCE_DIR}/scann/tree_x_hybrid/tree_ah_hybrid_residual.cc")
+set(_tahr_dst "${CMAKE_CURRENT_BINARY_DIR}/tree_ah_hybrid_residual.cc")
+configure_file("${_tahr_src}" "${_tahr_dst}" COPYONLY)
+file(READ "${_tahr_dst}" _tahr_content)
+string(REPLACE
+[==[#include <numeric>
+#include <unordered_set>]==]
+[==[#include <numeric>
+#include <random>
+#include <unordered_set>]==]
+    _tahr_content "${_tahr_content}")
+string(REPLACE
+[==[  vector<uint32_t> tokens_by_datapoint(dataset.size());
+  for (uint32_t token : Seq(datapoints_by_token.size())) {
+    for (DatapointIndex dp_idx : datapoints_by_token[token]) {
+      tokens_by_datapoint[dp_idx] = token;
+    }
+  }
+
+  vector<float> residuals_storage;
+  auto loop_body = [&](size_t dp_idx, bool is_first_dp)
+                       SCANN_INLINE_LAMBDA -> Status {
+    const uint32_t token = tokens_by_datapoint[dp_idx];
+    SCANN_ASSIGN_OR_RETURN(auto residual, get_residual(dataset[dp_idx], token));
+
+    if (is_first_dp) {
+      residuals_storage =
+          vector<float>(dataset.size() * residual.dimensionality());
+    } else {
+      DCHECK_EQ(residuals_storage.size(),
+                dataset.size() * residual.dimensionality());
+    }
+    std::copy(residual.values().begin(), residual.values().end(),
+              residuals_storage.begin() + dp_idx * residual.dimensionality());
+    return OkStatus();
+  };
+
+  if (dataset.empty()) return DenseDataset<float>();
+  SCANN_RETURN_IF_ERROR(loop_body(0, true));
+  SCANN_RETURN_IF_ERROR(ParallelForWithStatus<1>(
+      Seq(1, dataset.size()), parallelization_pool,
+      [&](size_t dp_idx) { return loop_body(dp_idx, false); }));
+  return DenseDataset<float>(std::move(residuals_storage), dataset.size());
+}]==]
+[==[  if (dataset.empty()) return DenseDataset<float>();
+
+  vector<uint32_t> tokens_by_datapoint(dataset.size());
+  for (uint32_t token : Seq(datapoints_by_token.size())) {
+    for (DatapointIndex dp_idx : datapoints_by_token[token]) {
+      tokens_by_datapoint[dp_idx] = token;
+    }
+  }
+
+  // The residuals are used only as the training set for the AH codebook (see
+  // TrainSingleMachine in base/internal/tree_x_hybrid_factory.cc), so training
+  // on a representative subset rather than the full dataset cuts build time and
+  // peak memory roughly in half with negligible recall impact. Quantization of
+  // the full dataset happens separately in BuildLeafSearchers and is unaffected.
+  const size_t sample_size = getSampleSize(dataset.size());
+
+  // Select sample_size datapoint indices via reservoir sampling. The seed is
+  // fixed so the sample (and therefore the codebook) is deterministic.
+  vector<DatapointIndex> sample_indices(sample_size);
+  {
+    std::mt19937 g(2023);
+    std::uniform_int_distribution<uint64_t> dis;
+    for (size_t i = 0; i < dataset.size(); ++i) {
+      if (i < sample_size) {
+        sample_indices[i] = i;
+      } else {
+        uint64_t rdx = dis(
+            g, std::uniform_int_distribution<uint64_t>::param_type(0, i));
+        if (rdx < sample_size) sample_indices[rdx] = i;
+      }
+    }
+  }
+
+  vector<float> residuals_storage;
+  auto loop_body = [&](size_t sample_pos, bool is_first_dp)
+                       SCANN_INLINE_LAMBDA -> Status {
+    const DatapointIndex dp_idx = sample_indices[sample_pos];
+    const uint32_t token = tokens_by_datapoint[dp_idx];
+    SCANN_ASSIGN_OR_RETURN(auto residual, get_residual(dataset[dp_idx], token));
+
+    if (is_first_dp) {
+      residuals_storage =
+          vector<float>(sample_size * residual.dimensionality());
+    } else {
+      DCHECK_EQ(residuals_storage.size(),
+                sample_size * residual.dimensionality());
+    }
+    std::copy(residual.values().begin(), residual.values().end(),
+              residuals_storage.begin() +
+                  sample_pos * residual.dimensionality());
+    return OkStatus();
+  };
+
+  SCANN_RETURN_IF_ERROR(loop_body(0, true));
+  SCANN_RETURN_IF_ERROR(ParallelForWithStatus<1>(
+      Seq(1, sample_size), parallelization_pool,
+      [&](size_t sample_pos) { return loop_body(sample_pos, false); }));
+  return DenseDataset<float>(std::move(residuals_storage), sample_size);
+}]==]
+    _tahr_content "${_tahr_content}")
+file(WRITE "${_tahr_dst}" "${_tahr_content}")
+list(REMOVE_ITEM SCANN_SOURCES "${_tahr_src}")
+list(APPEND SCANN_SOURCES "${_tahr_dst}")
+
+# ---------------------------------------------------------------------------
 # 4. Build the library
 # ---------------------------------------------------------------------------
 add_library(_scann

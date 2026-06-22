@@ -7,12 +7,14 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Common/Exception.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
@@ -32,6 +34,7 @@
 #include <scann/partitioning/partitioner.pb.h>
 #include <scann/proto/centers.pb.h>
 #include <scann/proto/scann.pb.h>
+#include <scann/utils/threads.h>
 #include <scann/utils/types.h>
 #include <google/protobuf/text_format.h>
 #pragma GCC diagnostic pop
@@ -46,6 +49,11 @@ namespace Setting
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsUInt64 scann_num_leaves_to_search;
     extern const SettingsUInt64 scann_candidate_pool_size;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
 }
 
 namespace ErrorCodes
@@ -65,6 +73,35 @@ struct ScannSearcherWrapper
 {
     std::unique_ptr<research_scann::SingleMachineSearcherBase<float>> inner;
 };
+
+namespace
+{
+
+/// Global thread pool shared by all ScaNN index builds, mirroring Usearch's
+/// getBuildVectorSimilarityIndexThreadPool(). A single shared pool bounds the total
+/// number of ScaNN build threads to max_build_vector_similarity_index_thread_pool_size
+/// regardless of how many parts build a ScaNN index concurrently, which avoids
+/// oversubscription. ScaNN uses its own Eigen-based thread pool type and cannot reuse
+/// the ClickHouse ThreadPool object directly, so this is a separate pool governed by the
+/// same server setting.
+///
+/// Sharing the pool across concurrent builds is safe: ScaNN's ParallelFor uses a
+/// work-stealing scheme where the calling thread completes the full range itself and the
+/// tasks scheduled onto the pool are only opportunistic helpers. A saturated pool
+/// therefore degrades to no speed-up, never a deadlock.
+std::shared_ptr<research_scann::ThreadPool> getScannBuildThreadPool()
+{
+    static std::shared_ptr<research_scann::ThreadPool> pool = []
+    {
+        size_t build_threads = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::max_build_vector_similarity_index_thread_pool_size];
+        if (build_threads == 0)
+            build_threads = getNumberOfCPUCoresToUse();
+        return research_scann::StartThreadPool("scann_build_pool", static_cast<int>(build_threads) - 1);
+    }();
+    return pool;
+}
+
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -365,6 +402,7 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
         std::move(vectors), num_vectors);
 
     research_scann::SingleMachineFactoryOptions build_opts;
+    build_opts.parallelization_pool = getScannBuildThreadPool();
     try
     {
         auto status_or = research_scann::SingleMachineFactoryScann<float>(
@@ -408,10 +446,19 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
     if (opts.ah_codebook)
         opts.ah_codebook->SerializeToString(&serialized_codebook_proto);
 
-    /// Do not copy hashed_data here: the searcher retains hashed_dataset internally,
-    /// and serializeBinary reads from it when hashed_data is empty.
+    /// Persist the quantized (hashed) codes so that a later restore reuses them instead of
+    /// re-quantizing every datapoint, which otherwise dominates cold-load time (~200s for 1M
+    /// vectors). The codes come from the extracted options: ExtractSingleMachineFactoryOptions
+    /// unpacks them from the leaf searchers' packed LUT16 format. They cannot be read back from
+    /// the tree searcher's top-level hashed_dataset() during serializeBinary - it is null for
+    /// Tree-AH, where the codes live in the per-leaf searchers - so copy them into the granule's
+    /// hashed_data member here.
     if (opts.hashed_dataset && !opts.hashed_dataset->empty())
+    {
         hashed_dim = opts.hashed_dataset->dimensionality();
+        const auto span = opts.hashed_dataset->data();
+        hashed_data.assign(span.data(), span.data() + span.size());
+    }
 
     if (opts.datapoints_by_token)
     {
@@ -450,6 +497,12 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndexFromSerialized()
     }
 
     research_scann::SingleMachineFactoryOptions opts;
+
+    /// Build the per-leaf searchers in parallel during restore. With the precomputed
+    /// hashed_dataset present this only repacks the codes into the leaf LUT16 layout (no
+    /// re-quantization); without it (legacy indexes) it parallelizes the re-quantization so a
+    /// cold load is not single-threaded.
+    opts.parallelization_pool = getScannBuildThreadPool();
 
     opts.serialized_partitioner = std::make_shared<research_scann::SerializedPartitioner>();
     if (!opts.serialized_partitioner->ParseFromString(serialized_partitioner_proto))
