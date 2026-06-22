@@ -2,6 +2,7 @@
 
 #include <string_view>
 
+#include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
@@ -50,6 +51,39 @@ DateTime64 parseBasic64(std::string_view s, UInt32 scale, const DateLUTImpl & tz
     DateTime64 res = 0;
     readDateTime64Text(res, scale, in, tz);
     return res;
+}
+
+struct TryResult
+{
+    bool ok;
+    time_t res;
+    bool operator==(const TryResult &) const = default;
+};
+
+TryResult tryParseBestEffort(std::string_view s, const DateLUTImpl & tz)
+{
+    ReadBufferFromMemory in(s.data(), s.size());
+    time_t res = 0;
+    bool ok = tryParseDateTimeBestEffort(res, in, tz, DateLUT::instance("UTC"));
+    return {ok, res};
+}
+
+/// Parse `s` from a ReadBuffer that is split into two chunks at byte offset `split`, so that the
+/// chunk boundary (a real `buffer().end()`) falls inside the value. This mimics a streaming ReadBuffer
+/// where a value can be delivered across two refills - the case the canonical fast path must handle.
+TryResult tryParseBestEffortSplit(std::string_view s, size_t split, const DateLUTImpl & tz)
+{
+    ReadBufferFromMemory part1(s.data(), split);
+    ReadBufferFromMemory part2(s.data() + split, s.size() - split);
+    ConcatReadBuffer in(part1, part2);
+    /// Prime the buffer so the first chunk becomes the working buffer (its end is the split point).
+    /// Without this the buffer is empty on entry and the fast path skips it - it would not exercise
+    /// the boundary at all. A real streaming buffer is likewise already filled when parsing starts.
+    char probe;
+    in.peek(probe);
+    time_t res = 0;
+    bool ok = tryParseDateTimeBestEffort(res, in, tz, DateLUT::instance("UTC"));
+    return {ok, res};
 }
 
 }
@@ -128,23 +162,39 @@ TEST(ParseDateTimeBestEffortFastPath, NonCanonicalStillWorks)
     EXPECT_EQ(parseBestEffort("2019-08-20 10:18:56Z", utc), parseBestEffort("2019-08-20 10:18:56", utc));
 }
 
-/// An over-long numeric field (e.g. a 5-digit year) must not be mistaken for the canonical layout.
-TEST(ParseDateTimeBestEffortFastPath, OverlongFieldsDeferToGeneralParser)
+/// An over-long numeric field (a trailing digit after the day or second) must not be mistaken for the
+/// canonical layout. The general parser rejects it, so the fast path must too.
+TEST(ParseDateTimeBestEffortFastPath, OverlongFieldsRejected)
 {
     const auto & utc = DateLUT::instance("UTC");
 
-    /// "2019-08-200" : a trailing digit after the day. tryParse must agree between a fresh buffer
-    /// (this just must not crash and must consume consistently); compare to the general parser by
-    /// constructing the same input twice.
-    auto try_parse = [&](std::string_view s)
-    {
-        ReadBufferFromMemory in(s.data(), s.size());
-        time_t res = 0;
-        bool ok = tryParseDateTimeBestEffort(res, in, utc, DateLUT::instance("UTC"));
-        return std::make_pair(ok, res);
+    /// Trailing digit after the 10-byte date and after the 19-byte date-time: both are malformed.
+    EXPECT_FALSE(tryParseBestEffort("2019-08-201", utc).ok);
+    EXPECT_FALSE(tryParseBestEffort("2019-08-20 10:18:561", utc).ok);
+}
+
+/// Regression test for the ReadBuffer chunk-boundary bug: when a value is split exactly after the
+/// canonical prefix, the fast path must not treat the buffer end as a clean token end. For example
+/// "2019-08-201" split after "2019-08-20" must still be rejected (an over-long day field), not parsed
+/// as "2019-08-20" + a stray "1". Streaming and single-buffer parsing must agree at every split point.
+TEST(ParseDateTimeBestEffortFastPath, ChunkBoundarySplitMatchesSingleBuffer)
+{
+    const auto & utc = DateLUT::instance("UTC");
+
+    const std::string_view inputs[] = {
+        "2019-08-201",            /// malformed: trailing digit after the date -> must be rejected
+        "2019-08-20 10:18:561",   /// malformed: trailing digit after the date-time -> must be rejected
+        "2019-08-20",             /// valid date only
+        "2019-08-20 10:18:56",    /// valid date-time
+        "2019-08-20T10:18:56",    /// valid date-time, 'T' separator
+        "2019-08-20 10:18:56+01:00", /// valid date-time with timezone offset
     };
 
-    /// Both calls go through the same code; the point is that the fast path does not engage on a
-    /// malformed trailing digit and the result is deterministic.
-    EXPECT_EQ(try_parse("2019-08-201"), try_parse("2019-08-201"));
+    for (const auto & s : inputs)
+    {
+        const TryResult whole = tryParseBestEffort(s, utc);
+        for (size_t split = 1; split < s.size(); ++split)
+            EXPECT_EQ(tryParseBestEffortSplit(s, split, utc), whole)
+                << "input: " << s << " split at: " << split;
+    }
 }

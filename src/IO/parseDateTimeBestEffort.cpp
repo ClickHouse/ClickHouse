@@ -204,33 +204,58 @@ ReturnType parseDateTimeBestEffortImpl(
                 && is_two_digits(s + 17);
 
             const size_t length = time_matches ? date_time_length : date_length;
-            const char * const next = s + length;
 
-            /// Defer to the general parser if the token does not end cleanly, so the fast path never diverges:
-            /// a trailing digit means an over-long field, and a ' '/'T' after a date-only match means a time
-            /// part the fast path did not cover.
-            bool clean_end = true;
-            if (next < buffer_end)
+            /// Capture the field values while `s` is still valid: the boundary probe below may refill the
+            /// buffer and invalidate `s`.
+            const UInt16 fp_year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
+            const UInt8 fp_month = (s[5] - '0') * 10 + (s[6] - '0');
+            const UInt8 fp_day = (s[8] - '0') * 10 + (s[9] - '0');
+            UInt8 fp_hour = 0;
+            UInt8 fp_minute = 0;
+            UInt8 fp_second = 0;
+            if (time_matches)
             {
-                if (isNumericASCII(*next))
-                    clean_end = false;
-                else if (!time_matches && (*next == ' ' || *next == 'T'))
-                    clean_end = false;
+                fp_hour = (s[11] - '0') * 10 + (s[12] - '0');
+                fp_minute = (s[14] - '0') * 10 + (s[15] - '0');
+                fp_second = (s[17] - '0') * 10 + (s[18] - '0');
             }
 
-            if (clean_end)
+            const char * const next = s + length;
+            bool engage = true;
+
+            if (next < buffer_end)
             {
-                year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
-                month = (s[5] - '0') * 10 + (s[6] - '0');
-                day_of_month = (s[8] - '0') * 10 + (s[9] - '0');
+                /// The byte after the prefix is known. Defer to the general parser if it extends the last field
+                /// (a digit) or, after a date-only match, starts an uncovered time part (' '/'T').
+                if (isNumericASCII(*next) || (!time_matches && (*next == ' ' || *next == 'T')))
+                    engage = false;
+            }
+            else
+            {
+                /// next == buffer_end: the follower byte is in the next ReadBuffer chunk (or this is true EOF).
+                /// Advance and refill via eof() to inspect it. A digit is an over-long field, which the general
+                /// parser also rejects. A refill cannot be rewound, so instead of deferring we commit the
+                /// captured fields and continue - that reaches the same state the general parser would here.
+                in.position() += length;
+                if (!in.eof() && isNumericASCII(*in.position()))
+                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected digit after the canonical date/time prefix");
+            }
+
+            if (engage)
+            {
+                year = fp_year;
+                month = fp_month;
+                day_of_month = fp_day;
                 if (time_matches)
                 {
-                    hour = (s[11] - '0') * 10 + (s[12] - '0');
-                    minute = (s[14] - '0') * 10 + (s[15] - '0');
-                    second = (s[17] - '0') * 10 + (s[18] - '0');
+                    hour = fp_hour;
+                    minute = fp_minute;
+                    second = fp_second;
                     has_time = true;
                 }
-                in.position() += length;
+                /// The boundary branch already advanced to buffer_end (and any refill kept the position there).
+                if (next < buffer_end)
+                    in.position() += length;
             }
         }
     }
