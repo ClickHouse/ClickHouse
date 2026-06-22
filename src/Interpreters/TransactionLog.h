@@ -5,7 +5,7 @@
 #include <Interpreters/MergeTreeTransactionHolder.h>
 #include <base/types.h>
 #include <boost/noncopyable.hpp>
-#include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 namespace DB
@@ -107,7 +107,7 @@ public:
     void rollbackTransaction(const MergeTreeTransactionPtr & txn) noexcept;
 
     /// Returns CSN if transaction with specified ID was committed and UnknownCSN if it was not.
-    /// Returns NonTransactionalCSN for NonTransactionalTID without creating a TransactionLog instance as a special case.
+    /// Returns PrehistoricCSN for PrehistoricTID without creating a TransactionLog instance as a special case.
     /// Some time a transaction could be committed concurrently, in order to resolve it provide failback_with_strict_load_csn
     static CSN getCSN(const TransactionID & tid, const std::atomic<CSN> * failback_with_strict_load_csn = nullptr);
     static CSN getCSN(const TIDHash & tid, const std::atomic<CSN> * failback_with_strict_load_csn = nullptr);
@@ -174,7 +174,7 @@ private:
     /// Allows to check if some transactions is committed.
     struct CSNEntry
     {
-        CSN csn{};
+        CSN csn;
         TransactionID tid;
     };
     using TIDMap = std::unordered_map<TIDHash, CSNEntry>;
@@ -203,7 +203,7 @@ private:
     Coordination::EventPtr log_updated_event = std::make_shared<Poco::Event>();
 
     std::atomic_bool stop_flag = false;
-    std::unique_ptr<ThreadFromGlobalPool> updating_thread;
+    ThreadFromGlobalPool updating_thread;
 
     const Float64 fault_probability_before_commit = 0;
     const Float64 fault_probability_after_commit = 0;
