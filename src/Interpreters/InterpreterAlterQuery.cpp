@@ -450,9 +450,17 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             }
         }
         /// Table is not present locally (e.g. ON CLUSTER issued from a node without it): the read
-        /// columns cannot be resolved, so fail closed by requiring SELECT on the whole table.
-        if (!metadata_ptr && table_id && has_mutation_command)
-            read_access.emplace_back(AccessType::SELECT, table_id.database_name, table_id.table_name);
+        /// columns cannot be resolved, so fail closed by requiring SELECT on the whole table. Use the
+        /// resolved id when available; otherwise (ON CLUSTER with no current database, so the id stays
+        /// unresolved) use the AST table name with an empty database, so executeDDLQueryOnCluster
+        /// expands it to each host's default database alongside ALTER_UPDATE/ALTER_DELETE.
+        if (!metadata_ptr && has_mutation_command)
+        {
+            if (table_id)
+                read_access.emplace_back(AccessType::SELECT, table_id.database_name, table_id.table_name);
+            else
+                read_access.emplace_back(AccessType::SELECT, alter.getDatabase(), alter.getTable());
+        }
     }
 
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))

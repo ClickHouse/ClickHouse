@@ -115,6 +115,14 @@ BlockIO InterpreterUpdateQuery::execute()
             read_access.emplace_back(AccessType::SELECT, resolved_id.database_name, resolved_id.table_name);
         }
     }
+    else if (!update_query.cluster.empty())
+    {
+        /// ON CLUSTER with no current database: the id stays unresolved here, but
+        /// executeDDLQueryOnCluster expands empty-database access elements to each host's default
+        /// database. Fail closed with the AST table name and an empty database so the predicate/RHS
+        /// SELECT requirement is expanded together with ALTER_UPDATE instead of being dropped.
+        read_access.emplace_back(AccessType::SELECT, update_query.getDatabase(), update_query.getTable());
+    }
 
     /// Built after `setDatabase` so the ALTER_UPDATE requirement uses the same (resolved) database as
     /// the dispatched query and the read requirements above.
