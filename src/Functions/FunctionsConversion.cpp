@@ -1036,10 +1036,10 @@ FunctionCast::WrapperType FunctionCast::createQBitWrapper(const DataTypePtr & fr
     /// From another QBit
     if (from_qbit_type)
     {
-        if (from_qbit_type->getDimension() != to_type.getDimension())
+        if (from_qbit_type->getDimension() != to_type.getDimension() || from_qbit_type->getStride() != to_type.getStride())
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
-                "CAST AS between two QBits can only be performed if they have the same number of elements. From: {}, To: {}",
+                "CAST AS between two QBits can only be performed if they have the same number of elements and stride. From: {}, To: {}",
                 from_qbit_type->getName(),
                 to_type.getName());
         else if (!from_qbit_type->getElementType()->equals(*to_type.getElementType()))
@@ -1079,7 +1079,12 @@ FunctionCast::WrapperType FunctionCast::createQBitWrapper(const DataTypePtr & fr
 
 template <typename FloatType>
 ColumnPtr FunctionCast::convertArrayToQBit(
-    ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t n, size_t size)
+    ColumnsWithTypeAndName & arguments,
+    const DataTypePtr &,
+    const ColumnNullable * nullable_source,
+    size_t n,
+    size_t size,
+    size_t stride)
 {
     using Word = std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>;
 
@@ -1093,8 +1098,11 @@ ColumnPtr FunctionCast::convertArrayToQBit(
     const auto & offsets = col_array->getOffsets();
     const auto & data = typeid_cast<const ColumnVector<FloatType> &>(col_array->getData()).getData();
     const size_t arrays_count = offsets.size();
-    const size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(n);
-    const size_t padded_dimension = bytes_per_fixedstring * 8;
+    const size_t num_strides = n / stride;
+    /// One FixedString per (stride group, bit plane), grouped as [group][bit].
+    const size_t num_columns = size * num_strides;
+    const size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(stride);
+    const size_t padded_stride = bytes_per_fixedstring * 8;
 
     /// Use the null map to skip NULL rows — their nested arrays may have default (empty) values
     /// that don't match the expected dimension, but the result will be masked by NULL anyway.
@@ -1114,17 +1122,17 @@ ColumnPtr FunctionCast::convertArrayToQBit(
     /// Handle empty input column
     if (arrays_count == 0)
     {
-        MutableColumns empty_tuple_columns(size);
+        MutableColumns empty_tuple_columns(num_columns);
 
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < num_columns; ++i)
             empty_tuple_columns[i] = ColumnFixedString::create(bytes_per_fixedstring);
 
         ColumnPtr tuple = ColumnTuple::create(std::move(empty_tuple_columns));
-        return ColumnQBit::create(tuple, n);
+        return ColumnQBit::create(tuple, n, stride);
     }
 
-    MutableColumns tuple_columns(size);
-    for (size_t i = 0; i < size; ++i)
+    MutableColumns tuple_columns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
     {
         auto column = ColumnFixedString::create(bytes_per_fixedstring);
         column->reserve(arrays_count);
@@ -1139,15 +1147,15 @@ ColumnPtr FunctionCast::convertArrayToQBit(
         /// For NULL rows, insert default (zero) values — the result will be masked by NULL.
         if (null_map && (*null_map)[row])
         {
-            for (size_t j = 0; j < size; ++j)
+            for (size_t j = 0; j < num_columns; ++j)
                 assert_cast<ColumnFixedString &>(*tuple_columns[j]).insertDefault();
             prev_offset = off;
             continue;
         }
 
         /// Insert default values for each FixedString column and keep pointers to them
-        VectorWithMemoryTracking<char *> row_ptrs(size);
-        for (size_t j = 0; j < size; ++j)
+        VectorWithMemoryTracking<char *> row_ptrs(num_columns);
+        for (size_t j = 0; j < num_columns; ++j)
         {
             auto & fixed_string_column = assert_cast<ColumnFixedString &>(*tuple_columns[j]);
             fixed_string_column.insertDefault();
@@ -1155,7 +1163,8 @@ ColumnPtr FunctionCast::convertArrayToQBit(
             row_ptrs[j] = reinterpret_cast<char *>(&chars[chars.size() - bytes_per_fixedstring]);
         }
 
-        /// Transpose bits right inside the FixedStrings
+        /// Transpose bits right inside the FixedStrings. Dimension `i` belongs to stride group `i / stride` and is written into
+        /// that group's `size` bit planes (tuple indices [group * size, group * size + size)).
         for (size_t i = 0; i < n; ++i)
         {
             Word w = 0;
@@ -1163,14 +1172,16 @@ ColumnPtr FunctionCast::convertArrayToQBit(
             FloatType v = data[prev_offset + i];
             std::memcpy(&w, &v, sizeof(Word));
 
-            SerializationQBit::transposeBits<Word>(w, i, padded_dimension, row_ptrs.data());
+            const size_t group = i / stride;
+            const size_t local_i = i - group * stride;
+            SerializationQBit::transposeBits<Word>(w, local_i, padded_stride, row_ptrs.data() + group * size);
         }
 
         prev_offset = off;
     }
 
     ColumnPtr tuple = ColumnTuple::create(std::move(tuple_columns));
-    return ColumnQBit::create(tuple, n);
+    return ColumnQBit::create(tuple, n, stride);
 }
 
 template <typename T>
@@ -1180,13 +1191,15 @@ FunctionCast::WrapperType FunctionCast::createArrayToQBitWrapper(const DataTypeA
     const DataTypePtr & to_nested_type = to_qbit_type.getElementType();
     const size_t dimension = to_qbit_type.getDimension();
     const size_t element_size = to_qbit_type.getElementSize();
+    const size_t stride = to_qbit_type.getStride();
 
     return [nested_function = prepareUnpackDictionaries(from_nested_type, to_nested_type),
             from_nested_type,
             to_nested_type,
             to_array_type = std::make_shared<DataTypeArray>(to_nested_type),
             dimension,
-            element_size](
+            element_size,
+            stride](
                ColumnsWithTypeAndName & arguments,
                const DataTypePtr & result_type,
                const ColumnNullable * nullable_source,
@@ -1207,7 +1220,7 @@ FunctionCast::WrapperType FunctionCast::createArrayToQBitWrapper(const DataTypeA
 
         /// Pass nullable_source so that convertArrayToQBit can use the null map
         /// to skip NULL rows (whose nested arrays may have default/empty values).
-        return convertArrayToQBit<T>(converted_arguments, result_type, nullable_source, dimension, element_size);
+        return convertArrayToQBit<T>(converted_arguments, result_type, nullable_source, dimension, element_size, stride);
     };
 }
 

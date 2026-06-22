@@ -579,18 +579,22 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         size_t dst_dimension = type_qbit->getDimension();
         size_t dst_element_size = type_qbit->getElementSize();
-        size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(dst_dimension);
-        const size_t padded_dimension = bytes_per_fixedstring * 8;
+        size_t dst_stride = type_qbit->getStride();
+        size_t dst_num_strides = type_qbit->getNumStrides();
+        /// One FixedString per (stride group, bit plane), grouped as [group][bit].
+        size_t dst_num_columns = dst_element_size * dst_num_strides;
+        size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(dst_stride);
+        const size_t padded_stride = bytes_per_fixedstring * 8;
 
         /// For tuples, we expect the input to be in the transposed format already s.t. it can by directly copied inside a QBit
         auto convert_tuple_to_qbit = [&](const auto & src_container, size_t src_size) -> Field
         {
-            /// Check that we have 16, 32 and 64 strings for BFloat16, Float32 and Float64 respectively
-            if (dst_element_size != src_size)
+            /// Check that we have element_size * num_strides strings (one per bit plane of each stride group)
+            if (dst_num_columns != src_size)
                 throw Exception(
                     ErrorCodes::TYPE_MISMATCH,
                     "Bad number of elements in IN or VALUES section when converting to QBit. Expected size: {}, actual size: {}",
-                    dst_element_size,
+                    dst_num_columns,
                     src_size);
 
             /// Check that each string is of expected length
@@ -626,31 +630,31 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                         "QBit can only be constructed from BFloat16, Float32 and Float64 values, got {}",
                         elem.getTypeName());
 
-            Tuple res(dst_element_size);
+            Tuple res(dst_num_columns);
 
             auto transpose_bits = [&]<typename Word, typename FloatType>()
             {
                 /// Prepare output tuple buffers
-                std::vector<std::string> out(dst_element_size, std::string(bytes_per_fixedstring, '\0'));
-                std::vector<char *> plane(dst_element_size);
-                for (size_t i = 0; i < dst_element_size; ++i)
+                std::vector<std::string> out(dst_num_columns, std::string(bytes_per_fixedstring, '\0'));
+                std::vector<char *> plane(dst_num_columns);
+                for (size_t i = 0; i < dst_num_columns; ++i)
                     plane[i] = reinterpret_cast<char *>(out[i].data());
 
-                /// Transpose
-                for (size_t i = 0; i < padded_dimension; ++i)
+                /// Transpose each stride group independently. Dimension `i` belongs to group `i / stride` and is written into
+                /// that group's element_size bit planes (tuple indices [group * element_size, group * element_size + element_size)).
+                for (size_t i = 0; i < dst_dimension; ++i)
                 {
                     Word w = 0;
-                    if (i < dst_dimension)
-                    {
-                        FloatType v = static_cast<const FloatType>(src_container[i].template safeGet<FloatType>());
-                        std::memcpy(&w, &v, sizeof(Word));
-                    }
+                    FloatType v = static_cast<const FloatType>(src_container[i].template safeGet<FloatType>());
+                    std::memcpy(&w, &v, sizeof(Word));
 
-                    SerializationQBit::transposeBits<Word>(w, i, padded_dimension, plane.data());
+                    const size_t group = i / dst_stride;
+                    const size_t local_i = i - group * dst_stride;
+                    SerializationQBit::transposeBits<Word>(w, local_i, padded_stride, plane.data() + group * dst_element_size);
                 }
 
                 /// Move into Fields
-                for (size_t i = 0; i < dst_element_size; ++i)
+                for (size_t i = 0; i < dst_num_columns; ++i)
                     res[i] = Field(std::move(out[i]));
             };
 

@@ -8,6 +8,7 @@
 #include <DataTypes/Serializations/SerializationQBit.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTLiteral.h>
+#include <Common/SipHash.h>
 
 
 namespace DB
@@ -20,9 +21,10 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int UNEXPECTED_AST_STRUCTURE;
 }
 
-DataTypeQBit::DataTypeQBit(const DataTypePtr & element_type_, const size_t dimension_)
+DataTypeQBit::DataTypeQBit(const DataTypePtr & element_type_, const size_t dimension_, const size_t stride_)
     : element_type(element_type_)
     , dimension(dimension_)
+    , stride(stride_)
 {
     /// Prevents maliciously crafted byte streams from being deserialized into illegal types, which could be exploited to crash the server
     if (element_type_->getTypeId() != TypeIndex::BFloat16 && element_type_->getTypeId() != TypeIndex::Float32
@@ -32,6 +34,22 @@ DataTypeQBit::DataTypeQBit(const DataTypePtr & element_type_, const size_t dimen
             "QBit data type only supports BFloat16, Float32, or Float64 as element type. Got: {}",
             element_type_->getName());
 
+    if (stride == 0 || stride > dimension || dimension % stride != 0)
+        throw Exception(
+            ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+            "QBit stride must be a positive divisor of the dimension {}. Got: {}",
+            dimension,
+            stride);
+
+    /// When actually strided, each group's bit plane is a FixedString of `stride / 8` bytes. Requiring `stride % 8 == 0` keeps the
+    /// groups byte-aligned and contiguous, which simplifies both the storage layout and the partial-dimension reads in distance
+    /// functions. The non-strided case (`stride == dimension`) keeps the previous behaviour and allows any dimension.
+    if (stride != dimension && stride % 8 != 0)
+        throw Exception(
+            ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+            "QBit stride must be a multiple of 8 when it is smaller than the dimension. Got: {}",
+            stride);
+
     /// QBit stores data as a Tuple of binary FixedStrings. Setting custom_serialization
     /// ensures that ReplaceQueryParameterVisitor::visitQueryParameter uses the original
     /// string value for query parameters like `SET param_q=[1,2,3,4]; SELECT {q:QBit(Float32,4)};`
@@ -39,22 +57,32 @@ DataTypeQBit::DataTypeQBit(const DataTypePtr & element_type_, const size_t dimen
     custom_serialization = getDefaultSerialization();
 }
 
+void DataTypeQBit::updateHashImpl(SipHash & hash) const
+{
+    getNestedType()->updateHashImpl(hash);
+    hash.update(dimension);
+    hash.update(stride);
+}
+
 std::string DataTypeQBit::doGetName() const
 {
-    return "QBit(" + element_type->getName() + ", " + toString(dimension) + ")";
+    if (stride == dimension)
+        return "QBit(" + element_type->getName() + ", " + toString(dimension) + ")";
+    return "QBit(" + element_type->getName() + ", " + toString(dimension) + ", " + toString(stride) + ")";
 }
 
 /// This is called when values are added, not on CREATE TABLE
 MutableColumnPtr DataTypeQBit::createColumn() const
 {
-    /// Continue with column creation
-    MutableColumns tuple_columns(getElementSize());
-    size_t bytes = bitsToBytes(dimension);
+    /// Continue with column creation. One FixedString per (stride group, bit plane), grouped as [group][bit].
+    const size_t num_columns = getElementSize() * getNumStrides();
+    MutableColumns tuple_columns(num_columns);
+    size_t bytes = bitsToBytes(stride);
 
-    for (size_t i = 0; i < getElementSize(); ++i)
+    for (size_t i = 0; i < num_columns; ++i)
         tuple_columns[i] = ColumnFixedString::create(bytes);
 
-    return ColumnQBit::create(IColumn::mutate(ColumnTuple::create(std::move(tuple_columns))), dimension);
+    return ColumnQBit::create(IColumn::mutate(ColumnTuple::create(std::move(tuple_columns))), dimension, stride);
 }
 
 bool DataTypeQBit::equals(const IDataType & rhs) const
@@ -64,24 +92,25 @@ bool DataTypeQBit::equals(const IDataType & rhs) const
 
     const DataTypeQBit & rhsq = static_cast<const DataTypeQBit &>(rhs);
 
-    return element_type.get()->equals(*rhsq.element_type.get()) && getElementSize() == rhsq.getElementSize() && dimension == rhsq.dimension;
+    return element_type.get()->equals(*rhsq.element_type.get()) && getElementSize() == rhsq.getElementSize() && dimension == rhsq.dimension
+        && stride == rhsq.stride;
 }
 
 DataTypePtr DataTypeQBit::getNestedType() const
 {
     auto fixed_string_type = getNestedTupleElementType();
-    DataTypes tuple_element_types(getElementSize(), fixed_string_type);
+    DataTypes tuple_element_types(getElementSize() * getNumStrides(), fixed_string_type);
     return std::make_shared<DataTypeTuple>(tuple_element_types);
 }
 
 DataTypePtr DataTypeQBit::getNestedTupleElementType() const
 {
-    return std::make_shared<DataTypeFixedString>(bitsToBytes(dimension));
+    return std::make_shared<DataTypeFixedString>(bitsToBytes(stride));
 }
 
 SerializationPtr DataTypeQBit::doGetSerialization(const SerializationInfoSettings &) const
 {
-    return SerializationQBit::create(getNestedType()->getDefaultSerialization(), getElementSize(), dimension);
+    return SerializationQBit::create(getNestedType()->getDefaultSerialization(), getElementSize(), dimension, stride);
 }
 
 Field DataTypeQBit::getDefault() const
@@ -92,10 +121,10 @@ Field DataTypeQBit::getDefault() const
 static DataTypePtr create(const ASTPtr & arguments)
 {
     /// Check if arguments are valid
-    if (!arguments || arguments->children.size() != 2)
+    if (!arguments || (arguments->children.size() != 2 && arguments->children.size() != 3))
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "QBit data type family must have exactly two argument: type of vector elements and their number");
+            "QBit data type family must have two or three arguments: type of vector elements, their number, and optionally the stride");
 
     const DataTypePtr type = DataTypeFactory::instance().get(arguments->children[0]);
     const auto * argument = arguments->children[1]->as<ASTLiteral>();
@@ -112,7 +141,22 @@ static DataTypePtr create(const ASTPtr & arguments)
             "QBit data type must have a number (positive integer) as its second argument. Got: {}",
             arguments->children[1]->formatForErrorMessage());
 
-    return std::make_shared<DataTypeQBit>(type, argument->value.safeGet<UInt64>());
+    const UInt64 dimension = argument->value.safeGet<UInt64>();
+
+    /// The optional third argument is the stride. When omitted it defaults to the dimension (no striding).
+    UInt64 stride = dimension;
+    if (arguments->children.size() == 3)
+    {
+        const auto * stride_argument = arguments->children[2]->as<ASTLiteral>();
+        if (!stride_argument || stride_argument->value.getType() != Field::Types::UInt64 || stride_argument->value.safeGet<UInt64>() == 0)
+            throw Exception(
+                ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+                "QBit data type stride must be a number (positive integer) as its third argument. Got: {}",
+                arguments->children[2]->formatForErrorMessage());
+        stride = stride_argument->value.safeGet<UInt64>();
+    }
+
+    return std::make_shared<DataTypeQBit>(type, dimension, stride);
 }
 
 
@@ -126,11 +170,12 @@ This stores vectors at full precision while letting you choose the fine-grained 
 To declare a column of `QBit` type, use the following syntax:
 
 ```sql
-column_name QBit(element_type, dimension)
+column_name QBit(element_type, dimension[, stride])
 ```
 
 * `element_type` – the type of each vector element. The allowed types are `BFloat16`, `Float32` and `Float64`
 * `dimension` – the number of elements in each vector
+* `stride` – optional. The number of dimensions stored together in one group of streams. When omitted it defaults to `dimension` (a single group). When provided, `dimension` must be a multiple of `stride`, and `stride` must be a multiple of 8. The `dimension` dimensions are split into `dimension / stride` contiguous groups, and each group's bit planes are stored in separate streams. This lets a search over the first `D` dimensions (with `D` a multiple of `stride`) read only the streams of the groups that cover those dimensions, which is useful for Matryoshka embeddings.
 
 ## Creating QBit {#creating-qbit}
 
@@ -180,7 +225,7 @@ These are the distance functions for vector similarity search that use `QBit` da
 * [`L2DistanceTransposed`](../functions/distance-functions.md#L2DistanceTransposed)
 * [`cosineDistanceTransposed`](../functions/distance-functions.md#cosineDistanceTransposed)
 )DOCS_MD",
-            .syntax = "QBit(T, dim)",
+            .syntax = "QBit(T, dim[, stride])",
             .examples = {},
             .related = {},
         });

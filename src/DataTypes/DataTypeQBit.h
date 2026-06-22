@@ -16,9 +16,13 @@ private:
     const DataTypePtr element_type;
     /* Number of elements in the vector */
     const size_t dimension;
+    /* Number of dimensions stored together in one group of streams. When equal to `dimension` (the default), QBit is not strided
+     * and behaves exactly as before. Otherwise the `dimension` dimensions are split into `dimension / stride` contiguous groups,
+     * each group's bit planes stored in separate streams, allowing to read fewer dimensions (e.g. for Matryoshka embeddings). */
+    const size_t stride;
 
 public:
-    DataTypeQBit(const DataTypePtr & element_type_, size_t dimension_);
+    DataTypeQBit(const DataTypePtr & element_type_, size_t dimension_, size_t stride_);
 
     TypeIndex getTypeId() const override { return TypeIndex::QBit; }
     std::string doGetName() const override;
@@ -40,8 +44,12 @@ public:
     /// Size of the vector element in bits: 16, 32, 64
     size_t getElementSize() const { return 8 * element_type->getSizeOfValueInMemory(); }
     size_t getDimension() const { return dimension; }
+    /// Number of dimensions stored together in one group of streams. Equal to `dimension` when not strided.
+    size_t getStride() const { return stride; }
+    /// Number of stride groups. Equal to 1 when not strided.
+    size_t getNumStrides() const { return dimension / stride; }
     size_t getSizeOfValueInMemory() const override { return (getElementSize() / 8) * dimension; }
-    void updateHashImpl(SipHash & hash) const override { getNestedType()->updateHashImpl(hash); }
+    void updateHashImpl(SipHash & hash) const override;
 
     /// Get the tuple type that represents the internal structure of QBit
     DataTypePtr getNestedType() const;

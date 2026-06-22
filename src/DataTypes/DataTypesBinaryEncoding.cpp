@@ -174,7 +174,11 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
             return BinaryTypeIndex::UnnamedTuple;
         }
         case TypeIndex::QBit:
-            return BinaryTypeIndex::QBit;
+        {
+            /// Keep non-strided QBit on the original index so its encoding stays byte-identical (backward/forward compatible).
+            const auto & qbit_type = assert_cast<const DataTypeQBit &>(*type);
+            return qbit_type.getStride() == qbit_type.getDimension() ? BinaryTypeIndex::QBit : BinaryTypeIndex::QBitWithStride;
+        }
         case TypeIndex::Set:
             return BinaryTypeIndex::Set;
         case TypeIndex::Interval:
@@ -416,6 +420,14 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
             const auto & qbit_type = assert_cast<const DataTypeQBit &>(*type);
             encodeDataTypeImpl<encode_for_hash_calculation>(qbit_type.getElementType(), buf);
             writeVarUInt(qbit_type.getDimension(), buf);
+            break;
+        }
+        case BinaryTypeIndex::QBitWithStride:
+        {
+            const auto & qbit_type = assert_cast<const DataTypeQBit &>(*type);
+            encodeDataTypeImpl<encode_for_hash_calculation>(qbit_type.getElementType(), buf);
+            writeVarUInt(qbit_type.getDimension(), buf);
+            writeVarUInt(qbit_type.getStride(), buf);
             break;
         }
         case BinaryTypeIndex::Interval:
@@ -686,7 +698,17 @@ static DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
             auto element_type = decodeDataType(buf, complexity);
             size_t dimension = 0;
             readVarUInt(dimension, buf);
-            return std::make_shared<DataTypeQBit>(element_type, dimension);
+            /// Non-strided QBit: the stride defaults to the dimension.
+            return std::make_shared<DataTypeQBit>(element_type, dimension, dimension);
+        }
+        case BinaryTypeIndex::QBitWithStride:
+        {
+            auto element_type = decodeDataType(buf, complexity);
+            size_t dimension = 0;
+            readVarUInt(dimension, buf);
+            size_t stride = 0;
+            readVarUInt(stride, buf);
+            return std::make_shared<DataTypeQBit>(element_type, dimension, stride);
         }
         case BinaryTypeIndex::Set:
             return std::make_shared<DataTypeSet>();
