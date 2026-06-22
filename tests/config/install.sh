@@ -141,6 +141,25 @@ ln -sf $SRC_PATH/config.d/small_caches.xml $DEST_SERVER_PATH/config.d/
 value=$((RANDOM % 2))
 echo "Async logging: $value"
 sed "s|<async>[01]</async>|<async>$value</async>|" $SRC_PATH/config.d/logger_trace.xml >$DEST_SERVER_PATH/config.d/logger_trace.xml
+
+# Randomize the default compression codec (the one used for columns without an explicit
+# CODEC) across LZ4, ZSTD(1) and ZSTD(3), to exercise all of them across CI runs. This is
+# the server-level <compression> override, so it applies to .sql and .sh tests alike. A
+# test that needs a specific codec pins it with `SETTINGS default_compression_codec = '...'`.
+compression_codec_options=("lz4" "zstd 1" "zstd 3")
+read -r compression_method compression_level <<< "${compression_codec_options[$((RANDOM % ${#compression_codec_options[@]}))]}"
+echo "Default compression codec: $compression_method ${compression_level:-(no level)}"
+{
+    echo "<clickhouse>"
+    echo "    <compression>"
+    echo "        <case>"
+    echo "            <method>${compression_method}</method>"
+    [ -n "${compression_level}" ] && echo "            <level>${compression_level}</level>"
+    echo "        </case>"
+    echo "    </compression>"
+    echo "</clickhouse>"
+} > $DEST_SERVER_PATH/config.d/compression.xml
+
 ln -sf $SRC_PATH/config.d/named_collection.xml $DEST_SERVER_PATH/config.d/
 cp $SRC_PATH/config.d/ssl_certs.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/filesystem_cache_log.xml $DEST_SERVER_PATH/config.d/
