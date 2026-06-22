@@ -874,6 +874,12 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain, bool & is_plainte
 
     if (interrupted)
     {
+        /// A cancelled worker may have skipped sibling-led segments (recorded, unread): its
+        /// led bytes are already cached inline, so revoke to the sync path (it reads the cached
+        /// led as hits and coordinates the rest) rather than serve a window with holes.
+        if (!m->sibling_led.empty())
+            return false;
+
         /// An interrupted step that produced nothing degrades to the revoke path:
         /// the connection is reclaimed (above), the caller reads synchronously.
         if (m->fetched.empty())
@@ -889,7 +895,7 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain, bool & is_plainte
         {
             ChainedBuffers assembled;
             IntervalSet covered_unused;
-            backfillBytes(m->physical_window, requested_phys, m->fetched, assembled, covered_unused,
+            assembleAndWriteBack(m->physical_window, requested_phys, m->fetched, assembled, covered_unused,
                 /*push_to_writers=*/false, stats);
             schedulePutStep(std::move(m), assembled);
             return false;
@@ -910,15 +916,52 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain, bool & is_plainte
     /// prefix when interrupted: a late hit BEYOND the prefix would otherwise leave a
     /// disjoint island in `result` and trip the contiguity guard; those bytes stay
     /// cached and the next window serves them from the plan.
-    const size_t pin_frontier = std::min(m->physical_window.end(), m->fetched.range().end());
+    /// The worker leads only some segments, so `fetched` can be sparse or even empty (every
+    /// segment sibling-led); use the window start as the frontier when it wrote nothing.
+    const size_t fetched_end = m->fetched.empty() ? m->physical_window.offset : m->fetched.range().end();
+    const size_t pin_frontier = std::min(m->physical_window.end(), fetched_end);
     const ByteRange slice_window = interrupted
-        ? ByteRange{requested_phys.offset,
-            std::min(requested_phys.end(), m->fetched.range().end()) - requested_phys.offset}
+        ? ByteRange{requested_phys.offset, std::min(requested_phys.end(), fetched_end) - requested_phys.offset}
         : requested_phys;
     ChainedBuffers result;
     IntervalSet covered;
-    backfillBytes(m->physical_window, requested_phys, m->fetched, result, covered,
+    /// Assemble the worker's led bytes from `fetched` (in memory) FIRST, so the cache fill it
+    /// already wrote inline is NOT re-read from cache here - a redundant `CacheGet` that would
+    /// defeat the prefetch. Then re-credit a grown committed prefix / late hit for whatever
+    /// `fetched` does not cover (an embedded faster-tier hit, a neighbour's fill).
+    assembleAndWriteBack(m->physical_window, requested_phys, m->fetched, result, covered,
         /*push_to_writers=*/false, stats);
+    recreditCommittedPrefixes(m->physical_window, result, covered, stats);
+    serveLateHits(m->physical_window, result, covered, stats);
+
+    /// Serve the sibling-led holes the worker skipped (it wrote only its own led segments):
+    /// wait on THIS (query) thread until the sibling commits, then read from its fill. Empty
+    /// for an interrupted collect (revoked above) and with no contention.
+    for (const auto & sl : m->sibling_led)
+        for (const auto & u : covered.subtract(sl.sub))
+        {
+            ChainedBuffers c = sl.writer->waitAndReadSiblingLed(u);
+            if (!c.covers(u))
+                continue;  /// short commit; the loser-tail below fetches the remainder
+            result.append(c.extract(u));
+            covered.add(u);
+            stats.add(Stats::BytesFromFilesystemCache, u.size);
+        }
+    /// Loser-tail: a sibling that committed short of the window leaves a hole; fetch it from
+    /// the source here (re-electing, since the leader reset the downloader on its short commit).
+    if (!m->sibling_led.empty())
+    {
+        auto tail = covered.subtract(requested_phys);
+        if (!tail.empty())
+        {
+            ChainedBuffers tail_src;
+            for (const auto & t : mergeRanges(tail, min_bytes_for_seek))
+                tail_src.append(fetchGapsFromSource(t, /*from_prefetch=*/false, reached_eof,
+                    m->geometry->pressure_level, read_extent_end, &long_conn, /*stop=*/nullptr, stats));
+            assembleAndWriteBack(m->physical_window, requested_phys, tail_src, result, covered,
+                /*push_to_writers=*/true, stats);
+        }
+    }
 
     /// Decrypt-ahead: when the worker produced a plaintext copy that fully covers the
     /// served window, assemble the SERVED chain from it so the serve boundary skips
@@ -1370,6 +1413,68 @@ bool ReaderExecutor::fetchAndBackfillGaps(
     return !led_misses.empty() || !remaining_tail.empty();
 }
 
+void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
+{
+    const ByteRange window = m.physical_window;
+    const MemoryPressureLevel level = m.geometry->pressure_level;
+
+    /// Elect the FileCache downloader over the window's fill-target writers (recorded at
+    /// launch). Segments WE win (`led_misses`) this worker fetches+writes inline below - it is
+    /// the downloader, so it must complete them on THIS thread. Segments a sibling already
+    /// leads go to `m.sibling_led`: the worker SKIPS them (the foreground serves them from the
+    /// sibling's fill at collect), which dedups concurrent cold populate - each segment is
+    /// fetched once across executors.
+    VectorWithMemoryTracking<ByteRange> led_misses;
+    for (const auto & view : m.writer_views)
+    {
+        if (!view.writer)
+            continue;
+        const size_t lo = std::max(window.offset, view.writer->range().offset);
+        const size_t hi = std::min(window.end(), view.writer->range().end());
+        if (lo >= hi)
+            continue;
+        view.writer->electDownloaders(ByteRange{lo, hi - lo}, led_misses, m.sibling_led);
+    }
+
+    /// A window byte that no fill-target writer covers cannot be deduped (no cache tier
+    /// populates it): fetch it plainly. Add the window remainder (minus elected + sibling-led)
+    /// to the led set.
+    IntervalSet elected;
+    for (const auto & r : led_misses)
+        elected.add(r);
+    for (const auto & sl : m.sibling_led)
+        elected.add(sl.sub);
+    for (const auto & g : elected.subtract(window))
+        led_misses.push_back(g);
+
+    /// Coalesce the led ranges into a DISJOINT set clamped to the window (overlapping tier
+    /// writers can elect the same bytes; round-trip through `IntervalSet`).
+    IntervalSet led_set;
+    for (const auto & r : led_misses)
+        led_set.add(r);
+    IntervalSet non_led;
+    for (const auto & g : led_set.subtract(window))
+        non_led.add(g);
+    VectorWithMemoryTracking<ByteRange> led_disjoint = non_led.subtract(window);
+
+    /// Fetch the led runs on this worker thread via the machine's own connection, and write+
+    /// complete them inline (we are the downloader). A sibling-led hole between two led runs
+    /// breaks the connection - correct, those bytes are not ours to fetch.
+    ChainedBuffers led_bytes;
+    for (const auto & led : mergeRanges(led_disjoint, min_bytes_for_seek))
+    {
+        if (m.reached_eof)
+            break;
+        led_bytes.append(fetchGapsFromSource(led, /*from_prefetch=*/true, m.reached_eof, level,
+            m.extent_snapshot, &m.long_conn, &m, m.stats));
+        if (m.interrupt_requested.load(std::memory_order_relaxed))
+            break;  /// stop-short on cancel; collect serves the led prefix or revokes
+    }
+    pushChainToWriters(m.writer_views, window, led_bytes, Stats::BytesPushedToCacheSync,
+        &m.interrupt_requested, m.stats);
+    m.fetched = std::move(led_bytes);
+}
+
 ChainedBuffers ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_prefetch,
     bool & eof_latch, MemoryPressureLevel pressure_level, std::optional<size_t> read_extent,
     std::optional<LongConnection> * lc, const MachineBase * stop, Stats & out_stats)
@@ -1377,10 +1482,10 @@ ChainedBuffers ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bo
     /// PURE source fetch: read the WHOLE window from the source as one contiguous
     /// physical run (short at EOF or at an interrupt point). No cache
     /// `lookup`/`get`/`put`, no plan - this is all a machine fetch step runs (it
-    /// cannot touch shared cache/plan state), and the foreground reuses it before
-    /// its own `backfillBytes`. The window is already clamped to one plan gap by
-    /// the caller, so it never straddles a resident run; the cache backfill of
-    /// these bytes is `backfillBytes`'s job.
+    /// cannot touch shared cache/plan state) - `coordinatedPrefetch` (worker) and the
+    /// foreground loser-tail call it. The window is already clamped to one plan gap by the
+    /// caller, so it never straddles a resident run; assembling these bytes into the served
+    /// window and the cache fill is `assembleAndWriteBack`'s job.
     ChainedBuffers result;
     if (physical_window.size == 0)
         return result;
@@ -1397,7 +1502,7 @@ ChainedBuffers ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bo
             pr.object.remote_path, pr.object_offset, pr.size);
 
         /// No head/tail-extension splits: the window IS the fetch range (the cache
-        /// `getOrSet` that would segment-align a miss runs later, in `backfillBytes`).
+        /// `getOrSet` that would segment-align a miss runs later, in `assembleAndWriteBack`).
         auto blocks = allocateBlocks(pr.size, window_block_size, {});
         StatTimer src_scope(out_stats, Stats::SourceReadMicroseconds);
         ChainedBuffers source_chain = readFromSource(pr.object, pr.object_offset, std::move(blocks), file_pos,
@@ -1433,21 +1538,6 @@ ChainedBuffers ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bo
         }
     }
     return result;
-}
-
-void ReaderExecutor::backfillBytes(
-    ByteRange physical_window, ByteRange requested_window, const ChainedBuffers & source_bytes,
-    ChainedBuffers & result, IntervalSet & covered, bool push_to_writers, Stats & out_stats)
-{
-    /// The prefetch-CONSUME gap path: the worker already fetched the whole aligned
-    /// `physical_window` into `source_bytes` (it does no cache work). Serve any grown
-    /// committed prefix and late cache hit first (BEFORE the worker's bytes, so a
-    /// concurrently-cached gap is served from cache, not the redundant source copy), then
-    /// hand the bytes to the shared `assembleAndWriteBack` - the same tail the sync path
-    /// uses, so over-read counts identically.
-    recreditCommittedPrefixes(physical_window, result, covered, out_stats);
-    serveLateHits(physical_window, result, covered, out_stats);
-    assembleAndWriteBack(physical_window, requested_window, source_bytes, result, covered, push_to_writers, out_stats);
 }
 
 void ReaderExecutor::assembleAndWriteBack(
@@ -2316,20 +2406,18 @@ void ReaderExecutor::launchRetrieve(size_t ri)
 
     m->run_step = [this, self = m.get()]
     {
-        self->fetched = fetchGapsFromSource(
-            self->physical_window, /*from_prefetch=*/true,
-            self->reached_eof, self->geometry->pressure_level,
-            self->extent_snapshot, &self->long_conn, self, self->stats);
+        /// Elect + fetch the led segments + write them inline on THIS worker thread (it is the
+        /// downloader); sibling-led holes are recorded in `self->sibling_led` for the
+        /// foreground to read at collect.
+        coordinatedPrefetch(*self);
         /// Decrypt-ahead: produce a plaintext copy on this worker thread so the serve
         /// boundary does not decrypt on the query thread. `fetched` stays ciphertext for
         /// the cache-fill. Reentrant - safe alongside a concurrent foreground decrypt.
         if (decrypt_ahead && needsDecryption() && !self->fetched.empty())
             self->plaintext_fetched = decryptFetchedAhead(self->fetched, self->stats);
-        const size_t fetched_size = self->fetched.empty() ? 0 : self->fetched.range().size;
-        const bool stopped_short = !self->reached_eof
-            && fetched_size < self->physical_window.size
-            && self->interrupt_requested.load();
-        if (stopped_short)
+        /// A cancel mid-fetch leaves a partial led prefix; collect revokes or serves it. A
+        /// sparse `fetched` (sibling-led holes) is NORMAL, not a stop indicator.
+        if (self->interrupt_requested.load() && !self->reached_eof)
         {
             self->stats.add(Stats::MachineInterrupted);
             return StepResult::Interrupted;

@@ -501,6 +501,11 @@ private:
         /// nodes shared with the served slice).
         VectorWithMemoryTracking<WriterView> writer_views;
         ChainedBuffers fill_chain;
+        /// Segments a SIBLING is downloading (this worker lost the election): it skipped
+        /// fetching them, so `fetched` has holes there. The foreground reads them from the
+        /// sibling's fill at collect (waiting on the query thread). Empty with no contention
+        /// (the worker then leads - and fetches - the whole window).
+        VectorWithMemoryTracking<CacheWriter::SiblingLed> sibling_led;
         /// Which byte counter the fill credits (`BytesPushedToCacheSync`).
         Stats::Counter put_bytes_counter = Stats::BytesPushedToCacheSync;
         /// Strategy-A pin taken by the fill step over the partial segment it just
@@ -619,14 +624,14 @@ private:
         bool & eof_latch, MemoryPressureLevel pressure_level, std::optional<size_t> read_extent,
         std::optional<LongConnection> * lc, const MachineBase * stop, Stats & out_stats);
 
-    /// Backfill for `physical_window` from `source_bytes` (already fetched).
-    /// FOREGROUND-only: late hits, then append the still-missing ranges from
-    /// `source_bytes` into `result`, then - when `push_to_writers` - push the
-    /// assembled misses into the held write buffers. A machine collect passes
-    /// false and defers that push to the put step.
-    void backfillBytes(
-        ByteRange physical_window, ByteRange requested_window, const ChainedBuffers & source_bytes,
-        ChainedBuffers & result, IntervalSet & covered, bool push_to_writers, Stats & out_stats);
+    /// The machine fetch step (runs on the worker thread): elect the FileCache downloader
+    /// over the window's fill-target `writer_views`, fetch the LED runs from the source via
+    /// the machine's own connection, and write+complete them INLINE on this thread (the
+    /// downloader contract). Segments a sibling leads are SKIPPED and recorded in
+    /// `m.sibling_led` for the foreground to read at collect. Sets `m.fetched` to the led
+    /// bytes (sparse - holes where a sibling leads). With no contention the worker leads the
+    /// whole window, so this fetches it all, exactly like `fetchGapsFromSource`.
+    void coordinatedPrefetch(FetchMachine & m);
 
     /// Shared assembly tail of both gap paths, run AFTER
     /// `recreditCommittedPrefixes` + `serveLateHits`: append `source_bytes`

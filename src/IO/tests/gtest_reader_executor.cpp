@@ -1994,11 +1994,11 @@ TEST(ReaderExecutor, PrefetchConsumeRebuildsPinAcrossSegmentBoundary)
     /// rebuilds the Strategy-A pin under the new frontier. Two 2000-byte
     /// segments, window 1000: W3 is the first window of segment 1 - the collect
     /// must re-pin that fresh partial segment, or an eviction sweep right after
-    /// drops it. The INLINE pool keeps the deferred fills synchronous in this
-    /// test, so `downloaded[1]` is deterministic at the eviction point (with a
-    /// real pool the put may not have landed yet - the segment would be
-    /// pinned-but-empty, which the eviction also survives, but the byte assert
-    /// would race).
+    /// drops it. The INLINE pool runs each worker (its inline cache write AND the
+    /// next look-ahead) synchronously, so `downloaded[1]` is deterministic at the
+    /// eviction point (with a real pool the look-ahead write may not have landed
+    /// yet - the segment would be partially filled, which the pin also survives,
+    /// but the byte assert would race).
     String content(4000, 'Q');
     auto source = std::make_shared<MemorySourceReader>(
         std::unordered_map<String, String>{{"file", content}});
@@ -2033,12 +2033,13 @@ TEST(ReaderExecutor, PrefetchConsumeRebuildsPinAcrossSegmentBoundary)
     /// and must RE-PIN it at collect; launches the machine for [3000,4000).
     consume(executor->readNextWindow());
 
-    /// Evict everything unpinned. Segment 1 is the partial in-flight segment whose
-    /// fill just landed; the PUT-side `fill_pin` (held until the machine's reap)
-    /// protects it - the foreground finalize pinned before the deferred fill landed
-    /// and so could not.
+    /// Evict everything unpinned. The collect pinned segment 1 at W3 when it was a fresh
+    /// partial segment (cwo=1000); the look-ahead worker for [3000,4000) then filled its
+    /// second half INLINE at launch (the worker writes its led segments on the fetch thread),
+    /// so it is fully downloaded now - but the pin (held until the machine's reap) keeps it
+    /// resident through the eviction sweep.
     cache->evictUnpinned();
-    EXPECT_EQ(cache->downloaded[1], 1000u) << "consume-path pin did not protect the in-flight segment";
+    EXPECT_EQ(cache->downloaded[1], 2000u) << "consume-path pin did not protect the in-flight segment";
 
     /// Finish and verify no corruption.
     while (true)
