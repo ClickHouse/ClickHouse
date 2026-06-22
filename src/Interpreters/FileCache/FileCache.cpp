@@ -1600,24 +1600,22 @@ void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
         while (blocking ? pending_finalization_queue.pop(batch) : pending_finalization_queue.tryPop(batch))
         {
             /// The batch leaves the pipeline regardless of the outcome below.
-            in_flight_size -= batch.candidates->bytes();
-            in_flight_elements -= batch.candidates->size();
+            in_flight_size -= batch->candidates->bytes();
+            in_flight_elements -= batch->candidates->size();
             try
             {
                 {
                     auto lock = cache_guard.writeLock();
-                    batch.candidates->afterEvictWrite(lock);
-                    IFileCachePriority::removeEntries(batch.invalidated_entries, lock);
+                    batch->candidates->afterEvictWrite(lock);
+                    IFileCachePriority::removeEntries(batch->invalidated_entries, lock);
                 }
-                batch.candidates->afterEvictState(cache_state_guard.lock());
+                batch->candidates->afterEvictState(cache_state_guard.lock());
 
-                /// Account only segments actually removed from disk: failed ones keep their queue
-                /// entries (afterEvictState does not invalidate them) and are not freed.
-                const auto failed = batch.candidates->getFailedCandidates();
-                evicted_size += batch.candidates->bytes() - failed.total_cache_size;
-                evicted_elements += batch.candidates->size() - failed.total_cache_elements;
-                ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundEvictedFileSegments, batch.candidates->size() - failed.total_cache_elements);
-                ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundEvictedBytes, batch.candidates->bytes() - failed.total_cache_size);
+                /// Per-segment eviction metrics are updated in `onSegmentEvictedInTheBackground`.
+                /// Here we only sum the actually removed amount (failures excluded) for the log.
+                const auto failed = batch->candidates->getFailedCandidates();
+                evicted_size += batch->candidates->bytes() - failed.total_cache_size;
+                evicted_elements += batch->candidates->size() - failed.total_cache_elements;
             }
             catch (...)
             {
@@ -1692,7 +1690,7 @@ void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
                       eviction_info->toString(), in_flight_size, in_flight_elements);
 
             auto batch = std::make_unique<EvictionBatch>();
-            batch->candidates = std::make_unique<EvictionCandidates>(&FileCache::onSegmentEvicted);
+            batch->candidates = std::make_unique<EvictionCandidates>(&FileCache::onSegmentEvictedInTheBackground);
             FileCacheReserveStat stat;
             main_priority->collectCandidatesForEviction(
                 *eviction_info, stat, *batch->candidates, batch->invalidated_entries,
@@ -2283,6 +2281,13 @@ void FileCache::onSegmentEvicted(const FileSegment & segment)
 {
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment.getReservedSize());
+}
+
+void FileCache::onSegmentEvictedInTheBackground(const FileSegment & segment)
+{
+    onSegmentEvicted(segment);
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundEvictedFileSegments);
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundEvictedBytes, segment.getReservedSize());
 }
 
 void FileCache::deactivateBackgroundOperations()

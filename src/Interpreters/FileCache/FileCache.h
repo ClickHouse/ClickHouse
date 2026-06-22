@@ -266,6 +266,7 @@ public:
     const String & getName() const { return name; }
 
     static void onSegmentEvicted(const FileSegment & segment);
+    static void onSegmentEvictedInTheBackground(const FileSegment & segment);
 
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
