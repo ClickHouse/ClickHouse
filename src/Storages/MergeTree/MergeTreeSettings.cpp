@@ -1132,17 +1132,20 @@ namespace ErrorCodes
     - Any positive integer.
     - 0 (disable deduplication)
 
-    The `Insert` command creates one or more blocks (parts). For
-    [insert deduplication](../../engines/table-engines/mergetree-family/replication.md),
-    when writing into replicated tables, ClickHouse writes the hash sums of the
-    created parts into ClickHouse Keeper. Hash sums are stored only for the most
-    recent `replicated_deduplication_window` blocks. The oldest hash sums are
-    removed from ClickHouse Keeper.
+    For [insert deduplication](../../engines/table-engines/mergetree-family/replication.md),
+    when writing into replicated tables, ClickHouse writes deduplication hash sums into
+    ClickHouse Keeper. Hash sums are stored only for the most recent
+    `replicated_deduplication_window` blocks. The oldest hash sums are removed from
+    ClickHouse Keeper.
 
-    A large number for `replicated_deduplication_window` slows down `Inserts`
-    because more entries need to be compared. The hash sum is calculated from
-    the composition of the field names and types and the data of the inserted
-    part (stream of bytes).
+    Under the default `insert_deduplication_version = new_unified_hash` the hash sum covers the
+    whole inserted block, so an insert is deduplicated only when its entire data matches a
+    previous insert (a retry), not per individual part. Under the legacy `old_separate_hashes` /
+    `compatible_double_hashes` the hash sum is instead calculated per created part, from the
+    composition of the field names and types and the data of that part (stream of bytes).
+
+    A large number for `replicated_deduplication_window` slows down `Inserts` because more
+    entries need to be compared.
     )", 0) \
     DECLARE(UInt64, replicated_deduplication_window_seconds, 60 * 60 /* one hour */, R"(
     The number of seconds after which the hash sums of the inserted blocks are
