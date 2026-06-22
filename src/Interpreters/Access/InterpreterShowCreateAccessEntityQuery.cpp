@@ -166,12 +166,6 @@ namespace
         if (quota.key_type != QuotaKeyType::NONE)
             query->key_type = quota.key_type;
 
-        if (quota.ipv4_prefix_bits)
-            query->ipv4_prefix_bits = quota.ipv4_prefix_bits;
-
-        if (quota.ipv6_prefix_bits)
-            query->ipv6_prefix_bits = quota.ipv6_prefix_bits;
-
         query->all_limits.reserve(quota.all_limits.size());
 
         for (const auto & limits : quota.all_limits)
@@ -312,8 +306,9 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
     }
     else if (show_query.current_quota)
     {
-        for (const auto & usage : getContext()->getQuotaUsages())
-            entities.push_back(access_control.read<Quota>(usage.quota_id));
+        auto usage = getContext()->getQuotaUsage();
+        if (usage)
+            entities.push_back(access_control.read<Quota>(usage->quota_id));
     }
     else if (show_query.type == AccessEntityType::ROW_POLICY)
     {
@@ -442,7 +437,6 @@ AccessRightsElements InterpreterShowCreateAccessEntityQuery::getRequiredAccess()
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by SHOW CREATE query", toString(show_query.type));
 }
 
-void registerInterpreterShowCreateAccessEntityQuery(InterpreterFactory & factory);
 void registerInterpreterShowCreateAccessEntityQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
