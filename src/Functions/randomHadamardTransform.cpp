@@ -6,11 +6,12 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/FunctionDocumentation.h>
+#include <Common/PODArray.h>
 #include <Common/assert_cast.h>
 
 #include <bit>
 #include <cmath>
-#include <unordered_map>
+#include <utility>
 #include <vector>
 
 /** randomHadamardTransform(vector [, seed] [, output_dims])
@@ -29,6 +30,8 @@
   * - output_dims (optional, default m): keep only the first `output_dims` coordinates. The
   *   1/sqrt(output_dims) scaling makes the result norm-preserving for the full transform and
   *   norm-preserving in expectation when truncated. Must not exceed m.
+  *
+  * The result has the same element type as the input. An empty input array yields an empty array.
   */
 namespace DB
 {
@@ -53,30 +56,36 @@ inline UInt64 splitmix64Next(UInt64 & state)
 }
 
 /// In-place unnormalized fast Walsh-Hadamard transform on m (a power of two) elements.
-void fwht(double * a, size_t m)
+template <typename T>
+void fwht(T * a, size_t m)
 {
     for (size_t h = 1; h < m; h <<= 1)
         for (size_t i = 0; i < m; i += (h << 1))
             for (size_t j = i; j < i + h; ++j)
             {
-                const double x = a[j];
-                const double y = a[j + h];
+                const T x = a[j];
+                const T y = a[j + h];
                 a[j] = x + y;
                 a[j + h] = x - y;
             }
 }
 
 /// Deterministic +-1 signs of length m derived from the seed (a splitmix64 stream).
-/// Cached per length m within one function call (the seed is constant for the call).
-const std::vector<double> & getSigns(std::unordered_map<size_t, std::vector<double>> & cache, UInt64 seed, size_t m)
+/// Cached per length m within one function call (the seed is constant for the call). Distinct
+/// lengths are rare (usually one), so a linear lookup is cheaper than a hash map.
+template <typename T>
+const PaddedPODArray<T> & getSigns(std::vector<std::pair<size_t, PaddedPODArray<T>>> & cache, UInt64 seed, size_t m)
 {
-    if (auto it = cache.find(m); it != cache.end())
-        return it->second;
-    std::vector<double> signs(m);
+    for (auto & entry : cache)
+        if (entry.first == m)
+            return entry.second;
+
+    PaddedPODArray<T> signs(m);
     UInt64 state = seed;
     for (size_t i = 0; i < m; ++i)
-        signs[i] = (splitmix64Next(state) >> 63) ? -1.0 : 1.0;
-    return cache.emplace(m, std::move(signs)).first->second;
+        signs[i] = (splitmix64Next(state) >> 63) ? static_cast<T>(-1) : static_cast<T>(1);
+    cache.emplace_back(m, std::move(signs));
+    return cache.back().second;
 }
 
 class FunctionRandomHadamardTransform : public IFunction
@@ -117,10 +126,8 @@ public:
                     i == 1 ? "'seed'" : "'output_dims'", getName(), arguments[i].type->getName());
         }
 
-        DataTypePtr out_element = which_nested.isFloat64()
-            ? std::static_pointer_cast<const IDataType>(std::make_shared<DataTypeFloat64>())
-            : std::static_pointer_cast<const IDataType>(std::make_shared<DataTypeFloat32>());
-        return std::make_shared<DataTypeArray>(out_element);
+        /// The result has the same element type as the input.
+        return std::make_shared<DataTypeArray>(array_type->getNestedType());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
@@ -151,60 +158,64 @@ public:
         const ColumnArray::Offsets & offsets = col_array->getOffsets();
         WhichDataType which_nested(checkAndGetDataType<DataTypeArray>(arguments[0].type.get())->getNestedType());
 
+        /// Compute in Float32 for Float32/BFloat16 inputs and in Float64 for Float64 inputs;
+        /// the output keeps the input's element type.
         if (which_nested.isFloat64())
-            return run<Float64, Float64>(nested, offsets, input_rows_count, seed, fixed_out_dims);
+            return run<Float64, Float64, Float64>(nested, offsets, input_rows_count, seed, fixed_out_dims);
         if (which_nested.isFloat32())
-            return run<Float32, Float32>(nested, offsets, input_rows_count, seed, fixed_out_dims);
-        return run<BFloat16, Float32>(nested, offsets, input_rows_count, seed, fixed_out_dims);
+            return run<Float32, Float32, Float32>(nested, offsets, input_rows_count, seed, fixed_out_dims);
+        return run<BFloat16, Float32, BFloat16>(nested, offsets, input_rows_count, seed, fixed_out_dims);
     }
 
 private:
-    template <typename In, typename Out>
+    template <typename In, typename Compute, typename Out>
     static ColumnPtr run(
         const IColumn & nested, const ColumnArray::Offsets & offsets, size_t rows, UInt64 seed, size_t fixed_out_dims)
     {
-        const auto & in_data = assert_cast<const ColumnVector<In> &>(nested).getData();
+        const auto & input = assert_cast<const ColumnVector<In> &>(nested).getData();
 
-        auto out_data = ColumnVector<Out>::create();
-        auto out_offsets = ColumnArray::ColumnOffsets::create();
-        auto & od = out_data->getData();
-        auto & oo = out_offsets->getData();
-        oo.resize(rows);
+        auto result_column = ColumnVector<Out>::create();
+        auto result_offsets_column = ColumnArray::ColumnOffsets::create();
+        auto & result = result_column->getData();
+        auto & result_offsets = result_offsets_column->getData();
+        result_offsets.resize(rows);
 
-        std::unordered_map<size_t, std::vector<double>> sign_cache;
-        std::vector<double> buf;
-        size_t out_total = 0;
+        std::vector<std::pair<size_t, PaddedPODArray<Compute>>> sign_cache;
+        PaddedPODArray<Compute> buffer;
+        size_t written = 0;
         size_t start = 0;
 
-        for (size_t r = 0; r < rows; ++r)
+        for (size_t row = 0; row < rows; ++row)
         {
-            const size_t len = offsets[r] - start;
-            if (len != 0)
+            const size_t length = offsets[row] - start;
+            if (length != 0)
             {
-                const size_t m = std::bit_ceil(len);
+                const size_t m = std::bit_ceil(length);
                 const size_t k = fixed_out_dims ? fixed_out_dims : m;
                 if (k > m)
                     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                         "output_dims ({}) of function {} exceeds the padded length {} (next power of two of {})",
-                        k, name, m, len);
+                        k, name, m, length);
 
-                buf.assign(m, 0.0);
-                const std::vector<double> & signs = getSigns(sign_cache, seed, m);
-                for (size_t i = 0; i < len; ++i)
-                    buf[i] = static_cast<double>(in_data[start + i]) * signs[i];
-                fwht(buf.data(), m);
+                const PaddedPODArray<Compute> & signs = getSigns(sign_cache, seed, m);
+                buffer.resize(m);
+                for (size_t i = 0; i < length; ++i)
+                    buffer[i] = static_cast<Compute>(input[start + i]) * signs[i];
+                for (size_t i = length; i < m; ++i)
+                    buffer[i] = 0;
+                fwht(buffer.data(), m);
 
-                const double scale = 1.0 / std::sqrt(static_cast<double>(k));
-                od.resize(out_total + k);
+                const Compute scale = static_cast<Compute>(1.0 / std::sqrt(static_cast<double>(k)));
+                result.resize(written + k);
                 for (size_t i = 0; i < k; ++i)
-                    od[out_total + i] = static_cast<Out>(buf[i] * scale);
-                out_total += k;
+                    result[written + i] = static_cast<Out>(buffer[i] * scale);
+                written += k;
             }
-            oo[r] = out_total;
-            start = offsets[r];
+            result_offsets[row] = written;
+            start = offsets[row];
         }
 
-        return ColumnArray::create(std::move(out_data), std::move(out_offsets));
+        return ColumnArray::create(std::move(result_column), std::move(result_offsets_column));
     }
 };
 
@@ -222,6 +233,8 @@ across coordinates, making the per-coordinate distribution approximately Gaussia
 data-independent. It is useful as a preprocessing step before scalar quantization, and -- when
 truncated -- as a Johnson-Lindenstrauss / subsampled-randomized-Hadamard (SRHT) random projection.
 
+The result has the same element type as the input; an empty input array returns an empty array.
+
 - `seed` (optional, default `0`): selects the sign pattern; the same seed always yields the same
   transform.
 - `output_dims` (optional, default `m`): keeps only the first `output_dims` coordinates. The
@@ -233,7 +246,7 @@ truncated -- as a Johnson-Lindenstrauss / subsampled-randomized-Hadamard (SRHT) 
         {"vector", "Vector to transform.", {"Array(BFloat16)", "Array(Float32)", "Array(Float64)"}},
         {"seed", "Optional. Seed for the deterministic +/-1 signs (default 0).", {"UInt*"}},
         {"output_dims", "Optional. Truncate the result to this many leading coordinates (default: next power of two of the input length).", {"UInt*"}}};
-    FunctionDocumentation::ReturnedValue returned_value = {"The transformed vector, zero-padded to the next power of two and optionally truncated.", {"Array(Float32)", "Array(Float64)"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"The transformed vector (same element type as the input), zero-padded to the next power of two and optionally truncated.", {"Array(BFloat16)", "Array(Float32)", "Array(Float64)"}};
     FunctionDocumentation::Examples examples = {
         {"Full transform (length padded to a power of two)",
          "SELECT length(randomHadamardTransform([1, 2, 3]::Array(Float32)))", "4"},

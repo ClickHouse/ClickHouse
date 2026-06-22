@@ -5,4 +5,5 @@
 0
 1
 5
-Array(Float32)	Array(Float64)	Array(Float32)
+Array(Float32)	Array(Float64)	Array(BFloat16)
+[]

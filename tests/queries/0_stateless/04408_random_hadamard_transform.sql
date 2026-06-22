@@ -16,10 +16,13 @@ SELECT randomHadamardTransform([1, 2, 3, 4]::Array(Float32)) = randomHadamardTra
 -- output_dims truncates the result (subsampled randomized Hadamard transform).
 SELECT length(randomHadamardTransform(CAST(range(16), 'Array(Float32)'), 7, 5));
 
--- Return types: BFloat16/Float32 -> Float32, Float64 -> Float64.
+-- The result keeps the input's element type.
 SELECT toTypeName(randomHadamardTransform([1, 2]::Array(Float32))),
        toTypeName(randomHadamardTransform([1, 2]::Array(Float64))),
        toTypeName(randomHadamardTransform([1, 2]::Array(BFloat16)));
+
+-- An empty input array yields an empty array (output_dims does not apply).
+SELECT randomHadamardTransform([]::Array(Float32), 0, 5);
 
 -- Errors.
 SELECT randomHadamardTransform([1, 2, 3, 4]::Array(Float32), 0, 8); -- { serverError ARGUMENT_OUT_OF_BOUND }
