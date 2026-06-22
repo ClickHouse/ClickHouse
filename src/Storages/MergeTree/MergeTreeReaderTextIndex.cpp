@@ -72,7 +72,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     }
 
     auto data_part = getDataPart();
-    auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName());
+    auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName(), &data_part->getDataPartStorage());
     chassert(index_format);
 
     MergeTreeIndexDeserializationState state
@@ -494,7 +494,8 @@ size_t MergeTreeReaderTextIndex::readRows(
 
         for (size_t i = 0; i < res_columns.size(); ++i)
         {
-            auto & column_mutable = res_columns[i]->assumeMutableRef();
+            auto mutable_column = IColumn::mutate(std::move(res_columns[i]));
+            auto & column_mutable = *mutable_column;
 
             if (is_always_true[i])
             {
@@ -524,6 +525,8 @@ size_t MergeTreeReaderTextIndex::readRows(
             {
                 fillColumn(column_mutable, mark_postings[i], from_row, rows_to_read);
             }
+
+            res_columns[i] = std::move(mutable_column);
         }
 
         ++from_mark;
