@@ -88,6 +88,24 @@ TryResult tryParseBestEffortSplit(std::string_view s, size_t split, const DateLU
     return {ok, res};
 }
 
+/// Same split as tryParseBestEffortSplit, but the ConcatReadBuffer is NOT primed first (no peek()).
+/// On entry its working buffer is still empty (null begin/end), so the parser must prime it (via eof())
+/// before reading position()/buffer().end(); otherwise taking `s = in.position()` and computing
+/// `s + date_length` is pointer arithmetic on a null pointer. This mimics any ReadBuffer reached before
+/// its first refill (an unprimed ConcatReadBuffer, a freshly opened source, etc.).
+TryResult tryParseBestEffortSplitUnprimed(std::string_view s, size_t split, const DateLUTImpl & tz)
+{
+    const std::string_view head = s.substr(0, split);
+    const std::string_view tail = s.substr(split);
+    ReadBufferFromMemory part1(head.data(), head.size());
+    ReadBufferFromMemory part2(tail.data(), tail.size());
+    ConcatReadBuffer in(part1, part2);
+    /// Intentionally NOT primed: the working buffer is empty/null on entry.
+    time_t res = 0;
+    bool ok = tryParseDateTimeBestEffort(res, in, tz, DateLUT::instance("UTC"));
+    return {ok, res};
+}
+
 }
 
 /// Canonical DateTime strings: the fast path must produce the same result as the basic parser.
@@ -197,6 +215,33 @@ TEST(ParseDateTimeBestEffortFastPath, ChunkBoundarySplitMatchesSingleBuffer)
         const TryResult whole = tryParseBestEffort(s, utc);
         for (size_t split = 1; split < s.size(); ++split)
             EXPECT_EQ(tryParseBestEffortSplit(s, split, utc), whole)
+                << "input: " << s << " split at: " << split;
+    }
+}
+
+/// Regression test for the unprimed-buffer bug: the fast path reads position()/buffer().end() to compute
+/// `s + date_length`, which is undefined behavior (pointer arithmetic on null) if the ReadBuffer has not
+/// been primed yet - e.g. a ConcatReadBuffer before its first next(). The parser must prime the buffer
+/// (via eof()) before entering the fast path. Parsing an unprimed split buffer must agree with the
+/// single-buffer result at every split point. (Under UBSan, the unfixed code traps here.)
+TEST(ParseDateTimeBestEffortFastPath, UnprimedSplitBufferMatchesSingleBuffer)
+{
+    const auto & utc = DateLUT::instance("UTC");
+
+    const std::string_view inputs[] = {
+        "2019-08-201",            /// malformed: trailing digit after the date -> must be rejected
+        "2019-08-20 10:18:561",   /// malformed: trailing digit after the date-time -> must be rejected
+        "2019-08-20",             /// valid date only
+        "2019-08-20 10:18:56",    /// valid date-time
+        "2019-08-20T10:18:56",    /// valid date-time, 'T' separator
+        "2019-08-20 10:18:56+01:00", /// valid date-time with timezone offset
+    };
+
+    for (const auto & s : inputs)
+    {
+        const TryResult whole = tryParseBestEffort(s, utc);
+        for (size_t split = 1; split < s.size(); ++split)
+            EXPECT_EQ(tryParseBestEffortSplitUnprimed(s, split, utc), whole)
                 << "input: " << s << " split at: " << split;
     }
 }

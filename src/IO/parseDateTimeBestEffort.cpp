@@ -179,6 +179,11 @@ ReturnType parseDateTimeBestEffortImpl(
     /// emits). Reads the fixed-offset fields directly, then falls through to the general loop below for any
     /// optional fractional/timezone tail and to the shared finalization. It is a strict subset of the general
     /// parser: it only engages when the token matches exactly and ends cleanly, otherwise the general loop runs.
+    ///
+    /// Prime the working buffer before reading position()/buffer().end(): an unprimed ReadBuffer has a
+    /// null/empty buffer, so `s + date_length` would be pointer arithmetic on null. eof() is cheap on the
+    /// hot path (ReadBufferFromMemory is already primed and returns false without refilling).
+    if (!in.eof())
     {
         const char * const s = in.position();
         const char * const buffer_end = in.buffer().end();
