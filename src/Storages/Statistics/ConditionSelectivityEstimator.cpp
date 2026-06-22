@@ -1,13 +1,15 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 #include <stack>
-#include <iostream>
+#include <cmath>
 
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/PreparedSets.h>
@@ -15,7 +17,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Processors/Formats/IRowInputFormat.h>
+#include <Formats/ParseError.h>
 
 
 namespace DB
@@ -108,10 +110,10 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
                     right_element->finalize(column_estimators, metadata);
                     /// P(c1 and c2) = P(c1) * P(c2)
                     if (element.function == RPNElement::FUNCTION_AND)
-                        element.selectivity = left_element->selectivity * right_element->selectivity;
+                        element.selectivity = left_element->selectivity.applyAnd(right_element->selectivity);
                     /// P(c1 or c2) = 1 - (1 - P(c1)) * (1 - P(c2))
                     else
-                        element.selectivity = 1-(1-left_element->selectivity)*(1-right_element->selectivity);
+                        element.selectivity = left_element->selectivity.applyOr(right_element->selectivity);
                     element.finalized = true;
                     rpn_stack.push(&element);
                 }
@@ -120,19 +122,22 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
             case RPNElement::FUNCTION_NOT:
             {
                 auto* last_element = rpn_stack.top();
-                if (last_element->finalized && last_element->function != RPNElement::FUNCTION_UNKNOWN)
-                    last_element->selectivity = 1 - last_element->selectivity;
+                if (last_element->finalized)
+                    last_element->selectivity = last_element->selectivity.applyNot();
                 else
                 {
                     std::swap(last_element->column_ranges, last_element->column_not_ranges);
-                    if (last_element->function == RPNElement::FUNCTION_AND)
-                        last_element->function = RPNElement::FUNCTION_OR;
-                    else if (last_element->function == RPNElement::FUNCTION_OR)
-                        last_element->function = RPNElement::FUNCTION_AND;
-                    else if (last_element->function == RPNElement::ALWAYS_FALSE)
-                        last_element->function = RPNElement::ALWAYS_TRUE;
-                    else if (last_element->function == RPNElement::ALWAYS_TRUE)
-                        last_element->function = RPNElement::ALWAYS_FALSE;
+                    std::swap(last_element->null_check_columns, last_element->not_null_check_columns);
+                    switch (last_element->function)
+                    {
+                        case RPNElement::FUNCTION_AND:        last_element->function = RPNElement::FUNCTION_OR;       break;
+                        case RPNElement::FUNCTION_OR:         last_element->function = RPNElement::FUNCTION_AND;      break;
+                        case RPNElement::FUNCTION_IS_NULL:    last_element->function = RPNElement::FUNCTION_IS_NOT_NULL; break;
+                        case RPNElement::FUNCTION_IS_NOT_NULL:last_element->function = RPNElement::FUNCTION_IS_NULL;  break;
+                        case RPNElement::ALWAYS_FALSE:        last_element->function = RPNElement::ALWAYS_TRUE;       break;
+                        case RPNElement::ALWAYS_TRUE:         last_element->function = RPNElement::ALWAYS_FALSE;      break;
+                        default: break;
+                    }
                 }
                 break;
             }
@@ -143,8 +148,13 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
     auto * final_element = rpn_stack.top();
     final_element->finalize(column_estimators, metadata);
     RelationProfile result;
-    Float64 final_rows = final_element->selectivity * static_cast<Float64>(total_rows);
-    final_rows = std::max<Float64>(final_rows, 0);
+    Float64 final_rows = final_element->selectivity.true_sel * static_cast<Float64>(total_rows);
+    /// Clamp to [0, total_rows] and handle NaN/Inf to avoid undefined behavior
+    /// in the float-to-UInt64 cast below (UBSAN float-cast-overflow).
+    if (!std::isfinite(final_rows) || final_rows < 0)
+        final_rows = 0;
+    else if (final_rows > static_cast<Float64>(total_rows))
+        final_rows = static_cast<Float64>(total_rows);
     result.rows = static_cast<UInt64>(final_rows);
     for (const auto & [column_name, estimator] : column_estimators)
     {
@@ -208,8 +218,37 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
         size_t num_args = func.getArgumentsSize();
 
         String func_name = func.getFunctionName();
-        if (atom_map.find(func_name) == std::end(atom_map))
+        auto atom_it = atom_map.find(func_name);
+        if (atom_it == atom_map.end())
+        {
+            /// LIKE/ILIKE cannot be represented as a range. Pre-set selectivity
+            /// so the estimator uses a tighter default than `default_unknown_cond_factor`.
+            if (func_name == "like" || func_name == "ilike")
+                out.selectivity.true_sel = default_like_factor;
+            else if (func_name == "notLike" || func_name == "notILike")
+                out.selectivity.true_sel = 1.0 - default_like_factor;
+            else if (func_name == "__applyFilter")
+            {
+                /// Runtime join filter. Selectivity 1.0 keeps it last in prewhere ordering
+                /// (after cheaper column predicates) and neutral for join reorder estimates.
+                out.selectivity.true_sel = 1.0;
+            }
+            else
+                return false;
+
+            out.finalized = true;
             return false;
+        }
+
+        if (num_args == 1)
+        {
+            /// `isNull(col)` / `isNotNull(col)` — populate the corresponding null-check set.
+            column_name = func.getArgumentAt(0).getColumnName();
+            if (metadata && !metadata->getColumns().tryGet(column_name))
+                return false;
+            atom_it->second(out, column_name, Field{});
+            return true;
+        }
 
         if (num_args == 2)
         {
@@ -278,6 +317,20 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 const ColumnDescription * column_desc = metadata->getColumns().tryGet(column_name);
                 if (column_desc)
                     column_type = removeLowCardinalityAndNullable(column_desc->type);
+                else
+                {
+                    /// Not a real column (e.g. a function expression like lower(col) or toDecimal64(col, 3)).
+                    /// Skip range analysis to avoid bad cast when merging ranges of incompatible Field types.
+                    /// Pre-set selectivity based on the function type so prewhere ordering is still reasonable.
+                    if (func_name == "equals" || func_name == "in")
+                        out.selectivity.true_sel = default_cond_equal_factor;
+                    else if (func_name == "notEquals" || func_name == "notIn")
+                        out.selectivity.true_sel = 1.0 - default_cond_equal_factor;
+                    else /// less, greater, lessOrEquals, greaterOrEquals
+                        out.selectivity.true_sel = default_cond_range_factor;
+                    out.finalized = true;
+                    return false;
+                }
             }
             /// In some cases we need to cast the type of const
             bool cast_not_needed = !column_type || !const_type ||
@@ -330,8 +383,38 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     }
                     if (!column_type->equals(*common_type))
                     {
-                        /// we assume that is "cast(column) < const", will not estimate this condition.
-                        return false;
+                        /// The common type is wider than the column type (e.g. Float64 literal on a
+                        /// Float32 column). For floating-point columns, narrow the constant to the
+                        /// column type so that column statistics can be used.
+                        /// For other combinations (e.g. Int32 column with Float64 constant) the
+                        /// conversion semantics are non-trivial (ceiling vs. floor for range queries),
+                        /// so we skip statistics estimation.
+                        if (!isFloat(column_type))
+                            return false;
+
+                        Field converted = tryConvertFieldToType(const_value, *column_type, const_type.get(), {});
+                        if (converted.isNull())
+                            return false;
+
+                        /// Narrowing to the column type is only semantically sound when the literal is
+                        /// exactly representable in that type. At execution time the column value is
+                        /// widened to the literal's type and compared against the original literal, not
+                        /// against its narrowed value. For a non-representable literal (e.g. `f32 = 0.1`)
+                        /// the comparison is always false, but narrowing would round the literal to a
+                        /// representable value and make an impossible predicate look selective, which can
+                        /// reorder PREWHERE incorrectly. Detect this with a round-trip and short-circuit
+                        /// equality/inequality instead of estimating from the narrowed value.
+                        if (func_name == "equals" || func_name == "notEquals")
+                        {
+                            Field round_trip = tryConvertFieldToType(converted, *common_type, column_type.get(), {});
+                            if (round_trip.isNull() || round_trip != const_value)
+                            {
+                                out.function = func_name == "equals" ? RPNElement::ALWAYS_FALSE : RPNElement::ALWAYS_TRUE;
+                                return true;
+                            }
+                        }
+
+                        const_value = converted;
                     }
                 }
             }
@@ -340,11 +423,31 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
             if (is_in_operator && const_value.getType() != Field::Types::Tuple)
                 const_value = Tuple{const_value};
 
-            const auto atom_it = atom_map.find(func_name);
+            atom_it = atom_map.find(func_name);
             atom_it->second(out, column_name, const_value);
             return true;
         }
     }
+
+    /// Bare `<col>.null` UInt8 subcolumn reference, e.g. `SELECT … WHERE x.null`. Treat it as `IS NULL`.
+    if (!node.isFunction() && !node.isConstant() && metadata)
+    {
+        String bare_column_name = node.getColumnName();
+
+        auto dot_pos = bare_column_name.rfind('.');
+        if (dot_pos != std::string::npos && bare_column_name.compare(dot_pos + 1, std::string::npos, "null") == 0)
+        {
+            String parent_name = bare_column_name.substr(0, dot_pos);
+            const ColumnDescription * parent_col = metadata->getColumns().tryGet(parent_name);
+            if (parent_col && isNullableOrLowCardinalityNullable(parent_col->type))
+            {
+                out.function = RPNElement::FUNCTION_IS_NULL;
+                out.null_check_columns.insert(parent_name);
+                return true;
+            }
+        }
+    }
+
     return false;
 }
 
@@ -383,19 +486,55 @@ ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstima
     return has_data ? estimator : nullptr;
 }
 
-Float64 ConditionSelectivityEstimator::ColumnEstimator::estimateRanges(const PlainRanges & ranges) const
+ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Selectivity::applyNot() const
 {
+    return {1.0 - true_sel - null_sel, null_sel};
+}
+
+ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Selectivity::applyOr(const Selectivity & other) const
+{
+    /// case1: NULL or (FALSE/NULL) = NULL
+    /// case2: FALSE or NULL = NULL
+    /// case3: TRUE or (...) = TRUE
+    /// case4: FALSE/NULL or TRUE = TRUE
+    return {
+        true_sel + (1 - true_sel) * other.true_sel,
+        null_sel * (1 - other.true_sel) + (1 - null_sel - true_sel) * other.null_sel,
+    };
+}
+
+ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Selectivity::applyAnd(const Selectivity & other) const
+{
+    return {
+        true_sel * other.true_sel,
+        null_sel * (other.true_sel + other.null_sel) + true_sel * other.null_sel,
+    };
+}
+
+ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::ColumnEstimator::estimateRanges(const PlainRanges & ranges) const
+{
+    if (stats->getNumRows() == 0)
+        return {0, 0};
     Float64 result = 0;
     for (const Range & range : ranges.ranges)
     {
-        result += stats->estimateRange(range);
+        if (auto estimate = stats->estimateRange(range))
+            result += *estimate;
+        else if (range.left == range.right)
+            result += static_cast<Float64>(stats->getNonNullRowCount()) * default_cond_equal_factor;
+        else
+            result += static_cast<Float64>(stats->getNonNullRowCount()) * default_cond_range_factor;
     }
-    /// In case that there is an empty statistics.
-    if (stats->getNumRows() == 0)
-        return 0;
-    Float64 selectivity = result / static_cast<Float64>(stats->getNumRows());
-    selectivity = std::max<Float64>(selectivity, 0);
-    return selectivity;
+    Float64 rows = static_cast<Float64>(stats->getNumRows());
+    Float64 selectivity = result / rows;
+    /// Range predicates evaluate to NULL on NULL rows, so `true_sel` cannot exceed the
+    /// non-NULL share of the column. Without this bound, summing estimates across many
+    /// disjoint ranges (e.g. IN with many values) on a column with a large NULL share can
+    /// produce `true_sel = 1, null_sel = 0.9`, leaving `false_sel = 1 - true_sel - null_sel`
+    /// negative — which then breaks `applyAnd` / `applyOr` / `applyNot`.
+    Float64 null_sel = static_cast<Float64>(stats->getNullCount()) / rows;
+    Float64 non_null_share = std::max(0.0, 1.0 - null_sel);
+    return {std::max(0.0, std::min(non_null_share, selectivity)), null_sel};
 }
 
 UInt64 ConditionSelectivityEstimator::ColumnEstimator::estimateCardinality() const
@@ -478,6 +617,22 @@ const ConditionSelectivityEstimator::AtomMap ConditionSelectivityEstimator::atom
                 out.function = RPNElement::FUNCTION_IN_RANGE;
                 out.column_ranges.emplace(column, Range::createLeftBounded(value, true));
             }
+        },
+        {
+            "isNull",
+            [] (RPNElement & out, const String & column, const Field &)
+            {
+                out.function = RPNElement::FUNCTION_IS_NULL;
+                out.null_check_columns.insert(column);
+            }
+        },
+        {
+            "isNotNull",
+            [] (RPNElement & out, const String & column, const Field &)
+            {
+                out.function = RPNElement::FUNCTION_IS_NOT_NULL;
+                out.not_null_check_columns.insert(column);
+            }
         }
 };
 
@@ -487,11 +642,14 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
     auto can_merge_with = [](const RPNElement & e, Function function_to_merge)
     {
         return (e.function == FUNCTION_IN_RANGE
+                || e.function == FUNCTION_IS_NULL
+                || e.function == FUNCTION_IS_NOT_NULL
                 /// if the sub-clause is also cnf/dnf, it's good to merge
                 || e.function == function_to_merge
                 /// if the sub-clause is different, but has only one column, it also works, e.g
                 /// (a > 0 and a < 5) or (a > 3 and a < 10) can be merged to (a > 0 and a < 10)
-                || (e.column_ranges.size() + e.column_not_ranges.size()) == 1
+                || (e.column_ranges.size() + e.column_not_ranges.size()
+                    + e.null_check_columns.size() + e.not_null_check_columns.size()) == 1
                 || e.function == FUNCTION_UNKNOWN)
                 && !e.finalized;
     };
@@ -522,6 +680,10 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
     {
         merge_column_ranges(column_ranges, lhs.column_ranges, rhs.column_ranges, false);
         merge_column_ranges(column_not_ranges, lhs.column_not_ranges, rhs.column_not_ranges, true);
+        null_check_columns.insert(lhs.null_check_columns.begin(), lhs.null_check_columns.end());
+        null_check_columns.insert(rhs.null_check_columns.begin(), rhs.null_check_columns.end());
+        not_null_check_columns.insert(lhs.not_null_check_columns.begin(), lhs.not_null_check_columns.end());
+        not_null_check_columns.insert(rhs.not_null_check_columns.begin(), rhs.not_null_check_columns.end());
         return true;
     }
     return false;
@@ -537,58 +699,179 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
 
     if (function == FUNCTION_UNKNOWN)
     {
-        selectivity = default_unknown_cond_factor;
+        selectivity = {default_unknown_cond_factor, 0};
         return;
     }
 
-    auto estimate_unknown_ranges = [&](const PlainRanges & ranges)
+    if (function == ALWAYS_FALSE)
+    {
+        selectivity = Selectivity();
+        return;
+    }
+
+    if (function == ALWAYS_TRUE)
+    {
+        selectivity = Selectivity(1.0, 0.0);
+        return;
+    }
+
+    auto estimate_unknown_ranges = [&](const PlainRanges & ranges) -> Selectivity
     {
         Float64 equal_selectivity = 0;
         for (const Range & range : ranges.ranges)
         {
             if (range.isInfinite())
-                return 1.0;
+                return Selectivity{1.0, 0.0};
 
             if (range.left == range.right)
                 equal_selectivity += default_cond_equal_factor;
             else
-                return default_cond_range_factor;
+                return Selectivity{default_cond_range_factor, 0};
         }
-        return std::min(equal_selectivity, 1.0);
+        return Selectivity{std::min(equal_selectivity, 1.0), 0};
     };
 
-    std::vector<Float64> estimate_results;
-    for (const auto & [column_name, ranges] : column_ranges)
+    auto get_estimator = [&](const String & column_name) -> const ColumnEstimator *
     {
         auto it = column_estimators_.find(column_name);
         if (it == column_estimators_.end() || !isCompatibleStatistics(metadata, it->second.stats, column_name))
-        {
-            estimate_results.emplace_back(estimate_unknown_ranges(ranges));
-        }
+            return nullptr;
+        return &it->second;
+    };
+
+    /// Per-column accumulator. The map enforces independence across columns: each column
+    /// contributes a single `Selectivity` to the final AND/OR product, with intra-column
+    /// merging (e.g. `col > 0 AND col IS NOT NULL`) folded in via `applyAnd`/`applyOr`.
+    std::unordered_map<String, Selectivity> estimate_results;
+    for (const auto & [column_name, ranges] : column_ranges)
+    {
+        if (const auto * est = get_estimator(column_name))
+            estimate_results.emplace(column_name, est->estimateRanges(ranges));
         else
-            estimate_results.emplace_back(it->second.estimateRanges(ranges));
+            estimate_results.emplace(column_name, estimate_unknown_ranges(ranges));
     }
 
     for (const auto & [column_name, ranges] : column_not_ranges)
     {
-        auto it = column_estimators_.find(column_name);
-        if (it == column_estimators_.end() || !isCompatibleStatistics(metadata, it->second.stats, column_name))
-        {
-            estimate_results.emplace_back(1 - estimate_unknown_ranges(ranges));
-        }
+        Selectivity not_ranges_selectivity;
+        if (const auto * est = get_estimator(column_name))
+            not_ranges_selectivity = est->estimateRanges(ranges).applyNot();
         else
-            estimate_results.emplace_back(1.0 - it->second.estimateRanges(ranges));
+            not_ranges_selectivity = estimate_unknown_ranges(ranges).applyNot();
+
+        auto it = estimate_results.find(column_name);
+        if (it == estimate_results.end())
+        {
+            estimate_results.emplace(column_name, not_ranges_selectivity);
+        }
+        else if (function == FUNCTION_AND)
+        {
+            it->second = it->second.applyAnd(not_ranges_selectivity);
+        }
+        else /// FUNCTION_OR or FUNCTION_IN_RANGE
+        {
+            it->second = it->second.applyOr(not_ranges_selectivity);
+        }
     }
 
-    selectivity = 1.0;
+    if (function == FUNCTION_AND)
+    {
+        /// `x IS NULL AND x IS NOT NULL` is a contradiction → selectivity = 0.
+        /// Note: the previous explicit check for `x IS NULL AND (range on x)` is no longer
+        /// needed — `applyAnd` over `Selectivity` reduces it to `true_sel = 0` automatically
+        /// because range predicates have `true_sel = 0` on rows where the column is NULL.
+        for (const auto & col : null_check_columns)
+        {
+            if (not_null_check_columns.contains(col))
+            {
+                selectivity = Selectivity();
+                return;
+            }
+        }
+    }
+    else if (function == FUNCTION_OR)
+    {
+        /// `x IS NULL OR x IS NOT NULL` is a tautology → selectivity = 1
+        for (const auto & col : null_check_columns)
+        {
+            if (not_null_check_columns.contains(col))
+            {
+                selectivity = Selectivity(1, 0);
+                return;
+            }
+        }
+    }
+
+    for (const auto & column_name : null_check_columns)
+    {
+        Float64 cur_selectivity = default_cond_equal_factor;
+        if (const auto * est = get_estimator(column_name))
+            cur_selectivity = est->stats->estimateIsNull();
+
+        if (!estimate_results.contains(column_name))
+        {
+            estimate_results.emplace(column_name, Selectivity{cur_selectivity, 0});
+        }
+        else if (function == FUNCTION_AND)
+        {
+            /// `x IS NULL AND <other predicate on x>`: any non-IS-NULL predicate on the same
+            /// column has `true_sel = 0` on NULL rows, so the AND's `true_sel` is 0. The NULL
+            /// share is `P(x IS NULL)` — IS NULL is TRUE there but the range predicate is NULL,
+            /// so the AND evaluates to NULL on those rows. Store this per-column result so the
+            /// final cross-column AND keeps folding in predicates on other columns.
+            estimate_results[column_name] = Selectivity(0, cur_selectivity);
+        }
+        else
+        {
+            Float64 is_true = std::min(1.0, estimate_results[column_name].true_sel + cur_selectivity);
+            estimate_results[column_name] = Selectivity(is_true, 0);
+        }
+    }
+
+    for (const auto & column_name : not_null_check_columns)
+    {
+        Float64 cur_selectivity = 1.0 - default_cond_equal_factor;
+        if (const auto * est = get_estimator(column_name))
+            cur_selectivity = est->stats->estimateIsNotNull();
+
+        if (!estimate_results.contains(column_name))
+        {
+            estimate_results.emplace(column_name, Selectivity{cur_selectivity, 0});
+        }
+        else if (function == FUNCTION_OR)
+        {
+            /// Under OR, `IS NOT NULL` dominates any range predicate on the same column,
+            /// because non-NULL rows where the range is FALSE still satisfy IS NOT NULL.
+            estimate_results[column_name].true_sel = cur_selectivity;
+        }
+        else
+        {
+            /// Under AND, the range predicate already filters NULLs; the only effect of
+            /// `IS NOT NULL` is to zero out the column's NULL share.
+            estimate_results[column_name].null_sel = 0;
+        }
+    }
+
+    if (function == FUNCTION_OR)
+        selectivity = Selectivity();
+    else
+        selectivity = Selectivity(1, 0);
     for (const auto & estimate_result : estimate_results)
     {
         if (function == FUNCTION_OR)
-            selectivity *= 1 - estimate_result;
+            selectivity = selectivity.applyOr(estimate_result.second);
         else
-            selectivity *= estimate_result;
+            selectivity = selectivity.applyAnd(estimate_result.second);
     }
-    if (function == FUNCTION_OR)
-        selectivity = 1 - selectivity;
+
+    /// Clamp to valid probability range. Selectivity can exceed [0, 1] when
+    /// estimateRanges() sums individual range estimates that together exceed the
+    /// total row count (e.g. IN with many values and over-counting statistics),
+    /// or become NaN from floating-point edge cases.
+    if (!std::isfinite(selectivity.true_sel))
+        selectivity.true_sel = default_unknown_cond_factor;
+    else
+        selectivity.true_sel = std::max(0.0, std::min(1.0, selectivity.true_sel));
 }
+
 }

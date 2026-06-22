@@ -8,6 +8,7 @@
 #include <Server/IServer.h>
 #include <Server/PrometheusMetricsWriter.h>
 #include <base/scope_guard.h>
+#include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -15,6 +16,7 @@
 
 #include <Access/Credentials.h>
 #include <Common/CurrentThread.h>
+#include <Common/StringUtils.h>
 #include <Common/QueryScope.h>
 #include <IO/SnappyReadBuffer.h>
 #include <IO/SnappyWriteBuffer.h>
@@ -37,6 +39,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 http_response_buffer_size;
+}
 
 namespace ErrorCodes
 {
@@ -118,6 +125,10 @@ public:
 
     virtual void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
 
+    /// When true, `handleRequest` parses `application/x-www-form-urlencoded` (and multipart) bodies for POST/PUT.
+    /// Must stay false for RemoteWrite/RemoteRead so the raw body stream stays available for protobuf.
+    virtual bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const { return false; }
+
 protected:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override
     {
@@ -128,12 +139,23 @@ protected:
             params.reset();
         });
 
-        params = std::make_unique<HTMLForm>(default_settings, request);
+        const auto & method = request.getMethod();
+        if (shouldParseFormFromRequestBody(request)
+            && (method == Poco::Net::HTTPRequest::HTTP_POST || method == Poco::Net::HTTPRequest::HTTP_PUT))
+            params = std::make_unique<HTMLForm>(default_settings, request, *request.getStream());
+        else
+            params = std::make_unique<HTMLForm>(default_settings, request);
         parent().send_stacktrace = config().is_stacktrace_enabled && params->getParsed<bool>("stacktrace", false);
 
         if (!authenticateUserAndMakeContext(request, response))
             return; /// The user is not authenticated yet, and the HTTP_UNAUTHORIZED response is sent with the "WWW-Authenticate" header,
                     /// and `request_credentials` must be preserved until the next request or until any exception.
+
+        /// Apply `http_response_buffer_size` for the output buffer (0 means use the default).
+        auto buffer_size = context->getSettingsRef()[Setting::http_response_buffer_size].value;
+        if (buffer_size == 0)
+            buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+        parent().http_response_buffer_size = buffer_size;
 
         /// Initialize query scope.
         QueryScope query_scope;
@@ -165,9 +187,9 @@ protected:
         if (name.empty())
             return false;
 
-        /// Some parameters (database, default_format, everything used in the code above) do not
-        /// belong to the Settings class.
-        static const NameSet reserved_param_names{"user", "password", "quota_key", "stacktrace", "role", "query_id"};
+        /// Some parameters (default_format, everything used in the code above) do not belong to the
+        /// Settings class.
+        static const NameSet reserved_param_names{"user", "password", "quota_key", "stacktrace", "role", "query_id", "database", "table"};
         return !reserved_param_names.contains(name);
     }
 
@@ -196,7 +218,54 @@ protected:
         context->applySettingsChanges(settings_changes);
 
         /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
-        context->setCurrentQueryId(params->get("query_id", request.get("X-ClickHouse-Query-Id", "")));
+        String query_id = params->get("query_id", request.get("X-ClickHouse-Query-Id", ""));
+
+        /// Sanitize query_id: remove ASCII control characters to prevent CRLF injection
+        /// into HTTP response headers (the query_id is reflected in X-ClickHouse-Query-Id).
+        std::erase_if(query_id, [](unsigned char c) { return isControlASCII(c) || c == 0x7F; });
+
+        context->setCurrentQueryId(query_id);
+    }
+
+    /// Resolves the time series table for the current request. Each of the database and table names comes
+    /// either from the configuration or from the URL query parameter 'database' and 'table'.
+    /// A query parameter can't override a value set in the configuration.
+    /// If the database isn't set, the table name is treated as a possibly-qualified  `database.table` name,
+    /// and if the table name is not a qualified name then the database name falls back to "default".
+    StorageID getTimeSeriesTableID()
+    {
+        QualifiedTableName full_name;
+        full_name.database = config().time_series_table_name.database;
+        full_name.table = config().time_series_table_name.table;
+
+        if (params->has("database"))
+        {
+            if (!full_name.database.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The database is set in the configuration of this prometheus handler and cannot be overridden by the 'database' query parameter");
+            full_name.database = params->get("database");
+        }
+
+        if (params->has("table"))
+        {
+            if (!full_name.table.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The table is set in the configuration of this prometheus handler and cannot be overridden by the 'table' query parameter");
+            full_name.table = params->get("table");
+        }
+
+        if (full_name.table.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The time series table name is not set; specify it in the configuration or in the 'table' query parameter");
+
+        if (full_name.database.empty())
+        {
+            full_name = QualifiedTableName::parseFromString(full_name.table);
+            if (full_name.database.empty())
+                full_name.database = "default";
+        }
+
+        return StorageID{full_name};
     }
 
     void onException() override
@@ -231,6 +300,8 @@ public:
         checkHTTPHeader(request, "Content-Type", "application/x-protobuf");
         checkHTTPHeader(request, "Content-Encoding", "snappy");
 
+        auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+        PrometheusRemoteWriteProtocol protocol{table, context};
 
         prometheus::WriteRequest write_request;
 
@@ -241,9 +312,6 @@ public:
             if (!write_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
         }
-
-        auto table = DatabaseCatalog::instance().getTable(StorageID{config().time_series_table_name}, context);
-        PrometheusRemoteWriteProtocol protocol{table, context};
 
         if (write_request.timeseries_size())
             protocol.writeTimeSeries(write_request.timeseries());
@@ -278,7 +346,7 @@ public:
         checkHTTPHeader(request, "Content-Type", "application/x-protobuf");
         checkHTTPHeader(request, "Content-Encoding", "snappy");
 
-        auto table = DatabaseCatalog::instance().getTable(StorageID{config().time_series_table_name}, context);
+        auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
         PrometheusRemoteReadProtocol protocol{table, context};
 
         prometheus::ReadRequest read_request;
@@ -329,6 +397,8 @@ class PrometheusRequestHandler::QueryAPIImpl : public ImplWithContext
 public:
     using ImplWithContext::ImplWithContext;
 
+    bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const override { return true; }
+
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
         LOG_INFO(log(), "Handling Prometheus Query API request from {}", request.get("User-Agent", ""));
@@ -341,24 +411,24 @@ public:
         if (name.empty())
             return false;
 
-        /// Some parameters (database, default_format, everything used in the code above) do not
-        /// belong to the Settings class.
-        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step"};
+        /// Some parameters (default_format, everything used in the code above) do not belong to the
+        /// Settings class.
+        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "database", "table"};
         return !reserved_param_names.contains(name);
     }
 
     void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) override
     {
-        auto table = DatabaseCatalog::instance().getTable(StorageID{config().time_series_table_name}, context);
-        PrometheusHTTPProtocolAPI protocol{table, context};
-
-
         const String & uri = request.getURI();
         LOG_DEBUG(log(), "Processing Query API request: method={}, uri={}", request.getMethod(), uri);
 
         response.setContentType("application/json");
+
         try
         {
+            auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+            PrometheusHTTPProtocolAPI protocol{table, context};
+
             if (uri.starts_with("/api/v1/query_range"))
             {
                 String query = params->get("query", "");
@@ -450,12 +520,22 @@ public:
         }
         catch (const Exception & e)
         {
+            /// Once the response header has been sent we can no longer produce
+            /// a well-formed Prometheus error response. So we let the outer handler
+            /// abort the chunked stream via cancelWithException() instead.
+            if (response.sent())
+                throw;
+
+            /// Drop any partial success body still sitting in the output buffer
+            /// before writing the error response.
+            getOutputStream(response).rejectBufferedDataSave();
+
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
             String error_str;
             WriteBufferFromString error_buf(error_str);
-            writeString(R"({"status":"error","errorType":"bad_data","error":")", error_buf);
-            writeString(e.message(), error_buf);
-            writeString(R"("})", error_buf);
+            writeString(R"({"status":"error","errorType":"bad_data","error":)", error_buf);
+            writeJSONString(e.message(), error_buf, FormatSettings{});
+            writeString("}", error_buf);
             error_buf.finalize();
             writeString(error_str, getOutputStream(response));
 
@@ -550,7 +630,7 @@ WriteBufferFromHTTPServerResponse & PrometheusRequestHandler::getOutputStream(HT
         return *write_buffer_from_response;
 
     write_buffer_from_response = std::make_unique<WriteBufferFromHTTPServerResponse>(
-        response, http_method == HTTPRequest::HTTP_HEAD, write_event);
+        response, http_method == HTTPRequest::HTTP_HEAD, write_event, http_response_buffer_size);
 
     return *write_buffer_from_response;
 }

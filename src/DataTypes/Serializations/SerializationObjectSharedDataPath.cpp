@@ -91,8 +91,8 @@ void SerializationObjectSharedDataPath::enumerateStreams(
     {
         if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP_WITH_BUCKETS)
         {
-            settings.path.push_back(Substream::ObjectSharedDataBucket);
-            settings.path.back().object_shared_data_bucket = bucket;
+            settings.path.push_back(Substream::Bucket);
+            settings.path.back().bucket = bucket;
         }
 
         const auto * deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateObjectSharedDataPath>(data.deserialize_state) : nullptr;
@@ -108,8 +108,8 @@ void SerializationObjectSharedDataPath::enumerateStreams(
     }
     else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
     {
-        settings.path.push_back(Substream::ObjectSharedDataBucket);
-        settings.path.back().object_shared_data_bucket = bucket;
+        settings.path.push_back(Substream::Bucket);
+        settings.path.back().bucket = bucket;
 
         if (settings.use_specialized_prefixes_and_suffixes_substreams)
             addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataStructurePrefix);
@@ -167,8 +167,8 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkStatePrefix(
     {
         if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP_WITH_BUCKETS)
         {
-            settings.path.push_back(Substream::ObjectSharedDataBucket);
-            settings.path.back().object_shared_data_bucket = bucket;
+            settings.path.push_back(Substream::Bucket);
+            settings.path.back().bucket = bucket;
         }
 
         serialization_map->deserializeBinaryBulkStatePrefix(settings, shared_data_path_state->map_state, cache);
@@ -178,8 +178,8 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkStatePrefix(
     }
     else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
     {
-        settings.path.push_back(Substream::ObjectSharedDataBucket);
-        settings.path.back().object_shared_data_bucket = bucket;
+        settings.path.push_back(Substream::Bucket);
+        settings.path.back().bucket = bucket;
 
         shared_data_path_state->structure_state = SerializationObjectSharedData::deserializeStructureStatePrefix(settings, cache);
         auto * structure_state_concrete = checkAndGetState<SerializationObjectSharedData::DeserializeBinaryBulkStateObjectSharedDataStructure>(shared_data_path_state->structure_state);
@@ -252,8 +252,8 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
         }
         else
         {
-            settings.path.push_back(Substream::ObjectSharedDataBucket);
-            settings.path.back().object_shared_data_bucket = bucket;
+            settings.path.push_back(Substream::Bucket);
+            settings.path.back().bucket = bucket;
 
             if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
             {
@@ -294,8 +294,8 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
     }
     else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
     {
-        settings.path.push_back(Substream::ObjectSharedDataBucket);
-        settings.path.back().object_shared_data_bucket = bucket;
+        settings.path.push_back(Substream::Bucket);
+        settings.path.back().bucket = bucket;
 
         auto * shared_data_structure_state = checkAndGetState<SerializationObjectSharedData::DeserializeBinaryBulkStateObjectSharedDataStructure>(shared_data_path_state->structure_state);
         auto structure_granules = SerializationObjectSharedData::deserializeStructure(rows_offset, limit, settings, *shared_data_structure_state, cache);

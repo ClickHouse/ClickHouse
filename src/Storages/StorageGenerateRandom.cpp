@@ -1,4 +1,5 @@
 #include <Storages/IStorage.h>
+#include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageGenerateRandom.h>
 #include <Storages/StorageFactory.h>
@@ -186,7 +187,7 @@ T fuzzyRandomInteger(pcg64 & rng)
             }
         }
 
-        T result;
+        T result{};
         memcpy(&result, words, sizeof(T));
         return result;
     }
@@ -272,14 +273,16 @@ void appendFuzzyRandomString(ColumnString::Chars & out, size_t max_length, pcg64
         }
         case 3: // IPv4
         {
-            WriteBufferFromVector<ColumnString::Chars> buf(out);
+            WriteBufferFromVector<ColumnString::Chars> buf(out, AppendModeTag{});
             writeIPv4Text(IPv4(fuzzyRandomInteger<UInt32>(rng)), buf);
+            buf.finalize();
             break;
         }
         case 4: // IPv6
         {
-            WriteBufferFromVector<ColumnString::Chars> buf(out);
+            WriteBufferFromVector<ColumnString::Chars> buf(out, AppendModeTag{});
             writeIPv6Text(IPv6(fuzzyRandomInteger<UInt128>(rng)), buf);
+            buf.finalize();
             break;
         }
         case 5: // type name
@@ -843,7 +846,7 @@ ColumnPtr fillColumnWithRandomData(
 namespace
 {
 
-class GenerateSource : public ISource
+class GenerateSource final : public ISource
 {
 public:
     GenerateSource(
@@ -922,7 +925,7 @@ StorageGenerateRandom::StorageGenerateRandom(
     UInt64 max_array_length_,
     UInt64 max_string_length_,
     const std::optional<UInt64> & random_seed_)
-    : IStorage(table_id_), max_array_length(max_array_length_), max_string_length(max_string_length_)
+    : StorageWithCommonVirtualColumns(table_id_), max_array_length(max_array_length_), max_string_length(max_string_length_)
 {
     static constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
     static constexpr size_t MAX_STRING_SIZE = 1 << 30;
@@ -938,10 +941,20 @@ StorageGenerateRandom::StorageGenerateRandom(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
+VirtualColumnsDescription StorageGenerateRandom::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
 
+
+void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageGenerateRandom(StorageFactory & factory)
 {
     factory.registerStorage("GenerateRandom", [](const StorageFactory::Arguments & args)
@@ -966,7 +979,7 @@ void registerStorageGenerateRandom(StorageFactory & factory)
         if (engine_args.size() >= 2)
         {
             engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
-            max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[0], "max_string_length");
+            max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[1], "max_string_length");
         }
 
         if (engine_args.size() == 3)
@@ -976,7 +989,63 @@ void registerStorageGenerateRandom(StorageFactory & factory)
         }
 
         return std::make_shared<StorageGenerateRandom>(args.table_id, args.columns, args.comment, max_array_length, max_string_length, random_seed);
-    });
+    },
+    {},
+    Documentation{
+        .description = R"DOCS_MD(
+The GenerateRandom table engine produces random data for given table schema.
+
+Usage examples:
+
+- Use in test to populate reproducible large table.
+- Generate random input for fuzzing tests.
+
+## Usage in ClickHouse Server {#usage-in-clickhouse-server}
+
+```sql
+ENGINE = GenerateRandom([random_seed [,max_string_length [,max_array_length]]])
+```
+
+The `max_array_length` and `max_string_length` parameters specify maximum length of all
+array or map columns and strings correspondingly in generated data.
+
+Generate table engine supports only `SELECT` queries.
+
+It supports all [DataTypes](../../../sql-reference/data-types/index.md) that can be stored in a table except `AggregateFunction`.
+
+## Example {#example}
+
+**1.** Set up the `generate_engine_table` table:
+
+```sql
+CREATE TABLE generate_engine_table (name String, value UInt32) ENGINE = GenerateRandom(1, 5, 3)
+```
+
+**2.** Query the data:
+
+```sql
+SELECT * FROM generate_engine_table LIMIT 3
+```
+
+```text
+┌─name─┬──────value─┐
+│ c4xJ │ 1412771199 │
+│ r    │ 1791099446 │
+│ 7#$  │  124312908 │
+└──────┴────────────┘
+```
+
+## Details of Implementation {#details-of-implementation}
+
+- Not supported:
+  - `ALTER`
+  - `SELECT ... SAMPLE`
+  - `INSERT`
+  - Indices
+  - Replication
+)DOCS_MD",
+        .syntax = "ENGINE = GenerateRandom([random_seed[, max_string_length[, max_array_length]]])",
+        .related = {"FuzzJSON", "FuzzQuery"}});
 }
 
 Pipe StorageGenerateRandom::read(
