@@ -727,28 +727,20 @@ KeeperStorage<Container>::KeeperStorage(
     int64_t tick_time_ms,
     const String & superdigest_,
     const KeeperContextPtr & keeper_context_,
-    const bool initialize_system_nodes,
-    const bool insert_initial_root)
+    const bool initialize_system_nodes)
     : KeeperStorageBase(tick_time_ms, keeper_context_, superdigest_)
 {
-    if (initialize_system_nodes && !insert_initial_root)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "initialize_system_nodes requires insert_initial_root (initializeSystemNodes dereferences '/')");
-
     if constexpr (use_rocksdb)
         container.initialize(keeper_context);
 
-    if (insert_initial_root)
+    if (initialize_system_nodes)
     {
         Node root_node;
         container.insert("/", root_node);
         if constexpr (!use_rocksdb)
             addDigest(root_node, "/");
-    }
-
-    if (initialize_system_nodes)
         initializeSystemNodes();
+    }
 }
 
 template<typename Container>
@@ -4661,12 +4653,11 @@ void finalizeMemorySnapshotLoad(KeeperMemoryStorage & storage, std::span<MemoryS
     uint64_t out_total_children = 0;
     storage.container.buildMapFromBatches(std::span<LocalBatch>{batches}, out_total_children);
 
-    // Root must exist (snapshot is constructed with insert_initial_root=false).
     if (!storage.container.contains("/"))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Chunked snapshot has no root '/' node");
 
     // Folded equality check: per-node over-count + non-negative guarantee above imply
-    // children.size() == numChildren() for every node iff out_non_root == out_total_children.
+    // this check is true only if children.size() == numChildren()
     if (storage.container.size() - 1 != out_total_children)
         throw Exception(
             ErrorCodes::CORRUPTED_DATA,

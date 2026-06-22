@@ -666,16 +666,14 @@ public:
     /// Used externally. Locks storage mutex and looks up the node.
     bool checkCommittedACL(std::string_view path, int32_t permissions, int64_t session_id);
 
-    /// `insert_initial_root=false` suppresses the automatic root `"/"` insert so the V8 load path
-    /// can populate the root from the snapshot's own serialized `"/"` node.
-    /// Invariant: `initialize_system_nodes=true` requires `insert_initial_root=true`, because
-    /// `initializeSystemNodes` assumes `"/"` already exists.
+    /// When `initialize_system_nodes=true` (default, fresh startup) the root `"/"` is inserted and
+    /// system nodes are created. When `false` (snapshot load), root comes from the snapshot data
+    /// and `initializeSystemNodes()` is called after deserialization.
     KeeperStorage(
         int64_t tick_time_ms,
         const String & superdigest_,
         const KeeperContextPtr & keeper_context_,
-        bool initialize_system_nodes = true,
-        bool insert_initial_root = true);
+        bool initialize_system_nodes = true);
     ~KeeperStorage();
 
     void initializeSystemNodes() TSA_NO_THREAD_SAFETY_ANALYSIS;

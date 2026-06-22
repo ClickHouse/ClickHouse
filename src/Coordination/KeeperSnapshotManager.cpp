@@ -1251,8 +1251,7 @@ KeeperSnapshotManager<Storage>::deserializeChunkedSnapshotFromBuffer(ReadBufferF
             storage_tick_time,
             superdigest,
             keeper_context,
-            /* initialize_system_nodes = */ false,
-            /* insert_initial_root = */ false);
+            /* initialize_system_nodes = */ false);
         Storage & storage = *result.storage;
 
         bool recalculate_digest = keeper_context->digestEnabled();
