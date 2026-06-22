@@ -73,7 +73,7 @@ class ElOracloDeLeaks:
         self.snapshots.clear()
         baseline = self._get_memory_snapshot("baseline", cluster)
         if baseline is None:
-            self.logger.error(f"Could not get baseline capture")
+            self.logger.error("Could not get baseline capture")
             return
         self.snapshots.append(baseline)
         self._print_snapshot(baseline)
@@ -114,7 +114,7 @@ class ElOracloDeLeaks:
         """
         # Check baseline
         if len(self.snapshots) == 0:
-            self.logger.error(f"No previous captures exist")
+            self.logger.error("No previous captures exist")
             return
         leak_detected = False
         try:
@@ -183,7 +183,7 @@ class ElOracloDeLeaks:
                         or result2 == ""
                     ):
                         self.logger.warning(
-                            f"Could not fetch number of merges or mutations"
+                            "Could not fetch number of merges or mutations"
                         )
                         return False
 
@@ -200,7 +200,7 @@ class ElOracloDeLeaks:
                     "SELECT name FROM system.databases WHERE name NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA');"
                 )
                 if not isinstance(dbs_str, str) or dbs_str == "":
-                    self.logger.warning(f"Could not fetch databases")
+                    self.logger.warning("Could not fetch databases")
                     return False
                 fetched_dbs: list[str] = [line for line in dbs_str.split("\n") if line]
                 for db_name in fetched_dbs:

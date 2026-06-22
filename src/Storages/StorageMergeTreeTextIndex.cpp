@@ -4,6 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Core/Range.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -66,6 +67,8 @@ protected:
     Chunk generate() override
     {
         using enum PostingsSerialization::Flags;
+
+        auto component_guard = Coordination::setCurrentComponent("MergeTreeTextIndexSource::generate");
 
         size_t total_rows = 0;
         size_t num_columns = header->columns();
