@@ -157,8 +157,9 @@ void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::enumerate(TConsumer & consume
         if (std::popcount(s) <= 1)
             continue;
 
+        auto & dp_table = consumer.getDPTable();
         // If the query is large/complex break out of the optimization early
-        if (consumer.getDPTable().noCcp() > budget)
+        if (dp_table.noCcp() > budget)
             return;
 
         NonEmptySubmasks<UInt> subsets(s);
@@ -173,27 +174,27 @@ void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::enumerate(TConsumer & consume
 
             LOG_TEST(log, "Enumerating subset S: {}, lhs: {}, rhs: {}", toBinaryString(s), toBinaryString(lhs), toBinaryString(rhs));
 
-            if (!(consumer.getDPTable().isConnected(lhs)))
+            if (!(dp_table.isConnected(lhs)))
             {
                 LOG_TEST(log, "lhs not connected");
                 continue;
             }
 
-            if (!(consumer.getDPTable().isConnected(rhs)))
+            if (!(dp_table.isConnected(rhs)))
             {
                 LOG_TEST(log, "rhs not connected");
                 continue;
             }
 
-            if (isConnected(consumer.getDPTable(), lhs, rhs))
+            if (isConnected(dp_table, lhs, rhs))
             {
-                setTableNeighbor(consumer.getDPTable(), lhs, rhs);
+                setTableNeighbor(dp_table, lhs, rhs);
                 consumer.accept(lhs | rhs, lhs, rhs);
                 LOG_TEST(log, "accepted lhs-rhs connected.");
             }
             else if (query_graph.areTransitivelyConnected(BitSet::fromUInt(lhs), BitSet::fromUInt(rhs)))
             {
-                setTableNeighbor(consumer.getDPTable(), lhs, rhs);
+                setTableNeighbor(dp_table, lhs, rhs);
                 consumer.accept(lhs | rhs, lhs, rhs);
                 LOG_TEST(log, "lhs-rhs transitively connected through equivalences, but not directly connected.");
             }
