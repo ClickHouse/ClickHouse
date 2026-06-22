@@ -699,7 +699,15 @@ bool decompress(
     /// where timing very small blocks would add too much noise.
     if (statistics.choose_method >= 0 || dest_size >= 32768)
     {
-        size_t variant_size = PerformanceStatistics::NUM_ELEMENTS;
+        /// The branchless small-offset variant (the last one) only helps blocks that contain
+        /// many small-offset matches, which is strongly correlated with a higher compression
+        /// ratio. For near-incompressible blocks it cannot help, so drop it from the candidate
+        /// set — the bandit keeps exploring forever (to adapt to shifting data), so leaving an
+        /// option that can never win for this block just wastes that exploration. The
+        /// compression ratio is free: both sizes are already in the block header.
+        size_t variant_size = (dest_size >= source_size * 2)
+            ? PerformanceStatistics::NUM_ELEMENTS
+            : PerformanceStatistics::NUM_ELEMENTS - 1;
         size_t best_variant = statistics.select(variant_size);
 
         Stopwatch watch;
