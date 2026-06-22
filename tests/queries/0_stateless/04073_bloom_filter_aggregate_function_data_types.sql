@@ -185,6 +185,19 @@ SELECT bloomFilterContains(bf, 'hello');
 WITH (SELECT groupBloomFilterState(100)(materialize(CAST(42, 'Nullable(UInt64)'))) FROM numbers(1)) AS bf
 SELECT bloomFilterContains(bf, toUInt16(42));
 
+-- Narrowing probe cast: a UInt8 filter probed with an out-of-range UInt16 must not wrap/truncate.
+-- 300 truncated to UInt8 would be 44; the filter only ever saw 44, so a wrapping cast would report 1.
+WITH (SELECT groupBloomFilterState(100)(toUInt8(44)) FROM numbers(1)) AS bf
+SELECT bloomFilterContains(bf, toUInt16(44)), bloomFilterContains(bf, toUInt16(300));
+
+-- Narrowing probe cast: signed out-of-range value must not alias an in-range one.
+WITH (SELECT groupBloomFilterState(100)(toInt8(-1)) FROM numbers(1)) AS bf
+SELECT bloomFilterContains(bf, toInt16(-1)), bloomFilterContains(bf, toInt16(255));
+
+-- Lossy probe cast: a UInt8 filter probed with a fractional Float64 must not round/truncate.
+WITH (SELECT groupBloomFilterState(100)(toUInt8(42)) FROM numbers(1)) AS bf
+SELECT bloomFilterContains(bf, toUInt8(42)), bloomFilterContains(bf, materialize(42.5));
+
 -- LowCardinality(Nullable(String)): value present
 WITH (SELECT groupBloomFilterState(100)(materialize(CAST('hello', 'LowCardinality(Nullable(String))'))) FROM numbers(1)) AS bf
 SELECT bloomFilterContains(bf, 'hello');

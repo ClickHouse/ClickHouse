@@ -4,6 +4,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
@@ -89,8 +90,14 @@ public:
         const DataTypePtr & value_type = arg_data_types[0];
         DataTypePtr dispatch_value_type = removeLowCardinalityAndNullable(value_type);
 
+        /// Use an accurate cast so a narrowing probe (e.g. toUInt16(300) against a UInt8 filter) does
+        /// not wrap/truncate before hashing and report a false positive; non-representable values
+        /// become NULL and their result is forced to 0 below.
+        ColumnPtr casted_value = castColumnAccurateOrNull(arguments[1], dispatch_value_type)->convertToFullColumnIfConst();
+        const auto & nullable_value = assert_cast<const ColumnNullable &>(*casted_value);
+
         ColumnsWithTypeAndName casted_arguments = arguments;
-        casted_arguments[1].column = castColumn(arguments[1], dispatch_value_type);
+        casted_arguments[1].column = nullable_value.getNestedColumnPtr();
         casted_arguments[1].type = dispatch_value_type;
 
         WhichDataType which(dispatch_value_type);
@@ -154,6 +161,12 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Unexpected value type {} for function {}",
                 value_type->getName(), getName());
+
+        /// Non-representable values became NULL during the accurate cast and cannot be in the filter.
+        const NullMap & null_map = nullable_value.getNullMapData();
+        for (size_t i = 0; i < input_rows_count; ++i)
+            if (null_map[i])
+                vec_to[i] = 0;
 
         return col_to;
     }
