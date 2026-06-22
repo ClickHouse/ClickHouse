@@ -34,3 +34,10 @@ SELECT toFloat32(0.5) IN (0.5), toFloat32(0.5) = 0.5;
 SELECT '-- same IN result without the analyzer';
 SELECT toFloat32(0.1) IN (0.1) SETTINGS allow_experimental_analyzer = 0;
 SELECT toFloat32(0.5) IN (0.5) SETTINGS allow_experimental_analyzer = 0;
+
+SELECT '-- conversion to a Variant prefers a lossless alternative, falling back to lossy only when needed';
+-- The exactly-representable Int64 values stay in the Array(Int64) alternative instead of being
+-- stored lossily in the earlier-listed (sorted) Array(Float64) alternative.
+SELECT x FROM values('x Array(Variant(Array(Int64), Array(Float64)))', [[9223372036854775807, -9223372036854775808], [0.9999, 7]]);
+-- When no alternative can represent the value exactly, the nearest representable value is used.
+SELECT x FROM values('x Array(Variant(Array(Float32), Array(String)))', [[0.1, 0.2]]);

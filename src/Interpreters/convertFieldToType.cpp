@@ -758,11 +758,19 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return src;
 
         /// Otherwise try to convert field to any variant.
-        for (const auto & variant : type_variant->getVariants())
+        /// Prefer an alternative that represents the value exactly: first look for a strict
+        /// (lossless) conversion, and only fall back to a lossy one if none exists. Without
+        /// this, a value that fits one alternative without loss (e.g. an Int64 in `Array(Int64)`)
+        /// could be stored lossily in an earlier-listed alternative (e.g. `Array(Float64)`),
+        /// because non-strict conversion to a floating-point type accepts the nearest value.
+        for (bool try_strict : {true, false})
         {
-            auto res = tryConvertFieldToType(src, *variant, from_type_hint, format_settings);
-            if (!res.isNull())
-                return res;
+            for (const auto & variant : type_variant->getVariants())
+            {
+                auto res = tryConvertFieldToType(src, *variant, from_type_hint, format_settings, try_strict);
+                if (!res.isNull())
+                    return res;
+            }
         }
     }
     else if (isDynamic(type))
@@ -822,12 +830,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
 }
 
-Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings)
+Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict)
 {
     /// TODO: implement proper tryConvertFieldToType without try/catch by adding template flag to convertFieldToTypeImpl to not throw an exception.
     try
     {
-        return convertFieldToType(from_value, to_type, from_type_hint, format_settings);
+        return convertFieldToType(from_value, to_type, from_type_hint, format_settings, strict);
     }
     catch (...) // Ok: tryConvertFieldToType is a try-pattern
     {

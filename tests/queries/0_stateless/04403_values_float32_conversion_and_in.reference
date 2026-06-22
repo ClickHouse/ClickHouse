@@ -23,3 +23,6 @@
 -- same IN result without the analyzer
 0
 1
+-- conversion to a Variant prefers a lossless alternative, falling back to lossy only when needed
+[[9223372036854775807,-9223372036854775808],[0.9999,7]]
+[[0.1,0.2]]
