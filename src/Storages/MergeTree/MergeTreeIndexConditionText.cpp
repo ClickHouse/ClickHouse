@@ -547,12 +547,16 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringToTokens(con
     {
         tokenizer->stringToTokens(raw.data(), raw.size(), tokens);
     }
-    /// Apply the postprocessor BEFORE compaction. Compacting first is unsound for sparseGrams: it drops a
-    /// shorter gram covered by a longer one, but the postprocessor can map those two grams to different
-    /// tokens, so the dropped token would be absent from the lookup set (under-checking -> false
-    /// positives). Postprocessing first lets compactTokens operate on the final tokens.
+    /// Containment-based compaction (sparseGrams drops a shorter gram covered by a longer one) relies on the
+    /// index guaranteeing that a document holding the longer gram also holds the shorter one. A postprocessor
+    /// maps each token independently, breaking that guarantee, so dropping the shorter gram would under-check
+    /// and yield false positives in Exact direct read. Deduplicate only; plain dedup is always sound.
     if (has_postprocessor)
+    {
         tokens = postprocessor->processTokens(std::move(tokens));
+        std::unordered_set<String> unique_tokens(tokens.begin(), tokens.end());
+        return VectorWithMemoryTracking<String>(unique_tokens.begin(), unique_tokens.end());
+    }
     return tokenizer->compactTokens(tokens);
 }
 

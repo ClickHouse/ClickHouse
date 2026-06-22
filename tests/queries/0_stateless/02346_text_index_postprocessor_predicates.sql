@@ -265,4 +265,26 @@ SELECT count() FROM tab WHERE mapContainsValue(val, 'foo');   -- 0
 
 DROP TABLE tab;
 
+SELECT '11. sparseGrams + postprocessor: needle compaction stays sound (no false positives in Exact direct read).';
+-- sparseGrams compaction drops a shorter gram covered by a longer one, relying on the index guaranteeing
+-- that a document with the longer gram also has the shorter one. A length-changing postprocessor (here:
+-- vowel removal) breaks that invariant, so the hasAllTokens lookup must require every postprocessed needle
+-- token, not just the longest. Needle 'utfub' -> grams {utf,tfu,fub,tfub,utfub} -> postprocessed {tf,fb,tfb}.
+-- 'tf' and 'fb' are substrings of 'tfb', so unsound compaction would require only 'tfb' and over-match.
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
+ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = sparseGrams(3, 5), postprocessor = replaceRegexpAll(val, '[aeiou]', ''));
+
+-- Postprocessed token sets: 'etfb' -> {tf,tfb}, 'fbtfb' -> {fbt,btf,fbtf,tfb,fbtfb}, 'tafabu' -> {tf,f,fb,b}.
+-- None contains all of {tf,fb,tfb}, so no row satisfies hasAllTokens(val, 'utfub').
+INSERT INTO tab VALUES (1, 'etfb'), (2, 'fbtfb'), (3, 'tafabu');
+
+SET use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+
+-- 'etfb' lacks 'fb', 'fbtfb' lacks 'tf'/'fb', 'tafabu' lacks 'tfb' -> 0 (unsound compaction returns 2).
+SELECT count() FROM tab WHERE hasAllTokens(val, 'utfub');   -- 0
+-- Control: needle 'etf' -> {tf}; 'etfb' and 'tafabu' contain 'tf', 'fbtfb' does not -> 2.
+SELECT count() FROM tab WHERE hasAllTokens(val, 'etf');     -- 2
+
 DROP TABLE IF EXISTS tab;

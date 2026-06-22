@@ -598,9 +598,9 @@ private:
                 VectorWithMemoryTracking<String> needles_array;
                 const auto & needles_string = needles_field.safeGet<String>();
                 tokenizer->stringToTokens(needles_string.data(), needles_string.size(), needles_array);
-                /// Skip compaction when a postprocessor is configured: it is applied to these needle
-                /// tokens below, and compacting before postprocessing is unsound for sparseGrams (it can
-                /// drop a shorter gram covered by a longer one that maps to a different postprocessed token).
+                /// Skip tokenizer-specific compaction when a postprocessor is configured: these needle tokens
+                /// are postprocessed and deduplicated below instead, because sparseGrams containment
+                /// compaction is unsound after a postprocessor (it can drop a required token).
                 if (!has_postprocessor)
                     needles_array = tokenizer->compactTokens(needles_array);
                 needles_field = Array(needles_array.begin(), needles_array.end());
@@ -668,11 +668,12 @@ private:
                 for (const Field & element : src_array)
                     if (element.getType() == Field::Types::String)
                         tokens.push_back(element.safeGet<String>());
-                /// Postprocess, then compact (compacting before postprocessing was skipped above): this
-                /// keeps the lookup set minimal while staying sound for sparseGrams.
+                /// Postprocess, then deduplicate. Do not run tokenizer-specific compaction: sparseGrams
+                /// containment compaction is unsound after a postprocessor (see stringToTokens) and could
+                /// drop a required token, disagreeing with the materialized index.
                 tokens = postprocessor->processTokens(std::move(tokens));
-                tokens = tokenizer->compactTokens(tokens);
-                needles_field = Array(tokens.begin(), tokens.end());
+                std::unordered_set<String> unique_tokens(tokens.begin(), tokens.end());
+                needles_field = Array(unique_tokens.begin(), unique_tokens.end());
                 needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
             }
         }

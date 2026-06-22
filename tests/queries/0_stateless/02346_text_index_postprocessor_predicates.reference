@@ -57,3 +57,6 @@
 1
 1
 0
+11. sparseGrams + postprocessor: needle compaction stays sound (no false positives in Exact direct read).
+0
+2
