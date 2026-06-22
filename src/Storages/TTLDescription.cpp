@@ -89,14 +89,22 @@ void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expres
     if (!has_aggregate_function_columns)
         return;
 
+    /// Rebuild the actions with short-circuit evaluation disabled. Otherwise lazy branches of
+    /// functions like `if`/`multiIf` are stored as unevaluated `ColumnFunction`s and only the branch
+    /// selected by the synthetic validation row is reduced, so an unsupported AggregateFunction
+    /// consumer in a not-taken branch would slip through and fail later during TTL execution.
+    auto settings = expression->getSettings();
+    settings.short_circuit_function_evaluation = ShortCircuitFunctionEvaluation::DISABLE;
+    ExpressionActions validation_actions(expression->getActionsDAG().clone(), settings);
+
     Block check_block;
-    for (const auto & col : expression->getRequiredColumnsWithTypes())
+    for (const auto & col : validation_actions.getRequiredColumnsWithTypes())
         check_block.insert(ColumnWithTypeAndName(
             col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(), col.type, col.name));
 
     try
     {
-        expression->execute(check_block, /*dry_run=*/ true);
+        validation_actions.execute(check_block, /*dry_run=*/ true);
     }
     catch (Exception & e)
     {

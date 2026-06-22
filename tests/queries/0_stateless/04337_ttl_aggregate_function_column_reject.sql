@@ -118,8 +118,7 @@ TTL d + INTERVAL 1 DAY;
 DROP TABLE test_ttl_agg_tuple_not_referenced;
 
 -- Non-type errors raised while dry-running the AggregateFunction validation must be propagated to
--- the user, not swallowed: here the synthetic aggregate state finalizes to 0, so intDiv divides by
--- zero. Only ILLEGAL_TYPE_OF_ARGUMENT is translated to BAD_TTL_EXPRESSION; everything else is rethrown.
+-- the user.Only ILLEGAL_TYPE_OF_ARGUMENT is translated to BAD_TTL_EXPRESSION; everything else is rethrown.
 CREATE TABLE test_ttl_agg_divzero
 (
     ts AggregateFunction(sum, UInt32)
@@ -127,6 +126,18 @@ CREATE TABLE test_ttl_agg_divzero
 ENGINE = MergeTree()
 ORDER BY tuple()
 TTL toDateTime(intDiv(toUInt32(100), finalizeAggregation(ts))) + INTERVAL 1 DAY; -- { serverError ILLEGAL_DIVISION }
+
+-- Short-circuit branch: an unsupported AggregateFunction consumer hidden in a not-taken if/multiIf
+-- branch must still be rejected. With short-circuit evaluation the synthetic validation row (cond = 0)
+-- would skip the toDateTime(ts) branch, so validation must run with short-circuit disabled.
+CREATE TABLE test_ttl_agg_if_branch
+(
+    cond UInt8,
+    ts AggregateFunction(max, DateTime64(3))
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL if(cond, toDateTime(ts), toDateTime(finalizeAggregation(ts))) + INTERVAL 1 DAY; -- { serverError BAD_TTL_EXPRESSION }
 
 -- Valid: finalizeAggregation can operate on AggregateFunction states
 CREATE TABLE test_ttl_agg_finalize
