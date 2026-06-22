@@ -5,7 +5,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <base/find_symbols.h>
+#include <Common/memcpySmall.h>
 
 #include <array>
 
@@ -81,26 +81,25 @@ public:
             custom_trim_characters = table;
         }
 
-        ColumnPtr col_input_full;
-        col_input_full = arguments[0].column->convertToFullColumnIfConst();
+        ColumnPtr col_input_full = arguments[0].column->convertToFullColumnIfConst();
 
         auto col_res = ColumnString::create();
         if (const ColumnString * col_input_string = checkAndGetColumn<ColumnString>(col_input_full.get()))
         {
-            vector(
-                col_input_string->getChars(), col_input_string->getOffsets(),
-                custom_trim_characters,
-                col_res->getChars(), col_res->getOffsets(),
-                input_rows_count);
+            if (custom_trim_characters)
+                vectorCustom(
+                    col_input_string->getChars(), col_input_string->getOffsets(), *custom_trim_characters,
+                    col_res->getChars(), col_res->getOffsets(), input_rows_count);
+            else
+                vectorSpace(
+                    col_input_string->getChars(), col_input_string->getOffsets(),
+                    col_res->getChars(), col_res->getOffsets(), input_rows_count);
         }
         else if (const ColumnFixedString * col_input_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input_full.get()))
         {
             vectorFixed(
-                col_input_fixed_string->getChars(), col_input_fixed_string->getN(),
-                custom_trim_characters,
-                col_res->getChars(),
-                col_res->getOffsets(),
-                input_rows_count);
+                col_input_fixed_string->getChars(), col_input_fixed_string->getN(), custom_trim_characters,
+                col_res->getChars(), col_res->getOffsets(), input_rows_count);
         }
         else
         {
@@ -116,11 +115,13 @@ private:
     const bool trim_left;
     const bool trim_right;
 
-    template <bool do_trim_left, bool do_trim_right>
-    void vectorImpl(
+    /// Default trim: strip only ASCII spaces. The hot path (e.g. ltrim of decimal
+    /// strings) has no leading space, so a scalar first-byte check beats the SIMD
+    /// symbol scan for short strings. Output capacity is reserved once up front and
+    /// the final size is set after the loop, so there is no per-row reallocation.
+    void vectorSpace(
         const ColumnString::Chars & input_data,
         const ColumnString::Offsets & input_offsets,
-        const std::optional<TrimCharsTable> & custom_trim_characters,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count) const
@@ -128,44 +129,41 @@ private:
         res_offsets.resize_exact(input_rows_count);
         res_data.reserve_exact(input_data.size());
 
+        const bool do_trim_left = trim_left;
+        const bool do_trim_right = trim_right;
+
+        UInt8 * res_begin = res_data.data();
         size_t prev_offset = 0;
         size_t res_offset = 0;
-
-        const UInt8 * start = nullptr;
-        size_t length = 0;
-
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            executeImpl<do_trim_left, do_trim_right>(reinterpret_cast<const UInt8 *>(&input_data[prev_offset]), input_offsets[i] - prev_offset, custom_trim_characters, start, length);
+            const UInt8 * begin = input_data.data() + prev_offset;
+            const UInt8 * end = input_data.data() + input_offsets[i];
 
-            res_data.resize(res_data.size() + length);
-            memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], start, length);
+            if (do_trim_left)
+                while (begin < end && *begin == ' ')
+                    ++begin;
+            if (do_trim_right)
+                while (end > begin && end[-1] == ' ')
+                    --end;
+
+            const size_t length = end - begin;
+            memcpySmallAllowReadWriteOverflow15(res_begin + res_offset, begin, length);
             res_offset += length;
 
             res_offsets[i] = res_offset;
             prev_offset = input_offsets[i];
         }
+
+        res_data.resize_exact(res_offset);
     }
 
-    void vector(
+    /// Custom trim character set. Same allocate-once skeleton as vectorSpace, with
+    /// O(1) table lookups instead of a space comparison.
+    void vectorCustom(
         const ColumnString::Chars & input_data,
         const ColumnString::Offsets & input_offsets,
-        const std::optional<TrimCharsTable> & custom_trim_characters,
-        ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets,
-        size_t input_rows_count) const
-    {
-        dispatch([&](auto trim_left_v, auto trim_right_v)
-        {
-            vectorImpl<trim_left_v, trim_right_v>(input_data, input_offsets, custom_trim_characters, res_data, res_offsets, input_rows_count);
-        });
-    }
-
-    template <bool do_trim_left, bool do_trim_right>
-    void vectorFixedImpl(
-        const ColumnString::Chars & input_data,
-        size_t n,
-        const std::optional<TrimCharsTable> & custom_trim_characters,
+        const TrimCharsTable & table,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count) const
@@ -173,23 +171,33 @@ private:
         res_offsets.resize_exact(input_rows_count);
         res_data.reserve_exact(input_data.size());
 
+        const bool do_trim_left = trim_left;
+        const bool do_trim_right = trim_right;
+
+        UInt8 * res_begin = res_data.data();
         size_t prev_offset = 0;
         size_t res_offset = 0;
-
-        const UInt8 * start = nullptr;
-        size_t length = 0;
-
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            executeImpl<do_trim_left, do_trim_right>(reinterpret_cast<const UInt8 *>(&input_data[prev_offset]), n, custom_trim_characters, start, length);
+            const UInt8 * begin = input_data.data() + prev_offset;
+            const UInt8 * end = input_data.data() + input_offsets[i];
 
-            res_data.resize(res_data.size() + length);
-            memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], start, length);
+            if (do_trim_left)
+                while (begin < end && table[*begin])
+                    ++begin;
+            if (do_trim_right)
+                while (end > begin && table[end[-1]])
+                    --end;
+
+            const size_t length = end - begin;
+            memcpySmallAllowReadWriteOverflow15(res_begin + res_offset, begin, length);
             res_offset += length;
 
             res_offsets[i] = res_offset;
-            prev_offset += n;
+            prev_offset = input_offsets[i];
         }
+
+        res_data.resize_exact(res_offset);
     }
 
     void vectorFixed(
@@ -200,58 +208,49 @@ private:
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count) const
     {
-        dispatch([&](auto trim_left_v, auto trim_right_v)
-        {
-            vectorFixedImpl<trim_left_v, trim_right_v>(input_data, n, custom_trim_characters, res_data, res_offsets, input_rows_count);
-        });
-    }
+        res_offsets.resize_exact(input_rows_count);
+        res_data.reserve_exact(input_data.size());
 
-    template <bool do_trim_left, bool do_trim_right>
-    static void executeImpl(const UInt8 * data, size_t size, const std::optional<TrimCharsTable> & custom_trim_characters, const UInt8 *& res_data, size_t & res_size)
-    {
-        const char * char_begin = reinterpret_cast<const char *>(data);
-        const char * char_end = char_begin + size;
+        const bool do_trim_left = trim_left;
+        const bool do_trim_right = trim_right;
 
-        if constexpr (do_trim_left)
+        UInt8 * res_begin = res_data.data();
+        size_t prev_offset = 0;
+        size_t res_offset = 0;
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
-            if (!custom_trim_characters)
-                char_begin = find_first_not_symbols<' '>(char_begin, char_end);
-            else
+            const UInt8 * begin = input_data.data() + prev_offset;
+            const UInt8 * end = begin + n;
+
+            if (custom_trim_characters)
             {
                 const TrimCharsTable & table = *custom_trim_characters;
-                while (char_begin < char_end && table[static_cast<UInt8>(*char_begin)])
-                    ++char_begin;
-            }
-        }
-        if constexpr (do_trim_right)
-        {
-            if (!custom_trim_characters)
-            {
-                const char * found = find_last_not_symbols_or_null<' '>(char_begin, char_end);
-                char_end = found ? found + 1 : char_begin;
+                if (do_trim_left)
+                    while (begin < end && table[*begin])
+                        ++begin;
+                if (do_trim_right)
+                    while (end > begin && table[end[-1]])
+                        --end;
             }
             else
             {
-                const TrimCharsTable & table = *custom_trim_characters;
-                while (char_end > char_begin && table[static_cast<UInt8>(char_end[-1])])
-                    --char_end;
+                if (do_trim_left)
+                    while (begin < end && *begin == ' ')
+                        ++begin;
+                if (do_trim_right)
+                    while (end > begin && end[-1] == ' ')
+                        --end;
             }
+
+            const size_t length = end - begin;
+            memcpySmallAllowReadWriteOverflow15(res_begin + res_offset, begin, length);
+            res_offset += length;
+
+            res_offsets[i] = res_offset;
+            prev_offset += n;
         }
 
-        res_data = reinterpret_cast<const UInt8 *>(char_begin);
-        res_size = char_end - char_begin;
-    }
-
-    /// Dispatch runtime trim_left/trim_right to compile-time template parameters
-    template <typename Func>
-    void dispatch(Func && func) const
-    {
-        if (trim_left && trim_right)
-            func(std::bool_constant<true>{}, std::bool_constant<true>{});
-        else if (trim_left)
-            func(std::bool_constant<true>{}, std::bool_constant<false>{});
-        else
-            func(std::bool_constant<false>{}, std::bool_constant<true>{});
+        res_data.resize_exact(res_offset);
     }
 };
 
