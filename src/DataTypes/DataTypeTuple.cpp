@@ -479,6 +479,12 @@ static DataTypePtr create(const ASTPtr & arguments)
     {
         if (const auto * name_and_type_pair = child->as<ASTNameTypePair>())
         {
+            if (name_and_type_pair->default_expression)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Data type Tuple cannot have a DEFAULT expression for element '{}'. "
+                    "DEFAULT inside a data type is only allowed in a column declaration, "
+                    "where it is pulled up to the column level.",
+                    name_and_type_pair->name);
             nested_types.emplace_back(DataTypeFactory::instance().get(name_and_type_pair->type));
             names.emplace_back(name_and_type_pair->name);
         }

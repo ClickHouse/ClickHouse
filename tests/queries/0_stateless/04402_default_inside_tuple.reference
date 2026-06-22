@@ -1,0 +1,15 @@
+-- basic
+c	Tuple(a UInt8, s String)	DEFAULT	tuple(defaultValueOfTypeName(\'UInt8\'), \'Hello\')
+id	UInt8		
+1	(0,'Hello')
+-- nested tuple
+Tuple(a UInt8, t Tuple(x String, y UInt8))	tuple(defaultValueOfTypeName(\'UInt8\'), tuple(\'q\', defaultValueOfTypeName(\'UInt8\')))
+1	(5,('z',1))
+2	(0,('q',0))
+-- default referencing a column
+Tuple(a UInt8, s String)	tuple(x, defaultValueOfTypeName(\'String\'))
+(7,'')
+-- constant expression default
+Tuple(a UInt8, s String)	tuple(1 + 2, upper(\'hi\'))
+(3,'HI')
+-- errors

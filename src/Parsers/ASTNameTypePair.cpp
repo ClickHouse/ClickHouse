@@ -17,6 +17,12 @@ ASTPtr ASTNameTypePair::clone() const
         res->children.push_back(res->type);
     }
 
+    if (default_expression)
+    {
+        res->default_expression = default_expression->clone();
+        res->children.push_back(res->default_expression);
+    }
+
     return res;
 }
 
@@ -25,6 +31,12 @@ void ASTNameTypePair::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
 {
     ostr << backQuoteIfNeed(name) << ' ';
     type->format(ostr, settings, state, frame);
+
+    if (default_expression)
+    {
+        ostr << " DEFAULT ";
+        default_expression->format(ostr, settings, state, frame);
+    }
 }
 
 }
