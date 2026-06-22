@@ -736,6 +736,83 @@ INSERT INTO test SELECT randomString(200);
     assert elements <= expected
 
 
+def test_keep_up_size_ratio_parallel_eviction(cluster):
+    # Regression test for the parallel background eviction path:
+    # a small remove batch with several remover threads forces the single collector
+    # to hand many batches to multiple removers and finalize them as they come back.
+    node = cluster.instances["node"]
+    max_elements = 200
+    cache_name = "keep_up_size_ratio_parallel"
+    node.query(
+        f"""
+DROP TABLE IF EXISTS test_parallel_eviction;
+
+CREATE TABLE test_parallel_eviction (a String)
+ENGINE = MergeTree() ORDER BY tuple()
+SETTINGS disk = disk(type = cache,
+            name = {cache_name},
+            max_size = '100Ki',
+            max_elements = {max_elements},
+            max_file_segment_size = 10,
+            boundary_alignment = 10,
+            path = "test_keep_up_size_ratio_parallel",
+            keep_free_space_size_ratio = 0.5,
+            keep_free_space_elements_ratio = 0.5,
+            keep_free_space_remove_batch = 2,
+            keep_free_space_eviction_threads = 3,
+            disk = hdd_blob),
+        min_bytes_for_wide_part = 10485760;
+    """
+    )
+
+    wait_for_cache_initialized(node, "test_keep_up_size_ratio_parallel")
+
+    node.query(
+        "INSERT INTO test_parallel_eviction SELECT randomString(200) FROM numbers(50);"
+    )
+
+    # Fill the cache well above max_elements so background keeping has to evict
+    # many small file segments in many batches.
+    query_id = "test_keep_up_size_ratio_parallel_1"
+    node.query(
+        "SELECT * FROM test_parallel_eviction FORMAT Null SETTINGS enable_filesystem_cache_log = 1",
+        query_id=query_id,
+    )
+    count = int(
+        node.query(
+            """
+    SYSTEM FLUSH LOGS;
+    SELECT uniqExact(concat(key, toString(offset)))
+    FROM system.filesystem_cache_log
+    WHERE read_type = 'READ_FROM_FS_AND_DOWNLOADED_TO_CACHE';
+    """
+        )
+    )
+    assert count > max_elements
+
+    # keep_free_space_*_ratio = 0.5 over max_elements = 200 -> converge to ~100.
+    expected = max_elements // 2
+    for _ in range(100):
+        elements = int(
+            node.query(
+                f"SELECT count() FROM system.filesystem_cache WHERE cache_name = '{cache_name}'"
+            )
+        )
+        if elements <= expected:
+            break
+        time.sleep(1)
+    assert elements <= expected
+
+    # The data must stay fully readable after parallel eviction + finalization:
+    # the cached read must return exactly what a cache-bypassing read returns.
+    assert int(node.query("SELECT count() FROM test_parallel_eviction")) == 50
+    assert node.query(
+        "SELECT sum(cityHash64(a)) FROM test_parallel_eviction"
+    ) == node.query(
+        "SELECT sum(cityHash64(a)) FROM test_parallel_eviction SETTINGS enable_filesystem_cache = 0"
+    )
+
+
 def test_proactive_invalidated_entries_cleanup(cluster):
     node = cluster.instances["node"]
     cache_name = "proactive_invalidated_cleanup"
