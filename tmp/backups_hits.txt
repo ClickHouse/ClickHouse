@@ -1,0 +1,149 @@
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupFileInfo.h:14:using BackupEntries = std::vector<std::pair<String, BackupEntryPtr>>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupFileInfo.h:79:using BackupFileInfos = std::vector<BackupFileInfo>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationReplicatedSQLObjects.h:50:        std::unordered_set<String> dir_paths;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationReplicatedSQLObjects.h:54:    std::map<ZkPathAndObjectType, DirPathsAndHost> dir_paths_by_zk_path;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupStatus.h:33:const std::vector<std::pair<String, Int8>> & getBackupStatusEnumValues();
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupStatus.h:41:const std::vector<std::pair<String, Int8>> & getSnapshotLockStatusEnumValues();
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/RestoreSettings.h:162:    std::vector<Strings> cluster_host_ids;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupMetadataFinder.cpp:70:        std::vector<std::future<void>> futures_to_wait;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupMetadataFinder.cpp:333:    const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names)
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupMetadataFinder.cpp:341:    const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names)
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupMetadataFinder.cpp:344:    std::unordered_set<String> table_names_in_backup;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupMetadataFinder.cpp:420:    const std::set<String> & except_database_names, const std::set<DatabaseAndTableName> & except_table_names)
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupMetadataFinder.cpp:422:    std::unordered_set<String> database_names_in_backup;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationReplicatedTables.h:46:        std::vector<PartNameAndChecksum> part_names_and_checksums;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationReplicatedTables.h:67:        std::vector<MutationInfo> mutations;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationReplicatedTables.h:74:    std::vector<MutationInfo> getMutations(const String & table_zk_path, const String & replica_name) const;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationReplicatedTables.h:97:        std::vector<std::shared_ptr<const String>> replica_names;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationReplicatedTables.h:104:        std::map<String /* part_name */, PartReplicas> replicas_by_part_name; /// Should be ordered because we need this map to be in the same order on every replica.
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationReplicatedTables.h:105:        mutable std::unordered_map<String /* replica_name> */, Strings> part_names_by_replica_name;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationReplicatedTables.h:107:        mutable std::unordered_map<String, String> mutations;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationReplicatedTables.h:109:        std::unordered_set<String> data_paths;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationReplicatedTables.h:112:    std::map<String /* table_zk_path */, TableInfo> table_infos; /// Should be ordered because we need this map to be in the same order on every replica.
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupIO_S3.h:38:    std::unordered_map<std::string, Entry> clients TSA_GUARDED_BY(clients_mutex);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupFactory.h:67:    std::unordered_map<String, CreatorFn> creators;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationOnCluster.cpp:33:        std::vector<PartNameAndChecksum> part_names_and_checksums;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationOnCluster.cpp:36:        static String serialize(const std::vector<PartNameAndChecksum> & part_names_and_checksums_, const String & table_name_for_logs_)
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationOnCluster.cpp:68:        std::vector<MutationInfo> mutations;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationOnCluster.cpp:71:        static String serialize(const std::vector<MutationInfo> & mutations_, const String & table_name_for_logs_)
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationOnCluster.cpp:365:    const std::vector<PartNameAndChecksum> & part_names_and_checksums)
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationOnCluster.cpp:396:    const std::vector<MutationInfo> & mutations)
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationOnCluster.cpp:416:std::vector<IBackupCoordination::MutationInfo> BackupCoordinationOnCluster::getReplicatedMutations(const String & table_zk_path, const String & replica_name) const
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationOnCluster.cpp:459:    std::vector<BackupCoordinationReplicatedTables::PartNamesForTableReplica> part_names_for_replicated_tables;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationOnCluster.cpp:484:    std::vector<BackupCoordinationReplicatedTables::MutationsForTableReplica> mutations_for_replicated_tables;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationOnCluster.cpp:509:    std::vector<BackupCoordinationReplicatedTables::DataPathForTableReplica> data_paths_for_replicated_tables;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationOnCluster.cpp:577:    std::vector<BackupCoordinationReplicatedAccess::FilePathForAccessEntity> file_path_for_access_entities;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationOnCluster.cpp:652:    std::vector<BackupCoordinationReplicatedSQLObjects::DirectoryPathForSQLObject> directories_for_sql_objects;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationOnCluster.cpp:709:    std::vector<std::pair<std::string, BackupCoordinationKeeperMapTables::KeeperMapTableInfo>> keeper_map_table_infos;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationOnCluster.cpp:734:            std::vector<std::string> data;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupsInMemoryHolder.h:26:    std::unordered_map<String, std::shared_ptr<BackupInMemory>> backups TSA_GUARDED_BY(mutex);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupConcurrencyCheck.h:51:    std::unordered_map<String /* zookeeper_path */, size_t /* num_refs */> on_cluster_backups TSA_GUARDED_BY(mutex);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupConcurrencyCheck.h:52:    std::unordered_map<String /* zookeeper_path */, size_t /* num_refs */> on_cluster_restores TSA_GUARDED_BY(mutex);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupInfo.h:16:    std::vector<Field> args;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupSettings.h:123:    std::vector<Strings> cluster_host_ids;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupSettings.h:147:        static std::vector<Strings> clusterHostIDsFromAST(const IAST & ast);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupSettings.h:148:        static ASTPtr clusterHostIDsToAST(const std::vector<Strings> & cluster_host_ids);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupSettings.h:149:        static std::pair<size_t, size_t> findShardNumAndReplicaNum(const std::vector<Strings> & cluster_host_ids, const String & host_id);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupSettings.h:150:        static Strings filterHostIDs(const std::vector<Strings> & cluster_host_ids, size_t only_shard_num, size_t only_replica_num);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupImpl.h:152:    std::map<String /* file_name */, SizeAndChecksum> file_names TSA_GUARDED_BY(mutex); /// Should be ordered alphabetically, see listFiles(). For empty files we assume checksum = 0.
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupImpl.h:153:    std::map<SizeAndChecksum, BackupFileInfo> file_infos TSA_GUARDED_BY(mutex); /// Information about files. Without empty files.
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupImpl.h:155:    std::unordered_map<String, String> file_object_keys TSA_GUARDED_BY(mutex);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupImpl.h:156:    std::unordered_map<String, BackupFileInfo> lightweight_snapshot_file_infos TSA_GUARDED_BY(mutex);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationStageSync.h:198:        std::map<String /* stage */, String /* result */> stages = {}; /// std::map because we need to compare states
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationStageSync.h:214:        std::map<String /* host */, HostInfo> hosts; /// std::map because we need to compare states
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationKeeperMapTables.h:20:    std::unordered_map<std::string /* root zookeeper path */, KeeperMapTableInfo> tables_with_info;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/IBackupEntry.h:64:using BackupEntries = std::vector<std::pair<String, BackupEntryPtr>>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupSettings.cpp:163:std::vector<Strings> BackupSettings::Util::clusterHostIDsFromAST(const IAST & ast)
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupSettings.cpp:165:    std::vector<Strings> res;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupSettings.cpp:229:ASTPtr BackupSettings::Util::clusterHostIDsToAST(const std::vector<Strings> & cluster_host_ids)
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupSettings.cpp:256:std::pair<size_t, size_t> BackupSettings::Util::findShardNumAndReplicaNum(const std::vector<Strings> & cluster_host_ids, const String & host_id)
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupSettings.cpp:269:Strings BackupSettings::Util::filterHostIDs(const std::vector<Strings> & cluster_host_ids, size_t only_shard_num, size_t only_replica_num)
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationStageSync.cpp:1060:    std::vector<std::pair<size_t, String>> non_existent_node_pos;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationReplicatedAccess.h:50:        std::set<String> file_paths;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationReplicatedAccess.h:54:    std::map<ZkPathAndEntityType, FilePathsAndHost> file_paths_by_zk_path;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupInMemory.h:41:    std::unordered_map<String, String> files TSA_GUARDED_BY(mutex);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/IBackupCoordination.h:10:using BackupFileInfos = std::vector<BackupFileInfo>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/IBackupCoordination.h:67:                                        const std::vector<PartNameAndChecksum> & part_names_and_checksums) = 0;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/IBackupCoordination.h:81:    virtual void addReplicatedMutations(const String & table_zk_path, const String & table_name_for_logs, const String & replica_name, const std::vector<MutationInfo> & mutations) = 0;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/IBackupCoordination.h:84:    virtual std::vector<MutationInfo> getReplicatedMutations(const String & table_zk_path, const String & replica_name) const = 0;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/RestorerFromBackup.h:51:    using DataRestoreTasks = std::vector<DataRestoreTask>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/RestorerFromBackup.h:102:    void createAndCheckTablesWithSameDependencyLevel(const std::vector<StorageID> & table_ids);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/RestorerFromBackup.h:123:    std::vector<DataRestoreTask> data_restore_tasks TSA_GUARDED_BY(mutex);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/RestorerFromBackup.h:128:    std::unordered_set<String> skipped_databases TSA_GUARDED_BY(mutex);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationLocal.h:45:                                const std::vector<PartNameAndChecksum> & part_names_and_checksums) override;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationLocal.h:49:                                const std::vector<MutationInfo> & mutations) override;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationLocal.h:50:    std::vector<MutationInfo> getReplicatedMutations(const String & table_zk_path, const String & replica_name) const override;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationLocal.h:80:    std::unordered_set<size_t> writing_files TSA_GUARDED_BY(writing_files_mutex);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupsWorker.h:29:using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBackupEntry>>>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupsWorker.h:31:using DataRestoreTasks = std::vector<std::function<void()>>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupsWorker.h:76:    std::vector<BackupOperationInfo> getAllInfos() const;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupsWorker.h:172:    std::unordered_map<BackupOperationID, ExtendedOperationInfo> infos;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupEntriesCollector.cpp:440:    const std::set<DatabaseAndTableName> & except_table_names)
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupEntriesCollector.cpp:536:    std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> rmv_replace_target_ids;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupEntriesCollector.cpp:540:        std::vector<std::pair<ASTPtr, StoragePtr>> db_tables = findTablesInDatabase(database_name);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupEntriesCollector.cpp:609:std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInDatabase(const String & database_name) const
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupEntriesCollector.cpp:630:    std::vector<std::pair<ASTPtr, StoragePtr>> db_tables;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupEntriesCollector.cpp:644:    std::unordered_set<String> found_table_names;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupEntriesCollector.cpp:713:    std::vector<std::pair<String, String>> databases_metadata;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupEntriesCollector.cpp:714:    std::vector<std::pair<QualifiedTableName, String>> tables_metadata;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupEntriesCollector.cpp:887:    const std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> & rmv_replace_target_ids) const
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupEntriesCollector.cpp:965:std::unordered_map<UUID, AccessEntityPtr> BackupEntriesCollector::getAllAccessEntities()
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupEntriesCollector.h:20:using BackupEntries = std::vector<std::pair<String, BackupEntryPtr>>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupEntriesCollector.h:57:    std::unordered_map<UUID, AccessEntityPtr> getAllAccessEntities();
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupEntriesCollector.h:89:        const std::set<DatabaseAndTableName> & except_table_names);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupEntriesCollector.h:92:    std::vector<std::pair<ASTPtr, StoragePtr>> findTablesInDatabase(const String & database_name) const;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupEntriesCollector.h:103:        const std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> & rmv_replace_target_ids) const;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupEntriesCollector.h:158:        std::unordered_map<String, TableParams> tables;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupEntriesCollector.h:161:        std::unordered_set<String> except_table_names;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupEntriesCollector.h:181:    std::unordered_map<String, DatabaseInfo> database_infos;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupEntriesCollector.h:182:    std::unordered_map<QualifiedTableName, TableInfo> table_infos;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupEntriesCollector.h:183:    std::vector<std::pair<String, String>> previous_databases_metadata;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupEntriesCollector.h:184:    std::vector<std::pair<QualifiedTableName, String>> previous_tables_metadata;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupEntriesCollector.h:186:    std::optional<std::unordered_map<UUID, AccessEntityPtr>> all_access_entities;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupEntriesCollector.h:189:    std::queue<std::function<void()>> post_tasks;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupEntryWrappedWith.h:45:void wrapBackupEntriesWith(std::vector<std::pair<String, BackupEntryPtr>> & backup_entries, const T & custom_value)
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationFileInfos.cpp:97:    std::vector<BackupFileInfo *> unresolved_references;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationFileInfos.cpp:98:    std::unordered_map<std::string_view, BackupFileInfo *> file_name_to_info;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationFileInfos.cpp:171:        std::map<SizeAndChecksum, size_t> data_file_index_by_checksum;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationLocal.cpp:30:void BackupCoordinationLocal::addReplicatedPartNames(const String & table_zk_path, const String & table_name_for_logs, const String & replica_name, const std::vector<PartNameAndChecksum> & part_names_and_checksums)
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationLocal.cpp:43:void BackupCoordinationLocal::addReplicatedMutations(const String & table_zk_path, const String & table_name_for_logs, const String & replica_name, const std::vector<MutationInfo> & mutations)
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationLocal.cpp:49:std::vector<IBackupCoordination::MutationInfo> BackupCoordinationLocal::getReplicatedMutations(const String & table_zk_path, const String & replica_name) const
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationReplicatedTables.cpp:147:    using Parts = std::map<Int64 /* max_block */, PartInfo>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationReplicatedTables.cpp:148:    std::unordered_map<String, Parts> partitions;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationReplicatedTables.cpp:242:std::vector<MutationInfo>
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationReplicatedTables.cpp:255:    std::vector<MutationInfo> res;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupsWorker.cpp:329:    std::map<ThreadPoolId, std::unique_ptr<ThreadPool>> thread_pools TSA_GUARDED_BY(mutex);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupsWorker.cpp:776:    std::vector<size_t> writing_order;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupsWorker.cpp:1378:    std::vector<OperationID> current_operations;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupsWorker.cpp:1429:    std::vector<OperationID> current_operations;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupsWorker.cpp:1462:std::vector<BackupOperationInfo> BackupsWorker::getAllInfos() const
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupsWorker.cpp:1464:    std::vector<BackupOperationInfo> res_infos;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/RestoreCoordinationLocal.h:66:    std::set<std::pair<String /* database_zk_path */, String /* table_name */>> acquired_tables_in_replicated_databases TSA_GUARDED_BY(mutex);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/RestoreCoordinationLocal.h:67:    std::unordered_set<String /* table_zk_path */> acquired_data_in_replicated_tables TSA_GUARDED_BY(mutex);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/RestoreCoordinationLocal.h:68:    std::unordered_map<String, CreateQueryUUIDs> create_query_uuids TSA_GUARDED_BY(mutex);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/RestoreCoordinationLocal.h:69:    std::unordered_set<String /* root_zk_path */> acquired_data_in_keeper_map_tables TSA_GUARDED_BY(mutex);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/RestoreCoordinationLocal.h:70:    std::unordered_set<String /* table_zk_path */> acquired_shared_databases;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupStatus.cpp:40:const std::vector<std::pair<String, Int8>> & getBackupStatusEnumValues()
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupStatus.cpp:42:    static const std::vector<std::pair<String, Int8>> values = []
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupStatus.cpp:44:        std::vector<std::pair<String, Int8>> res;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupStatus.cpp:52:const std::vector<std::pair<String, Int8>> & getSnapshotLockStatusEnumValues()
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupStatus.cpp:54:    static const std::vector<std::pair<String, Int8>> values = []
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupStatus.cpp:56:        std::vector<std::pair<String, Int8>> res;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/RestorerFromBackup.cpp:668:    std::vector<std::vector<StorageID>> tables_to_create;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/RestorerFromBackup.cpp:679:void RestorerFromBackup::createAndCheckTablesWithSameDependencyLevel(const std::vector<StorageID> & table_ids)
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/RestorerFromBackup.cpp:867:    std::vector<QualifiedTableName> table_names;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/RestorerFromBackup.cpp:950:        std::vector<DataRestoreTask> tasks_to_run;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/RestorerFromBackup.cpp:968:    std::vector<StoragePtr> tables;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationOnCluster.h:56:        const std::vector<PartNameAndChecksum> & part_names_and_checksums) override;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationOnCluster.h:64:        const std::vector<MutationInfo> & mutations) override;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationOnCluster.h:66:    std::vector<MutationInfo> getReplicatedMutations(const String & table_zk_path, const String & replica_name) const override;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationOnCluster.h:130:    std::unordered_set<size_t> writing_files TSA_GUARDED_BY(writing_files_mutex);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationFileInfos.h:60:    mutable std::unordered_map<String, BackupFileInfos> file_infos;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupCoordinationFileInfos.h:64:    mutable std::vector<BackupFileInfo *> file_infos_for_all_hosts;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupMetadataFinder.h:57:    void findDatabaseInBackup(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupMetadataFinder.h:58:    void findDatabaseInBackupImpl(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupMetadataFinder.h:67:    void findEverythingInBackup(const std::set<String> & except_database_names, const std::set<DatabaseAndTableName> & except_table_names);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupMetadataFinder.h:122:    std::vector<std::filesystem::path> root_paths_in_backup;
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupMetadataFinder.h:124:    std::unordered_map<String, DatabaseInfo> database_infos TSA_GUARDED_BY(mutex);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupMetadataFinder.h:125:    std::map<QualifiedTableName, TableInfo> table_infos TSA_GUARDED_BY(mutex);
+/home/ubuntu/ClickHouse-wmt_functions/src/Backups/BackupMetadataFinder.h:128:    std::vector<std::future<void>> futures TSA_GUARDED_BY(mutex);

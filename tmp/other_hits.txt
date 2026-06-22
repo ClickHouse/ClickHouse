@@ -1,0 +1,49 @@
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/array/mapOp.cpp:207:        std::map<KeyType, ValType> summing_map;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.cpp:41:        std::unordered_map<std::string_view, DataTypePtr> parameter_name_to_type;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/keyvaluepair/impl/StateHandlerImpl.h:639:        std::map<std::string_view, std::string_view> & map;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/keyvaluepair/impl/StateHandlerImpl.h:645:        explicit PairWriter(std::map<std::string_view, std::string_view> & map_)
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/FunctionNaiveBayesClassifier.cpp:50:    using Models = std::unordered_map<String, Model>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/FunctionDynamicAdaptor.cpp:360:    std::unordered_map<String, size_t> variant_indexes;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/FunctionDynamicAdaptor.cpp:366:    std::unordered_map<String, SerializationPtr> shared_variants_serializations;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/parseDateTime.cpp:70:    const std::unordered_map<String, std::pair<String, Int32>> dayOfWeekMap{
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/parseDateTime.cpp:80:    const std::unordered_map<String, std::pair<String, Int32>> monthMap{
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/UserDefined/UserDefinedSQLFunctionVisitor.h:28:    static ASTPtr tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process, ContextPtr context_);
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/UserDefined/UserDefinedSQLObjectsStorageBase.h:70:    std::unordered_map<String, ASTPtr> object_name_to_create_object_map;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/parseReadableSize.cpp:39:using ScaleFactors = std::unordered_map<std::string_view, size_t>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/parseTimeDelta.cpp:22:    const std::unordered_map<std::string_view, Float64> time_unit_to_float =
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/addressToLine.h:80:        std::unordered_map<std::string, Dwarf> dwarfs;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/UserDefined/UserDefinedWebAssembly.h:37:    std::unordered_map<String, Field> settings;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/UserDefined/UserDefinedWebAssembly.h:121:    std::unordered_map<String, RegistryEntry> registry;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/FunctionVariantAdaptor.cpp:526:    std::unordered_set<String> result_type_names;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/IFunction.h:285:        std::unordered_set<size_t> arguments_with_disabled_lazy_execution;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/keyvaluepair/impl/CHKeyValuePairExtractor.h:175:    uint64_t extract(std::string_view data, std::map<std::string_view, std::string_view> & map) const
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/JSONAllValues.cpp:113:        std::unordered_map<String, SerializationPtr> shared_serializations_cache;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/JSONAllValues.cpp:114:        std::unordered_map<String, MutableColumnPtr> shared_columns_cache;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/JSONAllValues.cpp:169:        std::unordered_map<String, SerializationPtr> & shared_serializations_cache,
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/JSONAllValues.cpp:170:        std::unordered_map<String, MutableColumnPtr> & shared_columns_cache)
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/hasPhrase.cpp:187:    static const std::unordered_set<ITokenizer::Type> supported_types = {
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/UserDefined/UserDefinedSQLFunctionVisitor.cpp:58:        std::unordered_set<std::string> udf_in_replace_process;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/UserDefined/UserDefinedSQLFunctionVisitor.cpp:74:ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process, ContextPtr context_)
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/UserDefined/UserDefinedSQLFunctionVisitor.cpp:123:    std::unordered_map<std::string, ASTPtr> identifier_name_to_function_argument;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/UserDefined/UserDefinedSQLFunctionFactory.cpp:74:        std::unordered_set<String> arguments;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/keyvaluepair/ArgumentExtractor.h:25:    using ColumnsWithTypeAndNameList = std::list<ColumnWithTypeAndName>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/UserDefined/UserDefinedSQLObjectsStorageBase.cpp:145:    std::unordered_map<String, ASTPtr> normalized_functions;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/FunctionFactory.h:72:    using Functions = std::unordered_map<std::string, Value>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/runningConcurrency.cpp:58:            std::multiset<typename ArgDataType::FieldType> ongoing_until;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/globalVariable.cpp:79:    std::unordered_map<String, TypeAndValue> global_variable_map =
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/FunctionsStringHash.cpp:398:        std::map<UInt64, BytesRef, Comp> values;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/obfuscateQuery.cpp:55:        auto names = std::make_shared<std::unordered_set<std::string>>();
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/obfuscateQuery.cpp:77:        auto names_lowercase = std::make_shared<std::unordered_set<std::string>>();
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/HMAC.cpp:40:    inline static std::map<std::string, std::set<std::string>> grouped_algorithms;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/HMAC.cpp:44:        std::map<std::string, std::set<std::string>> algorithms_map;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/HMAC.cpp:49:                auto * algos_map = static_cast<std::map<std::string, std::set<std::string>> *>(arg);
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/HMAC.cpp:74:    static const std::map<std::string, std::set<std::string>> & getGroupedAlgorithms()
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/generateSerialID.cpp:189:            std::unordered_map<std::string_view, Series, StringViewHash> series;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/UserDefined/UserDefinedWebAssembly.cpp:812:        std::unordered_set<String> values;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/UserDefined/UserDefinedWebAssembly.cpp:815:    const std::unordered_map<String, SettingDefinition> settings_def = {
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/FunctionsMiscellaneous.h:262:        std::unordered_map<std::string, DataTypePtr> arguments_map;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/FunctionsConversion.cpp:108:    std::unordered_map<String, UInt64> shared_variant_to_index;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/FunctionsConversion.cpp:747:        std::unordered_map<String, size_t> from_positions;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/FunctionsConversion.cpp:1281:    std::unordered_map<String, ColumnVariant::Discriminator> new_variant_types_to_new_global_discriminator;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/FunctionsConversion.cpp:1288:    std::unordered_map<String, ColumnVariant::Discriminator> old_variant_types_to_old_global_discriminator;
+/home/ubuntu/ClickHouse-wmt_functions/src/Functions/FunctionsConversion.cpp:1294:    std::unordered_map<ColumnVariant::Discriminator, ColumnVariant::Discriminator> old_global_discriminator_to_new;

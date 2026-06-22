@@ -1,0 +1,173 @@
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/Replication/ClusterConfiguration.h:27:    explicit ClusterConfiguration(const std::string & disk_name, std::unordered_map<Location, LocationInfo> locations_);
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/Replication/ClusterConfiguration.h:31:    std::unordered_map<Location, LocationInfo> getConfiguration() const;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/Replication/ClusterConfiguration.h:46:    std::unordered_map<Location, LocationInfo> locations TSA_GUARDED_BY(mutex);
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.cpp:94:    std::unordered_map<std::string, DirectoryRemoteInfo> remote_layout;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.cpp:167:                std::unordered_map<std::string, FileRemoteInfo> files;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.cpp:315:std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDirectory(const std::string & path) const
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.cpp:326:    std::vector<fs::path> fs_paths(paths.begin(), paths.end());
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/IO/IOUringReader.h:54:    std::deque<EnqueuedRequest> pending_requests;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/IO/IOUringReader.h:55:    std::unordered_map<UInt64, EnqueuedRequest> in_flight_requests;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/IO/IOUringReader.h:59:    using EnqueuedIterator = std::unordered_map<UInt64, EnqueuedRequest>::iterator;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.cpp:422:        std::vector<AzureBlobStorage::DeleteBlobResultDeferredResponse> responses;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.h:29:    std::unordered_map<std::string, FileRemoteInfo> files;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.h:58:    void apply(std::unordered_map<std::string, DirectoryRemoteInfo> remote_layout);
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.h:65:    std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> getSubtreeRemoteInfo(const std::string & path) const;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.h:79:    std::vector<std::string> listDirectory(const std::string & path) const;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.h:93:    std::unordered_map<std::string, std::shared_ptr<INode>> remote_path_to_inode TSA_GUARDED_BY(mutex);
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/SingleDiskVolume.h:34:using VolumesSingleDiskPtr = std::vector<VolumeSingleDiskPtr>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDiskTransactionOperations.h:117:    std::vector<std::string> paths_created;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDiskTransactionOperations.h:154:    std::unordered_set<int64_t> visited_inodes;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDiskTransactionOperations.h:155:    std::vector<std::unique_ptr<WriteFileOperation>> write_operations;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/StoragePolicy.h:96:    std::unordered_map<String, size_t> volume_index_by_volume_name;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/StoragePolicy.h:97:    std::unordered_map<String, size_t> volume_index_by_disk_name;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/StoragePolicy.h:112:using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/DiskObjectStorage.cpp:106:        [this] (const std::vector<IWorkloadEntityStorage::Event> & events)
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/DiskObjectStorage.cpp:111:            std::set<String> new_read_resource_name_from_sql;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/DiskObjectStorage.cpp:112:            std::set<String> new_write_resource_name_from_sql;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/DiskObjectStorage.cpp:113:            std::set<String> new_read_resource_name_from_sql_any;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/DiskObjectStorage.cpp:114:            std::set<String> new_write_resource_name_from_sql_any;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/DiskObjectStorage.cpp:338:std::unordered_map<String, String> DiskObjectStorage::getSerializedMetadata(const std::vector<String> & file_paths) const
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/DiskObjectStorage.cpp:429:void DiskObjectStorage::listFiles(const String & path, std::vector<String> & file_names) const
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/DiskObjectStorage.cpp:625:    std::vector<std::string> directories;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/Replication/ObjectStorageRouter.cpp:7:ObjectStorageRouter::ObjectStorageRouter(std::unordered_map<Location, ObjectStoragePtr> object_storages_)
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/Replication/ObjectStorageRouter.cpp:17:std::unordered_map<Location, ObjectStoragePtr> ObjectStorageRouter::getRegistry() const
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskFromAST.cpp:49:        std::vector<std::pair<std::string, std::string>> substitutions;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/MetadataStorageWithPathWrapper.h:238:    std::vector<std::string> listDirectory(const std::string & path) const override
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/MetadataStorageWithPathWrapper.h:258:    std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/MetadataStorageWithPathWrapper.h:278:    void updateCache(const std::vector<std::string> & paths, bool recursive, bool enforce_fresh, std::string * serialized_cache_update_description) override
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskEncryptedTransaction.h:26:    std::unordered_map<UInt128 /* fingerprint */, String /* key */> all_keys;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.h:52:    std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> from_tree_info;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.h:53:    std::unordered_set<std::string> changed_paths;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/Replication/Location.h:11:using Locations = std::vector<Location>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/Replication/Location.h:12:using LocationSet = std::unordered_set<Location>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h:95:    std::vector<std::string> listDirectory(const std::string & path) const override;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h:103:    std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/RegisterDiskObjectStorage.cpp:33:        std::unordered_map<Location, ObjectStoragePtr> object_storage_registry;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/RegisterDiskObjectStorage.cpp:34:        std::unordered_map<Location, LocationInfo> cluster_registry;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/IO/WriteBufferFromAzureBlobStorage.h:85:    std::vector<std::string> block_ids;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/IO/WriteBufferFromAzureBlobStorage.h:103:    std::deque<PartData> detached_part_data;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/Replication/BlobCopierThread.cpp:101:std::vector<std::shared_ptr<ThreadPoolCallbackRunnerLocal<bool>::Task>> scheduleReplicationTasks(
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/Replication/BlobCopierThread.cpp:109:    std::vector<std::shared_ptr<ThreadPoolCallbackRunnerLocal<bool>::Task>> running_replications;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskBackup.cpp:27:    explicit DiskBackupDirectoryIterator(std::string dir_path_, std::vector<std::string> files_)
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskBackup.cpp:45:    std::vector<std::string> files;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskBackup.cpp:158:std::vector<String> DiskBackup::getBlobPath(const String &) const
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskBackup.cpp:188:void DiskBackup::listFiles(const String & path, std::vector<String> & file_names) const
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/DiskObjectStorage.h:110:    std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/DiskObjectStorage.h:118:    void listFiles(const String & path, std::vector<String> & file_names) const override;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/VolumeJBOD.cpp:47:        std::vector<UInt64> sizes;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/IDiskTransaction.h:29:using RemoveBatchRequest = std::vector<RemoveRequest>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskEncrypted.cpp:58:                           std::map<UInt64, Key> & out_keys_by_id, std::vector<Key>& out_keys_without_id)
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskEncrypted.cpp:122:                                   const std::map<UInt64, Key> & keys_by_id, const std::vector<Key> & keys_without_id)
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskEncrypted.cpp:220:            std::map<UInt64, Key> keys_by_id;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskEncrypted.cpp:221:            std::vector<Key> keys_without_id;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskEncrypted.cpp:486:std::unordered_map<String, String> DiskEncrypted::getSerializedMetadata(const std::vector<String> & paths) const
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskEncrypted.cpp:488:    std::vector<String> wrapped_paths;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskEncrypted.cpp:493:    std::unordered_map<String, String> res;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/VolumeJBOD.h:20:using VolumesJBOD = std::vector<VolumeJBODPtr>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/StaticDirectoryIterator.h:15:    explicit StaticDirectoryIterator(std::vector<std::filesystem::path> && dir_file_paths_);
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/StaticDirectoryIterator.h:23:    std::vector<std::filesystem::path> dir_file_paths;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/StaticDirectoryIterator.h:24:    std::vector<std::filesystem::path>::iterator iter;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.cpp:44:    std::vector<std::string> key_parts;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.cpp:56:    std::vector<std::string> key_parts;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/StaticDirectoryIterator.cpp:6:StaticDirectoryIterator::StaticDirectoryIterator(std::vector<std::filesystem::path> && dir_file_paths_)
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.cpp:67:std::vector<std::string> MetadataStorageFromDisk::listDirectory(const std::string & path) const
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.cpp:69:    std::vector<std::string> result_files;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.cpp:114:std::unordered_map<String, String> MetadataStorageFromDisk::getSerializedMetadata(const std::vector<String> & file_paths) const
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.cpp:117:    std::unordered_map<String, String> metadatas;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskLocal.cpp:391:std::vector<String> DiskLocal::getBlobPath(const String & path) const
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskLocal.cpp:442:void DiskLocal::listFiles(const String & path, std::vector<String> & file_names) const
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.cpp:108:std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(const std::string & path) const
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.cpp:119:    std::unordered_set<std::string> result;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.cpp:132:    return std::vector<std::string>(std::make_move_iterator(result.begin()), std::make_move_iterator(result.end()));
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.cpp:142:    std::vector<std::filesystem::path> fs_paths(paths.begin(), paths.end());
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/MetadataStorageFactory.h:46:    using Registry = std::unordered_map<String, Creator>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.cpp:30:    std::unordered_map<std::string, std::shared_ptr<INode>> subdirectories = {};
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.cpp:68:    std::vector<std::pair<fs::path, std::shared_ptr<INode>>> unvisited;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.cpp:88:    std::vector<std::string> path_parts;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.cpp:124:void InMemoryDirectoryTree::apply(std::unordered_map<std::string, DirectoryRemoteInfo> remote_layout)
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.cpp:163:std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> InMemoryDirectoryTree::getSubtreeRemoteInfo(const std::string & path) const
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.cpp:168:    std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> subtree_info;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.cpp:303:std::vector<std::string> InMemoryDirectoryTree::listDirectory(const std::string & path) const
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.cpp:312:    std::vector<std::string> result;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h:12:    explicit ObjectStorageRouter(std::unordered_map<Location, ObjectStoragePtr> object_storages_);
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h:15:    std::unordered_map<Location, ObjectStoragePtr> getRegistry() const;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h:18:    std::unordered_map<Location, ObjectStoragePtr> object_storages;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskFactory.cpp:31:    const std::unordered_set<String> & skip_types) const
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/IO/ReadBufferFromAzureBlobStorage.h:78:    std::vector<char> tmp_buffer;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h:64:    std::vector<std::string> listDirectory(const std::string & path) const override;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h:216:    virtual std::vector<std::string> listDirectory(const std::string & path) const = 0;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h:259:    virtual std::unordered_map<std::string, std::string> getSerializedMetadata(const std::vector<String> & /* file_paths */) const
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h:292:    using BlobsToRemove = std::unordered_map<StoredObject, LocationSet>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h:303:    using BlobsToReplicate = std::vector<BlobsReplication>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h:310:    virtual void updateCache(const std::vector<std::string> & /* paths */, bool /* recursive */, bool /* enforce_fresh */,
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/Cache/MetadataStorageFromCacheObjectStorage.h:47:    std::vector<std::string> listDirectory(const std::string & path) const override;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/Cache/MetadataStorageFromCacheObjectStorage.h:60:    std::unordered_map<std::string, std::string> getSerializedMetadata(const std::vector<String> & file_paths) const override;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/Cache/MetadataStorageFromCacheObjectStorage.h:79:    void updateCache(const std::vector<std::string> & paths, bool recursive, bool enforce_fresh, std::string * serialized_cache_update_description) override;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/Cache/MetadataStorageFromCacheObjectStorage.cpp:107:std::vector<std::string> MetadataStorageFromCacheObjectStorage::listDirectory(const std::string & path) const
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/Cache/MetadataStorageFromCacheObjectStorage.cpp:152:std::unordered_map<std::string, std::string> MetadataStorageFromCacheObjectStorage::getSerializedMetadata(const std::vector<String> & file_paths) const
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/Cache/MetadataStorageFromCacheObjectStorage.cpp:233:void MetadataStorageFromCacheObjectStorage::updateCache(const std::vector<std::string> & paths, bool recursive, bool enforce_fresh, std::string * serialized_cache_update_description)
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h:104:using ObjectAttributes = std::map<std::string, std::string>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h:159:using RelativePathsWithMetadata = std::vector<RelativePathWithMetadataPtr>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h:160:using ObjectKeysWithMetadata = std::vector<ObjectKeyWithMetadata>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskFactory.h:18:using DisksMap = std::map<String, DiskPtr, std::less<>>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskFactory.h:46:        const std::unordered_set<String> & skip_types = {}) const;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskFactory.h:51:    using DiskTypeRegistry = std::unordered_map<String, Creator>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.cpp:37:std::pair<WebObjectStorage::FileDataPtr, std::vector<fs::path>>
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.cpp:40:    std::vector<fs::path> loaded_files;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.cpp:148:std::vector<std::filesystem::path> WebObjectStorage::listDirectory(const String & path) const
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.cpp:157:    std::vector<std::filesystem::path> result;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h:108:    struct Files : public std::map<String, FileDataPtr>
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h:113:                return std::map<String, FileDataPtr>::find(path);
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h:114:            return std::map<String, FileDataPtr>::find(path.ends_with("/") ? path : path + '/');
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h:129:    std::vector<std::filesystem::path> listDirectory(const String & path) const;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h:133:    std::pair<WebObjectStorage::FileDataPtr, std::vector<std::filesystem::path>>
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h:27:    std::vector<MetadataOperationPtr> operations;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/IStoragePolicy.h:19:using Volumes = std::vector<VolumePtr>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/IStoragePolicy.h:22:using Disks = std::vector<DiskPtr>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/IStoragePolicy.h:39:using Reservations = std::vector<ReservationPtr>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/IVolume.h:28:using Volumes = std::vector<VolumePtr>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/StoragePolicy.cpp:65:    std::set<UInt64> volume_priorities;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/StoragePolicy.cpp:100:            std::vector<DiskPtr>{disks->get(DEFAULT_DISK_NAME)},
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/StoragePolicy.cpp:377:        std::unordered_set<String> new_volume_names;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/StoragePolicy.cpp:390:            std::unordered_set<String> new_disk_names;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/StoragePolicy.cpp:405:        std::unordered_set<String> new_disk_names;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/StoragePolicy.cpp:522:    std::set<String> disks_before_reload;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/StoragePolicy.cpp:523:    std::set<String> disks_after_reload;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskLocal.h:79:    void listFiles(const String & path, std::vector<String> & file_names) const override;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/IDisk.h:57:using DisksMap = std::map<String, DiskPtr, std::less<>>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/IDisk.h:70:using RemoveBatchRequest = std::vector<RemoveRequest>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/IDisk.h:76:using ObjectAttributes = std::map<std::string, std::string>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/IDisk.h:240:    virtual void listFiles(const String & path, std::vector<String> & file_names) const = 0;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/IDisk.h:522:    virtual std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & /* paths */) const { return {}; }
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/IDisk.h:611:using Disks = std::vector<DiskPtr>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/InMemoryRemovalQueue.h:31:    std::map<int64_t, StoredObject> queue;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/InMemoryRemovalQueue.h:32:    std::unordered_map<StoredObject, int64_t> index;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromStaticFilesWebServer.h:37:    std::vector<std::string> listDirectory(const std::string & path) const override;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromStaticFilesWebServer.cpp:112:std::vector<std::string> MetadataStorageFromStaticFilesWebServer::listDirectory(const std::string & path) const
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromStaticFilesWebServer.cpp:114:    std::vector<std::string> result;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromStaticFilesWebServer.cpp:126:    std::vector<fs::path> dir_file_paths;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h:32:    using Registry = std::unordered_map<String, Creator>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/ReadOnlyDiskWrapper.h:51:    void listFiles(const String & path, std::vector<String> & file_names) const override { delegate->listFiles(path, file_names); }
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/ReadOnlyDiskWrapper.h:88:    std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override { return delegate->getSerializedMetadata(file_paths); }
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/Replication/ClusterConfiguration.cpp:22:ClusterConfiguration::ClusterConfiguration(const std::string & disk_name, std::unordered_map<Location, LocationInfo> locations_)
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/Replication/ClusterConfiguration.cpp:26:    LOG_DEBUG(log, "Cluster Configuration: {}", locations | std::views::keys | std::ranges::to<std::vector<std::string>>());
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/Replication/ClusterConfiguration.cpp:46:std::unordered_map<Location, LocationInfo> ClusterConfiguration::getConfiguration() const
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/DiskObjectStorageTransaction.h:35:    std::vector<std::function<void(MetadataTransactionPtr tx)>> operations_to_execute;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/DiskObjectStorageTransaction.h:36:    std::unordered_map<Location, StoredObjects> written_blobs;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/ObjectStorages/StoredObject.h:36:using StoredObjects = std::vector<StoredObject>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/ObjectStorages/StoredObject.h:37:using StoredObjectSet = std::unordered_set<StoredObject>;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskSelector.h:26:    explicit DiskSelector(std::unordered_set<String> skip_types_ = {}) : skip_types(skip_types_) { }
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskSelector.h:59:    const std::unordered_set<String> skip_types;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskEncrypted.h:105:    void listFiles(const String & path, std::vector<String> & file_names) const override
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskEncrypted.h:378:    std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & paths) const override;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskBackup.h:79:    void listFiles(const String & path, std::vector<String> & file_names) const override;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskBackup.h:136:    std::unordered_map<std::string, Poco::Timestamp> last_modified;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h:194:    std::map<const String, const AzureBlobStorage::RequestSettings> azure_settings;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/Replication/BlobKillerThread.cpp:77:std::vector<std::pair<Location, StoredObjects>> sliceIntoRemoveTasks(
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/Replication/BlobKillerThread.cpp:81:    std::vector<std::pair<Location, StoredObjects>> tasks;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/Replication/BlobKillerThread.cpp:83:    std::unordered_map<Location, StoredObjects> incomplete_tasks;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/Replication/BlobKillerThread.cpp:126:std::vector<std::shared_ptr<ThreadPoolCallbackRunnerLocal<bool>::Task>> scheduleRemovalTasks(
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/Replication/BlobKillerThread.cpp:128:    const std::vector<std::pair<Location, StoredObjects>> & batches_to_remove,
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/Replication/BlobKillerThread.cpp:132:    std::vector<std::shared_ptr<ThreadPoolCallbackRunnerLocal<bool>::Task>> running_removals;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h:69:    std::vector<std::string> listDirectory(const std::string & path) const override;
+/home/ubuntu/ClickHouse-wmt_functions/src/Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.cpp:397:    std::vector<size_t> file_sizes_for_blob_storage_log;

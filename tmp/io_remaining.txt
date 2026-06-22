@@ -1,0 +1,40 @@
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/AzureBlobStorage/copyAzureBlobStorageFile.cpp:96:            std::vector<std::string> block_ids;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/AzureBlobStorage/copyAzureBlobStorageFile.cpp:101:        std::vector<std::string> block_ids;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/AzureBlobStorage/copyAzureBlobStorageFile.cpp:103:        std::list<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) bg_tasks;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/CachedInMemoryReadBufferFromFile.h:38:    std::vector<CachedRegion> readBigAtRetainCells(size_t n, size_t offset) const override;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/CachedInMemoryReadBufferFromFile.h:71:    std::vector<PageCache::MappedPtr> populateBlockRange(size_t offset, size_t n, const std::function<bool(PageCache::MappedPtr &)> & block_callback = nullptr) const;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/HTTPHeaderEntries.h:18:using HTTPHeaderEntries = std::vector<HTTPHeaderEntry>;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/PackedFilesIO.h:21:using Index = std::map<String, FileOffset>;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/SeekableReadBuffer.h:110:    virtual std::vector<CachedRegion> readBigAtRetainCells(size_t n, size_t offset) const;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/CascadeWriteBuffer.h:34:    using WriteBufferConstructors = std::vector<WriteBufferConstructor>;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/CascadeWriteBuffer.h:35:    using WriteBufferPtrs = std::vector<WriteBufferPtr>;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/S3/URI.cpp:81:            std::vector<String> config_keys;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/WriteBufferFromS3.h:98:    std::deque<String> multipart_tags;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/WriteBufferFromS3.h:99:    std::deque<String> multipart_checksums; // if enabled
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/WriteBufferFromS3.h:109:    std::deque<PartData> detached_part_data;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/ConcatReadBuffer.h:15:    using Buffers = std::vector<std::unique_ptr<ReadBuffer>>;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/CachedInMemoryReadBufferFromFile.cpp:223:std::vector<PageCache::MappedPtr> CachedInMemoryReadBufferFromFile::populateBlockRange(size_t offset, size_t n, const std::function<bool(PageCache::MappedPtr &)> & block_callback) const
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/CachedInMemoryReadBufferFromFile.cpp:239:    std::vector<PageCache::MappedPtr> cells(num_blocks);
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/CachedInMemoryReadBufferFromFile.cpp:364:std::vector<SeekableReadBuffer::CachedRegion> CachedInMemoryReadBufferFromFile::readBigAtRetainCells(size_t n, size_t offset) const
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/CachedInMemoryReadBufferFromFile.cpp:375:    std::vector<CachedRegion> regions;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/S3/copyS3File.cpp:123:        std::deque<String> multipart_tags;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/S3/deleteFileFromS3.cpp:119:            std::vector<Aws::S3::Model::ObjectIdentifier> current_chunk;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/S3/deleteFileFromS3.cpp:190:                    std::unordered_set<std::string_view> removed_keys{keys.begin(), keys.end()};
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/ParallelReadBuffer.h:80:    std::deque<ReadWorkerPtr> read_workers;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/S3RequestSettings.cpp:236:    std::unordered_set<String> storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/AzureBlobStorage/PocoHTTPClient.cpp:386:            std::vector<uint8_t> buffer(8192);
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/PackedFilesWriter.h:163:    std::map<String, std::shared_ptr<Data>> written_files;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/PackedFilesWriter.h:166:    std::vector<MetadataChange> metadata_changes;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/SeekableReadBuffer.cpp:69:std::vector<SeekableReadBuffer::CachedRegion> SeekableReadBuffer::readBigAtRetainCells(size_t /*n*/, size_t /*offset*/) const
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/ForkWriteBuffer.h:18:    using WriteBufferPtrs = std::vector<WriteBufferPtr>;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/PackedFilesWriter.cpp:161:    std::vector<String> ordered_file_names;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/PackedFilesWriter.cpp:165:        std::unordered_set<String> already_added_files;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/ConcatReadBufferFromFile.h:54:    std::vector<BufferInfo> buffers;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/OpenedFileCache.h:38:        using Files = std::map<Key, OpenedFileWeakPtr>;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/OpenedFileCache.h:89:    std::vector<OpenedFileMap> impls{buckets};
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/S3AuthSettings.h:64:    std::unordered_set<std::string> users;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/S3/Credentials.cpp:285:    std::vector<String> security_credentials = Aws::Utils::StringUtils::Split(trimmed_credentials_string, '\n');
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/S3/Credentials.cpp:340:    std::vector<String> security_credentials = Aws::Utils::StringUtils::Split(trimmed_profile_string, '\n');
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/S3/Credentials.cpp:527:    std::vector<std::pair<bool /* used if AWS_ZONE_NAME_THEN_GCP_ZONE */, AZGetter>> az_getters =
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/S3/Credentials.cpp:539:        std::vector<std::string> ex_msgs;
+/home/ubuntu/ClickHouse-wmt_functions/src/IO/S3/Credentials.cpp:792:    std::vector<String> retryable_errors;

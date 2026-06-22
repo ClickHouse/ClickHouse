@@ -173,6 +173,26 @@ if (OS_LINUX)
 endif ()
 
 if (OS_DARWIN)
+    # Same reasoning as `--no-export-dynamic` on Linux: the main clickhouse binary does not
+    # use dlopen, so it does not need to export any dynamic symbols. By default the Mach-O
+    # linker puts every global symbol into the export trie (hundreds of thousands of them for
+    # clickhouse), which dyld walks for weak-symbol coalescing on every launch, adding ~0.15s
+    # of startup latency. An empty `-exported_symbols_list` suppresses the export trie while
+    # keeping the LC_SYMTAB used for backtraces intact. We use it instead of the simpler
+    # `-no_exported_symbols` because the latter is not understood by the cctools `ld` used for
+    # cross-compilation in CI, while `-exported_symbols_list` is supported by both it and lld.
+    #
+    # Skip this for sanitizer builds: on Darwin we rely on Apple's bundled sanitizer runtime,
+    # which resolves hooks such as `__asan_default_options` / `__lsan_default_suppressions`
+    # (see base/base/sanitizer_options.h) by symbol name via dyld weak-symbol coalescing.
+    # Hiding the executable's exports would silently drop those options. Sanitizer builds are
+    # for testing and do not need the startup optimization anyway.
+    if (NOT SANITIZE)
+        set (EMPTY_EXPORTED_SYMBOLS_LIST "${CMAKE_BINARY_DIR}/empty_exported_symbols.txt")
+        file (WRITE "${EMPTY_EXPORTED_SYMBOLS_LIST}" "")
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-exported_symbols_list,${EMPTY_EXPORTED_SYMBOLS_LIST}")
+    endif ()
+
     # Remove unreachable functions/data (Darwin equivalent of --gc-sections).
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip")
 
@@ -421,9 +441,12 @@ include(cmake/limit_jobs.cmake)
 # Turns on all external libs like s3, kafka, ODBC, ...
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 
-# Increase stack size on Musl. We need big stack for our recursive-descend parser.
+# Increase stack size on Musl. We need big stack for our recursive-descend parser
+# and for analyzer passes that recurse on deeply-nested join trees (e.g.
+# 1000-join queries). Match glibc's 8 MiB default; musl reads this from
+# PT_GNU_STACK and clamps it to DEFAULT_STACK_MAX (also 8 MiB).
 if (USE_MUSL)
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=2097152")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=8388608")
 endif ()
 
 include(cmake/dbms_glob_sources.cmake)
