@@ -117,19 +117,22 @@ TTL d + INTERVAL 1 DAY;
 
 DROP TABLE test_ttl_agg_tuple_not_referenced;
 
--- Non-type errors raised while dry-running the AggregateFunction validation must be propagated to
--- the user.Only ILLEGAL_TYPE_OF_ARGUMENT is translated to BAD_TTL_EXPRESSION; everything else is rethrown.
+-- Valid: a data-dependent error of a function that does not itself consume the AggregateFunction state
+-- must NOT fail validation. Here intDiv only sees finalized values, so the synthetic state finalizing to
+-- 0 (and the resulting division by zero on the validation row) must not turn this into a DDL failure;
+-- rows whose state finalizes to a nonzero value evaluate like any other TTL expression with intDiv.
 CREATE TABLE test_ttl_agg_divzero
 (
     ts AggregateFunction(sum, UInt32)
 )
 ENGINE = MergeTree()
 ORDER BY tuple()
-TTL toDateTime(intDiv(toUInt32(100), finalizeAggregation(ts))) + INTERVAL 1 DAY; -- { serverError ILLEGAL_DIVISION }
+TTL toDateTime(intDiv(toUInt32(100), finalizeAggregation(ts))) + INTERVAL 1 DAY;
+
+DROP TABLE test_ttl_agg_divzero;
 
 -- Short-circuit branch: an unsupported AggregateFunction consumer hidden in a not-taken if/multiIf
--- branch must still be rejected. With short-circuit evaluation the synthetic validation row (cond = 0)
--- would skip the toDateTime(ts) branch, so validation must run with short-circuit disabled.
+-- branch must still be rejected.
 CREATE TABLE test_ttl_agg_if_branch
 (
     cond UInt8,

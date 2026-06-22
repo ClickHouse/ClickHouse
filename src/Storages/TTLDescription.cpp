@@ -70,49 +70,55 @@ TTLAggregateDescription & TTLAggregateDescription::operator=(const TTLAggregateD
 namespace
 {
 
-/// If the expression reads any column whose type contains an AggregateFunction state (including nested
-/// states inside Tuple/Array/Map/etc.), dry-run the actions to detect functions that cannot consume such
-/// states. Only the resulting type error is translated into a clear message; all other exceptions are
-/// rethrown so that data-independent failures are not silently accepted.
+/// Reject TTL expressions that feed an AggregateFunction state into a function which cannot consume it
+/// (e.g. `toDateTime(state)`), while still accepting state-aware functions like `finalizeAggregation`.
+///
+/// We only execute the individual functions that directly receive an argument whose type contains an
+/// AggregateFunction state (including states nested inside Tuple/Array/Map/etc.). Executing the whole
+/// expression instead would make DDL validity depend on synthetic default values: a data-dependent
+/// error from an unrelated downstream function - e.g. division by zero in `intDiv(100, finalizeAggregation(state))`
+/// when the default state finalizes to 0 - would turn a perfectly valid TTL into a CREATE TABLE failure.
+/// Walking nodes individually also makes the check independent of short-circuit evaluation, so an
+/// unsupported consumer hidden in a not-taken `if`/`multiIf` branch is still validated. Only the type
+/// error is translated into a clear message; all other exceptions are rethrown.
 void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expression, std::string_view expression_kind)
 {
-    bool has_aggregate_function_columns = false;
-    for (const auto & col : expression->getRequiredColumnsWithTypes())
+    for (const auto & node : expression->getActionsDAG().getNodes())
     {
-        if (hasAggregateFunctionType(col.type))
+        if (node.type != ActionsDAG::ActionType::FUNCTION)
+            continue;
+
+        bool consumes_aggregate_state = false;
+        ColumnsWithTypeAndName arguments;
+        arguments.reserve(node.children.size());
+        for (const auto * child : node.children)
         {
-            has_aggregate_function_columns = true;
-            break;
+            if (hasAggregateFunctionType(child->result_type))
+                consumes_aggregate_state = true;
+
+            /// Preserve constant arguments as constants - some functions (e.g. `CAST`) require a
+            /// constant argument and otherwise throw an unrelated error during this synthetic execution.
+            ColumnPtr column = child->column
+                ? child->column->cloneResized(1)
+                : child->result_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+            arguments.emplace_back(std::move(column), child->result_type, child->result_name);
         }
-    }
 
-    if (!has_aggregate_function_columns)
-        return;
+        if (!consumes_aggregate_state)
+            continue;
 
-    /// Rebuild the actions with short-circuit evaluation disabled. Otherwise lazy branches of
-    /// functions like `if`/`multiIf` are stored as unevaluated `ColumnFunction`s and only the branch
-    /// selected by the synthetic validation row is reduced, so an unsupported AggregateFunction
-    /// consumer in a not-taken branch would slip through and fail later during TTL execution.
-    auto settings = expression->getSettings();
-    settings.short_circuit_function_evaluation = ShortCircuitFunctionEvaluation::DISABLE;
-    ExpressionActions validation_actions(expression->getActionsDAG().clone(), settings);
-
-    Block check_block;
-    for (const auto & col : validation_actions.getRequiredColumnsWithTypes())
-        check_block.insert(ColumnWithTypeAndName(
-            col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(), col.type, col.name));
-
-    try
-    {
-        validation_actions.execute(check_block, /*dry_run=*/ true);
-    }
-    catch (Exception & e)
-    {
-        if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
-            throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
-                "TTL {}expression uses AggregateFunction column in a function that cannot handle it. "
-                "Use `finalizeAggregation` to extract the value first: {}", expression_kind, e.message());
-        throw;
+        try
+        {
+            node.function_base->execute(arguments, node.result_type, /*input_rows_count=*/ 1, /*dry_run=*/ true);
+        }
+        catch (Exception & e)
+        {
+            if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
+                throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
+                    "TTL {}expression uses AggregateFunction column in a function that cannot handle it. "
+                    "Use `finalizeAggregation` to extract the value first: {}", expression_kind, e.message());
+            throw;
+        }
     }
 }
 
