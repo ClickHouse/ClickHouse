@@ -3,6 +3,7 @@ import pytest
 from contextlib import contextmanager
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 
 @pytest.fixture(scope="module")
@@ -311,3 +312,68 @@ def test_new_unified_hash_self_deduplication_variable_length(cluster):
         # Two identical inserts combined in one flush must self-deduplicate to a single row.
         result = node_new.query("SELECT key, s, a FROM test_unified_self_dedup ORDER BY key")
         assert result == "1\tone line\t[10,20]\n"
+
+
+def test_cleanup_consistent_across_directories_compatible(cluster):
+    # Under `compatible_double_hashes` a sync insert writes its deduplication id to BOTH the legacy
+    # `blocks` directory (old per-part hash) and the unified `deduplication_hashes` directory. The
+    # cleanup thread must evict from both consistently under `replicated_deduplication_window`.
+    # Functional test 04005 covers the same invariant for the default `new_unified_hash`, which uses
+    # only `deduplication_hashes`; this pins the dual-directory mode, selectable only via a server
+    # setting, so the cross-directory cleanup stays regression-tested after the default flip.
+    node = cluster.instances["node_compatible"]
+
+    create_table_query = \
+"""
+    DROP TABLE IF EXISTS dedup_cleanup_compatible SYNC;
+
+    CREATE TABLE dedup_cleanup_compatible (date Date, id UInt32, value String)
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/dedup_cleanup_compatible', '{replica}')
+    PARTITION BY date ORDER BY id
+    SETTINGS replicated_deduplication_window = 2, cleanup_delay_period = 1,
+             cleanup_delay_period_random_add = 0, cleanup_thread_preferred_points_per_iteration = 0
+"""
+
+    drop_table_query = "DROP TABLE IF EXISTS dedup_cleanup_compatible SYNC"
+
+    with with_tables(
+        nodes=[node],
+        create_query=create_table_query,
+        drop_query=drop_table_query,
+    ):
+        zk_path = node.query(
+            "SELECT zookeeper_path FROM system.replicas "
+            "WHERE database = currentDatabase() AND table = 'dedup_cleanup_compatible'"
+        ).strip().rstrip("/")
+
+        def dir_count_query(directory):
+            return f"SELECT count() FROM system.zookeeper WHERE path = '{zk_path}/{directory}'"
+
+        def wait_both_dirs_cleaned_to(expected):
+            # The legacy `blocks` and unified `deduplication_hashes` directories share the sync
+            # window, so both must settle to the same count.
+            assert_eq_with_retry(node, dir_count_query("blocks"), str(expected), retry_count=60, sleep_time=1)
+            assert_eq_with_retry(node, dir_count_query("deduplication_hashes"), str(expected), retry_count=60, sleep_time=1)
+
+        # Three distinct sync inserts (async_insert = 0, so ids land in the SYNC `blocks` directory
+        # rather than `async_blocks`); each also lands in the unified `deduplication_hashes`.
+        node.query("INSERT INTO dedup_cleanup_compatible SETTINGS async_insert = 0 VALUES (toDate('2024-01-01'), 1, 'a')")
+        node.query("INSERT INTO dedup_cleanup_compatible SETTINGS async_insert = 0 VALUES (toDate('2024-01-01'), 2, 'b')")
+        node.query("INSERT INTO dedup_cleanup_compatible SETTINGS async_insert = 0 VALUES (toDate('2024-01-01'), 3, 'c')")
+        assert node.query("SELECT count() FROM dedup_cleanup_compatible").strip() == "3"
+
+        # Window is 2, so both directories must be trimmed to 2 entries together.
+        wait_both_dirs_cleaned_to(2)
+
+        # The first row's ids were evicted from both directories, so re-inserting it is not deduplicated.
+        node.query("INSERT INTO dedup_cleanup_compatible SETTINGS async_insert = 0 VALUES (toDate('2024-01-01'), 1, 'a')")
+        assert node.query("SELECT count() FROM dedup_cleanup_compatible").strip() == "4"
+        wait_both_dirs_cleaned_to(2)
+
+        node.query("INSERT INTO dedup_cleanup_compatible SETTINGS async_insert = 0 VALUES (toDate('2024-01-01'), 2, 'b')")
+        assert node.query("SELECT count() FROM dedup_cleanup_compatible").strip() == "5"
+        wait_both_dirs_cleaned_to(2)
+
+        # A retry of the most recent insert, still inside the window, is deduplicated.
+        node.query("INSERT INTO dedup_cleanup_compatible SETTINGS async_insert = 0 VALUES (toDate('2024-01-01'), 2, 'b')")
+        assert node.query("SELECT count() FROM dedup_cleanup_compatible").strip() == "5"
