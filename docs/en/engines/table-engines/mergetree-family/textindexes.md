@@ -321,7 +321,112 @@ When the column is of type `Array(String)`, the postprocessor still operates on 
 
 Usage of non-deterministic functions is disallowed.
 
-**Function compatibility with preprocessor / tokenizer / postprocessor**.
+The postprocessor is applied to each generated token during index build (for the `array` tokenizer, each array element is a token). At query time, the behavior depends on the function:
+- For `hasToken`, `hasAllTokens`, and `hasAnyTokens` (with any tokenizer): the postprocessor is applied to both the haystack tokens and the search needle, enabling fully normalized matching (e.g., case-insensitive search).
+- For all other functions (`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`): only the search needle is postprocessed for the index-hint lookup; the row-level predicate still compares against the original column values.
+
+Examples:
+
+- Remove stop words using a postprocessor expression:
+
+```sql
+CREATE TABLE table
+(
+    str String,
+    INDEX idx(str) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        postprocessor = if(str IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', str)
+    )
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
+- Remove timestamps using a postprocessor expression:
+
+```sql
+-- Log lines: '2024-01-15T10:23:45 ERROR connection failed'
+-- The splitByString tokenizer (default: whitespace) keeps the full timestamp as one token.
+-- parseDateTimeOrNull detects and drops it; non-timestamp words are kept.
+CREATE TABLE logs
+(
+    id   UInt64,
+    line String,
+    INDEX idx(line) TYPE text(
+        tokenizer    = 'splitByString',
+        postprocessor = if(isNull(parseDateTimeOrNull(line, '%Y-%m-%dT%H:%i:%S')), line, '')
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+
+-- Only message-level words are indexed; timestamp tokens are not stored.
+SELECT count() FROM logs WHERE hasAllTokens(line, ['ERROR']);       -- fast index lookup
+SELECT count() FROM logs WHERE hasAllTokens(line, ['2024-01-15T10:23:45']);  -- returns 0: token was never indexed
+```
+
+- Remove timestamps using a preprocessor expression:
+
+```sql
+-- The preprocessor strips the ISO timestamp prefix before tokenization.
+-- Any tokenizer can be used; timestamp characters are never seen by the tokenizer.
+CREATE TABLE logs
+(
+    id   UInt64,
+    line String,
+    INDEX idx(line) TYPE text(
+        tokenizer   = 'splitByNonAlpha',
+        preprocessor = replaceRegexpAll(line, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
+- Remove timestamps using a combined preprocessor and postprocessor expression:
+
+```sql
+-- Preprocessor strips the timestamp, then lowercases the remainder.
+-- Postprocessor drops the severity word (error, info, warn, debug) after tokenization.
+-- Result: only substantive message words are stored in the index.
+CREATE TABLE logs
+(
+    id   UInt64,
+    line String,
+    INDEX idx(line) TYPE text(
+        tokenizer    = 'splitByNonAlpha',
+        preprocessor = lower(replaceRegexpAll(line, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')),
+        postprocessor = if(line IN ('error', 'info', 'warn', 'warning', 'debug', 'critical'), '', line)
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+
+-- Example log line: '2024-01-15T10:23:45 ERROR connection failed'
+-- After preprocessor:  'error connection failed'
+-- After tokenization:  ['error', 'connection', 'failed']
+-- After postprocessor: ['connection', 'failed']   ← 'error' dropped as severity word
+SELECT count() FROM logs WHERE hasAllTokens(line, ['connection']);
+```
+
+- Stem tokens using a postprocessor expression:
+
+```sql
+CREATE TABLE table
+(
+    str String,
+    INDEX idx(str) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        postprocessor = stem(str, 'en')
+    )
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+-- The query token 'running' is stemmed to 'run' before the lookup,
+-- matching rows that contain 'run', 'runs', 'ran', 'running', etc.
+SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
+```
+
+**Function support**.
+
 For predicates that consult the text index, the preprocessor and postprocessor are applied to the search value before the granule-level check so that the index lookup uses the same tokens that were stored at index build.
 For most functions (`=`, `IN`, `hasPhrase`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`), the text index is used only to skip irrelevant data blocks; ClickHouse still verifies each surviving row using the original predicate against the original column data.
 For token search functions (`hasToken`, `hasAllTokens`, `hasAnyTokens`), the text index is the primary evaluation path: ClickHouse normalizes the needle through the same preprocessor, tokenizer, and postprocessor that were applied at index build time, and uses this normalized form for both indexed and non-indexed table parts. With a postprocessor, the haystack tokens are also normalized at query time (for any tokenizer, not only `array`), so both sides of the comparison are consistently transformed and the result does not depend on whether the index is read directly (setting `query_plan_direct_read_from_text_index`) or whether a given part has a materialized index — e.g. enabling case-insensitive matching for `hasAllTokens(col, ['FOO'])` with a `lower` postprocessor.
@@ -350,114 +455,12 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [hasAny](/sql-reference/functions/array-functions.md/#hasAny)                               | yes | `array` | yes |
 | [hasAll](/sql-reference/functions/array-functions.md/#hasAll)                               | yes | `array` | yes |
 
-¹ `LIKE` and `match` use the index in Hint mode for the tokenizers shown.
-`LIKE` additionally supports a *direct-read mode* (enabled via `use_text_index_like_evaluation_by_dictionary_scan`) for `splitByNonAlpha` and `array` tokenizers without preprocessor or postprocessor.
+¹ `LIKE` and `match` use direct read as a hint for the listed tokenizers, otherwise they fall back to brute-force scan.
+`LIKE` additionally supports a *direct read (without hint)* (enabled via `use_text_index_like_evaluation_by_dictionary_scan`) for `splitByNonAlpha` and `array` tokenizers without preprocessor or postprocessor.
 
-² `ILIKE` is only supported via direct-read mode (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer).
-There is no hint-mode fallback: if the setting is disabled or the tokenizer is not in the supported set, the index is not used for `ILIKE`.
+² `ILIKE` is only supported via direct read (without hint) (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer).
+There is no fallback to using the index as a hint: if the setting is disabled or the tokenizer is not in the supported set, the index is not used for `ILIKE`.
 The preprocessor, if present, must be `lower` or `upper`; postprocessors are not supported.
-
-The postprocessor is applied to each generated token during index build (for the `array` tokenizer, each array element is a token). At query time, the behavior depends on the function:
-- For `hasToken`, `hasAllTokens`, and `hasAnyTokens` (with any tokenizer): the postprocessor is applied to both the haystack tokens and the search needle, enabling fully normalized matching (e.g., case-insensitive search).
-- For all other functions (`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`): only the search needle is postprocessed for the index-hint lookup; the row-level predicate still compares against the original column values.
-
-Example for stop word filtering:
-
-```sql
-CREATE TABLE table
-(
-    str String,
-    INDEX idx(str) TYPE text(
-        tokenizer = 'splitByNonAlpha',
-        postprocessor = if(str IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', str)
-    )
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-```
-
-Example for timestamp removal — postprocessor approach:
-
-```sql
--- Log lines: '2024-01-15T10:23:45 ERROR connection failed'
--- The splitByString tokenizer (default: whitespace) keeps the full timestamp as one token.
--- parseDateTimeOrNull detects and drops it; non-timestamp words are kept.
-CREATE TABLE logs
-(
-    id   UInt64,
-    line String,
-    INDEX idx(line) TYPE text(
-        tokenizer    = 'splitByString',
-        postprocessor = if(isNull(parseDateTimeOrNull(line, '%Y-%m-%dT%H:%i:%S')), line, '')
-    )
-)
-ENGINE = MergeTree ORDER BY id;
-
--- Only message-level words are indexed; timestamp tokens are not stored.
-SELECT count() FROM logs WHERE hasAllTokens(line, ['ERROR']);       -- fast index lookup
-SELECT count() FROM logs WHERE hasAllTokens(line, ['2024-01-15T10:23:45']);  -- returns 0: token was never indexed
-```
-
-Example for timestamp removal — preprocessor approach:
-
-```sql
--- The preprocessor strips the ISO timestamp prefix before tokenization.
--- Any tokenizer can be used; timestamp characters are never seen by the tokenizer.
-CREATE TABLE logs
-(
-    id   UInt64,
-    line String,
-    INDEX idx(line) TYPE text(
-        tokenizer   = 'splitByNonAlpha',
-        preprocessor = replaceRegexpAll(line, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')
-    )
-)
-ENGINE = MergeTree ORDER BY id;
-```
-
-Example for timestamp removal — combined preprocessor and postprocessor:
-
-```sql
--- Preprocessor strips the timestamp, then lowercases the remainder.
--- Postprocessor drops the severity word (error, info, warn, debug) after tokenization.
--- Result: only substantive message words are stored in the index.
-CREATE TABLE logs
-(
-    id   UInt64,
-    line String,
-    INDEX idx(line) TYPE text(
-        tokenizer    = 'splitByNonAlpha',
-        preprocessor = lower(replaceRegexpAll(line, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')),
-        postprocessor = if(line IN ('error', 'info', 'warn', 'warning', 'debug', 'critical'), '', line)
-    )
-)
-ENGINE = MergeTree ORDER BY id;
-
--- Example log line: '2024-01-15T10:23:45 ERROR connection failed'
--- After preprocessor:  'error connection failed'
--- After tokenization:  ['error', 'connection', 'failed']
--- After postprocessor: ['connection', 'failed']   ← 'error' dropped as severity word
-SELECT count() FROM logs WHERE hasAllTokens(line, ['connection']);
-```
-
-Example for stemming:
-
-```sql
-CREATE TABLE table
-(
-    str String,
-    INDEX idx(str) TYPE text(
-        tokenizer = 'splitByNonAlpha',
-        postprocessor = stem(str, 'en')
-    )
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-
--- The query token 'running' is stemmed to 'run' before the lookup,
--- matching rows that contain 'run', 'runs', 'ran', 'running', etc.
-SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
-```
 
 **Other arguments (optional)**.
 
