@@ -529,7 +529,6 @@
     M(SettingsProfileCacheRecalculationMicroseconds, "Total time spent re-merging settings and constraints for all live enabled sets (held under the cache mutex that the ContextAccess build path also takes).", ValueType::Microseconds) \
     M(QuotaCacheRecalculations, "Number of times the quota cache re-chose quotas for all live enabled sets. Coalesced to once per access entity notification batch.", ValueType::Number) \
     M(QuotaCacheRecalculationMicroseconds, "Total time spent re-choosing quotas for all live enabled sets (held under the cache mutex that the ContextAccess build path also takes).", ValueType::Microseconds) \
-    M(FileProgressCallbackInvocations, "Number of times the per-query `FileProgressCallback` was invoked (counts each per-file `FileProgress` event delivered to the client over native TCP or via `clickhouse-local`).", ValueType::Number) \
     \
     M(StorageBufferFlush, "Number of times a buffer in a 'Buffer' table was flushed.", ValueType::Number) \
     M(StorageBufferErrorOnFlush, "Number of times a buffer in the 'Buffer' table has not been able to flush due to error writing in the destination table.", ValueType::Number) \
