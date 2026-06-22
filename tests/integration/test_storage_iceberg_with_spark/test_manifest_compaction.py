@@ -1342,6 +1342,18 @@ def test_optimize_manifest_totals_invariant(started_cluster_iceberg_with_spark, 
         f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
     )
     summary_after_second = get_current_snapshot_summary(TABLE_PATH)
+    assert summary_after_second, "Could not read snapshot summary after second compaction"
+
+    # The second round is already optimal, so it must not change the totals.
+    assert int(summary_after_second.get("total-data-files", -1)) == total_files_1, (
+        f"total-data-files changed by no-op compaction: {total_files_1} -> {summary_after_second.get('total-data-files')}"
+    )
+    assert int(summary_after_second.get("total-records", -1)) == total_records_1, (
+        f"total-records changed by no-op compaction: {total_records_1} -> {summary_after_second.get('total-records')}"
+    )
+    assert int(summary_after_second.get("total-files-size", -1)) == total_size_1, (
+        f"total-files-size changed by no-op compaction: {total_size_1} -> {summary_after_second.get('total-files-size')}"
+    )
 
     # Third compaction — totals must remain identical.
     instance.query(
