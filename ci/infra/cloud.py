@@ -1,7 +1,6 @@
 from praktika import CloudInfrastructure
 from praktika.infrastructure.dedicated_host import DedicatedHost
 from praktika.infrastructure.ec2_instance import EC2Instance
-from praktika.infrastructure.iam_instance_profile import IAMInstanceProfile
 
 from ci.defs.defs import RunnerLabels
 

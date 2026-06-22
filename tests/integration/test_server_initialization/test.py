@@ -8,7 +8,7 @@ def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         # Disable `with_remote_database_disk` as the test uses the local disk to store metadata files.
-        instance = cluster.add_instance(
+        cluster.add_instance(
             "dummy",
             clickhouse_path_dir="clickhouse_path",
             stay_alive=True,
@@ -17,7 +17,7 @@ def started_cluster():
         cluster.start()
 
         cluster_fail = ClickHouseCluster(__file__, name="fail")
-        instance_fail = cluster_fail.add_instance(
+        cluster_fail.add_instance(
             "dummy_fail",
             clickhouse_path_dir="clickhouse_path_fail",
             with_remote_database_disk=False,

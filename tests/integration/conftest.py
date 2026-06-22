@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest  # pylint:disable=import-error; for style check
 
-from helpers.cluster import is_port_free, run_and_check
+from helpers.cluster import run_and_check
 
 # This is a workaround for a problem with logging in pytest [1].
 #

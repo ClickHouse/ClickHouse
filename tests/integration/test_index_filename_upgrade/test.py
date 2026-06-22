@@ -26,7 +26,7 @@ def test_index_filename_upgrade(started_cluster):
 
     node.query("DROP TABLE IF EXISTS test_index_filename;")
     node.query(
-        f"""
+        """
         CREATE TABLE test_index_filename (
             column UInt8,
             INDEX `minmax_index_ESPAÑA` `column` TYPE set(0) GRANULARITY 1

@@ -1,6 +1,5 @@
 import argparse
 import json
-import os
 import re
 import sys
 import time
@@ -253,7 +252,7 @@ Test output:
 
     @classmethod
     def repr_result(cls, result):
-        res = f"\n - test output:\n"
+        res = "\n - test output:\n"
         # For ERROR status (typically job-level failures), meaningful output is usually at the end,
         # so we truncate from the top to preserve the error details.
         # For other statuses (test failures), the relevant information is often at the beginning,
@@ -524,7 +523,7 @@ class CommitStatusCheck:
                     context=context,
                 )
 
-        print(f"\nCommit statuses:")
+        print("\nCommit statuses:")
         for check in required_checks:
             if check in status_map:
                 state = status_map[check].state
@@ -1014,7 +1013,7 @@ def main():
                 only_update=True,
                 verbose=False,
             ):
-                print(f"ERROR: failed to post CI summary")
+                print("ERROR: failed to post CI summary")
         except Exception as e:
             print(f"ERROR: failed to post CI summary, ex: {e}")
             traceback.print_exc()
@@ -1027,7 +1026,7 @@ def main():
     if Shell.check(
         f"gh pr view {pr_number} --json isDraft --jq '.isDraft' --repo ClickHouse/ClickHouse | grep -q true"
     ):
-        if UserPrompt.confirm(f"It's a draft PR. Do you want to undraft it?"):
+        if UserPrompt.confirm("It's a draft PR. Do you want to undraft it?"):
             Shell.check(
                 f"gh pr ready {pr_number} --repo ClickHouse/ClickHouse",
                 strict=True,

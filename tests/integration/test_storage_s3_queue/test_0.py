@@ -1,21 +1,14 @@
-import io
 import json
 import logging
 import random
-import string
 import time
-import uuid
 from datetime import datetime
-from multiprocessing.dummy import Pool
 
 import pytest
-from kazoo.exceptions import NoNodeError
 
 from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 from helpers.s3_queue_common import (
-    run_query,
-    random_str,
     generate_random_files,
     put_s3_file_content,
     put_azure_file_content,
@@ -1003,7 +996,7 @@ def test_streaming_to_many_views(started_cluster, mode):
 
 def test_multiple_tables_meta_mismatch(started_cluster):
     node = started_cluster.instances["instance"]
-    table_name = f"multiple_tables_meta_mismatch"
+    table_name = "multiple_tables_meta_mismatch"
     # A unique path is necessary for repeatable tests
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"

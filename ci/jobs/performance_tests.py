@@ -161,8 +161,8 @@ def _make_insert_query(table, table_columns, input_schema, select_exprs, where=N
     return (
         f"INSERT INTO {table}\n"
         f"(\n    " + ",\n    ".join(all_cols) + "\n)\n"
-        f"SELECT\n" + select_all + "\n"
-        f"FROM input('" + input_schema + "')\n"
+        "SELECT\n" + select_all + "\n"
+        "FROM input('" + input_schema + "')\n"
         + where_clause + "\n"
         "FORMAT TSV"
     )
@@ -741,12 +741,12 @@ class CHServer:
             stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
             Utils.print_formatted_error("Failed to start ClickHouse", stdout, stderr)
             return False
-        print(f"ClickHouse server process started -> wait ready")
+        print("ClickHouse server process started -> wait ready")
         res = self.wait_ready()
         if res:
-            print(f"ClickHouse server ready")
+            print("ClickHouse server ready")
         else:
-            print(f"ClickHouse server NOT ready")
+            print("ClickHouse server NOT ready")
 
         Shell.check(
             f"clickhouse-client --port {self.port} --query 'create database IF NOT EXISTS test' && clickhouse-client --port {self.port} --query 'rename table datasets.hits_v1 to test.hits'",
@@ -772,12 +772,12 @@ class CHServer:
             stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
             Utils.print_formatted_error("Failed to start ClickHouse", stdout, stderr)
             return False
-        print(f"ClickHouse server process started -> wait ready")
+        print("ClickHouse server process started -> wait ready")
         res = self.wait_ready()
         if res:
-            print(f"ClickHouse server ready")
+            print("ClickHouse server ready")
         else:
-            print(f"ClickHouse server NOT ready")
+            print("ClickHouse server NOT ready")
         return res
 
     def wait_ready(self):
@@ -792,7 +792,7 @@ class CHServer:
                 print("Server ready")
                 break
             else:
-                print(f"Server not ready, wait")
+                print("Server not ready, wait")
             Utils.sleep(delay)
         else:
             Utils.print_formatted_error(
@@ -953,7 +953,7 @@ def main():
         else:
             assert False
     else:
-        Utils.raise_with_error(f"Unknown processor architecture")
+        Utils.raise_with_error("Unknown processor architecture")
 
     if compare_against_release:
         print("It's a comparison against latest release baseline")

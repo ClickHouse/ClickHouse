@@ -1,7 +1,11 @@
 import logging
 
-from helpers.kafka.common_direct import *
-from helpers.kafka.common_direct import _VarintBytes
+import time
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
 import helpers.kafka.common as k
 
 
@@ -140,7 +144,7 @@ def test_good_intent_size(kafka_cluster):
         k.kafka_produce(
             kafka_cluster,
             topic_name,
-            [f"message_4", "message_5"]
+            ["message_4", "message_5"]
         )
 
         consumed_messages = instance.query_with_retry("SELECT * FROM test.dst", retry_count = 30, sleep_time = 1, check_callback=lambda x: len(TSV(x)) == 3)

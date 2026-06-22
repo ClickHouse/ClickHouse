@@ -1,7 +1,19 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from .prometheus_test_utils import *
+import urllib
+
+import requests
+
+from .prometheus_test_utils import (
+    convert_time_series_to_protobuf,
+    execute_query_via_http_api,
+    execute_range_query_via_http_api,
+    extract_data_from_http_api_response,
+    extract_error_from_http_api_response,
+    get_response_to_http_api_query,
+    send_protobuf_to_remote_write,
+)
 
 
 cluster = ClickHouseCluster(__file__)

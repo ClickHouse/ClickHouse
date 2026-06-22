@@ -1,6 +1,13 @@
 """Test Kafka poll timeout after assignment recovery."""
 
-from helpers.kafka.common_direct import *
+import json
+import logging
+import time
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 import helpers.kafka.common as k
 
 cluster = ClickHouseCluster(__file__)

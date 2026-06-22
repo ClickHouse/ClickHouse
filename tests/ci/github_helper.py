@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 from os import path as p
 from pathlib import Path
 from time import sleep
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import github
 import requests

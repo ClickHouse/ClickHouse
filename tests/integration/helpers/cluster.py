@@ -59,11 +59,29 @@ from minio import Minio
 
 from . import pytest_xdist_logging_to_separate_files
 from .client import Client, QueryRuntimeException
-from .config_cluster import *
+from .config_cluster import (
+    dremio_pass,
+    dremio_user,
+    minio_access_key,
+    minio_secret_key,
+    mongo_pass,
+    mongo_user,
+    mysql_pass,
+    mysql_user,
+    nats_pass,
+    nats_user,
+    odbc_mysql_db,
+    odbc_mysql_uid,
+    odbc_psql_db,
+    odbc_psql_user,
+    pg_db,
+    pg_pass,
+    pg_user,
+)
 from .kazoo_client import KazooClientWithImplicitRetries
 from .random_settings import write_random_settings_config
 from .retry_decorator import retry
-from .test_tools import assert_eq_with_retry, exec_query_with_retry
+from .test_tools import exec_query_with_retry
 
 HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
@@ -600,7 +618,7 @@ class ClickHouseCluster:
         #    [1]: https://github.com/ClickHouse/ClickHouse/issues/43426#issuecomment-1368512678
         self.env_variables["ASAN_OPTIONS"] = "use_sigaltstack=0"
         # In integration tests we spawn multiple servers, so let's aim to not more then 5GiB
-        self.env_variables["TSAN_OPTIONS"] = f"use_sigaltstack=0 memory_limit_mb=5120"
+        self.env_variables["TSAN_OPTIONS"] = "use_sigaltstack=0 memory_limit_mb=5120"
         self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
         self.env_variables["CLICKHOUSE_NATS_TLS_SECURE"] = "0"
 
@@ -928,7 +946,7 @@ class ClickHouseCluster:
             logging.debug(f"Removed :{self.instances_dir}")
 
         if with_spark:
-            import pyspark
+            pass
 
             # (
             #     pyspark.sql.SparkSession.builder.appName("spark_test")
@@ -1184,7 +1202,7 @@ class ClickHouseCluster:
                 if unstopped_containers:
                     logging.debug(f"Left unstopped containers: {unstopped_containers}")
                 else:
-                    logging.debug(f"Unstopped containers killed.")
+                    logging.debug("Unstopped containers killed.")
             else:
                 logging.debug(f"No running containers for project: {self.project_name}")
         except Exception as ex:
@@ -3207,7 +3225,7 @@ class ClickHouseCluster:
                 subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
                     self.base_kafka_cmd + ["logs"], stdout=f
                 )
-        except Exception as e:
+        except Exception:
             logging.debug("Unable to get logs from docker.")
         raise Exception("Kafka is not available")
 
@@ -3324,7 +3342,7 @@ class ClickHouseCluster:
                 subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
                     self.base_minio_cmd + ["logs"], stdout=f
                 )
-        except Exception as e:
+        except Exception:
             logging.debug("Unable to get logs from docker.")
 
         raise Exception("Can't wait Minio to start")
@@ -3430,7 +3448,6 @@ class ClickHouseCluster:
 
             start = time.time()
             sr_started = False
-            sr_auth_started = False
             while time.time() - start < timeout:
                 try:
                     sr_client._send_request(sr_client.url)
@@ -3576,7 +3593,7 @@ class ClickHouseCluster:
 
         try:
             self.cleanup()
-        except Exception as e:
+        except Exception:
             logging.warning("Cleanup failed:{e}")
 
         try:
@@ -3917,7 +3934,7 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.rabbitmq_docker_id = self.get_instance_docker_id("rabbitmq1")
                 time.sleep(2)
-                logging.debug(f"RabbitMQ checking container try")
+                logging.debug("RabbitMQ checking container try")
                 self.wait_rabbitmq_to_start()
 
             if self.with_nats and self.base_nats_cmd:
@@ -4121,7 +4138,7 @@ class ClickHouseCluster:
                 )
                 run_and_check(arrowflight_start_cmd)
 
-                logging.error(f'Trying to connect to Arrowflight...')
+                logging.error('Trying to connect to Arrowflight...')
                 self.wait_arrowflight_to_start()
 
             clickhouse_start_cmd = self.base_cmd + ["up", "-d", "--no-recreate"]
@@ -4838,7 +4855,7 @@ class ClickHouseInstance:
         if pids_limit is not None:
             self.pids_limit = f"pids_limit: {pids_limit}"
         else:
-            self.pids_limit = f"pids_limit: 5000"
+            self.pids_limit = "pids_limit: 5000"
 
         self.base_config_dir = (
             p.abspath(p.join(base_path, base_config_dir)) if base_config_dir else None
@@ -5434,7 +5451,7 @@ class ClickHouseInstance:
                 try:
                     self.wait_start(start_wait_sec + start_time - time.time())
                     return exec_id
-                except Exception as e:
+                except Exception:
                     logging.warning(
                         f"Current start attempt failed. Will kill {pid} just in case."
                     )
@@ -5474,7 +5491,7 @@ class ClickHouseInstance:
             if time.time() > start_time + start_wait_sec:
                 break
         logging.error(
-            f"No time left to start. But process is still running. Will dump threads."
+            "No time left to start. But process is still running. Will dump threads."
         )
         ps_clickhouse = self.exec_in_container(
             ["bash", "-c", "ps -C clickhouse"], nothrow=True, user="root"
@@ -5497,7 +5514,7 @@ class ClickHouseInstance:
                 return
             time.sleep(1)
         logging.error(
-            f"No time left to shutdown. Process is still running. Will dump threads."
+            "No time left to shutdown. Process is still running. Will dump threads."
         )
         ps_clickhouse = self.exec_in_container(
             ["bash", "-c", "ps -C clickhouse"], nothrow=True, user="root"
@@ -5569,7 +5586,7 @@ class ClickHouseInstance:
     def grep_in_log(
         self, substring, from_host=False, filename="clickhouse-server.log", after=None, only_latest=False
     ):
-        logging.debug(f"grep in log called %s", substring)
+        logging.debug("grep in log called %s", substring)
         if after is not None:
             after_opt = "-A{}".format(after)
         else:
@@ -5782,7 +5799,7 @@ class ClickHouseInstance:
         # wait start
         time_left = begin_time + stop_start_wait_sec - time.time()
         if time_left <= 0:
-            raise Exception(f"No time left during restart")
+            raise Exception("No time left during restart")
         else:
             self.wait_start(time_left)
 
@@ -5863,7 +5880,7 @@ class ClickHouseInstance:
         # wait start
         time_left = begin_time + stop_start_wait_sec - time.time()
         if time_left <= 0:
-            raise Exception(f"No time left during restart")
+            raise Exception("No time left during restart")
         else:
             self.wait_start(time_left)
 
@@ -6081,7 +6098,7 @@ class ClickHouseInstance:
                 delimiter = d
                 break
         else:
-            raise Exception(f"Couldn't find a suitable delimiter")
+            raise Exception("Couldn't find a suitable delimiter")
         replace = shlex.quote(replace)
         replacement = shlex.quote(replacement)
         self.exec_in_container(
@@ -6195,10 +6212,9 @@ class ClickHouseInstance:
             # If custom main config is used, do not apply random settings to it
             write_random_settings_config(Path(users_d_dir) / "0_random_settings.xml")
 
-        version = None
         version_parts = self.tag.split(".")
         if version_parts[0].isdigit() and version_parts[1].isdigit():
-            version = {"major": int(version_parts[0]), "minor": int(version_parts[1])}
+            {"major": int(version_parts[0]), "minor": int(version_parts[1])}
 
         logging.debug("Generate and write macros file")
         macros = self.macros.copy()

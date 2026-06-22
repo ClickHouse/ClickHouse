@@ -1,7 +1,6 @@
 import json
 import random
 import re
-import string
 import threading
 import time
 from multiprocessing.dummy import Pool
@@ -1182,7 +1181,7 @@ def produce_alter_move(node, name):
                 name, mt=move_type, mp=move_part, md=move_disk, mv=move_volume
             )
         )
-    except QueryRuntimeException as ex:
+    except QueryRuntimeException:
         pass
 
 
@@ -1685,7 +1684,6 @@ def test_kill_while_insert(start_cluster):
         )
 
         data = []
-        dates = []
         for i in range(10):
             data.append(get_random_string(1024 * 1024))  # 1MB value
         node1.query(

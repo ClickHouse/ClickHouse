@@ -32,9 +32,9 @@ def started_cluster():
         conn = sqlite3.connect(db_file_on_host)
         cursor = conn.cursor()
 
-        cursor.execute(f"DROP TABLE IF EXISTS big_data_table;")
+        cursor.execute("DROP TABLE IF EXISTS big_data_table;")
         cursor.execute(
-            f"""
+            """
         CREATE TABLE big_data_table (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             random_int INTEGER,
@@ -44,7 +44,7 @@ def started_cluster():
         """
         )
         cursor.execute(
-            f"""
+            """
 WITH RECURSIVE r(n) AS (
     VALUES(0)
     UNION ALL

@@ -32,7 +32,7 @@ def start_cluster():
 @pytest.fixture(scope="function", autouse=True)
 def clear_workloads_and_resources():
     node.query(
-        f"""
+        """
         drop workload if exists production;
         drop workload if exists development;
         drop workload if exists main;
@@ -58,7 +58,7 @@ def assert_profile_event(node, query_id, profile_event, check) -> None:
 
 def test_create() -> None:
     node.query(
-        f"""
+        """
         create resource query (query);
         create workload all settings max_concurrent_queries=20;
         create workload admin in all settings priority=0;
@@ -138,7 +138,7 @@ class QueryPool:
 def concurrent_queries() -> int:
     return int(
         node.query(
-            f"select value from system.metrics where name='ConcurrentQueryAcquired'"
+            "select value from system.metrics where name='ConcurrentQueryAcquired'"
         ).strip()
     )
 
@@ -170,7 +170,7 @@ def ensure_workload_concurrency(workload, limit: int) -> None:
 
 def test_max_concurrent_queries() -> None:
     node.query(
-        f"""
+        """
         create resource query (query);
         create workload all settings max_concurrent_queries=6;
         create workload admin in all settings priority=0;
@@ -207,7 +207,7 @@ def test_max_concurrent_queries() -> None:
 
 def test_max_waiting_queries_reached() -> None:
     node.query(
-        f"""
+        """
         create resource query (query);
         create workload all settings max_concurrent_queries=1, max_waiting_queries=1;
         """

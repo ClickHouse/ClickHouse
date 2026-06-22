@@ -3,7 +3,7 @@ import json
 import logging
 import os
 import re
-from typing import Dict, List, Set, Union
+from typing import Dict, Union
 from urllib.parse import quote
 
 from unidiff import PatchSet  # type: ignore

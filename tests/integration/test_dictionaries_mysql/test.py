@@ -588,7 +588,7 @@ def test_background_dictionary_reconnect(started_cluster):
         for _ in range(5):
             try:
                 result = query("SELECT value FROM dict WHERE id = 1")
-            except Exception as e:
+            except Exception:
                 pass
 
         time.sleep(5)

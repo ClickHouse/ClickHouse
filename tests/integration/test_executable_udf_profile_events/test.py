@@ -295,7 +295,7 @@ def test_reaped_child_memory_rolls_up(started_cluster):
     elapsed_us = _profile_event_value(qid, "ExecutableUserDefinedFunctionElapsedMicroseconds")
     invocations = _profile_event_value(qid, "ExecutableUserDefinedFunctionInvocations")
     assert invocations >= 1, f"UDF did not run (Invocations={invocations}); memory floor is meaningless"
-    assert elapsed_us > 0, f"ElapsedMicroseconds is 0; implied-peak calculation would divide by zero"
+    assert elapsed_us > 0, "ElapsedMicroseconds is 0; implied-peak calculation would divide by zero"
     implied_peak_mib = byte_seconds * 1e6 / elapsed_us / 1048576
     assert implied_peak_mib >= 40, (
         f"Implied peak {implied_peak_mib:.1f} MiB < 40 MiB floor; the child's ~64 MiB VmHWM "
@@ -372,7 +372,7 @@ def test_check_exit_code_false_succeeds_and_meters(started_cluster):
     # the tryReapWithoutStatusCheck path, so the query must succeed and rusage
     # must still be populated.
     result = _run(
-        f"SELECT sum(test_udf_nonzero_exit(number)) FROM numbers(20)",
+        "SELECT sum(test_udf_nonzero_exit(number)) FROM numbers(20)",
         qid,
     )
     # If check_exit_code=false is not honoured the query raises; reaching here
