@@ -602,9 +602,9 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     struct KQLOperatorDataFlowState
     {
         String operator_name;
-        bool need_input{};
-        bool gen_output{};
-        int8_t backspace_steps{}; // how many steps to last token of previous pipe
+        bool need_input;
+        bool gen_output;
+        int8_t backspace_steps; // how many steps to last token of previous pipe
     };
 
     auto select_query = make_intrusive<ASTSelectQuery>();
