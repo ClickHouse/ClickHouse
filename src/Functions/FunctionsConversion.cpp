@@ -1056,6 +1056,8 @@ FunctionCast::WrapperType FunctionCast::createQBitWrapper(const DataTypePtr & fr
     {
         switch (to_type.getElementSize())
         {
+            case 8:
+                return createArrayToQBitWrapper<Int8>(*from_array_type, to_type);
             case 16:
                 return createArrayToQBitWrapper<BFloat16>(*from_array_type, to_type);
             case 32:
@@ -1081,7 +1083,11 @@ template <typename FloatType>
 ColumnPtr FunctionCast::convertArrayToQBit(
     ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t n, size_t size)
 {
-    using Word = std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>;
+    /// Note: the 8-bit word is `uint8_t` (not ClickHouse's `UInt8`, which is `char8_t` and does not satisfy `std::countr_zero`).
+    using Word = std::conditional_t<
+        sizeof(FloatType) == 1,
+        uint8_t,
+        std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>>;
 
     ColumnPtr src_col = arguments.front().column;
     const auto * col_array = checkAndGetColumn<ColumnArray>(src_col.get());
