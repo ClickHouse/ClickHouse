@@ -55,11 +55,13 @@ void ASTWithElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
         hash_state.update(true);
 
     /// `aliases` is stored as a side field (not in `children`), so `IAST::updateTreeHashImpl` never
-    /// sees it. Hash it explicitly here, including each output-alias identifier's double-quote
-    /// style, so `QueryResultCache::Key` can't collide queries that differ only by CTE output
+    /// sees it. `updateTreeHashImpl` on its own would only hash the wrapper's node id, not its
+    /// children — call `updateTreeHash` to traverse every alias identifier (including each
+    /// identifier's per-part double-quote bit, contributed by `ASTIdentifier::updateTreeHashImpl`).
+    /// Without this, `QueryResultCache::Key` would collide queries that differ only by CTE output
     /// aliases (e.g. `WITH cte(MyCol) AS (...)` vs `WITH cte("MyCol") AS (...)`).
     if (aliases)
-        aliases->updateTreeHashImpl(hash_state, ignore_aliases);
+        aliases->updateTreeHash(hash_state, ignore_aliases);
 
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }

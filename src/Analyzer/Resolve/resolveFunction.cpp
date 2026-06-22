@@ -498,15 +498,27 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         identifier.getFullName(),
                         scope.scope_node->formatASTForErrorMessage());
 
-                /// Substitute the canonical storage name resolved by the analyzer. Without this,
-                /// `joinGet(myjoin, ...)` against an actual `Join` table `MyJoin` would pass analyzer
-                /// validation in `standard` mode and then fail at function overload resolution where
-                /// `FunctionJoinGet::getJoin` does an exact `context->resolveStorageID` lookup.
-                const auto resolved_storage_id = table_node_typed.getStorageID();
-                if (parts_size == 2 && !resolved_storage_id.database_name.empty())
-                    resolved_first_argument = resolved_storage_id.getDatabaseName() + "." + resolved_storage_id.getTableName();
-                else
-                    resolved_first_argument = resolved_storage_id.getTableName();
+                /// In `standard` mode, substitute the canonical storage name resolved by the analyzer
+                /// when the actual lookup folded case-insensitively (so the resolved table name
+                /// differs from the user's spelling). Without this, `joinGet(myjoin, ...)` against
+                /// an actual `Join` table `MyJoin` would pass analyzer validation in `standard` mode
+                /// and then fail at function overload resolution because `FunctionJoinGet::getJoin`
+                /// does an exact `context->resolveStorageID` lookup. Don't substitute in default mode
+                /// (or when the names already match) — the analyzer here can't see temporary tables,
+                /// so always-substituting would steer `joinGet('03775_join', ...)` away from a
+                /// session temporary `03775_join` to a same-named regular table.
+                if (standard_mode)
+                {
+                    const auto resolved_storage_id = table_node_typed.getStorageID();
+                    const String resolved_table_name = resolved_storage_id.getTableName();
+                    String candidate;
+                    if (parts_size == 2 && !resolved_storage_id.database_name.empty())
+                        candidate = resolved_storage_id.getDatabaseName() + "." + resolved_table_name;
+                    else
+                        candidate = resolved_table_name;
+                    if (candidate != identifier.getFullName())
+                        resolved_first_argument = std::move(candidate);
+                }
             }
 
             first_argument = std::make_shared<ConstantNode>(resolved_first_argument);

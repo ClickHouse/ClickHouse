@@ -73,5 +73,18 @@ SELECT * REPLACE STRICT (0 AS age) FROM t_xform;
 
 DROP TABLE IF EXISTS t_xform;
 
+SELECT '--- AST hash distinguishes quoted vs unquoted CTE output aliases / INTERPOLATE targets ---';
+-- Format/reparse must preserve the quote style of CTE output aliases and INTERPOLATE targets so
+-- their AST hashes differ — otherwise `QueryResultCache::Key` would collide queries that differ
+-- only by that quote bit (and bind targets with different case-sensitivity).
+SELECT formatQuery($$ WITH cte(MyCol) AS (SELECT 1) SELECT * FROM cte $$)
+    != formatQuery($$ WITH cte("MyCol") AS (SELECT 1) SELECT * FROM cte $$);
+-- The quoted CTE alias survives a format round-trip.
+SELECT formatQuery($$ WITH cte("MyCol") AS (SELECT 1) SELECT * FROM cte $$) LIKE '%cte("MyCol")%';
+-- Same shape for INTERPOLATE targets.
+SELECT formatQuery($$ SELECT x FROM (SELECT 1 AS x) ORDER BY x WITH FILL FROM 1 TO 3 INTERPOLATE (x AS x + 1) $$)
+    != formatQuery($$ SELECT x FROM (SELECT 1 AS x) ORDER BY x WITH FILL FROM 1 TO 3 INTERPOLATE ("x" AS x + 1) $$);
+SELECT formatQuery($$ SELECT x FROM (SELECT 1 AS x) ORDER BY x WITH FILL FROM 1 TO 3 INTERPOLATE ("x" AS x + 1) $$) LIKE '%INTERPOLATE ("x"%';
+
 DROP TABLE IF EXISTS t_using_l;
 DROP TABLE IF EXISTS t_using_r;

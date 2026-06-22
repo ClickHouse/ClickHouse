@@ -16,9 +16,15 @@ public:
     bool column_is_double_quoted = false;
     ASTPtr expr;
 
-    String getID(char delim) const override { return String("InterpolateElement") + delim + "(column " + column + ")"; }
+    String getID(char delim) const override
+    {
+        /// Include the quote flag so two AST forms that only differ by `"Col"` vs `Col` don't share an ID.
+        return String("InterpolateElement") + delim + "(column " + column + (column_is_double_quoted ? "/q" : "") + ")";
+    }
 
     ASTPtr clone() const override;
+
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

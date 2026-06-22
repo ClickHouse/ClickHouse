@@ -1,6 +1,7 @@
 #include <Parsers/ASTInterpolateElement.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
+#include <Common/SipHash.h>
 
 
 namespace DB
@@ -13,6 +14,19 @@ ASTPtr ASTInterpolateElement::clone() const
     clone->children.clear();
     clone->children.push_back(clone->expr);
     return clone;
+}
+
+void ASTInterpolateElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// The target column name and its double-quote flag are semantic in `standard` mode, so they
+    /// must be visible to `QueryResultCache::Key`. Without this override the wrapper hashes only
+    /// children, so `INTERPOLATE ("MyCol" AS ...)` and `INTERPOLATE (MyCol AS ...)` could share a
+    /// cache entry even though their targets bind with different case-sensitivity.
+    hash_state.update(column.size());
+    hash_state.update(column);
+    if (column_is_double_quoted)
+        hash_state.update(true);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 

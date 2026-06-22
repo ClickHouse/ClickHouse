@@ -32,3 +32,8 @@ Smith	30
 Alice	Smith	0
 Smith	30
 Alice	Smith	0
+--- AST hash distinguishes quoted vs unquoted CTE output aliases / INTERPOLATE targets ---
+1
+1
+1
+1
