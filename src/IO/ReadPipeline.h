@@ -155,10 +155,6 @@ public:
     /// Used only by the `ReaderExecutor` path.
     void needPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool);
 
-    /// The `CacheFiller` pool for the `ReaderExecutor` deferred cache-fill (put)
-    /// steps, separate from the prefetch pool.
-    void needCacheFillerPool(std::shared_ptr<PrefetchThreadPool> pool);
-
     /// Used only by the `ReaderExecutor` live-buffer optimization.
     void needLongConnectionLimit(std::shared_ptr<LongConnectionLimit> limit);
 
@@ -243,7 +239,6 @@ private:
     std::optional<DistributedCacheStage> distributed_cache;
     std::optional<AsyncPrefetchStage> async_prefetch;
     std::shared_ptr<PrefetchThreadPool> prefetch_pool;
-    std::shared_ptr<PrefetchThreadPool> cache_filler_pool;
     std::shared_ptr<LongConnectionLimit> long_connection_limit;
     VectorWithMemoryTracking<DecryptionStage> decryption_stages;
 

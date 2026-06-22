@@ -407,8 +407,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 prefetch_threadpool_queue_size;
     extern const ServerSettingsNonZeroUInt64 reader_executor_prefetch_pool_size;
     extern const ServerSettingsUInt64 reader_executor_prefetch_queue_size;
-    extern const ServerSettingsNonZeroUInt64 reader_executor_cache_filler_pool_size;
-    extern const ServerSettingsUInt64 reader_executor_cache_filler_queue_size;
     extern const ServerSettingsUInt64 load_marks_threadpool_pool_size;
     extern const ServerSettingsUInt64 load_marks_threadpool_queue_size;
     extern const ServerSettingsNonZeroUInt64 threadpool_writer_pool_size;
@@ -628,9 +626,6 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable OnceFlag prefetch_thread_pool_initialized;
     mutable std::shared_ptr<PrefetchThreadPool> prefetch_thread_pool;
-
-    mutable OnceFlag cache_filler_thread_pool_initialized;
-    mutable std::shared_ptr<PrefetchThreadPool> cache_filler_thread_pool;
 
     mutable OnceFlag long_connection_limit_initialized;
     mutable std::shared_ptr<LongConnectionLimit> long_connection_limit;
@@ -7808,18 +7803,6 @@ std::shared_ptr<PrefetchThreadPool> Context::getPrefetchThreadPool() const
         shared->prefetch_thread_pool = std::make_shared<PrefetchThreadPool>(pool_size, queue_size);
     });
     return shared->prefetch_thread_pool;
-}
-
-std::shared_ptr<PrefetchThreadPool> Context::getReaderExecutorCacheFillerPool() const
-{
-    callOnce(shared->cache_filler_thread_pool_initialized, [&]
-    {
-        const auto & server_settings = getServerSettings();
-        size_t pool_size = server_settings[ServerSetting::reader_executor_cache_filler_pool_size];
-        size_t queue_size = server_settings[ServerSetting::reader_executor_cache_filler_queue_size];
-        shared->cache_filler_thread_pool = std::make_shared<PrefetchThreadPool>(pool_size, queue_size);
-    });
-    return shared->cache_filler_thread_pool;
 }
 
 std::shared_ptr<LongConnectionLimit> Context::getLongConnectionLimit() const

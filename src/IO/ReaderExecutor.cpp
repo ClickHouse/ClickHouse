@@ -568,10 +568,9 @@ void ReaderExecutor::setReadExtent(std::optional<size_t> logical_end)
 
 std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t start_position, size_t read_size) const
 {
-    /// `prefetch_pool`, `cache_filler_pool` and `reader_executor_log` are
-    /// intentionally NOT propagated: a one-shot `readBigAt` can't amortise
-    /// prefetch latency (and so fills/promotes run synchronously inline), and
-    /// per-call log rows would spam `system.reader_executor_log`.
+    /// `prefetch_pool` and `reader_executor_log` are intentionally NOT propagated:
+    /// a one-shot `readBigAt` can't amortise prefetch latency, and per-call log rows
+    /// would spam `system.reader_executor_log`. (Fills/promotes always run inline.)
     /// `long_connection_limit` is shared (dormant until the long-connection rework).
     Options transient_options;
     transient_options.window_size = window_size;

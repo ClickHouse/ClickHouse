@@ -191,11 +191,6 @@ void ReadPipeline::needPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool)
     prefetch_pool = std::move(pool);
 }
 
-void ReadPipeline::needCacheFillerPool(std::shared_ptr<PrefetchThreadPool> pool)
-{
-    cache_filler_pool = std::move(pool);
-}
-
 void ReadPipeline::needLongConnectionLimit(std::shared_ptr<LongConnectionLimit> limit)
 {
     long_connection_limit = std::move(limit);
@@ -230,17 +225,17 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
         /// encrypted bytes to the caller.
         if (gather || memory_cache || !filesystem_caches.empty()
             || async_prefetch || !decryption_stages.empty() || distributed_cache
-            || prefetch_pool || cache_filler_pool || long_connection_limit)
+            || prefetch_pool || long_connection_limit)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "ReadPipeline: setAlreadyCompleteSource is incompatible with any stage: "
                 "gather={}, memory_cache={}, filesystem_caches={}, async_prefetch={}, "
                 "decryption_stages={}, distributed_cache={}, prefetch_pool={}, "
-                "cache_filler_pool={}, long_connection_limit={}",
+                "long_connection_limit={}",
                 gather, memory_cache.has_value(), filesystem_caches.size(),
                 async_prefetch.has_value(), decryption_stages.size(),
                 distributed_cache.has_value(),
-                static_cast<bool>(prefetch_pool), static_cast<bool>(cache_filler_pool),
+                static_cast<bool>(prefetch_pool),
                 static_cast<bool>(long_connection_limit));
         }
         const auto & custom = std::get<CustomSource>(source->source);
