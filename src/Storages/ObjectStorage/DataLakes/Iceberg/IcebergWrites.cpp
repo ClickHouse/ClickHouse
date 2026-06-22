@@ -682,7 +682,7 @@ void generateExistingManifestFile(
     String schema_representation;
     if (version == 1)
         schema_representation = manifest_entry_v1_schema;
-    else if (version == 2)
+    else if (version == 2 || version == 3)
         schema_representation = manifest_entry_v2_schema;
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown iceberg version {}", version);
