@@ -1,7 +1,22 @@
 """Quick tests, faster than 30 seconds"""
 
-from helpers.kafka.common_direct import *
-from helpers.kafka.common_direct import _VarintBytes
+import json
+import logging
+import math
+import random
+import threading
+import time
+
+from kafka import KafkaAdminClient, KafkaProducer
+import kafka.errors
+import pytest
+
+from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
+from helpers.test_tools import TSV, assert_eq_with_retry
+from google.protobuf.internal.encoder import _VarintBytes
+from helpers.kafka import message_with_repeated_pb2
 import helpers.kafka.common as k
 
 
@@ -587,10 +602,23 @@ def test_kafka_read_consumers_in_parallel(kafka_cluster):
         """
     )
 
+    # Parallel reading of 8 consumers reaches 64 polls in ~8s; sequential reading
+    # is gated by kafka_poll_timeout_ms=1000 to ~1 poll/sec, so it cannot reach 64
+    # polls in under ~64s on any build. Slow builds (sanitizer/coverage/debug)
+    # inflate the parallel path's wall-clock well past 30s under CI batch load, so
+    # use a larger timeout there while staying below the ~64s sequential floor that
+    # would catch a regression to sequential reads.
+    poll_timeout = (
+        60
+        if instance.is_built_with_sanitizer()
+        or instance.is_built_with_llvm_coverage()
+        or instance.is_debug_build()
+        else 30
+    )
     instance.wait_for_log_line(
         f"{kafka_table}.*Polled batch of [0-9]+.*read_consumers_in_parallel",
         repetitions=64,
-        timeout=30,  # we should get 64 polls in ~8 seconds, but when read sequentially it will take more than 64 sec
+        timeout=poll_timeout,
     )
 
     cancel.set()
@@ -1741,7 +1769,7 @@ def test_kafka_virtual_columns2(kafka_cluster, create_query_generator, log_line)
 
             instance.wait_for_log_line(log_line, repetitions=4)
 
-            members = k.describe_consumer_group(kafka_cluster, consumer_group)
+            k.describe_consumer_group(kafka_cluster, consumer_group)
             # pprint.pprint(members)
             # members[0]['client_id'] = 'ClickHouse-instance-test-kafka-0'
             # members[1]['client_id'] = 'ClickHouse-instance-test-kafka-1'
@@ -2438,7 +2466,7 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
             pm.drop_instance_zk_connections(instance)
             # FIXME: we need to make sure that this happens during writing to RMT
             instance.wait_for_log_line(
-                f"Error.*(Connection loss|Coordination::Exception|DB::Exception: Coordination error: Operation timeout).*while pushing to view",
+                "Error.*(Connection loss|Coordination::Exception|DB::Exception: Coordination error: Operation timeout).*while pushing to view",
                 timeout=60,
             )
 
@@ -2962,17 +2990,17 @@ def test_issue26643(kafka_cluster, create_query_generator):
     thread_per_consumer = k.must_use_thread_per_consumer(create_query_generator)
 
     with k.kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
-        msg = k.message_with_repeated_pb2.Message(
+        msg = message_with_repeated_pb2.Message(
             tnow=1629000000,
             server="server1",
             clien="host1",
             sPort=443,
             cPort=50000,
             r=[
-                k.message_with_repeated_pb2.dd(
+                message_with_repeated_pb2.dd(
                     name="1", type=444, ttl=123123, data=b"adsfasd"
                 ),
-                k.message_with_repeated_pb2.dd(name="2"),
+                message_with_repeated_pb2.dd(name="2"),
             ],
             method="GET",
         )
@@ -2981,7 +3009,7 @@ def test_issue26643(kafka_cluster, create_query_generator):
         serialized_msg = msg.SerializeToString()
         data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
 
-        msg = k.message_with_repeated_pb2.Message(tnow=1629000002)
+        msg = message_with_repeated_pb2.Message(tnow=1629000002)
 
         serialized_msg = msg.SerializeToString()
         data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
@@ -3750,10 +3778,10 @@ def test_kafka_json_type(kafka_cluster):
         """
     )
 
-    while int(instance.query(f"SELECT count() FROM test.dst")) < 2:
+    while int(instance.query("SELECT count() FROM test.dst")) < 2:
         time.sleep(1)
 
-    result = instance.query(f"SELECT * FROM test.dst ORDER BY a;")
+    result = instance.query("SELECT * FROM test.dst ORDER BY a;")
 
     instance.query(
         f"""
@@ -3780,7 +3808,7 @@ def test_kafka_assigned_partitions(kafka_cluster):
     k.kafka_create_topic(admin_client, topic_name, num_partitions=num_partitions)
 
     metrics_before = instance.query(
-            f"""
+            """
             SELECT
                 anyIf(value, metric = 'KafkaAssignedPartitions') AS KafkaAssignedPartitions,
                 anyIf(value, metric = 'KafkaConsumersWithAssignment') AS KafkaConsumersWithAssignment
