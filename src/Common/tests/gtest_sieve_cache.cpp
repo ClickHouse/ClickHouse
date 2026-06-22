@@ -240,3 +240,42 @@ TEST(SIEVECache, ComplexEvictTest)
     ASSERT_TRUE(sieve_cache_policy.isVisited(7).value() == 0);
     ASSERT_TRUE(sieve_cache_policy.isVisited(13).value() == 0);
 }
+
+/// An update that overflows the cache must not protect the entry the hand currently points at as if it
+/// were a freshly inserted tail entry: only a real insertion appends a new tail to protect. Here the hand
+/// points at the tail (key 11) and an update of an unrelated key (key 1) overflows. The canonical SIEVE
+/// hand inspects and evicts key 11; the buggy behaviour skipped key 11 and evicted key 3 instead.
+TEST(SIEVECache, UpdateDoesNotProtectUnrelatedTail)
+{
+    using SimpleCacheBase = DB::CacheBase<int, size_t, std::hash<int>, ValueWeight>;
+    auto sieve_cache = SimpleCacheBase("SIEVE", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 20, /*max_count*/ 7, /*size_ratio*/ 0.5);
+
+    // Reproduce the queue state {1, 3, 5, 7, 11} with the hand pointing at the tail (key 11),
+    // exactly as reached at the end of ComplexEvictTest.
+    for (int k = 1; k <= 7; ++k)
+        sieve_cache.set(k, std::make_shared<size_t>(2));
+    sieve_cache.get(1);
+    sieve_cache.get(3);
+    sieve_cache.get(5);
+    sieve_cache.get(7);
+    sieve_cache.set(8, std::make_shared<size_t>(2));
+    sieve_cache.set(9, std::make_shared<size_t>(2));
+    sieve_cache.set(10, std::make_shared<size_t>(2));
+    sieve_cache.set(11, std::make_shared<size_t>(12));
+
+    const auto & cache_policy = sieve_cache.getCachePolicy();
+    const auto & sieve_cache_policy = dynamic_cast<const DB::SIEVECachePolicy<int, size_t, std::hash<int>, ValueWeight> &>(cache_policy);
+
+    assertQueue(sieve_cache_policy.dumpQueue(), {1, 3, 5, 7, 11});
+    ASSERT_EQ(sieve_cache_policy.getHand().value(), 11);
+
+    // Update key 1 (size 2 -> 4), overflowing the cache by 2 bytes. As this is an update and not an
+    // insertion, the hand must evaluate the entry it points at (key 11) instead of skipping it.
+    sieve_cache.set(1, std::make_shared<size_t>(4));
+
+    assertQueue(sieve_cache_policy.dumpQueue(), {1, 3, 5, 7});
+    ASSERT_EQ(sieve_cache_policy.getHand().value(), 1);
+    ASSERT_EQ(sieve_cache.count(), 4);
+    ASSERT_FALSE(sieve_cache_policy.isVisited(11).has_value()); // key 11 was evicted
+    ASSERT_TRUE(sieve_cache_policy.isVisited(3).has_value());   // the unrelated key 3 was retained
+}

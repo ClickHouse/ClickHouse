@@ -187,7 +187,10 @@ public:
         CurrentMetrics::add(current_size_in_bytes_metric, static_cast<Int64>(current_size_in_bytes) - old_size_in_bytes);
         CurrentMetrics::add(count_metric, static_cast<Int64>(cells.size()) - old_size);
 
-        removeOverflow(true);
+        /// Protect the just-inserted tail entry from immediate eviction only when a new entry was
+        /// actually appended. On an update no new tail is created, so the hand must walk normally;
+        /// otherwise an unrelated tail entry would wrongly receive the new-entry exemption.
+        removeOverflow(/*ignore_last_element=*/ inserted);
     }
 
     std::vector<KeyMapped> dump() const override
