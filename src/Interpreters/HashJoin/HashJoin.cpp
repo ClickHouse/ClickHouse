@@ -1987,11 +1987,19 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
 
             auto & columns_info = columns_list.back().columns_info;
             size_t start_row = columns_info.columns.at(0)->size();
+
+            /// Detach all destination columns once (COW-safe: clones only if shared) and append through the
+            /// mutable handles, then move them back. This keeps the per-row append loop free of COW plumbing.
+            MutableColumns mutable_columns;
+            mutable_columns.reserve(columns_info.columns.size());
+            for (auto & column : columns_info.columns)
+                mutable_columns.push_back(IColumn::mutate(std::move(column)));
+
             for (; it.ok(); ++it)
             {
-                for (size_t i = 0; i < columns_info.columns.size(); ++i)
+                for (size_t i = 0; i < mutable_columns.size(); ++i)
                 {
-                    auto & col = columns_info.columns[i]->assumeMutableRef();
+                    auto & col = *mutable_columns[i];
                     /// Check if we insert into non replicated column from a replicated column.
                     if (!columns_info.replicated_columns[i] && it->columns_info->replicated_columns[i])
                     {
@@ -2004,6 +2012,10 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
                     }
                 }
             }
+
+            for (size_t i = 0; i < mutable_columns.size(); ++i)
+                columns_info.columns[i] = std::move(mutable_columns[i]);
+
             size_t new_rows = columns_info.columns.at(0)->size();
             if (new_rows > start_row)
             {

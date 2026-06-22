@@ -109,6 +109,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/Config/ConfigHelper.h>
@@ -509,6 +510,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_part_offset_column_in_projections;
     extern const MergeTreeSettingsUInt64 max_uncompressed_bytes_in_patches;
     extern const MergeTreeSettingsString auto_statistics_types;
+    extern const MergeTreeSettingsString default_compression_codec;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
@@ -1999,7 +2001,9 @@ Block MergeTreeData::getBlockWithVirtualsForFilter(
         for (auto & column : block)
         {
             auto field = getFieldForConstVirtualColumn(column.name, *part.data_part);
-            column.column->assumeMutableRef().insert(field);
+            auto mutable_column = IColumn::mutate(std::move(column.column));
+            mutable_column->insert(field);
+            column.column = std::move(mutable_column);
         }
     }
 
@@ -2027,7 +2031,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
         if (!virtual_columns_block.has(input->result_name))
             valid = false;
 
-    ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), local_context);
+    ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), local_context, /* boolean_context */ true);
 
     PartitionPruner partition_pruner(
         metadata_snapshot,
@@ -4574,8 +4578,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(local_context, false);
-    StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(local_context, false);
+    auto storage_metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    StorageInMemoryMetadata new_metadata = *storage_metadata_snapshot;
+    const StorageInMemoryMetadata & old_metadata = *storage_metadata_snapshot;
 
     const auto & settings = local_context->getSettingsRef();
     const auto & settings_from_storage = getSettings();
@@ -5029,7 +5034,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                                     reset_setting);
             }
         }
-        else if (command.isRequireMutationStage(*getInMemoryMetadataPtr(local_context, false), local_context))
+        else if (command.isRequireMutationStage(*storage_metadata_snapshot, local_context))
         {
             /// This alter will override data on disk. Let's check that it doesn't
             /// modify immutable column.
@@ -5264,7 +5269,8 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
     }
 
     const auto index_mode = (*getSettings())[MergeTreeSetting::alter_column_secondary_index_mode];
-    if (index_mode == AlterColumnSecondaryIndexMode::THROW && getInMemoryMetadataPtr(getContext(), false)->hasSecondaryIndices())
+    auto secondary_indices_metadata = getInMemoryMetadataPtr(getContext(), false);
+    if (index_mode == AlterColumnSecondaryIndexMode::THROW && secondary_indices_metadata->hasSecondaryIndices())
     {
         for (const auto & command : commands)
         {
@@ -5277,7 +5283,8 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
         }
     }
 
-    if (hasTextIndexMaterialization(commands, getInMemoryMetadataPtr(getContext(), false)))
+    const auto text_index_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    if (hasTextIndexMaterialization(commands, text_index_metadata_snapshot))
     {
         auto data_parts = getDataPartsVectorForInternalUsage();
 
@@ -5402,7 +5409,8 @@ void MergeTreeData::changeSettings(
         /// `setInMemoryMetadata`) into the dedicated MergeTree arena.
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
-        StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(getContext(), false);
+        auto storage_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        StorageInMemoryMetadata new_metadata = *storage_metadata_snapshot;
         new_metadata.setSettingsChanges(new_settings);
 
         if (has_escape_index_filenames_changed)
@@ -6080,7 +6088,8 @@ void MergeTreeData::restoreAndActivatePart(const DataPartPtr & part)
 void MergeTreeData::outdateUnexpectedPartAndCloneToDetached(const DataPartPtr & part_to_detach)
 {
     LOG_INFO(log, "Cloning part {} to unexpected_{} and making it obsolete.", part_to_detach->getDataPartStorage().getPartDirectory(), part_to_detach->name);
-    part_to_detach->makeCloneInDetached("unexpected", getInMemoryMetadataPtr(getContext(), false), /*disk_transaction*/ {});
+    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    part_to_detach->makeCloneInDetached("unexpected", metadata_snapshot, /*disk_transaction*/ {});
 
     auto lock = lockParts();
     part_to_detach->is_unexpected_local_part = true;
@@ -6715,7 +6724,8 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedL
     ///
     /// Note, the result will be still correct, since it is guarded by the
     /// columns_and_secondary_indices_sizes_mutex.
-    if (hasColumnsWithDynamicSubcolumns(getInMemoryMetadataPtr(getContext(), false)->getSampleBlock()))
+    auto storage_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    if (hasColumnsWithDynamicSubcolumns(storage_metadata_snapshot->getSampleBlock()))
     {
         DataParts data_parts(committed_parts_range.begin(), committed_parts_range.end());
         parts_lock.unlock();
@@ -8819,9 +8829,20 @@ CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_c
     if (best_ttl_entry)
         return CompressionCodecFactory::instance().get(best_ttl_entry->recompression_codec, {});
 
-    return getContext()->chooseCompressionCodec(
-        part_size_compressed,
-        static_cast<double>(part_size_compressed) / static_cast<double>(getTotalActiveSizeInBytes()));
+    auto codec_setting = (*getSettings())[MergeTreeSetting::default_compression_codec].value;
+    if (!codec_setting.empty())
+        return CompressionCodecFactory::instance().get(codec_setting);
+
+    /// On the first write into an empty table `getTotalActiveSizeInBytes()` is `0`, which would
+    /// turn `part_size / total` into `NaN` and make every `<compression>` case fail the
+    /// `part_size_ratio >= min_part_size_ratio` check inside `CompressionCodecSelector`.
+    /// Use a ratio of `0` in that case so the configuration with `min_part_size_ratio = 0` still applies.
+    auto total_active_size = getTotalActiveSizeInBytes();
+    double part_size_ratio = total_active_size > 0
+        ? static_cast<double>(part_size_compressed) / static_cast<double>(total_active_size)
+        : 0.0;
+
+    return getContext()->chooseCompressionCodec(part_size_compressed, part_size_ratio);
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds) const
@@ -9240,7 +9261,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         {
             minmax_columns_types = minmax_columns.getTypes();
 
-            ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), query_context);
+            ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), query_context, /* boolean_context */ true);
             const auto & query_settings = query_context->getSettingsRef();
 
             minmax_idx_condition.emplace(
@@ -9252,7 +9273,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
 
         if (metadata_snapshot->hasPartitionKey())
         {
-            ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), query_context);
+            ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), query_context, /* boolean_context */ true);
             const auto & query_settings = query_context->getSettingsRef();
 
             partition_pruner.emplace(
@@ -10648,8 +10669,9 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
     mutation_settings.max_threads = query_context->getSettingsRef()[Setting::max_threads];
     mutation_settings.recalculate_dependencies_of_updated_columns = false;
 
+    const auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
     MutationsInterpreter interpreter(
-        shared_from_this(), getInMemoryMetadataPtr(query_context, false),
+        shared_from_this(), metadata_snapshot,
         commands_to_run, query_context, mutation_settings);
 
     auto pipeline_builder = interpreter.execute();
@@ -11077,23 +11099,34 @@ MergeTreeSettingsPtr MergeTreeData::getSettings(const SettingsChanges * settings
     return data_settings;
 }
 
-StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
+StorageMetadataHandle MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
 {
-    if (bypass_metadata_cache)
-        return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+    auto base = [&]() -> StorageMetadataHandle
+    {
+        if (bypass_metadata_cache)
+            return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
 
-    if (!query_context || !query_context->hasQueryContext() || !query_context->getQueryMetadataCache())
-        return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+        if (!query_context || !query_context->hasQueryContext() || !query_context->getQueryMetadataCache())
+            return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
 
-    if (!query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
-        return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+        if (!query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
+            return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
 
-    auto [cache, lock] = query_context->getQueryMetadataCache()->getStorageMetadataCache();
-    auto it = cache->find(this);
-    if (it != cache->end())
-        return it->second;
+        auto [cache, lock] = query_context->getQueryMetadataCache()->getStorageMetadataCache();
+        auto it = cache->find(this);
+        if (it != cache->end())
+            return it->second;
 
-    return cache->emplace(this, IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache)).first->second;
+        const StorageMetadataHandle metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+        return cache->emplace(this, metadata).first->second;
+    }();
+
+    /// Let's return copy of storage metadata to catch lifetime bugs where reference to underlying metadata field was stored without pointer to metadata.
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    return std::make_shared<StorageInMemoryMetadata>(*base);
+#else
+    return base;
+#endif
 }
 
 StorageSnapshotPtr
@@ -11300,7 +11333,7 @@ void MergeTreeData::incrementMergedPartsProfileEvent(MergeTreeDataPartType type)
 
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition, const String & new_part_name,
-        const StorageMetadataPtr & metadata_snapshot, const MergeTreeTransactionPtr & txn)
+        const StorageMetadataPtr & metadata_snapshot, const MergeTreeTransactionPtr & txn) const
 {
     auto settings = getSettings();
 
@@ -11370,9 +11403,11 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     if ((*getSettings())[MergeTreeSetting::fsync_part_directory])
         sync_guard = new_data_part_storage->getDirectorySyncGuard();
 
-    /// This effectively chooses minimal compression method:
-    ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
-    auto compression_codec = getContext()->chooseCompressionCodec(0, 0);
+    /// An empty part has zero size, so this chooses the minimal compression method:
+    /// either the table-level `default_compression_codec` setting, or the default lz4 / a
+    /// compression method with zero thresholds on absolute and relative part size.
+    /// Pass empty TTL infos so that `RECOMPRESS` codecs are not selected for an empty part.
+    auto compression_codec = getCompressionCodecForPart(0, {}, time(nullptr));
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
     MergedBlockOutputStream out(
@@ -11380,7 +11415,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         getSettings(),
         metadata_snapshot,
         columns,
-        index_factory.getMany(metadata_snapshot->getSecondaryIndices(), *getSettings()),
+        index_factory.getMany(metadata_snapshot, metadata_snapshot->getSecondaryIndices(), *getSettings()),
         compression_codec,
         std::make_shared<MergeTreeIndexGranularityAdaptive>(),
         txn ? txn->tid : Tx::NonTransactionalTID,

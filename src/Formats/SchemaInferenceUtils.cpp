@@ -22,6 +22,7 @@
 
 #include <Core/Block.h>
 #include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
 #include <Common/SipHash.h>
 #include <Core/TypeId.h>
 
@@ -1169,7 +1170,10 @@ namespace
 
     bool tryReadJSONObject(ReadBuffer & buf, const FormatSettings & settings, DataTypeJSONPaths::Paths & paths, const std::vector<String> & path, JSONInferenceInfo * json_info, size_t depth)
     {
-        if (depth > settings.max_parser_depth)
+        /// max_parser_depth is the primary bound but user-tunable; keep a checkStackSize backstop.
+        /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
+        checkStackSize();
+        if (settings.max_parser_depth != 0 && depth > settings.max_parser_depth)
             throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
                 "Maximum parse depth ({}) exceeded. Consider raising max_parser_depth setting.", settings.max_parser_depth);
 
@@ -1339,7 +1343,11 @@ namespace
     template <bool is_json>
     DataTypePtr tryInferDataTypeForSingleFieldImpl(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth)
     {
-        if (depth > settings.max_parser_depth)
+        /// The max_parser_depth limit below is the primary bound, but it is user-tunable; keep a
+        /// checkStackSize backstop so a raised limit cannot turn deep nesting into a stack overflow.
+        /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
+        checkStackSize();
+        if (settings.max_parser_depth != 0 && depth > settings.max_parser_depth)
             throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
                 "Maximum parse depth ({}) exceeded. Consider raising max_parser_depth setting.", settings.max_parser_depth);
 
@@ -1450,6 +1458,8 @@ void transformInferredJSONTypesFromDifferentFilesIfNeeded(DataTypePtr & first, D
 
 static void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const FormatSettings & settings, JSONInferenceInfo * json_info, bool remain_nothing_types = false)
 {
+    checkStackSize();
+
     if (!data_type)
         return;
 
@@ -1666,6 +1676,10 @@ DataTypePtr tryInferDataTypeForSingleJSONField(std::string_view field, const For
 
 static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullable, const FormatSettings & settings)
 {
+    /// The inferred type tree can be arbitrarily deep (e.g. a deeply nested Array/Map/Tuple from a
+    /// crafted input). This walk runs after the per-format schema reader, so guard the native stack.
+    checkStackSize();
+
     if (!type)
         return nullptr;
 
@@ -1762,6 +1776,8 @@ NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header, cons
 
 bool checkIfTypeIsComplete(const DataTypePtr & type)
 {
+    checkStackSize();
+
     if (!type)
         return false;
 
