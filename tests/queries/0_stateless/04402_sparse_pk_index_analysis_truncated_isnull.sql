@@ -57,11 +57,17 @@ WHERE b IS NOT NULL
 SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0;
 
 -- Constraining the present prefix `a` alongside the truncated-suffix IS NULL/IS NOT NULL: pruning
--- still fires on `a` (Granules: 11/100), and the lightweight path matches the legacy path.
+-- still fires on `a` (Granules: 11/100), and the lightweight path matches the legacy path. The
+-- sparse path (=1) is asserted with its own EXPLAIN so pruning is checked, not just the count.
 EXPLAIN indexes = 1
 SELECT count() FROM t_sparse_pk_trunc_isnull
 WHERE a >= 90 AND b IS NULL
 SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0;
+
+EXPLAIN indexes = 1
+SELECT count() FROM t_sparse_pk_trunc_isnull
+WHERE a >= 90 AND b IS NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0;
 
 SELECT count() FROM t_sparse_pk_trunc_isnull
 WHERE a >= 90 AND b IS NULL
@@ -71,6 +77,11 @@ EXPLAIN indexes = 1
 SELECT count() FROM t_sparse_pk_trunc_isnull
 WHERE a >= 90 AND b IS NOT NULL
 SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0;
+
+EXPLAIN indexes = 1
+SELECT count() FROM t_sparse_pk_trunc_isnull
+WHERE a >= 90 AND b IS NOT NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0;
 
 SELECT count() FROM t_sparse_pk_trunc_isnull
 WHERE a >= 90 AND b IS NOT NULL
