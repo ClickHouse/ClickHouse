@@ -474,16 +474,17 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     /// Reset before the serve; `interpretStep` sets it only when it serves a window of
     /// decrypt-ahead bytes (already plaintext), so the boundary below skips decryption.
     served_window_is_plaintext = false;
-    served_window_is_hit = false;
     chain = interpretStep(position_phys, to_read);
 
     stats.add(Stats::RequestedBytes, chain.range().size);
     position += chain.range().size;
-    /// Feed the served range to the cache-read estimator ONLY on a cache HIT: it sizes the
-    /// residency look-ahead (held cache readers), so it must track the cache-read pattern,
-    /// not source/miss serves - feeding it on a cold source run would make that run look
-    /// "sequential" and wrongly extend the look-ahead, prefetching past the read-until bound.
-    if (chain.range().size && served_window_is_hit)
+    /// Feed every forward serve - hit OR miss - to the look-ahead estimator. It sizes the
+    /// plan / look-ahead window, which must grow on a sequential COLD read too (a cold scan
+    /// has no hits, so a hit-only feed left the window pinned to one mark range). The window
+    /// extends PAST `read_extent_end` on purpose: we plan and fetch ahead (whole cache
+    /// segments) while the SERVE stays bounded to the extent by `clampToExtent`. `onServe`'s
+    /// own contiguity test keeps a non-sequential (scattered) read from looking sequential.
+    if (chain.range().size)
         lookup_continuity.onServe(position_phys, chain.range().size);
     advanceCursor();
     LOG_TRACE(log, "readNextWindow: got {} bytes, {} nodes, position advanced to {}",
@@ -2666,7 +2667,6 @@ ChainedBuffers ReaderExecutor::interpretStep(size_t position_phys, size_t to_rea
     const auto & step = read_plan.schedule.steps[read_plan.cursor];
     if (step.require_retrieve.has_value())
         return serveRetrieveStep(step, *step.require_retrieve, position_phys, to_read);
-    served_window_is_hit = true;
     return serveHitStep(step, position_phys, to_read);
 }
 
@@ -2871,12 +2871,12 @@ ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start, MemoryPressureL
     /// readers/view should live across mark ranges, not be rebuilt each time
     /// `read_extent_end` advances (per-mark-range churn that defeats reader reuse and
     /// is the warm-cache coordination cost). Cover at least the advertised extent (so
-    /// the current task is served), then extend up to the cache-read continuity
-    /// prediction (`lookup_continuity`), capped above by the look-ahead window / object
-    /// end. Serving and fetching stay bounded by `read_extent_end` (`clampToExtent` /
-    /// a machine's `extent_snapshot`), so a larger lookup only holds resident hit
-    /// segments it will stream while the read continues; a non-continuous read keeps
-    /// `predictedReach` small, so the span falls back to the extent.
+    /// the current task is served), then extend up to the forward-serve continuity
+    /// prediction (`lookup_continuity`, fed by every forward serve - hit or miss), capped
+    /// above by the look-ahead window / object end. The SERVE stays bounded by
+    /// `read_extent_end` (`clampToExtent` / a machine's `extent_snapshot`), but the plan and
+    /// fetch extend past it so a sequential read pre-fetches/caches ahead; a non-continuous
+    /// read keeps `predictedReach` small, so the span falls back to the extent.
     if (read_extent_end)
     {
         const size_t physical_extent_end = *read_extent_end + data_start_offset;

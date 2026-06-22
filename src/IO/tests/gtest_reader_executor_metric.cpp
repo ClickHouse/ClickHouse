@@ -553,10 +553,9 @@ TEST_F(ReaderExecutorMetric, ColdSequential)
 {
     auto [live, stateless] = runMatrix("cold_seq", {}, {{0, std::nullopt}});
 
-    /// Live: the long connection coalesces the cold scan but reopens ~log(N) times as
-    /// its forward-reach bound (which roughly doubles each reopen) trails the advancing
-    /// read extent; it drains cleanly each time, no over-read.
-    EXPECT_EQ(live.requests, 8u) << "live: the cold scan coalesces into a few reach-bounded GETs";
+    /// Live: a cold sequential read grows the look-ahead, so the long connection spans the
+    /// whole scan and reopens only a couple of times; it drains cleanly, no over-read.
+    EXPECT_EQ(live.requests, 2u) << "live: the cold scan coalesces into a couple of GETs";
     EXPECT_EQ(live.incomplete, 0u) << "the connection drains to its bound";
     EXPECT_EQ(live.over_read, 0u);
     EXPECT_EQ(live.fetched, FILE_SIZE);
@@ -612,8 +611,8 @@ TEST_F(ReaderExecutorMetric, SmallCachedGaps)
         warm.emplace_back(off, hole);
     auto [live, stateless] = runMatrix("small_gaps", warm, {{0, std::nullopt}});
 
-    EXPECT_EQ(live.requests, 20u) << "live: above-bound holes are not bridged; reach-bounded reopens per cold run";
-    EXPECT_EQ(live.incomplete, 6u) << "a connection drains to its reach bound and reopens there; the open trigger shares that same bounded reach (`boundedReach`), so fewer connections open only to over-run into an above-bound hole than under the old raw-reach trigger";
+    EXPECT_EQ(live.requests, 17u) << "live: above-bound holes are not bridged; a reopen per cold run";
+    EXPECT_EQ(live.incomplete, 0u) << "the wide look-ahead bounds each connection at the next above-bound hole, so it drains cleanly there and is never abandoned";
     EXPECT_EQ(live.over_read, 0u) << "reopens land on the reach bound, not inside a segment, so no alignment-prefix slack";
     EXPECT_GT(stateless.requests, live.requests) << "stateless: a connection per window";
 }
@@ -679,18 +678,16 @@ TEST_F(ReaderExecutorMetric, PrefixHitSuffixMiss)
     EXPECT_GT(stateless.requests, live.requests) << "stateless: one connection per window";
 }
 
-/// First half cold, second half warm. The long connection coalesces the cold prefix
-/// (reopening reach-bounded a few times) and the last connection is dropped before its
-/// bound when the read switches to the cached suffix -> one incomplete connection.
-/// Order-flip of the case above: misses-then-hits costs an incomplete connection,
-/// hits-then-misses does not.
+/// First half cold, second half warm. The wide look-ahead lets the long connection span
+/// the cold prefix in a couple of GETs and bound it at the cold/warm boundary, so it drains
+/// cleanly there rather than being abandoned when the read switches to the cached suffix.
 TEST_F(ReaderExecutorMetric, SuffixHitPrefixMiss)
 {
     constexpr size_t half = FILE_SIZE / 2;
     auto [live, stateless] = runMatrix("suffix_hit", {{half, half}}, {{0, std::nullopt}});
 
-    EXPECT_EQ(live.requests, 7u) << "live: the cold prefix coalesces into a few reach-bounded GETs";
-    EXPECT_EQ(live.incomplete, 1u) << "live: connection abandoned when the read switches to the cached suffix";
+    EXPECT_EQ(live.requests, 2u) << "live: the cold prefix coalesces into a couple of GETs";
+    EXPECT_EQ(live.incomplete, 0u) << "live: the connection bounds at the cold/warm boundary and drains there, not abandoned";
     EXPECT_EQ(live.over_read, 0u);
     EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
 }
@@ -788,16 +785,13 @@ TEST_F(ReaderExecutorMetric, SparseScatteredCold)
     EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
 }
 
-/// Cold cache, read SEGMENT-sized chunks in DESCENDING order. Backward seeks defeat
-/// the long-connection's forward streaming, so each chunk costs reach-bounded GETs (vs
-/// a few coalesced GETs for the forward cold scan) — the request-count penalty of
-/// reverse access. The open decision compares the predicted forward reach to the read
-/// extent, and the bound is that same forward reach; on a reverse scan the estimator
-/// (EWMA of the prior chunks) predicts a reach past the current chunk, so the channel
-/// opens bound PAST the chunk and is abandoned at the backward seek - connection churn
-/// per chunk after the first. This is an accepted reverse degradation: it costs
-/// connection churn (I) but no wasted bytes (the channel is dropped at the chunk end
-/// before reading past it).
+/// Cold cache, read SEGMENT-sized chunks in DESCENDING order. Backward seeks defeat the
+/// long-connection's forward streaming, so each chunk costs a GET (vs a couple coalesced
+/// GETs for the forward cold scan) — the request-count penalty of reverse access. The
+/// look-ahead estimator sees non-contiguous (backward) serves, so it does NOT predict a
+/// forward run: each chunk's connection opens bound to just that chunk and drains cleanly,
+/// leaving no over-run to abandon at the backward seek. Accepted reverse degradation: a
+/// GET per chunk, but no incomplete connections and no wasted bytes.
 TEST_F(ReaderExecutorMetric, ReverseSequential)
 {
     ReadList reads;
@@ -805,8 +799,8 @@ TEST_F(ReaderExecutorMetric, ReverseSequential)
         reads.emplace_back(s * SEGMENT, SEGMENT);
     auto [live, stateless] = runMatrix("reverse_seq", {}, reads);
 
-    EXPECT_EQ(live.requests, 65u) << "backward seeks defeat forward streaming -> reach-bounded GETs per chunk (vs a few forward)";
-    EXPECT_EQ(live.incomplete, 31u) << "within a chunk a connection drains to its reach bound and reopens cleanly; the residual is the chunks whose forward-reach bound over-runs the chunk and is abandoned at the backward seek";
+    EXPECT_EQ(live.requests, 33u) << "backward seeks defeat forward streaming -> a GET per chunk (vs a couple forward)";
+    EXPECT_EQ(live.incomplete, 0u) << "the look-ahead detects the non-sequential reverse pattern (serves are not contiguous), keeps the bound short, so each chunk's connection drains cleanly with nothing to abandon at the backward seek";
     EXPECT_EQ(live.over_read, 0u) << "the channel is dropped at the chunk end before reading past it, so no wasted bytes";
     EXPECT_EQ(stateless.incomplete, 0u);
 }
