@@ -2361,6 +2361,7 @@ ASTExplainQuery::ExplainKind QueryFuzzer::fuzzExplainKind(ASTExplainQuery::Expla
            ASTExplainQuery::ExplainKind::QueryTree,
            ASTExplainQuery::ExplainKind::QueryPlan,
            ASTExplainQuery::ExplainKind::QueryPipeline,
+           ASTExplainQuery::ExplainKind::Analyze,
            ASTExplainQuery::ExplainKind::QueryEstimates,
            ASTExplainQuery::ExplainKind::TableOverride,
            ASTExplainQuery::ExplainKind::CurrentTransaction};
@@ -2391,6 +2392,8 @@ void QueryFuzzer::fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuer
              "column_structure",
              "pretty"}},
            {ASTExplainQuery::ExplainKind::QueryPipeline, {"header", "graph", "compact", "distributed"}},
+           {ASTExplainQuery::ExplainKind::Analyze,
+            {"header", "description", "projections", "sorting", "input_headers", "column_structure", "processors"}},
            {ASTExplainQuery::ExplainKind::QueryEstimates,
             {"header",
              "description",
