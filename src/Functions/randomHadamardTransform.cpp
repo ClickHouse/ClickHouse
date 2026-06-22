@@ -614,8 +614,8 @@ The result has the same element type as the input; an empty input array returns 
     FunctionDocumentation::Arguments arguments = {
         {"vector", "Vector to transform.", {"Array(BFloat16)", "Array(Float32)", "Array(Float64)"}},
         {"seed", "Optional. Seed for the deterministic +/-1 signs (default 0).", {"UInt*"}},
-        {"output_dims", "Optional. Truncate the result to this many leading coordinates (default: next power of two of the input length).", {"UInt*"}}};
-    FunctionDocumentation::ReturnedValue returned_value = {"The transformed vector (same element type as the input), zero-padded to the next power of two and optionally truncated.", {"Array(BFloat16)", "Array(Float32)", "Array(Float64)"}};
+        {"output_dims", "Optional. Truncate the result to this many leading coordinates (default: the full transform length, which is the input length for exact Kronecker dimensions and otherwise the next power of two).", {"UInt*"}}};
+    FunctionDocumentation::ReturnedValue returned_value = {"The transformed vector (same element type as the input). Its length is the transform length: the input length for exact Kronecker dimensions, otherwise the input padded to the next power of two; optionally truncated to output_dims.", {"Array(BFloat16)", "Array(Float32)", "Array(Float64)"}};
     FunctionDocumentation::Examples examples = {
         {"Full transform (length padded to a power of two)",
          "SELECT length(randomHadamardTransform([1, 2, 3]::Array(Float32)))", "4"},

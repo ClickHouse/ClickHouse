@@ -43,6 +43,10 @@ SELECT round(abs(arraySum(x -> x * x, randomHadamardTransform(CAST(range(12), 'A
        round(abs(arraySum(x -> x * x, randomHadamardTransform(CAST(range(20), 'Array(Float32)'), 5)) / arraySum(x -> x * x, CAST(range(20), 'Array(Float32)')) - 1), 4),
        round(abs(arraySum(x -> x * x, randomHadamardTransform(CAST(range(768), 'Array(Float32)'), 7)) / arraySum(x -> x * x, CAST(range(768), 'Array(Float32)')) - 1), 4);
 
+-- Exact Kronecker coordinates (rounded): catches a wrong H_m sign convention, D order, or
+-- scalar/NEON divergence that would still preserve length and norm.
+SELECT arrayMap(x -> round(x, 4), randomHadamardTransform(CAST(range(12), 'Array(Float32)')));
+
 -- output_dims still truncates a Kronecker transform (it must not exceed the input dimension).
 SELECT length(randomHadamardTransform(CAST(range(768), 'Array(Float32)'), 7, 500));
 
