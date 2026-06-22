@@ -7,6 +7,8 @@
 #include <Common/FunctionDocumentation.h>
 
 #include <algorithm>
+#include <array>
+#include <bit>
 #include <cmath>
 
 /** quantizeBFloat16ToInt8 / dequantizeInt8ToBFloat16
@@ -109,6 +111,44 @@ constexpr Float32 LLOYD_MAX_BOUNDARIES[255] = {
     2.40387496f, 2.52913769f, 2.67284063f, 2.84153407f, 3.04674351f, 3.31217014f, 3.70365827f,
 };
 
+/// Direct lookup table keyed by the raw BFloat16 bit pattern. BFloat16 has only 65536 possible
+/// values, so the whole quantizer is precomputed once: at runtime quantization is a single load
+/// indexed by the bits, with no Float32 conversion or boundary search. Built lazily on first use.
+const std::array<Int8, 65536> & quantizeCodeLUT()
+{
+    static const std::array<Int8, 65536> lut = []
+    {
+        std::array<Int8, 65536> table;
+        for (UInt32 bits = 0; bits <= 0xFFFFu; ++bits)
+        {
+            const Float32 x = static_cast<Float32>(BFloat16::fromBits(static_cast<UInt16>(bits)));
+            const size_t index = std::isnan(x)
+                ? 128
+                : static_cast<size_t>(
+                    std::lower_bound(std::begin(LLOYD_MAX_BOUNDARIES), std::end(LLOYD_MAX_BOUNDARIES), x)
+                    - std::begin(LLOYD_MAX_BOUNDARIES));
+            table[bits] = static_cast<Int8>(static_cast<Int16>(index) - 128);
+        }
+        return table;
+    }();
+    return lut;
+}
+
+/// Precomputed BFloat16 reconstruction levels (the bf16 representations of the 256 Lloyd-Max levels).
+/// Dequantization is then a direct BFloat16 (i.e. UInt16) copy from this table, with no Float32
+/// conversion at runtime. Built lazily on first use.
+const std::array<BFloat16, 256> & dequantizeLevels()
+{
+    static const std::array<BFloat16, 256> levels = []
+    {
+        std::array<BFloat16, 256> table;
+        for (size_t i = 0; i < 256; ++i)
+            table[i] = BFloat16(LLOYD_MAX_LEVELS[i]);
+        return table;
+    }();
+    return levels;
+}
+
 class FunctionQuantizeBFloat16ToInt8 : public IFunction
 {
 public:
@@ -136,19 +176,12 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Argument of function {} must be BFloat16", getName());
 
+        const std::array<Int8, 65536> & lut = quantizeCodeLUT();
         auto col_res = ColumnInt8::create(input_rows_count);
         const auto & src = col->getData();
         auto & dst = col_res->getData();
         for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            const Float32 x = static_cast<Float32>(src[i]);
-            /// Cell index in [0, 255] = number of boundaries strictly less than x. NaN maps to the central cell.
-            const size_t index = std::isnan(x)
-                ? 128
-                : static_cast<size_t>(std::lower_bound(std::begin(LLOYD_MAX_BOUNDARIES), std::end(LLOYD_MAX_BOUNDARIES), x)
-                    - std::begin(LLOYD_MAX_BOUNDARIES));
-            dst[i] = static_cast<Int8>(static_cast<Int16>(index) - 128);
-        }
+            dst[i] = lut[std::bit_cast<UInt16>(src[i])];
         return col_res;
     }
 };
@@ -180,14 +213,13 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Argument of function {} must be Int8", getName());
 
+        const std::array<BFloat16, 256> & levels = dequantizeLevels();
         auto col_res = ColumnBFloat16::create(input_rows_count);
         const auto & src = col->getData();
         auto & dst = col_res->getData();
+        /// Direct copy of the precomputed BFloat16 level -- no Float32 conversion at runtime.
         for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            const size_t index = static_cast<size_t>(static_cast<Int16>(src[i]) + 128); /// 0..255
-            dst[i] = BFloat16(LLOYD_MAX_LEVELS[index]);
-        }
+            dst[i] = levels[static_cast<size_t>(static_cast<Int16>(src[i]) + 128)];
         return col_res;
     }
 };
