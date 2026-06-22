@@ -37,3 +37,25 @@ SELECT dictHas(currentDatabase() || '.dict_non_leading_key', ('nope', 'nope'));
 DROP DICTIONARY dict_non_leading_key;
 DROP TABLE dict_source;
 "
+
+# Backward compatibility: a local source whose query does not name its columns to match the
+# dictionary attributes (e.g. 'SELECT 100, ...') must still load via positional matching.
+${CLICKHOUSE_CLIENT} --multiquery "
+DROP DICTIONARY IF EXISTS dict_positional;
+
+CREATE DICTIONARY dict_positional (k UInt64, v String)
+    PRIMARY KEY k
+    SOURCE(CLICKHOUSE(
+        HOST 'localhost'
+        PORT tcpPort()
+        USER 'default'
+        PASSWORD ''
+        DB currentDatabase()
+        QUERY 'SELECT 100, ''hello'''))
+    LAYOUT(HASHED()) LIFETIME(MIN 0 MAX 0);
+
+SELECT dictGet(currentDatabase() || '.dict_positional', 'v', toUInt64(100));
+SELECT dictHas(currentDatabase() || '.dict_positional', toUInt64(100));
+
+DROP DICTIONARY dict_positional;
+"
