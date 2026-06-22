@@ -7,6 +7,8 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 namespace DB
 {
@@ -28,7 +30,12 @@ class FunctionArrayFold final : public IFunction
 {
 public:
     static constexpr auto name = "arrayFold";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayFold>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionArrayFold>(context); }
+
+    explicit FunctionArrayFold(ContextPtr context)
+        : process_list_element(context ? context->getProcessListElement() : nullptr)
+    {
+    }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -180,6 +187,10 @@ public:
         size_t cur_element_in_cur_array = 0;
         for (ssize_t i = 0; i < num_elements_in_array_col; ++i)
         {
+            /// This loop is O(total array elements) and also runs uninterruptibly inside executeImpl().
+            if (process_list_element && (i & 0xFFFFF) == 0)
+                process_list_element->checkTimeLimit();
+
             selector[i] = cur_element_in_cur_array;
             ++cur_element_in_cur_array;
             max_array_size = std::max(cur_element_in_cur_array, max_array_size);
@@ -225,6 +236,14 @@ public:
         size_t unfinished_rows = num_rows; /// number of rows to consider in the current iteration
         for (size_t slice = 0; slice < max_array_size; ++slice)
         {
+            /// The whole fold over a chunk runs inside this single executeImpl() call, so the pipeline-level
+            /// time/cancellation check between chunks cannot interrupt it. Without an in-loop check a fold over
+            /// a very long array (e.g. range(number) with a result-growing lambda) ignores KILL QUERY and
+            /// max_execution_time and keeps running. Each iteration performs a full lambda->reduce(), so the
+            /// per-iteration check is negligible.
+            if (process_list_element)
+                process_list_element->checkTimeLimit();
+
             IColumn::Selector prev_selector(unfinished_rows); /// 1 for rows which have slice_i-many elements, otherwise 0
             size_t prev_index = 0;
             for (ssize_t row = 0; row < num_rows; ++row)
@@ -298,6 +317,8 @@ public:
     }
 
 private:
+    QueryStatusPtr process_list_element;
+
     String getName() const override
     {
         return name;
