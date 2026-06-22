@@ -574,8 +574,10 @@ struct CreateNodeDelta
 struct RemoveNodeDelta
 {
     NodeStats stat;
-    int32_t num_children;
-    ACLId acl_id;
+    /// RemoveRecursive can remove node with nonzero num_children (after also removing all its
+    /// children, just not updating the parent's num_children).
+    int32_t num_children = 0;
+    ACLId acl_id = 0;
     String data;
 };
 
@@ -819,6 +821,7 @@ std::shared_ptr<typename Container::Node> KeeperStorage<Container>::UncommittedS
 }
 
 template<typename Container>
+
 bool KeeperStorage<Container>::UncommittedState::hasACL(int64_t session_id, bool committed, std::function<bool(const AuthID &)> predicate) const
 {
     const auto check_auth = [&](const auto & auth_ids)
