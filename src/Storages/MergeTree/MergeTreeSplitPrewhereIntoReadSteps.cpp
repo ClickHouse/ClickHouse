@@ -248,33 +248,31 @@ bool tryBuildPrewhereSteps(
     /// 3. Sort condition nodes by the number of columns used in them and the overall size of those columns
     /// TODO: not sorting for now because the conditions are already sorted by Where Optimizer
 
-    /// 4. Group conditions that read from the same set of physical storage columns into a single read/compute step.
+    /// 4. Group adjacent conditions that read from the same set of physical storage columns into a single step.
     /// Conditions on subcolumns of the same column (e.g. `map.key_k0` and `map.key_k1`) are placed into one group
-    /// even if they are non-adjacent in the original list (e.g. interleaved with conditions on other columns).
-    /// The first occurrence of each storage column set determines the group's position in the PREWHERE chain.
+    /// when they appear next to each other in the condition list.
     ///
-    /// NOTE: This is a trade-off. Grouping benefits column types whose subcolumns share physical substreams
-    /// (e.g. Map — key-value subcolumns share common substreams of the underlying data).
-    /// For types with independent substreams (e.g. Tuple — each element is serialized separately),
-    /// grouping is suboptimal because it prevents early filtering by one element before reading the others.
-    /// In the future, we could consult `ISerialization` to check whether subcolumns actually share
-    /// substreams and only group them when they do or don't group under a setting.
+    /// Only adjacent conditions are merged to preserve the user's explicit PREWHERE evaluation order.
+    /// Non-adjacent conditions on the same storage column are kept in separate steps even though this
+    /// may cause redundant reads, because the user may have intentionally interleaved a guard predicate
+    /// (e.g. `PREWHERE tags['safe'] != '' AND value > 0 AND toUInt64(tags['unsafe']) > 0` — the
+    /// `value > 0` step must filter rows before evaluating the potentially-throwing conversion).
+    ///
+    /// For the WHERE-to-PREWHERE path this is not a problem: `MergeTreeWhereOptimizer` already groups
+    /// conditions by `table_storage_columns`, so subcolumns of the same column arrive here adjacent.
     std::vector<std::vector<const ActionsDAG::Node *>> condition_groups;
     for (const auto & node : condition_nodes)
     {
         const auto & node_info = nodes_info[node];
-        bool found = false;
-        for (auto & group : condition_groups)
+        if (!condition_groups.empty()
+            && nodes_info[condition_groups.back().front()].required_storage_columns == node_info.required_storage_columns)
         {
-            if (nodes_info[group.front()].required_storage_columns == node_info.required_storage_columns)
-            {
-                group.push_back(node);
-                found = true;
-                break;
-            }
+            condition_groups.back().push_back(node);
         }
-        if (!found)
+        else
+        {
             condition_groups.push_back({node});
+        }
     }
 
     /// 5. Build DAGs for each step
