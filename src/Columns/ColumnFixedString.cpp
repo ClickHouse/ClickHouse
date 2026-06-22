@@ -7,6 +7,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
+#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <base/memcmpSmall.h>
 #include <Common/memcpySmall.h>
@@ -63,7 +64,7 @@ void ColumnFixedString::getValueNameImpl(WriteBufferFromOwnString & name_buf, si
 
 bool ColumnFixedString::isDefaultAt(size_t index) const
 {
-    chassert(index < size());
+    assert(index < size());
     return memoryIsZero(chars.data() + index * n, 0, n);
 }
 
@@ -151,20 +152,23 @@ void ColumnFixedString::updateHashWithValueRange(size_t begin, size_t end, SipHa
     hash.update(reinterpret_cast<const char *>(&chars[n * begin]), n * (end - begin));
 }
 
-void ColumnFixedString::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+WeakHash32 ColumnFixedString::getWeakHash32() const
 {
-    /// The per-row hash seeds with `WEAK_HASH32_INITIAL_VALUE` (mixing the width in, so rows of
-    /// different widths never collide) and combines the finalized hash via `combineWeakHash32`.
-    /// CRC32C is a hardware dependency chain with no packed form, so a plain scalar loop is used.
-    /// See IColumn::computeHashInto.
-    const UInt8 * pos = chars.data() + row_begin * n;
-    for (size_t row = row_begin; row < row_end; ++row)
+    auto s = size();
+    WeakHash32 hash(s);
+
+    const UInt8 * pos = chars.data();
+    UInt32 * hash_data = hash.getData().data();
+
+    for (size_t row = 0; row < s; ++row)
     {
-        const UInt32 h = ::updateWeakHash32(pos, n, WEAK_HASH32_INITIAL_VALUE);
-        UInt32 & out = hash_out[row - row_begin];
-        out = initial ? h : combineWeakHash32(h, out);
+        *hash_data = ::updateWeakHash32(pos, n, *hash_data);
+
         pos += n;
+        ++hash_data;
     }
+
+    return hash;
 }
 
 void ColumnFixedString::updateHashFast(SipHash & hash) const
@@ -456,7 +460,7 @@ ColumnPtr ColumnFixedString::index(const IColumn & indexes, size_t limit) const
 template <typename Type>
 ColumnPtr ColumnFixedString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    chassert(limit <= indexes.size());
+    assert(limit <= indexes.size());
     if (limit == 0)
         return ColumnFixedString::create(n);
 

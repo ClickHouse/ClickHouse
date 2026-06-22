@@ -74,8 +74,6 @@ struct ConvertToASTOptions
     /// Add _CAST if constant literal type is different from column type
     bool add_cast_for_constants = true;
 
-    bool use_source_expression_for_constants = false;
-
     /// Identifiers are fully qualified (`database.table.column`), otherwise names are just column names (`column`)
     bool fully_qualified_identifiers = true;
 
@@ -197,18 +195,6 @@ public:
         alias = {};
     }
 
-    /// Returns true if the expression was parenthesized in the original query
-    bool isParenthesized() const
-    {
-        return parenthesized;
-    }
-
-    /// Set parenthesized flag
-    void setParenthesized(bool value)
-    {
-        parenthesized = value;
-    }
-
     /// Returns true if query tree node has original AST, false otherwise
     bool hasOriginalAST() const
     {
@@ -322,8 +308,6 @@ private:
     /// but we need to keep the original one to support additional_table_filters.
     String original_alias;
     ASTPtr original_ast;
-    /// If the expression has extra parentheses around it in the original query
-    bool parenthesized = false;
 };
 
 }
