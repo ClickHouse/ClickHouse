@@ -8,6 +8,7 @@ namespace DB
 
 static constexpr auto DBMS_DEFAULT_PORT = 9000;
 static constexpr auto DBMS_DEFAULT_SECURE_PORT = 9440;
+static constexpr auto DBMS_DEFAULT_HTTP_PORT = 8123;
 
 static constexpr auto DBMS_DEFAULT_CONNECT_TIMEOUT_SEC = 10;
 static constexpr auto DBMS_DEFAULT_SEND_TIMEOUT_SEC = 300;

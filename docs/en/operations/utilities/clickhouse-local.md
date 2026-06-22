@@ -352,6 +352,32 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ...
 ```
 
+## Starting TCP and HTTP Listeners {#starting-listeners}
+
+`clickhouse-local` can be transformed into a lightweight server that accepts TCP (native protocol) and HTTP connections. This is useful when you want to give other ClickHouse tools or applications access to the databases and tables of a running `clickhouse-local` instance. Note that each incoming connection gets a session of its own: temporary tables and session-level settings of the interactive `clickhouse-local` session are not visible to external connections.
+
+Use `SYSTEM START LISTEN` to open a listener and `SYSTEM STOP LISTEN` to close it:
+
+```bash
+clickhouse-local \
+    --listen_host 127.0.0.1 \
+    --tcp_port 9000 \
+    --http_port 8123 \
+    --query "
+        SYSTEM START LISTEN TCP;
+        SYSTEM START LISTEN HTTP;
+        SELECT * FROM url('http://127.0.0.1:8123/?query=SELECT+42', LineAsString);
+        SYSTEM STOP LISTEN TCP;
+        SYSTEM STOP LISTEN HTTP;
+    "
+```
+
+The `--listen_host`, `--tcp_port`, and `--http_port` options configure the bind address and ports. Default ports are `9000` for TCP and `8123` for HTTP.
+
+:::warning Security
+By default, `clickhouse-local` runs with the temporary users setup, so any listener it opens is unauthenticated. Bind to a loopback address (`127.0.0.1` or `::1`) unless you have explicitly configured users and access control by pointing the `users_config` setting at a custom `users.xml` (for example via `--config-file`). Listening on a non-loopback address without authentication exposes the data of the local instance to anyone who can reach the chosen port.
+:::
+
 ## Related Content {#related-content-1}
 
 - [Extracting, converting, and querying data in local files using clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)

@@ -828,6 +828,8 @@ Pipe ShellCommandSourceCoordinator::createPipe(
     auto destructor_strategy = ShellCommand::DestructorStrategy{true /*terminate_in_destructor*/, SIGTERM, configuration.command_termination_timeout_seconds};
     command_config.terminate_in_destructor_strategy = destructor_strategy;
 
+    command_config.register_in_udf_process_registry = configuration.is_user_defined_function;
+
     bool is_executable_pool = (process_pool != nullptr);
     if (is_executable_pool)
     {
