@@ -5,7 +5,8 @@ select toInt64(x) from values('x Nullable(String)', '42', NULL, '0', '', '256');
 
 select toDate(x) from values('x Nullable(String)', '2020-12-24', NULL, '0000-00-00', '', '9999-01-01');
 select toDateTime(x, 'Asia/Istanbul') from values('x Nullable(String)', '2020-12-24 01:02:03', NULL, '0000-00-00 00:00:00', '');
-select toDateTime64(x, 2, 'Asia/Istanbul') from values('x Nullable(String)', '2020-12-24 01:02:03', NULL, '0000-00-00 00:00:00', '');
+select toDateTime64(x, 2, 'Asia/Istanbul') from values('x Nullable(String)', '2020-12-24 01:02:03', NULL, '0000-00-00 00:00:00');
+SELECT toDateTime64('', 2, 'Asia/Istanbul'); -- { serverError CANNOT_PARSE_DATETIME }
 select toUnixTimestamp(x, 'Asia/Istanbul') from values ('x Nullable(String)', '2000-01-01 13:12:12', NULL, '');
 
 select toDecimal32(x, 2) from values ('x Nullable(String)', '42', NULL, '3.14159');
