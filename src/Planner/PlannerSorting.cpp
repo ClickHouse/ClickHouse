@@ -158,7 +158,7 @@ SortDescription extractSortDescription(const QueryTreeNodePtr & order_by_node, c
     {
         auto & sort_node_typed = sort_node->as<SortNode &>();
 
-        auto column_name = calculateActionNodeName(sort_node_typed.getExpression(), planner_context);
+        auto column_name = sort_node_typed.getColumnName().empty() ? calculateActionNodeName(sort_node_typed.getExpression(), planner_context) : sort_node_typed.getColumnName();
         std::shared_ptr<Collator> collator = sort_node_typed.getCollator();
         int direction = sort_node_typed.getSortDirection() == SortDirection::ASCENDING ? 1 : -1;
         int nulls_direction = direction;
