@@ -71,27 +71,9 @@ public:
     ASTPtr clone() const override
     {
         auto res = make_intrusive<ASTExplainQuery>(*this);
-
-        /// Re-add the named children explicitly, in the same order `ParserExplainQuery`
-        /// produces them, so that the clone has the same `getTreeHash` as a freshly parsed
-        /// AST. The parser parses the EXPLAIN-level settings before the explained query
-        /// (e.g. `EXPLAIN header = 1 SELECT 1` is parsed as `children = [ast_settings, query]`),
-        /// so `ast_settings` must come before `query`.
         res->children.clear();
-        res->query = nullptr;
-        res->ast_settings = nullptr;
-        res->table_function = nullptr;
-        res->table_override = nullptr;
-
-        if (ast_settings)
-            res->setSettings(ast_settings->clone());
-        if (query)
-            res->setExplainedQuery(query->clone());
-        if (table_function)
-            res->setTableFunction(table_function->clone());
-        if (table_override)
-            res->setTableOverride(table_override->clone());
-
+        if (!children.empty())
+            res->children.push_back(children[0]->clone());
         cloneOutputOptions(*res);
         return res;
     }

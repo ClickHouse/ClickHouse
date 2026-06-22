@@ -34,7 +34,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const String & metadata_path)
+void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const String & metadata_path)
 {
     auto default_db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
 
@@ -125,9 +125,9 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
     return impl;
 }
 
-void DatabaseFactory::registerDatabase(const std::string & name, CreatorFn creator_fn, EngineFeatures features, Documentation documentation)
+void DatabaseFactory::registerDatabase(const std::string & name, CreatorFn creator_fn, EngineFeatures features)
 {
-    if (!database_engines.emplace(name, Creator{std::move(creator_fn), features, std::move(documentation)}).second)
+    if (!database_engines.emplace(name, Creator{std::move(creator_fn), features}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DatabaseFactory: the database engine name '{}' is not unique", name);
 }
 
