@@ -3,6 +3,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
+#include <DataTypes/IDataType.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionaryPipelineExecutor.h>
 #include <IO/ReadHelpers.h>
@@ -12,6 +13,7 @@
 #include <Common/logger_useful.h>
 
 #include <cmath>
+#include <unordered_set>
 
 
 namespace DB
@@ -314,7 +316,39 @@ void registerDictionaryNaiveBayes(DictionaryFactory & factory)
                 ErrorCodes::BAD_ARGUMENTS,
                 "NaiveBayes dictionary must have at least two attributes: class_id (UInt32) and count (UInt64)");
 
+        /// The key holds the n-gram text and the first two attributes hold the class id and the count. Validate
+        /// their types now: the source columns are coerced to these declared types, so this guarantees the
+        /// `getDataAt`/`getUInt` reads in loadData are well defined and rejects misconfiguration at creation.
+        const auto & key_type = (*dict_struct.key)[0].type;
+        if (!isString(key_type))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary key must be String, got {}", key_type->getName());
+
+        for (size_t i = 0; i < 2; ++i)
+        {
+            const auto & attribute = dict_struct.attributes[i];
+            if (!WhichDataType(attribute.type).isNativeUInt())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "NaiveBayes dictionary attribute '{}' must be an unsigned integer (UInt8/16/32/64), got {}",
+                    attribute.name,
+                    attribute.type->getName());
+        }
+
         const String layout_prefix = config_prefix + ".layout.naive_bayes";
+
+        /// Reject unknown layout parameters so typos (for example `priors_mod`) are caught at creation instead
+        /// of being silently ignored.
+        static const std::unordered_set<std::string_view> known_layout_keys{
+            "n", "mode", "alpha", "priors_mode", "priors", "store_source"};
+        Poco::Util::AbstractConfiguration::Keys layout_keys;
+        config.keys(layout_prefix, layout_keys);
+        for (const auto & key : layout_keys)
+            if (!known_layout_keys.contains(key))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "NaiveBayes dictionary: unknown layout parameter '{}'. Allowed: n, mode, alpha, priors_mode, priors, store_source",
+                    key);
 
         if (!config.has(layout_prefix + ".n"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary layout requires 'n' parameter (n-gram size)");
@@ -364,6 +398,13 @@ void registerDictionaryNaiveBayes(DictionaryFactory & factory)
                 "NaiveBayes dictionary: priors_mode must be 'uniform', 'proportional', or 'explicit', got '{}'",
                 priors_mode_str);
         }
+
+        /// `priors` is consulted only in explicit mode; reject it otherwise so that a mistaken
+        /// `priors 'proportional'` (meaning `priors_mode 'proportional'`) is not silently ignored.
+        if (priors_mode != PriorsMode::Explicit && config.has(layout_prefix + ".priors"))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "NaiveBayes dictionary: 'priors' is only valid with priors_mode 'explicit'");
 
         const bool store_source = config.getBool(layout_prefix + ".store_source", false);
 
