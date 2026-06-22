@@ -97,6 +97,7 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -764,6 +765,10 @@ MergeTreeData::MergeTreeData(
 
     checkColumnFilenamesForCollision(metadata_.getColumns(), *settings, sanity_checks);
     checkTTLExpressions(metadata_, metadata_);
+
+    /// UNIQUE KEY — sidecar lifecycle helper. Constructed unconditionally;
+    /// methods are no-ops on non-UK tables (one pointer + one ctor call cost).
+    unique_key_dense_index_ops = std::make_unique<UniqueKeyDenseIndexOps>(*this);
 
     String reason;
     if (!canUsePolymorphicParts(*settings, reason) && !reason.empty())
@@ -2476,7 +2481,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     num_parts += active_parts.size();
 
-    auto part_lock = lockParts();
+    std::optional<DataPartsLock> part_lock_holder{lockParts()};
+    DataPartsLock & part_lock = *part_lock_holder;
 
     MutableDataPartsVector broken_parts_to_detach;
     MutableDataPartsVector duplicate_parts_to_remove;
@@ -2580,10 +2586,51 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         for (auto & part : broken_parts_to_detach)
             part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
 
+    /// UNIQUE KEY — SST sweep for parts that landed without a sidecar
+    /// (restore, freeze taken before UK shipped). The active set is captured
+    /// here under `part_lock`; the I/O-heavy per-part rebuild runs below,
+    /// after the lock is released.
+    MutableDataPartsVector active_uk_parts_to_rebuild;
+    if (!is_static_storage && !all_disks_are_readonly && !is_table_readonly)
+    {
+        sweepUniqueKeyDenseIndexOrphans(part_lock);
+
+        auto metadata_snapshot_for_rebuild = getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/false);
+        if (metadata_snapshot_for_rebuild && metadata_snapshot_for_rebuild->hasUniqueKey())
+        {
+            for (const auto & p : data_parts_by_info)
+            {
+                if (p->getState() == DataPartState::Active)
+                    active_uk_parts_to_rebuild.push_back(std::const_pointer_cast<IMergeTreeDataPart>(p));
+            }
+        }
+    }
+
     resetSerializationHints(part_lock);
 
     if (!(*settings)[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
         calculateColumnAndSecondaryIndexSizesImpl(part_lock);
+
+    /// Release the parts lock before the I/O-heavy UNIQUE KEY SST rebuild: it
+    /// reads each part's UK columns and writes a sidecar, and needs no
+    /// parts-collection lock (the active set was captured above under it).
+    part_lock_holder.reset();
+    for (auto & p : active_uk_parts_to_rebuild)
+    {
+        try
+        {
+            ensureUniqueKeyIndexOnLoad(p);
+        }
+        catch (...)
+        {
+            /// A UNIQUE KEY part with no dense index that cannot be rebuilt must
+            /// not stay active — the probe would miss its keys and let duplicates
+            /// through. Detach it as broken via the standard broken-part flow.
+            tryLogCurrentException(log,
+                fmt::format("Detaching part {} as broken: cannot build its UNIQUE KEY dense index", p->name));
+            forcefullyMovePartToDetachedAndRemoveFromMemory(p, "broken-on-start");
+        }
+    }
 
     PartLoadingTreeNodes unloaded_parts;
 
@@ -2842,6 +2889,26 @@ catch (...)
         refresh_stats_task->scheduleAfter(interval_seconds * 1000);
     else
         throw;
+}
+
+MergeTreeData::~MergeTreeData() = default;
+
+void MergeTreeData::sweepUniqueKeyDenseIndexOrphans(const DataPartsLock & part_lock)
+{
+    if (unique_key_dense_index_ops)
+        unique_key_dense_index_ops->sweepOrphans(part_lock);
+}
+
+void MergeTreeData::ensureUniqueKeyIndexOnLoad(MutableDataPartPtr & part) const
+{
+    if (unique_key_dense_index_ops)
+        unique_key_dense_index_ops->rebuildIfMissing(part);
+}
+
+void MergeTreeData::onPartAttachUniqueKey(MutableDataPartPtr & part) const
+{
+    if (unique_key_dense_index_ops)
+        unique_key_dense_index_ops->onPartAttach(part);
 }
 
 void MergeTreeData::loadUnexpectedDataParts()
@@ -4439,6 +4506,17 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 backQuoteIfNeed(command.column_name),
                 uk_list_str());
         }
+
+        /// Block ALTERs that derive a data-rewriting mutation (CLEAR COLUMN,
+        /// converting MODIFY, ...): the mutation rewrites the part without
+        /// rebuilding the dense index. TODO(unique-key): rebuild it, then relax.
+        auto uk_mutation_commands = commands.getMutationCommands(
+            new_metadata, settings[Setting::materialize_ttl_after_modify], local_context);
+        if (!uk_mutation_commands.empty())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Mutations are not yet supported on tables with UNIQUE KEY: ALTER '{}' "
+                "would rewrite part data without rebuilding the dense index.",
+                uk_mutation_commands.ast()->formatForErrorMessage());
     }
 
     removeImplicitStatistics(new_metadata.columns);
@@ -5013,9 +5091,8 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
         if (!disk->supportsHardLinks())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Mutations are not supported for immutable disk '{}'", disk->getName());
 
-    /// Reject mutations that bypass UK dedup: DELETE/UPDATE rewrite rows;
-    /// MATERIALIZE COLUMN / CLEAR COLUMN (the latter serialized as
-    /// `DROP_COLUMN` with `clear=true`) rewrite stored bytes.
+    /// UNIQUE KEY tables reject all mutations for now: a mutation rewrites the
+    /// part without rebuilding the dense index. TODO(unique-key): rebuild it.
     if (auto uk_metadata = getInMemoryMetadataPtr(getContext(), false); uk_metadata->hasUniqueKey())
     {
         const auto & uk_column_names = uk_metadata->getUniqueKeyColumns();
@@ -5043,6 +5120,14 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                     "and CLEAR would rewrite stored values without going through UNIQUE KEY dedup, "
                     "producing duplicate live keys. UNIQUE KEY columns: ({}).",
                     command.column_name, fmt::join(uk_column_names, ", "));
+
+            /// EMPTY / ALTER_WITHOUT_MUTATION don't rewrite parts; everything else does.
+            if (command.type != MutationCommand::EMPTY
+                && command.type != MutationCommand::ALTER_WITHOUT_MUTATION)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Mutations are not yet supported on tables with UNIQUE KEY: they would "
+                    "rewrite the part without rebuilding its dense index. UNIQUE KEY columns: ({}).",
+                    fmt::join(uk_column_names, ", "));
         }
     }
 
@@ -6454,6 +6539,9 @@ void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr
     part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
     part->removeDeleteOnDestroyMarker();
     part->removeVersionMetadata();
+
+    /// UNIQUE KEY — per-part ATTACH hook: `.sst.tmp` cleanup + rebuild.
+    onPartAttachUniqueKey(part);
 }
 
 void MergeTreeData::unregisterFromMergeSelection(const MergeTreeSettingsPtr & settings)
@@ -7409,6 +7497,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         part = std::move(builder).build();
         part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
         part->loadColumnsChecksumsIndexes(/* require_columns_checksums= */ false, /* check_consistency= */ true);
+        /// UNIQUE KEY: a restored part may not ship its `unique_key_index.sst`
+        /// (older backup, or one taken before UK). Build it here so the part is
+        /// usable; a failure throws and routes the part to `mark_broken` below
+        /// (detached), matching the fail-closed contract on every other load path.
+        onPartAttachUniqueKey(part);
     };
 
     /// Broken parts can appear in a backup sometimes.

@@ -1,0 +1,9 @@
+parts_after_insert	3
+parts_after_optimize	3
+row_count	6
+rows	1	a
+rows	2	b
+rows	3	c
+rows	4	d
+rows	5	e
+rows	6	f

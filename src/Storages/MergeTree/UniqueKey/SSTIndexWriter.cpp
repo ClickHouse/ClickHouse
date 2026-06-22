@@ -2,6 +2,7 @@
 
 #include <Columns/IColumn.h>
 #include <Core/SortDescription.h>
+#include <DataTypes/IDataType.h>
 #include <Disks/IDisk.h>
 #include <Disks/IVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -83,6 +84,29 @@ rocksdb::Options makeSSTOptions()
 LoggerPtr getWriterLogger()
 {
     return getLogger("SSTIndexWriter");
+}
+
+/// RocksDB SST needs strictly-ascending keys; when UK is a non-Nullable
+/// ascending prefix of ORDER BY the block is already sorted by UK, so the
+/// sorted writer can take it as-is and skip the re-sort.
+bool isBlockSortedByUniqueKey(
+    const Names & uk_names, const Names & sort_names,
+    const std::vector<bool> & sort_reverse_flags, const Block & block)
+{
+    if (uk_names.size() > sort_names.size())
+        return false;
+    for (size_t i = 0; i < uk_names.size(); ++i)
+        if (uk_names[i] != sort_names[i])
+            return false;
+    /// A descending ORDER BY column on the UK prefix would feed RocksDB
+    /// decreasing keys, so the block is not sorted by UK in that case.
+    for (size_t i = 0; i < uk_names.size(); ++i)
+        if (i < sort_reverse_flags.size() && sort_reverse_flags[i])
+            return false;
+    for (const auto & name : uk_names)
+        if (block.getByName(name).type->isNullable())
+            return false;
+    return true;
 }
 
 }
@@ -300,6 +324,30 @@ UInt64 SSTIndexWriter::finalizeToStorage()
 #else
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
         "SSTIndexWriter requires RocksDB support (USE_ROCKSDB=1)");
+#endif
+}
+
+
+UInt64 SSTIndexWriter::write(
+    IDataPartStorage & part_storage,
+    const Block & block,
+    const Names & uk_names,
+    const Names & sort_names,
+    const std::vector<bool> & sort_reverse_flags,
+    const IColumn::Permutation * permutation,
+    UInt64 max_encoded_size,
+    ContextPtr context)
+{
+    if (uk_names.empty())
+        return 0;
+
+#if USE_ROCKSDB
+    if (isBlockSortedByUniqueKey(uk_names, sort_names, sort_reverse_flags, block))
+        return writeFromBlock(part_storage, block, uk_names, permutation, max_encoded_size, context);
+    return writeFromBlockUnsorted(part_storage, block, uk_names, permutation, max_encoded_size, context);
+#else
+    (void)sort_names; (void)sort_reverse_flags;
+    return writeFromBlock(part_storage, block, uk_names, permutation, max_encoded_size, context);
 #endif
 }
 

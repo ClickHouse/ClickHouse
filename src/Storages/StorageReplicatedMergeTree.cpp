@@ -5642,6 +5642,14 @@ bool StorageReplicatedMergeTree::fetchPart(
     {
         part = get_part();
 
+        /// A fetched part may arrive without unique_key_index.sst (legacy or
+        /// no-SST source), and the fetch path does not rebuild it. Reachable only
+        /// if replicated UNIQUE KEY is ever enabled (DDL rejects it today).
+        /// TODO(unique-key): rebuild on fetch, then relax.
+        if (!to_detached && metadata_snapshot->hasUniqueKey())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Fetching parts into a table with UNIQUE KEY is not supported");
+
         if (!to_detached)
         {
             Transaction transaction(*this, NO_TRANSACTION_RAW);
@@ -9348,6 +9356,13 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                         getStorageID().getNameForLogs(), getStorageID().getNameForLogs(),
                         this->getStoragePolicy()->getName(), getStorageID().getNameForLogs(),
                         dest_table_storage->getStoragePolicy()->getName());
+
+    /// Mirror StorageMergeTree::movePartitionToTable: a cloned destination part
+    /// would have no unique_key_index.sst. Reachable only if replicated UNIQUE KEY
+    /// is ever enabled (DDL rejects it today). TODO(unique-key): rebuild on clone.
+    if (dest_table_storage->getInMemoryMetadataPtr(query_context, false)->hasUniqueKey())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "MOVE PARTITION TO a destination table with UNIQUE KEY is not supported");
 
     // Use the same back-pressure (delay/throw) logic as for INSERTs to be consistent and avoid possibility of exceeding part limits using MOVE PARTITION queries
     dest_table_storage->delayInsertOrThrowIfNeeded(nullptr, query_context, true);
