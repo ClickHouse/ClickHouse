@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
@@ -13,7 +14,7 @@ namespace DB
 
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
-using QueryPipelineBuilders = std::vector<QueryPipelineBuilderPtr>;
+using QueryPipelineBuilders = VectorWithMemoryTracking<QueryPipelineBuilderPtr>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;

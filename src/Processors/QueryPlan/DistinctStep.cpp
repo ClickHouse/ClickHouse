@@ -202,7 +202,7 @@ QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_disti
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "DistinctStep must have one input stream");
 
-    size_t columns_size;
+    size_t columns_size = 0;
     readVarUInt(columns_size, ctx.in);
     Names column_names(columns_size);
     for (size_t i = 0; i < columns_size; ++i)
@@ -226,6 +226,7 @@ QueryPlanStepPtr DistinctStep::deserializePre(Deserialization & ctx)
     return DistinctStep::deserialize(ctx, true);
 }
 
+void registerDistinctStep(QueryPlanStepRegistry & registry);
 void registerDistinctStep(QueryPlanStepRegistry & registry)
 {
     /// Preliminary distinct probably can be a query plan optimization.
