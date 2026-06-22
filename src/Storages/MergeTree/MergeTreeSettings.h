@@ -4,6 +4,7 @@
 #include <Core/Field.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Core/SettingsTierType.h>
 #include <base/types.h>
 #include <Common/SettingsChanges.h>
 #include <Columns/IColumn_fwd.h>
@@ -61,7 +62,8 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, MergeTreeMapBucketsStrategy) \
     M(CLASS_NAME, MergeTreeMapSerializationVersion) \
     M(CLASS_NAME, MergeTreePartMinMaxIndexColumns) \
-    M(CLASS_NAME, SearchOrphanedPartsDisks)
+    M(CLASS_NAME, SearchOrphanedPartsDisks) \
+    M(CLASS_NAME, TextIndexPostingListCodec)
 
 MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, DECLARE_SETTING_TRAIT)
 
@@ -85,6 +87,9 @@ struct MergeTreeSettings
     void applyChanges(const SettingsChanges & changes);
     void applyChange(const SettingChange & change);
     std::vector<std::string_view> getAllRegisteredNames() const;
+    std::vector<std::string_view> getAllAliasNames() const;
+    std::string_view getDescription(std::string_view name) const;
+    SettingsTierType getTier(std::string_view name) const;
     void applyCompatibilitySetting(const String & compatibility_value);
 
     /// NOTE: will rewrite the AST to add immutable settings.
