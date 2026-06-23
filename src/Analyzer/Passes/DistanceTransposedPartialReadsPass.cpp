@@ -30,6 +30,44 @@ extern const SettingsBool optimize_qbit_distance_function_reads;
 namespace
 {
 
+/// The reference vector is referenced more than once in the rewrite (the null mask, the
+/// `assumeNotNull` value and the NULL-row dummy guard). Reusing the expression node is only
+/// correct when it yields the same value at every reference, i.e. when it is deterministic.
+bool isDeterministicExpression(const QueryTreeNodePtr & node)
+{
+    QueryTreeNodes nodes_to_process{node};
+    while (!nodes_to_process.empty())
+    {
+        auto current = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        switch (current->getNodeType())
+        {
+            case QueryTreeNodeType::FUNCTION:
+            {
+                const auto * function_node = current->as<FunctionNode>();
+                const auto & function_base = function_node->getFunction();
+                if (!function_base || !function_base->isDeterministicInScopeOfQuery())
+                    return false;
+                for (const auto & argument : function_node->getArguments().getNodes())
+                    nodes_to_process.push_back(argument);
+                break;
+            }
+            case QueryTreeNodeType::CONSTANT:
+            {
+                if (!current->as<ConstantNode>()->isDeterministic())
+                    return false;
+                break;
+            }
+            case QueryTreeNodeType::COLUMN:
+                break;
+            default:
+                return false;
+        }
+    }
+    return true;
+}
+
 class DistanceTransposedPartialReadsPassVisitor : public InDepthQueryTreeVisitorWithContext<DistanceTransposedPartialReadsPassVisitor>
 {
 public:
@@ -91,6 +129,13 @@ public:
         const bool ref_vec_is_nullable
             = ref_vec_type->isNullable() || ref_vec_type->isLowCardinalityNullable() || isVariant(ref_vec_type)
             || isDynamic(ref_vec_type);
+
+        /// The mask-lifting rewrite below evaluates the reference expression at several places
+        /// (the null mask, the `assumeNotNull` value and the NULL-row dummy guard). For a
+        /// non-deterministic reference (e.g. `if(rand() % 2, [...], NULL)`) those evaluations
+        /// could sample different values, so skip the optimization there and read the whole column.
+        if (ref_vec_is_nullable && !isDeterministicExpression(ref_vec_node))
+            return;
 
         /// Apply the optimization
         const auto * qbit = checkAndGetDataType<DataTypeQBit>(qbit_node->getColumnType().get());

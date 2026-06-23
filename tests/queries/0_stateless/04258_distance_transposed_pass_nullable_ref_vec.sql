@@ -43,4 +43,17 @@ FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
       SELECT L2DistanceTransposed(vec, [0,1,2], toNullable(3)) FROM qbit_test
       SETTINGS optimize_qbit_distance_function_reads = 1);
 
+-- 5. A *non-deterministic* nullable reference vector must NOT take the partial-read path: the
+--    rewrite references the reference expression several times (the null mask, the `assumeNotNull`
+--    value and the NULL-row dummy guard), so a value that can differ between evaluations would make
+--    those references inconsistent. The optimization is skipped (the whole `vec` column is read, no
+--    `vec.1` subcolumn) and the query still runs and returns Nullable(Float64).
+SELECT countIf(explain ILIKE '%`vec.1`%') > 0 AS reads_subcolumns
+FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
+      SELECT L2DistanceTransposed(vec, if(rand() % 2 = 0, [0,1,2]::Array(Float32), NULL), 3) FROM qbit_test
+      SETTINGS optimize_qbit_distance_function_reads = 1);
+
+SELECT toTypeName(L2DistanceTransposed(vec, if(rand() % 2 = 0, [0,1,2]::Array(Float32), NULL), 3)) FROM qbit_test LIMIT 1
+SETTINGS optimize_qbit_distance_function_reads = 1;
+
 DROP TABLE qbit_test;
