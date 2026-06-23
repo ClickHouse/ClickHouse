@@ -1,6 +1,8 @@
 ---
 description: 'System table which shows all available stemmers.'
 keywords: ['system table', 'stemmers']
+sidebar_label: 'system.stemmers'
+sidebar_position: 84
 slug: /operations/system-tables/stemmers
 title: 'system.stemmers'
 doc_type: 'reference'
