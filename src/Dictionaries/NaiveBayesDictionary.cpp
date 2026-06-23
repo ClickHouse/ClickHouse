@@ -276,6 +276,10 @@ Pipe NaiveBayesDictionary::read(const Names & column_names, size_t /* max_block_
             ErrorCodes::UNSUPPORTED_METHOD,
             "Set `store_source` to true in the NAIVE_BAYES layout to support reading the training data back from the dictionary");
 
+    /// With store_source set, a successful load always populates these columns (an empty source throws
+    /// RECEIVED_EMPTY_DATA before the dictionary becomes usable), so they are never null here.
+    chassert(source_ngram_column && source_class_id_column && source_count_column);
+
     const auto & key_attribute = (*dict_struct.key)[0];
 
     ColumnsWithTypeAndName result_columns;
@@ -287,16 +291,16 @@ Pipe NaiveBayesDictionary::read(const Names & column_names, size_t /* max_block_
 
         if (column_name == key_attribute.name)
         {
-            column_with_type.column = source_ngram_column ? source_ngram_column : key_attribute.type->createColumn();
+            column_with_type.column = source_ngram_column;
             column_with_type.type = key_attribute.type;
         }
         else
         {
             const auto & attribute = dict_struct.getAttribute(column_name);
             if (column_name == dict_struct.attributes.front().name)
-                column_with_type.column = source_class_id_column ? source_class_id_column : attribute.type->createColumn();
+                column_with_type.column = source_class_id_column;
             else
-                column_with_type.column = source_count_column ? source_count_column : attribute.type->createColumn();
+                column_with_type.column = source_count_column;
             column_with_type.type = attribute.type;
         }
 
