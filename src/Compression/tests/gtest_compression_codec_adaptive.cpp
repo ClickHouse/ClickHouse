@@ -134,6 +134,15 @@ TEST(AdaptiveCodecPool, NonCandidateTypesGetNoneAndDefaultOnly)
     }
 }
 
+TEST(AdaptiveCodecPool, MultipleCodecAggregatesEncryption)
+{
+    auto & factory = CompressionCodecFactory::instance();
+    EXPECT_TRUE(factory.get("AES_128_GCM_SIV")->isEncryption());
+    EXPECT_TRUE(factory.get("LZ4, AES_128_GCM_SIV")->isEncryption());
+    EXPECT_FALSE(factory.get("LZ4")->isEncryption());
+    EXPECT_FALSE(factory.get("LZ4, ZSTD")->isEncryption());
+}
+
 TEST(AdaptiveCodecSelector, MonotonicNarrowIntegersPickT64)
 {
     std::vector<UInt32> values(100000);

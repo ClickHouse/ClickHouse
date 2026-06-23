@@ -12,6 +12,7 @@
 
 #include <Compression/ICompressionCodec.h>
 #include <Compression/LZ4_decompress_faster.h>
+#include <Compression/getCompressionCodecForFile.h>
 #include <IO/BufferWithOwnMemory.h>
 
 #include <random>

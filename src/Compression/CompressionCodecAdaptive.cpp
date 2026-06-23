@@ -69,6 +69,10 @@ CompressionCodecPtr buildCodecForType(std::string_view expr, const IDataType & t
 
 Codecs AdaptiveCodec::poolForType(const IDataType & type, const CompressionCodecPtr & deployment_default)
 {
+    /// An encrypting default must not reach here as substituting a codec would drop the encryption. Must handle this in the caller.
+    if (deployment_default->isEncryption())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Adaptive codec pool must not be built from an encrypting default");
+
     Codecs pool{CompressionCodecFactory::instance().get("NONE", {}), deployment_default};
     const TypeIndex type_id = type.getTypeId();
     for (const auto & [codec_expr, types] : CANDIDATES)
