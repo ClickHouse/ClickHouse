@@ -267,12 +267,13 @@ fromCharsLong(const char * first, const char * last, T & value, fast_float::char
 }
 
 
-/// Length, capped just past the 38-digit boundary, of the leading run of float characters at
-/// [first, last) -- i.e. the size of the numeric token, NOT of the whole remaining buffer. The
-/// dispatch below must classify by the token: a short token like "1" sitting in a large buffer
-/// (e.g. "1.5 GiB", or any non-exact ReadBuffer) must still take the fast from_chars path. The
-/// cap is enough to tell short / <=38-digit / longer apart; the chosen parser still receives the
-/// real `last` and consumes the full token.
+/// Length, capped just past the 38-digit boundary, of the leading integer run at [first, last) --
+/// i.e. the size of the integer token, NOT of the whole remaining buffer. The dispatch below must
+/// classify by the token: a short token like "1" sitting in a large buffer (e.g. "1.5 GiB", or any
+/// non-exact ReadBuffer) must still take the fast from_chars path. A '.', 'e' or 'E' right after the
+/// digits means it is a fraction/exponent, not an integer, so we return max_short_float_chars to send
+/// it to from_chars directly. The cap is enough to tell short / <=38-digit / longer integers apart;
+/// the chosen parser still receives the real `last` and consumes the full token.
 inline ptrdiff_t floatTokenClassLength(const char * first, const char * last)
 {
     const char * const scan_end = (last - first > max_u128_integer_digits + 2) ? first + (max_u128_integer_digits + 2) : last;
@@ -281,8 +282,12 @@ inline ptrdiff_t floatTokenClassLength(const char * first, const char * last)
         ++p;
     while (p + 8 <= scan_end && is_made_of_eight_digits_fast(p)) /// skip digit runs 8 at a time
         p += 8;
-    while (p < scan_end && (isNumericASCII(*p) || *p == '.' || *p == 'e' || *p == 'E' || *p == '+' || *p == '-'))
+    while (p < scan_end && isNumericASCII(*p))
         ++p;
+    /// A '.', 'e' or 'E' means this is not a pure integer, so neither integer fast path applies.
+    /// Classify it as short so the dispatch hands it to from_chars for a single-pass parse.
+    if (p < scan_end && (*p == '.' || *p == 'e' || *p == 'E'))
+        return max_short_float_chars;
     return p - first;
 }
 
