@@ -20,12 +20,13 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <base/getThreadId.h>
-#include <base/scope_guard.h>
 #include <base/sleep.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/EventNotifier.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -868,64 +869,40 @@ void ZooKeeper::sendThread()
                 {
                     /// After we popped element from the queue, we must register callbacks (even in the case when expired == true right now),
                     ///  because they must not be lost (callbacks must be called because the user will wait for them).
-
-                    /// Until `info` is registered in `operations` below it is the sole owner of the
-                    /// request's callback, and the steps before that (span finalize, addRootPath, the map
-                    /// insert) can throw on allocation. Without this guard the popped `info` would unwind
-                    /// with an unsatisfied callback, so an async caller waiting on a std::promise (e.g.
-                    /// asyncTryExistsNoThrow) sees a broken-promise future_error that aborts the server.
-                    /// Satisfy the callback with an error response if the request is dropped here.
-                    bool callback_registered = false;
-                    SCOPE_EXIT({
-                        if (callback_registered || !info.callback)
-                            return;
-                        try
-                        {
-                            ZooKeeperResponsePtr response = info.request->makeResponse();
-                            response->error = info.request->probably_sent ? Error::ZCONNECTIONLOSS : Error::ZSESSIONEXPIRED;
-                            response->xid = info.request->xid;
-                            info.callback(*response);
-                        }
-                        catch (...)
-                        {
-                            /// A scope-exit guard must not let an exception escape during unwinding.
-                            tryLogCurrentException(log);
-                        }
-                    });
-
-                    fiu_do_on(FailPoints::zk_send_thread_request_window_throw,
                     {
-                        throw Exception::fromMessage(Error::ZSYSTEMERROR, "Injected failure in sendThread request window");
-                    });
+                        /// Until `info` is registered in `operations` it is the sole owner of the request's
+                        /// callback. The steps until then allocate, so block MEMORY_LIMIT_EXCEEDED: otherwise
+                        /// `info` would unwind with an unsatisfied callback, and an async caller waiting on its
+                        /// std::promise would see a broken-promise future_error that aborts the server.
+                        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
-                    info.request->spans.maybeFinalize(
-                        KeeperSpan::ClientRequestsQueue,
-                        [&]
+                        fiu_do_on(FailPoints::zk_send_thread_request_window_throw, { CurrentMemoryTracker::injectFault(); });
+
+                        info.request->spans.maybeFinalize(
+                            KeeperSpan::ClientRequestsQueue,
+                            [&]
+                            {
+                                return std::vector<OpenTelemetry::SpanAttribute>{
+                                    {"zookeeper_client.requests_queue.size", requests_queue.size()},
+                                };
+                            });
+
+                        if (info.watch)
+                            info.request->has_watch = true;
+
+                        if (info.request->add_root_path)
+                            info.request->addRootPath(args.chroot);
+
+                        /// Insert into operations AFTER mutating the request (has_watch, addRootPath)
+                        /// to avoid a data race: receiveThread reads from operations concurrently,
+                        /// and the request object is shared via shared_ptr.
+                        if (info.request->xid != close_xid)
                         {
-                            return std::vector<OpenTelemetry::SpanAttribute>{
-                                {"zookeeper_client.requests_queue.size", requests_queue.size()},
-                            };
-                        });
-
-                    if (info.watch)
-                        info.request->has_watch = true;
-
-                    if (info.request->add_root_path)
-                        info.request->addRootPath(args.chroot);
-
-                    /// Insert into operations AFTER mutating the request (has_watch, addRootPath)
-                    /// to avoid a data race: receiveThread reads from operations concurrently,
-                    /// and the request object is shared via shared_ptr.
-                    if (info.request->xid != close_xid)
-                    {
-                        CurrentMetrics::add(CurrentMetrics::ZooKeeperRequest);
-                        std::lock_guard lock(operations_mutex);
-                        operations[info.request->xid] = info;
+                            CurrentMetrics::add(CurrentMetrics::ZooKeeperRequest);
+                            std::lock_guard lock(operations_mutex);
+                            operations[info.request->xid] = info;
+                        }
                     }
-
-                    /// Ownership of the callback is now with `operations` (or the request is a close
-                    /// with no callback): receiveEvent() or finalize() will satisfy it. Disarm the guard.
-                    callback_registered = true;
 
                     if (requests_queue.isFinished() && info.request->xid != close_xid)
                     {

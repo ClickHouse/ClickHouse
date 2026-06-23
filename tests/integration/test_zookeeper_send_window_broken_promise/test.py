@@ -2,13 +2,14 @@
 # Regression test for a broken-promise server abort in Coordination::ZooKeeper::sendThread.
 #
 # In sendThread a popped request is the sole owner of its callback until it is registered in
-# `operations`. The steps before that (span finalize, addRootPath, the map insert) can throw,
-# and without a guard the request unwinds with an unsatisfied callback, so an async caller
-# waiting on a std::promise sees a broken-promise future_error that aborts the server.
+# `operations`. The steps before that allocate, so a MEMORY_LIMIT_EXCEEDED there makes the
+# request unwind with an unsatisfied callback, and an async caller waiting on a std::promise
+# sees a broken-promise future_error that aborts the server.
 #
-# The zk_send_thread_request_window_throw failpoint throws inside exactly that window. With the
-# guard the callback is satisfied with a session error and the server stays up; without it the
-# server aborts (caught here because the node enables abort_on_logical_error).
+# The zk_send_thread_request_window_throw failpoint injects a memory-tracker fault inside that
+# window. The LockMemoryExceptionInThread around the window suppresses it, so the server stays
+# up; remove the lock and the fault throws and aborts the server (caught here because the node
+# enables abort_on_logical_error).
 
 import pytest
 
@@ -40,10 +41,9 @@ def test_send_window_throw_does_not_abort_server(started_cluster):
     pid_before = node.get_process_pid("clickhouse server")
     assert pid_before is not None
 
-    # Drive the real sendThread request window through the failpoint. The query may succeed (the
-    # client reconnects after the session is finalized) or fail with a Keeper error; either is
-    # fine. What must not happen is a broken-promise abort, so each iteration re-arms the ONCE
-    # failpoint and checks the server is still the same process.
+    # Drive the real sendThread request window through the failpoint. The query may succeed or
+    # fail with a Keeper error; either is fine. What must not happen is a broken-promise abort,
+    # so each iteration re-arms the ONCE failpoint and checks the server is still the same process.
     for _ in range(20):
         node.query("SYSTEM ENABLE FAILPOINT zk_send_thread_request_window_throw")
         node.query_and_get_answer_with_error(
