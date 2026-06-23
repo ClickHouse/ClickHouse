@@ -30,6 +30,10 @@ INSERT INTO t1 SELECT number, toString(number) FROM numbers(100);
 -- randomized settings can set) makes make_distributed_plan reject the query before it reaches the
 -- projection regression this test targets.
 SET max_rows_to_group_by = 0;
+-- Pin optimize_use_projections = 1. Without it, randomized settings can disable projection
+-- optimization, so optimizeUseNormalProjections never runs, no Union split happens, and neither the
+-- fixed nor the unfixed binary aborts, so the test would pass trivially and prove nothing.
+SET optimize_use_projections = 1;
 -- Pin distributed_plan_max_rows_to_broadcast low so t2's read is sharded (the bug path) without a
 -- huge fixture; t1 stays under the threshold and is broadcast, as in the original bug. Otherwise
 -- randomized settings could raise it above the selected row count and skip the sharded read.
