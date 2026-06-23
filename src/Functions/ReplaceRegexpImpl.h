@@ -189,7 +189,7 @@ struct ReplaceRegexpImpl
             return {};
 
         re2::Regexp * dot = star->sub()[0];
-        bool needs_newline_check;
+        bool needs_newline_check = false;
         if (dot->op() == re2::kRegexpAnyChar)
         {
             /// Dotall `.` matches everything, so the trailing `.*` always consumes the rest of the string.
