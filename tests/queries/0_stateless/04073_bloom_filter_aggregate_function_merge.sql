@@ -65,3 +65,18 @@ FROM (
     UNION ALL
     SELECT groupBloomFilterState(1000)(number) AS state FROM numbers(100)
 );
+
+-- Malformed serialized state: filter_size_bytes = 0 must throw.
+SELECT finalizeAggregation(CAST(unhex('00010000'), 'AggregateFunction(groupBloomFilter(1000), UInt64)')); -- { serverError INCORRECT_DATA }
+
+-- Malformed serialized state: filter_size_bytes above maximum must throw.
+SELECT finalizeAggregation(CAST(unhex('8180808001010000'), 'AggregateFunction(groupBloomFilter(1000), UInt64)')); -- { serverError INCORRECT_DATA }
+
+-- Malformed serialized state: num_hashes = 0 must throw.
+SELECT finalizeAggregation(CAST(unhex('08000000'), 'AggregateFunction(groupBloomFilter(1000), UInt64)')); -- { serverError INCORRECT_DATA }
+
+-- Malformed serialized state: num_hashes above maximum must throw.
+SELECT finalizeAggregation(CAST(unhex('08150000'), 'AggregateFunction(groupBloomFilter(1000), UInt64)')); -- { serverError INCORRECT_DATA }
+
+-- Malformed serialized state: has_data must be 0 or 1.
+SELECT finalizeAggregation(CAST(unhex('08010002'), 'AggregateFunction(groupBloomFilter(1000), UInt64)')); -- { serverError INCORRECT_DATA }

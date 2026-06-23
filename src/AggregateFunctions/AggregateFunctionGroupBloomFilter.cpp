@@ -236,6 +236,10 @@ AggregateFunctionPtr createAggregateFunctionGroupBloomFilter(
             filter_size_bytes, BLOOM_FILTER_MAX_SIZE_BYTES);
     if (num_hashes == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of hash functions cannot be zero");
+    if (num_hashes > BLOOM_FILTER_MAX_HASHES)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Number of hash functions {} exceeds maximum allowed {}",
+            num_hashes, BLOOM_FILTER_MAX_HASHES);
 
     const DataTypePtr & arg_type = argument_types[0];
     WhichDataType which(arg_type);

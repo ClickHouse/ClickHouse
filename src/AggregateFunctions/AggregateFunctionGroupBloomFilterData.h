@@ -28,6 +28,9 @@ static constexpr size_t BLOOM_FILTER_DEFAULT_EXPECTED_ELEMENTS = 10000;
 /// Maximum allowed Bloom filter size in bytes (256 MB)
 static constexpr size_t BLOOM_FILTER_MAX_SIZE_BYTES = 256 * 1024 * 1024;
 
+/// Maximum allowed number of hash functions for Bloom filter.
+static constexpr size_t BLOOM_FILTER_MAX_HASHES = 20;
+
 /// Compute optimal Bloom filter size in bytes given expected number of elements and false positive rate.
 /// Formula: m = -n * ln(p) / (ln(2))^2
 inline size_t bloomFilterOptimalSizeBytes(size_t expected_elements, double false_positive_rate)
@@ -59,7 +62,7 @@ inline size_t bloomFilterOptimalHashes(size_t filter_size_bytes, size_t expected
     size_t hashes = static_cast<size_t>(std::round(bits_per_element * std::numbers::ln2));
     if (hashes == 0)
         hashes = 1;
-    hashes = std::min(hashes, size_t(20));
+    hashes = std::min(hashes, BLOOM_FILTER_MAX_HASHES);
     return hashes;
 }
 
@@ -152,13 +155,24 @@ struct AggregateFunctionGroupBloomFilterData
         readVarUInt(num_hashes, buf);
         readVarUInt(seed, buf);
 
+        if (filter_size_bytes == 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Bloom filter size cannot be zero");
         if (filter_size_bytes > BLOOM_FILTER_MAX_SIZE_BYTES)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Bloom filter size {} exceeds maximum allowed size {}",
                 filter_size_bytes, BLOOM_FILTER_MAX_SIZE_BYTES);
+        if (num_hashes == 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Number of hash functions cannot be zero");
+        if (num_hashes > BLOOM_FILTER_MAX_HASHES)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Number of hash functions {} exceeds maximum allowed {}",
+                num_hashes, BLOOM_FILTER_MAX_HASHES);
 
         UInt8 has_data;
         readBinary(has_data, buf);
+        if (has_data > 1)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid Bloom filter state data flag: {}", static_cast<UInt16>(has_data));
+
         if (has_data)
         {
             bloom_filter = std::make_unique<BloomFilter>(filter_size_bytes, num_hashes, seed);

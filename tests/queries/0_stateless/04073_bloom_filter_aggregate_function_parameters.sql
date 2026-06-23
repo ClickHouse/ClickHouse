@@ -52,6 +52,13 @@ SELECT groupBloomFilterState(0, 5)(number) FROM numbers(10); -- { serverError BA
 -- num_hashes = 0 must throw
 SELECT groupBloomFilterState(1000, 0)(number) FROM numbers(10); -- { serverError BAD_ARGUMENTS }
 
+-- num_hashes at the maximum allowed value is accepted
+SELECT bloomFilterContains(groupBloomFilterState(4096, 20)(number), toUInt64(50)) AS result
+FROM numbers(100);
+
+-- num_hashes above the maximum allowed value must throw
+SELECT groupBloomFilterState(4096, 21)(number) FROM numbers(10); -- { serverError BAD_ARGUMENTS }
+
 -- false_positive_rate = 0.0 must throw
 SELECT groupBloomFilterState(1000, 0.0)(number) FROM numbers(10); -- { serverError BAD_ARGUMENTS }
 

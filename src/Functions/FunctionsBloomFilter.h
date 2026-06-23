@@ -36,6 +36,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /** Bloom filter functions.
@@ -89,6 +90,11 @@ public:
         DataTypes arg_data_types = aggr_type->getArgumentsDataTypes();
         const DataTypePtr & value_type = arg_data_types[0];
         DataTypePtr dispatch_value_type = removeLowCardinalityAndNullable(value_type);
+
+        if (!canCastProbeType(arguments[1].type, dispatch_value_type))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Conversion from {} to Bloom filter value type {} is not supported for function {}",
+                arguments[1].type->getName(), value_type->getName(), getName());
 
         /// Use an accurate cast so a narrowing probe (e.g. toUInt16(300) against a UInt8 filter) does
         /// not wrap/truncate before hashing and report a false positive; non-representable values
@@ -172,6 +178,23 @@ public:
     }
 
 private:
+    static bool canCastProbeType(const DataTypePtr & probe_type, const DataTypePtr & bloom_value_type)
+    {
+        DataTypePtr dispatch_probe_type = removeLowCardinalityAndNullable(probe_type);
+
+        if (dispatch_probe_type->equals(*bloom_value_type))
+            return true;
+
+        WhichDataType probe_which(dispatch_probe_type);
+        WhichDataType bloom_value_which(bloom_value_type);
+
+        /// Numeric probes are intentionally allowed to use a different numeric type. The accurate
+        /// cast below preserves correct values and turns non-representable values into NULL, which
+        /// are then reported as definitely absent from the Bloom filter.
+        return (probe_which.isInteger() || probe_which.isFloat())
+            && (bloom_value_which.isInteger() || bloom_value_which.isFloat());
+    }
+
     static size_t getBloomFilterDataOffset(const ColumnAggregateFunction & bloom_col)
     {
         AggregateFunctionPtr function = bloom_col.getAggregateFunction();
