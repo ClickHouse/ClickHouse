@@ -133,7 +133,7 @@ void NaiveBayesDictionary::loadData()
     }();
 
     /// The block places the key columns first and the attribute columns after them. The key is the n-gram
-    /// string, the first attribute is the class id, and the second attribute is the count.
+    /// string; the class and count attributes are located by the indices resolved from `class_attribute`.
     const size_t key_size = dict_struct.getKeysSize();
 
     MutableColumnPtr ngram_acc;
@@ -159,8 +159,8 @@ void NaiveBayesDictionary::loadData()
         {
             const size_t rows = block.rows();
             const auto & ngram_col = block.safeGetByPosition(0).column;
-            const auto & class_id_col = block.safeGetByPosition(key_size).column;
-            const auto & count_col = block.safeGetByPosition(key_size + 1).column;
+            const auto & class_id_col = block.safeGetByPosition(key_size + configuration.class_index).column;
+            const auto & count_col = block.safeGetByPosition(key_size + configuration.count_index).column;
 
             for (size_t i = 0; i < rows; ++i)
             {
@@ -225,13 +225,14 @@ ColumnPtr NaiveBayesDictionary::getColumn(
     const DataTypes & /* key_types */,
     DefaultOrFilter /* default_or_filter */) const
 {
-    /// Only the prediction attribute (the first one, class_id) is computable. The remaining attributes
-    /// describe the training source and have no meaning as a per-input prediction.
-    if (attribute_name != dict_struct.attributes.front().name)
+    /// Only the class attribute is computable (it is the predicted class). The count attribute describes the
+    /// training source and has no meaning as a per-input prediction.
+    const auto & class_attribute_name = dict_struct.attributes[configuration.class_index].name;
+    if (attribute_name != class_attribute_name)
         throw Exception(
             ErrorCodes::UNSUPPORTED_METHOD,
             "NaiveBayes dictionary only supports querying attribute '{}' (the predicted class), got '{}'",
-            dict_struct.attributes.front().name,
+            class_attribute_name,
             attribute_name);
 
     const auto * string_col = typeid_cast<const ColumnString *>(key_columns.front().get());
@@ -331,14 +332,14 @@ void registerDictionaryNaiveBayes(DictionaryFactory & factory)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary must have exactly one complex key column (the n-gram text)");
 
-        if (dict_struct.attributes.size() < 2)
+        if (dict_struct.attributes.size() != 2)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "NaiveBayes dictionary must have at least two attributes: class_id (UInt32) and count (UInt64)");
+                "NaiveBayes dictionary must have exactly two attributes: the class label and the count, both unsigned integers");
 
-        /// The key holds the n-gram text and the first two attributes hold the class id and the count. Validate
-        /// their types now: the source columns are coerced to these declared types, so this guarantees the
-        /// `getDataAt`/`getUInt` reads in loadData are well defined and rejects misconfiguration at creation.
+        /// The key holds the n-gram text; the two attributes are the class label and the count (which is which is
+        /// resolved below from the `class_attribute` parameter). Both must be unsigned integers: the source columns
+        /// are coerced to these declared types, so this makes the `getUInt` reads in loadData well defined.
         const auto & key_type = (*dict_struct.key)[0].type;
         if (!isString(key_type))
             throw Exception(
@@ -360,14 +361,14 @@ void registerDictionaryNaiveBayes(DictionaryFactory & factory)
         /// Reject unknown layout parameters so typos (for example `priors_mod`) are caught at creation instead
         /// of being silently ignored.
         static const std::unordered_set<std::string_view> known_layout_keys{
-            "n", "mode", "alpha", "priors_mode", "priors", "store_source"};
+            "n", "mode", "alpha", "priors_mode", "priors", "store_source", "class_attribute"};
         Poco::Util::AbstractConfiguration::Keys layout_keys;
         config.keys(layout_prefix, layout_keys);
         for (const auto & key : layout_keys)
             if (!known_layout_keys.contains(key))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "NaiveBayes dictionary: unknown layout parameter '{}'. Allowed: n, mode, alpha, priors_mode, priors, store_source",
+                    "NaiveBayes dictionary: unknown layout parameter '{}'. Allowed: n, mode, alpha, priors_mode, priors, store_source, class_attribute",
                     key);
 
         if (!config.has(layout_prefix + ".n"))
@@ -428,6 +429,29 @@ void registerDictionaryNaiveBayes(DictionaryFactory & factory)
 
         const bool store_source = config.getBool(layout_prefix + ".store_source", false);
 
+        /// `class_attribute` names which of the two attributes is the class label; the other is the count. Requiring
+        /// it, rather than assuming an attribute order, makes each column's role explicit, so reordering the attribute
+        /// declarations cannot silently swap the class and the count.
+        if (!config.has(layout_prefix + ".class_attribute"))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "NaiveBayes dictionary layout requires a 'class_attribute' parameter naming the class label column, "
+                "e.g. class_attribute 'class_id'");
+        const String class_attribute = config.getString(layout_prefix + ".class_attribute");
+
+        size_t class_index = dict_struct.attributes.size();
+        for (size_t i = 0; i < dict_struct.attributes.size(); ++i)
+            if (dict_struct.attributes[i].name == class_attribute)
+                class_index = i;
+        if (class_index == dict_struct.attributes.size())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "NaiveBayes dictionary: class_attribute '{}' does not name any attribute; the attributes are '{}' and '{}'",
+                class_attribute,
+                dict_struct.attributes[0].name,
+                dict_struct.attributes[1].name);
+        const size_t count_index = 1 - class_index;
+
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 
         NaiveBayesDictionary::Configuration cfg
@@ -438,6 +462,8 @@ void registerDictionaryNaiveBayes(DictionaryFactory & factory)
             .priors_mode = priors_mode,
             .explicit_priors = std::move(explicit_priors),
             .store_source = store_source,
+            .class_index = class_index,
+            .count_index = count_index,
             .dict_lifetime = dict_lifetime,
         };
 

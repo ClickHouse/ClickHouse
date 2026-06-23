@@ -26,7 +26,7 @@ CREATE DICTIONARY nb_acl
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_acl_src' DB currentDatabase()))
-LAYOUT(NAIVE_BAYES(n 1 mode 'token'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
 LIFETIME(0);
 
 CREATE USER ${user};

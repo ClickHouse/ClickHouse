@@ -35,6 +35,9 @@ public:
         std::map<UInt32, double> explicit_priors;
         /// When true, the source n-gram rows are retained so that the dictionary contents can be read back.
         bool store_source;
+        /// Declared-attribute index of the class label and of the count, resolved from the `class_attribute` param.
+        size_t class_index;
+        size_t count_index;
         DictionaryLifetime dict_lifetime;
     };
 

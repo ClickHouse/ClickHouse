@@ -16,11 +16,11 @@ INSERT INTO nb_empty_bi_src VALUES (0, 'very good', 10), (0, 'really great', 8),
 
 CREATE DICTIONARY nb_empty_uni (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
 PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_empty_uni_src' DB currentDatabase()))
-LAYOUT(NAIVE_BAYES(n 1 mode 'token')) LIFETIME(0);
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token')) LIFETIME(0);
 
 CREATE DICTIONARY nb_empty_bi (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
 PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_empty_bi_src' DB currentDatabase()))
-LAYOUT(NAIVE_BAYES(n 2 mode 'token')) LIFETIME(0);
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'token')) LIFETIME(0);
 
 -- Empty input is classified, and the result matches dictGet for both n sizes.
 SELECT naiveBayesClassifier('nb_empty_uni', '') = dictGet('nb_empty_uni', 'class_id', '');

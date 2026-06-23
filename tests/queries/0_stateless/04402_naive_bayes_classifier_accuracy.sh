@@ -30,7 +30,7 @@ CREATE DICTIONARY lang_codepoint_2
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_lang_model'))
-LAYOUT(NAIVE_BAYES(n 2 mode 'codepoint'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'codepoint'))
 LIFETIME(0)
 "
 

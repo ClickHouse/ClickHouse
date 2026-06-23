@@ -32,7 +32,7 @@ CREATE DICTIONARY nb_token_model
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_source'))
-LAYOUT(NAIVE_BAYES(n 1 mode 'token' alpha 1.0))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' alpha 1.0))
 LIFETIME(0);
 
 SELECT 'Token mode — positive text';
@@ -71,7 +71,7 @@ CREATE DICTIONARY nb_byte_model
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_byte_source'))
-LAYOUT(NAIVE_BAYES(n 2 mode 'byte' alpha 1.0))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'byte' alpha 1.0))
 LIFETIME(0);
 
 SELECT 'Byte mode — English text';
@@ -110,7 +110,7 @@ CREATE DICTIONARY nb_codepoint_model
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_cp_source'))
-LAYOUT(NAIVE_BAYES(n 1 mode 'codepoint' alpha 1.0))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'codepoint' alpha 1.0))
 LIFETIME(0);
 
 SELECT 'Codepoint mode — Latin text';
@@ -137,7 +137,7 @@ CREATE DICTIONARY nb_priors_model
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_source'))
-LAYOUT(NAIVE_BAYES(n 1 mode 'token' alpha 1.0 priors_mode 'explicit' priors '0=0.9,1=0.1'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' alpha 1.0 priors_mode 'explicit' priors '0=0.9,1=0.1'))
 LIFETIME(0);
 
 SELECT 'Explicit priors';
@@ -163,7 +163,7 @@ CREATE DICTIONARY nb_prop_model
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_source'))
-LAYOUT(NAIVE_BAYES(n 1 mode 'token' alpha 1.0 priors_mode 'proportional'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' alpha 1.0 priors_mode 'proportional'))
 LIFETIME(0);
 
 SELECT 'Proportional priors';
@@ -189,7 +189,7 @@ CREATE DICTIONARY nb_alpha_model
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_source'))
-LAYOUT(NAIVE_BAYES(n 1 mode 'token' alpha 0.01))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' alpha 0.01))
 LIFETIME(0);
 
 SELECT 'Small alpha';
@@ -259,7 +259,7 @@ CREATE DICTIONARY nb_dup_model
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_dup_source'))
-LAYOUT(NAIVE_BAYES(n 1 mode 'token'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
 LIFETIME(0);
 
 SELECT 'Duplicate ngram accumulation';
@@ -300,7 +300,7 @@ CREATE DICTIONARY nb_stored_model
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_stored_source'))
-LAYOUT(NAIVE_BAYES(n 1 mode 'token' store_source 1))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' store_source 1))
 LIFETIME(0);
 
 SELECT 'Read training rows';

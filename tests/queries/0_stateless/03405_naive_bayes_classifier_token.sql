@@ -21,7 +21,7 @@ CREATE DICTIONARY sentiment_token_1
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_sentiment_data'))
-LAYOUT(NAIVE_BAYES(n 1 mode 'token' alpha 1.0))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' alpha 1.0))
 LIFETIME(0);
 
 SELECT naiveBayesClassifier('sentiment_token_1', 'The interface is beautiful and intuitive');

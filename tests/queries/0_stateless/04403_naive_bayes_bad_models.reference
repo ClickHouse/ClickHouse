@@ -6,3 +6,5 @@ valid UInt64/UInt64
 0	1
 valid n=2 bigram model
 0	1
+class_attribute and PRIMARY KEY resolve regardless of column order
+0	1

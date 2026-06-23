@@ -23,7 +23,7 @@ CREATE DICTIONARY nb_no_n
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_err_source'))
-LAYOUT(NAIVE_BAYES(mode 'token' alpha 1.0))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' mode 'token' alpha 1.0))
 LIFETIME(0);
 
 SELECT dictGet('nb_no_n', 'class_id', 'test'); -- { serverError BAD_ARGUMENTS }
@@ -40,7 +40,7 @@ CREATE DICTIONARY nb_no_mode
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_err_source'))
-LAYOUT(NAIVE_BAYES(n 1))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1))
 LIFETIME(0);
 
 SELECT dictGet('nb_no_mode', 'class_id', 'test'); -- { serverError BAD_ARGUMENTS }
@@ -57,7 +57,7 @@ CREATE DICTIONARY nb_bad_mode
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_err_source'))
-LAYOUT(NAIVE_BAYES(n 1 mode 'invalid'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'invalid'))
 LIFETIME(0);
 
 SELECT dictGet('nb_bad_mode', 'class_id', 'test'); -- { serverError BAD_ARGUMENTS }
@@ -74,7 +74,7 @@ CREATE DICTIONARY nb_zero_n
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_err_source'))
-LAYOUT(NAIVE_BAYES(n 0 mode 'token'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 0 mode 'token'))
 LIFETIME(0);
 
 SELECT dictGet('nb_zero_n', 'class_id', 'test'); -- { serverError BAD_ARGUMENTS }
@@ -91,7 +91,7 @@ CREATE DICTIONARY nb_bad_alpha
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_err_source'))
-LAYOUT(NAIVE_BAYES(n 1 mode 'token' alpha 0))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' alpha 0))
 LIFETIME(0);
 
 SELECT dictGet('nb_bad_alpha', 'class_id', 'test'); -- { serverError BAD_ARGUMENTS }
@@ -108,7 +108,7 @@ CREATE DICTIONARY nb_bad_priors_sum
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_err_source'))
-LAYOUT(NAIVE_BAYES(n 1 mode 'token' priors_mode 'explicit' priors '0=0.5,1=0.3'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors '0=0.5,1=0.3'))
 LIFETIME(0);
 
 SELECT dictGet('nb_bad_priors_sum', 'class_id', 'test'); -- { serverError BAD_ARGUMENTS }
@@ -125,7 +125,7 @@ CREATE DICTIONARY nb_neg_prior
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_err_source'))
-LAYOUT(NAIVE_BAYES(n 1 mode 'token' priors_mode 'explicit' priors '0=-0.5,1=1.5'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors '0=-0.5,1=1.5'))
 LIFETIME(0);
 
 SELECT dictGet('nb_neg_prior', 'class_id', 'test'); -- { serverError BAD_ARGUMENTS }
@@ -142,7 +142,7 @@ CREATE DICTIONARY nb_big_prior
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_err_source'))
-LAYOUT(NAIVE_BAYES(n 1 mode 'token' priors_mode 'explicit' priors '0=2.0,1=0.5'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors '0=2.0,1=0.5'))
 LIFETIME(0);
 
 SELECT dictGet('nb_big_prior', 'class_id', 'test'); -- { serverError BAD_ARGUMENTS }
@@ -159,7 +159,7 @@ CREATE DICTIONARY nb_malformed_prior
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_err_source'))
-LAYOUT(NAIVE_BAYES(n 1 mode 'token' priors_mode 'explicit' priors '0:0.5,1:0.5'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors '0:0.5,1:0.5'))
 LIFETIME(0);
 
 SELECT dictGet('nb_malformed_prior', 'class_id', 'test'); -- { serverError BAD_ARGUMENTS }
@@ -176,7 +176,7 @@ CREATE DICTIONARY nb_prior_count_mismatch
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_err_source'))
-LAYOUT(NAIVE_BAYES(n 1 mode 'token' priors_mode 'explicit' priors '0=0.4,1=0.3,2=0.3'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors '0=0.4,1=0.3,2=0.3'))
 LIFETIME(0);
 
 SELECT dictGet('nb_prior_count_mismatch', 'class_id', 'test'); -- { serverError BAD_ARGUMENTS }
@@ -193,7 +193,7 @@ CREATE DICTIONARY nb_prior_unknown_class
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_err_source'))
-LAYOUT(NAIVE_BAYES(n 1 mode 'token' priors_mode 'explicit' priors '0=0.5,5=0.5'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors '0=0.5,5=0.5'))
 LIFETIME(0);
 
 SELECT dictGet('nb_prior_unknown_class', 'class_id', 'test'); -- { serverError BAD_ARGUMENTS }
@@ -217,7 +217,7 @@ CREATE DICTIONARY nb_empty_model
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_empty_source'))
-LAYOUT(NAIVE_BAYES(n 1 mode 'token'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
 LIFETIME(0);
 
 SELECT dictGet('nb_empty_model', 'class_id', 'test'); -- { serverError RECEIVED_EMPTY_DATA }
@@ -234,7 +234,7 @@ CREATE DICTIONARY nb_err_dict
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_err_source'))
-LAYOUT(NAIVE_BAYES(n 1 mode 'token'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
 LIFETIME(0);
 
 -- Wrong argument types — all three functions
@@ -288,7 +288,7 @@ CREATE DICTIONARY nb_uniform_explicit
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_err_source'))
-LAYOUT(NAIVE_BAYES(n 1 mode 'token' priors_mode 'uniform'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'uniform'))
 LIFETIME(0);
 
 SELECT 'Uniform explicit';
@@ -306,7 +306,7 @@ CREATE DICTIONARY nb_explicit_no_priors
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_err_source'))
-LAYOUT(NAIVE_BAYES(n 1 mode 'token' priors_mode 'explicit'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit'))
 LIFETIME(0);
 
 SELECT dictGet('nb_explicit_no_priors', 'class_id', 'test'); -- { serverError BAD_ARGUMENTS }
@@ -323,7 +323,7 @@ CREATE DICTIONARY nb_bad_priors_mode
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_err_source'))
-LAYOUT(NAIVE_BAYES(n 1 mode 'token' priors_mode 'bogus'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'bogus'))
 LIFETIME(0);
 
 SELECT dictGet('nb_bad_priors_mode', 'class_id', 'test'); -- { serverError BAD_ARGUMENTS }
@@ -340,7 +340,7 @@ CREATE DICTIONARY nb_nonnumeric_prior
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_err_source'))
-LAYOUT(NAIVE_BAYES(n 1 mode 'token' priors_mode 'explicit' priors '0=abc,1=0.5'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors '0=abc,1=0.5'))
 LIFETIME(0);
 
 SELECT dictGet('nb_nonnumeric_prior', 'class_id', 'test'); -- { serverError BAD_ARGUMENTS }
