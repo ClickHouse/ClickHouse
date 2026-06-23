@@ -57,3 +57,34 @@ SELECT toTypeName(L2DistanceTransposed(vec, if(rand() % 2 = 0, [0,1,2]::Array(Fl
 SETTINGS optimize_qbit_distance_function_reads = 1;
 
 DROP TABLE qbit_test;
+
+-- 6. The reference vector may be an expression-bearing `ColumnNode` (a table `ALIAS` column or an
+--    array-join expression), not just a plain stored column. The rewrite clones that node; the clone
+--    must keep the alias expression and its column dependency (here `id`) so the optimization still
+--    reads the `vec.1` subcolumn, returns Nullable(Float64) and produces the same values as the
+--    unoptimized path. A deterministic alias is materialized once, so it is safe to reference.
+DROP TABLE IF EXISTS qbit_alias_test;
+CREATE TABLE qbit_alias_test
+(
+    id UInt64,
+    vec QBit(Float32, 3),
+    ref_alias Variant(Array(Float32), String) ALIAS if(id > 1, [0,1,2]::Array(Float32), NULL)
+) ENGINE = Memory
+SETTINGS allow_experimental_qbit_type = 1, allow_experimental_variant_type = 1;
+INSERT INTO qbit_alias_test(id, vec) VALUES (1, [0,1,2]), (2, [1,2,3]), (3, [2,3,4]);
+
+SELECT id, round(L2DistanceTransposed(vec, ref_alias, 3), 4) AS dist
+FROM qbit_alias_test ORDER BY id SETTINGS optimize_qbit_distance_function_reads = 1;
+
+SELECT id, round(L2DistanceTransposed(vec, ref_alias, 3), 4) AS dist
+FROM qbit_alias_test ORDER BY id SETTINGS optimize_qbit_distance_function_reads = 0;
+
+SELECT countIf(explain ILIKE '%`vec.1`%') > 0 AS reads_subcolumns
+FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
+      SELECT L2DistanceTransposed(vec, ref_alias, 3) FROM qbit_alias_test
+      SETTINGS optimize_qbit_distance_function_reads = 1);
+
+SELECT toTypeName(L2DistanceTransposed(vec, ref_alias, 3)) FROM qbit_alias_test LIMIT 1
+SETTINGS optimize_qbit_distance_function_reads = 1;
+
+DROP TABLE qbit_alias_test;
