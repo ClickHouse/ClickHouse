@@ -41,7 +41,7 @@ ColumnsDescription StorageSystemGrants::getColumnsDescription()
         {"grant_option", std::make_shared<DataTypeUInt8>(), "Permission is granted WITH GRANT OPTION."},
         {"is_wildcard", std::make_shared<DataTypeUInt8>(),
             "Logical value. It shows whether the grant is a wildcard prefix grant. Possible values: "
-            "0 — The row describes an exact grant, "
+            "0 — The row does not describe a wildcard prefix grant, "
             "1 — The row describes a wildcard prefix grant (e.g. db*.* or foo.bar*)."
         },
     };
