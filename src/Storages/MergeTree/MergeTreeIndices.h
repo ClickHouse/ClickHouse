@@ -234,6 +234,11 @@ public:
     }
 
     virtual std::string getDescription() const = 0;
+
+    /// Optional description of the runtime analysis state of the index for the given granules
+    /// (e.g. for the text index: which search tokens were resolved during analysis). Shown as a
+    /// separate section in EXPLAIN. Empty by default; indexes that have such state override it.
+    virtual std::string getStateDescription(const std::vector<MergeTreeIndexGranulePtr> & /*granules*/) const { return ""; }
 };
 
 using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;

@@ -13,7 +13,7 @@ set -e
 # Pin date_time_input_format to 'basic' so JSON path inference matches the
 # pre-existing reference (best_effort would infer DateTime64 from ISO date strings,
 # which changes JSONAllValues output and the cityHash64 result).
-MY_CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_analyzer 1 --date_time_input_format=basic"
+MY_CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_analyzer 1 --date_time_input_format=basic --query_plan_text_index_add_hint 1"
 
 function run_query()
 {

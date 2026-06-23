@@ -4,6 +4,8 @@ DROP TABLE IF EXISTS tab;
 
 -- To have always local plan in EXPLAIN when running the test with enabled parallel replicas
 SET parallel_replicas_local_plan = 1;
+-- Pin so the printed direct read mode does not flip with settings randomization.
+SET query_plan_text_index_add_hint = 1;
 
 CREATE TABLE tab
 (

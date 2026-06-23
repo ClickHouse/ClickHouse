@@ -21,6 +21,7 @@
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
+#include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -425,27 +426,155 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
     return rpn_stack[0].can_be_true;
 }
 
+template <typename Tokens>
+static std::string formatTokens(const Tokens & tokens)
+{
+    if (tokens.size() > 20)
+        return fmt::format("... {} tokens ...", tokens.size());
+
+    std::string result;
+    for (size_t i = 0; i < tokens.size(); ++i)
+    {
+        if (i > 0)
+            result += ", ";
+
+        result += fmt::format("\"{}\"", tokens[i]);
+    }
+    return result;
+}
+
+static std::string formatTextSearchQueries(const std::vector<TextSearchQueryPtr> & queries)
+{
+    std::string result;
+
+    if (queries.size() > 10)
+    {
+        result += fmt::format("... {} text search queries ...", queries.size());
+        return result;
+    }
+
+    for (size_t i = 0; i < queries.size(); ++i)
+    {
+        if (i > 0)
+            result += " | ";
+
+        const auto & query = queries[i];
+        result += fmt::format("(search mode: {}, direct read: {}, tokens: [", query->search_mode, query->direct_read_mode);
+        result += formatTokens(query->tokens);
+        result += "])";
+    }
+    return result;
+}
+
 std::string MergeTreeIndexConditionText::getDescription() const
 {
-    std::string description = fmt::format("(mode: {}; tokens: [", global_search_mode);
+    /// Print the RPN of the condition as a tree of text search queries.
+    std::vector<std::string> stack;
 
-    if (all_search_tokens.size() > 50)
+    for (const auto & element : rpn)
     {
-        description += fmt::format("... {} tokens ...", all_search_tokens.size());
+        switch (element.function)
+        {
+            case RPNElement::FUNCTION_EQUALS:
+            case RPNElement::FUNCTION_HAS_ANY_ELEMENTS:
+            case RPNElement::FUNCTION_HAS_ANY_TOKENS:
+            case RPNElement::FUNCTION_HAS_ALL_TOKENS:
+            case RPNElement::FUNCTION_LIKE:
+            {
+                stack.push_back(formatTextSearchQueries(element.text_search_queries));
+                break;
+            }
+            case RPNElement::FUNCTION_UNKNOWN:
+            {
+                stack.emplace_back("unknown");
+                break;
+            }
+            case RPNElement::FUNCTION_NOT:
+            {
+                chassert(!stack.empty());
+                auto arg = std::move(stack.back());
+                stack.back() = fmt::format("not({})", arg);
+                break;
+            }
+            case RPNElement::FUNCTION_AND:
+            {
+                chassert(stack.size() >= 2);
+                auto arg2 = std::move(stack.back());
+                stack.pop_back();
+                auto arg1 = std::move(stack.back());
+                stack.back() = fmt::format("and({}, {})", arg1, arg2);
+                break;
+            }
+            case RPNElement::FUNCTION_OR:
+            {
+                chassert(stack.size() >= 2);
+                auto arg2 = std::move(stack.back());
+                stack.pop_back();
+                auto arg1 = std::move(stack.back());
+                stack.back() = fmt::format("or({}, {})", arg1, arg2);
+                break;
+            }
+            case RPNElement::ALWAYS_FALSE:
+            {
+                stack.emplace_back("false");
+                break;
+            }
+            case RPNElement::ALWAYS_TRUE:
+            {
+                stack.emplace_back("true");
+                break;
+            }
+        }
+    }
+
+    return stack.size() == 1 ? std::move(stack.front()) : "unknown";
+}
+
+std::string MergeTreeIndexConditionText::getStateDescription(const std::vector<MergeTreeIndexGranulePtr> & granules) const
+{
+    /// The overall search mode plus, for each search token, in how many of the analyzed parts it was
+    /// resolved during index analysis (postings folded) rather than deferred to the runtime direct read in PREWHERE.
+    std::vector<const TextIndexAnalyzer *> analyzers;
+    analyzers.reserve(granules.size());
+
+    for (const auto & granule : granules)
+    {
+        if (const auto * granule_text = typeid_cast<const MergeTreeIndexGranuleText *>(granule.get()))
+            analyzers.push_back(&granule_text->getAnalyzer());
+    }
+
+    /// Without any granule (e.g. all parts were pruned before this index ran) we cannot tell the tokens apart.
+    if (analyzers.empty())
+        return fmt::format("(global search mode: {}, all tokens: [{}])", global_search_mode, formatTokens(all_search_tokens));
+
+    std::string tokens_str;
+    if (all_search_tokens.size() > 20)
+    {
+        tokens_str = fmt::format("... {} tokens ...", all_search_tokens.size());
     }
     else
     {
         for (size_t i = 0; i < all_search_tokens.size(); ++i)
         {
-            if (i > 0)
-                description += ", ";
+            const auto & token = all_search_tokens[i];
+            /// A token is analyzed in a part unless it is still needed there but its postings
+            /// were not folded during analysis (i.e. they are deferred to the runtime direct read).
+            size_t analyzed_in_parts = 0;
 
-            description += fmt::format("\"{}\"", all_search_tokens[i]);
+            for (const auto * analyzer : analyzers)
+            {
+                if (!analyzer->isTokenNeeded(token) || analyzer->hasReadPostings(token))
+                    ++analyzed_in_parts;
+            }
+
+            if (i > 0)
+                tokens_str += ", ";
+
+            tokens_str += fmt::format("\"{}\" (analyzed in {}/{} parts)", token, analyzed_in_parts, analyzers.size());
         }
     }
 
-    description += "])";
-    return description;
+    return fmt::format("(global search mode: {}, all tokens: [{}])", global_search_mode, tokens_str);
 }
 
 bool MergeTreeIndexConditionText::hasSearchPatterns() const

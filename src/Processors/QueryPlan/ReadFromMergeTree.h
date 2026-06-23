@@ -115,6 +115,7 @@ public:
         std::string part_name = {};
         std::string description = {};
         std::string condition = {};
+        std::string state = {};
         std::vector<std::string> used_keys = {};
         size_t num_parts_after;
         size_t num_granules_after;
