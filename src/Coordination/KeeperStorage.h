@@ -1,6 +1,5 @@
 #pragma once
 
-#include <deque>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -368,14 +367,6 @@ public:
         const KeeperStorageBase::Delta & front() const;
     };
 
-    /// Element of RemoveRecursive's list of nodes to remove.
-    struct SubtreeNodeToRemove
-    {
-        std::string path;
-        ACLId acl_id = 0;
-        std::optional<int64_t> ephemeral_owner;
-    };
-
     KeeperStorageStats stats;
 
     mutable std::mutex transaction_mutex;
@@ -477,24 +468,13 @@ protected:
 
     struct TransactionInfo
     {
-        int64_t zxid{-1};
+        int64_t zxid;
         KeeperDigest nodes_digest;
         /// index in storage of the log containing the transaction
         int64_t log_idx = 0;
     };
 
     std::list<TransactionInfo> uncommitted_transactions TSA_GUARDED_BY(transaction_mutex);
-
-public:
-    /// For the duration of a preprocessRequest call, these fields accumulate changes made by the
-    /// transaction that's being preprocessed.
-    /// These deltas are already applied to UncommittedState; if the transaction fails, they must be
-    /// rolled back.
-    int64_t staging_zxid = -1;
-    KeeperDigest staging_digest;
-    std::list<Delta> staging_deltas;
-
-protected:
 
     std::atomic<bool> finalized{false};
 
@@ -539,8 +519,6 @@ public:
     /// container.
     Container container;
 
-    struct UncommittedNodeRef;
-
     struct UncommittedState
     {
         explicit UncommittedState(KeeperStorage & storage_) : storage(storage_) { }
@@ -552,14 +530,18 @@ public:
         void rollback(int64_t rollback_zxid);
         void rollback(std::list<Delta> rollback_deltas);
 
-        UncommittedNodeRef getNode(std::string_view path, bool should_lock_storage = true) const;
+        std::shared_ptr<Node> getNode(std::string_view path, bool should_lock_storage = true) const;
 
+        Coordination::ACLs getACLs(std::string_view path, bool should_lock_storage = true) const;
+
+        void applyDeltas(const std::list<Delta> & new_deltas, uint64_t * digest);
+        void applyDelta(const Delta & delta, uint64_t * digest);
         void rollbackDelta(const Delta & delta);
 
         /// Update digest with new nodes
         UInt64 updateNodesDigest(UInt64 current_digest, UInt64 zxid) const;
 
-        bool hasACL(int64_t session_id, bool committed, std::function<bool(const AuthID &)> predicate) const;
+        bool hasACL(int64_t session_id, bool is_local, std::function<bool(const AuthID &)> predicate) const;
 
         void forEachAuthInSession(int64_t session_id, std::function<void(const AuthID &)> func) const;
 
@@ -570,15 +552,12 @@ public:
         struct UncommittedNode
         {
             std::shared_ptr<Node> node{nullptr};
+            std::optional<Coordination::ACLs> acls{};
             /// Tracks which zxids have been applied to this uncommitted node.
             /// Typically 1-3 entries; vector is faster than unordered_set at this size.
             /// May contain duplicates when a Multi operation applies multiple deltas
             /// with the same zxid to the same node — this is harmless because erasure
             /// uses std::erase (removes all matches) and only emptiness is checked.
-            /// TODO: Store just the max zxid instead of the whole set. Clean up when commit zxid
-            ///       reaches that value. It may end up overestimated on rollback, but that's fine,
-            ///       it would just delay cleanup a little. But maybe this won't work because of the
-            ///       zxid_to_nodes[0] thing, research that first.
             std::vector<uint64_t> applied_zxids{};
 
             void materializeACL(const ACLMap & current_acl_map);
@@ -586,8 +565,6 @@ public:
 
         /// zxid_to_nodes stores iterators of nodes map
         /// so we should be careful when removing nodes from it
-        /// Note: we rely on unordered_map iterators staying valid even after rehash. The standard
-        ///       doesn't guarantee it, but apparently the libc++ we're using has this property.
         mutable std::unordered_map<
             std::string,
             UncommittedNode,
@@ -607,14 +584,9 @@ public:
         Ephemerals ephemerals;
 
         /// for each session, store list of uncommitted auths with their ZXID
-        /// TODO: If there are lots of uncommitted Close requests, this grows big, and request
-        ///       preprocessing becomes super slow (tens of seconds) because cleanup iterates over
-        ///       this whole map. Maybe do something about it.
         std::unordered_map<int64_t, std::list<std::pair<int64_t, std::shared_ptr<AuthID>>>> session_and_auth;
 
-        /// Mapping of uncommitted transaction to all it's modified nodes for a faster cleanup.
-        /// zxid_to_nodes[0] contains nodes that were duplicated from committed container to
-        /// UncommittedState::nodes, but weren't necessarily updated.
+        /// mapping of uncommitted transaction to all it's modified nodes for a faster cleanup
         using ZxidToNodes = std::map<int64_t, std::unordered_set<NodesIterator, NodesIteratorHash>>;
         mutable ZxidToNodes zxid_to_nodes;
 
@@ -623,51 +595,73 @@ public:
         KeeperStorage<Container> & storage;
     };
 
-    struct UncommittedNodeRef
-    {
-        std::optional<typename UncommittedState::NodesIterator> it{};
-
-        const Node * get() const { return it ? (*it)->second.node.get() : nullptr; }
-
-        /// Mutable access to the node. Should only be used from `prepare*` functions, together
-        /// with producing deltas matching the changes made to the Node.
-        Node * getMut() const
-        {
-            chassert(it.has_value());
-            chassert((*it)->second.node != nullptr);
-            return (*it)->second.node.get();
-        }
-    };
-
     UncommittedState uncommitted_state{*this};
 
-    /// 0 if no uncommitted requests.
-    uint64_t getLastUncommittedLogIdx() const;
+    struct UncommittedStateForSnapshot
+    {
+        UncommittedStateForSnapshot();
+        ~UncommittedStateForSnapshot();
+        UncommittedStateForSnapshot(UncommittedStateForSnapshot &&) noexcept;
+        UncommittedStateForSnapshot & operator=(UncommittedStateForSnapshot &&) noexcept;
+        UncommittedStateForSnapshot(const UncommittedStateForSnapshot &) = delete;
+        UncommittedStateForSnapshot & operator=(const UncommittedStateForSnapshot &) = delete;
 
+        struct Transaction
+        {
+            int64_t zxid;
+            KeeperDigest nodes_digest;
+            int64_t log_idx = 0;
+        };
+
+        std::vector<Transaction> transactions;
+        std::list<Delta> deltas;
+
+        bool empty() const { return transactions.empty(); }
+    };
+
+    /// Collect uncommitted transactions and deltas with `log_idx > last_log_idx`.
+    UncommittedStateForSnapshot copyUncommittedStateAfter(int64_t last_log_idx) const;
+
+    /// Like `copyUncommittedStateAfter`, but removes the returned transactions
+    /// and deltas from this storage instead of copying them.
+    UncommittedStateForSnapshot detachUncommittedStateAfter(int64_t last_log_idx);
+    void applyUncommittedState(UncommittedStateForSnapshot uncommitted_state_for_snapshot);
+
+    // Compatibility wrapper for the non-low-memory snapshot apply path.
+    void applyUncommittedState(KeeperStorage & other, int64_t last_log_idx);
+
+private:
+    void collectUncommittedTransactionsAfter(
+        int64_t last_log_idx,
+        UncommittedStateForSnapshot & result,
+        std::unordered_set<int64_t> & zxids_to_apply) const;
+    static void detachMatchingDeltasNoexcept(
+        std::list<Delta> & source,
+        std::list<Delta> & destination,
+        const std::unordered_set<int64_t> & zxids_to_apply) noexcept;
+
+public:
     Coordination::Error commit(DeltaRange deltas);
 
     // Create node in the storage
     // Returns false if it failed to create the node, true otherwise
     // We don't care about the exact failure because we should've caught it during preprocessing
     bool
-    createNode(const std::string & path, String data, const Coordination::Stat & stat, ACLId acl_id, bool update_digest);
+    createNode(const std::string & path, String data, const Coordination::Stat & stat, Coordination::ACLs node_acls, bool update_digest);
 
     // Remove node in the storage
     // Returns false if it failed to remove the node, true otherwise
     // We don't care about the exact failure because we should've caught it during preprocessing
     bool removeNode(const std::string & path, int32_t version, bool update_digest);
 
-    /// Used internally by `preprocess` and `processLocal` implementations.
-    /// They usually have acl_id readily available, so we don't have to look up the node here.
-    bool checkACL(ACLId acl_id, int32_t permissions, int64_t session_id, bool committed);
-
-    /// Used externally. Locks storage mutex and looks up the node.
-    bool checkCommittedACL(std::string_view path, int32_t permissions, int64_t session_id);
+    bool checkACL(std::string_view path, int32_t permissions, int64_t session_id, bool is_local, bool should_lock_storage);
 
     KeeperStorage(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes = true);
     ~KeeperStorage();
 
     void initializeSystemNodes() TSA_NO_THREAD_SAFETY_ANALYSIS;
+
+    UInt64 calculateNodesDigest(UInt64 current_digest, const std::list<Delta> & new_deltas) const;
 
     /// Process user request and return response.
     /// check_acl = false only when converting data from ZooKeeper.
@@ -732,36 +726,6 @@ public:
 private:
     void removeDigest(const Node & node, std::string_view path);
     void addDigest(const Node & node, std::string_view path);
-
-public:
-    /// Functions that mutate UncommittedState, add corresponding deltas to staging_deltas, and
-    /// update staging_digest.
-    /// These are public because they're called from the free `preprocess` request handlers.
-    void prepareUpdateNodeStat(std::string_view path, UncommittedNodeRef node, const NodeStats & new_stats, int32_t new_num_children);
-    void prepareUpdateNodeData(std::string_view path, UncommittedNodeRef node, const NodeStats & new_stats, std::string_view new_data);
-    void prepareUpdateNodeACL(std::string_view path, UncommittedNodeRef node, const NodeStats & new_stats, ACLId new_acl_id);
-    void prepareCreateNode(
-        std::string_view parent_path, UncommittedNodeRef parent,
-        const NodeStats & new_parent_stats, int32_t new_parent_num_children,
-        std::string_view path, UncommittedNodeRef node, const Coordination::Stat & stat,
-        ACLId acl_id, std::string_view data);
-    void prepareRemoveNode(
-        std::string_view parent_path, UncommittedNodeRef parent,
-        const NodeStats & new_parent_stats, int32_t new_parent_num_children,
-        std::string_view path, UncommittedNodeRef node);
-    /// (`nodes_to_remove` must be a node + the set of all its descendants, not arbitrary set of
-    ///  nodes. Because we don't update children stats on parents of removed nodes, expecting those
-    ///  parents to also be in the set to be removed, except for the outermost `parent`.)
-    void prepareRemoveRecursive(
-        std::string_view parent_path, UncommittedNodeRef parent,
-        const NodeStats & new_parent_stats, int32_t new_parent_num_children,
-        std::deque<SubtreeNodeToRemove> nodes_to_remove);
-    void prepareRemoveEphemeralNodes(const std::unordered_set<std::string> & paths, int64_t session_id);
-    void prepareAddAuth(std::shared_ptr<KeeperStorageBase::AuthID> new_auth, int64_t session_id);
-
-    /// Helpers used by other `prepare*` implementations.
-    void prepareWriteCommon(std::string_view path, UncommittedNodeRef node);
-    void prepareRemoveNodeWithoutUpdatingParent(std::string_view path, UncommittedNodeRef node);
 };
 
 }

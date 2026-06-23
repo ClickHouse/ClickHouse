@@ -27,19 +27,19 @@ struct BlobStorageLogElement
         Read = 7,
     };
 
-    EventType event_type{};
+    EventType event_type;
 
     String query_id;
     UInt64 thread_id = 0;
-    ThreadName thread_name{};
+    ThreadName thread_name;
 
     String disk_name;
     String bucket;
     String remote_path;
     String local_path;
 
-    size_t data_size{};
-    size_t elapsed_microseconds{};
+    size_t data_size;
+    size_t elapsed_microseconds;
 
     Int32 error_code = 0; /// 0 if no error
     String error_message;

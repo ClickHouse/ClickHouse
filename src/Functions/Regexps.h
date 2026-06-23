@@ -10,7 +10,6 @@
 #include <Common/Exception.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/ProfileEvents.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/likePatternToRegexp.h>
 #include <base/defines.h>
 #include <boost/container_hash/hash.hpp>
@@ -169,15 +168,15 @@ private:
 using DeferredConstructedRegexpsPtr = std::shared_ptr<DeferredConstructedRegexps>;
 
 template <bool save_indices, bool with_edit_distance>
-inline Regexps constructRegexps(const VectorWithMemoryTracking<String> & str_patterns, [[maybe_unused]] std::optional<UInt32> edit_distance)
+inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[maybe_unused]] std::optional<UInt32> edit_distance)
 {
     /// Common pointers
-    VectorWithMemoryTracking<const char *> patterns;
-    VectorWithMemoryTracking<unsigned int> flags;
+    std::vector<const char *> patterns;
+    std::vector<unsigned int> flags;
 
     /// Pointer for external edit distance compilation
-    VectorWithMemoryTracking<hs_expr_ext> ext_exprs;
-    VectorWithMemoryTracking<const hs_expr_ext *> ext_exprs_ptrs;
+    std::vector<hs_expr_ext> ext_exprs;
+    std::vector<const hs_expr_ext *> ext_exprs_ptrs;
 
     patterns.reserve(str_patterns.size());
     flags.reserve(str_patterns.size());
@@ -212,7 +211,7 @@ inline Regexps constructRegexps(const VectorWithMemoryTracking<String> & str_pat
         }
     }
     hs_database_t * db = nullptr;
-    hs_compile_error_t * compile_error = nullptr;
+    hs_compile_error_t * compile_error;
 
     std::unique_ptr<unsigned int[]> ids;
 
@@ -224,7 +223,7 @@ inline Regexps constructRegexps(const VectorWithMemoryTracking<String> & str_pat
             ids[i] = static_cast<unsigned>(i + 1);
     }
 
-    hs_error_t err = 0;
+    hs_error_t err;
     if constexpr (!with_edit_distance)
         err = hs_compile_multi(
             patterns.data(),
@@ -282,7 +281,7 @@ struct GlobalCacheTable
 
     struct Bucket
     {
-        VectorWithMemoryTracking<String> patterns;          /// key
+        std::vector<String> patterns;          /// key
         std::optional<UInt32> edit_distance;   /// key
         /// The compiled patterns and their state (vectorscan 'database' + scratch space) are wrapped in a shared_ptr. Refcounting guarantees
         /// that eviction of a pattern does not affect parallel threads still using the pattern.
@@ -292,7 +291,7 @@ struct GlobalCacheTable
     std::array<Bucket, CACHE_SIZE> known_regexps TSA_GUARDED_BY(mutex);
     std::mutex mutex;
 
-    static size_t getBucketIndexFor(const VectorWithMemoryTracking<String> patterns, std::optional<UInt32> edit_distance)
+    static size_t getBucketIndexFor(const std::vector<String> patterns, std::optional<UInt32> edit_distance)
     {
         size_t hash = 0;
         for (const auto & pattern : patterns)
@@ -305,11 +304,11 @@ struct GlobalCacheTable
 /// If with_edit_distance is False, edit_distance must be nullopt. Also, we use templates here because each instantiation of function template
 /// has its own copy of local static variables which must not be the same for different hyperscan compilations.
 template <bool save_indices, bool with_edit_distance>
-inline DeferredConstructedRegexpsPtr getOrSet(const VectorWithMemoryTracking<std::string_view> & patterns, std::optional<UInt32> edit_distance)
+inline DeferredConstructedRegexpsPtr getOrSet(const std::vector<std::string_view> & patterns, std::optional<UInt32> edit_distance)
 {
     static GlobalCacheTable pool; /// Different variables for different pattern parameters, thread-safe in C++11
 
-    VectorWithMemoryTracking<String> str_patterns;
+    std::vector<String> str_patterns;
     str_patterns.reserve(patterns.size());
     for (const auto & pattern : patterns)
         str_patterns.emplace_back(String(pattern));
