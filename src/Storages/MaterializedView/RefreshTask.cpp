@@ -955,7 +955,6 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
             w->should_reread_znodes.store(true);
             task_waker(response);
         });
-    }
     zookeeper->getChildrenWatch(coordination.path, nullptr,
         [w = coordination.watches, task_waker = refresh_task->getWatchCallback()](const Coordination::WatchResponse & response)
         {
