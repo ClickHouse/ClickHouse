@@ -54,6 +54,8 @@ Structure of the `users` section:
             </methodN>
         </auth_methods>
 
+        <valid_until>YYYY-MM-DD HH:MM:SS</valid_until>  <!-- or YYYY-MM-DD, or infinity -->
+
         <access_management>0|1</access_management>
 
         <networks incl="networks" replace="replace">
@@ -258,6 +260,7 @@ The following authentication types are supported inside `<auth_methods>`:
 - `<auth_methods>` must contain at least one authentication method.
 - Each wrapper element inside `<auth_methods>` must contain exactly one authentication type (with the exception of `<ssh_keys>`, which can contain multiple, for backwards compatibility).
 - TOTP (`<time_based_one_time_password>`) is specified at the user level (outside `<auth_methods>`) and applies to all password-based methods in the list. At least one password-based method is required when TOTP is enabled.
+- `<valid_until>` can be placed at the user level to apply the same expiry to all methods, or inside an individual method wrapper to expire only that method. See [`user_name/valid_until`](#user-namevalid-until).
 
 **Example: `auth_methods` with TOTP**
 
@@ -282,6 +285,25 @@ The following authentication types are supported inside `<auth_methods>`:
 ```
 
 In this example, TOTP verification is applied to the password-based method (`<password>`), while the LDAP method authenticates against the external server independently.
+
+### user_name/valid_until {#user-namevalid-until}
+
+Sets an expiration time for the user's authentication, equivalent to the `VALID UNTIL` clause on [`CREATE USER`](/sql-reference/statements/create/user). Authentication is rejected at connection time once the expiry has passed; existing sessions are not terminated.
+
+Accepted values: a date/time string in `YYYY-MM-DD HH:MM:SS` format, a plain date (`YYYY-MM-DD`), or `infinity` (no expiration).
+
+When used with `<auth_methods>`, `<valid_until>` can also be placed inside an individual method wrapper; see [Multiple Authentication Methods](#multiple-authentication-methods).
+
+Example:
+
+```xml
+<users>
+    <my_user>
+        <password>secret</password>
+        <valid_until>2030-12-31 23:59:59</valid_until>
+    </my_user>
+</users>
+```
 
 ### access_management {#access_management-user-setting}
 
