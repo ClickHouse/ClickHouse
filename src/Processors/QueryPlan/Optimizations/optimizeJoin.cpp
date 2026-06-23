@@ -1262,20 +1262,27 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             auto lhs_estimation = entry->left->pointEstimate();
             auto rhs_estimation = entry->right->pointEstimate();
 
-            /// We flip the join to move the smaller input to the build (right) side.
+            /// We flip the join to move the smaller input to the build (right) side. Both branches
+            /// below decide the swap by comparing sizes; they differ in the LOGICAL STRENGTH the
+            /// comparison demands of the values.
             ///
-            /// When the left input has a point estimate we keep the original heuristic comparison
-            /// `lhs < rhs` (both are best-effort estimates).
+            /// When the left input has a point estimate, we keep the original SYMMETRIC heuristic
+            /// `lhs < rhs`: two best-effort point estimates, neither privileged. It claims no
+            /// guarantee -- a wrong estimate just yields a suboptimal build side, never a wrong
+            /// result -- so a heuristic Estimate is fine to compare here (this is the pre-existing
+            /// behavior).
             ///
             /// When the left input has only an upper bound (a residual filter defeated its exact
-            /// estimate, see `estimateReadRowsCount`), `upperBound(left) < rhs` only implies
-            /// `left < right` if `rhs` does not exceed the true right size -- i.e. only if `rhs` is
-            /// trustworthy as a lower bound. `canAnchorUpperBoundSwap` allows that for an Exact
-            /// count and, by deliberate choice, for a `Cached` measurement (the real prior build
-            /// size of the right subtree) -- accepting that a stale-high cache can occasionally
-            /// mis-swap. A purely-derived Estimate (e.g. an NDV-less aggregation reported as its
-            /// input row count) is NOT trusted here and only takes part in the `lhs < rhs`
-            /// comparison above.
+            /// estimate, see `estimateReadRowsCount`), the swap rests on the ASYMMETRIC implication
+            /// `upperBound(left) < rhs  =>  left < right`, which holds only if `rhs` does not exceed
+            /// the true right size -- i.e. `rhs` must be trustworthy as a lower bound.
+            /// `canAnchorUpperBoundSwap` allows that for an Exact count and, by deliberate choice,
+            /// for a `Cached` measurement (the real prior build size), accepting that a stale-high
+            /// cache can occasionally mis-swap. A purely-derived Estimate (e.g. an NDV-less
+            /// aggregation reported as its input row count) may over-estimate, which would break the
+            /// implication and move a LARGER input onto the build side -- so it cannot anchor here.
+            /// (It can still drive the symmetric comparison above; it just cannot stand in for a
+            /// lower bound.)
             bool swap_on_sizes = false;
             if (optimization_settings.join_swap_table.has_value())
                 swap_on_sizes = optimization_settings.join_swap_table.value();
