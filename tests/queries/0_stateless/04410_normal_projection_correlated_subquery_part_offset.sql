@@ -1,4 +1,6 @@
 -- { echo ON }
+-- Correlated subqueries require the new analyzer.
+SET enable_analyzer = 1;
 SET allow_suspicious_low_cardinality_types = 1;
 
 DROP TABLE IF EXISTS t_proj_corr;
