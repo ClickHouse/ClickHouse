@@ -882,6 +882,8 @@ void TestKeeper::processingThread()
     {
         while (!expired)
         {
+            clearExpiredTTLNodes();
+
             RequestInfo info;
 
             UInt64 max_wait = static_cast<UInt64>(args.operation_timeout_ms);
@@ -923,9 +925,6 @@ void TestKeeper::processingThread()
                 if (info.callback)
                     info.callback(*response);
             }
-
-            if (!expired)
-                clearExpiredTTLNodes();
         }
     }
     catch (...)

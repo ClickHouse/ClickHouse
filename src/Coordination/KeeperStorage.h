@@ -122,10 +122,10 @@ private:
     /// node was created, we can use the high bits for flags
     struct
     {
-        int64_t is_ephemeral : 1;
         int64_t ctime : 62;
+        int64_t is_ephemeral : 1;
         int64_t is_ttl : 1;
-    } is_ephemeral_and_ctime{false, 0, false};
+    } is_ephemeral_and_ctime{0, false, false};
 
     /// ephemeral nodes cannot have children, so a node either stores
     /// ephemeral_owner (the owning session) OR seq_num (the counter

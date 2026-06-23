@@ -1768,21 +1768,7 @@ Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRe
 {
     ProfileEvents::increment(ProfileEvents::KeeperCreateRequest);
 
-    std::shared_ptr<Coordination::ZooKeeperCreateResponse> response;
-
-    if (zk_request.include_ttl)
-    {
-        response = std::make_shared<Coordination::ZooKeeperCreateTTLResponse>();
-    }
-    else if (zk_request.include_stats)
-    {
-        auto create2response = std::make_shared<Coordination::ZooKeeperCreate2Response>();
-        response = create2response;
-    }
-    else if (zk_request.not_exists)
-        response = std::make_shared<Coordination::ZooKeeperCreateIfNotExistsResponse>();
-    else
-        response = std::make_shared<Coordination::ZooKeeperCreateResponse>();
+    auto response = std::static_pointer_cast<Coordination::ZooKeeperCreateResponse>(zk_request.makeResponse());
 
     if (deltas.empty())
     {

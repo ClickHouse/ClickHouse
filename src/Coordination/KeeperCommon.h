@@ -2,7 +2,9 @@
 
 #include <Common/Logger.h>
 
+#include <cstdint>
 #include <functional>
+#include <string>
 
 
 namespace Coordination
