@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- no-fasttest because aklomp-base64 library is required
-
 SELECT base64Encode(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT base64Decode(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT tryBase64Decode(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
