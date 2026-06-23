@@ -33,7 +33,7 @@ $CLICKHOUSE_CLIENT -m -q "
     -- OPTIMIZE TABLE x FINAL will be done in background
 
 
-    optimize table ttl_02262 final;
+    optimize table ttl_02262 final settings log_comment = '02262_optimize_after_attach';
 
     system flush logs text_log, query_log;
     -- If TTL will be applied again (during OPTIMIZE TABLE FINAL) it will produce the following message:
@@ -42,10 +42,13 @@ $CLICKHOUSE_CLIENT -m -q "
     --
     -- Let's ensure that this is not happen anymore:
 
+    -- The table is optimized twice (before and after detach/attach); use a unique log_comment so the
+    -- lookup cannot pick the first optimize's query_id instead of the post-attach one being tested.
     WITH
         (
             SELECT query_id FROM system.query_log where has(databases, currentDatabase()) AND has(tables, currentDatabase() || '.ttl_02262')
-            AND type = 'QueryFinish' AND query LIKE '%optimize table ttl_02262 final%' LIMIT 1
+            AND type = 'QueryFinish' AND log_comment = '02262_optimize_after_attach'
+            ORDER BY event_time_microseconds DESC LIMIT 1
         ) AS optimize_qid
     SELECT
         count()>0, countIf(message LIKE '%TTL%')

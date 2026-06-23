@@ -38,20 +38,22 @@ def test_merge_load_marks(started_cluster, min_bytes_for_wide_part):
         INSERT INTO t_load_marks SELECT number, number FROM numbers(1000);
         INSERT INTO t_load_marks SELECT number, number FROM numbers(1000);
 
-        OPTIMIZE TABLE t_load_marks FINAL;
+        OPTIMIZE TABLE t_load_marks FINAL SETTINGS log_comment = 'load_marks_{min_bytes_for_wide_part}';
         SYSTEM FLUSH LOGS query_log, text_log;
     """
     )
 
+    # Both parametrized cases reuse the same table and query text, so a unique log_comment per case
+    # is required to avoid picking the other parameter's query_id (event_time has second precision).
     query_id = node.query(
-    """
+    f"""
         SELECT query_id FROM system.query_log
         WHERE
             has(databases, currentDatabase())
             AND has(tables, currentDatabase() || '.t_load_marks')
             AND type = 'QueryFinish'
-            AND (query LIKE '%OPTIMIZE TABLE t_load_marks FINAL%')
-        ORDER BY event_time DESC
+            AND log_comment = 'load_marks_{min_bytes_for_wide_part}'
+        ORDER BY event_time_microseconds DESC
         LIMIT 1
     """
     ).strip()

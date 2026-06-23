@@ -8,4 +8,6 @@ INSERT INTO part_profile_events SELECT number, toString(number) FROM numbers(100
 SYSTEM FLUSH LOGS part_log;
 
 SELECT count() FROM part_profile_events;
-SELECT ProfileEvents['S3PutObject'] > 0 FROM system.part_log where event_time >= now() - interval 2 minute and table = 'part_profile_events' and database = currentDatabase();
+-- Scope to the insert's NewPart rows and aggregate, so a retry within two minutes or the part removal
+-- logged by DROP TABLE does not add extra (often zero) rows and make the result unstable.
+SELECT max(ProfileEvents['S3PutObject'] > 0) FROM system.part_log where event_type = 'NewPart' and event_time >= now() - interval 2 minute and table = 'part_profile_events' and database = currentDatabase();
