@@ -5154,6 +5154,12 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     /// The per-bucket marks travel in the `read_bucket` task parameter, so the step carries only the count.
     size_t distributed_read_bucket_count = 0;
     readVarUInt(distributed_read_bucket_count, ctx.in);
+    /// A version-1 bucketed step had a trailing part-name payload this reader would leave unconsumed; fail
+    /// closed at the version boundary instead of misparsing the rest of the plan.
+    if (distributed_read_bucket_count > 0 && ctx.version < 2)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan: a bucketed ReadFromMergeTree read requires query plan serialization "
+            "version >= 2; all nodes must run the same version");
 
     auto step = executor.readFromParts(
         snapshot_data.parts,

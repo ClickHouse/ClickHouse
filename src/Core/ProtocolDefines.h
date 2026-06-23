@@ -54,14 +54,13 @@ static constexpr auto DBMS_MIN_REVISION_WITH_QUERY_AND_LINE_NUMBERS = 54475;
 
 static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 1;
+/// Version 2 serializes a bucketed `ReadFromMergeTree` leaf read as just its bucket count; the per-bucket
+/// marks travel in the `read_bucket` task parameter. The deserializer rejects a version-1 bucketed step (its
+/// trailing part-name payload would desync the plan), so all `make_distributed_plan` nodes need one version.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 2;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
-/// Version 3 makes the `read_bucket` task parameter a list of virtual buckets (lanes), each with its own
-/// authoritative marks, so one task carries several FINAL merge lanes. The version check rejects a newer
-/// task on an older worker; an older task reaching a newer worker is not detected, so `make_distributed_plan`
-/// (experimental) requires all nodes on the same version -- no rolling upgrade.
-static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 3;
+static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET = 54441;
 

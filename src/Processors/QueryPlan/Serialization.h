@@ -38,6 +38,9 @@ struct IQueryPlanStep::Deserialization
     const SharedHeaders & input_headers;
     const SharedHeader & output_header;
     const QueryPlanSerializationSettings & settings;
+
+    /// Query-plan serialization version the stream was written with (DBMS_QUERY_PLAN_SERIALIZATION_VERSION).
+    UInt64 version = 0;
 };
 
 }
