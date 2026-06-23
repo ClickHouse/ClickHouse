@@ -383,10 +383,14 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         /// those can fire; otherwise it is just an upper bound on the rows that actually come out,
         /// and must not be the exact lower bound the build-side choice trusts (see `chooseJoinOrder`).
         /// Row reducers, none of which is reflected in `selected_rows`:
-        ///  * a residual filter -- the parent FilterStep predicate (`filter`), a PREWHERE, a filter
-        ///    pushed into the scan, or a row-level security policy. (Index pruning *some* granules
-        ///    does not prove the whole predicate was consumed, and an index range still reads its
-        ///    boundary granules whole, then filters.)
+        ///  * a residual filter -- the parent FilterStep predicate (`filter`), a PREWHERE, or a
+        ///    filter pushed into the scan. (Index pruning *some* granules does not prove the whole
+        ///    predicate was consumed, and an index range still reads its boundary granules whole,
+        ///    then filters.)
+        ///  * a row-level security policy. Check the raw `getRowLevelFilter()` directly, not just
+        ///    `getFilterActionsDAG()`: the policy is folded into that DAG only after
+        ///    `optimizePrimaryKeyConditionAndLimit` runs, which is skipped on some paths (e.g. the
+        ///    parallel-replicas plan), yet the read still applies the policy.
         ///  * SAMPLE;
         ///  * FINAL (collapsing/replacing/aggregating merges drop rows);
         ///  * a lightweight-delete mask (`_row_exists`), applied after mark selection.
@@ -394,6 +398,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         bool can_reduce_rows = filter
             || reading->getPrewhereInfo()
             || reading->getFilterActionsDAG()
+            || reading->getRowLevelFilter()
             || reading->getDeferredRowLevelFilter()
             || reading->isQueryWithFinal()
             || analyzed_result->sampling.use_sampling
