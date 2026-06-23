@@ -2067,8 +2067,6 @@ If either the tuple or div contain non-integer elements then the result is calcu
     FunctionDocumentation::Description description_dotProduct = R"(
 Calculates the [dot product](https://en.wikipedia.org/wiki/Dot_product) (scalar product) of two vectors (tuples or arrays of equal size).
 Returns the sum of the products of the corresponding elements.
-
-Array arguments may also have `BFloat16` elements; two `BFloat16` arrays accumulate in and return `Float32` (the same rule as two `Float32` arrays).
     )";
     FunctionDocumentation::Syntax syntax_dotProduct = "dotProduct(vector1, vector2)";
     FunctionDocumentation::Arguments arguments_dotProduct = {
