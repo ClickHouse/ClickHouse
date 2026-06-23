@@ -31,7 +31,7 @@ def clone_submodules():
         "contrib/zlib-ng",
         "contrib/libxml2",
         "contrib/fmtlib",
-        "contrib/base64",
+        "contrib/simdutf",
         "contrib/cctz",
         "contrib/libcpuid",
         "contrib/libdivide",
