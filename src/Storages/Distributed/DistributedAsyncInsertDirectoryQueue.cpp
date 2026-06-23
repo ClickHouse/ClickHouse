@@ -286,7 +286,7 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(c
             }
         }
 
-        return std::make_shared<ConnectionPool>(
+        return std::make_shared<ConnectionPool<>>(
             1, /* max_connections */
             address.host_name,
             address.port,

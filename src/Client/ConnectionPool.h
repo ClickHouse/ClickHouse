@@ -26,7 +26,7 @@ struct Settings;
 class IConnectionPool : private boost::noncopyable
 {
 public:
-    using Entry = PoolBase<Connection>::Entry;
+    using Entry = PoolEntry<Connection>;
 
     IConnectionPool() = default;
     IConnectionPool(String host_, UInt16 port_, Priority config_priority_);
@@ -56,13 +56,16 @@ using ConnectionPoolPtr = std::shared_ptr<IConnectionPool>;
 using ConnectionPoolPtrs = std::vector<ConnectionPoolPtr>;
 using ConnectionPoolEntries = std::vector<IConnectionPool::Entry>;
 
+Poco::Timespan::TimeDiff connectionPoolMaxWaitMilliseconds(const Settings & settings);
+
 /** A common connection pool, without fault tolerance.
   */
-class ConnectionPool : public IConnectionPool, private PoolBase<Connection>
+template <typename TLocker = std::mutex, typename TWaiter = std::condition_variable>
+class ConnectionPool : public IConnectionPool, private PoolBase<Connection, TLocker, TWaiter>
 {
 public:
     using Entry = IConnectionPool::Entry;
-    using Base = PoolBase<Connection>;
+    using Base = PoolBase<Connection, TLocker, TWaiter>;
 
     ConnectionPool(
         unsigned max_connections_,
@@ -80,7 +83,25 @@ public:
         Protocol::Compression compression_,
         Protocol::Secure secure_,
         const String & bind_host_,
-        Priority config_priority_ = Priority{1});
+        Priority config_priority_ = Priority{1},
+        Connection::SocketFactory socket_factory_ = &Connection::defaultSocketFactory)
+        : IConnectionPool(host_, port_, config_priority_)
+        , Base(max_connections_, getLogger("ConnectionPool (" + host_ + ":" + std::to_string(port_) + ")"))
+        , default_database(default_database_)
+        , user(user_)
+        , password(password_)
+        , proto_send_chunked(proto_send_chunked_)
+        , proto_recv_chunked(proto_recv_chunked_)
+        , quota_key(quota_key_)
+        , cluster(cluster_)
+        , cluster_secret(cluster_secret_)
+        , client_name(client_name_)
+        , compression(compression_)
+        , secure(secure_)
+        , bind_host(bind_host_)
+        , socket_factory(std::move(socket_factory_))
+    {
+    }
 
     Entry get(const ConnectionTimeouts & timeouts) override
     {
@@ -91,9 +112,20 @@ public:
 
     Entry get(const ConnectionTimeouts & timeouts, /// NOLINT
               const Settings & settings,
-              bool force_connected) override;
+              bool force_connected) override
+    {
+        Entry entry = Base::get(connectionPoolMaxWaitMilliseconds(settings));
 
-    std::string getDescription() const;
+        if (force_connected)
+            entry->forceConnected(timeouts);
+
+        return entry;
+    }
+
+    std::string getDescription() const
+    {
+        return host + ":" + std::to_string(port);
+    }
 
 protected:
     /** Creates a new object to put in the pool. */
@@ -105,7 +137,11 @@ protected:
             proto_send_chunked, proto_recv_chunked,
             SSHKey(), /*jwt*/ "", quota_key,
             cluster, cluster_secret,
-            client_name, compression, secure, "", bind_host);
+            client_name, compression, secure, "", bind_host,
+#if USE_JWT_CPP && USE_SSL
+            /*jwt_provider*/ nullptr,
+#endif
+            socket_factory);
     }
 
 private:
@@ -124,6 +160,7 @@ private:
     Protocol::Compression compression; /// Whether to compress data when interacting with the server.
     Protocol::Secure secure;           /// Whether to encrypt data when interacting with the server.
     String bind_host;
+    Connection::SocketFactory socket_factory;
 };
 
 /**

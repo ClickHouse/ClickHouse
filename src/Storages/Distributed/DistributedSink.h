@@ -126,7 +126,7 @@ private:
 
         Block current_shard_block;
 
-        ConnectionPool::Entry connection_entry;
+        IConnectionPool::Entry connection_entry;
         ContextMutablePtr local_context;
         QueryPipeline pipeline;
         std::unique_ptr<PushingPipelineExecutor> executor;

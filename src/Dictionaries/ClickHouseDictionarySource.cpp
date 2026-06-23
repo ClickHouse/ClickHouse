@@ -52,7 +52,7 @@ namespace
             return nullptr;
 
         ConnectionPoolPtrs pools;
-        pools.emplace_back(std::make_shared<ConnectionPool>(
+        pools.emplace_back(std::make_shared<ConnectionPool<>>(
             MAX_CONNECTIONS,
             configuration.host,
             configuration.port,
