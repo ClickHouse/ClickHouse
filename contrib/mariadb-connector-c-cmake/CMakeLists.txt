@@ -191,11 +191,6 @@ REGISTER_PLUGIN(TARGET mysql_native_password
                 TYPE MARIADB_CLIENT_PLUGIN_AUTH
                 SOURCES "${CC_SOURCE_DIR}/plugins/auth/my_auth.c")
 
-REGISTER_PLUGIN(TARGET aurora
-                TYPE MARIADB_CLIENT_PLUGIN_CONNECTION
-                SOURCES "${CC_SOURCE_DIR}/plugins/connection/aurora.c")
-
-
 add_definitions(-D HAVE_COMPRESS)
 add_definitions(-D LIBMARIADB)
 add_definitions(-D THREAD)
@@ -230,7 +225,7 @@ ${CC_SOURCE_DIR}/libmariadb/ma_compress.c
 ${CC_SOURCE_DIR}/libmariadb/ma_init.c
 ${CC_SOURCE_DIR}/libmariadb/ma_password.c
 ${CC_SOURCE_DIR}/libmariadb/ma_ll2str.c
-${CC_SOURCE_DIR}/libmariadb/ma_sha1.c
+${CC_SOURCE_DIR}/libmariadb/ma_decimal.c
 ${CC_SOURCE_DIR}/libmariadb/mariadb_stmt.c
 ${CC_SOURCE_DIR}/libmariadb/ma_loaddata.c
 ${CC_SOURCE_DIR}/libmariadb/ma_stmt_codec.c
