@@ -95,3 +95,8 @@ wo	1
 2
 2
 0
+15. Lazy apply mode + postprocessor dropping the needle: empty-token query fills zeros, not a short column.
+1
+1
+1
+1

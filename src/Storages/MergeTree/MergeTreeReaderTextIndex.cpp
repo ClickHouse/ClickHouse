@@ -666,7 +666,12 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, const String & c
     chassert(search_query->patterns.empty());
 
     if (search_query->tokens.empty())
+    {
+        /// hasAnyTokens / hasAllTokens whose needle tokens were all dropped (e.g. by a postprocessor): no
+        /// match, so fill zeros for every row read, matching fillColumn and the row-scan path.
+        column_data.resize_fill(old_size + num_rows, 0);
         return;
+    }
 
     const auto & analyzer = granule->getAnalyzer();
     const auto & query_builder = analyzer.getQueryBuilder(*search_query);

@@ -396,4 +396,35 @@ SELECT count() FROM tab WHERE hasAnyTokens(val, ['xyz']);          -- 0
 SYSTEM START MERGES tab;
 DROP TABLE tab;
 
+SELECT '15. Lazy apply mode + postprocessor dropping the needle: empty-token query fills zeros, not a short column.';
+-- A postprocessor that drops the needle token yields an empty-token hasAnyTokens/hasAllTokens query that
+-- matches no rows. Under lazy apply mode the virtual column must still be zero-filled for every row read;
+-- otherwise it is shorter than the block (exposed by OR, where granule pruning cannot mask it) and trips
+-- the read-result consistency check. posting_list_codec = 'bitpacking' (non-None) is required to engage
+-- lazy mode.
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = if(val = 'stop', '', val), posting_list_codec = 'bitpacking')
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab SELECT number, if(number = 5, 'stop', 'word' || toString(number)) FROM numbers(20);
+
+SET use_skip_indexes = 1;
+SET use_skip_indexes_on_data_read = 1;
+SET query_plan_direct_read_from_text_index = 1;
+SET allow_experimental_text_index_lazy_apply = 1;
+
+-- The 'stop' token is dropped, so hasAnyTokens(['stop']) matches nothing; OR id = 1 keeps the virtual
+-- column unmasked. Both apply modes must return 1 (only the id = 1 row).
+SELECT count() FROM tab WHERE hasAnyTokens(val, ['stop']) OR id = 1 SETTINGS text_index_posting_list_apply_mode = 'lazy';        -- 1
+SELECT count() FROM tab WHERE hasAnyTokens(val, ['stop']) OR id = 1 SETTINGS text_index_posting_list_apply_mode = 'materialize'; -- 1
+SELECT count() FROM tab WHERE hasAllTokens(val, ['stop']) OR id = 1 SETTINGS text_index_posting_list_apply_mode = 'lazy';        -- 1
+SELECT count() FROM tab WHERE hasAllTokens(val, ['stop']) OR id = 1 SETTINGS text_index_posting_list_apply_mode = 'materialize'; -- 1
+
+DROP TABLE tab;
+
 DROP TABLE IF EXISTS tab;
