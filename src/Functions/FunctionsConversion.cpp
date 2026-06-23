@@ -1181,8 +1181,17 @@ FunctionCast::WrapperType FunctionCast::createArrayToQBitWrapper(const DataTypeA
     const size_t dimension = to_qbit_type.getDimension();
     const size_t element_size = to_qbit_type.getElementSize();
 
-    return [nested_function = prepareUnpackDictionaries(from_nested_type, to_nested_type),
+    /// accurateOrNull conversions from a Dynamic/Variant nested source always return a Nullable
+    /// column (per-variant overflow-as-NULL), while QBit elements are non-nullable. Use a Nullable
+    /// nested target so the conversion assembles a consistent column; removeNullable() below strips it.
+    const DataTypePtr nested_target_type
+        = (cast_type == CastType::accurateOrNull && (isDynamic(from_nested_type) || isVariant(from_nested_type)))
+        ? makeNullable(to_nested_type)
+        : to_nested_type;
+
+    return [nested_function = prepareUnpackDictionaries(from_nested_type, nested_target_type),
             from_nested_type,
+            nested_target_type,
             to_nested_type,
             to_array_type = std::make_shared<DataTypeArray>(to_nested_type),
             dimension,
@@ -1198,7 +1207,7 @@ FunctionCast::WrapperType FunctionCast::createArrayToQBitWrapper(const DataTypeA
         /// has a different size (total elements vs. number of rows), and the original
         /// nullable_source column may have a different type than the converted column.
         ColumnsWithTypeAndName nested_columns{{col_array.getDataPtr(), from_nested_type, ""}};
-        auto converted_nested = nested_function(nested_columns, to_nested_type, nullptr, nested_columns.front().column->size());
+        auto converted_nested = nested_function(nested_columns, nested_target_type, nullptr, nested_columns.front().column->size());
         /// When cast_type is accurateOrNull, the inner element conversion may wrap the result in ColumnNullable. Strip it because
         /// we need raw ColumnVector data for bit transposition. The outer-level nullable semantics are handled by prepareRemoveNullable.
         converted_nested = removeNullable(converted_nested);
