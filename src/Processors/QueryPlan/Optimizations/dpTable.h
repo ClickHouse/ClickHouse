@@ -24,7 +24,7 @@ public:
     };
 
     using Key = TUInt;
-    using Map = std::unordered_map<Key, DPEntry>;
+    using Map = std::vector<DPEntry>;
 
     explicit DPTable(size_t numRelations_);
 
@@ -33,7 +33,7 @@ public:
     const DPEntry & operator[](TUInt x) const { return table.at(x); }
     DPEntry & operator[](TUInt x) { return table[x]; }
 
-    bool isConnected(TUInt S) const { return table.contains(S); }
+    bool isConnected(TUInt S) const { return table[S].count; }
     size_t numRelations() const { return num_relations; }
     UInt64 noCcp() const { return nr_ccp; }
     UInt64 noCsg() const { return map().size(); }
@@ -48,8 +48,9 @@ private:
 
 template <class TEntry, std::unsigned_integral TUInt>
 DPTable<TEntry, TUInt>::DPTable(size_t numRelations_)
-    : num_relations(numRelations_)
-    , nr_ccp(0)
+    : num_relations(numRelations_),
+    table(static_cast<TUInt>(1) << numRelations_, DPEntry{}), /// reserve space for all subsets of relations
+    nr_ccp(0)
 {
     for (TUInt i = 0; i < numRelations(); ++i)
         table[static_cast<TUInt>(1) << i].count = 1;
@@ -83,10 +84,11 @@ void DPTable<TEntry, TUInt>::printStatistics() const
     LOG_INFO(logger, "Number of CSGs: {}", noCsg());
     LOG_INFO(logger, "Number of CCPs: {}", noCcp());
 
-    for (const auto & [key, entry] : map())
+    for (Key i = 1; i < (static_cast<TUInt>(1) << numRelations()); ++i)
     {
+        const auto & entry = table[i];
         LOG_INFO(logger, "Subset: {}, Count: {}, Cost: {}, Estimated Rows: {}, Selectivity: {}",
-                 toBinaryString(key), entry.count, entry.cost, entry.estimated_rows.value_or(0), entry.sel);
+                 toBinaryString(i), entry.count, entry.cost, entry.estimated_rows.value_or(0), entry.sel);
     }
 }
 

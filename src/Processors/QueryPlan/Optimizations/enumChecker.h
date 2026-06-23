@@ -69,8 +69,6 @@ void
 EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const TUInt S, const TUInt S1, const TUInt S2)
 {
     auto logger = optimizer.log;
-    auto lhs = BitSet::fromUInt(S1);
-    auto rhs = BitSet::fromUInt(S2);
 
     /// A child is usable only if it is a base relation or a subset for which a valid join
     /// was already recorded. The enumerator's `setTableNeighbor` creates a DP entry for
@@ -78,38 +76,26 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const TUInt S, const TU
     /// may have rejected the only ordering that builds that subset (e.g. {t2, t3} when t2's
     /// LEFT join requires t1). Such a polluted entry has no recorded join (left == right == 0)
     /// and must not be used as a building block, otherwise `buildPhysicalPlan` mistakes it for
-    /// a leaf and emits an incomplete tree.
+    /// a leaf and emits an incomplete tree
     auto is_buildable = [&](TUInt s)
     {
-        return std::popcount(s) == 1 || (dp_table.map().contains(s) && (dp_table[s].left != 0 || dp_table[s].right != 0));
+        return std::popcount(s) == 1 || (dp_table.isConnected(s) && (dp_table[s].left != 0 || dp_table[s].right != 0));
     };
     if (!is_buildable(S1) || !is_buildable(S2))
         return;
 
-    auto join_kind = optimizer.isValidJoinOrder(lhs, rhs);
+    const UInt32 left_mask = static_cast<UInt32>(S1);
+    const UInt32 right_mask = static_cast<UInt32>(S2);
+
+    auto join_kind = optimizer.isValidJoinOrderMask(left_mask, right_mask);
     if (!join_kind)
         return;
 
     auto kind = *join_kind;
 
-    auto applicable_edge = optimizer.getApplicableExpressions(lhs, rhs);
-    std::vector<JoinActionRef *> edge;
-    for (auto & edge_it : applicable_edge)
-    {
-        if (connects(edge_it, lhs, rhs))
-        {
-            edge.push_back(edge_it);
-        }
-        else if ((edge_it->fromLeft() || edge_it->fromRight() || edge_it->fromNone()) && std::popcount(S) == 2)
-        {
-            /// If a predicate does not connect tables we add it at the earliest stage - when joining just 2 tables
-            edge.push_back(edge_it);
-        }
-        else
-        {
-            LOG_TEST(logger, "Skipping non-connecting predicate for {} and {} : {}", toString(lhs), toString(rhs), edge_it->dump());
-        }
-    }
+    /// `edge` aliases an internal scratch buffer that the next `collectJoinEdgesMask` call overwrites
+    /// it is only read below and copied into the DP entry, so the aliasing is safe.
+    const auto & edge = optimizer.collectJoinEdgesMask(left_mask, right_mask);
 
     /// The enumerator only invokes the acceptor for connected pairs, so a `Cross`
     /// kind here is a connected join that should be treated as `Inner` (mirrors the
@@ -117,7 +103,7 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const TUInt S, const TU
     if (kind == JoinKind::Cross)
         kind = JoinKind::Inner;
 
-    auto selectivity = optimizer.computeSelectivity(edge, lhs, rhs);
+    auto selectivity = optimizer.computeSelectivityMask(edge, left_mask, right_mask);
     auto plan_cost = computeJoinCost(S1, S2, selectivity);
 
     LOG_TEST(logger, "selectivity: {} costs: {}, lhs est. rows: {}, rhs est. rows: {}",
@@ -126,7 +112,7 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const TUInt S, const TU
              dp_table[S1].estimated_rows.value_or(0),
              dp_table[S2].estimated_rows.value_or(0));
 
-    if (!dp_table.map().contains(S) || plan_cost < dp_table[S].cost)
+    if (!dp_table.isConnected(S) || plan_cost < dp_table[S].cost)
     {
         auto & entry = dp_table[S];
         entry.left = S1;
@@ -135,7 +121,7 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const TUInt S, const TU
         entry.sel = selectivity;
         entry.kind = kind;
         entry.estimated_rows = optimizer.estimateCardinality(dp_table[S1].estimated_rows, dp_table[S2].estimated_rows, selectivity, kind);
-        entry.edges = edge;
+        entry.edges.assign(edge.begin(), edge.end());
     }
 }
 }
