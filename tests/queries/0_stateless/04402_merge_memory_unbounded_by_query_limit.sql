@@ -42,6 +42,12 @@ SET max_memory_usage = 20000000;
 -- a no-op `OPTIMIZE` fail loudly, so the test cannot pass without actually merging under the low limit.
 OPTIMIZE TABLE t_merge_memory FINAL SETTINGS optimize_throw_if_noop = 1;
 
+-- The limit above has done its job (bounding the `OPTIMIZE`). Clear it before the diagnostic
+-- read-backs below: reading `system.part_log` can need more than 20 MB when it is stored on object
+-- storage (its reader prefetches), which would otherwise fail this test with `MEMORY_LIMIT_EXCEEDED`
+-- under the s3 / distributed-cache configurations - unrelated to the merge under test.
+SET max_memory_usage = 0;
+
 -- One part remains: the merge ran to completion despite the 20 MB query limit.
 SELECT count() FROM system.parts
 WHERE database = currentDatabase() AND table = 't_merge_memory' AND active;
