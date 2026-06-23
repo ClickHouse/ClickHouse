@@ -796,6 +796,10 @@ void MutationsInterpreter::prepare(bool dry_run)
         need_rebuild_projections = true;
     }
 
+    /// For a single command the prefilter checks the same condition, so do not
+    /// wrap updated values into 'if (condition, ...)' again.
+    bool condition_checked_by_prefilter = false;
+
     if (settings.return_mutated_rows)
     {
         ASTs all_filters;
@@ -814,6 +818,8 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (auto filter = getPartitionAndPredicateExpressionForMutationCommand(alter.get()))
                 all_filters.push_back(std::move(filter));
         }
+
+        condition_checked_by_prefilter = all_filters.size() == 1;
 
         ASTPtr filter;
         if (all_filters.size() > 1)
@@ -900,11 +906,20 @@ void MutationsInterpreter::prepare(bool dry_run)
                 auto type_literal = make_intrusive<ASTLiteral>(type->getName());
                 ASTPtr condition = base_condition ? base_condition->clone() : nullptr;
 
+                /// Nested validation still has to run for rows selected by the prefilter.
+                ASTPtr validation_condition = condition_checked_by_prefilter
+                    ? static_cast<ASTPtr>(make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(1))))
+                    : (condition ? condition->clone() : nullptr);
+
                 /// And new check validateNestedArraySizes for Nested subcolumns.
                 /// When share_nested_offsets is disabled, sibling Array columns are independent
                 /// and their sizes don't need to match.
                 bool skip_nested_validation = source.getMergeTreeData()
                     && !(*source.getMergeTreeData()->getSettings())[MergeTreeSetting::share_nested_offsets];
+
+                /// Keep Nested validation when the original 'if' wrapper is omitted.
+                boost::intrusive_ptr<ASTFunction> nested_validation;
+
                 if (!skip_nested_validation && isArray(type) && !Nested::splitName(column_name).second.empty())
                 {
                     boost::intrusive_ptr<ASTFunction> function = nullptr;
@@ -913,28 +928,55 @@ void MutationsInterpreter::prepare(bool dry_run)
                     if (!nested_update_exprs)
                     {
                         function = makeASTFunction("validateNestedArraySizes",
-                            condition,
+                            validation_condition,
                             update_expr->clone(),
                             make_intrusive<ASTIdentifier>(column_name));
-                        condition = makeASTOperator("and", condition, function);
                     }
                     else if (nested_update_exprs->size() > 1)
                     {
-                        function = makeASTFunction("validateNestedArraySizes", condition);
+                        function = makeASTFunction("validateNestedArraySizes", validation_condition);
                         for (const auto & it : *nested_update_exprs)
                             function->arguments->children.push_back(it->clone());
-                        condition = makeASTOperator("and", condition, function);
+                    }
+
+                    if (function)
+                    {
+                        if (condition_checked_by_prefilter)
+                            nested_validation = function;
+                        else
+                            condition = makeASTOperator("and", condition, function);
                     }
                 }
 
-                auto updated_column = makeASTFunction("_CAST",
-                    makeASTFunction("if",
-                        condition,
-                        makeASTFunction("_CAST",
+                ASTPtr updated_column;
+                if (condition_checked_by_prefilter)
+                {
+                    if (nested_validation)
+                    {
+                        /// Use validation result as the condition to keep its side effect.
+                        updated_column = makeASTFunction("if",
+                            nested_validation,
                             update_expr->clone(),
-                            type_literal),
-                        make_intrusive<ASTIdentifier>(column_name)),
-                    type_literal);
+                            make_intrusive<ASTIdentifier>(column_name));
+                    }
+                    else
+                    {
+                        updated_column = update_expr->clone();
+                    }
+
+                    updated_column = makeASTFunction("_CAST", std::move(updated_column), type_literal);
+                }
+                else
+                {
+                    updated_column = makeASTFunction("_CAST",
+                        makeASTFunction("if",
+                            condition,
+                            makeASTFunction("_CAST",
+                                update_expr->clone(),
+                                type_literal),
+                            make_intrusive<ASTIdentifier>(column_name)),
+                        type_literal);
+                }
 
                 stages.back().column_to_updated.emplace(column_name, updated_column);
             }
