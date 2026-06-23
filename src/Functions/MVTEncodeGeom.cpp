@@ -531,8 +531,8 @@ REGISTER_FUNCTION(MVTEncodeGeom)
 {
     FunctionDocumentation::Description description = R"(
 Projects a geometry given in geographic coordinates (longitude/latitude) into the tile-local pixel space of the
-slippy-map tile identified by `zoom`, `tile_x` and `tile_y`, optionally clips it to the tile, snaps it to the integer
-pixel grid, and returns the tile-space geometry as a `Geometry`.
+slippy-map tile identified by `zoom`, `tile_x` and `tile_y`, snaps it to the integer pixel grid, optionally clips it
+to the tile, and returns the tile-space geometry as a `Geometry`.
 
 The projection is Web Mercator over the full `UInt32` coordinate range; the origin is the tile's top-left corner with the
 y axis pointing downwards (the Mapbox Vector Tile convention). When `clip` is enabled (the default) the geometry is
