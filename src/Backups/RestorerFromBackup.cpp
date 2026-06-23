@@ -481,9 +481,10 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
         /// Restoring a MaterializedPostgreSQL database is not supported. Recreating such a database starts
         /// replicating from the live PostgreSQL source immediately (its startup schedules `tryStartSynchronization`),
         /// which happens before the backed-up table data is restored and would mix the backup snapshot with the
-        /// current remote state. Fail closed and direct the user to restore the data of individual tables into
-        /// separately created `ReplacingMergeTree` tables instead - the data is still captured by the backup (see
-        /// `StorageMaterializedPostgreSQL::backupData`).
+        /// current remote state. Fail closed and direct the user to restore the data of individual tables instead -
+        /// the data is still captured by the backup (see `StorageMaterializedPostgreSQL::backupData`). In a database
+        /// backup each table's stored definition is already the synthetic nested `ReplacingMergeTree` (not the
+        /// `MaterializedPostgreSQL` engine), so a table can be restored straight into a new, not-yet-existing table.
         {
             const auto * storage = create_database_query->storage;
             const String database_engine_name = storage && storage->engine ? storage->engine->name : "";
@@ -492,8 +493,9 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
                     ErrorCodes::CANNOT_RESTORE_DATABASE,
                     "Restoring a MaterializedPostgreSQL database ({}) is not supported, because recreating it would "
                     "start replicating from the live PostgreSQL source and mix it with the backup snapshot. Restore "
-                    "the data of individual tables into separately created ReplacingMergeTree tables instead, e.g.: "
-                    "RESTORE TABLE <src_database>.<table> AS <database>.<existing_replacing_mergetree> "
+                    "the data of individual tables instead - each table's definition in the backup is already a "
+                    "ReplacingMergeTree, so it can be restored into a new table, e.g.: "
+                    "RESTORE TABLE <src_database>.<table> AS <database>.<new_table> FROM <backup> "
                     "SETTINGS allow_different_table_def = 1.",
                     backQuoteIfNeed(database_name));
         }

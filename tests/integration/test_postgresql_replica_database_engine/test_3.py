@@ -923,12 +923,13 @@ def test_backup_database(started_cluster):
     pg_manager.execute("DROP TABLE IF EXISTS test_backup_tbl")
 
 
-def test_backup_table_engine_restore_rejected(started_cluster):
+def test_backup_table_engine(started_cluster):
     # Restoring a standalone MaterializedPostgreSQL table in place is intentionally rejected: the
     # storage starts replicating from the live PostgreSQL source the moment it is created, so
     # restoring the backed-up parts on top would mix the backup snapshot with the current remote
-    # data. The data is still captured by the backup and should be restored as a standalone
-    # ReplacingMergeTree instead (see test_backup_database).
+    # data. The data is still captured by the backup (delegated to the nested ReplacingMergeTree)
+    # and can be restored into a separately pre-created ReplacingMergeTree instead, which this test
+    # also exercises.
     table = "test_backup_te"
     pg_manager.execute(f"DROP TABLE IF EXISTS {table}")
     pg_manager.create_postgres_table(table)
@@ -960,6 +961,32 @@ def test_backup_table_engine_restore_rejected(started_cluster):
         settings={"allow_experimental_materialized_postgresql_table": 1},
     )
     assert "in place is not supported" in error, error
+
+    # The backed-up data (delegated to the nested ReplacingMergeTree by backupData) can be restored
+    # into a ReplacingMergeTree created beforehand with the same structure as the nested table
+    # (including the _sign and _version columns). `allow_different_table_def` is required because the
+    # definition stored in the backup is the MaterializedPostgreSQL engine, which we intentionally
+    # restore into a plain ReplacingMergeTree; only the data has to match. This proves backupData
+    # actually captures the data (the in-place rejection above would pass even if it did not).
+    instance.query("DROP TABLE IF EXISTS restored_te SYNC")
+    instance.query(
+        """
+        CREATE TABLE restored_te
+        (
+            key Int32,
+            value Int32,
+            _sign Int8 MATERIALIZED 1,
+            _version UInt64 MATERIALIZED 1
+        )
+        ENGINE = ReplacingMergeTree(_version) ORDER BY key
+        """
+    )
+    instance.query(
+        f"RESTORE TABLE {table} AS restored_te FROM {backup_name} SETTINGS allow_different_table_def = 1"
+    )
+    assert 50 == int(instance.query("SELECT count() FROM restored_te"))
+    assert "1225" == instance.query("SELECT sum(key) FROM restored_te").strip()
+    instance.query("DROP TABLE IF EXISTS restored_te SYNC")
 
     instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
     pg_manager.execute(f"DROP TABLE IF EXISTS {table}")
