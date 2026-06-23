@@ -11115,11 +11115,11 @@ bool MergeTreeData::scheduleStreamingJob(BackgroundJobsAssignee & assignee)
     if (subscription_manager.isEmpty())
         return false;
 
-    auto promoters = buildPromoters();
-
     LocalPartsByPartition local_parts;
     for (const auto & part : getDataPartsVectorForInternalUsage())
         local_parts[part->info.getPartitionId()].push_back(part->info);
+
+    auto promoters = buildPromoters();
 
     bool any_enriched = false;
     subscription_manager.executeOnEachSubscription([&](StreamSubscriptionPtr & subscription)

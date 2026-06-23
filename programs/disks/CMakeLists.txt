@@ -15,6 +15,7 @@ set (CLICKHOUSE_DISKS_SOURCES
     CommandRemove.cpp
     CommandSwitchDisk.cpp
     CommandWrite.cpp
+    CommandSed.cpp
     CommandHelp.cpp
     CommandTouch.cpp
     CommandGetCurrentDiskAndPath.cpp

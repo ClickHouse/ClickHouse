@@ -291,6 +291,21 @@ def started_cluster():
         cluster.shutdown()
 
 
+@pytest.fixture(autouse=True)
+def clean_catalog(started_cluster):
+    # All tests share one module-scoped Glue catalog. Listing operations such as
+    # SHOW TABLES enumerate every namespace and make one sequential Glue call per
+    # namespace, so leftover namespaces from earlier tests make these calls grow
+    # unbounded and eventually exceed query timeouts. Drop everything each test
+    # created so the catalog stays bounded to the running test.
+    yield
+    catalog = load_catalog_impl(started_cluster)
+    for namespace in catalog.list_namespaces():
+        for table in catalog.list_tables(namespace):
+            catalog.drop_table(table)
+        catalog.drop_namespace(namespace)
+
+
 def test_no_secrets_in_logs(started_cluster):
     node = started_cluster.instances["node1"]
 

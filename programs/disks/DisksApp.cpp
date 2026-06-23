@@ -328,6 +328,7 @@ void DisksApp::registerCommands()
     command_descriptions.emplace("link", makeCommandLink());
     command_descriptions.emplace("write", makeCommandWrite());
     command_descriptions.emplace("read", makeCommandRead());
+    command_descriptions.emplace("sed", makeCommandSed());
     command_descriptions.emplace("read-bitmap", makeCommandReadBitmap());
     command_descriptions.emplace("mkdir", makeCommandMkDir());
     command_descriptions.emplace("switch-disk", makeCommandSwitchDisk());
