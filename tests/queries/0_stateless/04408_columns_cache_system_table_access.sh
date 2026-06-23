@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-user="user_04892_${CLICKHOUSE_DATABASE}"
+user="user_04408_${CLICKHOUSE_DATABASE}"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM DROP COLUMNS CACHE"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_columns_cache_acl"
