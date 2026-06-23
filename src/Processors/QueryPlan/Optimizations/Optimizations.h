@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <array>
+#include <unordered_set>
 
 class SipHash;
 
@@ -211,8 +212,8 @@ void optimizeAggregationPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &,
 void optimizeLimitByPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeVectorSearchSecondPass(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
-void materializeQueryPlanReferences(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
-void optimizeUnusedCommonSubplans(QueryPlan::Node & node);
+void materializeQueryPlanReferences(QueryPlan::Node & node, QueryPlan::Nodes & nodes, bool use_in_memory_buffer);
+void optimizeUnusedCommonSubplans(QueryPlan::Node & node, const std::unordered_set<const QueryPlan::Node *> & referenced_subplan_roots);
 void useMemoryBufferForCommonSubplanResult(QueryPlan::Node & node, const QueryPlanOptimizationSettings & settings);
 void optimizeJoinLazyIndexing(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 

@@ -1,5 +1,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Common/typeid_cast.h>
+#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -16,6 +18,7 @@
 #include <memory>
 #include <stack>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -239,18 +242,35 @@ void optimizeTreeSecondPass(
         stack.pop_back();
     }
 
-    if (!optimization_settings.correlated_subqueries_use_in_memory_buffer)
     {
-        /// Materialize subplan references before other optimizations.
+        /// Collect the subplan roots referenced by CommonSubplanReferenceStep's that will be kept for the
+        /// in-memory buffer optimization, so their CommonSubplanStep producers are not unwrapped below.
+        /// A reference is kept only when the buffer is enabled and the reference does not require
+        /// materialization (the latter is decided per decorrelation, e.g. join_kind = left forces
+        /// materialization regardless of the global setting). When the buffer is disabled, all references
+        /// are materialized and no producer is referenced.
+        std::unordered_set<const QueryPlan::Node *> referenced_subplan_roots;
+        if (optimization_settings.correlated_subqueries_use_in_memory_buffer)
+        {
+            traverseQueryPlan(stack, root, [&](auto & frame_node)
+            {
+                if (const auto * reference = typeid_cast<const CommonSubplanReferenceStep *>(frame_node.step.get());
+                    reference && !reference->mustMaterialize())
+                    referenced_subplan_roots.insert(reference->getSubplanReferenceRoot());
+            });
+        }
+
+        /// Materialize subplan references before other optimizations. When the buffer is enabled, only the
+        /// references flagged for materialization are materialized here; the rest become buffers below.
         traverseQueryPlan(stack, root, [&](auto & frame_node)
         {
-            materializeQueryPlanReferences(frame_node, nodes);
+            materializeQueryPlanReferences(frame_node, nodes, optimization_settings.correlated_subqueries_use_in_memory_buffer);
         });
 
-        /// Remove CommonSubplanSteps (they must be not used at that point).
+        /// Remove CommonSubplanSteps that are no longer referenced (their references were materialized).
         traverseQueryPlan(stack, root, [&](auto & frame_node)
         {
-            optimizeUnusedCommonSubplans(frame_node);
+            optimizeUnusedCommonSubplans(frame_node, referenced_subplan_roots);
         });
     }
 
