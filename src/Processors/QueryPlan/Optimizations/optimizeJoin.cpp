@@ -373,12 +373,34 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         if (!analyzed_result)
             return RelationStats{.estimated_rows = {}, .table_name = table_display_name};
 
-        /// `selected_rows` is the row count after index analysis: when the filter is used by the index it is
-        /// already the reduced count, and when the filter is not used by the index it is the full relation size.
-        /// Previously we returned an unknown (empty) estimate in the latter case because the filter selectivity
-        /// could not be determined precisely. That is harmful for the join-order optimizer: an unknown cardinality
-        /// collapses the cost model (it gets treated as a single row downstream), leading to bad plans. Returning
-        /// the relation size is a safe upper bound that preserves cost signal, so we always return `selected_rows`.
+        bool is_filtered_by_index = false;
+        UInt64 total_parts = 0;
+        UInt64 total_granules = 0;
+        for (const auto & idx_stat : analyzed_result->index_stats)
+        {
+            /// We expect the first element to be an index with None type, which is used to estimate the total amount of data in the table.
+            /// Further index_stats are used to estimate amount of filtered data after applying the index.
+            if (ReadFromMergeTree::IndexType::None == idx_stat.type)
+            {
+                total_parts = idx_stat.num_parts_after;
+                total_granules = idx_stat.num_granules_after;
+                continue;
+            }
+
+            is_filtered_by_index = is_filtered_by_index
+                || (total_parts && idx_stat.num_parts_after < total_parts)
+                || (total_granules && idx_stat.num_granules_after < total_granules);
+
+            if (is_filtered_by_index)
+                break;
+        }
+        bool has_filter = filter || reading->getPrewhereInfo();
+
+        /// If any conditions are pushed down to storage but not used in the index,
+        /// we cannot precisely estimate the row count
+        if (has_filter && !is_filtered_by_index)
+            return RelationStats{.estimated_rows = {}, .table_name = table_display_name};
+
         return RelationStats{.estimated_rows = analyzed_result->selected_rows, .table_name = table_display_name};
     }
 
@@ -395,36 +417,6 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
     {
         return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter);
-    }
-
-    /// PROTOTYPE: Estimate join results BEFORE the single-child guard below. Otherwise a 2-child
-    /// JoinStepLogical falls straight through to `return {}`, so every join intermediate is reported
-    /// as unknown to an enclosing join-order optimization, which then treats it as 1 row and loses
-    /// all cost signal. When the sub-join is already optimized we use its cached estimate; otherwise
-    /// we derive a coarse one from the children so estimation is independent of optimization order.
-    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step))
-    {
-        if (auto cached = join_step->isOptimized() ? join_step->getResultRowsEstimation() : std::nullopt)
-            return RelationStats{
-                .estimated_rows = cached,
-                .column_stats = join_step->getResultColumnStats(),
-                .table_name = join_step->getReadableRelationName()};
-
-        std::optional<UInt64> est;
-        if (node.children.size() == 2)
-        {
-            auto lhs = estimateReadRowsCount(*node.children[0]).estimated_rows;
-            auto rhs = estimateReadRowsCount(*node.children[1]).estimated_rows;
-            if (lhs && rhs)
-            {
-                const auto kind = join_step->getJoinOperator().kind;
-                est = (kind == JoinKind::Left) ? *lhs
-                    : (kind == JoinKind::Right) ? *rhs
-                    : (kind == JoinKind::Cross) ? (*lhs * *rhs)
-                    : std::max(*lhs, *rhs); /// Full/Inner/Cross: containment heuristic
-            }
-        }
-        return RelationStats{.estimated_rows = est, .table_name = join_step->getReadableRelationName()};
     }
 
     if (node.children.size() != 1)
@@ -460,6 +452,14 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         auto stats = estimateReadRowsCount(*node.children.front(), filter);
         auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
         return aggregation_stats;
+    }
+
+    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
+    {
+        return RelationStats{
+            .estimated_rows = join_step->getResultRowsEstimation(),
+            .column_stats = join_step->getResultColumnStats(),
+            .table_name = join_step->getReadableRelationName()};
     }
 
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
@@ -1475,32 +1475,6 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     auto strictness = join_operator.strictness;
     auto kind = join_operator.kind;
     auto locality = join_operator.locality;
-
-    /// PROTOTYPE: When a join is not reordered (e.g. it carries a residual non-equi predicate, like
-    /// `a < b`), we still mark it optimized. Previously setOptimized()
-    /// was called with no row estimate, leaving result_rows_estimation unknown; any enclosing
-    /// join-order optimization then treats this whole subtree as 1 row (see computeJoinCost), which
-    /// is catastrophic for large intermediates. Derive a coarse result-row estimate from the
-    /// children so the parent cluster keeps a usable cost signal.
-    auto estimate_non_reordered_rows = [&]() -> std::optional<UInt64>
-    {
-        if (node.children.size() != 2)
-            return {};
-        auto lhs_opt = estimateReadRowsCount(*node.children[0]).estimated_rows;
-        auto rhs_opt = estimateReadRowsCount(*node.children[1]).estimated_rows;
-        if (!lhs_opt || !rhs_opt)
-            return {};
-
-        const UInt64 lhs = *lhs_opt;
-        const UInt64 rhs = *rhs_opt;
-        switch (kind)
-        {
-            case JoinKind::Left:  return lhs;  /// preserved side floors the result
-            case JoinKind::Right: return rhs;
-            default:              return std::max(lhs, rhs); /// Full/Inner/Cross: containment heuristic
-        }
-    };
-
     if (!optimization_settings.query_plan_optimize_join_order_limit
         || (strictness != JoinStrictness::All && !isSwapOnlyJoinStrictness(strictness))
         || locality != JoinLocality::Unspecified
@@ -1508,7 +1482,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
         || !join_operator.residual_filter.empty()
     )
     {
-        join_step->setOptimized(estimate_non_reordered_rows());
+        join_step->setOptimized();
         return;
     }
 
@@ -1523,7 +1497,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     /// the whole flattened relation set, so it also covers overlaps that only appear after flattening.
     if (joinGraphHasOverlappingColumnNames(node, query_graph_size_limit, join_step->getJoinSettings()))
     {
-        join_step->setOptimized(estimate_non_reordered_rows());
+        join_step->setOptimized();
         return;
     }
 
