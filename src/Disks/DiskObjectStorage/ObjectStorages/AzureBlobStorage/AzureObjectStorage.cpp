@@ -17,6 +17,7 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
+#include <IO/AzureBlobStorage/isRetryableAzureException.h>
 
 #include <azure/storage/files/datalake/datalake_file_client.hpp>
 #include <azure/storage/files/datalake/datalake_options.hpp>
@@ -132,7 +133,8 @@ AzureObjectStorage::AzureObjectStorage(
     const AzureBlobStorage::ConnectionParams & connection_params_,
     const String & object_namespace_,
     const String & description_,
-    const String & common_key_prefix_)
+    const String & common_key_prefix_,
+    AzureClientRefreshCallback client_refresh_callback_)
     : name(name_)
     , auth_method(std::move(auth_method_))
     , client(std::move(client_))
@@ -141,8 +143,23 @@ AzureObjectStorage::AzureObjectStorage(
     , description(description_)
     , common_key_prefix(common_key_prefix_)
     , connection_params(connection_params_)
+    , client_refresh_callback(std::move(client_refresh_callback_))
     , log(getLogger("AzureObjectStorage"))
 {
+}
+
+bool AzureObjectStorage::tryRefreshClient(const Azure::Core::RequestFailedException & e) const
+{
+    if (!client_refresh_callback || !isAzureAccessTokenExpiredError(e))
+        return false;
+
+    auto new_client = client_refresh_callback();
+    if (!new_client)
+        return false;
+
+    client.set(std::move(new_client));
+    LOG_DEBUG(log, "Refreshed Azure credentials after an authentication failure");
+    return true;
 }
 
 ObjectStorageKeyGeneratorPtr AzureObjectStorage::createKeyGenerator() const
@@ -251,7 +268,8 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
         restrict_seek,
         /* read_until_position */0,
         std::move(blob_storage_log),
-        connection_params.getContainer());
+        connection_params.getContainer(),
+        client_refresh_callback);
 }
 
 SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
@@ -554,25 +572,37 @@ void AzureObjectStorage::tagObjects(const StoredObjects & objects, const std::st
 
 ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path, bool) const
 {
-    auto client_ptr = client.get();
-    auto blob_client = client_ptr->GetBlobClient(path);
-    auto properties = blob_client.GetProperties().Value;
-
-    ProfileEvents::increment(ProfileEvents::AzureGetProperties);
-    if (client_ptr->IsClientForDisk())
-        ProfileEvents::increment(ProfileEvents::DiskAzureGetProperties);
-
-    ObjectMetadata result;
-    result.size_bytes = properties.BlobSize;
-    result.etag = properties.ETag.ToString();
-    if (!properties.Metadata.empty())
+    for (size_t attempt = 0; ; ++attempt)
     {
-        result.attributes.emplace();
-        for (const auto & [key, value] : properties.Metadata)
-            result.attributes[key] = value;
+        auto client_ptr = client.get();
+        try
+        {
+            auto blob_client = client_ptr->GetBlobClient(path);
+            auto properties = blob_client.GetProperties().Value;
+
+            ProfileEvents::increment(ProfileEvents::AzureGetProperties);
+            if (client_ptr->IsClientForDisk())
+                ProfileEvents::increment(ProfileEvents::DiskAzureGetProperties);
+
+            ObjectMetadata result;
+            result.size_bytes = properties.BlobSize;
+            result.etag = properties.ETag.ToString();
+            if (!properties.Metadata.empty())
+            {
+                result.attributes.emplace();
+                for (const auto & [key, value] : properties.Metadata)
+                    result.attributes[key] = value;
+            }
+            result.last_modified = static_cast<std::chrono::system_clock::time_point>(properties.LastModified).time_since_epoch().count();
+            return result;
+        }
+        catch (const Azure::Core::RequestFailedException & e)
+        {
+            if (attempt == 0 && tryRefreshClient(e))
+                continue;
+            throw;
+        }
     }
-    result.last_modified = static_cast<std::chrono::system_clock::time_point>(properties.LastModified).time_since_epoch().count();
-    return result;
 }
 
 std::optional<ObjectMetadata> AzureObjectStorage::tryGetObjectMetadata(const std::string & path, bool with_tags) const

@@ -1421,7 +1421,30 @@ void RestCatalog::dropTable(const String & namespace_name, const String & table_
 
 namespace
 {
-std::optional<std::chrono::system_clock::time_point> parseSasTokenExpiry(const std::string & sas_token)
+/// Parse a "...-expires-at-ms" value (ms since epoch); nullopt if absent, epoch (= don't cache) if invalid.
+std::optional<std::chrono::system_clock::time_point>
+parseExpiresAtMs(const Poco::JSON::Object::Ptr & object, const std::string & key)
+{
+    if (!object->has(key))
+        return std::nullopt;
+    try
+    {
+        static constexpr Int64 max_representable_sec
+            = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::duration::max()).count();
+        const Int64 expires_at_ms = object->get(key).convert<Int64>();
+        if (expires_at_ms <= 0)
+            return std::chrono::system_clock::time_point{};
+        if (expires_at_ms / 1000 < max_representable_sec)
+            return std::chrono::system_clock::from_time_t(static_cast<std::time_t>(expires_at_ms / 1000));
+        return std::nullopt;
+    }
+    catch (...) // NOLINT(bugprone-empty-catch) Ok: fail close below
+    {
+    }
+    return std::chrono::system_clock::time_point{};
+}
+
+std::chrono::system_clock::time_point parseSasTokenExpiry(const std::string & sas_token)
 {
     std::string token = sas_token;
     if (!token.empty() && token.front() == '?')
@@ -1450,10 +1473,10 @@ std::optional<std::chrono::system_clock::time_point> parseSasTokenExpiry(const s
         {
         }
 
-        /// 'se=' is present but could not be parsed. Do not cache.
-        return std::chrono::system_clock::time_point{};
+        break;
     }
-    return std::nullopt;
+    /// Absent or unparseable 'se': do not cache.
+    return std::chrono::system_clock::time_point{};
 }
 }
 
@@ -1465,6 +1488,7 @@ VendedStorageCredentials RestCatalog::getCredentialsAndEndpoint(Poco::JSON::Obje
         case StorageType::S3:
         {
             static constexpr auto gcs_token_str = "gcs.oauth2.token";
+            static constexpr auto gcs_token_expires_at_str = "gcs.oauth2.token-expires-at";
             static constexpr auto access_key_id_str = "s3.access-key-id";
             static constexpr auto secret_access_key_str = "s3.secret-access-key";
             static constexpr auto session_token_str = "s3.session-token";
@@ -1475,7 +1499,9 @@ VendedStorageCredentials RestCatalog::getCredentialsAndEndpoint(Poco::JSON::Obje
             {
                 auto gcs_token = object->get(gcs_token_str).extract<String>();
                 LOG_DEBUG(log, "Using GCS OAuth2 token for location {}", location);
-                return {std::make_shared<GCSCredentials>(gcs_token), "", std::nullopt};
+                /// Do not cache if expiry was not parsed.
+                auto expires_at = parseExpiresAtMs(object, gcs_token_expires_at_str).value_or(std::chrono::system_clock::time_point{});
+                return {std::make_shared<GCSCredentials>(gcs_token), "", expires_at};
             }
 
             std::string access_key_id;
@@ -1491,28 +1517,7 @@ VendedStorageCredentials RestCatalog::getCredentialsAndEndpoint(Poco::JSON::Obje
                 session_token = object->get(session_token_str).extract<String>();
             if (object->has(storage_endpoint_str))
                 storage_endpoint = object->get(storage_endpoint_str).extract<String>();
-            if (object->has(session_token_expires_at_ms_str))
-            {
-                try
-                {
-                    static constexpr Int64 max_representable_sec
-                        = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::duration::max()).count();
-                    const Int64 expires_at_ms = object->get(session_token_expires_at_ms_str).convert<Int64>();
-                    if (expires_at_ms <= 0)
-                        expires_at = std::chrono::system_clock::time_point{}; /// Already invalid: do not cache.
-                    else if (expires_at_ms / 1000 < max_representable_sec)
-                        expires_at = std::chrono::system_clock::from_time_t(static_cast<std::time_t>(expires_at_ms / 1000));
-                }
-                catch (...)
-                {
-                    /// The provider sent an expiry we cannot parse; do not cache.
-                    LOG_WARNING(
-                        log,
-                        "Failed to parse '{}' from vended credentials config; will not cache this credential",
-                        session_token_expires_at_ms_str);
-                    expires_at = std::chrono::system_clock::time_point{};
-                }
-            }
+            expires_at = parseExpiresAtMs(object, session_token_expires_at_ms_str);
 
             LOG_DEBUG(log, "get tokens for location {}", location);
             return {std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token), storage_endpoint, expires_at};

@@ -118,6 +118,8 @@ public:
 
     bool isEmpty() const override { return sas_token.empty(); }
 
+    const std::string & getToken() const { return sas_token; }
+
 private:
     std::string sas_token;
 };
