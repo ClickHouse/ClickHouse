@@ -199,8 +199,8 @@ void NaiveBayesDictionary::loadData()
     });
 
     /// Finalizing the trainer computes the priors, compiles the flat model, and yields the immutable model.
-    classifier.emplace(std::visit(
-        [&](auto & t) -> Classifier { return Classifier{t.finalize(configuration.priors_mode, configuration.explicit_priors)}; },
+    model_variant.emplace(std::visit(
+        [&](auto & t) -> ModelVariant { return ModelVariant{t.finalize(configuration.priors_mode, configuration.explicit_priors)}; },
         trainer));
 
     if (configuration.store_source && ngram_acc)
@@ -210,8 +210,8 @@ void NaiveBayesDictionary::loadData()
         source_count_column = std::move(count_acc);
     }
 
-    element_count = std::visit([](const auto & model) { return model.getElementCount(); }, *classifier);
-    bytes_allocated = std::visit([](const auto & model) { return model.getAllocatedBytes(); }, *classifier);
+    element_count = std::visit([](const auto & model) { return model.getElementCount(); }, *model_variant);
+    bytes_allocated = std::visit([](const auto & model) { return model.getAllocatedBytes(); }, *model_variant);
 
     LOG_INFO(log, "Loaded NaiveBayes dictionary with {} n-grams, {} bytes allocated", element_count, bytes_allocated);
 }

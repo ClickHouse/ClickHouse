@@ -97,11 +97,11 @@ public:
     template <typename Func>
     decltype(auto) visitModel(Func && func) const
     {
-        return std::visit(std::forward<Func>(func), *classifier);
+        return std::visit(std::forward<Func>(func), *model_variant);
     }
 
 private:
-    using Classifier = std::variant<
+    using ModelVariant = std::variant<
         NaiveBayesModel<BytePolicy>,
         NaiveBayesModel<CodePointPolicy>,
         NaiveBayesModel<TokenPolicy>>;
@@ -113,7 +113,7 @@ private:
     Configuration configuration;
 
     /// This is populated once while the dictionary is being constructed and is never modified afterwards.
-    std::optional<Classifier> classifier;
+    std::optional<ModelVariant> model_variant;
 
     /// These hold the training rows and are populated only when the store source option is enabled.
     ColumnPtr source_ngram_column;
