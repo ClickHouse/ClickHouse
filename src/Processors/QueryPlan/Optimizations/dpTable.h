@@ -29,7 +29,6 @@ public:
     explicit DPTable(size_t numRelations_);
 
     void insert(TUInt S, TUInt S1, TUInt S2);
-
     const DPEntry & operator[](TUInt x) const { return table.at(x); }
     DPEntry & operator[](TUInt x) { return table[x]; }
 
