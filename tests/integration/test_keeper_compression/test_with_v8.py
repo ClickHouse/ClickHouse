@@ -22,7 +22,7 @@ node_v8 = cluster.add_instance(
     "node_v8",
     main_configs=[
         "configs/keeper_v8_base.xml",
-        "configs/keeper_with_compression.xml",
+        "configs/keeper_with_compression_v8.xml",
         "configs/keeper_v8_settings.xml",
     ],
     stay_alive=True,
