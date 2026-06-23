@@ -11,6 +11,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
 #include <base/getThreadId.h>
 #include <Interpreters/ReaderExecutorLog.h>
 #include <chrono>
@@ -1433,10 +1434,21 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
         non_led.add(g);
     VectorWithMemoryTracking<ByteRange> led_disjoint = non_led.subtract(window);
 
-    /// Fetch the led runs on this worker thread via the machine's own connection, and write+
+    /// Fetch the led runs on this worker thread via the machine's own connection, then write+
     /// complete them inline (we are the downloader). A sibling-led hole between two led runs
     /// breaks the connection - correct, those bytes are not ours to fetch.
+    ///
+    /// EVERY elected segment is DOWNLOADING until `write` completes it (writing the fetched
+    /// bytes, or RESETTING the downloader of an uncovered one); leaving one DOWNLOADING aborts
+    /// the writer's holder dtor (`chassert(!is_last_holder)`). The fetch can exit early - a
+    /// cancel mid-loop, an EOF short, or a source exception - so run the completion from a SCOPE
+    /// guard over ALL writer views, with a `nullptr` interrupt so it never stops half-done.
     ChainedBuffers led_bytes;
+    SCOPE_EXIT_SAFE({
+        pushChainToWriters(m.writer_views, window, led_bytes, Stats::BytesPushedToCacheSync,
+            /*interrupt=*/nullptr, m.stats);
+        m.fetched = std::move(led_bytes);
+    });
     for (const auto & led : mergeRanges(led_disjoint, min_bytes_for_seek))
     {
         if (m.reached_eof)
@@ -1444,11 +1456,8 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
         led_bytes.append(fetchGapsFromSource(led, /*from_prefetch=*/true, m.reached_eof, level,
             m.extent_snapshot, &m.long_conn, &m, m.stats));
         if (m.interrupt_requested.load(std::memory_order_relaxed))
-            break;  /// stop-short on cancel; collect serves the led prefix or revokes
+            break;  /// stop-short on cancel; the scope guard still completes every elected segment
     }
-    pushChainToWriters(m.writer_views, window, led_bytes, Stats::BytesPushedToCacheSync,
-        &m.interrupt_requested, m.stats);
-    m.fetched = std::move(led_bytes);
 }
 
 ChainedBuffers ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_prefetch,
@@ -2902,15 +2911,17 @@ void ReaderExecutor::cancelMachine(bool cancelled)
     }
     else
     {
-        /// Already running (or finished): SOFT cancel - flag the doomed work
-        /// and stash the machine, with no foreground wait. The worker wraps at
-        /// its next safe point; the sweep reaps it opportunistically and the
-        /// destructor joins it hard. Its stats and wasted-bytes attribution are
-        /// reconciled at the reap. The machine reads only its own snapshots
-        /// (geometry, extent), so the foreground is free to re-plan or move the
-        /// extent right away.
+        /// Already running: interrupt it, then JOIN it before abandoning. The worker writes the
+        /// shared `read_plan.bufs` writers (its led segments) on the pool thread, so the
+        /// foreground must NOT free the plan (the caller re-plans / drops the extent / seeks
+        /// right after this) until the worker has finished and completed every elected segment -
+        /// else the writer dtor aborts on a leaked DOWNLOADING segment
+        /// (`chassert(!is_last_holder)`) or the worker writes into freed memory. The interrupt
+        /// makes the worker wrap at its next block, so the wait is bounded. Stats are folded at
+        /// the reap (the machine is stashed finished; `drainAbandonedMachines` reaps it).
         stats.add(Stats::PrefetchDiscardedRunning);
         runner->requestInterrupt(*m);
+        runner->waitReleased(*m);
         abandoned_machines.push_back(std::move(m));
     }
 }
