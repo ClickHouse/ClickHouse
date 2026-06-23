@@ -1129,6 +1129,8 @@ public:
 
     /// Returns set of partition_ids of all Active parts
     std::unordered_set<String> getAllPartitionIds() const;
+    /// Returns set of partition_ids of all Active regular (non-patch) parts.
+    std::unordered_set<String> getRegularPartitionIds() const;
 
     /// Extracts MergeTreeData of other *MergeTree* storage
     ///  and checks that their structure suitable for ALTER TABLE ATTACH PARTITION FROM

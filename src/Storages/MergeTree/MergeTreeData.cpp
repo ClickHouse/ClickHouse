@@ -7813,6 +7813,22 @@ std::unordered_set<String> MergeTreeData::getAllPartitionIds() const
     return res;
 }
 
+std::unordered_set<String> MergeTreeData::getRegularPartitionIds() const
+{
+    auto lock = readLockParts();
+    std::unordered_set<String> res;
+    std::string_view prev_id;
+    for (const auto & part : getDataPartsStateRange(DataPartState::Active, DataPartKind::Regular))
+    {
+        if (prev_id == part->info.getPartitionId())
+            continue;
+
+        res.insert(part->info.getPartitionId());
+        prev_id = part->info.getPartitionId();
+    }
+    return res;
+}
+
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsAnyLock & /*lock*/, DataPartStateVector * out_states) const
 {
     DataPartsVector res;

@@ -7314,11 +7314,32 @@ void StorageReplicatedMergeTree::dropPart(const String & part_name, bool detach,
 
     zkutil::ZooKeeperPtr zookeeper = getZooKeeperAndAssertNotReadonly();
     LogEntry entry;
+    std::vector<String> patch_parts_to_detach;
+
+    if (detach && supportsLightweightUpdate())
+    {
+        const auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
+        const auto patch_parts = getPatchPartsVectorForPartition(part_info.getPartitionId());
+        patch_parts_to_detach.reserve(patch_parts.size());
+        for (const auto & patch_part : patch_parts)
+        {
+            const auto & source_parts = patch_part->getSourcePartsSet().getSourcePartsMinMaxVersions();
+            if (source_parts.contains(part_name))
+                patch_parts_to_detach.push_back(patch_part->name);
+        }
+    }
 
     dropPartImpl(zookeeper, part_name, entry, detach, /*throw_if_noop=*/ true);
 
     WatchEventByPath watch_events;
     waitForLogEntryToBeProcessedIfNecessary(entry, query_context, watch_events);
+
+    for (const auto & patch_part_name : patch_parts_to_detach)
+    {
+        LogEntry patch_entry;
+        if (dropPartImpl(zookeeper, patch_part_name, patch_entry, /*detach=*/ true, /*throw_if_noop=*/ false))
+            waitForLogEntryToBeProcessedIfNecessary(patch_entry, query_context, watch_events);
+    }
 }
 
 void StorageReplicatedMergeTree::dropPartition(const ASTPtr & partition, bool detach, ContextPtr query_context)
@@ -7356,6 +7377,17 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & partition, bool de
 void StorageReplicatedMergeTree::dropPartitions(const zkutil::ZooKeeperPtr & zookeeper, const Strings & partition_ids, bool detach, ContextPtr query_context)
 {
     std::vector<LogEntryPtr> entries;
+    std::vector<String> patch_parts_to_detach;
+    if (detach && supportsLightweightUpdate())
+    {
+        for (const auto & partition_id : partition_ids)
+        {
+            auto patch_parts = getPatchPartsVectorForPartition(partition_id);
+            for (const auto & patch_part : patch_parts)
+                patch_parts_to_detach.push_back(patch_part->name);
+        }
+    }
+
     dropAllPartsInPartitions(*zookeeper, partition_ids, entries, query_context, detach);
 
     WatchEventByPath watch_events;
@@ -7364,6 +7396,17 @@ void StorageReplicatedMergeTree::dropPartitions(const zkutil::ZooKeeperPtr & zoo
         waitForLogEntryToBeProcessedIfNecessary(*entry, query_context, watch_events);
         auto drop_range_info = MergeTreePartInfo::fromPartName(entry->new_part_name, format_version);
         cleanLastPartNode(drop_range_info.getPartitionId());
+    }
+
+    if (detach)
+    {
+        for (const auto & patch_part_name : patch_parts_to_detach)
+        {
+            LogEntry patch_entry;
+            auto zk = zookeeper;
+            if (dropPartImpl(zk, patch_part_name, patch_entry, /*detach=*/ true, /*throw_if_noop=*/ false))
+                waitForLogEntryToBeProcessedIfNecessary(patch_entry, query_context, watch_events);
+        }
     }
 }
 
@@ -9007,7 +9050,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         if (replace)
             throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support DROP/DETACH/ATTACH PARTITION ALL currently");
 
-        partitions = src_data.getAllPartitionIds();
+        partitions = src_data.getRegularPartitionIds();
     }
     else
     {
@@ -9074,8 +9117,9 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
         src_patch_parts = src_data.getPatchPartsVectorForPartition(partition_id, parts_lock);
     }
 
-    assertNoPatchesForParts(src_all_parts, src_patch_parts, "REPLACE PARTITION " + partition_id + " FROM");
-    LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
+    src_patch_parts = filterUnappliedPatchParts(src_all_parts, src_patch_parts);
+    const bool preserve_source_part_names = !src_patch_parts.empty();
+    LOG_DEBUG(log, "Cloning {} regular parts and {} patch parts", src_all_parts.size(), src_patch_parts.size());
 
     std::optional<ZooKeeperMetadataTransaction> txn;
     if (auto query_txn = query_context->getZooKeeperMetadataTransaction())
@@ -9093,6 +9137,8 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
         std::vector<std::vector<std::string>> block_id_paths;
         Strings part_checksums;
         std::vector<EphemeralLockInZooKeeper> ephemeral_locks;
+        UInt64 patch_bytes_transferred = 0;
+        Stopwatch patch_transfer_watch;
         String alter_partition_version_path = zookeeper_path + "/alter_partition_version";
         Coordination::Stat alter_partition_version_stat;
         zookeeper->get(alter_partition_version_path, &alter_partition_version_stat);
@@ -9170,7 +9216,9 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
             }
 
             UInt64 index = lock.getNumber();
-            MergeTreePartInfo dst_part_info(partition_id, index, index, getLevelForAdoptedPart(src_data, src_part->info.level));
+            MergeTreePartInfo dst_part_info = preserve_source_part_names
+                ? src_part->info
+                : MergeTreePartInfo(partition_id, index, index, getLevelForAdoptedPart(src_data, src_part->info.level));
 
             IDataPartStorage::ClonePartParams clone_params
             {
@@ -9213,6 +9261,35 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
             part_checksums.emplace_back(hash_hex);
         }
 
+        for (const auto & src_patch_part : src_patch_parts)
+        {
+            IDataPartStorage::ClonePartParams clone_params
+            {
+                .copy_instead_of_hardlink = always_use_copy_instead_of_hardlinks || (zero_copy_enabled && src_patch_part->isStoredOnRemoteDiskWithZeroCopySupport()),
+                .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
+            };
+
+            auto [dst_patch_part, patch_part_lock] = cloneAndLoadDataPart(
+                src_patch_part,
+                TMP_PREFIX_REPLACE_PARTITION_FROM,
+                src_patch_part->info,
+                metadata_snapshot,
+                clone_params,
+                query_context->getReadSettings(),
+                query_context->getWriteSettings(),
+                replace /* ATTACH can be cross-disk, REPLACE keeps same disk */);
+
+            dst_parts.emplace_back(std::move(dst_patch_part));
+            dst_parts_locks.emplace_back(std::move(patch_part_lock));
+            src_parts.emplace_back(src_patch_part);
+            block_id_paths.emplace_back(std::vector<String>{});
+            part_checksums.emplace_back(src_patch_part->checksums.getTotalChecksumHex());
+            patch_bytes_transferred += src_patch_part->getBytesOnDisk();
+        }
+        if (!src_patch_parts.empty())
+            LOG_INFO(log, "Transferred {} patch parts ({} bytes) for partition {} in {} ms",
+                src_patch_parts.size(), patch_bytes_transferred, partition_id, patch_transfer_watch.elapsedMilliseconds());
+
         auto entry = std::make_unique<ReplicatedMergeTreeLogEntryData>();
         {
             auto src_table_id = src_data.getStorageID();
@@ -9251,7 +9328,8 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
             for (size_t i = 0; i < dst_parts.size(); ++i)
             {
                 getCommitPartOps(ops, dst_parts[i], block_id_paths[i]);
-                ephemeral_locks[i].getUnlockOp(ops);
+                if (i < ephemeral_locks.size())
+                    ephemeral_locks[i].getUnlockOp(ops);
             }
 
             if (txn)
@@ -9403,7 +9481,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             src_patch_parts = src_data.getPatchPartsVectorForPartition(partition_id, parts_lock);
         }
 
-        assertNoPatchesForParts(src_all_parts, src_patch_parts, "MOVE PARTITION " + partition_id);
+        src_patch_parts = filterUnappliedPatchParts(src_all_parts, src_patch_parts);
+        const bool preserve_source_part_names = !src_patch_parts.empty();
 
         if (covering_part)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got part {} covering drop range {}, it's a bug",
@@ -9424,6 +9503,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         std::vector<std::vector<std::string>> block_id_paths;
         Strings part_checksums;
         std::vector<EphemeralLockInZooKeeper> ephemeral_locks;
+        UInt64 patch_bytes_transferred = 0;
+        Stopwatch patch_transfer_watch;
 
         LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
 
@@ -9457,7 +9538,9 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             }
 
             UInt64 index = lock.getNumber();
-            MergeTreePartInfo dst_part_info(partition_id, index, index, dest_table_storage->getLevelForAdoptedPart(src_data, src_part->info.level));
+            MergeTreePartInfo dst_part_info = preserve_source_part_names
+                ? src_part->info
+                : MergeTreePartInfo(partition_id, index, index, dest_table_storage->getLevelForAdoptedPart(src_data, src_part->info.level));
 
             /// Don't do hardlinks in case of zero-copy at any side (defensive programming)
             bool zero_copy_enabled = (*storage_settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication]
@@ -9485,6 +9568,38 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             block_id_paths.emplace_back(std::move(block_id_path));
             part_checksums.emplace_back(hash_hex);
         }
+
+        for (const auto & src_patch_part : src_patch_parts)
+        {
+            /// Don't do hardlinks in case of zero-copy at any side (defensive programming)
+            bool zero_copy_enabled = (*storage_settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication]
+                || (*dynamic_cast<const MergeTreeData *>(dest_table.get())->getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
+
+            IDataPartStorage::ClonePartParams clone_params
+            {
+                .copy_instead_of_hardlink = (*storage_settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks] || (zero_copy_enabled && src_patch_part->isStoredOnRemoteDiskWithZeroCopySupport()),
+                .metadata_version_to_write = dest_metadata_snapshot->getMetadataVersion()
+            };
+            auto [dst_patch_part, dst_patch_part_lock] = dest_table_storage->cloneAndLoadDataPart(
+                src_patch_part,
+                TMP_PREFIX,
+                src_patch_part->info,
+                dest_metadata_snapshot,
+                clone_params,
+                query_context->getReadSettings(),
+                query_context->getWriteSettings(),
+                true/*must_on_same_disk*/);
+
+            src_parts.emplace_back(src_patch_part);
+            dst_parts.emplace_back(dst_patch_part);
+            temporary_parts_locks.emplace_back(std::move(dst_patch_part_lock));
+            block_id_paths.emplace_back(std::vector<String>{});
+            part_checksums.emplace_back(src_patch_part->checksums.getTotalChecksumHex());
+            patch_bytes_transferred += src_patch_part->getBytesOnDisk();
+        }
+        if (!src_patch_parts.empty())
+            LOG_INFO(log, "Transferred {} patch parts ({} bytes) for MOVE PARTITION {} in {} ms",
+                src_patch_parts.size(), patch_bytes_transferred, partition_id, patch_transfer_watch.elapsedMilliseconds());
 
         ReplicatedMergeTreeLogEntryData entry_delete;
         {
@@ -9532,7 +9647,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             for (size_t i = 0; i < dst_parts.size(); ++i)
             {
                 dest_table_storage->getCommitPartOps(ops, dst_parts[i], block_id_paths[i]);
-                ephemeral_locks[i].getUnlockOp(ops);
+                if (i < ephemeral_locks.size())
+                    ephemeral_locks[i].getUnlockOp(ops);
             }
 
             /// Check and update version to avoid race with DROP_RANGE
@@ -9620,6 +9736,9 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
         /// Cleaning possibly stored information about parts from /quorum/last_part node in ZooKeeper.
         cleanLastPartNode(partition_id);
+
+        for (const auto & src_patch_part : src_patch_parts)
+            dropPartNoWaitNoThrow(src_patch_part->name);
 
         return;
     }
@@ -9963,12 +10082,7 @@ bool StorageReplicatedMergeTree::dropPartImpl(
             return false;
         }
 
-        if (detach && supportsLightweightUpdate())
-        {
-            auto patch_parts = getPatchPartsVectorForPartition(part_info.getPartitionId());
-            if (!assertNoPatchesForParts({part}, patch_parts, "DETACH PART " + part_name, throw_if_noop))
-                return false;
-        }
+        /// For DETACH PART, patch parts are detached explicitly by dropPart().
 
         Coordination::Requests ops;
         /// NOTE Don't need to remove block numbers too, because no in-progress inserts in the range are possible
@@ -10048,17 +10162,6 @@ bool StorageReplicatedMergeTree::addOpsToDropAllPartsInPartition(
         auto sync_timeout_ms = getContext()->getSettingsRef()[Setting::receive_timeout].totalMilliseconds();
         if (!waitForProcessingQueue(sync_timeout_ms, SyncReplicaMode::LIGHTWEIGHT, {}))
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to sync replica with timeout {} to satisfy update_sequential_consistency", sync_timeout_ms);
-
-        DataPartsVector parts_to_detach;
-        DataPartsVector patches_in_partition;
-
-        {
-            auto parts_lock = readLockParts();
-            parts_to_detach = grabActivePartsToRemoveForDropRange(NO_TRANSACTION_RAW, drop_range_info, parts_lock);
-            patches_in_partition = getPatchPartsVectorForPartition(partition_id, parts_lock);
-        }
-
-        assertNoPatchesForParts(parts_to_detach, patches_in_partition, "DETACH PARTITION " + partition_id);
     }
 
     String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range_info);

@@ -23,6 +23,7 @@ public:
     bool empty() const { return min_max_versions_by_part.empty(); }
     UInt64 getMinDataVersion() const { return min_data_version; }
     UInt64 getMaxDataVersion() const { return max_data_version; }
+    const std::map<String, std::pair<UInt64, UInt64>> & getSourcePartsMinMaxVersions() const { return min_max_versions_by_part; }
 
     UInt64 getMinDataVersion(const String & part_name) const { return min_max_versions_by_part.at(part_name).first; }
     UInt64 getMaxDataVersion(const String & part_name) const { return min_max_versions_by_part.at(part_name).second; }

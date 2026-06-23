@@ -2619,11 +2619,17 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot);
     DataPartsVector src_parts;
+    DataPartsVector src_patch_parts;
 
     if (is_all)
         src_parts = src_data.getVisibleDataPartsVector(local_context);
     else
         src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
+    if (!is_all)
+    {
+        src_patch_parts = src_data.getPatchPartsVectorForPartition(partition_id);
+        src_patch_parts = filterUnappliedPatchParts(src_parts, src_patch_parts);
+    }
 
     MutableDataPartsVector dst_parts;
     std::vector<scope_guard> dst_parts_locks;
@@ -2631,6 +2637,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     static const String TMP_PREFIX = "tmp_replace_from_";
 
     bool are_policies_partition_op_compatible = getStoragePolicy()->isCompatibleForPartitionOps(source_table->getStoragePolicy());
+    const bool preserve_source_part_names = !src_patch_parts.empty();
     for (const DataPartPtr & src_part : src_parts)
     {
         if (is_all)
@@ -2643,7 +2650,9 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
         /// This will generate unique name in scope of current server process.
         Int64 temp_index = insert_increment.get();
-        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, getLevelForAdoptedPart(src_data, src_part->info.level));
+        MergeTreePartInfo dst_part_info = preserve_source_part_names
+            ? src_part->info
+            : MergeTreePartInfo(partition_id, temp_index, temp_index, getLevelForAdoptedPart(src_data, src_part->info.level));
 
         IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
         if (replace)
@@ -2675,6 +2684,57 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                 false/*must_on_same_disk*/);
             dst_parts.emplace_back(std::move(dst_part));
             dst_parts_locks.emplace_back(std::move(part_lock));
+        }
+    }
+
+    if (!is_all)
+    {
+        for (const auto & src_patch_part : src_patch_parts)
+        {
+            IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
+            auto [dst_patch_part, patch_part_lock] = cloneAndLoadDataPart(
+                src_patch_part,
+                TMP_PREFIX,
+                src_patch_part->info,
+                my_metadata_snapshot,
+                clone_params,
+                local_context->getReadSettings(),
+                local_context->getWriteSettings(),
+                replace ? !are_policies_partition_op_compatible : false);
+            dst_parts.emplace_back(std::move(dst_patch_part));
+            dst_parts_locks.emplace_back(std::move(patch_part_lock));
+        }
+    }
+    else
+    {
+        std::unordered_map<String, DataPartsVector> base_parts_by_partition;
+        base_parts_by_partition.reserve(src_parts.size());
+        for (const auto & src_part : src_parts)
+        {
+            const String partition_for_part = src_part->partition.getID(src_data);
+            base_parts_by_partition[partition_for_part].push_back(src_part);
+        }
+
+        for (const auto & [partition_for_part, base_parts_for_partition] : base_parts_by_partition)
+        {
+            auto patches_for_partition = src_data.getPatchPartsVectorForPartition(partition_for_part);
+            patches_for_partition = filterUnappliedPatchParts(base_parts_for_partition, patches_for_partition);
+
+            for (const auto & src_patch_part : patches_for_partition)
+            {
+                IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
+                auto [dst_patch_part, patch_part_lock] = cloneAndLoadDataPart(
+                    src_patch_part,
+                    TMP_PREFIX,
+                    src_patch_part->info,
+                    my_metadata_snapshot,
+                    clone_params,
+                    local_context->getReadSettings(),
+                    local_context->getWriteSettings(),
+                    replace ? !are_policies_partition_op_compatible : false);
+                dst_parts.emplace_back(std::move(dst_patch_part));
+                dst_parts_locks.emplace_back(std::move(patch_part_lock));
+            }
         }
     }
 
@@ -2785,6 +2845,9 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     String partition_id = getPartitionIDFromQuery(partition, local_context);
 
     DataPartsVector src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
+    DataPartsVector src_patch_parts = src_data.getPatchPartsVectorForPartition(partition_id);
+    src_patch_parts = filterUnappliedPatchParts(src_parts, src_patch_parts);
+    const bool preserve_source_part_names = !src_patch_parts.empty();
     if (src_parts.size() > settings[Setting::max_parts_to_move])
     {
         /// Moving a large number of parts at once can take a long time or get stuck in a retry loop in case of an S3 error, for example.
@@ -2811,7 +2874,9 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
         /// This will generate unique name in scope of current server process.
         Int64 temp_index = insert_increment.get();
-        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, dest_table_storage->getLevelForAdoptedPart(src_data, src_part->info.level));
+        MergeTreePartInfo dst_part_info = preserve_source_part_names
+            ? src_part->info
+            : MergeTreePartInfo(partition_id, temp_index, temp_index, dest_table_storage->getLevelForAdoptedPart(src_data, src_part->info.level));
 
         IDataPartStorage::ClonePartParams clone_params
         {
@@ -2832,6 +2897,29 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
         dst_parts.emplace_back(std::move(dst_part));
         dst_parts_locks.emplace_back(std::move(part_lock));
+    }
+
+    for (const auto & src_patch_part : src_patch_parts)
+    {
+        IDataPartStorage::ClonePartParams clone_params
+        {
+            .txn = local_context->getCurrentTransaction(),
+            .copy_instead_of_hardlink = (*getSettings())[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
+        };
+
+        auto [dst_patch_part, patch_part_lock] = dest_table_storage->cloneAndLoadDataPart(
+            src_patch_part,
+            TMP_PREFIX,
+            src_patch_part->info,
+            dest_metadata_snapshot,
+            clone_params,
+            local_context->getReadSettings(),
+            local_context->getWriteSettings(),
+            !are_policies_partition_op_compatible /*must_on_same_disk*/
+        );
+
+        dst_parts.emplace_back(std::move(dst_patch_part));
+        dst_parts_locks.emplace_back(std::move(patch_part_lock));
     }
 
     /// empty part set
@@ -2865,6 +2953,9 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             {
                 renameTempPartAndReplaceUnlocked(part, src_data_parts_lock, src_transaction, /*rename_in_transaction=*/true);
             }
+
+            if (!src_patch_parts.empty())
+                removePartsFromWorkingSet(txn.get(), src_patch_parts, /*clear_without_timeout=*/ false, src_data_parts_lock);
         }
 
         dest_transaction.renameParts();
