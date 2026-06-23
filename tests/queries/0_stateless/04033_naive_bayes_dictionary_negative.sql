@@ -98,6 +98,23 @@ SELECT dictGet('nb_bad_alpha', 'class_id', 'test'); -- { serverError BAD_ARGUMEN
 
 DROP DICTIONARY IF EXISTS nb_bad_alpha;
 
+-- alpha so large that the smoothing term (alpha * vocabulary size) overflows to infinity
+
+CREATE DICTIONARY nb_huge_alpha
+(
+    ngram String,
+    class_id UInt32 DEFAULT 0,
+    count UInt64 DEFAULT 0
+)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'nb_err_source'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' alpha 1e308))
+LIFETIME(0);
+
+SELECT dictGet('nb_huge_alpha', 'class_id', 'test'); -- { serverError BAD_ARGUMENTS }
+
+DROP DICTIONARY IF EXISTS nb_huge_alpha;
+
 -- Priors don't sum to 1.0
 
 CREATE DICTIONARY nb_bad_priors_sum
