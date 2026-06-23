@@ -1790,54 +1790,20 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
 }
 
 
-/// Collect every JOIN USING node in the join tree that is not currently being resolved.
-/// A qualified matcher (`t.*`) can match a USING key that sits at any JOIN in the tree, not
-/// just the top one: with a PASTE/CROSS/comma join or an outer ON join wrapping the USING join,
-/// the top node is not a USING JoinNode, yet `t` still participates in the nested USING join.
-/// Walking the whole tree lets the qualified matcher find that nested key.
-static void collectUsingJoinNodes(
-    const QueryTreeNodePtr & join_tree_node,
-    const std::unordered_set<const IQueryTreeNode *> & in_resolve_process,
-    std::vector<const JoinNode *> & result)
-{
-    std::stack<const IQueryTreeNode *> stack;
-    stack.push(join_tree_node.get());
-
-    while (!stack.empty())
-    {
-        const auto * current = stack.top();
-        stack.pop();
-
-        if (const auto * join_node = current->as<JoinNode>())
-        {
-            if (!in_resolve_process.contains(join_node) && join_node->isUsingJoinExpression())
-                result.push_back(join_node);
-
-            stack.push(join_node->getLeftTableExpression().get());
-            stack.push(join_node->getRightTableExpression().get());
-        }
-        else if (const auto * cross_join_node = current->as<CrossJoinNode>())
-        {
-            for (const auto & table_expression : cross_join_node->getTableExpressions())
-                stack.push(table_expression.get());
-        }
-        else if (const auto * array_join_node = current->as<ArrayJoinNode>())
-        {
-            stack.push(array_join_node->getTableExpression().get());
-        }
-    }
-}
-
-/// Columns that resolved from matcher can also match columns from JOIN USING.
-/// In that case we update type to type of column in USING section.
+/// Columns resolved from a matcher can also be JOIN USING keys, whose type the join changes
+/// (the supertype of both sides, and Nullable when an OUTER side makes the data Nullable).
 ///
-/// Unqualified matcher (`*`): the matched column IS the merged USING key, so it takes the
-/// key type as-is, and only the top USING join applies. Qualified matcher (`t.*`): the matched
-/// column is `t`'s own column, so its type must equal what the explicit reference `t.col`
-/// resolves to. The merged key's type is not correct here: in a nested JOIN it reflects the
-/// outer join's other side, while `t.col` only follows the joins `t` participates in. That
-/// USING join can sit anywhere in the tree (below a PASTE/CROSS/comma join or an outer ON
-/// join), so for the qualified matcher every USING join is examined, not only the top one.
+/// Unqualified matcher (`*`): the matched column IS the merged USING key of the top join, so it
+/// takes that key's type directly.
+///
+/// Qualified matcher (`t.*`): the matched column is `t`'s own column, so its type must equal what
+/// the explicit reference `t.col` resolves to. Rather than inspect the USING joins here, resolve
+/// `t.col` through the normal identifier flow and adopt its type. That flow
+/// (IdentifierResolver::tryResolveIdentifierFromJoin) follows only the joins `t` participates in,
+/// wherever the USING join sits in the tree, applies the same type correction, and registers the
+/// changed type in `scope.join_columns_with_changed_types`. So a USING key that `t.col` matches
+/// only by name in a join `t` does not take part in is naturally not applied, and no separate
+/// participation check or registration is needed.
 void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
     QueryTreeNodesWithNames & result_matched_column_nodes_with_names,
     bool is_qualified_matcher,
@@ -1855,39 +1821,55 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
             scope.scope_node->formatASTForErrorMessage());
     }
 
-    const auto & join_tree = nearest_query_scope_query_node->getJoinTree();
-
-    std::vector<const JoinNode *> join_using_source_nodes;
     if (is_qualified_matcher)
     {
-        collectUsingJoinNodes(join_tree, nearest_query_scope->table_expressions_in_resolve_process, join_using_source_nodes);
-    }
-    else
-    {
-        const auto * join_node = join_tree->as<JoinNode>();
-        bool join_node_in_resolve_process = nearest_query_scope->table_expressions_in_resolve_process.contains(join_node);
-        if (!join_node_in_resolve_process && join_node && join_node->isUsingJoinExpression())
-            join_using_source_nodes.push_back(join_node);
-    }
+        /// Without joins no column type can be changed by a join, so `t.*` keeps the table types.
+        if (scope.joins_count == 0)
+            return;
 
-    for (auto & [matched_column_node, _] : result_matched_column_nodes_with_names)
-    {
-        auto & matched_column_node_typed = matched_column_node->as<ColumnNode &>();
-        const auto & matched_column_name = matched_column_node_typed.getColumnName();
-
-        /// A matched column is retyped from at most one USING join: its name is unique within a
-        /// single USING list, and for the qualified matcher the adopted type comes from resolving
-        /// the explicit identifier `t.col`, which is the same regardless of which USING join in
-        /// the tree carries the same-named key. Stop after the first match to avoid retyping (and
-        /// re-registering) the same column against several joins.
-        bool matched_column_retyped = false;
-        for (const auto * join_node : join_using_source_nodes)
+        for (auto & [matched_column_node, _] : result_matched_column_nodes_with_names)
         {
-            if (matched_column_retyped)
-                break;
+            auto & matched_column_node_typed = matched_column_node->as<ColumnNode &>();
 
-            const auto & join_using_list = join_node->getJoinExpression()->as<ListNode &>();
-            const auto & join_using_nodes = join_using_list.getNodes();
+            Identifier explicit_identifier = matched_qualified_identifier;
+            explicit_identifier.push_back(matched_column_node_typed.getColumnName());
+            auto explicit_lookup = IdentifierLookup{explicit_identifier, IdentifierLookupContext::EXPRESSION};
+            IdentifierResolveContext explicit_resolve_settings;
+            explicit_resolve_settings.allow_to_check_cte = false;
+            explicit_resolve_settings.allow_to_check_database_catalog = false;
+            auto explicit_resolve_result = tryResolveIdentifier(explicit_lookup, scope, explicit_resolve_settings);
+            if (!explicit_resolve_result.resolved_identifier)
+                continue;
+
+            auto resolved_type = explicit_resolve_result.resolved_identifier->getResultType();
+            if (resolved_type->equals(*matched_column_node_typed.getColumnType()))
+                continue;
+
+            auto it = node_to_projection_name.find(matched_column_node);
+            matched_column_node = matched_column_node->clone();
+            if (it != node_to_projection_name.end())
+                node_to_projection_name.emplace(matched_column_node, it->second);
+
+            matched_column_node->as<ColumnNode &>().setColumnType(resolved_type);
+            correctColumnExpressionType(matched_column_node->as<ColumnNode &>(), scope.context);
+        }
+
+        return;
+    }
+
+    const auto & join_tree = nearest_query_scope_query_node->getJoinTree();
+
+    const auto * join_node = join_tree->as<JoinNode>();
+    bool join_node_in_resolve_process = nearest_query_scope->table_expressions_in_resolve_process.contains(join_node);
+    if (!join_node_in_resolve_process && join_node && join_node->isUsingJoinExpression())
+    {
+        const auto & join_using_list = join_node->getJoinExpression()->as<ListNode &>();
+        const auto & join_using_nodes = join_using_list.getNodes();
+
+        for (auto & [matched_column_node, _] : result_matched_column_nodes_with_names)
+        {
+            auto & matched_column_node_typed = matched_column_node->as<ColumnNode &>();
+            const auto & matched_column_name = matched_column_node_typed.getColumnName();
 
             for (const auto & join_using_node : join_using_nodes)
             {
@@ -1912,46 +1894,7 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
                     }
                 }
 
-                /// A qualified matcher reaches USING joins anywhere in the tree, so a key can match
-                /// `t.col` by name while `t` does not take part in that join. Only retype/register
-                /// against a key the matched column's source actually contributes to, otherwise the
-                /// registration rewrites `t.col` to an unrelated table's column in later replacement.
-                if (is_qualified_matcher)
-                {
-                    bool matched_source_participates = false;
-                    for (const auto & join_using_column_inner_node : join_using_column_nodes)
-                    {
-                        const auto * inner_column_node = join_using_column_inner_node->as<ColumnNode>();
-                        if (inner_column_node
-                            && inner_column_node->getColumnSourceOrNull().get() == matched_column_node_typed.getColumnSource().get())
-                        {
-                            matched_source_participates = true;
-                            break;
-                        }
-                    }
-                    if (!matched_source_participates)
-                        continue;
-                }
-
                 auto using_column_type = join_using_column_node.getResultType();
-
-                /// Qualified matcher: the matched column is `t.col`, NOT the merged USING key.
-                /// Resolve the explicit identifier `t.col` and adopt its type, exactly matching
-                /// how an explicit reference is typed (IdentifierResolver::tryResolveIdentifierFromJoin).
-                /// The merged key's type is wrong here: in a nested JOIN it reflects the OUTER
-                /// join's siblings, while `t.col` only follows the joins `t` participates in.
-                if (is_qualified_matcher)
-                {
-                    Identifier explicit_identifier = matched_qualified_identifier;
-                    explicit_identifier.push_back(matched_column_name);
-                    auto explicit_lookup = IdentifierLookup{explicit_identifier, IdentifierLookupContext::EXPRESSION};
-                    IdentifierResolveContext explicit_resolve_settings;
-                    explicit_resolve_settings.allow_to_check_cte = false;
-                    explicit_resolve_settings.allow_to_check_database_catalog = false;
-                    auto explicit_resolve_result = tryResolveIdentifier(explicit_lookup, scope, explicit_resolve_settings);
-                    if (explicit_resolve_result.resolved_identifier)
-                        using_column_type = explicit_resolve_result.resolved_identifier->getResultType();
-                }
 
                 auto it = node_to_projection_name.find(matched_column_node);
                 matched_column_node = matched_column_node->clone();
@@ -1962,9 +1905,6 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
                 correctColumnExpressionType(matched_column_node->as<ColumnNode &>(), scope.context);
                 if (!matched_column_node->isEqual(*join_using_column_nodes.at(0)))
                     scope.join_columns_with_changed_types[matched_column_node] = join_using_column_nodes.at(0);
-
-                matched_column_retyped = true;
-                break;
             }
         }
     }
