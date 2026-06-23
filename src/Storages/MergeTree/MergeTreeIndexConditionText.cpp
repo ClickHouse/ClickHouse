@@ -914,11 +914,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
-        /// A needle with token separators is invalid for hasToken at row level (BAD_ARGUMENTS; hasTokenOrNull
-        /// returns NULL). The index would instead tokenize it into several tokens and silently replace the
-        /// predicate, hiding that behaviour. Bypass the index so the row-level function runs. The separator
-        /// rule matches HasTokenImpl: a separator is any ASCII non-alphanumeric character.
-        if (std::ranges::any_of(value_field.safeGet<String>(), [](unsigned char c) { return isASCII(c) && !isAlphaNumericASCII(c); }))
+        /// A needle containing a token separator is invalid for hasToken and raises BAD_ARGUMENTS during a
+        /// brute-force scan. hasToken uses Exact direct read, so the index would tokenize the needle and
+        /// silently replace the predicate (or prune the granule that would have thrown), hiding the exception;
+        /// bypass the index so the row-level function runs. hasTokenOrNull is not affected: it returns NULL
+        /// instead of throwing and only uses the index for granule pruning, which never changes its result.
+        /// A separator is any ASCII non-alphanumeric character, matching HasTokenImpl.
+        if (function_name == "hasToken"
+            && std::ranges::any_of(value_field.safeGet<String>(), [](unsigned char c) { return isASCII(c) && !isAlphaNumericASCII(c); }))
             return false;
 
         auto tokens = stringToTokens(value_field);
