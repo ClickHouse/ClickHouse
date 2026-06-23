@@ -54,3 +54,12 @@ ALTER TABLE t_pco_ttl MODIFY TTL d + INTERVAL 1 MONTH RECOMPRESS CODEC(PCO); -- 
 -- `PCO` wrapped in a chain must be rejected in TTL recompression as well.
 ALTER TABLE t_pco_ttl MODIFY TTL d + INTERVAL 1 MONTH RECOMPRESS CODEC(PCO, ZSTD(1)); -- { serverError BAD_ARGUMENTS }
 DROP TABLE t_pco_ttl;
+
+-- `temporary_files_codec` is another untyped codec path: it is resolved without a column type when
+-- an external sort/aggregation spills to disk. `PCO` must be rejected before the first spill write
+-- instead of failing deep inside the compression of the temporary file.
+SET temporary_files_codec = 'PCO';
+SET max_bytes_before_external_group_by = 1, max_bytes_ratio_before_external_group_by = 0;
+SELECT number, count() FROM numbers(1000000) GROUP BY number FORMAT Null; -- { serverError BAD_ARGUMENTS }
+SET max_bytes_before_external_sort = 1, max_bytes_ratio_before_external_sort = 0;
+SELECT number FROM numbers(1000000) ORDER BY number FORMAT Null; -- { serverError BAD_ARGUMENTS }

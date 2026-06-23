@@ -60,6 +60,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int INVALID_STATE;
     extern const int LOGICAL_ERROR;
     extern const int NOT_ENOUGH_SPACE;
@@ -74,7 +75,18 @@ inline CompressionCodecPtr getCodec(const TemporaryDataOnDiskSettings & settings
     if (settings.compression_codec.empty())
         return CompressionCodecFactory::instance().get("LZ4");
 
-    return CompressionCodecFactory::instance().get(settings.compression_codec);
+    auto codec = CompressionCodecFactory::instance().get(settings.compression_codec);
+
+    /// `temporary_files_codec` is an untyped compression setting: the codec is resolved without a
+    /// column type. A codec that needs the column type to compress (e.g. the experimental `PCO`)
+    /// could otherwise be accepted here and only fail later, at the first spill write. Reject it up
+    /// front, consistent with the other untyped compression settings (`marks_compression_codec`, ...).
+    if (codec->requiresColumnTypeToCompress())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Codec {} requires a column type to compress and cannot be used for temporary files",
+            settings.compression_codec);
+
+    return codec;
 }
 
 }
