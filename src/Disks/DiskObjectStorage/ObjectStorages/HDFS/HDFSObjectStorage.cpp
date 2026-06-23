@@ -27,6 +27,38 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+/// HDFS has no native ETag, so we synthesise a version identifier from the
+/// attributes available in `hdfsFileInfo`: the last modification time and the
+/// size. This is used as a cache key the same way an S3 ETag is — an in-place
+/// rewrite that changes either the mtime or the size invalidates the cache.
+///
+/// IMPORTANT: the precision of this token is only one second. Although the HDFS
+/// NameNode keeps the modification time in milliseconds, libhdfs3 truncates it
+/// to seconds when populating `hdfsFileInfo::mLastMod` (it computes
+/// `getModificationTime() / 1000`), and the public C API exposes no other field
+/// (no file id, no checksum) that changes on a content rewrite. Consequently a
+/// rewrite that happens within the same wall-clock second AND produces the exact
+/// same byte size but different content cannot be distinguished and yields the
+/// same ETag.
+///
+/// This is acceptable for the `_etag` virtual column, but it means caches keyed
+/// on this token (`use_parquet_metadata_cache`, the filesystem cache, the page
+/// cache) can serve stale data in that rare same-second/same-size case. For
+/// Parquet this is extremely unlikely because the footer almost always changes
+/// the file length, and it mirrors the mtime-based versioning already used for
+/// local files (which, however, has sub-second precision). If stronger
+/// guarantees are needed, libhdfs3 must be extended to expose the millisecond
+/// modification time.
+std::string getHDFSETag(tTime last_modified, tOffset size)
+{
+    return fmt::format("{}_{}", static_cast<Int64>(last_modified), static_cast<Int64>(size));
+}
+
+}
+
 void HDFSObjectStorage::initializeHDFSFS() const
 {
     if (initialized)
@@ -207,8 +239,9 @@ ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path, bo
 std::optional<ObjectMetadata> HDFSObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
 {
     initializeHDFSFS();
-    auto * file_info = wrapErr<hdfsFileInfo *>(hdfsGetPathInfo, hdfs_fs.get(), path.data());
-    if (!file_info)
+    HDFSFileInfo file_info;
+    file_info.file_info = wrapErr<hdfsFileInfo *>(hdfsGetPathInfo, hdfs_fs.get(), path.data());
+    if (!file_info.file_info)
     {
         if (errno == ENOENT)
             return {};
@@ -216,12 +249,13 @@ std::optional<ObjectMetadata> HDFSObjectStorage::tryGetObjectMetadata(const std:
         throw Exception(ErrorCodes::HDFS_ERROR,
                         "Cannot get file info for: {}. Error: {}", path, hdfsGetLastError());
     }
+    file_info.length = 1;
 
     ObjectMetadata metadata;
-    metadata.size_bytes = static_cast<size_t>(file_info->mSize);
-    metadata.last_modified = Poco::Timestamp::fromEpochTime(file_info->mLastMod);
+    metadata.size_bytes = static_cast<size_t>(file_info.file_info->mSize);
+    metadata.last_modified = Poco::Timestamp::fromEpochTime(file_info.file_info->mLastMod);
+    metadata.etag = getHDFSETag(file_info.file_info->mLastMod, file_info.file_info->mSize);
 
-    hdfsFreeFileInfo(file_info, 1);
     return metadata;
 }
 
@@ -266,7 +300,7 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
                 ObjectMetadata{
                     .size_bytes = static_cast<uint64_t>(ls.file_info[i].mSize),
                     .last_modified = Poco::Timestamp::fromEpochTime(ls.file_info[i].mLastMod),
-                    .etag = {},
+                    .etag = getHDFSETag(ls.file_info[i].mLastMod, ls.file_info[i].mSize),
                     .tags = {},
                     .attributes = {},
                 }));
