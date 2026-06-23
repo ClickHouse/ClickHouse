@@ -227,8 +227,16 @@ public:
 
     void start()
     {
-        for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError([this] { workerLoop(); });
+        try
+        {
+            for (size_t i = 0; i < num_threads; ++i)
+                pool.scheduleOrThrowOnError([this] { workerLoop(); });
+        }
+        catch (...)
+        {
+            shutdown();
+            throw;
+        }
     }
 
     void submit(QueryRunnerJob job)

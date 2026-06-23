@@ -152,7 +152,7 @@ ${CLICKHOUSE_CLIENT} --user user_04337 -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.q
 
 ${CLICKHOUSE_CLIENT} -q "SELECT 'cluster cancel on detach'"
 CANCEL_MARKER="04337_cluster_cancel_${CLICKHOUSE_DATABASE}"
-STUCK_QUERY="SELECT sleepEachRow(3) FROM numbers(100500) SETTINGS max_block_size = 1, log_comment = '${CANCEL_MARKER}'"
+STUCK_QUERY="SELECT sleepEachRow(3) FROM numbers(100500) SETTINGS max_block_size = 1, log_comment = ''${CANCEL_MARKER}''"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.query_runner_cancel (query String, database String) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost', shard_num = 1, mode = 'asynchronous'"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO ${CLICKHOUSE_DATABASE}.query_runner_cancel SELECT '${STUCK_QUERY}', currentDatabase()"
 started=0
