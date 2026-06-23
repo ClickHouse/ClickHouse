@@ -41,10 +41,6 @@ ExternalQueryBuilder::ExternalQueryBuilder(
     , where(where_)
     , quoting_style(quoting_style_)
 {
-    // SQL-standard DBs (PostgreSQL, Cassandra, etc.) treat '\' as a literal character, so use '' escaping.
-    if (quoting_style == IdentifierQuotingStyle::DoubleQuotes)
-        format_settings.values.escape_quote_with_quote = true;
-
     if (table.empty() && query.empty())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Setting `table` or `query` must be non empty");
 
@@ -242,7 +238,7 @@ std::string ExternalQueryBuilder::composeUpdateQuery(const std::string & update_
 }
 
 
-std::string ExternalQueryBuilder::composeLoadIdsQuery(const VectorWithMemoryTracking<UInt64> & ids) const
+std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> & ids) const
 {
     if (!dict_struct.id)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Simple key required for method");
@@ -326,7 +322,7 @@ std::string ExternalQueryBuilder::composeLoadIdsQuery(const VectorWithMemoryTrac
 
 
 std::string ExternalQueryBuilder::composeLoadKeysQuery(
-    const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix) const
+    const Columns & key_columns, const std::vector<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix) const
 {
     if (!dict_struct.key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Composite key required for method");
@@ -437,7 +433,7 @@ void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, size
 }
 
 
-void ExternalQueryBuilder::composeInWithTuples(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows,
+void ExternalQueryBuilder::composeInWithTuples(const Columns & key_columns, const std::vector<size_t> & requested_rows,
                                                WriteBuffer & out, size_t beg, size_t end) const
 {
     composeKeyTupleDefinition(out, beg, end);
@@ -504,7 +500,7 @@ void ExternalQueryBuilder::composeUpdateCondition(const std::string & update_fie
     writeChar('\'', out);
 }
 
-void ExternalQueryBuilder::composeIdsCondition(const VectorWithMemoryTracking<UInt64> & ids, WriteBuffer & out) const
+void ExternalQueryBuilder::composeIdsCondition(const std::vector<UInt64> & ids, WriteBuffer & out) const
 {
     writeQuoted(dict_struct.id->name, out);
     writeString(" IN (", out);
@@ -522,7 +518,7 @@ void ExternalQueryBuilder::composeIdsCondition(const VectorWithMemoryTracking<UI
     writeString(")", out);
 }
 
-void ExternalQueryBuilder::composeKeysCondition(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix, WriteBuffer & out) const
+void ExternalQueryBuilder::composeKeysCondition(const Columns & key_columns, const std::vector<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix, WriteBuffer & out) const
 {
     bool first = true;
 
