@@ -79,7 +79,7 @@ struct MergeTreeIndexDeserializationState
     const IMergeTreeIndexCondition * condition;
     const IMergeTreeDataPart & part;
     const IMergeTreeIndex & index;
-    const MarkRanges * original_ranges;
+    const MarkRanges * readable_ranges;
 };
 
 }
