@@ -24,6 +24,7 @@
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/PatchParts/SourcePartsSetForPatch.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
+#include <Storages/MergeTree/UniqueKey/Txn/UniqueKeyManifest.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Statistics/Statistics.h>
 #include <base/defines.h>
@@ -184,6 +185,21 @@ public:
     ColumnsStatistics loadStatistics(const Names & required_columns) const;
     Estimates getEstimates() const;
     void setEstimates(const Estimates & new_estimates);
+
+    /// UNIQUE KEY — lightweight per-part transaction metadata (`creation_csn`,
+    /// `is_marker`), lazily read from `unique_key.txt` on first access and
+    /// cached. Returns `nullopt` for legacy parts that carry no manifest. The
+    /// full `bitmaps_created` / `forwarded` lists are parsed transiently and
+    /// discarded — they are not retained on active parts. Throws
+    /// `CORRUPTED_DATA` on an unparseable manifest (fail-closed: a broken
+    /// manifest must not yield a bogus `creation_csn`).
+    std::optional<UniqueKeyTxn::UniqueKeyPartMeta> getUniqueKeyMeta() const;
+
+    /// Populate the lightweight cache directly, bypassing the disk read. Used
+    /// by the DELETE commit driver to mirror a freshly-published marker's
+    /// `creation_csn` / `is_marker` into the in-process part so a same-process
+    /// csn-seed sees it without waiting for an ATTACH reload.
+    void setUniqueKeyMeta(const UniqueKeyTxn::UniqueKeyPartMeta & meta);
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
@@ -781,6 +797,14 @@ private:
     /// Lazily initialized on a first access.
     mutable std::mutex estimates_mutex;
     mutable std::optional<Estimates> estimates TSA_GUARDED_BY(estimates_mutex);
+
+    /// UNIQUE KEY — lightweight `unique_key.txt` projection, lazily loaded.
+    /// `unique_key_meta_loaded` distinguishes "not yet read" from "read, but the
+    /// part is legacy (no manifest)" — the latter caches a `nullopt`
+    /// `unique_key_meta` so the disk check runs at most once.
+    mutable std::mutex unique_key_meta_mutex;
+    mutable bool unique_key_meta_loaded TSA_GUARDED_BY(unique_key_meta_mutex) = false;
+    mutable std::optional<UniqueKeyTxn::UniqueKeyPartMeta> unique_key_meta TSA_GUARDED_BY(unique_key_meta_mutex);
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();

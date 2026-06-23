@@ -25,6 +25,7 @@
 #include <Interpreters/TransactionLog.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCheckQuery.h>
+#include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTPartition.h>
 #include <Planner/Utils.h>
@@ -47,6 +48,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/MergeTree/MergeTreeSinkPatch.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyDelete.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/PartitionCommands.h>
@@ -204,6 +206,16 @@ StorageMergeTree::StorageMergeTree(
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
 
     loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
+
+    /// UNIQUE KEY txn-state recovery. Runs here, AFTER loadDataParts releases
+    /// the exclusive DataPartsLock: recovery's csn-seed path takes a shared
+    /// parts lock, which would self-deadlock under that exclusive lock.
+    if (!isStaticStorage())
+    {
+        auto uk_metadata = getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/false);
+        if (uk_metadata && uk_metadata->hasUniqueKey())
+            runUniqueKeyTxnRecovery();
+    }
 
     if (mode < LoadingStrictnessLevel::ATTACH && !getDataPartsForInternalUsage().empty() && !isStaticStorage())
         throw Exception(ErrorCodes::INCORRECT_DATA,
@@ -394,9 +406,26 @@ CursorPromotersMap StorageMergeTree::buildPromoters()
     return constructPromoters(/*committing_block_numbers=*/{}, std::move(partition_ranges));
 }
 
-std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr) const
+std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr local_context) const
 {
-    return getTotalActiveSizeInRows();
+    /// Fast path for non-UK tables: the cached atomic is correct and cheap.
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/false);
+    if (!metadata_snapshot || !metadata_snapshot->hasUniqueKey())
+        return getTotalActiveSizeInRows();
+
+    /// UNIQUE KEY: derive BOTH the raw total and the dead-row total from a
+    /// SINGLE parts snapshot. Reusing `getTotalActiveSizeInRows()` could pair
+    /// a pre-merge sum with a post-merge snapshot (merge publish/retire is not
+    /// atomic to this reader) and return a count matching neither state.
+    auto parts = getDataPartsVectorForInternalUsage();
+    UInt64 total = 0;
+    for (const auto & part : parts)
+    {
+        if (part)
+            total += part->rows_count;
+    }
+    size_t dead = getDeadRowsForUniqueKey(parts, local_context);
+    return (dead >= total) ? UInt64{0} : total - dead;
 }
 
 std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr local_context) const
@@ -820,6 +849,24 @@ void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
     if (it == current_mutations_by_version.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find mutation {}", mutation_id);
     it->second.writeCSN(csn);
+}
+
+void StorageMergeTree::deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr query_context)
+{
+    /// Thin dispatcher: validate the query shape and UNIQUE KEY status, then
+    /// delegate to `executeUniqueKeyDelete` (see it for the full contract).
+    /// ALTER DELETE on UK stays rejected earlier in `checkMutationIsPossible`.
+    assertNotReadonly();
+
+    const auto & delete_query = query_ptr->as<ASTDeleteQuery &>();
+    if (!delete_query.predicate)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "DELETE on UNIQUE KEY tables requires a WHERE predicate");
+
+    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/false);
+    if (!metadata_snapshot->hasUniqueKey())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "deleteByUniqueKey called on a table without UNIQUE KEY");
+
+    executeUniqueKeyDelete(*this, query_ptr, query_context);
 }
 
 void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)

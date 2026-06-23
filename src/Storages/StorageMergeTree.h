@@ -126,6 +126,32 @@ public:
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
+    /// UNIQUE KEY synchronous DELETE path.
+    ///
+    /// `DELETE FROM uk_table WHERE <predicate>` on UNIQUE KEY tables is
+    /// dispatched here by `InterpreterDeleteQuery` instead of going through
+    /// the `_row_exists` lightweight-delete mutation. A 0-row marker part is
+    /// published to record the operation; matching rows are added to the
+    /// bitmap sidecar of each affected active part under the per-partition UK
+    /// mutex. Synchronous — returns after all bitmap files are durable.
+    ///
+    /// Scope and limitations:
+    ///   * Not transactional. Between predicate evaluation and the per-partition
+    ///     mutex acquire, a concurrent merge may swallow a targeted part into a
+    ///     covering one; the DELETE skips that part rather than retargeting
+    ///     stale row numbers (re-issue the predicate to catch them).
+    ///   * No cross-partition atomicity — each partition's bitmap write is its
+    ///     own critical section; a crash mid-statement leaves a partial delete.
+    ///   * Logical delete: matching rows are added to the delete bitmap; the
+    ///     on-disk rows (and their space) are reclaimed only by a later merge.
+    ///   * TODO(unique-key): single-node StorageMergeTree only — ReplicatedMergeTree
+    ///     and distributed (`ON CLUSTER`) dispatch not yet implemented.
+    ///   * TODO(unique-key): merge-side reconciliation (bitmap forwarding +
+    ///     late-kill on merge commit) to remove the concurrent-merge skip.
+    ///   * TODO(unique-key): bitmap GC (see `PartitionTxnController::runGcRound`) not
+    ///     yet implemented — superseded delete bitmaps are not reclaimed.
+    void deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr context);
+
 private:
 
     /// Mutex and condvar for synchronous mutations wait
@@ -313,6 +339,8 @@ private:
     friend class MergePlainMergeTreeTask;
     friend class MutatePlainMergeTreeTask;
     friend class MergeTreeCleanupThread;
+    /// UNIQUE KEY synchronous DELETE helper — needs `allocateBlockNumber`.
+    friend void executeUniqueKeyDelete(StorageMergeTree &, const ASTPtr &, ContextPtr);
 
     struct DataValidationTasks : public IStorage::DataValidationTasksBase
     {

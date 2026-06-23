@@ -38,6 +38,7 @@
 #include <Poco/Timestamp.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Storages/MergeTree/UniqueKey/Txn/UniqueKeyPartitionMutex.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -94,6 +95,12 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 class MergeTreeDeduplicationLog;
+
+namespace UniqueKeyTxn
+{
+    class PartitionTxnController;
+}
+
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
 namespace ErrorCodes
@@ -521,6 +528,12 @@ public:
                   LoadingStrictnessLevel mode,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
+    /// Out-of-line so the `unique_key_txn_controllers` map's
+    /// `unique_ptr<UniqueKeyTxn::PartitionTxnController>` members are destroyed in
+    /// `MergeTreeData.cpp` (where the type is complete), not in every TU that
+    /// only forward-declares it.
+    ~MergeTreeData() override;
+
     /// Build a block of minmax and count values of a MergeTree table. These values are extracted
     /// from minmax_indices, the first expression of primary key, and part rows.
     ///
@@ -731,6 +744,16 @@ public:
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartState & state, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
 
+    /// Returns a shared, read-only snapshot of the Active parts in a single
+    /// partition. Callers iterate the returned vector outside any lock; the
+    /// snapshot is consistent at the moment of the call. If a writer publishes
+    /// a new part after the pointer is obtained, the caller observes the
+    /// slightly-stale view — that's safe for snap-then-commit flows that hold
+    /// a higher-level coordination primitive (e.g. the UK partition mutex).
+    /// Briefly acquires `data_parts_mutex` shared (via `readLockParts`) to
+    /// materialize the vector.
+    DataPartsVectorPtr getActivePartsInPartitionShared(const String & partition_id) const;
+
     /// Returns the number of data mutations suitable for applying on the fly.
     virtual MutationCounters getMutationCounters() const = 0;
 
@@ -759,6 +782,23 @@ public:
     DataPartsVector getVisibleDataPartsVectorInPartition(ContextPtr local_context, const String & partition_id) const;
     DataPartsVector getVisibleDataPartsVectorInPartitions(ContextPtr local_context, const std::unordered_set<String> & partition_ids) const;
 
+    /// UNIQUE KEY — return the per-partition mutex used to serialize
+    /// INSERT / DELETE / merge-commit writers within a partition. Stable
+    /// for the table's lifetime; repeated calls for the same partition_id
+    /// return the same mutex.
+    ///
+    /// SharedMergeTree must NOT call this — it uses optimistic CAS via
+    /// Keeper and has no process-local equivalent.
+    std::shared_ptr<std::mutex> getOrCreatePartitionMutex(const String & partition_id) const;
+
+    /// UNIQUE KEY — lazily instantiate and return the partition's
+    /// transaction state. Engine factory picks the strategy bundle:
+    /// `MakeLocalStrategies` for plain MergeTree (Shared bundle for
+    /// replicated engines is not yet implemented). The returned pointer is
+    /// owned by `MergeTreeData::unique_key_txn_controllers` and stays valid for
+    /// the table's lifetime (no eviction).
+    UniqueKeyTxn::PartitionTxnController & getOrCreateTxnController(const String & partition_id) const;
+
     /// Return the number of marks in all parts
     size_t getTotalMarksCount() const;
 
@@ -782,6 +822,15 @@ public:
     size_t getTotalActiveSizeInBytes() const;
     size_t getTotalActiveSizeInRows() const;
     size_t getTotalUncompressedBytesInPatches() const;
+
+    /// UNIQUE KEY — sum of delete-bitmap cardinalities across the given parts,
+    /// each read at its partition snapshot. Used by `totalRows` /
+    /// `totalRowsByPartitionPredicate` to correct the trivial-count shortcut
+    /// (which ignores the bitmap). Uses the same `(parts, csn, bitmap_at)`
+    /// source the read path uses, so `count()` and `SELECT` agree; non-UK /
+    /// legacy parts contribute 0. Bitmap read errors propagate rather than
+    /// silently over-counting on corrupt bitmaps.
+    size_t getDeadRowsForUniqueKey(const DataPartsVector & parts, ContextPtr query_context) const;
 
     size_t getAllPartsCount() const;
     size_t getActivePartsCount() const;
@@ -1601,6 +1650,24 @@ protected:
     mutable std::mutex patch_parts_metadata_mutex;
     mutable std::unordered_map<String, StorageMetadataPtr> patch_parts_metadata_cache;
 
+    /// UNIQUE KEY — per-partition writer mutex registry. INSERT / DELETE /
+    /// merge-commit hold the partition's mutex across their commit window
+    /// to serialize concurrent writers in the same partition. The registry
+    /// object is cheap (empty map + map-level mutex); kept `mutable`
+    /// because `getOrCreatePartitionMutex` is logically `const` from the
+    /// caller's point of view (observing / installing an ephemeral
+    /// coordination primitive, not mutating table data).
+    mutable UniqueKeyPartitionMutex unique_key_partition_mutex;
+
+    /// UNIQUE KEY — per-partition transaction state map. Lazily populated
+    /// by `getOrCreateTxnController(partition_id)`. Each entry owns a
+    /// `PartitionTxnController` wired with the engine-appropriate strategy
+    /// bundle. `mutable` for the same reason as `unique_key_partition_mutex`:
+    /// the accessor is logically const (installing ephemeral coordination
+    /// state, not mutating table data).
+    mutable std::mutex unique_key_txn_controllers_mutex;
+    mutable std::unordered_map<String, std::unique_ptr<UniqueKeyTxn::PartitionTxnController>> unique_key_txn_controllers;
+
     MergeTreePartsMover parts_mover;
 
     /// Executors are common for both ReplicatedMergeTree and plain MergeTree
@@ -1809,6 +1876,19 @@ protected:
     virtual void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) = 0;
 
     void resetSerializationHints(const DataPartsLock & lock);
+
+    /// UNIQUE KEY — per-partition txn-state recovery.
+    /// Enumerates `tmp_<op>_<part>/` dirs at the table's data root across all
+    /// disks, groups them by partition_id, gathers each partition's active
+    /// parts, and drives `PartitionTxnController::recover`, which sweeps the
+    /// `(target, csn)` sidecars listed in each tmp's `unique_key.txt`
+    /// manifest, then removes the tmp dir. SMT is a no-op (Keeper
+    /// authoritative). Errors are logged per tmp dir and recovery continues.
+    /// Must run WITHOUT `data_parts_mutex` held — the csn-seed path takes its
+    /// own shared parts lock, so it would self-deadlock under the exclusive
+    /// `lockParts`; called from the StorageMergeTree ctor after loadDataParts
+    /// releases that lock.
+    void runUniqueKeyTxnRecovery();
 
     template <typename AddedParts, typename RemovedParts>
     void updateSerializationHints(const AddedParts & added_parts, const RemovedParts & removed_parts, const DataPartsLock & lock);

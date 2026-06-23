@@ -748,6 +748,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     "Set the session setting `allow_experimental_unique_key = 1` to enable it.");
             }
 
+            /// Replicated/shared engines reject UNIQUE KEY earlier in
+            /// `StorageFactory::get` via `features.supports_unique_key = false`
+            /// (only the non-replicated MergeTree variants set it true), so a
+            /// replicated table can never reach the process-local txn strategies.
+
             /// Reject expression-style elements at parse time: runtime consumers
             /// look up keys via `block.getByName(<column name>)`, so an
             /// expression-style UK passes DDL but crashes the first INSERT.

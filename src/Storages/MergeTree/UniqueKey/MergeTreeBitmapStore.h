@@ -2,9 +2,11 @@
 
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
+#include <Storages/MergeTree/UniqueKey/IBitmapStore.h>
 #include <Common/SharedMutex.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -15,6 +17,7 @@ namespace DB
 
 class IDataPartStorage;
 class IMergeTreeDataPart;
+class MergeTreeData;
 
 /// UNIQUE KEY — MergeTree-backed bitmap store. Bitmap files are named
 /// `delete_bitmap_<csn>.rbm`; each commit allocates a global
@@ -22,12 +25,33 @@ class IMergeTreeDataPart;
 /// at that csn. Readers pin a `snapshot_csn` and pick the file with
 /// `max csn ≤ snapshot_csn` per part.
 ///
+/// Also serves as the Local implementation of the transaction layer's
+/// `IBitmapStore` seam: the `PartName`-keyed overrides resolve a part name
+/// to its `(storage, cache_identity)` over the `MergeTreeData` + partition_id
+/// supplied to the resolution-context ctor, then forward to the storage-level
+/// methods below. The cache-only ctor leaves the context unset; the
+/// `PartName` overrides then throw `LOGICAL_ERROR`.
+///
 /// Holds a shared_ptr to the process-wide `DeleteBitmapCache` (owned by `Context`); null when
 /// caching is disabled. Shared ownership avoids a dangling cache reference.
-class MergeTreeBitmapStore
+class MergeTreeBitmapStore : public UniqueKeyTxn::IBitmapStore
 {
 public:
     explicit MergeTreeBitmapStore(DeleteBitmapCachePtr cache_ = nullptr);
+
+    /// Resolution-context ctor: the `PartName`-keyed `IBitmapStore` overrides
+    /// resolve names over `data`'s active+outdated parts in `partition_id`.
+    /// `data` must outlive the store.
+    MergeTreeBitmapStore(const MergeTreeData & data, String partition_id, DeleteBitmapCachePtr cache_);
+
+    /// `IBitmapStore` (txn seam). Resolve `part`/`target` to its
+    /// `(storage, cache_identity)` over the resolution context, then forward
+    /// to the storage-level methods. Throw `LOGICAL_ERROR` if the store was
+    /// built with the cache-only ctor (no resolution context).
+    std::pair<std::shared_ptr<const DeleteBitmap>, UniqueKeyTxn::CSN>
+        readBitmap(const UniqueKeyTxn::PartName & part, UniqueKeyTxn::CSN snapshot_csn) override;
+    void installBitmap(const UniqueKeyTxn::PartName & target, UniqueKeyTxn::CSN csn, const DeleteBitmap & bitmap) override;
+    void removeBitmap(const UniqueKeyTxn::PartName & target, UniqueKeyTxn::CSN csn) override;
 
     /// Install `bitmap` for `part` at `csn`. Atomic. Caller has already
     /// computed the cumulative `prev_bitmap ∪ new_kills`. Caller MUST
@@ -78,8 +102,37 @@ public:
     /// entries. Storage is not touched. Idempotent.
     void dropPart(const std::string & part_id);
 
+    /// Precisely remove the single `(part_id, csn)` bitmap file, drop its
+    /// cache entry, and erase that csn from the in-memory version index.
+    /// Idempotent — a missing file/entry is not an error. Used by commit
+    /// rollback and recovery's orphan tmp-scan to reclaim a bitmap named in
+    /// an aborted commit's `bitmaps_created`. Caller must serialize this with
+    /// `installBitmap` / `gcObsoleteBitmaps` / `dropPart` for the same part
+    /// under the per-partition UK mutex (see `installBitmap`).
+    void removeBitmap(
+        IDataPartStorage & storage,
+        const std::string & part_id,
+        BitmapVersion csn);
+
 private:
     DeleteBitmapCachePtr cache;
+
+    /// Resolution context for the `PartName`-keyed `IBitmapStore` overrides.
+    /// Unset under the cache-only ctor, in which case those overrides throw.
+    /// Non-owning — the resolution-context ctor's caller keeps `data` alive
+    /// longer than the store.
+    const MergeTreeData * resolution_data = nullptr;
+    String resolution_partition_id;
+
+    /// Per-part handle a `PartName` resolves to over `resolution_data`:
+    /// `storage` (null when the part is gone) + the part's
+    /// `getDeleteBitmapCacheIdentity` (empty → caller falls back to the name).
+    struct ResolvedPart
+    {
+        IDataPartStorage * storage = nullptr;
+        std::string cache_identity;
+    };
+    ResolvedPart resolvePart(const UniqueKeyTxn::PartName & part_name) const;
 
     /// Per-`part_id` sorted ascending csn list. Lazily populated on
     /// first access; updated by `installBitmap` and `gcObsoleteBitmaps`.

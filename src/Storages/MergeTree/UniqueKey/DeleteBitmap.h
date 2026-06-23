@@ -143,6 +143,12 @@ private:
 
 using DeleteBitmapPtr = std::shared_ptr<DeleteBitmap>;
 
+/// Read-side handle: the bitmap a reader fetches from a query snapshot is
+/// shared const (multiple readers, copy-mutated by writers). Read-path fields
+/// (`RangesInDataPart::delete_bitmap`, `MergeTreeReadTaskInfo::delete_bitmap`)
+/// hold this so the const-ness from `IBitmapStore::readBitmap` is preserved.
+using ConstDeleteBitmapPtr = std::shared_ptr<const DeleteBitmap>;
+
 /// Result of a tolerant, non-throwing `.rbm` parse for inspection tooling
 /// (`clickhouse-disk read-bitmap`): a malformed magic / version / CRC / body is
 /// reported via the flags below rather than thrown. A failed stage leaves later
