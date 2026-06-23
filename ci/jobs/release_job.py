@@ -16,6 +16,15 @@ _GH_TOKEN_SECRET = Secret.Config(
     name="/github-tokens/robot-1",
     type=Secret.Type.AWS_SSM_PARAMETER,
 )
+# Docker Hub robot credentials for pushing release images. The legacy
+# `release-maker` runner was logged in to Docker Hub out-of-band; the
+# ephemeral `release-maker-asg` runners are not, so the registry push must
+# authenticate explicitly (mirrors `docker_login` in ci/jobs/docker_server.py).
+_DOCKERHUB_USERNAME = "robotclickhouse"
+_DOCKERHUB_SECRET = Secret.Config(
+    name="dockerhub_robot_password",
+    type=Secret.Type.AWS_SSM_PARAMETER,
+)
 
 _GEESEFS_VERSION = "v0.43.5"
 
@@ -496,6 +505,21 @@ def main():
                 )
 
             return build
+
+        def docker_login():
+            Shell.check(
+                f"docker login --username {shlex.quote(_DOCKERHUB_USERNAME)}"
+                f" --password-stdin",
+                strict=True,
+                stdin_str=_DOCKERHUB_SECRET.get_value(),
+                encoding="utf-8",
+            )
+
+        step(
+            name="Docker Hub Login",
+            command=docker_login,
+            workdir=REPO_PATH,
+        )
 
         step(
             name="Docker clickhouse/clickhouse-server Building",
