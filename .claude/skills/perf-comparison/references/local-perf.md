@@ -232,11 +232,13 @@ diff <query_index> <old_median> <new_median> <relative_diff> <pvalue>
 
 Meaningful local signal:
 
+- use at least `--runs 3`; prefer `--runs 7` or more for noisy queries;
 - `abs(relative_diff) >= report-threshold`;
 - `pvalue <= 0.05`;
-- enough samples;
-- repeat agrees if borderline;
+- repeat the local comparison before calling a regression real, especially if local data is the only evidence;
 - server self-comparison or rerun is stable if the result is surprising.
+
+Do not use a single local run as a standalone verdict. If the result has not repeated, report it as `needs rerun` or `local-only evidence`, not a real regression.
 
 ## Optional trace analysis on local servers
 
