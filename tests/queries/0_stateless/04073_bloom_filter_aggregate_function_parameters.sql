@@ -64,3 +64,12 @@ SELECT groupBloomFilterState(1000, 0.0)(number) FROM numbers(10); -- { serverErr
 
 -- More than 3 parameters must throw
 SELECT groupBloomFilterState(1000, 0.01, 0, 99)(number) FROM numbers(10); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+-- Auto-sized parameters requiring a filter larger than the maximum allowed size must throw before casting to size_t
+SELECT groupBloomFilterState(1000000000000, 0.0000001)(number) FROM numbers(10); -- { serverError BAD_ARGUMENTS }
+
+-- Auto-sized parameters around the maximum allowed size must throw if the rounded filter would be too large
+SELECT groupBloomFilterState(200000000, 0.0001)(number) FROM numbers(10); -- { serverError BAD_ARGUMENTS }
+
+-- Explicit filter size above the maximum allowed size must throw
+SELECT groupBloomFilterState(268435464, 5)(number) FROM numbers(10); -- { serverError BAD_ARGUMENTS }

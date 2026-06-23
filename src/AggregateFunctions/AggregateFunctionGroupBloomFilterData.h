@@ -44,7 +44,13 @@ inline size_t bloomFilterOptimalSizeBytes(size_t expected_elements, double false
 
     double ln2 = std::numbers::ln2;
     double bits = -static_cast<double>(expected_elements) * std::log(false_positive_rate) / (ln2 * ln2);
-    size_t bytes = static_cast<size_t>(std::ceil(bits / 8.0));
+    double bytes_double = std::ceil(bits / 8.0);
+    if (!std::isfinite(bytes_double) || bytes_double > static_cast<double>(BLOOM_FILTER_MAX_SIZE_BYTES))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Bloom filter parameters expected_elements={} and false_positive_rate={} require a filter larger than the maximum allowed size {} bytes",
+            expected_elements, false_positive_rate, BLOOM_FILTER_MAX_SIZE_BYTES);
+
+    size_t bytes = static_cast<size_t>(bytes_double);
     /// Round up to multiple of 8 bytes (64 bits) for alignment
     bytes = ((bytes + 7) / 8) * 8;
     if (bytes == 0)
