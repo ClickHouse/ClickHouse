@@ -123,6 +123,9 @@ static struct InitFiu
     ONCE(libcxx_hardening_out_of_bounds_assertion) \
     ONCE(receive_timeout_on_table_status_response) \
     ONCE(delta_kernel_fail_literal_visitor) \
+    REGULAR(delta_kernel_force_credentials_fingerprint_drift) \
+    ONCE(delta_kernel_force_stale_token_error) \
+    REGULAR(object_storage_force_refresh_callback_success) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
     ONCE(space_saving_copy_arena_throw) \
     REGULAR(keepermap_fail_drop_data) \
@@ -157,6 +160,7 @@ static struct InitFiu
     ONCE(write_file_operation_fail_on_read) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
+    REGULAR(storage_cluster_read_sleep) \
     ONCE(backup_add_empty_memory_table) \
     PAUSEABLE_ONCE(backup_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_on_start) \
@@ -201,8 +205,12 @@ static struct InitFiu
     REGULAR(wide_part_writer_fail_in_add_streams) \
     REGULAR(compact_part_writer_fail_in_add_streams) \
     REGULAR(transaction_force_unknown_state_after_commit) \
+    ONCE(attach_to_group_failure) \
+    ONCE(thread_group_switcher_post_attach_failure) \
     PAUSEABLE(transaction_after_commit_pause) \
-    REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc)
+    REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
+    REGULAR(tcp_handler_fail_connection_setup) \
+    REGULAR(distributed_plan_status_check_reenqueue_fault)
 
 namespace FailPoints
 {
