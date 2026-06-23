@@ -134,7 +134,7 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         options.append("--no-random-merge-tree-settings")
 
     # allow constraint
-    client_options.append(f"enable_analyzer=1")
+    client_options.append("enable_analyzer=1")
 
     if i > 0:
         options.append("--order=random")
@@ -625,7 +625,7 @@ def main():
         query_killer = RandomQueryKiller(interval=3.0)
 
     try:
-        func_pipes = run_func_test(
+        run_func_test(
             args.test_cmd,
             args.output_folder,
             args.num_parallel,

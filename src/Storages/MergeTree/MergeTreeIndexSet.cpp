@@ -4,6 +4,7 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 
@@ -182,23 +183,36 @@ void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBu
     /// Due to using of position-dependent encoding, we have to read into a temporary block and then move to the accumulating block.
     for (size_t i = 0; i < num_columns; ++i)
     {
-        auto column = block_for_reading.getByPosition(i).column;
+        /// A reference into the scratch block (not a copy), so it stays uniquely owned: `mutate` below is a no-op
+        /// and the `popBack` reset is written back, leaving the scratch column empty for the next granule.
+        auto & column = block_for_reading.getByPosition(i).column;
         ISerialization::DeserializeBinaryBulkStatePtr state;
 
         serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
         serializations[i]->deserializeBinaryBulkWithMultipleStreams(column, 0, rows_to_read, settings, state, nullptr);
 
-        block.getByPosition(i).column->assumeMutableRef().insertRangeFrom(*column, 0, rows_to_read);
-        column->assumeMutableRef().popBack(rows_to_read);
+        {
+            auto mutable_column = IColumn::mutate(std::move(block.getByPosition(i).column));
+            mutable_column->insertRangeFrom(*column, 0, rows_to_read);
+            block.getByPosition(i).column = std::move(mutable_column);
+        }
+
+        {
+            auto mutable_column = IColumn::mutate(std::move(column));
+            mutable_column->popBack(rows_to_read);
+            column = std::move(mutable_column);
+        }
     }
 
     /// The last column is designating the granule
     auto & elem = block.getByPosition(num_columns);
-    MutableColumnPtr granule_num_column = elem.column->assumeMutable();
+    MutableColumnPtr granule_num_column = IColumn::mutate(std::move(elem.column));
 
     auto & data = assert_cast<ColumnUInt64 &>(*granule_num_column).getData();
     for (size_t i = 0; i < rows_to_read; ++i)
         data.push_back(granule_num);
+
+    elem.column = std::move(granule_num_column);
 }
 
 
@@ -571,7 +585,11 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
             /// "It's a bug!" exception from `__bitWrapperFunc` at execution time. Fall back to
             /// `UNKNOWN_FIELD` so that the index does not prune granules and the query goes
             /// through the regular filter path.
-            if (WhichDataType(removeNullable(atom_node_ptr->result_type)).isInteger())
+            const auto & atom_result_type = atom_node_ptr->result_type;
+            const bool is_integer_atom = WhichDataType(atom_result_type).isLowCardinality()
+                ? WhichDataType(removeLowCardinality(atom_result_type)).isInteger()
+                : WhichDataType(removeNullable(atom_result_type)).isInteger();
+            if (is_integer_atom)
             {
                 auto bit_wrapper_function = FunctionFactory::instance().get("__bitWrapperFunc", context);
                 result_node = &result_dag.addFunction(bit_wrapper_function, {atom_node_ptr}, {});
@@ -793,17 +811,17 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator() const
 MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
     const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    ActionsDAGWithInversionPushDown filter_dag(predicate, context);
+    ActionsDAGWithInversionPushDown filter_dag(predicate, context, /* boolean_context */ true);
     return std::make_shared<MergeTreeIndexConditionSet>(max_rows, filter_dag, context, index);
 }
 
-MergeTreeIndexPtr setIndexCreator(const IndexDescription & index)
+MergeTreeIndexPtr setIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
     size_t max_rows = getFieldFromIndexArgumentAST(index.arguments->children[0]).safeGet<size_t>();
-    return std::make_shared<MergeTreeIndexSet>(index, max_rows);
+    return std::make_shared<MergeTreeIndexSet>(std::move(metadata_snapshot), index, max_rows);
 }
 
-void setIndexValidator(const IndexDescription & index, bool /*attach*/)
+void setIndexValidator(const IndexDescription & index, bool /*attach*/, const MergeTreeSettings & /*settings*/)
 {
     if (!index.arguments || index.arguments->children.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index must have exactly one argument");
