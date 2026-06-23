@@ -25,6 +25,14 @@ SET remote_filesystem_read_method = 'read';   -- avoid the async-prefetch stage
 SET enable_filesystem_cache = 0;               -- avoid the filesystem-cache stage so the executor engages
 SET max_read_buffer_size = 65536;              -- small windows -> many sequential reads per object
 
+-- Keep the scan contiguous so reuse is deterministic. The `LongConnectionHits > 0` assertion below
+-- needs the held connection to serve more than one window, which only happens on contiguous forward
+-- access (the `canContinue` gate). Two randomized settings can fragment the access pattern and leave
+-- `LongConnectionHits` at 0: `max_threads` > 1 stripes non-adjacent mark ranges across per-thread
+-- readers, and the range-split injection reorders mark ranges within a single reader. Pin both.
+SET max_threads = 1;
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
+
 -- Long connections ON: a sequential column scan opens a held source connection and reuses it.
 SELECT sum(id) + sum(v) + sum(length(s)) FROM t_reader_executor_lc_on
 SETTINGS reader_executor_use_long_connections = 1, log_comment = '04341_long_conn_on' FORMAT Null;
