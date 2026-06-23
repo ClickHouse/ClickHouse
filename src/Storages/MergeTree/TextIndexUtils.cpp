@@ -207,12 +207,12 @@ void BuildTextIndexTransform::writeTemporarySegment(size_t i)
 
 static PostingsSerialization createPostingsSerialization(const IMergeTreeIndex & index)
 {
-    const auto * codec = typeid_cast<const MergeTreeIndexText &>(index).getPostingListCodec();
+    const auto & text_index = typeid_cast<const MergeTreeIndexText &>(index);
+    const auto * codec = text_index.getPostingListCodec();
     auto codec_type = codec ? codec->getType() : IPostingListCodec::Type::None;
     auto codec_copy = PostingListCodecFactory::createPostingListCodec(codec_type);
 
-    /// The merged part is written in the current on-disk format.
-    return PostingsSerialization(std::move(codec_copy), static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec));
+    return PostingsSerialization(std::move(codec_copy), text_index.getParams().version);
 }
 
 static PostingsSerialization createSourcePostingsSerialization(MergeTreeIndexReaderStream & header_stream)
@@ -496,7 +496,7 @@ void MergeTextIndexesTask::finalize()
 
     auto * index_stream = output_streams.at(MergeTreeIndexSubstream::Type::Regular);
     DictionarySparseIndex sparse_index(std::move(sparse_index_tokens), std::move(sparse_index_offsets));
-    TextIndexSerialization::serializeHeader(sparse_index, postings_serialization.getPostingListCodec()->getType(), index_stream->compressed_hashing);
+    TextIndexSerialization::serializeHeader(params.version, sparse_index, postings_serialization.getPostingListCodec()->getType(), index_stream->compressed_hashing);
 
     for (auto & stream : output_streams_holders)
         stream->finalize();

@@ -685,6 +685,22 @@ namespace ErrorCodes
     Default posting list codec for text indexes.
     Can be overridden by explicit `posting_list_codec` index argument.
     )", 0) \
+    DECLARE(MergeTreeTextIndexVersion, text_index_version, MergeTreeTextIndexVersion::WithCodec, R"(
+    On-disk serialization format version used when writing text indexes.
+
+    During a rolling upgrade, set this to `initial` so that newer servers keep writing
+    text index parts in the older on-disk format that older servers can still read. After
+    all replicas are upgraded, switch back to `with_codec` (the default) to persist the
+    posting list codec type in the text index header. The `compatibility` setting reverts
+    this to `initial` automatically when set to a version older than the one that introduced
+    the `with_codec` format.
+
+    Possible values:
+
+    - `initial` — The original format. Does not persist the posting list codec type and is
+      therefore only compatible with `text_index_posting_list_codec = none`.
+    - `with_codec` — Persist the posting list codec type in the text index header.
+    )", 0) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
     Minimum time to wait before trying to select parts to merge again after no
     parts were selected. A lower setting will trigger selecting tasks in

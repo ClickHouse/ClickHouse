@@ -3622,12 +3622,14 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsCodecType)
     DictionarySparseIndex sparse_index(tokens->getPtr(), offsets->getPtr());
 
     WriteBufferFromOwnString out;
-    TextIndexSerialization::serializeHeader(sparse_index, IPostingListCodec::Type::Bitpacking, out);
+    TextIndexSerialization::serializeHeader(
+        MergeTreeTextIndexVersion::WithCodec,
+        sparse_index, IPostingListCodec::Type::Bitpacking, out);
 
     ReadBufferFromString in(out.str());
     auto sparse_index_data = TextIndexSerialization::deserializeHeader(in);
 
-    EXPECT_EQ(sparse_index_data.version, static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec));
+    EXPECT_EQ(sparse_index_data.version, MergeTreeTextIndexVersion::WithCodec);
     EXPECT_EQ(sparse_index_data.codec_type, IPostingListCodec::Type::Bitpacking);
     EXPECT_EQ(sparse_index_data.sparse_index.size(), 1u);
     EXPECT_EQ(assert_cast<const ColumnString &>(*sparse_index_data.sparse_index.tokens).getDataAt(0), "alpha");
@@ -3637,7 +3639,7 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsCodecType)
 TEST(PostingListCursorTest, TextIndexHeaderInitialVersionDefaultsToNoneCodec)
 {
     WriteBufferFromOwnString out;
-    writeVarUInt(static_cast<UInt64>(TextIndexHeader::Version::Initial), out);
+    writeVarUInt(static_cast<UInt64>(MergeTreeTextIndexVersion::Initial), out);
     writeVarUInt(1u, out);
 
     auto tokens = ColumnString::create();
@@ -3651,11 +3653,62 @@ TEST(PostingListCursorTest, TextIndexHeaderInitialVersionDefaultsToNoneCodec)
     ReadBufferFromString in(out.str());
     auto sparse_index_data = TextIndexSerialization::deserializeHeader(in);
 
-    EXPECT_EQ(sparse_index_data.version, static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::Initial));
+    EXPECT_EQ(sparse_index_data.version, MergeTreeTextIndexVersion::Initial);
     EXPECT_EQ(sparse_index_data.codec_type, IPostingListCodec::Type::None);
     EXPECT_EQ(sparse_index_data.sparse_index.size(), 1u);
     EXPECT_EQ(assert_cast<const ColumnString &>(*sparse_index_data.sparse_index.tokens).getDataAt(0), "beta");
     EXPECT_EQ(assert_cast<const ColumnUInt64 &>(*sparse_index_data.sparse_index.offsets_in_file).getData()[0], 7u);
+}
+
+TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
+{
+    auto tokens = ColumnString::create();
+    tokens->insert("gamma");
+
+    auto offsets = ColumnUInt64::create();
+    offsets->insertValue(13);
+
+    DictionarySparseIndex sparse_index(tokens->getPtr(), offsets->getPtr());
+
+    WriteBufferFromOwnString out_initial;
+    TextIndexSerialization::serializeHeader(
+        MergeTreeTextIndexVersion::Initial,
+        sparse_index, IPostingListCodec::Type::None, out_initial);
+
+    WriteBufferFromOwnString out_with_codec;
+    TextIndexSerialization::serializeHeader(
+        MergeTreeTextIndexVersion::WithCodec,
+        sparse_index, IPostingListCodec::Type::None, out_with_codec);
+
+    /// The `Initial` header omits the single-byte codec type, so it is exactly one byte shorter.
+    EXPECT_EQ(out_initial.str().size() + 1, out_with_codec.str().size());
+
+    ReadBufferFromString in(out_initial.str());
+    auto sparse_index_data = TextIndexSerialization::deserializeHeader(in);
+
+    EXPECT_EQ(sparse_index_data.version, MergeTreeTextIndexVersion::Initial);
+    EXPECT_EQ(sparse_index_data.codec_type, IPostingListCodec::Type::None);
+    EXPECT_EQ(sparse_index_data.sparse_index.size(), 1u);
+    EXPECT_EQ(assert_cast<const ColumnString &>(*sparse_index_data.sparse_index.tokens).getDataAt(0), "gamma");
+    EXPECT_EQ(assert_cast<const ColumnUInt64 &>(*sparse_index_data.sparse_index.offsets_in_file).getData()[0], 13u);
+}
+
+TEST(PostingListCursorTest, TextIndexHeaderInitialVersionWithCodecThrows)
+{
+    auto tokens = ColumnString::create();
+    tokens->insert("delta");
+
+    auto offsets = ColumnUInt64::create();
+    offsets->insertValue(21);
+
+    DictionarySparseIndex sparse_index(tokens->getPtr(), offsets->getPtr());
+
+    WriteBufferFromOwnString out;
+    EXPECT_THROW(
+        TextIndexSerialization::serializeHeader(
+            MergeTreeTextIndexVersion::Initial,
+            sparse_index, IPostingListCodec::Type::Bitpacking, out),
+        Exception);
 }
 
 // Section: row_offset beyond UInt32::max must throw — doc IDs are 32-bit, and

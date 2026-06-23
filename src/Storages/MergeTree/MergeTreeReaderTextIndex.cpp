@@ -109,12 +109,11 @@ void MergeTreeReaderTextIndex::setIndexGranule(MergeTreeIndexGranulePtr index_gr
 
     /// Lazy mode requires the per-segment block-index section (from `WithCodec` onward) and
     /// pure-token queries — pattern predicates take the eager materialize path.
-    auto required_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec);
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
 
     use_lazy_mode = lazy_mode_requested
         && postings_codec->getType() != IPostingListCodec::Type::None
-        && granule->getSerializationVersion() >= required_version
+        && granule->getSerializationVersion() != MergeTreeTextIndexVersion::Initial
         && !condition_text.hasSearchPatterns();
 
     postings_serialization = PostingsSerialization(std::move(postings_codec), granule->getSerializationVersion());

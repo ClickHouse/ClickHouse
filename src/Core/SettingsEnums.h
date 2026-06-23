@@ -501,6 +501,16 @@ enum class TextIndexPostingListCodec : uint8_t
 
 DECLARE_SETTING_ENUM(TextIndexPostingListCodec)
 
+/// On-disk serialization format version of text indexes (written verbatim into the text index header).
+/// These are the on-disk version numbers and must remain stable (pinned by a static_assert in MergeTreeIndexText.cpp).
+enum class MergeTreeTextIndexVersion : uint8_t
+{
+    Initial = 0,
+    WithCodec = 1,
+};
+
+DECLARE_SETTING_ENUM(MergeTreeTextIndexVersion)
+
 /// NOTE: Part level min-max index depends on strict columns order.
 ///       That means if you want to add new columns segment to index - it will not be materialized until
 ///       previous segment will be materialized in all data parts via mutation or merge.

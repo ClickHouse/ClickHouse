@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/SettingsEnums.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
@@ -79,6 +80,7 @@ struct MergeTreeIndexTextParams
     size_t dictionary_block_frontcoding_compression = 1;
     size_t posting_list_block_size = 1024 * 1024;
     ASTPtr preprocessor;
+    MergeTreeTextIndexVersion version = MergeTreeTextIndexVersion::Initial;
 };
 
 using PostingList = roaring::Roaring;
@@ -149,7 +151,7 @@ struct TokenPostingsInfo;
 
 struct PostingsSerialization
 {
-    PostingsSerialization(PostingListCodecPtr posting_list_codec_, MergeTreeIndexVersion serialization_version_);
+    PostingsSerialization(PostingListCodecPtr posting_list_codec_, MergeTreeTextIndexVersion serialization_version_);
 
     enum Flags : UInt64
     {
@@ -176,7 +178,7 @@ struct PostingsSerialization
 
 private:
     PostingListCodecPtr posting_list_codec;
-    MergeTreeIndexVersion serialization_version;
+    MergeTreeTextIndexVersion serialization_version;
 
     /// Reusable buffers to avoid repeated heap allocations during deserialization.
     std::vector<UInt32> raw_postings_buffer;
@@ -253,13 +255,7 @@ using DictionarySparseIndexPtr = std::shared_ptr<DictionarySparseIndex>;
 
 struct TextIndexHeader
 {
-    enum class Version
-    {
-        Initial = 0,
-        WithCodec = 1,
-    };
-
-    MergeTreeIndexVersion version = static_cast<MergeTreeIndexVersion>(Version::Initial);
+    MergeTreeTextIndexVersion version = MergeTreeTextIndexVersion::Initial;
     IPostingListCodec::Type codec_type = IPostingListCodec::Type::None;
     DictionarySparseIndex sparse_index;
 };
@@ -280,7 +276,7 @@ struct TextIndexSerialization
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
-    static void serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, WriteBuffer & ostr);
+    static void serializeHeader(MergeTreeTextIndexVersion version, const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, WriteBuffer & ostr);
 
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);
     /// Reads only the version and posting list codec from the start of the header, without the
@@ -338,7 +334,7 @@ public:
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
     const String & getIndexIdForCaches() const { return index_id_for_caches; }
     IPostingListCodec::Type getPostingsCodecType() const { return postings_codec_type; }
-    MergeTreeIndexVersion getSerializationVersion() const { return serialization_version; }
+    MergeTreeTextIndexVersion getSerializationVersion() const { return serialization_version; }
 
     static PostingListPtr readPostingsBlock(
         MergeTreeIndexReaderStream & stream,
@@ -375,7 +371,7 @@ private:
     /// Codec type used to serialize postings in this granule.
     IPostingListCodec::Type postings_codec_type = IPostingListCodec::Type::None;
     /// On-disk serialization version of the text index header.
-    MergeTreeIndexVersion serialization_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::Initial);
+    MergeTreeTextIndexVersion serialization_version = MergeTreeTextIndexVersion::Initial;
 };
 
 /// Text index granule created on writing of the index.

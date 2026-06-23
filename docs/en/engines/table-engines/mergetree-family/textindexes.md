@@ -312,6 +312,11 @@ They apply to every text index of the table that does not specify the parameter 
 The main use case of the table-level settings is to change the index parameters of an existing table without dropping and re-creating the text index on all table parts.
 Changing a table-level setting applies the new parameters only to text indexes built for new parts; existing parts keep their current layout.
 
+The on-disk format version of text indexes is controlled by the table-level setting [`text_index_version`](/operations/settings/merge-tree-settings#text_index_version) (default: `with_codec`).
+During a rolling upgrade, set it to `initial` so that newer servers keep writing the older format that older servers can still read; switch it back to `with_codec` once all replicas have been upgraded.
+The `initial` format does not persist the posting list codec type and is therefore only compatible with `text_index_posting_list_codec = none`.
+The [`compatibility`](/operations/settings/settings#compatibility) setting reverts `text_index_version` to `initial` automatically when set to a version older than the one that introduced the `with_codec` format.
+
 An argument given in the index definition takes precedence over the table setting, for example:
 
 ```sql

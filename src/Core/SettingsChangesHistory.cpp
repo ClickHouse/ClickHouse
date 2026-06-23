@@ -1259,6 +1259,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"text_index_dictionary_block_frontcoding_compression", true, true, "New setting"},
             {"text_index_posting_list_block_size", 1048576, 1048576, "New setting"},
             {"text_index_posting_list_codec", "none", "none", "New setting"},
+            {"text_index_version", "initial", "with_codec", "New setting. Controls the on-disk format version of text indexes. Reverts to 'initial' under older compatibility so that newer servers keep writing the previous format that older servers can read during a rolling upgrade."},
             {"materialize_projections_on_insert", true, true, "New setting"},
             {"materialize_projections_on_merge", false, false, "New setting"},
         });

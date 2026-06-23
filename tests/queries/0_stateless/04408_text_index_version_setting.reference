@@ -1,0 +1,14 @@
+-- default value
+with_codec
+-- invalid value is rejected
+-- initial version: round-trip read
+1024
+512
+0
+-- initial version: merge keeps the format readable
+1024
+512
+-- with_codec version: round-trip read
+512
+512
+-- initial version is incompatible with a posting list codec
