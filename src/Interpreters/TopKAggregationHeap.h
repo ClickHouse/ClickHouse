@@ -410,7 +410,7 @@ private:
             case TypeIndex::DateTime:  resolveNumericFastPath<UInt32>(); break;
             case TypeIndex::Enum8:     resolveNumericFastPath<Int8>(); break;
             case TypeIndex::Enum16:    resolveNumericFastPath<Int16>(); break;
-            case TypeIndex::IPv4:      resolveNumericFastPath<UInt32>(); break;
+            case TypeIndex::IPv4:      resolveNumericFastPath<IPv4>(); break;
             default: break;
         }
     }
