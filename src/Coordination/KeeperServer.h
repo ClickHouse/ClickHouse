@@ -215,6 +215,8 @@ public:
 
     void recalculateStorageStats();
 
+    void optimizeStorage();
+
     std::optional<AuthenticationData> getAuthenticationData() const { return state_manager->getAuthenticationData(); }
 
     const KeeperContextPtr & getKeeperContext() const { return keeper_context; }

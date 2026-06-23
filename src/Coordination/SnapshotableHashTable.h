@@ -1,14 +1,34 @@
 #pragma once
-#include <Common/HashTable/HashMap.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/ArenaUtils.h>
+#include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
+#include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperContext.h>
+
+#include <absl/container/flat_hash_map.h>
+
 #include <list>
+
+
+namespace ProfileEvents
+{
+    extern const Event KeeperStorageRehashMicroseconds;
+}
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
+}
+
+namespace CoordinationSetting
+{
+    extern const CoordinationSettingsUInt64 min_node_count_for_auto_optimize;
+    extern const CoordinationSettingsFloat hash_map_min_load_factor;
 }
 
 template<typename V>
@@ -87,7 +107,7 @@ private:
     using ListElem = ListNode<V>;
     using List = std::list<ListElem>;
     using Mapped = typename List::iterator;
-    using IndexMap = HashMap<std::string_view, Mapped>;
+    using IndexMap = absl::flat_hash_map<std::string_view, Mapped, DefaultHash<std::string_view>>;
 
     List list;
     IndexMap map;
@@ -105,6 +125,17 @@ private:
     std::vector<Mapped> snapshot_invalid_iters;
 
     uint64_t approximate_data_size{0};
+
+    float min_load_factor{0.0f};
+    uint64_t min_node_count_for_auto_optimize{0};
+
+    /// State used by `optimizeIfNeeded` to avoid redundant rehashing (see the method).
+    size_t bucket_count_at_last_optimize{0};
+    size_t node_count_at_last_optimize{0};
+
+    /// Outstanding `reserve` target (e.g. for bulk snapshot loading). While the reserved capacity is
+    /// still being filled, automatic optimization must not shrink the table back (see `optimizeIfNeeded`).
+    size_t reserved_node_count{0};
 
     enum OperationType
     {
@@ -157,10 +188,9 @@ private:
 
     void insertOrReplace(std::string_view key, V value, bool owns_key)
     {
-        size_t hash_value = map.hash(key);
         auto new_value_size = value.sizeInBytes();
-        auto it = map.find(key, hash_value);
-        uint64_t old_value_size = it == map.end() ? 0 : it->getMapped()->value.sizeInBytes();
+        auto it = map.find(key);
+        uint64_t old_value_size = it == map.end() ? 0 : it->second->value.sizeInBytes();
         bool remove_old = true;
 
         if (it == map.end())
@@ -169,25 +199,23 @@ private:
             ListElem elem{list_key, std::move(value)};
             elem.setVersion(current_version);
             auto itr = list.insert(list.end(), std::move(elem));
-            bool inserted = false;
-            map.emplace(itr->key, it, inserted, hash_value);
+            auto [map_it, inserted] = map.emplace(itr->key, itr);
             itr->setActiveInMap();
             chassert(inserted);
-            it->getMapped() = itr;
         }
         else
         {
             if (owns_key)
                 arena.free(key.data(), key.size());
 
-            auto list_itr = it->getMapped();
+            auto list_itr = it->second;
             if (snapshot_mode && list_itr->getVersion() <= snapshot_up_to_version)
             {
                 ListElem elem{list_itr->key, std::move(value)};
                 elem.setVersion(current_version);
                 list_itr->setInactiveInMap();
                 auto new_list_itr = list.insert(list.end(), std::move(elem));
-                it->getMapped() = new_list_itr;
+                it->second = new_list_itr;
                 snapshot_invalid_iters.push_back(list_itr);
 
                 remove_old = false;
@@ -198,10 +226,10 @@ private:
             }
         }
         updateDataSize(INSERT_OR_REPLACE, key.size(), new_value_size, old_value_size, remove_old);
+        optimizeIfNeeded();
     }
 
 public:
-
     using Node = V;
     using iterator = typename List::iterator;
     using const_iterator = typename List::const_iterator;
@@ -212,31 +240,36 @@ public:
         clear();
     }
 
-    std::pair<typename IndexMap::LookupResult, bool> insert(const std::string & key, V value)
+    void initialize(const KeeperContextPtr & context)
     {
-        size_t hash_value = map.hash(key);
-        auto it = map.find(key, hash_value);
-
-        if (!it)
-        {
-            auto value_size = value.sizeInBytes();
-            ListElem elem{copyStringInArena(arena, key), std::move(value)};
-            elem.setVersion(current_version);
-            auto itr = list.insert(list.end(), std::move(elem));
-            bool inserted = false;
-            map.emplace(itr->key, it, inserted, hash_value);
-            itr->setActiveInMap();
-            chassert(inserted);
-
-            it->getMapped() = itr;
-            updateDataSize(INSERT_OR_REPLACE, key.size(), value_size, 0);
-            return std::make_pair(it, true);
-        }
-
-        return std::make_pair(it, false);
+        min_load_factor = context->getCoordinationSettings()[CoordinationSetting::hash_map_min_load_factor];
+        min_node_count_for_auto_optimize = context->getCoordinationSettings()[CoordinationSetting::min_node_count_for_auto_optimize];
     }
 
-    void reserve(size_t node_num) { map.reserve(node_num); }
+    std::pair<typename IndexMap::const_iterator, bool> insert(const std::string & key, V value)
+    {
+        if (auto it = map.find(key); it != map.end())
+            return std::make_pair(it, false);
+
+        auto value_size = value.sizeInBytes();
+        ListElem elem{copyStringInArena(arena, key), std::move(value)};
+        elem.setVersion(current_version);
+        auto itr = list.insert(list.end(), std::move(elem));
+        auto [it, inserted] = map.emplace(itr->key, itr);
+        chassert(inserted);
+        itr->setActiveInMap();
+        updateDataSize(INSERT_OR_REPLACE, key.size(), value_size, 0);
+        /// `optimizeIfNeeded` may rehash and invalidate `it`, so re-find after the call.
+        if (optimizeIfNeeded())
+            it = map.find(itr->key);
+        return std::make_pair(it, true);
+    }
+
+    void reserve(size_t node_num)
+    {
+        map.reserve(node_num);
+        reserved_node_count = std::max(reserved_node_count, node_num);
+    }
 
     void insertOrReplace(const std::string & key, V value)
     {
@@ -275,7 +308,7 @@ public:
             return false;
 
         bool remove_old = true;
-        auto list_itr = it->getMapped();
+        auto list_itr = it->second;
         uint64_t old_data_size = list_itr->value.sizeInBytes();
         /// Note: in snapshot mode we can't deallocate the node even if
         /// `list_itr->getVersion() > snapshot_up_to_version`. Because the node's key may be shared
@@ -290,17 +323,24 @@ public:
             list_itr->setInactiveInMap();
             snapshot_invalid_iters.push_back(list_itr);
             list_itr->setFreeKey();
-            map.erase(it->getKey());
+            map.erase(it);
 
             remove_old = false;
         }
         else
         {
-            map.erase(it->getKey());
+            map.erase(it);
             arena.free(const_cast<char *>(list_itr->key.data()), list_itr->key.size());
             list.erase(list_itr);
         }
 
+        /// Note: `erase` deliberately does not call `optimizeIfNeeded`. `optimize` calls `rehash(0)`,
+        /// which unconditionally rebuilds the whole index (it is O(N) even when it cannot shrink), so
+        /// shrinking after every delete would turn a large `rmr`/delete batch into O(N^2). The sparse
+        /// table left behind by deletes is instead reclaimed lazily: on the next `insert`/`insertOrReplace`,
+        /// on the periodic post-snapshot `clearOutdatedNodes`, or via a manual `clrs` 4LW command. This is
+        /// why `hash_map_min_load_factor` controls auto-optimization on inserts and snapshot cleanup rather
+        /// than on individual deletes.
         updateDataSize(ERASE, key.size(), 0, old_data_size, remove_old);
         return true;
     }
@@ -312,12 +352,11 @@ public:
 
     const_iterator updateValue(std::string_view key, ValueUpdater updater)
     {
-        size_t hash_value = map.hash(key);
-        auto it = map.find(key, hash_value);
+        auto it = map.find(key);
         if (it == map.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find key: '{}'", key);
 
-        auto list_itr = it->getMapped();
+        auto list_itr = it->second;
         uint64_t old_value_size = list_itr->value.sizeInBytes();
 
         const_iterator ret;
@@ -338,7 +377,7 @@ public:
 
                 elem_copy.setVersion(current_version);
                 auto itr = list.insert(list.end(), std::move(elem_copy));
-                it->getMapped() = itr;
+                it->second = itr;
                 ret = itr;
 
                 remove_old = false;
@@ -363,8 +402,7 @@ public:
     {
         auto map_it = map.find(key);
         if (map_it != map.end())
-            /// return std::make_shared<KVPair>(KVPair{map_it->getMapped()->key, map_it->getMapped()->value});
-            return map_it->getMapped();
+            return map_it->second;
         return list.end();
     }
 
@@ -374,10 +412,10 @@ public:
         auto it = map.find(key);
         if (it == map.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find key: '{}'", key);
-        return it->getMapped()->value;
+        return it->second->value;
     }
 
-    void clearOutdatedNodes()
+    void clearOutdatedNodes(bool optimize_after_cleanup = true)
     {
         chassert(!snapshot_mode);
 
@@ -391,11 +429,46 @@ public:
             list.erase(itr);
         }
         snapshot_invalid_iters.clear();
+        if (optimize_after_cleanup)
+            optimizeIfNeeded();
+    }
+
+    bool optimizeIfNeeded()
+    {
+        /// An outstanding `reserve` (e.g. bulk snapshot loading via `KeeperStorageSnapshot::deserialize`)
+        /// preallocates buckets for the expected node count. Once that target is reached the reservation
+        /// is fulfilled and we resume normal auto-optimization.
+        if (reserved_node_count != 0 && map.size() >= reserved_node_count)
+            reserved_node_count = 0;
+
+        if (min_load_factor <= 0 || map.size() <= min_node_count_for_auto_optimize || map.load_factor() >= min_load_factor)
+            return false;
+
+        /// While the reserved capacity is still being filled, shrinking the table would defeat the
+        /// preallocation and force repeated rehashing during snapshot load - exactly the restart /
+        /// follower catch-up path where predictable performance matters. Skip until the target is met.
+        if (reserved_node_count != 0)
+            return false;
+
+        /// `optimize` only helps when `rehash(0)` can actually shrink the table. If we already rehashed
+        /// at the current bucket count and no node has been erased since (the node count only grew),
+        /// another `rehash(0)` would be a no-op. Skipping it prevents repeated O(N) rehashing of the
+        /// whole node index when `hash_map_min_load_factor` is set higher than the load factor the
+        /// container can reach after a rehash (`absl::flat_hash_map` tops out below 1.0).
+        if (map.bucket_count() == bucket_count_at_last_optimize && map.size() >= node_count_at_last_optimize)
+            return false;
+
+        optimize();
+        bucket_count_at_last_optimize = map.bucket_count();
+        node_count_at_last_optimize = map.size();
+        return true;
     }
 
     void clear()
     {
-        clearOutdatedNodes();
+        /// The map is discarded right below, so rehashing it in `optimizeIfNeeded` would be wasted
+        /// O(N) work on the shutdown / storage replacement paths.
+        clearOutdatedNodes(/*optimize_after_cleanup=*/false);
         map.clear();
         for (auto itr = list.begin(); itr != list.end(); ++itr)
             arena.free(const_cast<char *>(itr->key.data()), itr->key.size());
@@ -424,6 +497,12 @@ public:
         return map.size();
     }
 
+    /// Number of buckets currently allocated by the index map. Exposed for tests.
+    size_t getBucketCount() const
+    {
+        return map.bucket_count();
+    }
+
     std::pair<size_t, size_t> snapshotSizeWithVersion() const
     {
         return std::make_pair(list.size(), current_version);
@@ -442,6 +521,13 @@ public:
             approximate_data_size += node.key.size();
             approximate_data_size += node.value.sizeInBytes();
         }
+    }
+
+    void optimize()
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::KeeperStorageRehashMicroseconds);
+        map.rehash(0);
+        LOG_TRACE(getLogger("SnapshotableHashTable"), "Rehash took {}ms", watch.watch.elapsedMilliseconds());
     }
 
     uint64_t keyArenaSize() const { return 0; }

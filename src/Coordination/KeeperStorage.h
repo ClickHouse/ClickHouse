@@ -729,6 +729,8 @@ public:
 
     void recalculateStats();
 
+    void optimize();
+
 private:
     void removeDigest(const Node & node, std::string_view path);
     void addDigest(const Node & node, std::string_view path);

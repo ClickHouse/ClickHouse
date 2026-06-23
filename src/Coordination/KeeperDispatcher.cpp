@@ -986,6 +986,7 @@ catch (...)
 
 void KeeperDispatcher::cleanResources()
 {
+    server->optimizeStorage();
 #if USE_JEMALLOC
     Jemalloc::purgeArenas();
 #endif

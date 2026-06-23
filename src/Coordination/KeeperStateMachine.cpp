@@ -2039,6 +2039,14 @@ void KeeperStateMachine<Storage>::recalculateStorageStats()
 }
 
 template<typename Storage>
+void KeeperStateMachine<Storage>::optimizeStorage()
+{
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
+    LOG_INFO(log, "Optimizing storage");
+    storage->optimize();
+}
+
+template<typename Storage>
 SnapshotFileInfoPtr KeeperStateMachine<Storage>::getSnapshotPinUnlocked(uint64_t log_idx) const
 {
     return snapshot_manager.getSnapshotPin(log_idx);

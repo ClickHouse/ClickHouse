@@ -35,6 +35,8 @@ namespace DB::CoordinationSetting
 {
     extern const CoordinationSettingsBool compress_snapshots_with_zstd_format;
     extern const CoordinationSettingsUInt64 snapshot_transfer_chunk_size;
+    extern const CoordinationSettingsFloat hash_map_min_load_factor;
+    extern const CoordinationSettingsUInt64 min_node_count_for_auto_optimize;
 }
 
 namespace
@@ -436,6 +438,199 @@ TYPED_TEST(CoordinationTest, SnapshotableHashMapDataSize)
     world.disableSnapshotMode();
     world.clearOutdatedNodes();
     EXPECT_EQ(world.getApproximateDataSize(), 0);
+}
+
+TYPED_TEST(CoordinationTest, SnapshotableHashMapAutoOptimize)
+{
+    /// Enable automatic rehashing with a deliberately high load-factor threshold.
+    /// `absl::flat_hash_map` can never reach a load factor of 0.99 after `rehash(0)`, so without the
+    /// guard in `optimizeIfNeeded` the predicate would stay true and rehash the whole index on every
+    /// insert. The map must stay correct (and avoid repeated O(N) rehashing) in this configuration.
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    (*settings)[DB::CoordinationSetting::hash_map_min_load_factor] = 0.99f;
+    (*settings)[DB::CoordinationSetting::min_node_count_for_auto_optimize] = 8;
+    auto context = std::make_shared<DB::KeeperContext>(true, settings);
+
+    DB::SnapshotableHashTable<IntNode> map;
+    map.initialize(context);
+
+    static constexpr int node_count = 2000;
+    for (int i = 0; i < node_count; ++i)
+    {
+        auto [it, inserted] = map.insert("/node" + std::to_string(i), i);
+        EXPECT_TRUE(inserted);
+        /// The iterator returned by insert must stay valid even if an internal rehash happened.
+        EXPECT_EQ(it->second->value, i);
+    }
+    EXPECT_EQ(map.size(), node_count);
+
+    /// All nodes must still be reachable after the inserts (and any rehashing).
+    for (int i = 0; i < node_count; ++i)
+        EXPECT_EQ(map.getValue("/node" + std::to_string(i)), i);
+
+    /// Erase most of the nodes inside snapshot mode and clean them up. This drives the shrink path
+    /// through clearOutdatedNodes -> optimizeIfNeeded.
+    map.enableSnapshotMode(map.snapshotSizeWithVersion().second);
+    for (int i = 0; i < node_count - 10; ++i)
+        EXPECT_TRUE(map.erase("/node" + std::to_string(i)));
+    map.disableSnapshotMode();
+    map.clearOutdatedNodes();
+
+    EXPECT_EQ(map.size(), 10);
+    for (int i = node_count - 10; i < node_count; ++i)
+        EXPECT_EQ(map.getValue("/node" + std::to_string(i)), i);
+
+    /// Inserting again after the shrink must keep working and return valid iterators.
+    for (int i = node_count; i < node_count + 100; ++i)
+    {
+        auto [it, inserted] = map.insert("/node" + std::to_string(i), i);
+        EXPECT_TRUE(inserted);
+        EXPECT_EQ(it->second->value, i);
+    }
+    EXPECT_EQ(map.size(), 110);
+}
+
+TYPED_TEST(CoordinationTest, SnapshotableHashMapReserveSurvivesAutoOptimize)
+{
+    /// `KeeperStorageSnapshot::deserialize` calls `reserve(snapshot_container_size)` and then bulk-loads
+    /// the nodes. With automatic optimization enabled (`hash_map_min_load_factor > 0`) the early inserts
+    /// see a very low load factor, so without special handling `optimizeIfNeeded` would `rehash(0)` and
+    /// shrink the table back, undoing the preallocation and forcing repeated rehashing during the load.
+    /// The reserved capacity must survive until the load completes.
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    (*settings)[DB::CoordinationSetting::hash_map_min_load_factor] = 0.5f;
+    (*settings)[DB::CoordinationSetting::min_node_count_for_auto_optimize] = 0;
+    auto context = std::make_shared<DB::KeeperContext>(true, settings);
+
+    DB::SnapshotableHashTable<IntNode> map;
+    map.initialize(context);
+
+    static constexpr int node_count = 2000;
+    map.reserve(node_count);
+    const size_t reserved_buckets = map.getBucketCount();
+    /// The reservation must be large enough to hold all nodes without growing.
+    EXPECT_GE(reserved_buckets, node_count);
+
+    for (int i = 0; i < node_count; ++i)
+    {
+        auto [it, inserted] = map.insert("/node" + std::to_string(i), i);
+        EXPECT_TRUE(inserted);
+        EXPECT_EQ(it->second->value, i);
+        /// The bucket count must never shrink below the reserved capacity while the load is in progress.
+        EXPECT_GE(map.getBucketCount(), reserved_buckets);
+    }
+    EXPECT_EQ(map.size(), node_count);
+    for (int i = 0; i < node_count; ++i)
+        EXPECT_EQ(map.getValue("/node" + std::to_string(i)), i);
+}
+
+TYPED_TEST(CoordinationTest, SnapshotableHashMapClearSkipsAutoOptimize)
+{
+    /// `clear` (also called from the destructor) discards the whole map, so the cleanup of outdated
+    /// nodes it performs must not trigger the automatic `rehash(0)` - that would be wasted O(N) work
+    /// right before the index is dropped. `clearOutdatedNodes(/*optimize_after_cleanup=*/false)`
+    /// covers this path; the default call must still shrink the table.
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    /// Low threshold so that growth-rehashes during the inserts do not trigger optimization,
+    /// while the sparse map after the bulk erase is far below it.
+    (*settings)[DB::CoordinationSetting::hash_map_min_load_factor] = 0.2f;
+    (*settings)[DB::CoordinationSetting::min_node_count_for_auto_optimize] = 8;
+    auto context = std::make_shared<DB::KeeperContext>(true, settings);
+
+    DB::SnapshotableHashTable<IntNode> map;
+    map.initialize(context);
+
+    static constexpr int node_count = 2000;
+    for (int i = 0; i < node_count; ++i)
+        EXPECT_TRUE(map.insert("/node" + std::to_string(i), i).second);
+
+    /// Make the map sparse: erase almost everything inside snapshot mode.
+    map.enableSnapshotMode(map.snapshotSizeWithVersion().second);
+    for (int i = 0; i < node_count - 10; ++i)
+        EXPECT_TRUE(map.erase("/node" + std::to_string(i)));
+    map.disableSnapshotMode();
+
+    const size_t buckets_before_cleanup = map.getBucketCount();
+    map.clearOutdatedNodes(/*optimize_after_cleanup=*/false);
+    EXPECT_EQ(map.size(), 10);
+    /// Cleanup without optimization must not rehash even though the load factor is below the threshold.
+    EXPECT_EQ(map.getBucketCount(), buckets_before_cleanup);
+
+    /// The default cleanup still optimizes: the sparse table shrinks.
+    map.clearOutdatedNodes();
+    EXPECT_LT(map.getBucketCount(), buckets_before_cleanup);
+    for (int i = node_count - 10; i < node_count; ++i)
+        EXPECT_EQ(map.getValue("/node" + std::to_string(i)), i);
+}
+
+TYPED_TEST(CoordinationTest, SnapshotableHashMapEraseDefersAutoOptimizeUntilInsert)
+{
+    /// Ordinary (non-snapshot) `erase` deliberately does not run automatic optimization: `optimize`
+    /// calls `rehash(0)`, which unconditionally rebuilds the whole index (O(N) even when it cannot
+    /// shrink), so shrinking after every delete would make a large `rmr`/delete batch O(N^2). The
+    /// sparse table left behind by deletes is reclaimed lazily - here, on the next `insert`.
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    (*settings)[DB::CoordinationSetting::hash_map_min_load_factor] = 0.5f;
+    (*settings)[DB::CoordinationSetting::min_node_count_for_auto_optimize] = 8;
+    auto context = std::make_shared<DB::KeeperContext>(true, settings);
+
+    DB::SnapshotableHashTable<IntNode> map;
+    map.initialize(context);
+
+    static constexpr int node_count = 2000;
+    for (int i = 0; i < node_count; ++i)
+        EXPECT_TRUE(map.insert("/node" + std::to_string(i), i).second);
+
+    const size_t buckets_after_insert = map.getBucketCount();
+
+    /// Delete almost everything outside snapshot mode. The bucket count must not change: a bare `erase`
+    /// never triggers `rehash(0)`, even though the load factor is now far below the threshold.
+    for (int i = 0; i < node_count - 10; ++i)
+        EXPECT_TRUE(map.erase("/node" + std::to_string(i)));
+    EXPECT_EQ(map.size(), 10);
+    EXPECT_EQ(map.getBucketCount(), buckets_after_insert);
+
+    /// The next insert runs the deferred optimization and shrinks the now-sparse table.
+    EXPECT_TRUE(map.insert("/trigger", -1).second);
+    EXPECT_LT(map.getBucketCount(), buckets_after_insert);
+
+    /// Remaining nodes are intact.
+    for (int i = node_count - 10; i < node_count; ++i)
+        EXPECT_EQ(map.getValue("/node" + std::to_string(i)), i);
+    EXPECT_EQ(map.getValue("/trigger"), -1);
+}
+
+TYPED_TEST(CoordinationTest, SnapshotableHashMapEraseReclaimedByPostSnapshotCleanup)
+{
+    /// Companion to the test above: even without a follow-up insert, the sparse table produced by
+    /// non-snapshot deletes is reclaimed by the periodic post-snapshot cleanup. `clearOutdatedNodes`
+    /// (called from `clearGarbageAfterSnapshot`) has nothing to free here - all deletes were outside
+    /// snapshot mode - but its trailing `optimizeIfNeeded` still shrinks the index.
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    (*settings)[DB::CoordinationSetting::hash_map_min_load_factor] = 0.5f;
+    (*settings)[DB::CoordinationSetting::min_node_count_for_auto_optimize] = 8;
+    auto context = std::make_shared<DB::KeeperContext>(true, settings);
+
+    DB::SnapshotableHashTable<IntNode> map;
+    map.initialize(context);
+
+    static constexpr int node_count = 2000;
+    for (int i = 0; i < node_count; ++i)
+        EXPECT_TRUE(map.insert("/node" + std::to_string(i), i).second);
+
+    const size_t buckets_after_insert = map.getBucketCount();
+
+    for (int i = 0; i < node_count - 10; ++i)
+        EXPECT_TRUE(map.erase("/node" + std::to_string(i)));
+    EXPECT_EQ(map.size(), 10);
+    EXPECT_EQ(map.getBucketCount(), buckets_after_insert);
+
+    /// Post-snapshot cleanup reclaims the sparse table (no outdated nodes to free, optimize still runs).
+    map.clearOutdatedNodes();
+    EXPECT_LT(map.getBucketCount(), buckets_after_insert);
+
+    for (int i = node_count - 10; i < node_count; ++i)
+        EXPECT_EQ(map.getValue("/node" + std::to_string(i)), i);
 }
 
 TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)

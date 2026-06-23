@@ -281,6 +281,7 @@
     M(KeeperGetRequest) \
     M(KeeperListRequest) \
     M(KeeperExistsRequest) \
+    M(KeeperStorageRehashMicroseconds) \
     M(KeeperSetWatchesRequest) \
     M(KeeperCheckWatchRequest) \
     M(KeeperAddWatchRequest) \
