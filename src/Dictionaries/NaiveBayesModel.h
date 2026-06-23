@@ -346,7 +346,9 @@ struct NaiveBayesData
     PODArray<Float64> log_prior;
     /// Dense class index -> contribution of an absent n-gram, `log(alpha) - log(denom[c])`. This and
     /// `slice_delta` are kept as Float32 deliberately: scores accumulate in Float64, so halving the size of
-    /// these large arrays outweighs the lost mantissa bits, which do not change the argmax.
+    /// these large arrays outweighs the lost mantissa bits. The reduced precision changes the argmax only when
+    /// the top classes are separated by less than the Float32 rounding error, i.e. when they are effectively
+    /// tied and the choice between them is arbitrary anyway.
     PODArray<Float32> base;
 
     /// Compressed-sparse-row representation of the present `(class, delta)` pairs, indexed by n-gram index.
