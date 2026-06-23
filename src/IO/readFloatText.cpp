@@ -10,12 +10,14 @@
 #include <cstring>
 #include <limits>
 
-// NOLINTBEGIN(clang-analyzer-core.UndefinedBinaryOperatorResult,clang-analyzer-optin.core.EnumCastOutOfRange)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunneeded-internal-declaration"
 #include <fast_float/fast_float.h>
 #pragma clang diagnostic pop
-// NOLINTEND(clang-analyzer-core.UndefinedBinaryOperatorResult,clang-analyzer-optin.core.EnumCastOutOfRange)
+
+/// The analyzer chases fast_float's flag-enum operators (chars_format) and ascii number parsing
+/// through every call site below, so the suppression spans the whole file.
+// NOLINTBEGIN(clang-analyzer-core.UndefinedBinaryOperatorResult,clang-analyzer-optin.core.EnumCastOutOfRange)
 
 namespace DB
 {
@@ -123,12 +125,12 @@ inline uint32_t parse_eight_digits_unrolled(uint64_t val) noexcept
 /// long inputs (e.g. 19-20 digit integers), and exactly as correct.
 /// Returns true (and sets @x and @parse_end) on a pure integer; false to fall back otherwise
 /// (decimal point, exponent, sign issues, or more than 38 digits).
-static constexpr int max_u128_integer_digits = 38;
+constexpr int max_u128_integer_digits = 38;
 
 /// A value of at most this many characters has at most this many significant digits, so
 /// fast_float's default from_chars (store_spans=false) never hits the too_many_digits double-parse
 /// and is fastest. Longer inputs use the unsigned __int128 integer path or fromCharsLong.
-static constexpr ptrdiff_t max_short_float_chars = 19;
+constexpr ptrdiff_t max_short_float_chars = 19;
 
 template <typename T>
 inline bool tryReadLongIntegerToFloat(T & x, const char * first, const char * last, const char *& parse_end)
@@ -146,7 +148,7 @@ inline bool tryReadLongIntegerToFloat(T & x, const char * first, const char * la
     /// Accumulate 8 digits at a time via SWAR (byteswap on big-endian; see parse_eight_digits_unrolled).
     while (p + 8 <= last && is_made_of_eight_digits_fast(p))
     {
-        uint64_t chunk;
+        uint64_t chunk = 0;
         ::memcpy(&chunk, p, 8);
         if constexpr (std::endian::native == std::endian::big)
             chunk = std::byteswap(chunk);
@@ -254,7 +256,7 @@ fromCharsLong(const char * first, const char * last, T & value, fast_float::char
     {
         if (uint64_t(adjusted & fast_float::chars_format::no_infnan))
         {
-            fast_float::from_chars_result_t<char> answer;
+            fast_float::from_chars_result_t<char> answer{};
             answer.ec = std::errc::invalid_argument;
             answer.ptr = first;
             return answer;
@@ -307,7 +309,7 @@ parseFloatFromRange(T & x, const char * first, const char * last, fast_float::ch
             const char * int_end = nullptr;
             if (tryReadLongIntegerToFloat(x, first, last, int_end))
             {
-                fast_float::from_chars_result_t<char> answer;
+                fast_float::from_chars_result_t<char> answer{};
                 answer.ptr = int_end;
                 answer.ec = std::errc();
                 return answer;
@@ -317,7 +319,7 @@ parseFloatFromRange(T & x, const char * first, const char * last, fast_float::ch
         /// fast_float's rounding backend; its result (incl. out-of-range) is returned as-is.
         else
         {
-            fast_float::from_chars_result_t<char> answer;
+            fast_float::from_chars_result_t<char> answer{};
             if (tryReadBigIntegerToFloat(x, first, last, answer))
                 return answer;
         }
@@ -467,7 +469,7 @@ inline void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
     /// digits in little-endian byte order, so byteswap the read on big-endian targets.
     while (digits + 8 <= N && buf.position() + 8 <= buf.buffer().end() && is_made_of_eight_digits_fast(buf.position()))
     {
-        uint64_t val;
+        uint64_t val = 0;
         ::memcpy(&val, buf.position(), 8);
         if constexpr (std::endian::native == std::endian::big)
             val = std::byteswap(val);
@@ -942,3 +944,5 @@ template bool tryReadFloatTextExtNoExponent<Float32>(Float32 &, ReadBuffer &, bo
 template bool tryReadFloatTextExtNoExponent<Float64>(Float64 &, ReadBuffer &, bool &);
 
 }
+
+// NOLINTEND(clang-analyzer-core.UndefinedBinaryOperatorResult,clang-analyzer-optin.core.EnumCastOutOfRange)
