@@ -21,7 +21,7 @@ It is ok to have ASCII NULL bytes in strings, and they will be counted as well.
     )";
     FunctionDocumentation::Syntax syntax = "length(x)";
     FunctionDocumentation::Arguments arguments = {{"x", "Value for which to calculate the number of bytes (for String/FixedString), elements (for Array), or the dimension (for QBit).", {"String", "FixedString", "Array(T)", "QBit"}}};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of number of bytes in the String/FixedString `x` / the number of elements in array `x`", {"UInt64"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of bytes in the String/FixedString `x`, the number of elements in array `x`, or the dimension of the QBit `x`", {"UInt64"}};
     FunctionDocumentation::Examples examples {
     {
         "String example",
