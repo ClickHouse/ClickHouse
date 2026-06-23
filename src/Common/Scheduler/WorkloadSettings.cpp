@@ -379,6 +379,14 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
     // Compute total memory reservation limit as the minimum of two possible values:
     // (1) exact limit `max_memory` and (2) ratio of server memory `max_memory_ratio * server_memory`.
     // Zero setting value means unlimited.
+    //
+    // NOTE: this is computed only ONCE here, at `CREATE WORKLOAD` time, so the ratio-based
+    // limit is a SNAPSHOT of the server hard limit and goes stale once that limit moves (config reload,
+    // or per-tick dynamic adjustment when `memory_worker_dynamic_hard_limit > 0`). The exact
+    // `max_memory` setting is unaffected.
+    //
+    // TODO(serxa): re-derive the ratio-based limit when the hard limit changes (notify from
+    // `MemoryWorker`/`total_memory_tracker` to `WorkloadResourceManager`, then `AllocationLimit::updateLimit`).
     {
         Int64 limit = unlimited;
         Int64 exact_number = get_value(specific.max_memory, regular.max_memory, Int64(0));
