@@ -23,7 +23,7 @@ from threading import Thread
 from types import SimpleNamespace
 from typing import Any, Dict, Iterator, List, Optional, Type, TypeVar, Union
 
-T = TypeVar("T", bound="Serializable")
+T = TypeVar("T", bound="Serializable")  # noqa: F821  # forward ref to MetaClasses.Serializable below
 
 
 class MetaClasses:
@@ -304,7 +304,7 @@ class Shell:
 
         # Force kill if still running
         if process.poll() is None:
-            print(f"WARNING: Process still running after SIGTERM, sending SIGKILL")
+            print("WARNING: Process still running after SIGTERM, sending SIGKILL")
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
@@ -417,7 +417,7 @@ class Shell:
                     err in err_line for err_line in err_output for err in retry_errors
                 ):
                     if verbose:
-                        print(f"No retryable errors found, stopping retries")
+                        print("No retryable errors found, stopping retries")
                     break
 
                 if verbose:
@@ -439,7 +439,7 @@ class Shell:
                     else:
                         print(f"Retry {retry+1}/{retries}: exception {e}")
                         if retry == retries - 1:
-                            print(f"ERROR: Final attempt failed, no more retries left.")
+                            print("ERROR: Final attempt failed, no more retries left.")
                 if proc:
                     proc.kill()
                 if retry == retries - 1:
@@ -629,6 +629,13 @@ class Utils:
         base64_bytes = base64.b64encode(string_bytes)
         base64_string = base64_bytes.decode("utf-8")
         return base64_string
+
+    @staticmethod
+    def from_base64(value):
+        assert isinstance(value, str), f"TODO: not supported for {type(value)}"
+        base64_bytes = value.encode("utf-8")
+        string_bytes = base64.b64decode(base64_bytes)
+        return string_bytes.decode("utf-8")
 
     @staticmethod
     def is_hex(s):

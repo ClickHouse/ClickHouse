@@ -21,8 +21,6 @@ from .prometheus_test_utils import (
 from .generate_compliance_data import (
     generate as generate_openmetrics,
     BASE_TIME,
-    DATA_START,
-    DATA_END,
 )
 
 
@@ -408,7 +406,6 @@ def _compare_series_list(result_type, ref_list, test_list):
     if len(ref_sorted) != len(test_sorted):
         return False, f"series count mismatch: {len(ref_sorted)} vs {len(test_sorted)}"
 
-    value_key = "values" if result_type == "matrix" else "value"
 
     for i, (rs, ts) in enumerate(zip(ref_sorted, test_sorted)):
         if rs.get("metric") != ts.get("metric"):
@@ -614,7 +611,7 @@ def test_promql_compliance():
                 print(f"           ... and {len(entries) - 3} more")
 
             if "other" in cat or "reference" in cat or "mismatch" in cat.split("(")[0].strip():
-                print(f"           Details:")
+                print("           Details:")
                 for q, r in entries:
                     q_short = q if len(q) <= 60 else q[:57] + "..."
                     r_short = r if len(r) <= 100 else r[:97] + "..."
