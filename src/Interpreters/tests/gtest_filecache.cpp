@@ -2693,14 +2693,6 @@ namespace
         }
     };
 
-    struct RecordingCacheView : public CacheView
-    {
-        const VectorWithMemoryTracking<HitEntry> & hits() const override { return hit_entries; }
-        const VectorWithMemoryTracking<MissEntry> & misses() const override { return miss_entries; }
-        VectorWithMemoryTracking<HitEntry> hit_entries;
-        VectorWithMemoryTracking<MissEntry> miss_entries;
-    };
-
     struct RecordingCacheProvider : public ICacheProvider
     {
         ByteRange hit_range;
@@ -2712,7 +2704,7 @@ namespace
 
         CacheViewPtr planResidencyView(const StoredObject &, size_t, ByteRange) override
         {
-            auto view = std::make_unique<RecordingCacheView>();
+            auto view = std::make_unique<CacheView>();
             view->hit_entries.push_back(HitEntry{
                 hit_range,
                 std::make_unique<RecordingReadBuffer>(hit_range, recorded_gets, data)});

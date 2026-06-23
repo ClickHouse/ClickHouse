@@ -276,7 +276,7 @@ VectorWithMemoryTracking<MissEntry> PageCacheProvider::openWriteBuffers(
 
 CacheViewPtr PageCacheProvider::buildView(ByteRange range_in_file)
 {
-    auto view = std::make_unique<PageCacheView>();
+    auto view = std::make_unique<CacheView>();
 
     /// Block-align the request; the tail block is clamped to the file's real
     /// byte length so a hit cell carries only valid bytes.

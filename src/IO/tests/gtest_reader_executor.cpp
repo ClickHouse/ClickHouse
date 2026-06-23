@@ -266,20 +266,6 @@ TEST(ReaderExecutor, Seek)
 namespace
 {
 
-/// Shared, minimal `CacheView` for the in-memory mocks: it just owns the hit/miss
-/// entry vectors the executor reads back. The per-range read/write buffers do the
-/// real work over the mock's storage. No deferred-LRU bump (the mocks have no LRU),
-/// so the default destructor is fine.
-class MockCacheView : public CacheView
-{
-public:
-    const VectorWithMemoryTracking<HitEntry> & hits() const override { return hit_entries; }
-    const VectorWithMemoryTracking<MissEntry> & misses() const override { return miss_entries; }
-
-    VectorWithMemoryTracking<HitEntry> hit_entries;
-    VectorWithMemoryTracking<MissEntry> miss_entries;
-};
-
 /// Held read buffer over a run of resident blocks in `MockCacheProvider`'s storage.
 /// Re-readable; clamps `read(sub)` to its own range so a shared-storage view never
 /// reaches into a neighbouring hit's blocks. Reads each call from the LIVE storage
@@ -415,7 +401,7 @@ public:
     /// Hits carry a held read buffer; misses are whole-block-aligned with no writer.
     CacheViewPtr planResidencyView(const StoredObject &, size_t, ByteRange range_in_file) override
     {
-        auto view = std::make_unique<MockCacheView>();
+        auto view = std::make_unique<CacheView>();
         if (range_in_file.size == 0)
             return view;
 
@@ -1870,7 +1856,7 @@ private:
 inline CacheViewPtr EvictableSegmentMockCache::planResidencyView(
     const StoredObject &, size_t, ByteRange range_in_file)
 {
-    auto view = std::make_unique<MockCacheView>();
+    auto view = std::make_unique<CacheView>();
     if (range_in_file.size == 0)
         return view;
 
@@ -2786,7 +2772,7 @@ public:
     /// misses are whole-block-aligned with no writer.
     CacheViewPtr planResidencyView(const StoredObject &, size_t, ByteRange range_in_file) override
     {
-        auto view = std::make_unique<MockCacheView>();
+        auto view = std::make_unique<CacheView>();
         if (range_in_file.size == 0)
             return view;
 
@@ -3188,7 +3174,7 @@ namespace
             const StoredObject & object, size_t object_file_offset, ByteRange range_in_file) override
         {
             log.push_back(TrackedLookup{object.remote_path, object_file_offset, range_in_file});
-            auto view = std::make_unique<MockCacheView>();
+            auto view = std::make_unique<CacheView>();
             view->miss_entries.push_back(MissEntry{range_in_file, /*writer=*/nullptr});
             return view;
         }

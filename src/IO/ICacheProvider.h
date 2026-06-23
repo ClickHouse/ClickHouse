@@ -112,15 +112,21 @@ struct MissEntry { ByteRange range; CacheWriterPtr writer; };
 class CacheView
 {
 public:
+    /// Virtual so a subclass with teardown work (`DiskCacheView`'s deferred LRU
+    /// bump) runs through a `CacheViewPtr`; tiers without it use this class directly.
     virtual ~CacheView() = default;
 
-    /// Sorted, disjoint; hits + misses tile the lookup range (clamped to
-    /// EOF / object end). Miss ranges are cache-ALIGNED.
-    virtual const VectorWithMemoryTracking<HitEntry> & hits() const = 0;
-    virtual const VectorWithMemoryTracking<MissEntry> & misses() const = 0;
+    const VectorWithMemoryTracking<HitEntry> & hits() const { return hit_entries; }
+    const VectorWithMemoryTracking<MissEntry> & misses() const { return miss_entries; }
 
-    bool allHit() const { return misses().empty(); }
-    bool allMiss() const { return hits().empty(); }
+    bool allHit() const { return miss_entries.empty(); }
+    bool allMiss() const { return hit_entries.empty(); }
+
+    /// Sorted, disjoint; hits + misses tile the lookup range (clamped to EOF /
+    /// object end). Miss ranges are cache-ALIGNED. The builders (`planResidencyView`)
+    /// write these directly.
+    VectorWithMemoryTracking<HitEntry> hit_entries;
+    VectorWithMemoryTracking<MissEntry> miss_entries;
 };
 using CacheViewPtr = std::unique_ptr<CacheView>;
 

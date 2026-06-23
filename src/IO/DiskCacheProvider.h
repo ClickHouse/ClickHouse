@@ -141,11 +141,7 @@ public:
 
     ~DiskCacheView() override;
 
-    const VectorWithMemoryTracking<HitEntry> & hits() const override { return hit_entries; }
-    const VectorWithMemoryTracking<MissEntry> & misses() const override { return miss_entries; }
-
-    VectorWithMemoryTracking<HitEntry> hit_entries;
-    VectorWithMemoryTracking<MissEntry> miss_entries;
+    /// `hit_entries` / `miss_entries` are inherited from `CacheView`.
     /// Appended to by the owned read buffers' `read` calls; consumed by the dtor.
     VectorWithMemoryTracking<ByteRange> hits_to_touch;
 

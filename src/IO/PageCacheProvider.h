@@ -104,19 +104,6 @@ private:
     LoggerPtr log = getLogger("PageCacheWriter");
 };
 
-/// `CacheView` from `PageCacheProvider::planResidencyView`. No deferred-LRU
-/// bump (page cache has none), so no special destructor.
-class PageCacheView : public CacheView
-{
-public:
-    const VectorWithMemoryTracking<HitEntry> & hits() const override { return hit_entries; }
-    const VectorWithMemoryTracking<MissEntry> & misses() const override { return miss_entries; }
-
-    VectorWithMemoryTracking<HitEntry> hit_entries;
-    VectorWithMemoryTracking<MissEntry> miss_entries;
-};
-
-
 /// `ICacheProvider` wrapping PageCache. PageCache is FILE-level (one logical
 /// file per `PageCacheFile` regardless of how many `StoredObject`s back it),
 /// so the file is configured once at construction and lookups ignore the
