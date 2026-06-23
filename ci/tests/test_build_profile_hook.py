@@ -10,7 +10,9 @@ Two layers are covered:
   parse.
 * The hook artifact selection (``_has_data`` / ``_upload_profile_artifacts``):
   no-op for builds without profile data, upload for builds that have it, and
-  propagate any genuine upload error so the caller fails loudly.
+  treat a remote-upload rejection as best-effort (logged, never fatal) so a
+  successful build is not reported as failed when the shared analytics DB
+  rejects the telemetry INSERT.
 """
 
 import os
@@ -147,18 +149,41 @@ def test_native_build_uploads_all(tmp_path):
     assert recorded == [str(f) for f in files]
 
 
-def test_upload_error_propagates(tmp_path):
-    """A genuine upload failure must not be swallowed by the selector."""
+def test_remote_upload_rejection_is_best_effort(tmp_path):
+    """A remote-upload rejection must not fail the build post-hook.
+
+    insert_* raises AssertionError when the shared analytics DB rejects the
+    INSERT (e.g. Code 241 MEMORY_LIMIT_EXCEEDED when all Build variants upload
+    at once). That is telemetry-only and must be swallowed, not propagated.
+    """
     f = tmp_path / "binary_sizes.txt"
     f.write_text("1 a.o")
 
     def failing_insert(build_name, start_time, file):
         raise AssertionError("upload rejected")
 
-    try:
-        _upload_profile_artifacts(
-            "amd_debug", "2026-06-11 00:00:00", [(failing_insert, f)]
-        )
-    except AssertionError:
-        return
-    raise AssertionError("expected the upload error to propagate")
+    # Must not raise.
+    _upload_profile_artifacts(
+        "amd_debug", "2026-06-11 00:00:00", [(failing_insert, f)]
+    )
+
+
+def test_one_artifact_rejection_does_not_block_the_rest(tmp_path):
+    """One rejected artifact must not stop the remaining uploads."""
+    a = tmp_path / "profile.json"
+    a.write_text("[]")
+    b = tmp_path / "binary_sizes.txt"
+    b.write_text("1 a.o")
+
+    recorded = []
+
+    def insert(build_name, start_time, file):
+        if str(file).endswith("profile.json"):
+            raise AssertionError("upload rejected")
+        recorded.append(str(file))
+
+    _upload_profile_artifacts(
+        "amd_debug", "2026-06-11 00:00:00", [(insert, a), (insert, b)]
+    )
+
+    assert recorded == [str(b)]

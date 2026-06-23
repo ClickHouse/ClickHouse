@@ -28,15 +28,24 @@ def _has_data(file):
 def _upload_profile_artifacts(build_type, start_time, artifacts):
     """No-op for builds without profile data; upload it for builds that have it.
 
-    Skips only artifacts that are genuinely empty (no data for this build).
-    A non-empty artifact is always uploaded, and any failure uploading it
-    propagates so the caller can fail loudly: we never swallow a real error.
+    Skips artifacts that are genuinely empty (no data for this build). Uploading
+    is best-effort: it ships data to a remote analytics DB purely for build
+    observability and has no bearing on the produced binaries. That DB is shared
+    by every Build variant and routinely rejects an INSERT (e.g. Code 241
+    MEMORY_LIMIT_EXCEEDED, or transient connectivity) when the variants finish
+    and upload at once; a successful build must not be reported as failed for
+    that. Genuine build/producer errors surface earlier (prepare-time-trace.sh
+    under strict Shell.check, local file assembly), not here.
     """
     for insert, file in artifacts:
         if not _has_data(file):
             print(f"No build profile data in [{file}], skipping upload")
             continue
-        insert(build_name=build_type, start_time=start_time, file=file)
+        try:
+            insert(build_name=build_type, start_time=start_time, file=file)
+        except Exception:
+            print(f"WARNING: failed to upload build profile data [{file}]:")
+            traceback.print_exc()
 
 
 def check():
@@ -77,9 +86,11 @@ def check():
             ],
         )
     except Exception:
-        # Fail loudly on any genuine error (producer crashed, upload rejected,
-        # malformed data): never let the post-hook pass silently.
-        print("ERROR: Failed to upload build profile data:")
+        # Fail loudly on a genuine error in producing the profile data
+        # (prepare-time-trace.sh crashed, local assembly failed): never let the
+        # post-hook pass silently. Remote upload rejections are handled best
+        # effort in _upload_profile_artifacts and do not reach here.
+        print("ERROR: Failed to prepare build profile data:")
         traceback.print_exc()
         sys.exit(1)
 
