@@ -187,6 +187,38 @@ DROP TABLE t_a;
 DROP TABLE t_b;
 DROP TABLE t_c;
 
+-- A NATURAL JOIN synthesizes its USING key (the common column names) only while resolving the
+-- join, after the join-tree walk that counts USING joins has already run. The qualified matcher
+-- must still adopt the type the synthesized key gives the explicit reference; otherwise `t1.*`
+-- keeps the table (non-Nullable) type while the runtime column is Nullable, and an aggregate over
+-- it aborts with the same Bad cast. The type equality must hold and the aggregate must not crash.
+DROP TABLE IF EXISTS nt1;
+DROP TABLE IF EXISTS nt2;
+CREATE TABLE nt1 (id UInt64, x String) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE nt2 (id Nullable(UInt64), y String) ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_nullable_key = 1;
+INSERT INTO nt1 VALUES (0, 'a'), (1, 'b'), (2, 'c');
+INSERT INTO nt2 VALUES (0, 'g'), (2, 'h'), (4, 'i');
+
+SELECT toTypeName(sipHash64(nt1.*)) = toTypeName(sipHash64(nt1.id, nt1.x))
+FROM nt1 NATURAL RIGHT JOIN nt2
+LIMIT 1
+SETTINGS join_use_nulls = 0;
+
+SELECT toTypeName(nt1.id)
+FROM nt1 NATURAL RIGHT JOIN nt2
+LIMIT 1
+SETTINGS join_use_nulls = 0;
+
+SELECT count() FROM
+(
+    SELECT anyHeavy(sipHash64(nt1.*))
+    FROM nt1 NATURAL RIGHT JOIN nt2
+)
+SETTINGS join_use_nulls = 0;
+
+DROP TABLE nt1;
+DROP TABLE nt2;
+
 DROP TABLE t_jn1;
 DROP TABLE t_jn2;
 DROP TABLE t_jn3;

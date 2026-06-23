@@ -5225,6 +5225,11 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
         join_node_typed.getJoinExpression() = std::make_shared<ListNode>(std::move(using_nodes));
         join_node_typed.setUsingJoinExpression();
+
+        /// initializeQueryJoinTreeNode counts USING joins before this NATURAL -> USING conversion,
+        /// when the join still has no USING expression. Count it here so the qualified-matcher guard
+        /// in updateMatchedColumnsFromJoinUsing sees the synthesized key and corrects the matched type.
+        ++scope.using_joins_count;
     }
 
     if (join_node_typed.isOnJoinExpression())
