@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, zookeeper
 # On a Replicated database, ALTER UPDATE/DELETE must enforce SELECT on the WHERE-predicate columns
 # on the initiator, before the DDL is enqueued (the enqueue does not preserve the initiator user).
 # https://github.com/ClickHouse/ClickHouse/issues/105614
