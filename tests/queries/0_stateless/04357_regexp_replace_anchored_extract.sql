@@ -15,7 +15,7 @@ INSERT INTO t_anchored_extract VALUES
     (5, 'http://a.com/b/c/d'),
     (6, 'http://x.com:8080/a'),
     (7, 'https://user:pass@h.com/p'),
-    (8, 'http://日本.example/パス/q'),
+    (8, 'http://пример.рф/путь/q'),
     (9, 'HTTP://UPPER.COM/x'),
     (10, 'http://only.host.no.slash'),
     (11, 'http://trailing.slash.com/'),
@@ -51,7 +51,9 @@ INSERT INTO t_anchored_extract VALUES
     (41, '123-abc'),
     (42, 'abc-1'),
     (43, 'a.b.c'),
-    (44, 'ab.c');
+    (44, 'ab.c'),
+    (45, 'seg/ab1'),
+    (46, 'seg/x\ry');
 
 -- Part A: independent oracle. For anchored single-match bare-backref patterns the result
 -- must equal if(match(s,P), extractGroups(s,P)[N], s). match()/extractGroups() do NOT use
@@ -71,6 +73,9 @@ SELECT 'astar_tail' AS pattern, sum(replaceRegexpAll(s, '^https?://([^/]+)/a*$',
 SELECT 'greedy_last_slash' AS pattern, sum(replaceRegexpAll(s, '^(.*)/.*$', '\\1') != if(match(s, '^(.*)/.*$'), extractGroups(s, '^(.*)/.*$')[1], s)) AS mismatches FROM t_anchored_extract WHERE position(s, '\n') = 0;
 SELECT 'lazy_first_slash' AS pattern, sum(replaceRegexpAll(s, '^(.*?)/.*$', '\\1') != if(match(s, '^(.*?)/.*$'), extractGroups(s, '^(.*?)/.*$')[1], s)) AS mismatches FROM t_anchored_extract WHERE position(s, '\n') = 0;
 SELECT 'digits_prefix' AS pattern, sum(replaceRegexpAll(s, '^([0-9]+)-.*$', '\\1') != if(match(s, '^([0-9]+)-.*$'), extractGroups(s, '^([0-9]+)-.*$')[1], s)) AS mismatches FROM t_anchored_extract WHERE position(s, '\n') = 0;
+SELECT 'tail_class_has_nl' AS pattern, sum(replaceRegexpAll(s, '^([^/]+)/[^/]*$', '\\1') != if(match(s, '^([^/]+)/[^/]*$'), extractGroups(s, '^([^/]+)/[^/]*$')[1], s)) AS mismatches FROM t_anchored_extract WHERE position(s, '\n') = 0;
+SELECT 'tail_class_alpha' AS pattern, sum(replaceRegexpAll(s, '^([^/]+)/[a-z]*$', '\\1') != if(match(s, '^([^/]+)/[a-z]*$'), extractGroups(s, '^([^/]+)/[a-z]*$')[1], s)) AS mismatches FROM t_anchored_extract WHERE position(s, '\n') = 0;
+SELECT 'tail_class_no_crlf' AS pattern, sum(replaceRegexpAll(s, '^([^/]+)/[^\\r\\n]*$', '\\1') != if(match(s, '^([^/]+)/[^\\r\\n]*$'), extractGroups(s, '^([^/]+)/[^\\r\\n]*$')[1], s)) AS mismatches FROM t_anchored_extract WHERE position(s, '\n') = 0;
 
 -- Part B: concrete golden behaviour (includes newline fallback rows and non-firing shapes).
 -- Output columns: label, id, s, replaceRegexpAll, replaceRegexpOne.
@@ -87,6 +92,7 @@ SELECT 'NOFIRE no_begin \\1' AS t, id, s, replaceRegexpAll(s, '(foo).*$', '\\1')
 SELECT 'NOFIRE no_end \\1' AS t, id, s, replaceRegexpAll(s, '^(foo).*', '\\1') AS all_, replaceRegexpOne(s, '^(foo).*', '\\1') AS one_ FROM t_anchored_extract ORDER BY id;
 SELECT 'NOFIRE multiline \\1' AS t, id, s, replaceRegexpAll(s, '(?m)^(\\w+)$', '\\1') AS all_, replaceRegexpOne(s, '(?m)^(\\w+)$', '\\1') AS one_ FROM t_anchored_extract ORDER BY id;
 SELECT 'NOFIRE group_is_dotstar' AS t, id, s, replaceRegexpAll(s, '^(.*)$', '\\1') AS all_, replaceRegexpOne(s, '^(.*)$', '\\1') AS one_ FROM t_anchored_extract ORDER BY id;
+SELECT 'NOFIRE tail[^/]* \\1' AS t, id, s, replaceRegexpAll(s, '^([^/]+)/[^/]*$', '\\1') AS all_, replaceRegexpOne(s, '^([^/]+)/[^/]*$', '\\1') AS one_ FROM t_anchored_extract ORDER BY id;
 
 DROP TABLE t_anchored_extract;
 
@@ -102,7 +108,7 @@ INSERT INTO t_anchored_extract_fixed VALUES
     (3, 'http://h.com/a\nb'),
     (4, 'http://x.com:8080/path'),
     (5, ''),
-    (6, 'http://日本.ex/q'),
+    (6, 'http://пример.рф/q'),
     (7, 'http://h.com/'),
     (8, 'http://h/a\0b'),
     (9, 'no-match'),
