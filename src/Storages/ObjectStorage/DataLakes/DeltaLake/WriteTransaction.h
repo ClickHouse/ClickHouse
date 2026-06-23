@@ -16,8 +16,13 @@ public:
 
     const std::string & getDataPath() const;
 
-    /// Create a transcation.
-    void create();
+    /// Create a transaction.
+    ///
+    /// `partition_columns` and `table_schema` describe the target table. delta-kernel v23 does
+    /// not expose a partitioned write context via FFI (`get_unpartitioned_write_context` errors
+    /// for partitioned tables, see TODO(#2355) upstream), so for partitioned tables the write
+    /// schema and write path are derived directly from these instead of from a write context.
+    void create(const DB::Names & partition_columns, const DB::NamesAndTypesList & table_schema);
 
     /// Create a brand-new Delta table at the configured location by writing the
     /// initial `00000000000000000000.json` commit (Protocol + Metadata actions).

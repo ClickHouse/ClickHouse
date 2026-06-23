@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int TABLE_ALREADY_EXISTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace FailPoints
@@ -61,6 +62,7 @@ namespace Setting
     extern const SettingsInt64 delta_lake_snapshot_version;
 }
 
+void tracingCallback(struct ffi::Event event);
 void tracingCallback(struct ffi::Event event)
 {
     /// Do not pollute logs with very long messages
@@ -638,8 +640,20 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     auto snapshot = getTableSnapshot(snapshot_version);
     Names partition_columns = snapshot->getPartitionColumns();
 
+    /// delta-kernel v23 distinguishes the logical and physical write schemas; with column mapping
+    /// enabled the data files must use physical field names/ids, which this writer does not yet
+    /// apply (it writes the logical `sample_block`). Reject such writes rather than committing an
+    /// AddFile whose Parquet payload Delta readers cannot read correctly. Column mapping is enabled
+    /// iff the snapshot exposes physical column names.
+    if (!snapshot->getPhysicalNamesMap().empty())
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Writing to DeltaLake tables with column mapping enabled is not supported");
+    }
+
     auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper);
-    delta_transaction->create();
+    delta_transaction->create(partition_columns, snapshot->getTableSchema());
 
     if (partition_columns.empty())
     {

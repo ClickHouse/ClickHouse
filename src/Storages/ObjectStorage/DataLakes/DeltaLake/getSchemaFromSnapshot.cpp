@@ -123,9 +123,9 @@ private:
         const std::string physical_name;
 
         /// If type is complex (array, map, struct), whether it can contain nullable values.
-        bool value_contains_null;
+        bool value_contains_null{};
         /// If type is complex (array, map, struct), list id of the child list.
-        size_t child_list_id;
+        size_t child_list_id{};
 
         size_t precision = 0; /// For Decimal.
         size_t scale = 0; /// For Decimal.
@@ -204,7 +204,7 @@ public:
 private:
     static ffi::EngineSchemaVisitor createVisitor(SchemaVisitorData & data)
     {
-        ffi::EngineSchemaVisitor visitor;
+        ffi::EngineSchemaVisitor visitor{};
         visitor.data = &data;
         visitor.make_field_list = &makeFieldList;
 
@@ -225,8 +225,26 @@ private:
         visitor.visit_struct = &tupleTypeVisitor;
         visitor.visit_map = &mapTypeVisitor;
         visitor.visit_decimal = &decimalTypeVisitor;
+        visitor.visit_variant = &variantTypeVisitor;
 
         return visitor;
+    }
+
+    /// delta-kernel v23 added `visit_variant`. ClickHouse has no mapping for the Delta `Variant`
+    /// type yet, so fail deterministically instead of leaving the callback null (which the kernel
+    /// would call through and crash). Matches the throw-on-unsupported pattern of the other
+    /// visitors in this file.
+    static void variantTypeVisitor(
+        void * /* data */,
+        uintptr_t /* sibling_list_id */,
+        ffi::KernelStringSlice name,
+        bool /* nullable */,
+        const ffi::CStringMap * /* metadata */)
+    {
+        const std::string column_name(name.ptr, name.len);
+        throw DB::Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
+            "DeltaLake column '{}' has type Variant, which is not supported", column_name);
     }
 
     static void visitPartitionColumn(void * data, ffi::KernelStringSlice slice)
