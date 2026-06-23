@@ -11,6 +11,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/TreeRewriter.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -276,10 +277,18 @@ void collectIdentifierShortNames(const ASTPtr & ast, NameSet & names)
 /// column list, as in `CREATE VIEW v (id, name) AS SELECT a, b FROM t`, is rewritten into
 /// SELECT-list aliases (`SELECT a AS id, b AS name`) when the view is created, so it is
 /// covered by the alias handling here.
+///
+/// The target column name is resolved with `IdentifierSemantic::extractNestedName`, which strips
+/// only a leading table/database/alias qualifier and preserves a compound subcolumn name such as
+/// a `Nested` column `n.x`. Using `shortName` here would be wrong: it also drops the compound
+/// prefix, so a view `SELECT n.x AS nx FROM t` over a table that has both a plain column `x` and a
+/// `Nested` column `n.x` would map `nx -> x` and silently write the inserted values into the wrong
+/// column.
 std::unordered_map<String, String> extractColumnMapping(
     const ASTSelectQuery & select,
     const StorageID & view_id,
-    const NameSet & target_columns)
+    const NameSet & target_columns,
+    const DatabaseAndTableWithAlias & target_table_ref)
 {
     std::unordered_map<String, String> mapping;
 
@@ -328,7 +337,7 @@ std::unordered_map<String, String> extractColumnMapping(
                 "Cannot INSERT into view {} because its SELECT list mixes * with explicit columns",
                 view_id.getFullTableName());
 
-        String target_col = identifier->shortName();
+        String target_col = IdentifierSemantic::extractNestedName(*identifier, target_table_ref);
         if (!target_columns.contains(target_col))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Cannot INSERT into view {} because identifier '{}' in its SELECT list "
@@ -355,10 +364,13 @@ std::unordered_map<String, String> extractColumnMapping(
 }
 
 /// Gets the target table from the view's FROM clause.
+/// When `out_table_ref` is not null, it is filled with the database/table/alias of the FROM table,
+/// so the caller can resolve qualified column identifiers against it (see `extractColumnMapping`).
 StoragePtr getViewTargetTable(
     const ASTSelectQuery & select,
     const StorageID & view_id,
-    ContextPtr context)
+    ContextPtr context,
+    DatabaseAndTableWithAlias * out_table_ref = nullptr)
 {
     const auto & tables = select.tables();
     if (!tables || tables->children.empty())
@@ -388,6 +400,9 @@ StoragePtr getViewTargetTable(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Cannot INSERT into view {}: FROM clause must reference a table directly",
             view_id.getFullTableName());
+
+    if (out_table_ref)
+        *out_table_ref = DatabaseAndTableWithAlias(*table_expr, context->getCurrentDatabase());
 
     auto resolved_id = context->resolveStorageID(table_id->getTableId());
     return DatabaseCatalog::instance().getTable(resolved_id, context);
@@ -1018,7 +1033,8 @@ SinkToStoragePtr StorageView::write(
 
     /// Use the view's SQL security context for accessing the target table.
     auto context = metadata_snapshot->getSQLSecurityOverriddenContext(local_context);
-    auto target_table = getViewTargetTable(select, getStorageID(), context);
+    DatabaseAndTableWithAlias target_table_ref;
+    auto target_table = getViewTargetTable(select, getStorageID(), context, &target_table_ref);
 
     /// The target of an insertable view must be a real storage, not another regular view. A view as
     /// the target would break the "omitted columns receive the target table's defaults" contract,
@@ -1038,7 +1054,7 @@ SinkToStoragePtr StorageView::write(
     for (const auto & col : target_table->getInMemoryMetadataPtr(context, false)->getColumns().getOrdinary())
         target_columns.insert(col.name);
 
-    auto column_mapping = extractColumnMapping(select, getStorageID(), target_columns);
+    auto column_mapping = extractColumnMapping(select, getStorageID(), target_columns, target_table_ref);
 
     /// A SELECT-list alias may collide with the name of a *different* underlying column, as in
     /// `SELECT t.a AS b, t.b AS a FROM t WHERE a > 0`. If the WHERE references such a name, the
