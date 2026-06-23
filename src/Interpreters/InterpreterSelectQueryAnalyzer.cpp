@@ -42,7 +42,6 @@
 namespace ProfileEvents
 {
     extern const Event QueryAnalysisMicroseconds;
-    extern const Event QueryPlanBuildMicroseconds;
     extern const Event QueryPipelineBuildMicroseconds;
 }
 

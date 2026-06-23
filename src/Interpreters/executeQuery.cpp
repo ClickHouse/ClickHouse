@@ -118,7 +118,6 @@ namespace ProfileEvents
     extern const Event OtherQueryTimeMicroseconds;
     extern const Event ASTFuzzerQueries;
     extern const Event QueryParseMicroseconds;
-    extern const Event QueryPipelineBuildMicroseconds;
 }
 
 namespace CurrentMetrics
