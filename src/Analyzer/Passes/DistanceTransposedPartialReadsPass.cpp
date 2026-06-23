@@ -3,6 +3,8 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/DistanceTransposedPartialReadsPass.h>
+#include <Analyzer/Utils.h>
+#include <Core/Field.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -77,14 +79,18 @@ public:
         if (!column_in_table || !column_in_table->type->equals(*column_name_type.type))
             return;
 
-        /// The rewrite casts the reference vector to a non-nullable `Array(element_type)`,
-        /// which strips any nullability it carries and would change the function result type.
-        /// Precision nullability is handled separately (on the dimension constant below), so
-        /// only the reference vector's own nullability blocks the optimization here.
+        /// The rewrite casts the reference vector to a non-nullable `Array(element_type)`, which
+        /// drops the row null mask it carries (Nullable / LowCardinalityNullable / Variant / Dynamic).
+        /// Left as is, that turns the result from Nullable(Float64) into Float64. We still apply the
+        /// optimization for such reference vectors but reinstate the mask around the rewritten call
+        /// (the `ref_vec_is_nullable` branches below). An always-NULL reference (Nullable(Nothing))
+        /// carries no element type to cast to and yields a NULL distance on every row, so skip it.
         const auto & ref_vec_type = ref_vec_node->getResultType();
-        if (ref_vec_type->isNullable() || ref_vec_type->isLowCardinalityNullable() || isVariant(ref_vec_type)
-            || isDynamic(ref_vec_type))
+        if (ref_vec_type->onlyNull())
             return;
+        const bool ref_vec_is_nullable
+            = ref_vec_type->isNullable() || ref_vec_type->isLowCardinalityNullable() || isVariant(ref_vec_type)
+            || isDynamic(ref_vec_type);
 
         /// Apply the optimization
         const auto * qbit = checkAndGetDataType<DataTypeQBit>(qbit_node->getColumnType().get());
@@ -97,6 +103,16 @@ public:
 
         if (precision == 0 || precision > data_width)
             return;
+
+        auto original_result_type = function_node->getResultType();
+
+        auto make_resolved = [&](const String & name, QueryTreeNodes args) -> QueryTreeNodePtr
+        {
+            auto fn = std::make_shared<FunctionNode>(name);
+            fn->getArguments().getNodes() = std::move(args);
+            resolveOrdinaryFunctionNodeByName(*fn, name, getContext());
+            return fn;
+        };
 
         std::vector<QueryTreeNodePtr> new_args;
 
@@ -121,38 +137,54 @@ public:
         /// Cast reference vector to match QBit type. This is the only information about the type of the QBit after this pass is applied
         auto expected_ref_vec_type = std::make_shared<DataTypeArray>(qbit->getElementType());
 
-        if (ref_vec_node->getResultType()->equals(*expected_ref_vec_type))
+        auto cast_to_expected_type = [&](QueryTreeNodePtr ref) -> QueryTreeNodePtr
         {
-            new_args.push_back(ref_vec_node);
+            if (ref->getResultType()->equals(*expected_ref_vec_type))
+                return ref;
+            return make_resolved("_CAST", {ref, std::make_shared<ConstantNode>(expected_ref_vec_type->getName())});
+        };
+
+        if (ref_vec_is_nullable)
+        {
+            /// Casting the reference vector to a non-nullable `Array` drops its row null mask. Keep reading the
+            /// subcolumns, but feed the call `assumeNotNull(ref)` cast to the expected type and reinstate the mask
+            /// around the result. On a NULL row `assumeNotNull` yields a wrong-sized array, so substitute a
+            /// correctly sized dummy there: that keeps the rewritten call independent of short-circuit evaluation
+            /// (which CI randomizes) while still surfacing a genuine wrong-size error for non-null references.
+            Array dummy_ref_vec(qbit->getDimension(), Field(0));
+            auto dummy_ref_node = std::make_shared<ConstantNode>(Field(std::move(dummy_ref_vec)), expected_ref_vec_type);
+
+            auto ref_is_null = make_resolved("isNull", {ref_vec_node->clone()});
+            auto not_null_ref = cast_to_expected_type(make_resolved("assumeNotNull", {ref_vec_node->clone()}));
+            new_args.push_back(make_resolved("if", {ref_is_null, dummy_ref_node, not_null_ref}));
         }
         else
         {
-            auto cast_type_constant = std::make_shared<ConstantNode>(expected_ref_vec_type->getName());
-            auto cast_function = std::make_shared<FunctionNode>("_CAST");
-            cast_function->getArguments().getNodes().push_back(ref_vec_node);
-            cast_function->getArguments().getNodes().push_back(cast_type_constant);
-
-            auto cast_function_builder = FunctionFactory::instance().get("_CAST", getContext());
-            cast_function->resolveAsFunction(cast_function_builder->build(cast_function->getArgumentColumns()));
-
-            new_args.push_back(cast_function);
+            new_args.push_back(cast_to_expected_type(ref_vec_node));
         }
-
-        auto original_result_type = function_node->getResultType();
 
         /// Re-resolve function with new arguments
         function_node->getArguments().getNodes() = std::move(new_args);
         auto function_builder = FunctionFactory::instance().get(function_name, getContext());
         function_node->resolveAsFunction(function_builder->build(function_node->getArgumentColumns()));
 
-        if (!function_node->getResultType()->equals(*original_result_type))
+        if (ref_vec_is_nullable)
+        {
+            /// The rewritten call returns a non-nullable `Float64`; reinstate the original row null mask so the
+            /// result type matches what the user wrote (`Nullable(Float64)`).
+            auto distance_node = node;
+            auto null_const = std::make_shared<ConstantNode>(Field{}, original_result_type);
+            node = make_resolved("if", {make_resolved("isNull", {ref_vec_node->clone()}), null_const, distance_node});
+        }
+
+        if (!node->getResultType()->equals(*original_result_type))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "{} query tree node does not have a valid source node after running DistanceTransposedPartialReadsPass. Before: {}, "
                 "after: {}",
                 node->getNodeTypeName(),
                 original_result_type->getName(),
-                function_node->getResultType()->getName());
+                node->getResultType()->getName());
     }
 };
 
