@@ -58,3 +58,5 @@
 (1,'a')
 -- round-trip: CSVWithNamesAndTypes flattened header+types read back positionally (both use_header = 0)
 (1,'a')
+-- round-trip: CustomSeparatedWithNamesAndTypes flattened header+types read back positionally (both use_header = 0)
+(1,'a')
