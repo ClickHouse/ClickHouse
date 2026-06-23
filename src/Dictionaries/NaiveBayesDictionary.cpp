@@ -406,9 +406,13 @@ void registerDictionaryNaiveBayes(DictionaryFactory & factory)
         if (!config.has(layout_prefix + ".mode"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary layout requires 'mode' parameter (byte/codepoint/token)");
 
-        const auto n = static_cast<UInt32>(config.getUInt(layout_prefix + ".n"));
-        if (n == 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary: n-gram size 'n' must be greater than 0");
+        const UInt64 n_raw = config.getUInt64(layout_prefix + ".n");
+        if (n_raw == 0 || n_raw > std::numeric_limits<UInt32>::max())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "NaiveBayes dictionary: n-gram size 'n' must be between 1 and {}, got {}",
+                std::numeric_limits<UInt32>::max(), n_raw);
+        const auto n = static_cast<UInt32>(n_raw);
 
         const String mode = config.getString(layout_prefix + ".mode");
         if (mode != "byte" && mode != "codepoint" && mode != "token")
