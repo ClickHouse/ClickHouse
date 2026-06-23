@@ -6,10 +6,14 @@
 -- high-cardinality prefix `a` (unique per granule, distinct-mark ratio ~0.99 clears the 0.9 threshold)
 -- triggers primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns. The ratio must be in
 -- (0, 1): optimizeIndexColumns (IMergeTreeDataPart.cpp:1454) only drops suffix columns when
--- 0 < ratio < 1, so the control table at 0.0 keeps `b` loaded. Filtering on `b IS NULL` /
--- `b IS NOT NULL` then references a key column absent from the sparse representation, exercising the
--- `!is_key_col_present` branch of FUNCTION_IS_NULL/FUNCTION_IS_NOT_NULL in sparse index analysis
--- (KeyCondition.cpp:5854). primary_key_lazy_load = 0 keeps primary_key_bytes_in_memory populated.
+-- 0 < ratio < 1, so the control table at 0.0 keeps `b` loaded. The `!is_key_col_present` branch of
+-- the FUNCTION_IS_NULL/FUNCTION_IS_NOT_NULL handler in sparse index analysis (KeyCondition.cpp) is
+-- reached only when a present prefix column keeps the loaded sparse key set non-empty: the
+-- `a >= 90 AND b IS NULL/IS NOT NULL` cases below constrain `a`, so checkInRange runs and meets the
+-- missing `b` column. Filtering on `b` alone caps the loaded key set to zero, so markRangesFromPKRange
+-- returns BoolMask(true, true) before checkInRange and never reaches that branch -- those queries only
+-- cover the empty-sparse fallback and legacy/lightweight parity. primary_key_lazy_load = 0 keeps
+-- primary_key_bytes_in_memory populated.
 
 DROP TABLE IF EXISTS t_sparse_pk_trunc_isnull;
 DROP TABLE IF EXISTS t_full_pk_isnull;
@@ -36,8 +40,11 @@ SELECT 'b skipped from sparse index',
 
 -- { echoOn }
 
--- Filtering only on the truncated suffix `b`: the `!is_key_col_present` branch returns unknown, so
--- no granule is pruned (Granules: 100/100). The lightweight path (=1) must match the legacy path (=0).
+-- Filtering only on the truncated suffix `b`: the loaded sparse key set is empty, so
+-- markRangesFromPKRange returns BoolMask(true, true) before checkInRange and no granule is pruned
+-- (Granules: 100/100). This covers the empty-sparse fallback and that the lightweight path (=1)
+-- matches the legacy path (=0); the `!is_key_col_present` branch itself is exercised by the
+-- prefix-constrained cases below.
 EXPLAIN indexes = 1
 SELECT count() FROM t_sparse_pk_trunc_isnull
 WHERE b IS NULL
@@ -66,9 +73,11 @@ SELECT count() FROM t_sparse_pk_trunc_isnull
 WHERE b IS NOT NULL
 SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0;
 
--- Constraining the present prefix `a` alongside the truncated-suffix IS NULL/IS NOT NULL: pruning
--- still fires on `a` (Granules: 11/100), and the lightweight path matches the legacy path. The
--- sparse path (=1) is asserted with its own EXPLAIN so pruning is checked, not just the count.
+-- Constraining the present prefix `a` alongside the truncated-suffix IS NULL/IS NOT NULL: `a` keeps
+-- the loaded sparse key set non-empty, so checkInRange runs and hits the `!is_key_col_present` branch
+-- for the missing `b` column. Pruning still fires on `a` (Granules: 11/100), and the lightweight path
+-- matches the legacy path. The sparse path (=1) is asserted with its own EXPLAIN so pruning is
+-- checked, not just the count.
 EXPLAIN indexes = 1
 SELECT count() FROM t_sparse_pk_trunc_isnull
 WHERE a >= 90 AND b IS NULL
