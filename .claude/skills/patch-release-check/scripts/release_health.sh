@@ -32,11 +32,14 @@ STALE_DAYS="${STALE_DAYS:-18}"   # a targeted version older than this with new c
 # excluded so an overdue version is never hidden behind a green "all healthy".
 EXCLUDE_VERSIONS="${EXCLUDE_VERSIONS-25.8}"
 
-# `command gh` bypasses the `gh -> history|fzf` shell alias. We also drop
-# GH_CONFIG_DIR: some agent/runner checkouts point it at a config whose token
-# passes `gh auth status` but 403s on real API calls — unsetting it falls back to
-# the default config / GH_TOKEN that actually works. No-op when it is already unset.
-GH() { env -u GH_CONFIG_DIR command gh "$@"; }
+# Call the gh binary via `env`, dropping GH_CONFIG_DIR: some agent/runner checkouts
+# point it at a config whose token passes `gh auth status` but 403s on real API calls
+# — unsetting it falls back to the default config / GH_TOKEN that actually works (no-op
+# when already unset). Use `env -u … gh`, NOT `env -u … command gh`: `command` is a
+# shell builtin, so env would try to exec a binary named `command` and fail on systems
+# that lack /usr/bin/command (e.g. Linux runners). A non-interactive script does not
+# expand the interactive `gh` alias, so calling `gh` directly already hits the binary.
+GH() { env -u GH_CONFIG_DIR gh "$@"; }
 
 # Fail-close validator for a required read: the payload must parse as JSON, else
 # abort. An empty JSON array ([]) is a legitimate result (no runs / no PRs) and
