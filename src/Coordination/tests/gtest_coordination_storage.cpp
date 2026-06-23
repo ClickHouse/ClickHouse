@@ -125,7 +125,7 @@ TYPED_TEST(CoordinationTest, TestCheckNotExistsRequest)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestReapplyingDeltas)
+TYPED_TEST(CoordinationTest, TestDeterministicPreprocess)
 {
     using namespace DB;
     using namespace Coordination;
@@ -172,7 +172,11 @@ TYPED_TEST(CoordinationTest, TestReapplyingDeltas)
     Storage storage2{500, "", this->keeper_context};
     commit_initial_data(storage2);
 
-    storage1.applyUncommittedState(storage2, initial_zxid);
+    /// preprocess the same requests, expect same results
+    /// (previously this test was testing something completely different here,
+    /// but that code path was removed, and now this test is not very interesting)
+    for (int64_t zxid = initial_zxid + 1; zxid < initial_zxid + 50; ++zxid)
+        storage2.preprocessRequest(create_request, 1, 0, zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/zxid);
 
     const auto commit_unprocessed = [&](Storage & storage)
     {
@@ -1206,7 +1210,7 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
         create_request->path = path;
         create_request->acls = {Coordination::ACL{.permissions = Coordination::ACL::All, .scheme = "digest", .id = std::string{digest}}};
         storage.preprocessRequest(create_request, session_id, 0, req_zxid);
-        auto acls = storage.uncommitted_state.getACLs(path);
+        auto acls = getUncommittedACLs(storage, path);
         ASSERT_EQ(acls.size(), 1);
         ASSERT_EQ(acls[0].id, digest);
         storage.processRequest(create_request, session_id, req_zxid);
@@ -1217,7 +1221,7 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
         set_acl_request->path = path;
         set_acl_request->acls = {Coordination::ACL{.permissions = Coordination::ACL::All, .scheme = "digest", .id = std::string{new_digest}}};
         storage.preprocessRequest(set_acl_request, session_id, 0, req_zxid);
-        acls = storage.uncommitted_state.getACLs(path);
+        acls = getUncommittedACLs(storage, path);
         ASSERT_EQ(acls.size(), 1);
         ASSERT_EQ(acls[0].id, new_digest);
         storage.processRequest(set_acl_request, session_id, req_zxid);
@@ -1233,7 +1237,7 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
         create_request->path = path;
         create_request->acls = {Coordination::ACL{.permissions = Coordination::ACL::All, .scheme = "digest", .id = std::string{digest}}};
         storage.preprocessRequest(create_request, session_id, 0, req_zxid);
-        auto acls = storage.uncommitted_state.getACLs(path);
+        auto acls = getUncommittedACLs(storage, path);
         ASSERT_EQ(acls.size(), 0);
         storage.processRequest(create_request, session_id, req_zxid);
         ASSERT_EQ(storage.container.getValue(path).acl_id, 0);
@@ -1243,7 +1247,7 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
         set_acl_request->path = path;
         set_acl_request->acls = {Coordination::ACL{.permissions = Coordination::ACL::All, .scheme = "digest", .id = std::string{new_digest}}};
         storage.preprocessRequest(set_acl_request, session_id, 0, req_zxid);
-        acls = storage.uncommitted_state.getACLs(path);
+        acls = getUncommittedACLs(storage, path);
         ASSERT_EQ(acls.size(), 0);
         storage.processRequest(set_acl_request, session_id, req_zxid);
         ASSERT_EQ(storage.container.getValue(path).acl_id, 0);
