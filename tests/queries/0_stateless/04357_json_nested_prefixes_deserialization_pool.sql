@@ -1,9 +1,11 @@
 -- Tags: no-fasttest
 -- Regression test for a TSAN lock-order-inversion in nested JSON prefix deserialization.
 -- The 'arr' path is an array of objects, so JSON stores it as a dynamic path of type
--- Array(JSON), i.e. a genuine nested SerializationObject. A full-column read of 'data'
--- makes the outer object's prefix-deserialization pool task recurse into the nested
--- object's prefix - the re-entrant path that must take the sequential branch.
+-- Array(JSON), i.e. a genuine nested SerializationObject. A full-column read of 'data' makes
+-- the outer object's prefix-deserialization pool task recurse into the nested object's prefix.
+-- The nested level still deserializes prefixes in parallel, but reuses the ancestor's already
+-- thread-safe callbacks (settings.prefix_deserialization_callbacks_are_thread_safe) instead of
+-- wrapping them under a second callbacks mutex - those two nested mutexes were the inversion.
 -- A subcolumn read (data.arr) goes through SerializationObjectDynamicPath and reaches the
 -- nested object as a standalone pool owner, so it does not exercise the re-entry; only a
 -- full-column read does.
