@@ -313,7 +313,7 @@ void registerAggregateFunctionGroupBloomFilter(AggregateFunctionFactory & factor
 {
     FunctionDocumentation::Description description = R"(
 Builds a probabilistic Bloom filter from column values and returns it as an aggregate state.
-The Bloom filter can be used with [`bloomFilterContains`](/sql-reference/functions/bloom-filter-functions#bloomFilterContains)
+The Bloom filter can be used with [`bloomFilterContains`](/sql-reference/functions/bloom-filter-functions#bloomfiltercontains)
 to efficiently check whether a value was present in the aggregated dataset.
 
 This is useful for finding new values that appeared in one time interval but were absent in another,
@@ -327,17 +327,30 @@ with low memory usage compared to exact methods like `NOT IN` or `EXCEPT`.
 Alternatively, you can specify filter parameters directly:
 - `filter_size_bytes` — size of the Bloom filter in bytes.
 - `num_hashes` — number of hash functions.
+
+The parameter form is selected by the second parameter: if it is a `Float64` value in `(0, 1)`,
+it is interpreted as `false_positive_rate`; otherwise, it is interpreted as `num_hashes`.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 groupBloomFilter([expected_elements[, false_positive_rate[, seed]]])(column)
 groupBloomFilterState([expected_elements[, false_positive_rate[, seed]]])(column)
+groupBloomFilter(filter_size_bytes, num_hashes[, seed])(column)
+groupBloomFilterState(filter_size_bytes, num_hashes[, seed])(column)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"column", "Column values to add to the Bloom filter. Supported types: integers, floats, String, Date, UUID, IP, Enum.", {}}
+        {
+            "column",
+            "Column values to add to the Bloom filter. Supported types: UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, "
+            "Int8, Int16, Int32, Int64, Int128, Int256, Float32, Float64, String, FixedString, Date, Date32, "
+            "DateTime, DateTime64, UUID, IPv4, IPv6, Enum8, Enum16.",
+            {}
+        }
     };
     FunctionDocumentation::Parameters parameters = {
         {"expected_elements", "Expected number of distinct elements."},
         {"false_positive_rate", "Desired false positive rate in (0, 1). Default: 0.025."},
+        {"filter_size_bytes", "Size of the Bloom filter in bytes for the direct parameter form."},
+        {"num_hashes", "Number of hash functions for the direct parameter form."},
         {"seed", "Seed for hash functions. Default: 0."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
