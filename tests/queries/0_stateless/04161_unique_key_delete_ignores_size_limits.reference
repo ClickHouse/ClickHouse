@@ -1,0 +1,6 @@
+c1_after_insert	200000
+c1_after_delete	0
+c2_after_insert	200000
+c2_after_delete	100000
+c2_survivors_min	1
+c2_survivors_max	199999

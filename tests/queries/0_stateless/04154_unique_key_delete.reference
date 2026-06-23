@@ -1,0 +1,10 @@
+after_insert	5
+after_delete	3
+survivors	1	a
+survivors	3	c
+survivors	5	e
+after_redelete	3
+survivors_redelete	1	a
+survivors_redelete	3	c
+survivors_redelete	5	e
+survivor_sum	9

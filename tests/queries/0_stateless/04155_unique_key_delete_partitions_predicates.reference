@@ -1,0 +1,27 @@
+part_after_insert	9
+part_after_delete	5
+part_p10	2
+part_p20	1
+part_p30	2
+part_survivors	1	10
+part_survivors	3	10
+part_survivors	5	20
+part_survivors	7	30
+part_survivors	9	30
+gran_after_insert	8
+gran_after_delete	4
+gran_survivors	5	e
+gran_survivors	6	f
+gran_survivors	7	g
+gran_survivors	8	h
+gran_filtered	1
+edge_nomatch	4
+edge_all	0
+cum_after_insert	10
+cum_step1	8
+cum_step2	6
+cum_step3	4
+cum_survivors	3	c
+cum_survivors	4	d
+cum_survivors	7	g
+cum_survivors	8	h

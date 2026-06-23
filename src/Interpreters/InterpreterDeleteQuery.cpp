@@ -22,6 +22,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageMergeTree.h>
 
 
 namespace DB
@@ -96,6 +97,31 @@ BlockIO InterpreterDeleteQuery::execute()
     /// supportsDelete() and subsequent mutation checks see valid metadata.
     table->updateExternalDynamicMetadataIfExists(getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
+
+    /// UNIQUE KEY: `DELETE FROM ... WHERE ...` is dispatched to the storage's
+    /// synchronous marker-part path, bypassing both the `supportsDelete`
+    /// mutation route and the default `_row_exists = 0` lightweight path.
+    /// ALTER DELETE on UK stays blocked in `checkMutationIsPossible`.
+    if (metadata_snapshot->hasUniqueKey())
+    {
+        /// `ON CLUSTER` has no dispatch on the single-node UK path; reject
+        /// explicitly rather than silently ignore it.
+        if (!delete_query.cluster.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "DELETE ... ON CLUSTER is not supported on UNIQUE KEY tables "
+                "(synchronous single-node path only).");
+
+        if (auto * merge_tree = dynamic_cast<StorageMergeTree *>(table.get()))
+        {
+            merge_tree->deleteByUniqueKey(query_ptr, getContext());
+            return {};
+        }
+        /// ReplicatedMergeTree and other variants: only the non-replicated
+        /// `StorageMergeTree` synchronous DELETE path is implemented.
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "DELETE on UNIQUE KEY tables is only supported on StorageMergeTree (got {})",
+            table->getName());
+    }
 
     if (table->supportsDelete())
     {

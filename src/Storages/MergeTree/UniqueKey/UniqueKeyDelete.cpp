@@ -1,0 +1,285 @@
+#include <Storages/MergeTree/UniqueKey/UniqueKeyDelete.h>
+
+#include <Interpreters/Context.h>
+#include <Parsers/ASTDeleteQuery.h>
+#include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeCommittingBlock.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/MergeTreePartition.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
+#include <Storages/MergeTree/UniqueKey/Txn/PartitionTxnController.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyDeleteRowFinder.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyMarkerPart.h>
+#include <Storages/MergeTree/UniqueKey/Txn/UniqueKeyPartitionMutex.h>
+#include <Storages/MergeTree/UniqueKey/Txn/UniqueKeyManifest.h>
+#include <Storages/StorageMergeTree.h>
+
+#include <Common/Stopwatch.h>
+
+#include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
+
+#include <filesystem>
+
+
+namespace ProfileEvents
+{
+    extern const Event UniqueKeyDeleteRows;
+}
+
+
+namespace DB
+{
+
+namespace
+{
+
+/// Run one partition's DELETE commit through the per-partition
+/// `PartitionTxnController`. Returns the number of touched targets actually
+/// committed (skipped-outdated targets are accounted by the caller). Caller
+/// holds the per-partition UK mutex for the duration.
+size_t commitDeleteForPartition(
+    StorageMergeTree & storage,
+    const String & partition_id,
+    const std::vector<UniqueKeyTxn::UniqueKeyDeleteRowsForPart> & parts_in_partition,
+    LoggerPtr log,
+    size_t & out_skipped_outdated_parts,
+    std::unique_ptr<PlainCommittingBlockHolder> marker_block_holder)
+{
+    /// Resolve part_name → DataPartPtr under the UK mutex. NOTE: the UK
+    /// partition mutex is DELETE-only — merges do NOT take it. So resolving
+    /// here only freezes the part set against other DELETEs, not against
+    /// merges; the exact-match skip below catches a merge that committed
+    /// BEFORE this resolution, but a merge that outdates a target AFTER it
+    /// (between this critical section and the bitmap install) is not caught
+    /// here — see the install-side note on that race below.
+    struct ResolvedTarget
+    {
+        MergeTreeData::DataPartPtr part;
+        UniqueKeyTxn::RoaringBitmapPtr rows;
+    };
+    std::vector<ResolvedTarget> targets;
+    targets.reserve(parts_in_partition.size());
+
+    /// Capture one MergeTreePartition for the marker part (any surviving
+    /// touched part from this partition will do — they all share the same
+    /// partition value).
+    MergeTreePartition marker_partition;
+    bool marker_partition_set = false;
+
+    {
+        auto parts_lock = storage.readLockParts();
+        for (const auto & entry : parts_in_partition)
+        {
+            auto part = storage.getActiveContainingPart(entry.part_name, parts_lock);
+            if (!part)
+            {
+                ++out_skipped_outdated_parts;
+                continue;
+            }
+            /// DELETE-vs-merge retargeting: `getActiveContainingPart` returns
+            /// the COVERING part. If a merge committed between our SELECT and
+            /// this critical section, `part->name` is the merged-output
+            /// part's name and our `_part_offset` values would target wrong
+            /// rows. Require exact match; best-effort skip otherwise.
+            ///
+            /// This catches only a merge that committed BEFORE this
+            /// resolution. A merge that outdates a target AFTER it — between
+            /// here and the bitmap install — is NOT caught: merges don't take
+            /// the UK mutex, so `MergeTreeBitmapStore::resolvePart` falls back
+            /// to the now-outdated part (`getPartIfExists`), the marker commit
+            /// succeeds, and the matched rows survive live in the merged active
+            /// part with NO `skipped_outdated_parts` increment — a silent
+            /// under-delete (no warning fires for this window).
+            /// TODO(unique-key): both windows (pre- and post-resolution) need
+            /// full DELETE-vs-merge reconciliation, which lands with merge
+            /// support (late-kill on merge commit). Until then the
+            /// post-resolution race is silent; re-running the DELETE removes
+            /// the survivors.
+            if (part->name != entry.part_name)
+            {
+                LOG_DEBUG(log,
+                    "UNIQUE KEY DELETE: skipping part '{}' — merged into covering part '{}' "
+                    "between SELECT and UK mutex; stale _part_offset values cannot be remapped",
+                    entry.part_name, part->name);
+                ++out_skipped_outdated_parts;
+                continue;
+            }
+
+            if (!marker_partition_set)
+            {
+                marker_partition = part->partition;
+                marker_partition_set = true;
+            }
+
+            ResolvedTarget rt;
+            rt.part = std::move(part);
+            rt.rows = entry.rows;
+            targets.push_back(std::move(rt));
+        }
+    }
+
+    if (targets.empty())
+        return 0;
+
+    const Int64 marker_block_number = marker_block_holder->block.number;
+
+    /// Stage the marker part. `creation_csn = INVALID_CSN` is a placeholder —
+    /// the publish callback rewrites it with the real assigned csn.
+    UniqueKeyTxn::UniqueKeyManifest marker_meta;
+    marker_meta.creation_csn = UniqueKeyTxn::INVALID_CSN;
+    marker_meta.is_marker = true;
+    marker_meta.bitmaps_created.reserve(targets.size());
+    for (const auto & t : targets)
+        marker_meta.bitmaps_created.emplace_back(t.part->name, UniqueKeyTxn::INVALID_CSN);
+
+    auto marker_handle = UniqueKeyTxn::createMarkerPart(
+        storage, partition_id, marker_block_number, marker_partition, marker_meta);
+
+    /// `touched` is the per-target DELTA; the commit cumulates
+    /// `prev_bitmap ∪ new_kills` internally and PUTs the cumulative bytes.
+    UniqueKeyTxn::CommitRequest req;
+    req.is_marker = true;
+    req.touched.reserve(targets.size());
+    for (auto & t : targets)
+    {
+        UniqueKeyTxn::TouchedPartKills tk;
+        tk.target = t.part->name;
+        tk.new_kills = t.rows;
+        req.touched.push_back(std::move(tk));
+    }
+
+    /// Two callbacks split around the bitmap PUTs so the Writer ordering holds
+    /// under the publish lock: manifest finalize, bitmap PUTs, rename.
+    auto marker_data_part_shared = marker_handle.data_part;
+    MergeTreeData & data_ref = storage;
+
+    /// Runs inside the publish lock BEFORE any bitmap PUT: rewrite
+    /// `unique_key.txt` with the real csn (replacing the staged
+    /// `INVALID_CSN` placeholders in `marker_meta`) so the recovery sweep can
+    /// find every sidecar this commit writes, then mirror the lightweight
+    /// projection into the in-memory cache so same-process consumers don't wait
+    /// on the lazy ATTACH-time disk read.
+    req.staged.finalize_manifest = [marker_data_part_shared, finalized = marker_meta]
+        (UniqueKeyTxn::CSN assigned_csn) mutable
+    {
+        finalized.creation_csn = assigned_csn;
+        finalized.is_marker = true;
+        for (auto & [_, csn] : finalized.bitmaps_created)
+            csn = assigned_csn;
+
+        UniqueKeyTxn::UniqueKeyManifest::write(
+            marker_data_part_shared->getDataPartStorage(), finalized);
+
+        marker_data_part_shared->setUniqueKeyMeta(
+            UniqueKeyTxn::UniqueKeyPartMeta{finalized.creation_csn, finalized.is_marker});
+    };
+
+    /// Runs inside the publish lock AFTER `finalize_manifest` and after every
+    /// per-target bitmap PUT. Renames tmp → active via `renameTempPartAndAdd`
+    /// (same primitive INSERT uses); the part goes Active on `transaction.commit`.
+    req.staged.publish = [&data_ref, marker_data_part_shared]
+        (UniqueKeyTxn::CSN /*assigned_csn*/)
+    {
+        MergeTreeData::MutableDataPartPtr mutable_part = marker_data_part_shared;
+        MergeTreeData::Transaction transaction(data_ref, /*txn=*/nullptr);
+        {
+            auto parts_lock = data_ref.lockParts();
+            data_ref.renameTempPartAndAdd(
+                mutable_part, transaction, parts_lock,
+                /*rename_in_transaction=*/false);
+            transaction.commit(parts_lock);
+        }
+    };
+
+    auto & txn_controller = storage.getOrCreateTxnController(partition_id);
+    auto result = txn_controller.commit(std::move(req));
+    chassert(result.csn != UniqueKeyTxn::INVALID_CSN,
+        "UNIQUE KEY DELETE: PartitionTxnController::commit returned INVALID_CSN");
+
+    /// Report the per-target delta cardinality for the ProfileEvent (not the
+    /// cumulative dead set; the row finder pre-filters already-dead rows).
+    size_t committed_rows = 0;
+    for (const auto & t : targets)
+        if (t.rows)
+            committed_rows += t.rows->cardinality();
+
+    /// Drops after the commit; the part is already renamed into the active
+    /// set above, so releasing the block number here is safe.
+    (void)marker_block_holder;
+
+    return committed_rows;
+}
+
+}
+
+void executeUniqueKeyDelete(
+    StorageMergeTree & storage,
+    const ASTPtr & query_ptr,
+    ContextPtr query_context)
+{
+    /// Synchronous UNIQUE KEY DELETE; see the header for the full contract.
+    /// Resurrection: with `_block_number` ordering, a later INSERT of a
+    /// now-dead key produces a strictly-greater `_block_number`, so the
+    /// bitmap-dead row stays invisible and the new row supersedes it.
+    ///
+    /// NOT a transaction. The atomic unit is one partition's commit (marker
+    /// part + per-target bitmap installs under that partition's UK mutex); the
+    /// loop below visits partitions independently with no cross-partition
+    /// atomicity or rollback. A crash or mid-loop error leaves the
+    /// already-committed partitions deleted and the rest untouched — re-running
+    /// the same DELETE is the recovery (idempotent: already-dead rows are
+    /// filtered out by the read path). The statement is also not isolated from
+    /// concurrent merges (see the outdated-part skip in
+    /// `commitDeleteForPartition`).
+
+    const auto & storage_id = storage.getStorageID();
+    auto log = getLogger(storage_id.getNameForLogs());
+
+    /// ----- Step 1: row finder (no lock).
+    auto rf = UniqueKeyTxn::UniqueKeyDeleteRowFinder::find(storage, query_ptr, query_context);
+
+    /// ----- Step 2: per partition, route through PartitionTxnController::commit.
+    size_t total_committed_rows = 0;
+    size_t skipped_outdated_parts = 0;
+
+    for (auto & [partition_id, parts_in_partition] : rf.by_partition)
+    {
+        auto uk_mutex = storage.getOrCreatePartitionMutex(partition_id);
+        std::lock_guard<std::mutex> partition_lock(*uk_mutex);
+        Stopwatch mutex_hold_watch;
+
+        /// Allocated here rather than in the anon-namespace helper below,
+        /// which cannot reach `allocateBlockNumber` (this function is the
+        /// `friend` of `StorageMergeTree`).
+        auto marker_block_holder = storage.allocateBlockNumber(CommittingBlock::Op::NewPart);
+
+        total_committed_rows += commitDeleteForPartition(
+            storage, partition_id, parts_in_partition, log, skipped_outdated_parts,
+            std::move(marker_block_holder));
+
+        recordUniqueKeyMutexHold(mutex_hold_watch.elapsedMicroseconds());
+    }
+
+    ProfileEvents::increment(ProfileEvents::UniqueKeyDeleteRows, total_committed_rows);
+
+    LOG_DEBUG(log,
+        "UNIQUE KEY DELETE: predicate matched {} rows across {} parts; committed {} newly-dead rows; "
+        "{} parts skipped (outdated under UK mutex)",
+        rf.stats.total_matched_rows, rf.stats.parts_with_hits, total_committed_rows, skipped_outdated_parts);
+
+    /// Loud signal for the DELETE-vs-merge skip (see commitDeleteForPartition):
+    /// rows whose part merged away between the predicate scan and commit are
+    /// NOT deleted by this statement. Surfaced at WARNING so the gap is not
+    /// silent until merge-side reconciliation (forwarding + late-kill) lands.
+    if (skipped_outdated_parts > 0)
+        LOG_WARNING(log,
+            "UNIQUE KEY DELETE on table {}: {} part(s) merged away between the predicate "
+            "scan and commit; their matching rows were NOT deleted by this statement "
+            "(concurrent-merge race) — re-run the DELETE to remove them",
+            storage.getStorageID().getNameForLogs(), skipped_outdated_parts);
+}
+
+}
