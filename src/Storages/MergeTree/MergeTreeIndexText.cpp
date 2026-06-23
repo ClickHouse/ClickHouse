@@ -1077,12 +1077,15 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
     }
 }
 
-void TextIndexSerialization::serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, MergeTreeIndexVersion version, WriteBuffer & ostr)
+void TextIndexSerialization::serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, MergeTreeIndexVersion version, bool has_positions, WriteBuffer & ostr)
 {
     UInt64 codec_type = static_cast<UInt64>(posting_list_codec_type);
 
     writeVarUInt(static_cast<UInt64>(version), ostr);
     writeVarUInt(codec_type, ostr);
+
+    if (version >= static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithPositions))
+        writeVarUInt(static_cast<UInt64>(has_positions), ostr);
 
     chassert(sparse_index.tokens->size() == sparse_index.offsets_in_file->size());
     auto serialization_string = SerializationString::create();
@@ -1113,6 +1116,13 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown posting list codec type in text index header: {}", codec_type);
 
         header.codec_type = static_cast<IPostingListCodec::Type>(codec_type);
+    }
+
+    if (version >= static_cast<UInt64>(TextIndexHeader::Version::WithPositions))
+    {
+        UInt64 has_positions = 0;
+        readVarUInt(has_positions, istr);
+        header.has_positions = has_positions != 0;
     }
 
     return header;
@@ -1410,8 +1420,7 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         positions_stream = it->second;
     }
 
-    /// When positions are stored, the dictionary entries carry extra position metadata, so the
-    /// header version is bumped. Older servers reject `WithPositions` parts instead of misparsing them.
+    /// Positional parts need a WithPositions reader.
     auto serialization_version = static_cast<MergeTreeIndexVersion>(
         params.positions ? TextIndexHeader::Version::WithPositions : TextIndexHeader::Version::WithCodec);
 
@@ -1426,7 +1435,7 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         postings_serialization,
         positions_stream);
 
-    TextIndexSerialization::serializeHeader(sparse_index_block, posting_list_codec_type, serialization_version, index_stream->compressed_hashing);
+    TextIndexSerialization::serializeHeader(sparse_index_block, posting_list_codec_type, serialization_version, params.positions, index_stream->compressed_hashing);
 }
 
 void MergeTreeIndexGranuleTextWritable::deserializeBinary(ReadBuffer &, MergeTreeIndexVersion)
@@ -1916,8 +1925,6 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     if (positions > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 0 or 1, but got {}", ARGUMENT_POSITIONS, positions);
 
-    /// Storing positions is experimental (the on-disk format is not yet stable), so gate it behind
-    /// a MergeTree setting that can be disabled in the experimental tier.
     if (positions && !settings[MergeTreeSetting::allow_experimental_text_index_positions])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Text index argument '{}' is experimental. Enable it with the MergeTree setting "

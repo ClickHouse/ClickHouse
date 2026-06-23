@@ -557,7 +557,7 @@ void MergeTextIndexesTask::finalize()
 
     auto serialization_version = static_cast<MergeTreeIndexVersion>(
         params.positions ? TextIndexHeader::Version::WithPositions : TextIndexHeader::Version::WithCodec);
-    TextIndexSerialization::serializeHeader(sparse_index, postings_serialization.getPostingListCodec()->getType(), serialization_version, index_stream->compressed_hashing);
+    TextIndexSerialization::serializeHeader(sparse_index, postings_serialization.getPostingListCodec()->getType(), serialization_version, params.positions, index_stream->compressed_hashing);
 
     for (auto & stream : output_streams_holders)
         stream->finalize();
