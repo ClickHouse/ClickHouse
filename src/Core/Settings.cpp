@@ -1708,6 +1708,24 @@ Possible values:
 Validate checksums on reading. It is enabled by default and should be always enabled in production. Please do not expect any benefits in disabling this setting. It may only be used for experiments and benchmarks. The setting is only applicable for tables of MergeTree family. Checksums are always validated for other table engines and when receiving data over the network.
 )", 0) \
     \
+    DECLARE(Bool, use_lightweight_primary_key_index_analysis, true, R"(
+Optimize primary key index analysis for `MergeTree` tables with long primary keys.
+
+When enabled, the run time of index analysis mainly depends on the complexity of the query's filter (the key columns it actually uses), not on the length of the primary key — so extending the sorting key has negligible extra overhead on index analysis for queries that filter on only a few of its columns.
+
+Possible values:
+
+- 0 — Disabled. All primary key columns are processed during index analysis.
+- 1 — Enabled.
+)", 0) \
+    DECLARE_WITH_ALIAS(Bool, use_partition_pruning, true, R"(
+Use partition key to prune partitions during query execution for MergeTree tables.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0, use_partition_key) \
     DECLARE(Bool, force_index_by_date, false, R"(
 Disables query execution if the index can't be used by date.
 
@@ -1723,14 +1741,6 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, use_partition_pruning, true, R"(
-Use partition key to prune partitions during query execution for MergeTree tables.
-
-Possible values:
-
-- 0 — Disabled.
-- 1 — Enabled.
-)", 0, use_partition_key) \
     DECLARE(Bool, force_primary_key, false, R"(
 Disables query execution if indexing by the primary key is not possible.
 
@@ -6946,6 +6956,9 @@ Only has an effect in ClickHouse Cloud. Use clients cache for read requests.
     DECLARE(String, distributed_cache_file_cache_name, "", R"(
 Only has an effect in ClickHouse Cloud. A setting used only for CI tests - filesystem cache name to use on distributed cache.
 )", 0) \
+    DECLARE(Bool, distributed_cache_registry_show_certificate_and_signature, false, R"(
+Only has an effect in ClickHouse Cloud. Show the `certificate` and `signature` columns in the `system.distributed_cache_registry` table. By default these columns are empty to keep the output compact; enable this setting to inspect them.
+)", 0) \
     DECLARE(Bool, filesystem_cache_allow_background_download, true, R"(
 Allow filesystem cache to enqueue background downloads for data read from remote storage. Disable to keep downloads in the foreground for the current query/session.
 )", 0) \
@@ -8130,10 +8143,6 @@ Changes made with `SET` or query-level `SETTINGS` do not change extracted subcol
 To change extracted subcolumn behavior, update `allow_nullable_tuple_in_extracted_subcolumns` in startup profile configuration (for example, users.xml) and restart the server.
 )", 0) \
     \
-    /** Experimental feature for moving data between shards. */ \
-    DECLARE(Bool, allow_experimental_query_deduplication, false, R"(
-Experimental data deduplication for SELECT queries based on part UUIDs
-)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_hms_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'hms'
 )", EXPERIMENTAL) \
@@ -8194,6 +8203,9 @@ Default number of tasks for parallel reading in distributed query. Tasks are spr
     DECLARE(Bool, distributed_plan_optimize_exchanges, true, R"(
 Removes unnecessary exchanges in distributed query plan. Disable it for debugging.
 )", 0) \
+    DECLARE(UInt64, distributed_plan_workers_num, 0, R"(
+How many stateless workers will be used to execute this query. Zero disables stateless-worker leasing for distributed plans.
+)", EXPERIMENTAL) \
     DECLARE(String, distributed_plan_force_exchange_kind, "", R"(
 Force specified kind of Exchange operators between distributed query stages.
 
@@ -8352,6 +8364,7 @@ Maximum number of texts to include in a single HTTP request made by `aiEmbed`. T
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
     /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_query_deduplication, false) \
     MAKE_OBSOLETE(M, Bool, query_condition_cache_store_conditions_as_plaintext, false) \
     MAKE_OBSOLETE(M, Bool, update_insert_deduplication_token_in_dependent_materialized_views, 0) \
     MAKE_OBSOLETE(M, UInt64, max_memory_usage_for_all_queries, 0) \
