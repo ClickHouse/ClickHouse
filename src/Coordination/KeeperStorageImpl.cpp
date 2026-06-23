@@ -338,14 +338,14 @@ static Coordination::Error preprocess(
     else if (parent_cversion > new_parent_stats.cversion)
         new_parent_stats.cversion = parent_cversion;
 
-    new_parent_stats.pzxid = std::max(storage.staging_zxid, new_parent_stats.pzxid);
+    new_parent_stats.pzxid = std::max(storage.staging.zxid, new_parent_stats.pzxid);
 
     new_parent_stats.increaseNumChildren();
 
     Coordination::Stat stat;
-    stat.czxid = storage.staging_zxid;
-    stat.mzxid = storage.staging_zxid;
-    stat.pzxid = storage.staging_zxid;
+    stat.czxid = storage.staging.zxid;
+    stat.mzxid = storage.staging.zxid;
+    stat.pzxid = storage.staging.zxid;
     stat.ctime = time;
     stat.mtime = time;
     stat.numChildren = 0;
@@ -358,7 +358,7 @@ static Coordination::Error preprocess(
 
     storage.prepareCreateNode(
         parent_path, std::move(parent_node_ref), new_parent_stats,
-        path_created, std::move(child_node_ref), stat, acl_id, zk_request.data);
+        path_created, std::move(child_node_ref), stat, acl_id, zk_request.data, storage.staging);
 
     return Coordination::Error::ZOK;
 }
@@ -392,13 +392,13 @@ static Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperC
         deltas.begin(),
         deltas.end(),
         [](const auto & delta)
-        { return std::holds_alternative<KeeperStorage::CreateNodeDelta>(delta.operation); });
+        { return std::holds_alternative<CreateNodeDelta>(delta.operation); });
 
     if (create_delta_it != deltas.end())
     {
         created_path = create_delta_it->path;
         if (response->getOpNum() == Coordination::OpNum::Create2)
-            static_cast<Coordination::ZooKeeperCreate2Response &>(*response).zstat = std::get<KeeperStorage::CreateNodeDelta>(create_delta_it->operation).stat;
+            static_cast<Coordination::ZooKeeperCreate2Response &>(*response).zstat = std::get<CreateNodeDelta>(create_delta_it->operation).stat;
     }
     if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
     {
@@ -498,8 +498,8 @@ static Coordination::Error preprocess(
 
     KeeperNodeStats new_parent_stats = parent_node->stats;
 
-    if (zk_request.restored_from_zookeeper_log && new_parent_stats.pzxid < storage.staging_zxid)
-        new_parent_stats.pzxid = storage.staging_zxid;
+    if (zk_request.restored_from_zookeeper_log && new_parent_stats.pzxid < storage.staging.zxid)
+        new_parent_stats.pzxid = storage.staging.zxid;
 
     auto node_ref = storage.getUncommittedNode(zk_request.path);
     const auto * node = node_ref.get();
@@ -511,7 +511,7 @@ static Coordination::Error preprocess(
 
         if (zk_request.restored_from_zookeeper_log)
         {
-            storage.prepareUpdateNodeStat(parent_path, std::move(parent_node_ref), new_parent_stats);
+            storage.prepareUpdateNodeStat(parent_path, std::move(parent_node_ref), new_parent_stats, storage.staging);
             return Coordination::Error::ZOK;
         }
 
@@ -548,7 +548,7 @@ static Coordination::Error preprocess(
     }
 
     storage.prepareRemoveNode(
-        parent_path, std::move(parent_node_ref), new_parent_stats, zk_request.path, std::move(node_ref));
+        parent_path, std::move(parent_node_ref), new_parent_stats, zk_request.path, std::move(node_ref), storage.staging);
 
     return Coordination::Error::ZOK;
 }
@@ -585,7 +585,7 @@ static std::pair<KeeperResponsesForSessions, Int64> processWatches(
     Int64 total_removed_watches = 0;
     for (const auto & delta : deltas)
     {
-        if (std::holds_alternative<KeeperStorage::RemoveNodeDelta>(delta.operation))
+        if (std::holds_alternative<RemoveNodeDelta>(delta.operation))
         {
             auto [new_responses, removed_watches] = storage.processWatchesImpl(delta.path, Coordination::Event::DELETED);
             responses.insert(responses.end(), std::make_move_iterator(new_responses.begin()), std::make_move_iterator(new_responses.end()));
@@ -654,7 +654,7 @@ static Coordination::Error preprocess(
         }
     }
 
-    storage.prepareRemoveRecursive(parent_path, std::move(parent_node_ref), new_parent_stats, std::move(nodes_to_remove));
+    storage.prepareRemoveRecursive(parent_path, std::move(parent_node_ref), new_parent_stats, std::move(nodes_to_remove), storage.staging);
 
     return Coordination::Error::ZOK;
 }
@@ -808,17 +808,17 @@ static Coordination::Error preprocess(
 
     KeeperNodeStats new_stats = node->stats;
     new_stats.version++;
-    new_stats.mzxid = storage.staging_zxid;
+    new_stats.mzxid = storage.staging.zxid;
     new_stats.mtime = time;
     new_stats.data_size = static_cast<uint32_t>(zk_request.data.size());
-    storage.prepareUpdateNodeData(zk_request.path, std::move(node_ref), new_stats, zk_request.data);
+    storage.prepareUpdateNodeData(zk_request.path, std::move(node_ref), new_stats, zk_request.data, storage.staging);
 
     auto parent_path = Coordination::parentNodePath(zk_request.path);
     auto parent_node_ref = storage.getUncommittedNode(parent_path);
     const auto * parent_node = parent_node_ref.get();
     KeeperNodeStats new_parent_stats = parent_node->stats;
     ++new_parent_stats.cversion;
-    storage.prepareUpdateNodeStat(parent_path, std::move(parent_node_ref), new_parent_stats);
+    storage.prepareUpdateNodeStat(parent_path, std::move(parent_node_ref), new_parent_stats, storage.staging);
 
     return Coordination::Error::ZOK;
 }
@@ -833,7 +833,7 @@ static Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperS
     for (auto it = deltas.end(); it != deltas.begin();)
     {
         --it;
-        if (const auto * update_delta = std::get_if<KeeperStorage::UpdateNodeStatDelta>(&it->operation))
+        if (const auto * update_delta = std::get_if<UpdateNodeStatDelta>(&it->operation))
         {
             found_delta = true;
             update_delta->new_stats.setResponseStat(response->stat);
@@ -1301,7 +1301,7 @@ static Coordination::Error preprocess(
             return Coordination::Error::ZOK;
     }
 
-    storage.prepareAddAuth(new_auth, session_id);
+    storage.prepareAddAuth(new_auth, session_id, storage.staging);
 
     return Coordination::Error::ZOK;
 }
@@ -1363,7 +1363,7 @@ static Coordination::Error preprocess(
     KeeperNodeStats new_stats = node->stats;
     ++new_stats.aversion;
     new_stats.acl_id = storage.acl_map.convertACLs(node_acls);
-    storage.prepareUpdateNodeStat(zk_request.path, std::move(node_ref), new_stats);
+    storage.prepareUpdateNodeStat(zk_request.path, std::move(node_ref), new_stats, storage.staging);
 
     return Coordination::Error::ZOK;
 }
@@ -1377,7 +1377,7 @@ process(const Coordination::ZooKeeperSetACLRequest & /*zk_request*/, KeeperStora
     for (auto it = deltas.end(); it != deltas.begin();)
     {
         --it;
-        if (const auto * update_delta = std::get_if<KeeperStorage::UpdateNodeStatDelta>(&it->operation))
+        if (const auto * update_delta = std::get_if<UpdateNodeStatDelta>(&it->operation))
         {
             found_delta = true;
             update_delta->new_stats.setResponseStat(response->stat);
@@ -1455,11 +1455,11 @@ static Coordination::Error preprocess(
         {
             /// Failed multi-write. Caller will roll back any changes we've made.
             /// (Caller has special case to preserve FailedMultiDelta but roll back everything before it.)
-            storage.staging_deltas.emplace_back(storage.staging_zxid, KeeperStorage::FailedMultiDelta{ .failed_pos = i, .failed_pos_error = error });
+            storage.staging.deltas.emplace_back(storage.staging.zxid, FailedMultiDelta{ .failed_pos = i, .failed_pos_error = error });
             return error;
         }
 
-        storage.staging_deltas.emplace_back(storage.staging_zxid, KeeperStorage::SubDeltaEnd{});
+        storage.staging.deltas.emplace_back(storage.staging.zxid, SubDeltaEnd{});
     }
 
     return Coordination::Error::ZOK;
@@ -1471,7 +1471,7 @@ static KeeperStorage::DeltaRange extractSubdeltas(KeeperStorage::DeltaRange & de
 
     for (; it != deltas.end(); ++it)
     {
-        if (std::holds_alternative<KeeperStorage::SubDeltaEnd>(it->operation))
+        if (std::holds_alternative<SubDeltaEnd>(it->operation))
             break;
     }
 
@@ -1499,7 +1499,7 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
 
     // the deltas will have at least SubDeltaEnd or FailedMultiDelta
     chassert(!deltas.empty());
-    if (const auto * failed_multi = std::get_if<KeeperStorage::FailedMultiDelta>(&deltas.front().operation))
+    if (const auto * failed_multi = std::get_if<FailedMultiDelta>(&deltas.front().operation))
     {
         const size_t subrequests_count = subrequests.size();
 
@@ -1553,7 +1553,7 @@ static std::pair<KeeperResponsesForSessions, Int64> processWatches(
 {
     KeeperResponsesForSessions result;
 
-    if (deltas.empty() || std::get_if<KeeperStorage::FailedMultiDelta>(&deltas.front().operation))
+    if (deltas.empty() || std::get_if<FailedMultiDelta>(&deltas.front().operation))
         return {result, 0};
 
     const auto & subrequests = zk_request.requests;
@@ -2138,7 +2138,7 @@ KeeperDigest KeeperStorageImpl::preprocessRequest(
     if (!initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
 
-    if (!staging_deltas.empty() || staging_zxid != -1)
+    if (!staging.deltas.empty() || staging.zxid != -1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "State left over from previous transaction");
 
     TransactionInfo * transaction = nullptr;
@@ -2183,10 +2183,10 @@ KeeperDigest KeeperStorageImpl::preprocessRequest(
                                 new_last_zxid, last_zxid);
         }
 
-        staging_zxid = new_last_zxid;
-        staging_digest = current_digest;
+        staging.zxid = new_last_zxid;
+        staging.digest = current_digest;
         KeeperDigestVersion version = keeper_context->digestEnabled() ? KEEPER_CURRENT_DIGEST_VERSION : KeeperDigestVersion::NO_DIGEST;
-        chassert(staging_digest.version == version);
+        chassert(staging.digest.version == version);
 
         transaction = &uncommitted_transactions.emplace_back(TransactionInfo{.zxid = new_last_zxid, .nodes_digest = current_digest, .log_idx = log_idx});
     }
@@ -2196,17 +2196,17 @@ KeeperDigest KeeperStorageImpl::preprocessRequest(
     {
         if (request_finalized)
             return;
-        uncommitted_state.addDeltas(std::move(staging_deltas));
-        staging_deltas.clear();
+        uncommitted_state.addDeltas(std::move(staging.deltas));
+        staging.deltas.clear();
 
         if (zk_request->getOpNum() == Coordination::OpNum::Create)
         {
-            fiu_do_on(FailPoints::keeper_leader_sets_invalid_digest, staging_digest.value = 42);
+            fiu_do_on(FailPoints::keeper_leader_sets_invalid_digest, staging.digest.value = 42);
         }
 
-        if (!rolled_back && staging_digest.version != KeeperDigestVersion::NO_DIGEST)
+        if (!rolled_back && staging.digest.version != KeeperDigestVersion::NO_DIGEST)
         {
-            staging_digest.value = updateNodesDigest(staging_digest.value, new_last_zxid);
+            staging.digest.value = updateNodesDigest(staging.digest.value, new_last_zxid);
             // if the version of digest we got from the leader is the same as the one this instances has, we can simply copy the value
             // and just check the digest on the commit
             // a mistake can happen while applying the changes to the uncommitted_state so for now let's just recalculate the digest here also
@@ -2217,11 +2217,11 @@ KeeperDigest KeeperStorageImpl::preprocessRequest(
             // which we're also holding. (Except for commit callback, which reads
             // `uncommitted_transactions.front()`, but only after the transaction is committed,
             // which can't happen before we return from here.)
-            transaction->nodes_digest = staging_digest;
+            transaction->nodes_digest = staging.digest;
         }
 
         uncommitted_state.cleanup(getZXID());
-        staging_zxid = -1;
+        staging.zxid = -1;
         request_finalized = true;
     };
 
@@ -2249,10 +2249,10 @@ KeeperDigest KeeperStorageImpl::preprocessRequest(
                 ephemeral_paths.insert(it->second.begin(), it->second.end());
         }
 
-        prepareRemoveEphemeralNodes(ephemeral_paths, session_id);
+        prepareRemoveEphemeralNodes(ephemeral_paths, session_id, staging);
 
-        staging_deltas.emplace_back(staging_zxid, CloseSessionDelta{session_id});
-        uncommitted_state.closed_sessions_to_zxids[session_id].insert(staging_zxid);
+        staging.deltas.emplace_back(staging.zxid, CloseSessionDelta{session_id});
+        uncommitted_state.closed_sessions_to_zxids[session_id].insert(staging.zxid);
 
         finalize(/*rolled_back=*/ false);
         return transaction->nodes_digest;
@@ -2272,21 +2272,21 @@ KeeperDigest KeeperStorageImpl::preprocessRequest(
         /// prepare it again, and assert that the result is the same.
         /// This shouldn't have any externally observable effects.
         /// Good for finding bugs in rollback.
-        if (staging_digest.version != KeeperDigestVersion::NO_DIGEST && thread_local_rng() % 2 == 0)
+        if (staging.digest.version != KeeperDigestVersion::NO_DIGEST && thread_local_rng() % 2 == 0)
         {
-            const UInt64 first_digest = updateNodesDigest(staging_digest.value, new_last_zxid);
-            const size_t first_delta_count = staging_deltas.size();
+            const UInt64 first_digest = updateNodesDigest(staging.digest.value, new_last_zxid);
+            const size_t first_delta_count = staging.deltas.size();
 
-            uncommitted_state.rollback(std::move(staging_deltas));
-            staging_deltas.clear();
-            staging_digest = transaction->nodes_digest;
+            uncommitted_state.rollback(std::move(staging.deltas));
+            staging.deltas.clear();
+            staging.digest = transaction->nodes_digest;
 
             callOnConcreteRequestType(*zk_request, preprocess_request);
             chassert(error == Coordination::Error::ZOK, "Re-preprocessing after a spurious rollback unexpectedly failed");
 
-            const UInt64 second_digest = updateNodesDigest(staging_digest.value, new_last_zxid);
+            const UInt64 second_digest = updateNodesDigest(staging.digest.value, new_last_zxid);
             chassert(
-                first_digest == second_digest && first_delta_count == staging_deltas.size(),
+                first_digest == second_digest && first_delta_count == staging.deltas.size(),
                 "Re-preprocessing after rollback produced a different result: preprocessing is non-deterministic or rollback is incomplete");
         }
 #endif
@@ -2301,20 +2301,20 @@ KeeperDigest KeeperStorageImpl::preprocessRequest(
         /// prepareWriteCommon and updateNodesDigest) or revert to original digest.
 
         /// Hack: Multi request needs a FailedMultiDelta instead of ErrorDelta. We pass it from
-        /// `preprocess` to here through staging_deltas.
+        /// `preprocess` to here through staging.deltas.
         std::optional<Delta> custom_error_delta;
-        if (!staging_deltas.empty() && std::get_if<FailedMultiDelta>(&staging_deltas.back().operation))
+        if (!staging.deltas.empty() && std::get_if<FailedMultiDelta>(&staging.deltas.back().operation))
         {
-            custom_error_delta = std::move(staging_deltas.back());
-            staging_deltas.pop_back();
+            custom_error_delta = std::move(staging.deltas.back());
+            staging.deltas.pop_back();
         }
 
-        uncommitted_state.rollback(std::move(staging_deltas));
-        staging_deltas.clear();
+        uncommitted_state.rollback(std::move(staging.deltas));
+        staging.deltas.clear();
         if (custom_error_delta.has_value())
-            staging_deltas.push_back(std::move(*custom_error_delta));
+            staging.deltas.push_back(std::move(*custom_error_delta));
         else
-            staging_deltas.emplace_back(staging_zxid, error);
+            staging.deltas.emplace_back(staging.zxid, error);
         finalize(/*rolled_back=*/ true);
     }
     return transaction->nodes_digest;
@@ -2902,62 +2902,62 @@ bool KeeperStorageImpl::visitUncommittedRecursive(std::string_view root_path, si
 }
 
 /// Must be called before mutating any node in other prepare* functions.
-void KeeperStorageImpl::prepareWriteCommon(std::string_view path, UncommittedNodeRef & node)
+void KeeperStorageImpl::prepareWriteCommon(std::string_view path, UncommittedNodeRef & node, KeeperStagingTransaction & staging_)
 {
     chassert(node.it.has_value());
 
     auto node_it = *node.it;
-    auto & zxid_nodes = uncommitted_zxid_to_nodes[staging_zxid];
+    auto & zxid_nodes = uncommitted_zxid_to_nodes[staging_.zxid];
     const bool node_was_not_yet_in_zxid = zxid_nodes.insert(node_it).second;
 
     /// if it's the first time we see that node in the transaction
     /// we need to subtract it's digest from the point before
     /// we started the transaction
     /// at the end of transaction, we add new node digests in updateNodesDigest
-    if (node_was_not_yet_in_zxid && staging_digest.version != KeeperDigestVersion::NO_DIGEST &&
+    if (node_was_not_yet_in_zxid && staging_.digest.version != KeeperDigestVersion::NO_DIGEST &&
         node_it->second.node)
-        staging_digest.value -= node_it->second.node->getDigest(path);
+        staging_.digest.value -= node_it->second.node->getDigest(path);
 
-    node_it->second.applied_zxids.push_back(staging_zxid);
+    node_it->second.applied_zxids.push_back(staging_.zxid);
 }
 
-void KeeperStorageImpl::prepareUpdateNodeStat(std::string_view path, UncommittedNodeRef && node, const KeeperNodeStats & new_stats)
+void KeeperStorageImpl::prepareUpdateNodeStat(std::string_view path, UncommittedNodeRef && node, const KeeperNodeStats & new_stats, KeeperStagingTransaction & staging_)
 {
-    prepareWriteCommon(path, node);
+    prepareWriteCommon(path, node, staging_);
 
     Node * node_ptr = node.getMut();
     UpdateNodeStatDelta delta(node_ptr->stats);
     delta.new_stats = new_stats;
-    staging_deltas.emplace_back(std::string{path}, staging_zxid, std::move(delta));
+    staging_.deltas.emplace_back(std::string{path}, staging_.zxid, std::move(delta));
 
     node_ptr->invalidateDigestCache();
     node_ptr->stats = new_stats;
 }
 
-void KeeperStorageImpl::prepareUpdateNodeData(std::string_view path, UncommittedNodeRef && node, const KeeperNodeStats & new_stats, std::string_view new_data)
+void KeeperStorageImpl::prepareUpdateNodeData(std::string_view path, UncommittedNodeRef && node, const KeeperNodeStats & new_stats, std::string_view new_data, KeeperStagingTransaction & staging_)
 {
-    prepareWriteCommon(path, node);
+    prepareWriteCommon(path, node, staging_);
 
     Node * node_ptr = node.getMut();
 
     /// The data delta must be ordered before the stat delta: at commit time the stat delta
     /// overwrites `stats.data_size` (to the new size), after which `getData` would read the old
     /// buffer with the new size. Committing the data delta first keeps the node consistent.
-    staging_deltas.emplace_back(
-        std::string{path}, staging_zxid,
+    staging_.deltas.emplace_back(
+        std::string{path}, staging_.zxid,
         UpdateNodeDataDelta{.old_data = std::string{node_ptr->getData()}, .new_data = std::string{new_data}});
 
     node_ptr->invalidateDigestCache();
     node_ptr->setData(new_data);
 
-    prepareUpdateNodeStat(path, std::move(node), new_stats);
+    prepareUpdateNodeStat(path, std::move(node), new_stats, staging_);
 }
 
 void KeeperStorageImpl::prepareCreateNode(
     std::string_view parent_path, UncommittedNodeRef && parent,
     const KeeperNodeStats & new_parent_stats,
     std::string_view path, UncommittedNodeRef && node, const Coordination::Stat & stat,
-    ACLId acl_id, std::string_view data)
+    ACLId acl_id, std::string_view data, KeeperStagingTransaction & staging_)
 {
     /// (prepareCreateNode combines parent node update and new node creation. Currently these
     ///  operations are independent here, and we could equally well remove the parent update from
@@ -2967,15 +2967,15 @@ void KeeperStorageImpl::prepareCreateNode(
     ///  number of node lookups when committing Create request from 3 to 2, as currently it looks up
     ///  the parent twice: to update stats and to add child. Same story for Remove.)
 
-    prepareUpdateNodeStat(parent_path, std::move(parent), new_parent_stats);
+    prepareUpdateNodeStat(parent_path, std::move(parent), new_parent_stats, staging_);
 
     if (!node.it.has_value())
         node.it = uncommitted_nodes.emplace(std::string{path}, UncommittedNode{}).first;
-    prepareWriteCommon(path, node);
+    prepareWriteCommon(path, node, staging_);
 
-    staging_deltas.emplace_back(
+    staging_.deltas.emplace_back(
         std::string{path},
-        staging_zxid,
+        staging_.zxid,
         CreateNodeDelta{stat, acl_id, std::string{data}});
 
     auto node_it = *node.it;
@@ -2988,12 +2988,12 @@ void KeeperStorageImpl::prepareCreateNode(
 }
 
 void KeeperStorageImpl::prepareRemoveNodeWithoutUpdatingParent(
-    std::string_view path, UncommittedNodeRef && node)
+    std::string_view path, UncommittedNodeRef && node, KeeperStagingTransaction & staging_)
 {
-    prepareWriteCommon(path, node);
+    prepareWriteCommon(path, node, staging_);
     const Node * node_ptr = node.get();
-    staging_deltas.emplace_back(
-        std::string{path}, staging_zxid,
+    staging_.deltas.emplace_back(
+        std::string{path}, staging_.zxid,
         RemoveNodeDelta{node_ptr->stats, std::string{node_ptr->getData()}});
 
     (*node.it)->second.node = nullptr;
@@ -3002,24 +3002,24 @@ void KeeperStorageImpl::prepareRemoveNodeWithoutUpdatingParent(
 void KeeperStorageImpl::prepareRemoveNode(
     std::string_view parent_path, UncommittedNodeRef && parent,
     const KeeperNodeStats & new_parent_stats,
-    std::string_view path, UncommittedNodeRef && node)
+    std::string_view path, UncommittedNodeRef && node, KeeperStagingTransaction & staging_)
 {
-    prepareUpdateNodeStat(parent_path, std::move(parent), new_parent_stats);
-    prepareRemoveNodeWithoutUpdatingParent(path, std::move(node));
+    prepareUpdateNodeStat(parent_path, std::move(parent), new_parent_stats, staging_);
+    prepareRemoveNodeWithoutUpdatingParent(path, std::move(node), staging_);
 }
 
 void KeeperStorageImpl::prepareRemoveRecursive(
     std::string_view parent_path, UncommittedNodeRef && parent,
     const KeeperNodeStats & new_parent_stats,
-    std::deque<std::pair<std::string, UncommittedNodeRef>> nodes_to_remove)
+    std::deque<std::pair<std::string, UncommittedNodeRef>> nodes_to_remove, KeeperStagingTransaction & staging_)
 {
-    prepareUpdateNodeStat(parent_path, std::move(parent), new_parent_stats);
+    prepareUpdateNodeStat(parent_path, std::move(parent), new_parent_stats, staging_);
 
     for (auto & [path, node] : nodes_to_remove)
-        prepareRemoveNodeWithoutUpdatingParent(path, std::move(node));
+        prepareRemoveNodeWithoutUpdatingParent(path, std::move(node), staging_);
 }
 
-void KeeperStorageImpl::prepareRemoveEphemeralNodes(const std::unordered_set<std::string> & paths, int64_t session_id)
+void KeeperStorageImpl::prepareRemoveEphemeralNodes(const std::unordered_set<std::string> & paths, int64_t session_id, KeeperStagingTransaction & staging_)
 {
     struct ParentUpdate
     {
@@ -3056,21 +3056,14 @@ void KeeperStorageImpl::prepareRemoveEphemeralNodes(const std::unordered_set<std
         ++parent_update.new_stats.cversion;
         parent_update.new_stats.decreaseNumChildren();
 
-        prepareRemoveNodeWithoutUpdatingParent(ephemeral_path, std::move(node));
+        prepareRemoveNodeWithoutUpdatingParent(ephemeral_path, std::move(node), staging_);
     }
 
     /// Note: we rely on the fact that ephemeral nodes can't have children. Otherwise we'd need to
     ///       check to make sure we're not updating a node we already removed, and that we're not
     ///       removing a node that still has children.
     for (auto & [path, update] : parent_updates)
-        prepareUpdateNodeStat(path, std::move(update.node), update.new_stats);
-}
-
-void KeeperStorageImpl::prepareAddAuth(std::shared_ptr<KeeperStorage::AuthID> new_auth, int64_t session_id)
-{
-    auto & uncommitted_auth = uncommitted_state.session_and_auth[session_id];
-    uncommitted_auth.push_back(std::pair{staging_zxid, new_auth});
-    staging_deltas.emplace_back(staging_zxid, AddAuthDelta{session_id, std::move(new_auth)});
+        prepareUpdateNodeStat(path, std::move(update.node), update.new_stats, staging_);
 }
 
 }

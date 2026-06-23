@@ -1163,6 +1163,13 @@ bool KeeperStorage::removePersistentWatch(const String & path, Coordination::Rem
     return removed;
 }
 
+void KeeperStorage::prepareAddAuth(std::shared_ptr<KeeperStorage::AuthID> new_auth, int64_t session_id, KeeperStagingTransaction & staging_)
+{
+    auto & uncommitted_auth = uncommitted_state.session_and_auth[session_id];
+    uncommitted_auth.push_back(std::pair{staging_.zxid, new_auth});
+    staging_.deltas.emplace_back(staging_.zxid, AddAuthDelta{session_id, std::move(new_auth)});
+}
+
 }
 
 // NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)

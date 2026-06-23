@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <Coordination/KeeperDelta.h>
 #include <Coordination/ACLMap.h>
 #include <Coordination/SessionExpiryQueue.h>
 #include <Coordination/SnapshotableHashTable.h>
@@ -69,13 +70,7 @@ class KeeperStorage
 public:
     static String generateDigest(const String & userdata);
 
-    struct AuthID
-    {
-        std::string scheme;
-        std::string id;
-
-        bool operator==(const AuthID & other) const { return scheme == other.scheme && id == other.id; }
-    };
+    using AuthID = KeeperAuthID;
 
     using Ephemerals = std::unordered_map<int64_t, std::unordered_set<std::string>>;
 
@@ -113,100 +108,8 @@ public:
         StringHashForHeterogeneousLookup,
         StringHashForHeterogeneousLookup::transparent_key_equal>;
 
-    // Applying ZooKeeper request to storage consists of two steps:
-    //  - preprocessing which, instead of applying the changes directly to storage,
-    //    generates deltas with those changes, denoted with the request ZXID
-    //  - processing which applies deltas with the correct ZXID to the storage
-    //
-    // Delta objects allow us two things:
-    //  - fetch the latest, uncommitted state of an object by getting the committed
-    //    state of that same object from the storage and applying the deltas
-    //    in the same order as they are defined
-    //  - quickly commit the changes to the storage
-
-    struct CreateNodeDelta
-    {
-        Coordination::Stat stat;
-        ACLId acl_id;
-        String data;
-    };
-
-    struct RemoveNodeDelta
-    {
-        KeeperNodeStats stat;
-        String data;
-    };
-
-    struct UpdateNodeStatDelta
-    {
-        explicit UpdateNodeStatDelta(const KeeperNodeStats & stats)
-            : old_stats(stats), new_stats(stats) {}
-
-        KeeperNodeStats old_stats;
-        KeeperNodeStats new_stats;
-    };
-
-    struct UpdateNodeDataDelta
-    {
-        std::string old_data;
-        std::string new_data;
-    };
-
-    struct ErrorDelta
-    {
-        Coordination::Error error;
-    };
-
-    struct FailedMultiDelta
-    {
-        size_t failed_pos = std::numeric_limits<size_t>::max();
-        Coordination::Error failed_pos_error = Coordination::Error::ZOK;
-        Coordination::Error global_error = Coordination::Error::ZOK;
-    };
-
-    // Denotes end of a subrequest in multi request
-    struct SubDeltaEnd
-    {
-    };
-
-    struct AddAuthDelta
-    {
-        int64_t session_id;
-        std::shared_ptr<KeeperStorage::AuthID> auth_id;
-    };
-
-    struct CloseSessionDelta
-    {
-        int64_t session_id;
-    };
-
-    using Operation = std::variant<
-        /// Node-related deltas are handled by KeeperStorageImpl.
-        CreateNodeDelta,
-        RemoveNodeDelta,
-        UpdateNodeStatDelta,
-        UpdateNodeDataDelta,
-
-        /// Other deltas are handled by base KeeperStorage.
-        AddAuthDelta,
-        ErrorDelta,
-        SubDeltaEnd,
-        FailedMultiDelta,
-        CloseSessionDelta>;
-
-    struct Delta
-    {
-        Delta(String path_, int64_t zxid_, Operation operation_) : path(std::move(path_)), zxid(zxid_), operation(std::move(operation_)) { }
-
-        Delta(int64_t zxid_, Coordination::Error error) : Delta("", zxid_, ErrorDelta{error}) { }
-
-        Delta(int64_t zxid_, Operation subdelta) : Delta("", zxid_, subdelta) { }
-
-        String path;
-        int64_t zxid;
-        Operation operation;
-    };
-
+    using Delta = KeeperDelta;
+    using Operation = KeeperDelta::Operation;
     using DeltaIterator = std::list<KeeperStorage::Delta>::const_iterator;
     using DeltaRange = std::ranges::subrange<DeltaIterator>;
 
@@ -321,13 +224,7 @@ protected:
     std::list<TransactionInfo> uncommitted_transactions TSA_GUARDED_BY(transaction_mutex);
 
 public:
-    /// For the duration of a preprocessRequest call, these fields accumulate changes made by the
-    /// transaction that's being preprocessed.
-    /// These deltas are already applied to UncommittedState; if the transaction fails, they must be
-    /// rolled back.
-    int64_t staging_zxid = -1;
-    KeeperDigest staging_digest;
-    std::list<Delta> staging_deltas;
+    KeeperStagingTransaction staging;
 
 protected:
 
@@ -456,6 +353,8 @@ public:
 
     std::pair<KeeperResponsesForSessions, Int64> processWatchesImpl(
         std::string_view path, Coordination::Event event_type);
+
+    void prepareAddAuth(std::shared_ptr<KeeperStorage::AuthID> new_auth, int64_t session_id, KeeperStagingTransaction & staging_);
 };
 
 /// Remove `path` from the set of ephemeral paths owned by `session_id`.
