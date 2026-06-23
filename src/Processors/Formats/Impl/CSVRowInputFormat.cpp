@@ -530,7 +530,7 @@ void registerInputFormatCSV(FormatFactory & factory)
     };
 
     registerWithNamesAndTypes("CSV", register_func);
-    factory.markFormatSupportsSubsetOfColumnsByPosition("CSV");
+    markFormatWithNamesAndTypesSupportsSubsetOfColumnsByPosition("CSV", factory);
 
     factory.setDocumentation("CSV", Documentation{
         .description = R"DOCS_MD(

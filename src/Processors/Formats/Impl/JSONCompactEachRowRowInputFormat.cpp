@@ -267,7 +267,7 @@ void registerInputFormatJSONCompactEachRow(FormatFactory & factory)
 
         registerWithNamesAndTypes(base_format_name, register_func);
         markFormatWithNamesAndTypesSupportsSamplingColumns(base_format_name, factory);
-        factory.markFormatSupportsSubsetOfColumnsByPosition(base_format_name);
+        markFormatWithNamesAndTypesSupportsSubsetOfColumnsByPosition(base_format_name, factory);
     }
 
     factory.setDocumentation("JSONCompactEachRow", Documentation{

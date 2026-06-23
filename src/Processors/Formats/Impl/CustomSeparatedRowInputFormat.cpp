@@ -464,8 +464,9 @@ void registerInputFormatCustomSeparated(FormatFactory & factory)
             });
         };
         registerWithNamesAndTypes(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", register_func);
-        factory.registerSubsetOfColumnsByPositionSupportChecker(
+        registerWithNamesAndTypesSubsetOfColumnsByPositionSupportChecker(
             ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated",
+            factory,
             [](const FormatSettings & settings) { return settings.custom.escaping_rule == FormatSettings::EscapingRule::CSV; });
         markFormatWithNamesAndTypesSupportsSamplingColumns(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", factory);
     }
