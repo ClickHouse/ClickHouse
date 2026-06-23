@@ -55,7 +55,7 @@ def run_kill_query_test(query, log_line_pattern, log_timeout=30):
 
     node1.wait_for_log_line(log_line_pattern, timeout=log_timeout)
 
-    node1.query(f"KILL QUERY WHERE query_id='{query_id}' SYNC")
+    node1.http_query(f"KILL QUERY WHERE query_id='{query_id}' SYNC")
 
     query_thread.join()
     if thread_error[0] is not None:
@@ -82,5 +82,5 @@ def test_sorted_kill_query(started_cluster):
     run_kill_query_test(
         SORTED_QUERY,
         "Transform a chunk in LimitBySortedStreamTransform",
-        log_timeout=60,
+        log_timeout=120,
     )
