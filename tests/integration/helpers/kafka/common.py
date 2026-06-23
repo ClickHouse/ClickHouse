@@ -1,5 +1,26 @@
-from .common_direct import *
-from .common_direct import _VarintBytes
+from contextlib import contextmanager
+import io
+import logging
+import os.path as p
+import random
+import socket
+import string
+import time
+
+import avro.datafile
+import avro.io
+import avro.schema
+from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
+from kafka import BrokerConnection, KafkaAdminClient, KafkaConsumer, KafkaProducer
+from kafka.admin import NewTopic
+import kafka.errors
+from kafka.protocol.admin import DescribeGroupsRequest_v1
+from kafka.protocol.group import MemberAssignment
+
+from ..client import QueryRuntimeException
+from . import kafka_pb2, oneof_transaction_pb2, social_pb2
+from ..test_tools import TSV
+from google.protobuf.internal.encoder import _VarintBytes
 
 
 def get_kafka_producer(port, serializer, retries):
@@ -235,7 +256,6 @@ def kafka_produce_protobuf_messages_protobuflist(
 def kafka_produce_protobuf_messages_no_delimiters(
     kafka_cluster, topic, start_index, num_messages
 ):
-    data = ""
     producer = KafkaProducer(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
