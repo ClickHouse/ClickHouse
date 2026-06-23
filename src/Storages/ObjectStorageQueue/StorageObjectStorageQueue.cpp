@@ -24,6 +24,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
@@ -333,10 +334,13 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     /// The restriction is NOT relaxed when loading from existing metadata: a queue whose definition resolves to
     /// server-managed credentials (e.g. a named collection later re-bound to `use_environment_credentials = 1`)
     /// must not silently regain the server identity on restart, since that is something a user `CREATE`/`ATTACH`
-    /// of the same definition would be refused. Such a queue simply fails to build its client and becomes
-    /// inaccessible after a restart rather than escalating; the server itself still starts. `context_` stays the
-    /// persistent global context held weakly by `WithContext`, and `createObjectStorage` copies the context it is
-    /// given into its credential refresher, so the transient settings copy here is safe.
+    /// of the same definition would be refused. Instead, flagging the load lets `getClient` downgrade such a
+    /// queue to an anonymous client (so the server still starts and the queue is merely inaccessible) rather
+    /// than escalating or aborting startup, controlled by the server setting
+    /// `s3_load_table_anonymously_if_credentials_restricted`. `context_` stays the persistent global context
+    /// held weakly by `WithContext`, and `createObjectStorage` copies the context it is given into its
+    /// credential refresher, so the transient settings copy here is safe.
+    configuration->is_loading_from_existing_metadata = isLoadingFromExistingMetadata(mode);
     auto object_storage_context = Context::createCopy(context_);
     object_storage_context->setSetting(
         "s3_allow_server_credentials_in_user_queries",

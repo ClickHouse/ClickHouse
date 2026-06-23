@@ -237,6 +237,13 @@ struct CredentialsConfiguration
     /// forgets about it cannot accidentally expose the server's credentials to user SQL. Server-internal
     /// callers that legitimately use the server's own credentials set this to false explicitly.
     bool forbid_implicit_credentials = true;
+
+    /// Only meaningful together with `forbid_implicit_credentials`. When a request would be refused because it
+    /// resolves server-managed credentials, build an anonymous client instead of throwing. Used when loading a
+    /// persistent table from existing metadata so a table that can no longer use the server's credentials does
+    /// not abort server startup; it becomes inaccessible (anonymous) rather than escalating. Never set for
+    /// user-issued CREATE/queries, which must still be rejected with ACCESS_DENIED.
+    bool anonymous_fallback_for_server_credentials = false;
 };
 
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain

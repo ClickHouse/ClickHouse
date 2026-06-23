@@ -324,6 +324,11 @@ public:
     bool partition_columns_in_data_file_was_set = false;
     std::shared_ptr<IPartitionStrategy> partition_strategy;
 
+    /// Set by the storage when it is being loaded from existing metadata (server startup or RESTORE), so the
+    /// S3 client build can downgrade restricted server-managed credentials to anonymous instead of aborting
+    /// startup (see `getClient` and the `s3_load_table_anonymously_if_credentials_restricted` server setting).
+    bool is_loading_from_existing_metadata = false;
+
 protected:
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;

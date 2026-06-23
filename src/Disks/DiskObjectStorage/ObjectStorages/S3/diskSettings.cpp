@@ -5,6 +5,7 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <boost/algorithm/string/predicate.hpp>
 #include <Common/logger_useful.h>
 #include <Common/Macros.h>
 #include <Common/Throttler.h>
@@ -44,6 +45,7 @@ namespace ServerSetting
 {
     extern const ServerSettingsUInt64 s3_max_redirects;
     extern const ServerSettingsUInt64 s3_retry_attempts;
+    extern const ServerSettingsBool s3_load_table_anonymously_if_credentials_restricted;
 }
 
 namespace S3AuthSetting
@@ -100,17 +102,18 @@ std::unique_ptr<S3::Client> getClient(
     ContextPtr context,
     bool for_disk_s3,
     std::optional<std::string> opt_disk_name,
-    std::optional<std::function<std::shared_ptr<DataLake::IStorageCredentials>()>> refresh_credentials_callback)
+    std::optional<std::function<std::shared_ptr<DataLake::IStorageCredentials>()>> refresh_credentials_callback,
+    bool is_loading_from_existing_metadata)
 
 {
     auto url = S3::URI(endpoint, false, true, settings.auth_settings[S3AuthSetting::uri_style]);
     if (!url.key.ends_with('/'))
         url.key.push_back('/');
-    return getClient(url, settings, context, for_disk_s3, opt_disk_name, refresh_credentials_callback);
+    return getClient(url, settings, context, for_disk_s3, opt_disk_name, refresh_credentials_callback, is_loading_from_existing_metadata);
 }
 
 std::unique_ptr<S3::Client>
-getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, bool for_disk_s3, std::optional<std::string> opt_disk_name, std::optional<std::function<std::shared_ptr<DataLake::IStorageCredentials>()>> refresh_credentials_callback)
+getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, bool for_disk_s3, std::optional<std::string> opt_disk_name, std::optional<std::function<std::shared_ptr<DataLake::IStorageCredentials>()>> refresh_credentials_callback, bool is_loading_from_existing_metadata)
 {
     const auto & auth_settings = settings.auth_settings;
     const auto & server_settings = context->getGlobalContext()->getServerSettings();
@@ -212,6 +215,24 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     /// Server disks use the server's own credentials. User-created dynamic S3 disks are handled earlier,
     /// in getDiskConfigurationFromAST.
     credentials_configuration.forbid_implicit_credentials = !for_disk_s3 && context->shouldRestrictUserQueryS3Credentials();
+
+    /// When loading a persistent table from existing metadata (server startup or RESTORE), a definition that
+    /// resolves the server's own (now restricted) credentials would otherwise abort startup. If allowed by the
+    /// server setting, downgrade it to an anonymous client so the server starts and the table is merely
+    /// inaccessible instead of escalating. `gcp_oauth` mints its token at the HTTP layer regardless of the
+    /// credentials provider, so also drop that http client when no explicit ADC triple is supplied, otherwise
+    /// the downgrade would still use the server's GCP identity.
+    if (credentials_configuration.forbid_implicit_credentials && is_loading_from_existing_metadata
+        && server_settings[ServerSetting::s3_load_table_anonymously_if_credentials_restricted])
+    {
+        credentials_configuration.anonymous_fallback_for_server_credentials = true;
+
+        const bool has_explicit_gcp_adc = !client_configuration.google_adc_client_id.empty()
+            && !client_configuration.google_adc_client_secret.empty()
+            && !client_configuration.google_adc_refresh_token.empty();
+        if (boost::iequals(client_configuration.http_client, "gcp_oauth") && !has_explicit_gcp_adc)
+            client_configuration.http_client.clear();
+    }
 
     String access_key_id = auth_settings[S3AuthSetting::access_key_id];
     String secret_access_key = auth_settings[S3AuthSetting::secret_access_key];

@@ -1348,6 +1348,11 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
 {
     CredentialsConfiguration credentials_configuration = credentials_configuration_;
 
+    /// Set when a refused server-managed request is downgraded to anonymous access instead of throwing
+    /// (only when `anonymous_fallback_for_server_credentials` is set, i.e. loading a persistent table from
+    /// existing metadata). Treated like `no_sign_request` below: build the anonymous provider and skip STS.
+    bool force_anonymous_fallback = false;
+
     /// For S3 access that originates from user SQL in clickhouse-server, refuse every server-managed
     /// credential source so a user cannot make the server authenticate to S3 with its own identity.
     /// A user may still supply explicit credentials, use no_sign_request, or supply explicit credentials
@@ -1383,22 +1388,40 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
         if (uses_gcp_oauth)
         {
             if (!has_explicit_gcp_adc)
-                throw DB::Exception(
-                    DB::ErrorCodes::ACCESS_DENIED,
-                    "S3 access from user queries is not allowed to use `http_client = gcp_oauth` without an "
-                    "explicit Google Application Default Credentials triple (google_adc_client_id, "
-                    "google_adc_client_secret, google_adc_refresh_token), because it would otherwise mint a "
-                    "token from the server's GCP metadata service. Enable the setting "
-                    "`s3_allow_server_credentials_in_user_queries` to allow it.");
+            {
+                if (credentials_configuration.anonymous_fallback_for_server_credentials)
+                    force_anonymous_fallback = true;
+                else
+                    throw DB::Exception(
+                        DB::ErrorCodes::ACCESS_DENIED,
+                        "S3 access from user queries is not allowed to use `http_client = gcp_oauth` without an "
+                        "explicit Google Application Default Credentials triple (google_adc_client_id, "
+                        "google_adc_client_secret, google_adc_refresh_token), because it would otherwise mint a "
+                        "token from the server's GCP metadata service. Enable the setting "
+                        "`s3_allow_server_credentials_in_user_queries` to allow it.");
+            }
         }
         else if (!credentials_configuration.no_sign_request && !has_explicit_credentials && wants_server_credentials)
-            throw DB::Exception(
-                DB::ErrorCodes::ACCESS_DENIED,
-                "S3 access from user queries is not allowed to use server-managed credentials "
-                "(environment variables, instance metadata, IRSA, instance profile, AWS config files, "
-                "or role_arn-based STS assume-role). "
-                "Provide explicit credentials, use NOSIGN, or enable the setting "
-                "`s3_allow_server_credentials_in_user_queries`.");
+        {
+            if (credentials_configuration.anonymous_fallback_for_server_credentials)
+                force_anonymous_fallback = true;
+            else
+                throw DB::Exception(
+                    DB::ErrorCodes::ACCESS_DENIED,
+                    "S3 access from user queries is not allowed to use server-managed credentials "
+                    "(environment variables, instance metadata, IRSA, instance profile, AWS config files, "
+                    "or role_arn-based STS assume-role). "
+                    "Provide explicit credentials, use NOSIGN, or enable the setting "
+                    "`s3_allow_server_credentials_in_user_queries`.");
+        }
+
+        if (force_anonymous_fallback)
+            LOG_WARNING(
+                getLogger("AWSClient"),
+                "Loading this table with an anonymous S3 client: it resolves server-managed credentials that "
+                "are restricted for user queries (s3_allow_server_credentials_in_user_queries = 0). The table "
+                "will be inaccessible until its credentials resolve to a permitted source. Set the server "
+                "setting s3_load_table_anonymously_if_credentials_restricted = 0 to fail loading instead.");
 
         /// Belt and suspenders: even when explicit credentials are present, never let the provider chain
         /// fall back to the server's environment credentials.
@@ -1409,7 +1432,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
     /// Match `gcp_oauth` case-insensitively, the same way PocoHTTPClientFactory selects the GCP OAuth HTTP
     /// client. Otherwise a differently-cased value (e.g. `GCP_OAUTH`) would build the AWS provider chain
     /// here while the HTTP layer still sends a GCP OAuth bearer token.
-    if (credentials_configuration.no_sign_request || boost::iequals(configuration.http_client, "gcp_oauth"))
+    if (credentials_configuration.no_sign_request || force_anonymous_fallback || boost::iequals(configuration.http_client, "gcp_oauth"))
     {
         credentials_provider = std::make_shared<Aws::Auth::AnonymousAWSCredentialsProvider>();
     }
@@ -1422,8 +1445,9 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
     /// `no_sign_request` means anonymous access, and `gcp_oauth` authenticates with a bearer token at the
     /// HTTP layer (its provider here is anonymous); both are mutually exclusive with assuming a role. Skip the
     /// STS assume-role wrapper so a stray `role_arn` alongside either does not trigger credential resolution
-    /// on top of the anonymous provider.
-    if (!credentials_configuration.no_sign_request && !boost::iequals(configuration.http_client, "gcp_oauth")
+    /// on top of the anonymous provider. The anonymous metadata-load fallback likewise must not assume a role.
+    if (!credentials_configuration.no_sign_request && !force_anonymous_fallback
+        && !boost::iequals(configuration.http_client, "gcp_oauth")
         && !credentials_configuration.role_arn.empty())
     {
         credentials_provider = AwsAuthSTSAssumeRoleCredentialsProvider::create(
