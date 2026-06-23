@@ -9,8 +9,6 @@
 #include <base/defines.h>
 #include <boost/algorithm/string/predicate.hpp>
 
-#include <algorithm>
-
 namespace DB
 {
 
