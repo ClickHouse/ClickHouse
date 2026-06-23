@@ -129,6 +129,7 @@ private:
     size_t current_row = 0;
     size_t current_mark = 0;
     PaddedPODArray<UInt32> indices_buffer;
+    PaddedPODArray<char> position_payload_scratch;
 
     bool is_initialized = false;
     /// Virtual columns that are always true.

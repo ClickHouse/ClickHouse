@@ -86,6 +86,7 @@ static_assert(PostingListBuilder::max_small_size <= MAX_CARDINALITY_FOR_RAW_POST
 
 /// Move to MergeTreeSettings once `__experimental_positions` is finalized.
 static constexpr bool DEFAULT_POSITIONS = false;
+static constexpr String DEFAULT_POSITIONS_ENCODING = "none";
 
 bool DictionaryBlockBase::empty() const
 {
@@ -1375,7 +1376,9 @@ DictionarySparseIndex serializeTokensAndPostings(
                 token_info.position_offset = positions_stream->plain_hashing.count();
                 token_info.position_cardinality = static_cast<UInt32>(position_entries.size());
 
-                TextIndexPositionCodec::encode(position_entries, positions_stream->plain_hashing);
+                TextIndexPositionCodec::encode(
+                    position_entries, positions_stream->plain_hashing,
+                    TextIndexPositionCodec::parseEncoding(params.positions_encoding));
             }
 
             TextIndexSerialization::serializeTokenInfo(dictionary_stream.compressed_hashing, token_info);
@@ -1765,6 +1768,7 @@ static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "diction
 static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
 static const String ARGUMENT_POSTING_LIST_CODEC = "posting_list_codec";
 static const String ARGUMENT_POSITIONS = "__experimental_positions";
+static const String ARGUMENT_POSITIONS_ENCODING = "positions_encoding";
 
 namespace
 {
@@ -1869,12 +1873,14 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
         .value_or(settings[MergeTreeSetting::text_index_posting_list_block_size]);
 
     UInt64 positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(DEFAULT_POSITIONS);
+    String positions_encoding = extractFieldOption<String>(options, ARGUMENT_POSITIONS_ENCODING).value_or(DEFAULT_POSITIONS_ENCODING);
 
     MergeTreeIndexTextParams index_params{
         dictionary_block_size,
         dictionary_block_frontcoding_compression,
         posting_list_block_size,
         positions,
+        positions_encoding,
         std::move(preprocessor_ast)};
 
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
@@ -1920,6 +1926,14 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
     PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);
+
+    const auto positions_encoding_opt = extractFieldOption<String>(options, ARGUMENT_POSITIONS_ENCODING);
+    if (!positions && positions_encoding_opt.has_value())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' requires '{}' to be enabled", ARGUMENT_POSITIONS_ENCODING, ARGUMENT_POSITIONS);
+
+    String positions_encoding = positions_encoding_opt.value_or(DEFAULT_POSITIONS_ENCODING);
+    if (positions_encoding != "none" && positions_encoding != "pfor")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 'none' or 'pfor', but got '{}'", ARGUMENT_POSITIONS_ENCODING, positions_encoding);
 
     if (!options.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
