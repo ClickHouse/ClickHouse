@@ -111,6 +111,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
+#include <Interpreters/HypotheticalIndexStore.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/TraceCollector.h>
 #include <IO/AsyncReadCounters.h>
@@ -544,6 +545,7 @@ struct ContextSharedPart : boost::noncopyable
     String merge_workload TSA_GUARDED_BY(mutex);                /// Workload setting value that is used by all merges
     String mutation_workload TSA_GUARDED_BY(mutex);             /// Workload setting value that is used by all mutations
     String license_file TSA_GUARDED_BY(mutex);                  /// BYOC license text
+    bool show_license_expiration_warnings TSA_GUARDED_BY(mutex) = true; /// Whether to show the license expiration warning in system.warnings
     bool throw_on_unknown_workload TSA_GUARDED_BY(mutex) = false;
     bool cpu_slot_preemption TSA_GUARDED_BY(mutex) = false;
     UInt64 cpu_slot_quantum_ns TSA_GUARDED_BY(mutex) = 10'000'000;
@@ -727,7 +729,11 @@ struct ContextSharedPart : boost::noncopyable
     /// No lock required for async_insert_queue modified only during initialization
     std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
 
-    std::map<String, UInt16> server_ports;
+    /// Server listener port registry. Reads come from concurrent SQL contexts
+    /// (the `getServerPort` SQL function); writes happen during server startup
+    /// and at runtime via `SYSTEM START LISTEN` in `clickhouse-local`.
+    mutable std::mutex server_ports_mutex;
+    std::map<String, UInt16> server_ports TSA_GUARDED_BY(server_ports_mutex);
 
     std::atomic<bool> shutdown_called = false;
 
@@ -2347,6 +2353,19 @@ void Context::setLicenseFile(const String & value)
     shared->license_file = value;
 }
 
+
+bool Context::getShowLicenseExpirationWarnings() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->show_license_expiration_warnings;
+}
+
+void Context::setShowLicenseExpirationWarnings(bool value)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->show_license_expiration_warnings = value;
+}
+
 String Context::getMutationWorkload() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -2592,6 +2611,18 @@ std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String 
         external_tables_mapping.erase(iter);
     }
     return holder;
+}
+
+HypotheticalIndexStore & Context::getHypotheticalIndexStore() const
+{
+    /// in session context so the store persists across queries
+    if (auto session_ctx = session_context.lock(); session_ctx && session_ctx.get() != this)
+        return session_ctx->getHypotheticalIndexStore();
+
+    std::lock_guard lock(mutex);
+    if (!hypothetical_index_store)
+        hypothetical_index_store = std::make_shared<HypotheticalIndexStore>();
+    return *hypothetical_index_store;
 }
 
 
@@ -5818,11 +5849,16 @@ std::optional<UInt16> Context::getTCPPortSecure() const
 
 void Context::registerServerPort(String port_name, UInt16 port)
 {
-    shared->server_ports.emplace(std::move(port_name), port);
+    /// Use `insert_or_assign` so re-registration after stop/start refreshes the
+    /// stored port. With `--tcp_port 0` / `--http_port 0` in `clickhouse-local`,
+    /// each restart binds a new ephemeral port and the registry must reflect it.
+    std::lock_guard lock(shared->server_ports_mutex);
+    shared->server_ports.insert_or_assign(std::move(port_name), port);
 }
 
 UInt16 Context::getServerPort(const String & port_name) const
 {
+    std::lock_guard lock(shared->server_ports_mutex);
     auto it = shared->server_ports.find(port_name);
     if (it == shared->server_ports.end())
         throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "There is no port named {}", port_name);
