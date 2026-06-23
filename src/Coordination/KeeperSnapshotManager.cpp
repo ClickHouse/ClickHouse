@@ -621,7 +621,10 @@ void KeeperStorageSnapshot<Storage>::deserialize(
             storage.nodes_digest += node.getDigest(path);
 
         if (node.stats.isTTL())
+        {
             storage.ttl_paths.insert(std::string{path});
+            storage.committed_ttl_nodes.fetch_add(1);
+        }
 
         storage.container.insertOrReplace(std::move(path_data), path_size, std::move(node));
     }

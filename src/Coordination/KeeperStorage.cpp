@@ -1372,6 +1372,7 @@ bool KeeperStorage<Container>::createNode(
     {
         created_node.stats.setTTL(*ttl);
         ttl_paths.insert(path);
+        committed_ttl_nodes.fetch_add(1);
     }
 
     if constexpr (use_rocksdb)
@@ -1420,7 +1421,10 @@ bool KeeperStorage<Container>::removeNode(const std::string & path, int32_t vers
     acl_map.removeUsage(node_it->value.acl_id);
 
     if (node_it->value.stats.isTTL())
+    {
         ttl_paths.erase(path);
+        committed_ttl_nodes.fetch_sub(1);
+    }
 
     if constexpr (use_rocksdb)
         container.erase(path);
@@ -4277,10 +4281,7 @@ void KeeperStorage<Container>::updateStats()
     stats.total_emphemeral_nodes_count.store(getTotalEphemeralNodesCount(), std::memory_order_relaxed);
     stats.last_zxid.store(getZXID(), std::memory_order_relaxed);
 
-    {
-        SharedLockGuard storage_lock(storage_mutex);
-        CurrentMetrics::set(CurrentMetrics::KeeperTTLNodes, ttl_paths.size());
-    }
+    CurrentMetrics::set(CurrentMetrics::KeeperTTLNodes, committed_ttl_nodes.load());
 }
 
 const KeeperStorageStats & KeeperStorageBase::getStorageStats() const

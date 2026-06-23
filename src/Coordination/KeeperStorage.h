@@ -574,6 +574,8 @@ public:
         StringHashForHeterogeneousLookup::transparent_key_equal>
         ttl_paths TSA_GUARDED_BY(storage_mutex);
 
+    std::atomic<UInt64> committed_ttl_nodes{0};
+
     struct UncommittedNodeRef;
 
     struct UncommittedState
