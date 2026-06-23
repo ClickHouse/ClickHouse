@@ -73,7 +73,7 @@ private:
     {
         UUID id;
         AccessEntityPtr entity;
-        AccessEntityType type{};
+        AccessEntityType type;
     };
     std::queue<Event> queue;
     std::mutex queue_mutex;

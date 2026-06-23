@@ -2,6 +2,7 @@ import time
 
 import pytest
 
+from helpers.client import CommandRequest, QueryTimeoutExceedException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
