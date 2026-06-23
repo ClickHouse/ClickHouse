@@ -233,6 +233,7 @@ public:
     void addResources(const QueryPlanResourceHolder & resources_) { resources.append(resources_); }
     void setQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { resources.query_id_holders.emplace_back(std::move(query_id_holder)); }
     void addContext(ContextPtr context) { resources.interpreter_context.emplace_back(std::move(context)); }
+    void addCustomResource(std::shared_ptr<ICustomResourceHolder> resource) { resources.custom_resources.emplace_back(std::move(resource)); }
 
     /// Convert query pipeline to pipe.
     static Pipe getPipe(QueryPipelineBuilder pipeline, QueryPlanResourceHolder & resources);

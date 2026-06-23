@@ -127,6 +127,12 @@ struct MergeTreeReadTaskInfo
     DeserializationPrefixesCachePtr deserialization_prefixes_cache;
     /// Extra info for optimizations - exact row processing, calculated virtual columns.
     RangesInDataPartReadHints read_hints;
+
+    /// UNIQUE KEY — snapshot bitmap propagated from
+    /// `RangesInDataPart`. `MergeTreeSelectProcessor::readCurrentTask` applies
+    /// row-level filtering when this is non-null and non-empty; nullptr /
+    /// empty bitmaps are the zero-overhead fast path.
+    ConstDeleteBitmapPtr delete_bitmap;
 };
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;

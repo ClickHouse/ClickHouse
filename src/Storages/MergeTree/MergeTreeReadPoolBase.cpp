@@ -211,6 +211,10 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
     read_task_info.part_starting_offset_in_query = part_with_ranges.part_starting_offset_in_query;
     read_task_info.alter_conversions = MergeTreeData::getAlterConversionsForPart(read_task_info.data_part, mutations_snapshot, getContext());
     read_task_info.read_hints = part_with_ranges.read_hints;
+    /// UNIQUE KEY — propagate the pinned bitmap snapshot from
+    /// `selectRangesToRead`. Null for non-unique-key tables and for parts
+    /// without deletions.
+    read_task_info.delete_bitmap = part_with_ranges.delete_bitmap;
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
         .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)

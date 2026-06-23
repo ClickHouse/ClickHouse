@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 
 #include <Columns/ColumnLazy.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -22,6 +23,7 @@
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyReadFilter.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -59,6 +61,7 @@ namespace ProfileEvents
 {
 extern const Event ParallelReplicasAnnouncementMicroseconds;
 extern const Event ParallelReplicasReadRequestMicroseconds;
+extern const Event UniqueKeyBitmapRowsSkipped;
 }
 
 namespace DB
@@ -254,6 +257,65 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
 
     if (res.row_count)
     {
+        /// UNIQUE KEY — row-level delete-bitmap filter, keyed on the
+        /// `_part_offset` virtual column. Applied AFTER PREWHERE / skip-indexes
+        /// so `_part_offset` reflects absolute part-local rows; PREWHERE wastes
+        /// a little eval on dead rows in exchange for keeping the bitmap filter
+        /// out of the PREWHERE DAG.
+        const auto & delete_bitmap = current_task.getInfo().delete_bitmap;
+        if (delete_bitmap && !delete_bitmap->empty() && res.block.has("_part_offset"))
+        {
+            const auto & part_offset_col = res.block.getByName("_part_offset").column;
+            const auto * offsets = typeid_cast<const ColumnUInt64 *>(part_offset_col.get());
+            if (offsets && offsets->size() == res.row_count)
+            {
+                const auto & offset_data = offsets->getData();
+                IColumn::Filter filter;
+                const size_t kept = UniqueKeyTxn::buildDeleteBitmapFilter(
+                    offset_data.data(), res.row_count, *delete_bitmap, filter);
+
+                if (kept != res.row_count)
+                {
+                    const size_t skipped = res.row_count - kept;
+                    ProfileEvents::increment(ProfileEvents::UniqueKeyBitmapRowsSkipped, skipped);
+
+                    if (kept == 0)
+                    {
+                        /// All PREWHERE-surviving rows were filtered by the delete
+                        /// bitmap — treat as an empty chunk. DO NOT record the read
+                        /// marks (`res.read_mark_ranges`) in the query-condition
+                        /// cache: those rows matched PREWHERE and only the
+                        /// (csn-dependent) bitmap killed them. The cache is
+                        /// csn-oblivious and server-shared, so a concurrent query
+                        /// pinned at an older snapshot — before this delete — would
+                        /// consult the entry and wrongly skip a mark whose rows are
+                        /// live at its csn, dropping live rows. The append-only-bitmap
+                        /// invariant doesn't make this safe: it only holds forward in
+                        /// csn. Fully bitmap-dead marks are re-scanned and re-filtered
+                        /// until a csn/bitmap-aware cache exists.
+                        ///
+                        /// Genuine PREWHERE misses in this batch ARE still cacheable —
+                        /// they're csn-independent (the predicate, not the bitmap,
+                        /// rejected them) — so record `res.unmatched_mark_ranges` as
+                        /// the normal path below does.
+                        if (reader_settings.use_query_condition_cache && prewhere_info
+                            && !res.unmatched_mark_ranges.empty()
+                            && !current_task.readersChainCanSkipMarksBeforePrewhere())
+                            current_task.addPrewhereUnmatchedMarks(res.unmatched_mark_ranges);
+
+                        return {Chunk(), res.num_read_rows, res.num_read_bytes, false, std::move(res.read_mark_ranges)};
+                    }
+
+                    for (size_t i = 0, cols = res.block.columns(); i < cols; ++i)
+                    {
+                        auto & col = res.block.getByPosition(i);
+                        col.column = col.column->filter(filter, kept);
+                    }
+                    res.row_count = kept;
+                }
+            }
+        }
+
         /// Reorder the columns according to result_header
         Columns ordered_columns;
         ordered_columns.reserve(result_header.columns());
