@@ -28,3 +28,4 @@ Int32
 Int16
 Variant(Int64, String)
 Array(Variant(Array(UInt8), Int64))
+Float64

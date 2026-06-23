@@ -64,3 +64,12 @@ SELECT toTypeName(if(materialize(1), toUInt8(1), toInt16(2)));
 -- Non-numeric branches still become a Variant even when the setting is on.
 SELECT toTypeName(if(materialize(1), toInt64(1), 'str'));
 SELECT toTypeName([toInt64(1), [1, 2]]);
+
+-- The setting covers the searched form `CASE WHEN ... END` (which goes through multiIf), so
+-- it resolves to the numeric supertype like the other conditionals.
+SELECT toTypeName(CASE WHEN materialize(1) THEN toDecimal64(1, 2) ELSE 0. END);
+-- But the expression form `CASE expr WHEN ... END` (function caseWithExpression) is outside the
+-- setting: it computes its result type with plain getLeastSupertype, so mixed numeric branches
+-- with no lossless common type still throw NO_COMMON_TYPE regardless of the setting.
+SELECT toTypeName(CASE materialize(1) WHEN 1 THEN toDecimal64(1, 2) ELSE 0. END); -- { serverError NO_COMMON_TYPE }
+SELECT sum(CASE materialize(1) WHEN 1 THEN toDecimal64(1, 2) ELSE 0. END); -- { serverError NO_COMMON_TYPE }
