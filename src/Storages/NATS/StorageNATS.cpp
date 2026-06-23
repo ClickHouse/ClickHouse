@@ -385,7 +385,8 @@ void StorageNATS::read(
         throw Exception(
             ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`. Be aware that usually the read data is removed from the queue.");
 
-    if (!DatabaseCatalog::instance().getDependentViews(getStorageID()).empty())
+    if (!DatabaseCatalog::instance().getDependentViews(getStorageID()).empty()
+        && (consumers_ready || stream_control.isBlocked()))
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageNATS with attached materialized views");
 
     if (!getStreamName().empty() && getConsumerName().empty())
