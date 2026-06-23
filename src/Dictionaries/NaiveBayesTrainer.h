@@ -158,7 +158,14 @@ private:
     {
         UInt64 total = 0;
         for (const auto & [_, count] : data->class_totals)
+        {
+            /// Each class total already fits in a 64-bit integer, but their sum can still overflow.
+            if (count > std::numeric_limits<UInt64>::max() - total)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "NaiveBayes dictionary: the total n-gram count across all classes overflows a 64-bit integer");
             total += count;
+        }
 
         if (total == 0)
             throw Exception(
