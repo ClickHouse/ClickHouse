@@ -17,8 +17,8 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
 #include <Common/FieldAccurateComparison.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -27,6 +27,7 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnDynamic.h>
 #include <DataTypes/DataTypeObject.h>
+
 
 namespace DB
 {
@@ -88,15 +89,15 @@ private:
     using ArrOffset = ColumnArray::Offset;
     using ArrOffsets = ColumnArray::Offsets;
 
-    static constexpr bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i)
-    {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wsign-compare"
+
+    static constexpr bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i) noexcept
+    {
         return left == right[i];
-#pragma clang diagnostic pop
     }
 
-    static constexpr bool compare(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
+    static constexpr bool compare(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t) noexcept
     {
         if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
         {
@@ -108,16 +109,12 @@ private:
         }
         else
         {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wsign-compare"
-#pragma clang diagnostic ignored "-Wdouble-promotion"
             return left[i] == right;
-#pragma clang diagnostic pop
         }
     }
 
     static constexpr bool compare(
-            const PaddedPODArray<Initial> & left, const PaddedPODArray<Result> & right, size_t i, size_t j)
+            const PaddedPODArray<Initial> & left, const PaddedPODArray<Result> & right, size_t i, size_t j) noexcept
     {
         if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
         {
@@ -129,11 +126,7 @@ private:
         }
         else
         {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wsign-compare"
-#pragma clang diagnostic ignored "-Wdouble-promotion"
             return left[i] == right[j];
-#pragma clang diagnostic pop
         }
     }
 
@@ -154,7 +147,7 @@ private:
         return accurateEquals(arr[pos], rhs);
     }
 
-    static constexpr bool lessOrEqual(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
+    static constexpr bool lessOrEqual(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t) noexcept
     {
         if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
         {
@@ -166,11 +159,7 @@ private:
         }
         else
         {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wsign-compare"
-#pragma clang diagnostic ignored "-Wdouble-promotion"
             return left[i] >= right;
-#pragma clang diagnostic pop
         }
     }
 
@@ -180,6 +169,8 @@ private:
     {
         return accurateLessOrEqual(rhs, arr[pos]);
     }
+
+#pragma clang diagnostic pop
 
 public:
     /** Assuming that the array is sorted, use a binary search */
@@ -505,7 +496,7 @@ public:
 }
 
 template <typename ConcreteAction, typename Name>
-class FunctionArrayIndex final : public IFunction
+class FunctionArrayIndex : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -1070,7 +1061,7 @@ private:
 
             /// Collect columns from dynamic paths that match exact path or prefix.
             /// These columns need to be checked for non-null values per row.
-            VectorWithMemoryTracking<const IColumn *> relevant_dynamic_columns;
+            std::vector<const IColumn *> relevant_dynamic_columns;
             const auto & dynamic_paths = object_column.getDynamicPathsPtrs();
 
             if (auto it = dynamic_paths.find(path); it != dynamic_paths.end())
@@ -1198,11 +1189,7 @@ private:
             const auto & value = (*item_arg)[0];
             if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
             {
-                if (isColumnNullableOrLowCardinalityNullable(
-                        assert_cast<const ColumnArray &>(col_array->getDataColumn()).getData()))
-                    current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value);
-                else
-                    current = Impl::Main<ConcreteAction, true>::lowerBound(arr, value, arr.size(), 0);
+                current = Impl::Main<ConcreteAction, true>::lowerBound(arr, value, arr.size(), 0);
             }
             else
             {

@@ -321,7 +321,7 @@ def test_docker_library(test_results) -> None:
         test_results.append(
             Result(
                 name=test_name,
-                status=Result.Status.FAIL,
+                status=Result.Status.FAILED,
                 info=f"Exception while testing docker library: {traceback.format_exc()}",
             )
         )
@@ -360,8 +360,8 @@ def main():
             print(
                 "WARNING: ClickHouse version has not been found in workflow kv storage - read from repo"
             )
-            info.add_workflow_warning(
-                "ClickHouse version has not been found in workflow kv storage"
+            info.add_workflow_report_message(
+                "WARNING: ClickHouse version has not been found in workflow kv storage"
             )
     assert version_dict
 
@@ -419,7 +419,7 @@ def main():
             else:
                 assert False, "BUG"
             urls = read_build_urls(build_name)
-            assert urls, "URLS has not been read from build report"
+            assert urls, f"URLS has not been read from build report"
             direct_urls[arch] = [
                 url
                 for url in urls

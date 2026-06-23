@@ -187,9 +187,6 @@ public:
 
     void onBuildPhaseFinish() override;
 
-    bool hasPostBuildPhase() const override;
-    void runPostBuildPhase() override;
-
     /// Number of keys in all built JOIN maps.
     size_t getTotalRowCount() const final;
     /// Sum size in bytes of all buffers, used for JOIN maps and for all memory pools.
@@ -213,8 +210,6 @@ public:
         M(key64)                       \
         M(key_string)                  \
         M(key_fixed_string)            \
-        M(keys32)                      \
-        M(keys64)                      \
         M(keys128)                     \
         M(keys256)                     \
         M(hashed)                      \
@@ -222,19 +217,9 @@ public:
         M(two_level_key64)             \
         M(two_level_key_string)        \
         M(two_level_key_fixed_string)  \
-        M(two_level_keys32)            \
-        M(two_level_keys64)            \
         M(two_level_keys128)           \
         M(two_level_keys256)           \
-        M(two_level_hashed)            \
-        M(range8_key32)                \
-        M(range16_key32)               \
-        M(range17_key32)               \
-        M(range18_key32)               \
-        M(range8_key64)                \
-        M(range16_key64)               \
-        M(range17_key64)               \
-        M(range18_key64)
+        M(two_level_hashed)
 
     /// Used for reading from StorageJoin and applying joinGet function
     #define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
@@ -251,8 +236,6 @@ public:
         M(two_level_key64 __VA_OPT__(,) __VA_ARGS__)            \
         M(two_level_key_string __VA_OPT__(,) __VA_ARGS__)       \
         M(two_level_key_fixed_string __VA_OPT__(,) __VA_ARGS__) \
-        M(two_level_keys32 __VA_OPT__(,) __VA_ARGS__)           \
-        M(two_level_keys64 __VA_OPT__(,) __VA_ARGS__)           \
         M(two_level_keys128 __VA_OPT__(,) __VA_ARGS__)          \
         M(two_level_keys256 __VA_OPT__(,) __VA_ARGS__)          \
         M(two_level_hashed __VA_OPT__(,) __VA_ARGS__)
@@ -295,8 +278,6 @@ public:
         std::shared_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>           key64;
         std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>              key_string;
         std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>              key_fixed_string;
-        std::shared_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>           keys32;
-        std::shared_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>           keys64;
         std::shared_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>           keys128;
         std::shared_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>           keys256;
         std::shared_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>         hashed;
@@ -304,19 +285,9 @@ public:
         std::shared_ptr<TwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>>   two_level_key64;
         std::shared_ptr<TwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_string;
         std::shared_ptr<TwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_fixed_string;
-        std::shared_ptr<TwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>>   two_level_keys32;
-        std::shared_ptr<TwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>>   two_level_keys64;
         std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>>   two_level_keys128;
         std::shared_ptr<TwoLevelHashMap<UInt256, Mapped, UInt256HashCRC32>>   two_level_keys256;
         std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128TrivialHash>> two_level_hashed;
-        std::shared_ptr<FixedHashMapWithSizeBits<UInt32, Mapped, 8>>          range8_key32;
-        std::shared_ptr<FixedHashMapWithSizeBits<UInt32, Mapped, 16>>         range16_key32;
-        std::shared_ptr<FixedHashMapWithSizeBits<UInt32, Mapped, 17>>         range17_key32;
-        std::shared_ptr<FixedHashMapWithSizeBits<UInt32, Mapped, 18>>         range18_key32;
-        std::shared_ptr<FixedHashMapWithSizeBits<UInt64, Mapped, 8>>          range8_key64;
-        std::shared_ptr<FixedHashMapWithSizeBits<UInt64, Mapped, 16>>         range16_key64;
-        std::shared_ptr<FixedHashMapWithSizeBits<UInt64, Mapped, 17>>         range17_key64;
-        std::shared_ptr<FixedHashMapWithSizeBits<UInt64, Mapped, 18>>         range18_key64;
 
         void create(Type which, size_t reserve)
         {
@@ -399,7 +370,7 @@ public:
 
     struct NullMapHolder
     {
-        const ScatteredColumns * columns{};
+        const ScatteredColumns * columns;
         ColumnPtr column;
         size_t selector_rows = 0;
 
@@ -442,15 +413,6 @@ public:
         size_t keys_to_join = 0;
         /// Whether the right table reranged by key
         bool sorted = false;
-
-        /// For range types: the minimum key value and the range size from min_key to max_key.
-        struct KeyRange
-        {
-            UInt64 min_key = 0;
-            UInt64 size = 0;
-        };
-
-        KeyRange key_range;
 
         size_t avgPerKeyRows() const
         {
@@ -498,6 +460,8 @@ public:
     void materializeColumnsFromLeftBlock(Block & block) const;
     Block materializeColumnsFromRightBlock(Block block) const;
 
+    bool rightTableCanBeReranged() const override;
+    void tryRerangeRightTableData() override;
     size_t getAndSetRightTableKeys() const;
 
     bool hasNonJoinedRows();
@@ -509,9 +473,6 @@ public:
     void setUsedFlags(std::shared_ptr<JoinStuff::JoinUsedFlags> flags) { used_flags = std::move(flags); }
 
     bool enableLazyColumnsReplication() const { return enable_lazy_columns_replication; }
-    bool enableSoftwarePrefetch() const { return enable_prefetch; }
-
-    void setEnableLazyColumnsIndexing(bool value) override { enable_lazy_columns_indexing = value; }
 
     static bool isUsedByAnotherAlgorithm(const TableJoin & table_join);
     static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
@@ -575,18 +536,10 @@ private:
     size_t max_joined_block_bytes = 0;
     bool joined_block_split_single_row = false;
     bool enable_lazy_columns_replication = false;
-    bool enable_lazy_columns_indexing = false;
-    bool enable_prefetch = true;
 
     /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
     bool shrink_blocks = false;
     Int64 memory_usage_before_adding_blocks = 0;
-
-    /// Track if conversion to fixed hash map was already attempted to prevent repeated checks.
-    bool conversion_to_fixed_hash_map_attempted = false;
-
-    /// Track if shared runtime filters were already published to keep publication one-shot.
-    bool shared_runtime_filters_publish_attempted = false;
 
     /// Identifier to distinguish different HashJoin instances in logs
     /// Several instances can be created, for example, in GraceHashJoin to handle different buckets
@@ -614,24 +567,8 @@ private:
     void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
     bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
 
-    bool rightTableCanBeReranged() const;
-    void tryRerangeRightTableData();
-
     template <JoinKind KIND, typename Map, JoinStrictness STRICTNESS>
     void tryRerangeRightTableDataImpl(Map & map);
-
-    bool canConvertToFixedHashMap() const;
-
-    /// Publish a SharedFixedHashTableRuntimeFilter that replaces the Set/BloomFilter
-    /// installed by BuildRuntimeFilterStep, when the build side is a FixedHashMap.
-    void publishSharedRuntimeFilters();
-    void tryConvertToFixedHashMap();
-
-    template <bool is_signed, typename Key, typename MapsTemplate>
-    void tryConvertToFixedHashMapImpl(MapsTemplate & maps);
-
-    void reinitUsedFlags();
-
     void doDebugAsserts() const;
 };
 }
