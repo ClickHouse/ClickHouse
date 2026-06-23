@@ -89,7 +89,7 @@ CREATE DICTIONARY sentiment_model
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'sentiment_ngrams'))
-LAYOUT(NAIVE_BAYES(n 1 mode 'token' alpha 1.0))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' alpha 1.0))
 LIFETIME(0);
 ```
 
@@ -126,6 +126,7 @@ SELECT naiveBayesClassifier('sentiment_model', 'this is terrible');
 
 | Parameter        | Description | Example | Default |
 | ---------------- | ----------- | ------- | ------- |
+| **class_attribute** | Name of the attribute that holds the class label; the other attribute is the count. | `'class_id'` | *Required* |
 | **n**            | N-gram size. `1` = unigrams, `2` = bigrams, `3` = trigrams. | `2` | *Required* |
 | **mode**         | Tokenization method: `byte` (raw bytes), `codepoint` (Unicode characters), or `token` (whitespace-delimited words). | `token` | *Required* |
 | **alpha**        | Laplace smoothing factor for unseen n-grams. | `0.5` | `1.0` |
@@ -152,11 +153,8 @@ Uses Naive Bayes classification with [Laplace smoothing](https://en.wikipedia.or
 
 For n > 1, the classifier pads the input with `(n - 1)` boundary tokens at each end before extracting n-grams.
 
-**Source table format:**
-The source table must have three columns matching the dictionary structure:
-- `class_id` (`UInt32`) — the class label
-- `ngram` (`String`) — the n-gram text
-- `count` (`UInt64`) — occurrence count
+**Dictionary structure:**
+The `PRIMARY KEY` must be a single `String` column holding the n-gram — it is the value passed in at query time (the text to classify), not a stored lookup key. Alongside the key, declare exactly two unsigned-integer attributes: the class label and the occurrence count. The `class_attribute` layout parameter names which attribute is the class label; the other is the count, so the two attributes may be declared in either order.
 
 **Updating models:**
 Since the model is a dictionary backed by a table, you can update the training data and reload:
