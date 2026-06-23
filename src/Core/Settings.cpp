@@ -2603,6 +2603,9 @@ The maximum size of the set in the right-hand side of the IN operator to use tab
     DECLARE(Bool, analyze_index_with_space_filling_curves, true, R"(
 If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
 )", 0) \
+    DECLARE(Bool, analyze_index_with_tuple_lexicographic_comparison, true, R"(
+If the query has a lexicographic tuple comparison on key columns, e.g. `(k1, k2) < (c1, c2)`, use it for primary key and minmax index analysis to prune granules. The tuple comparison `(k1, k2) < (c1, c2)` is equivalent to `k1 < c1 OR (k1 = c1 AND k2 < c2)`.
+)", 0) \
     DECLARE(Bool, joined_subquery_requires_alias, true, R"(
 Force joined subqueries and table functions to have aliases for correct name qualification.
 )", 0) \
