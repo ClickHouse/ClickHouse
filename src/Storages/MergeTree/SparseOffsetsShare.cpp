@@ -53,9 +53,10 @@ SparseOffsetsShare::sliceFromBucket(
 
     /// Find the entry that covers `abs_row_start`. Entries are inserted in order of
     /// ascending `start_row_in_part`, so a linear scan picks the right starting chunk
-    /// in the analyzer's `O(num_chunks)` (~16 entries on a single part). For workloads
-    /// with many parts, the per-reader bucket cache in `IMergeTreeReader` makes this
-    /// O(1) after the first call.
+    /// in `O(num stored ranges)`. The number of ranges depends on the selected mark
+    /// ranges and on how the analyzer split the work. The per-reader bucket cache in
+    /// `IMergeTreeReader` avoids repeating the `(part, column)` map lookup before this
+    /// scan.
     const SparseOffsetsRange * start = nullptr;
     size_t start_idx = 0;
     for (size_t i = 0; i < ranges.size(); ++i)
@@ -111,12 +112,12 @@ SparseOffsetsShare::sliceFromBucket(
             /*skipped_values_rows_=*/skipped);
     }
 
-    /// Straddle: the scan window crosses one or more chunk boundaries. Walk the chunks
-    /// in order, slice each one, and stitch the pieces into a fresh column. The disk
+    /// The scan window crosses one or more stored-range boundaries. Walk the ranges in
+    /// order, slice each one, and stitch the pieces into a fresh column. The disk
     /// fallback would be incorrect here because the scan's `DeserializeStateSparse` was
     /// never advanced through the SparseOffsets stream (previous calls were cache hits),
-    /// so we must always produce a result. This path is rare (chunk_marks >> scan
-    /// max_block_size), so the extra alloc is acceptable.
+    /// so we must always produce a result. This path is rare because analyzer ranges are
+    /// usually much larger than scan blocks, so the extra allocation is acceptable.
     auto stitched = ColumnUInt64::create();
     auto & stitched_data = stitched->getData();
 

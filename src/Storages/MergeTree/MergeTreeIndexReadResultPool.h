@@ -216,7 +216,7 @@ public:
 
     /// Decompressed sparse offsets produced by the sparsity analyzer; the data scan
     /// readers consult this to skip re-reading the same offsets from disk. May be
-    /// nullptr (older queries / no sparsity reader configured).
+    /// nullptr when this query has no sparsity reader/share configured.
     SparseOffsetsSharePtr getSparseOffsetsShare() const { return sparse_offsets_share; }
 
 private:
