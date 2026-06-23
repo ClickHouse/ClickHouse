@@ -102,7 +102,7 @@ class EC2:
         """Detect the current AWS region from instance metadata, falling back to the default."""
         try:
             cls.region_name = EC2.get_instance_metadata("placement/region")
-        except Exception as e:
+        except Exception:
             pass
         return cls.region_name
 
@@ -312,14 +312,14 @@ class Runner:
 
                 self.config()
                 self.run_job()
-            except Exception as e:
+            except Exception:
                 self.remove_if_not_running()
                 raise
 
             log(f"Completed jobs: {self.completed_jobs}/{config.max_jobs}")
             # macOS runners run continuously without job limits
             if config.init_environment != Environment.MACOS and self.completed_jobs >= config.max_jobs:
-                raise Exception(f"Runner completed max number of jobs")
+                raise Exception("Runner completed max number of jobs")
 
     def run_job(self) -> None:
         """Execute one iteration of the runner loop."""
@@ -360,7 +360,7 @@ class Runner:
 
         try:
             Monitor.check_termination_flag()
-        except Exception as e:
+        except Exception:
             self.ec2.scale_down()
             raise
         Runner.check_post_run()
@@ -806,7 +806,7 @@ class Monitor:
         last_job_time = start_time
         runner_state = "starting"
         last_job_start_time = start_time
-        Monitor.log(f"started")
+        Monitor.log("started")
 
         while True:
             time.sleep(20)
@@ -1021,7 +1021,7 @@ if __name__ == "__main__":
         monitor.daemonize()
         runner.run()
 
-    except Exception as e:
+    except Exception:
         if config.init_environment != Environment.MACOS:
             ec2.terminate()
         raise
