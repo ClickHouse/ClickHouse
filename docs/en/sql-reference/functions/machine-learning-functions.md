@@ -30,10 +30,11 @@ The model is stored as a dictionary with the `NAIVE_BAYES` layout, backed by a C
 naiveBayesClassifier(dictionary_name, input_text)
 ```
 
-This is equivalent to:
+This is equivalent to calling `dictGet` for the dictionary's class attribute — the attribute named by the `class_attribute` layout setting, which is `class_id` in the examples below:
 ```sql
 dictGet(dictionary_name, 'class_id', input_text)
 ```
+If the class attribute is declared under a different name, use that name in the `dictGet` call.
 
 **Arguments**
 
@@ -165,7 +166,7 @@ SYSTEM RELOAD DICTIONARY sentiment_model;
 
 **Dictionary semantics:**
 This is a *computational* dictionary, so its lookup interface behaves accordingly:
-- `dictGet(dict, 'class_id', text)` classifies `text` (the key is an input to classify, not a stored key). Other attributes are not queryable.
+- `dictGet(dict, '<class_attribute>', text)` classifies `text`, where `<class_attribute>` is the configured class attribute name (`class_id` in the examples above). The key is an input to classify, not a stored key, and the other attribute is not queryable.
 - `dictHas` always returns `1` — any text is classifiable.
 
 ---
