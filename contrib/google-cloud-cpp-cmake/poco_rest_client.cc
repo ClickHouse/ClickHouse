@@ -7,12 +7,15 @@
 
 #include "google/cloud/common_options.h"
 #include "google/cloud/credentials.h"
+#include "google/cloud/internal/curl_options.h"
 #include "google/cloud/internal/http_payload.h"
+#include "google/cloud/internal/oauth2_credentials.h"
 #include "google/cloud/internal/rest_client.h"
 #include "google/cloud/internal/rest_context.h"
 #include "google/cloud/internal/rest_options.h"
 #include "google/cloud/internal/rest_request.h"
 #include "google/cloud/internal/rest_response.h"
+#include "google/cloud/internal/unified_rest_credentials.h"
 #include "google/cloud/internal/url_encode.h"
 #include "google/cloud/options.h"
 #include "google/cloud/version.h"
@@ -139,11 +142,15 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
     if (options.has<CARootsFilePathOption>()) {
       ca_location = options.get<CARootsFilePathOption>();
     }
+    // When an explicit CA bundle is configured via CARootsFilePathOption, trust
+    // only that bundle and do not also load the system trust store. This matches
+    // the libcurl-based transport, where CAINFO replaces the default trust roots
+    // rather than extending them, preserving custom-CA/pinning semantics.
     Poco::Net::Context::Ptr context(new Poco::Net::Context(
         Poco::Net::Context::TLSV1_2_CLIENT_USE, /*privateKeyFile=*/"",
         /*certificateFile=*/"", ca_location,
         Poco::Net::Context::VERIFY_STRICT, /*verificationDepth=*/9,
-        /*loadDefaultCAs=*/true));
+        /*loadDefaultCAs=*/ca_location.empty()));
     session = std::make_unique<Poco::Net::HTTPSClientSession>(
         uri.getHost(), uri.getPort(), context);
   } else {
@@ -153,7 +160,13 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
   if (options.has<ProxyOption>()) {
     auto const& proxy = options.get<ProxyOption>();
     if (!proxy.hostname().empty()) {
-      Poco::UInt16 port = Poco::Net::HTTPSession::HTTP_PORT;
+      // ProxyConfig defaults the scheme to "https"; default the port to match
+      // the configured scheme instead of always assuming the plain-HTTP port,
+      // matching the `scheme://host[:port]` proxy URL used by the libcurl-based
+      // transport.
+      Poco::UInt16 port = proxy.scheme() == "https"
+                              ? Poco::Net::HTTPSClientSession::HTTPS_PORT
+                              : Poco::Net::HTTPSession::HTTP_PORT;
       if (!proxy.port().empty()) {
         port = static_cast<Poco::UInt16>(std::stoi(proxy.port()));
       }
@@ -240,7 +253,17 @@ class PocoRestResponse : public RestResponse {
 class PocoRestClient : public RestClient {
  public:
   PocoRestClient(std::string endpoint, Options options)
-      : endpoint_(std::move(endpoint)), options_(std::move(options)) {}
+      : endpoint_(std::move(endpoint)), options_(std::move(options)) {
+    // Map the unified credentials to an OAuth 2.0 credential so an
+    // `Authorization` header can be added to every request, matching the
+    // libcurl-based transport. This is required for token-exchange and
+    // impersonation flows (external-account and impersonated service-account
+    // credentials build their token-fetching REST clients via
+    // `MakeDefaultRestClient`), which would otherwise be sent unauthenticated.
+    if (options_.has<UnifiedCredentialsOption>()) {
+      credentials_ = MapCredentials(*options_.get<UnifiedCredentialsOption>());
+    }
+  }
 
   StatusOr<std::unique_ptr<RestResponse>> Delete(
       RestContext& context, RestRequest const& request) override {
@@ -280,7 +303,11 @@ class PocoRestClient : public RestClient {
       body.append(PercentEncode(p.second));
       separator = '&';
     }
-    // MakeRequest() defaults Content-Type to application/x-www-form-urlencoded.
+    // The body is already percent-encoded here, so mark its Content-Type
+    // explicitly to stop MakeRequest() from re-encoding it as a default form
+    // body (matching the libcurl-based transport, which set this header on the
+    // context for the form_data overload only).
+    context.AddHeader("content-type", "application/x-www-form-urlencoded");
     return MakeRequest(context, request, Poco::Net::HTTPRequest::HTTP_POST,
                        {{body.data(), body.size()}});
   }
@@ -297,14 +324,38 @@ class PocoRestClient : public RestClient {
       RestContext& context, RestRequest const& request,
       std::string const& method,
       std::vector<absl::Span<char const>> const& payload) const {
-    auto url = ComposeUrl(endpoint_, request, options_);
+    // Per-call options (e.g. an OptionsSpan forwarded through RestContext) take
+    // precedence over the client options. The libcurl-based transport merged
+    // context.options() into the client options for every verb, so options like
+    // the stall timeout, CA bundle, or proxy carried by an individual request
+    // are honored throughout building the URL, session and headers.
+    auto options = internal::MergeOptions(context.options(), options_);
+
+    // Resolve the authentication header once per request, propagating a refresh
+    // failure as a Status instead of sending an unauthenticated request.
+    std::pair<std::string, std::string> auth_header;
+    if (credentials_) {
+      auto header =
+          credentials_->AuthenticationHeader(std::chrono::system_clock::now());
+      if (!header) return std::move(header).status();
+      auth_header = *std::move(header);
+    }
+
+    // The libcurl-based transport only followed redirects when
+    // CurlFollowLocationOption was enabled. It defaults to false and is not set
+    // anywhere in ClickHouse, so by default the 3xx response is returned as-is.
+    bool const follow_location = options.has<CurlFollowLocationOption>() &&
+                                 options.get<CurlFollowLocationOption>();
+
+    auto url = ComposeUrl(endpoint_, request, options);
     try {
       for (int redirect = 0; redirect != kMaxRedirects; ++redirect) {
         auto response = MakeSingleRequest(context, request, method, payload,
-                                          url);
+                                          url, options, auth_header);
         auto const status_code =
             static_cast<std::int32_t>(response->StatusCode());
-        if (status_code < HttpStatusCode::kMinRedirects ||
+        if (!follow_location ||
+            status_code < HttpStatusCode::kMinRedirects ||
             status_code >= HttpStatusCode::kMinRequestErrors ||
             status_code == HttpStatusCode::kNotModified ||
             status_code == HttpStatusCode::kResumeIncomplete) {
@@ -315,7 +366,9 @@ class PocoRestClient : public RestClient {
         if (location == headers.end()) {
           return std::unique_ptr<RestResponse>(std::move(response));
         }
-        url = location->second;
+        // Resolve relative Location values against the current URL, as libcurl
+        // does, so e.g. "Location: /new-path" keeps the current scheme and host.
+        url = Poco::URI(Poco::URI(url), location->second).toString();
       }
       return Status(StatusCode::kUnavailable,
                     "too many redirects requesting " + url);
@@ -332,19 +385,23 @@ class PocoRestClient : public RestClient {
       RestContext& context, RestRequest const& request,
       std::string const& method,
       std::vector<absl::Span<char const>> const& payload,
-      std::string const& url) const {
+      std::string const& url, Options const& options,
+      std::pair<std::string, std::string> const& auth_header) const {
     Poco::URI uri(url);
-    auto session = MakeSession(uri, options_);
+    auto session = MakeSession(uri, options);
 
     auto path = uri.getPathAndQuery();
     if (path.empty()) path = "/";
     Poco::Net::HTTPRequest http_request(
         method, path, Poco::Net::HTTPMessage::HTTP_1_1);
-    if (options_.has<AuthorityOption>()) {
-      auto const& authority = options_.get<AuthorityOption>();
+    if (options.has<AuthorityOption>()) {
+      auto const& authority = options.get<AuthorityOption>();
       if (!authority.empty()) http_request.set("Host", authority);
     }
-    http_request.set("User-Agent", UserAgent(options_));
+    http_request.set("User-Agent", UserAgent(options));
+    if (!auth_header.first.empty()) {
+      http_request.set(auth_header.first, auth_header.second);
+    }
     // An empty value means "do not send this header at all". This matches the
     // semantics of the libcurl-based transport, where an empty value unsets a
     // header; e.g. the storage stub disables chunked transfer encoding by
@@ -366,18 +423,42 @@ class PocoRestClient : public RestClient {
     auto const has_body = method == Poco::Net::HTTPRequest::HTTP_POST ||
                           method == Poco::Net::HTTPRequest::HTTP_PUT ||
                           method == Poco::Net::HTTPRequest::HTTP_PATCH;
+    // Match the libcurl-based transport: a payload without an explicit
+    // Content-Type defaults to application/x-www-form-urlencoded and the whole
+    // body is percent-encoded before being sent. Requests that set their own
+    // Content-Type (e.g. JSON metadata, media uploads, and the form_data Post
+    // overload, whose body is already encoded) send the payload unchanged.
+    std::string encoded_body;
+    bool encode_form = false;
     if (has_body) {
       if (!http_request.has("Content-Type")) {
         http_request.set("Content-Type", "application/x-www-form-urlencoded");
+        encode_form = true;
       }
-      http_request.setContentLength(
-          static_cast<std::streamsize>(payload_size));
+      if (encode_form) {
+        std::string concatenated;
+        concatenated.reserve(payload_size);
+        for (auto const& span : payload) {
+          concatenated.append(span.data(), span.size());
+        }
+        encoded_body = PercentEncode(concatenated);
+        http_request.setContentLength(
+            static_cast<std::streamsize>(encoded_body.size()));
+      } else {
+        http_request.setContentLength(
+            static_cast<std::streamsize>(payload_size));
+      }
     }
 
     auto& body_stream = session->sendRequest(http_request);
-    for (auto const& span : payload) {
-      body_stream.write(span.data(),
-                        static_cast<std::streamsize>(span.size()));
+    if (encode_form) {
+      body_stream.write(encoded_body.data(),
+                        static_cast<std::streamsize>(encoded_body.size()));
+    } else {
+      for (auto const& span : payload) {
+        body_stream.write(span.data(),
+                          static_cast<std::streamsize>(span.size()));
+      }
     }
 
     auto http_response = std::make_unique<Poco::Net::HTTPResponse>();
@@ -399,6 +480,7 @@ class PocoRestClient : public RestClient {
 
   std::string endpoint_;
   Options options_;
+  std::shared_ptr<oauth2_internal::Credentials> credentials_;
 };
 
 }  // namespace
@@ -423,9 +505,12 @@ std::unique_ptr<RestClient> MakeDefaultRestClient(std::string endpoint_address,
                                           std::move(options));
 }
 
-// Poco::Net::HTTPClientSession is not thread-safe, so connections are not
-// pooled: each request creates a session, and streaming responses keep it
-// alive until the payload is consumed.
+// Poco::Net::HTTPClientSession is not thread-safe and a streaming response
+// keeps its session alive until the payload is fully consumed, so connections
+// are not pooled here: each request creates a fresh session. ConnectionPoolSizeOption
+// is therefore intentionally ignored. This trades some connection-reuse
+// throughput for a simpler, correct transport; a Poco-backed pool can be added
+// later if GCS request rates make it worthwhile.
 std::unique_ptr<RestClient> MakePooledRestClient(std::string endpoint_address,
                                                  Options options) {
   return MakeDefaultRestClient(std::move(endpoint_address),
