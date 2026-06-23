@@ -361,6 +361,33 @@ DROP DICTIONARY nb_label_model;
 DROP TABLE nb_label_source;
 
 
+-- Rows with count zero record no observation, so they must not change the trained model: a model with extra
+-- count=0 rows must behave identically to one without them, including an n-gram that has a positive count in
+-- one class but a zero count in another (which stays in the vocabulary through its positive row).
+DROP TABLE IF EXISTS nb_zero_base_source;
+DROP TABLE IF EXISTS nb_zero_extra_source;
+DROP DICTIONARY IF EXISTS nb_zero_base;
+DROP DICTIONARY IF EXISTS nb_zero_extra;
+CREATE TABLE nb_zero_base_source (ngram String, class_id UInt32, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+CREATE TABLE nb_zero_extra_source (ngram String, class_id UInt32, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO nb_zero_base_source VALUES ('x', 1, 1), ('y', 0, 3), ('z', 1, 5);
+INSERT INTO nb_zero_extra_source VALUES ('x', 1, 1), ('y', 0, 3), ('z', 1, 5), ('z', 0, 0), ('unused_a', 0, 0), ('unused_b', 1, 0);
+CREATE DICTIONARY nb_zero_base (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_zero_base_source')) LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'proportional')) LIFETIME(0);
+CREATE DICTIONARY nb_zero_extra (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_zero_extra_source')) LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'proportional')) LIFETIME(0);
+
+SELECT 'Zero-count rows do not change the model';
+SELECT naiveBayesClassifier('nb_zero_extra', 'x') = naiveBayesClassifier('nb_zero_base', 'x');
+SELECT naiveBayesClassifierAllProbs('nb_zero_extra', 'x') = naiveBayesClassifierAllProbs('nb_zero_base', 'x');
+SELECT naiveBayesClassifierAllProbs('nb_zero_extra', 'z') = naiveBayesClassifierAllProbs('nb_zero_base', 'z');
+
+DROP DICTIONARY nb_zero_base;
+DROP DICTIONARY nb_zero_extra;
+DROP TABLE nb_zero_base_source;
+DROP TABLE nb_zero_extra_source;
+
+
 DROP DICTIONARY IF EXISTS nb_token_model;
 DROP DICTIONARY IF EXISTS nb_byte_model;
 DROP DICTIONARY IF EXISTS nb_codepoint_model;
