@@ -23,6 +23,7 @@ WITH 'SEL' AS a, 'ECT 10 AS with_concat_value' AS b SELECT * FROM eval(a || b);
 SELECT count() FROM eval('SELECT number FROM numbers(3) SETTINGS limit = 1') SETTINGS enable_analyzer = 1;
 
 SET enable_analyzer = 0;
+SELECT count() FROM eval('SELECT number FROM numbers(3) SETTINGS limit = 1');
 WITH 'SELECT 1' AS x SELECT * FROM eval(arrayElement(arrayMap(x -> x, ['SELECT 11 AS lambda_value']), 1));
 SET enable_analyzer = 1;
 

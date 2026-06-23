@@ -344,6 +344,13 @@ ASTPtr parseGeneratedQuery(const String & query_text, ContextPtr context)
     return query;
 }
 
+ContextMutablePtr getContextWithGeneratedQuerySettings(ContextPtr context, const ASTPtr & query)
+{
+    auto query_context = Context::createCopy(context);
+    InterpreterSetQuery::applySettingsFromQuery(query, query_context);
+    return query_context;
+}
+
 }
 
 void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -376,13 +383,14 @@ ColumnsDescription TableFunctionEval::getActualTableStructure(ContextPtr context
     chassert(create.children.size() == 1);
     chassert(create.children[0]->as<ASTSelectWithUnionQuery>());
 
+    auto query_context = getContextWithGeneratedQuerySettings(context, create.children[0]);
     auto query_for_schema = create.children[0]->clone();
 
     SharedHeader sample_block;
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_for_schema, context);
+    if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_for_schema, query_context);
     else
-        sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query_for_schema, context);
+        sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query_for_schema, query_context);
 
     return ColumnsDescription(sample_block->getNamesAndTypesList());
 }
@@ -394,8 +402,9 @@ StoragePtr TableFunctionEval::executeImpl(
     ColumnsDescription /*cached_columns*/,
     bool is_insert_query) const
 {
-    auto columns = getActualTableStructure(context, is_insert_query);
-    auto storage = std::make_shared<StorageView>(StorageID(getDatabaseName(), table_name), create, columns, "");
+    auto query_context = getContextWithGeneratedQuerySettings(context, create.children[0]);
+    auto columns = getActualTableStructure(query_context, is_insert_query);
+    auto storage = std::make_shared<StorageView>(StorageID(getDatabaseName(), table_name), create, columns, "", false, query_context);
     storage->startup();
     return storage;
 }

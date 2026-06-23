@@ -127,7 +127,8 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
   */
 ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view)
 {
-    auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
+    auto inner_query_context = view->getInnerQueryContext();
+    auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(inner_query_context ? inner_query_context : context);
     Settings view_settings = view_context->getSettingsCopy();
 
     if (context->canUseParallelReplicasOnInitiator() && view_settings[Setting::parallel_replicas_allow_view_over_mergetree])
@@ -159,8 +160,10 @@ StorageView::StorageView(
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
     const String & comment,
-    bool is_parameterized_view_)
+    bool is_parameterized_view_,
+    ContextPtr inner_query_context_)
     : StorageWithCommonVirtualColumns(table_id_)
+    , inner_query_context(std::move(inner_query_context_))
 {
     StorageInMemoryMetadata storage_metadata;
     if (!is_parameterized_view_)
