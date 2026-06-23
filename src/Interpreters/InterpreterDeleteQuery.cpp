@@ -84,9 +84,10 @@ BlockIO InterpreterDeleteQuery::execute()
     /// (virtual columns excluded, as in a plain SELECT). Checked with the resolved storage.
     {
         AccessRightsElements read_access;
+        const auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
         addExpressionColumnsSelectAccess(
             read_access, delete_query.predicate.get(), table_id.database_name, table_id.table_name,
-            *table->getInMemoryMetadataPtr(getContext(), false));
+            *metadata_snapshot);
         if (!read_access.empty())
             getContext()->checkAccess(read_access);
     }
