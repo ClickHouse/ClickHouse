@@ -27,13 +27,14 @@ LIFETIME(0);
 
 SYSTEM RELOAD DICTIONARY nb_mem;
 
--- Confirm every n-gram was indexed, so that the per-n-gram ratio checked below is meaningful.
-SELECT throwIf(element_count != 100000, 'NaiveBayes dictionary did not load all n-grams')
-FROM system.dictionaries WHERE database = currentDatabase() AND name = 'nb_mem' FORMAT Null;
-
--- Fail if each n-gram costs more than 256 bytes of resident memory.
-SELECT throwIf(bytes_allocated / element_count > 256, 'NaiveBayes dictionary uses too much memory per n-gram')
-FROM system.dictionaries WHERE database = currentDatabase() AND name = 'nb_mem' FORMAT Null;
+-- The first column confirms every n-gram was indexed, so the per-n-gram ratio is meaningful. The
+-- next two pin that ratio to a band: more than 30 bytes means the index really was built and
+-- populated, and fewer than 256 bytes means the footprint stays compact. All three are 1 when healthy.
+SELECT
+    element_count = 100000,
+    bytes_allocated / element_count > 30,
+    bytes_allocated / element_count < 256
+FROM system.dictionaries WHERE database = currentDatabase() AND name = 'nb_mem';
 
 DROP DICTIONARY nb_mem;
 DROP TABLE nb_mem_src;
