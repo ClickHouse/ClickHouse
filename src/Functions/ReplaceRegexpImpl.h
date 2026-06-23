@@ -169,8 +169,13 @@ struct ReplaceRegexpImpl
         re2::Regexp * re = searcher.Regexp();
         if (re == nullptr || re->op() != re2::kRegexpConcat)
             return {};
+
+        /// The smallest pattern that can qualify is `^(group).*$`, whose top-level concatenation has
+        /// exactly four nodes: BeginText (`^`), the capturing group, Star (`.*`) and EndText (`$`).
+        /// A shorter concatenation cannot hold all of them, so bail out early.
+        static constexpr int min_concat_nodes = 4;
         const int nsub = re->nsub();
-        if (nsub < 4)
+        if (nsub < min_concat_nodes)
             return {};
         re2::Regexp ** subs = re->sub();
 
