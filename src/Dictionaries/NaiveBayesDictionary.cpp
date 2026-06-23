@@ -141,6 +141,13 @@ void NaiveBayesDictionary::loadData()
 
     BlockIO io = source_ptr->loadAll();
 
+    /// Validate that the source n-grams match the configured n. A model whose n-grams have a different
+    /// arity would otherwise load silently and then classify everything by the prior, so reject it here.
+    /// Checking a bounded sample of the first rows keeps loading cheap while catching a misconfigured
+    /// n or mode.
+    const size_t ngram_check_limit = 1000;
+    size_t validated_ngrams = 0;
+
     io.executeWithCallbacks([&]()
     {
         DictionaryPipelineExecutor executor(io.pipeline, false);
@@ -159,7 +166,21 @@ void NaiveBayesDictionary::loadData()
                 const std::string_view ngram_sv = ngram_col->getDataAt(i);
                 const auto class_id = static_cast<UInt32>(class_id_col->getUInt(i));
                 const UInt64 count = count_col->getUInt(i);
-                std::visit([&](auto & t) { t.addNgram(class_id, ngram_sv, count); }, trainer);
+                std::visit([&](auto & t)
+                {
+                    if (validated_ngrams < ngram_check_limit)
+                    {
+                        const size_t tokens = t.tokenCount(ngram_sv);
+                        if (tokens != configuration.n)
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "NaiveBayes dictionary: source n-gram '{}' resolves to {} token(s) for mode '{}', but the "
+                                "layout specifies n = {}. The source n-grams must match the configured size and mode.",
+                                ngram_sv, tokens, configuration.mode, configuration.n);
+                        ++validated_ngrams;
+                    }
+                    t.addNgram(class_id, ngram_sv, count);
+                }, trainer);
             }
 
             if (configuration.store_source)

@@ -94,6 +94,9 @@ struct BytePolicy
             visit(std::string_view(buf.data() + i, n));
         return count;
     }
+
+    /// Number of byte tokens in `s` (one per byte). Used to check a model against the configured n.
+    size_t tokenCount(std::string_view s) const { return s.size(); }
 };
 
 /// CodePoint-level tokenizer: each token is a single Unicode (UTF-8) code point.
@@ -144,6 +147,15 @@ struct CodePointPolicy
         const size_t count = code_points - n + 1;
         for (size_t i = 0; i < count; ++i)
             visit(std::string_view(buf.data() + offsets[i], offsets[i + n] - offsets[i]));
+        return count;
+    }
+
+    /// Number of code-point tokens in `s`. Used to check a model against the configured n.
+    size_t tokenCount(std::string_view s) const
+    {
+        size_t count = 0;
+        for (size_t at = 0; at < s.size(); at += DB::UTF8::seqLength(static_cast<UInt8>(s[at])))
+            ++count;
         return count;
     }
 };
@@ -220,6 +232,24 @@ struct TokenPolicy
         {
             join(&tokens[i], n, ngram);
             visit(std::string_view(ngram));
+        }
+        return count;
+    }
+
+    /// Number of whitespace-delimited word tokens in `s`. Used to check a model against the configured n.
+    size_t tokenCount(std::string_view s) const
+    {
+        size_t count = 0;
+        size_t pos = 0;
+        while (pos < s.size())
+        {
+            while (pos < s.size() && isAsciiWhitespace(s[pos]))
+                ++pos;
+            if (pos == s.size())
+                break;
+            ++count;
+            while (pos < s.size() && !isAsciiWhitespace(s[pos]))
+                ++pos;
         }
         return count;
     }
@@ -479,6 +509,9 @@ public:
         data->entries.push_back(NaiveBayesEntry{(static_cast<UInt64>(index) << 32) | class_id, count});
         data->class_totals[class_id] += count;
     }
+
+    /// Number of tokens the configured tokenizer sees in `ngram`. Used to validate the source against n.
+    size_t tokenCount(std::string_view ngram) const { return data->tokenizer.tokenCount(ngram); }
 
     /// Computes the class priors according to the given mode, compiles the accumulated counts into the flat CSR
     /// arrays (reusing the existing n-gram index and arena), frees the per-n-gram count maps, and returns the
