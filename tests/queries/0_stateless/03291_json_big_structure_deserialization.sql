@@ -1,5 +1,8 @@
--- Tags: long
+-- Tags: long, no-flaky-check
 -- long - may be too slow under asan
+-- no-flaky-check: heavy test (big JSON, tiny compress blocks); running it many times
+-- under sanitizers times out. It is pulled into the flaky check only because this PR
+-- pins its codec (see below).
 
 set enable_json_type=1;
 
