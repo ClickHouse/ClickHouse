@@ -399,6 +399,13 @@ def test_threads_oversubscription():
     ]
 )
 def test_cpu_time_fairness(queries, threads, production_length, development_length, randomize):
+    if (
+        node.is_built_with_address_sanitizer()
+        or node.is_built_with_thread_sanitizer()
+        or node.is_built_with_memory_sanitizer()
+        or node.is_built_with_llvm_coverage()
+    ):
+        pytest.skip("doesn't fit in timeouts due to heavy workload")
 
     # We use max_cpus=1 to make sure that we have voilated constraint.
     # In CI we should have at least one CPU core, so we never hit CPU bottleneck w/o hitting scheduler limit.
