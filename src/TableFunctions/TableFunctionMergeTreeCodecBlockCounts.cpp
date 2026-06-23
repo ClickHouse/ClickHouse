@@ -118,7 +118,7 @@ void registerTableFunctionMergeTreeCodecBlockCounts(TableFunctionFactory & facto
 void registerTableFunctionMergeTreeCodecBlockCounts(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMergeTreeCodecBlockCounts>(
-        {.description = "Shows compressed-block counts by codec, per (part, column, substream) of a MergeTree table."
+        {.description = "Shows compressed-block counts by codec, per (part, column, substream) of a MergeTree table. "
                         "Selecting `codec_block_counts` reads data files, not just metadata.",
          .examples = {{"mergeTreeCodecBlockCounts", "SELECT * FROM mergeTreeCodecBlockCounts(currentDatabase(), mt_table)", ""}},
          .category = FunctionDocumentation::Category::TableFunction},
