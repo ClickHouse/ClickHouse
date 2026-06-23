@@ -70,9 +70,12 @@ struct Base64DecodeTraits
     /// Base64 conversion is linear in the input length, so the cancellation callback is unused.
     static std::optional<size_t> perform(std::string_view src, UInt8 * dst, const std::function<void()> & = {})
     {
-        constexpr auto options = (variant == Base64Variant::URL) ? simdutf::base64_url : simdutf::base64_default;
-        /// The standard variant requires a complete, padded final chunk: reject truncated input such as the
-        /// 3-character "foo". The URL variant is defined to omit padding, so partial final chunks are valid.
+        /// The URL variant decodes the standard/base64url hybrid alphabet: the previous implementation only
+        /// translated '-' and '_' before decoding and left '+' and '/' untouched, so it accepted both alphabets
+        /// (e.g. base64URLDecode('+w==')). It is also defined to omit padding, so partial final chunks are valid.
+        /// The standard variant requires a complete, padded final chunk and rejects truncated input such as the
+        /// 3-character "foo".
+        constexpr auto options = (variant == Base64Variant::URL) ? simdutf::base64_default_or_url : simdutf::base64_default;
         constexpr auto last_chunk = (variant == Base64Variant::URL) ? simdutf::loose : simdutf::strict;
         const simdutf::result res
             = simdutf::base64_to_binary(src.data(), src.size(), reinterpret_cast<char *>(dst), options, last_chunk);
