@@ -888,3 +888,77 @@ TEST(RemoveSettingsFromQuery, StripsSettingsCarriersOutsideChildrenWalk)
         EXPECT_NE(nullptr, reparsed) << "did not re-parse: " << formatted;
     }
 }
+
+/// max_rows_to_read + read_overflow_mode = break bound the number of chunks a fuzzed query reads, but
+/// not the size of the first chunk. The block-forming settings decide that size: for a trivial
+/// INSERT ... SELECT into a table that prefers large blocks, applyTrivialInsertSelectOptimization
+/// copies min_insert_block_size_rows (default ~1M) into the SELECT's max_block_size, so one ~1M-row
+/// block can still reach the part writer and spend minutes in a single pipeline task that the cancel
+/// callback (which only runs between tasks) cannot interrupt. The fuzzer therefore pins both block-
+/// forming settings small AND strips the query's own overrides of them, so a fuzzed
+/// `SETTINGS min_insert_block_size_rows = <large>` (or `= DEFAULT`, which would reset the pinned small
+/// value back to the ~1M default) cannot re-inflate the first chunk. This checks the strip half for the
+/// two block-forming names across the carriers the fuzzer uses.
+TEST(RemoveSettingsFromQuery, StripsBlockFormingOverrides)
+{
+    /// The full set the server-side AST fuzzer strips, including the two block-forming settings.
+    static constexpr std::string_view safety_settings[] = {
+        "max_rows_to_read",
+        "read_overflow_mode",
+        "max_execution_time",
+        "max_memory_usage",
+        "max_result_rows",
+        "max_result_bytes",
+        "max_block_size",
+        "min_insert_block_size_rows",
+    };
+
+    /// Both block-forming settings appear as `= value`, `= DEFAULT`, repeated, and on the INSERT carrier
+    /// (the path the bot reported). After the strip none of them may survive in any clause.
+    const std::vector<String> queries = {
+        "SELECT sum(number) FROM numbers(100) SETTINGS max_block_size = 1000000, min_insert_block_size_rows = 1000000",
+        "INSERT INTO t SELECT number FROM numbers(100) SETTINGS min_insert_block_size_rows = 1000000",
+        "SELECT 1 SETTINGS max_block_size = DEFAULT, min_insert_block_size_rows = DEFAULT",
+        "SELECT 1 SETTINGS min_insert_block_size_rows = 1000000, min_insert_block_size_rows = 1000000",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        removeSettingsFromQuery(ast, safety_settings);
+
+        /// No block-forming override may survive, in either list, in any clause (a `= DEFAULT` survivor
+        /// would reset the pinned small value back to the large default on re-parse).
+        EXPECT_EQ(0u, countSettingOccurrences(ast, "max_block_size"))
+            << "max_block_size survived for: " << query;
+        EXPECT_EQ(0u, countSettingOccurrences(ast, "min_insert_block_size_rows"))
+            << "min_insert_block_size_rows survived for: " << query;
+
+        EXPECT_FALSE(hasEmptySettingsNode(ast)) << "empty SETTINGS left for: " << query;
+
+        const String formatted = ast->formatWithSecretsOneLine();
+        EXPECT_EQ(String::npos, formatted.find("max_block_size")) << "kept max_block_size: " << formatted;
+        EXPECT_EQ(String::npos, formatted.find("min_insert_block_size_rows")) << "kept min_insert_block_size_rows: " << formatted;
+        ParserQuery reparser(formatted.data() + formatted.size());
+        ASTPtr reparsed = parseQuery(reparser, formatted, "", 0, 0, 0);
+        EXPECT_NE(nullptr, reparsed) << "did not re-parse: " << formatted;
+    }
+
+    /// A non-safety setting alongside a block-forming override survives; the SETTINGS clause stays.
+    {
+        const String query = "SELECT 1 SETTINGS min_insert_block_size_rows = 1000000, max_threads = 4";
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        removeSettingsFromQuery(ast, safety_settings);
+
+        EXPECT_FALSE(hasEmptySettingsNode(ast)) << "query: " << query;
+        const String formatted = ast->formatWithSecretsOneLine();
+        EXPECT_NE(String::npos, formatted.find("max_threads")) << "dropped a non-safety setting: " << formatted;
+        EXPECT_EQ(String::npos, formatted.find("min_insert_block_size_rows")) << "kept a block-forming setting: " << formatted;
+    }
+}

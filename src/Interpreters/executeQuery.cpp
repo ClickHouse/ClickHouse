@@ -1040,8 +1040,8 @@ static void validateAnalyzerSettings(ASTPtr ast, bool context_value)
 }
 
 /// Remove the resource-limit settings that executeASTFuzzerQueries pins on the fuzz context from the
-/// query-level SETTINGS carriers of the fuzzed AST. These caps (row/time/memory/result limits) keep a
-/// single fuzzed query from running away. They are applied to the fuzz context up front, but
+/// query-level SETTINGS carriers of the fuzzed AST. These caps (row/time/memory/result/block-size
+/// limits) keep a single fuzzed query from running away. They are applied to the fuzz context up front, but
 /// executeQueryImpl re-applies the query's own SETTINGS on top of the context
 /// (InterpreterSetQuery::applySettingsFromQuery), so a seed or fuzzed `SETTINGS max_rows_to_read = 0`
 /// (or `= DEFAULT`, which resets the cap back to its unbounded default), including from a BACKUP or
@@ -1060,6 +1060,8 @@ static void stripFuzzerSafetyLimitSettings(const ASTPtr & ast)
         "max_memory_usage",
         "max_result_rows",
         "max_result_bytes",
+        "max_block_size",
+        "min_insert_block_size_rows",
     };
 
     removeSettingsFromQuery(ast, limit_settings);
@@ -2186,6 +2188,17 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             /// after enough rows to keep exercising the query structure without a runaway data volume.
             fuzz_context->setSetting("max_rows_to_read", Field(UInt64(100000)));
             fuzz_context->setSetting("read_overflow_mode", Field("break"));
+
+            /// max_rows_to_read is only checked after a source emits a chunk, so it bounds the number of
+            /// chunks but not the size of the first one. A trivial INSERT ... SELECT into a table that
+            /// prefers large blocks copies min_insert_block_size_rows into the SELECT's max_block_size
+            /// (InterpreterInsertQuery::applyTrivialInsertSelectOptimization), and the default is
+            /// ~1M rows, so a single ~1M-row chunk can still reach the part writer and spend minutes in
+            /// one pipeline task before read_overflow_mode = break cancels further reads. The cancel
+            /// callback only runs between tasks, so it cannot interrupt that block. Pin both block-forming
+            /// settings small so the first emitted chunk is bounded too.
+            fuzz_context->setSetting("max_block_size", Field(UInt64(65409)));
+            fuzz_context->setSetting("min_insert_block_size_rows", Field(UInt64(65409)));
 
             fuzz_context->setCurrentQueryId("");
             if (!fuzzed_query_params.empty())
