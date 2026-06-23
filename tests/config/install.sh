@@ -22,6 +22,7 @@ NO_AZURE=0
 KEEPER_INJECT_AUTH=1
 WASM_ENGINE=""
 REMOTE_DATABASE_DISK=0
+LLVM_COVERAGE=0
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -49,6 +50,7 @@ while [[ "$#" -gt 0 ]]; do
         --no-remote-database-disk) REMOTE_DATABASE_DISK=0 ;;
 
         --encrypted-storage) USE_ENCRYPTED_STORAGE=1 ;;
+        --llvm-coverage) LLVM_COVERAGE=1 ;;
         *) echo "Unknown option: $1" ; exit 1 ;;
     esac
     shift
@@ -261,6 +263,12 @@ if [[ -n "$USE_DISTRIBUTED_CACHE" ]] && [[ "$USE_DISTRIBUTED_CACHE" -eq 1 ]]; th
     ln -sf $SRC_PATH/users.d/enable_distributed_cache_for_reads.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/config.d/enable_distributed_cache_for_tmp_files.xml $DEST_SERVER_PATH/config.d/
 
+fi
+
+if [[ -n "$LLVM_COVERAGE" ]] && [[ "$LLVM_COVERAGE" -eq 1 ]]; then
+    # Pin random-by-default fault injection seeds in the default profile so coverage
+    # is deterministic without injecting per-query settings (which break readonly tests).
+    ln -sf $SRC_PATH/users.d/coverage_fault_injection_seeds.xml $DEST_SERVER_PATH/users.d/
 fi
 
 # FIXME DataPartsExchange may hang for http_send_timeout seconds
