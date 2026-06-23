@@ -96,23 +96,36 @@ DataTypePtr makeClassProbTuple()
 }
 
 
-/// Implements `naiveBayesClassifier(dictionary_name, input_text)`, returning the predicted class id.
-class FunctionNaiveBayesClassifier : public IFunction
+/// Common state and traits shared by the three naiveBayesClassifier* functions. Each derived function
+/// supplies only its name, return type, and per-row work; the dictionary resolution, access check, and
+/// tokenizer-variant dispatch all live in the shared `executeNaiveBayes` driver above.
+class FunctionNaiveBayesBase : public IFunction
 {
+protected:
     ContextPtr context;
     mutable std::atomic<bool> access_checked{false};
 
 public:
-    static constexpr auto name = "naiveBayesClassifier";
-    explicit FunctionNaiveBayesClassifier(ContextPtr context_) : context(context_) {}
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionNaiveBayesClassifier>(context); }
+    explicit FunctionNaiveBayesBase(ContextPtr context_) : context(context_) {}
 
-    String getName() const override { return name; }
     bool isVariadic() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
+};
+
+
+/// Implements `naiveBayesClassifier(dictionary_name, input_text)`, returning the predicted class id.
+class FunctionNaiveBayesClassifier : public FunctionNaiveBayesBase
+{
+public:
+    using FunctionNaiveBayesBase::FunctionNaiveBayesBase;
+
+    static constexpr auto name = "naiveBayesClassifier";
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionNaiveBayesClassifier>(context_); }
+
+    String getName() const override { return name; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -136,22 +149,15 @@ public:
 
 /// Implements `naiveBayesClassifierWithProb(dictionary_name, input_text)`, returning the predicted class
 /// id together with its probability as a tuple.
-class FunctionNaiveBayesClassifierWithProb : public IFunction
+class FunctionNaiveBayesClassifierWithProb : public FunctionNaiveBayesBase
 {
-    ContextPtr context;
-    mutable std::atomic<bool> access_checked{false};
-
 public:
+    using FunctionNaiveBayesBase::FunctionNaiveBayesBase;
+
     static constexpr auto name = "naiveBayesClassifierWithProb";
-    explicit FunctionNaiveBayesClassifierWithProb(ContextPtr context_) : context(context_) {}
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionNaiveBayesClassifierWithProb>(context); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionNaiveBayesClassifierWithProb>(context_); }
 
     String getName() const override { return name; }
-    bool isVariadic() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
-    size_t getNumberOfArguments() const override { return 2; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -184,22 +190,15 @@ public:
 
 /// Implements `naiveBayesClassifierAllProbs(dictionary_name, input_text)`, returning every class with its
 /// probability as an array of tuples, sorted by probability descending.
-class FunctionNaiveBayesClassifierAllProbs : public IFunction
+class FunctionNaiveBayesClassifierAllProbs : public FunctionNaiveBayesBase
 {
-    ContextPtr context;
-    mutable std::atomic<bool> access_checked{false};
-
 public:
+    using FunctionNaiveBayesBase::FunctionNaiveBayesBase;
+
     static constexpr auto name = "naiveBayesClassifierAllProbs";
-    explicit FunctionNaiveBayesClassifierAllProbs(ContextPtr context_) : context(context_) {}
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionNaiveBayesClassifierAllProbs>(context); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionNaiveBayesClassifierAllProbs>(context_); }
 
     String getName() const override { return name; }
-    bool isVariadic() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
-    size_t getNumberOfArguments() const override { return 2; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
