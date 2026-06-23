@@ -1717,8 +1717,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
     if (distributed_read_bucket_count > 0)
     {
-        /// Distributed parallel FINAL: build one pipe per lane and unite them as single-node FINAL does, so the
-        /// node parallelizes the merge across its lanes instead of running one merge per task.
+        /// Distributed parallel FINAL: resolve each lane's coordinator-selected marks to local parts, then build
+        /// the per-lane merge pipeline (parallel across lanes, as single-node FINAL) via `buildDistributedFinalPipe`.
         std::unordered_map<String, RangesInDataPart> parts_by_name;
         for (const auto & part : parts_with_ranges)
             parts_by_name.emplace(part.data_part->info.getPartNameV1(), part);
@@ -1741,77 +1741,19 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             return lane_parts;
         };
 
-        const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
-        auto in_reverse_order = deriveReverseOrder(primary_key, storage_snapshot->metadata->getSortingKey());
-
-        Names sort_columns = storage_snapshot->metadata->getSortingKeyColumns();
-        std::vector<bool> reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
-        SortDescription sort_description;
-        sort_description.compile_sort_description = settings[Setting::compile_sort_description];
-        sort_description.min_count_to_compile_sort_description = settings[Setting::min_count_to_compile_sort_description];
-        sort_description.reserve(sort_columns.size());
-        for (size_t i = 0; i < sort_columns.size(); ++i)
-            sort_description.emplace_back(sort_columns[i], (!reverse_flags.empty() && reverse_flags[i]) ? -1 : 1);
-
-        Pipes final_merge_pipes;
-        RangesInDataParts non_intersecting_parts;
-        for (const auto & lane : distributed_read_task_buckets)
+        auto read_lane_in_order = [&](const RangesInDataPartsDescription & marks)
         {
-            RangesInDataParts lane_parts = resolve_lane_parts(lane.marks);
-            if (!lane.needs_merge)
-            {
-                for (auto & part : lane_parts)
-                    non_intersecting_parts.push_back(std::move(part));
-                continue;
-            }
-
-            if (!in_reverse_order)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Distributed FINAL got primary-key-range layers for a table whose primary key cannot be range-split");
-
-            /// One read stream per lane: parallelism is across lanes, as in single-node FINAL.
-            Pipe pipe = read(
-                std::move(lane_parts), index_build_context, column_names, ReadType::InOrder, 1, 0, info.use_uncompressed_cache);
-            pipe.addSimpleTransform([sorting_expr](const SharedHeader & header)
-                                    { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
-            addLayerRangeFilterToPipe(pipe, primary_key, lane.borders, lane.index, *in_reverse_order, context);
-            if (!out_projection)
-                out_projection = createProjection(pipe.getHeader());
-            addMergingFinal(pipe, sort_description, data.merging_params, storage_snapshot->metadata, block_size.max_block_size_rows, enable_vertical_final);
-            final_merge_pipes.emplace_back(std::move(pipe));
-        }
-
-        Pipes final_non_merge_pipes;
-        if (!non_intersecting_parts.empty())
-            final_non_merge_pipes.emplace_back(readNonIntersectingWithEngineFilter(
-                std::move(non_intersecting_parts), index_build_context, num_streams, origin_column_names));
-
-        if (!final_merge_pipes.empty() && !final_non_merge_pipes.empty())
+            return read(resolve_lane_parts(marks), index_build_context, column_names, ReadType::InOrder, 1, 0, info.use_uncompressed_cache);
+        };
+        auto read_non_intersecting = [&](const RangesInDataPartsDescription & marks)
         {
-            out_projection = {}; /// Projection happens via the converting transform below.
-            Pipes pipes;
-            pipes.resize(2);
-            pipes[0] = Pipe::unitePipes(std::move(final_merge_pipes));
-            pipes[1] = Pipe::unitePipes(std::move(final_non_merge_pipes));
-            auto conversion_action = ActionsDAG::makeConvertingActions(
-                pipes[0].getHeader().getColumnsWithTypeAndName(),
-                pipes[1].getHeader().getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Name,
-                context);
-            auto converting_expr = std::make_shared<ExpressionActions>(std::move(conversion_action));
-            pipes[0].addSimpleTransform([converting_expr](const SharedHeader & header)
-                                        { return std::make_shared<ExpressionTransform>(header, converting_expr); });
-            return Pipe::unitePipes(std::move(pipes));
-        }
+            return readNonIntersectingWithEngineFilter(resolve_lane_parts(marks), index_build_context, num_streams, origin_column_names);
+        };
 
-        if (final_merge_pipes.empty())
-        {
-            Pipe pipe = Pipe::unitePipes(std::move(final_non_merge_pipes));
-            if (!out_projection)
-                out_projection = createProjection(pipe.getHeader());
-            return pipe;
-        }
-        return Pipe::unitePipes(std::move(final_merge_pipes));
+        return buildDistributedFinalPipe(
+            distributed_read_task_buckets, storage_snapshot->metadata, data.merging_params,
+            block_size.max_block_size_rows, enable_vertical_final, context, out_projection,
+            read_lane_in_order, read_non_intersecting);
     }
 
     for (size_t range_index = 0; range_index < parts_to_merge_ranges.size() - 1; ++range_index)

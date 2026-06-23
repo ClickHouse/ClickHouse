@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/QueryPlan/MergeTreeFinalMerge.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -78,18 +79,7 @@ struct TopKFilterInfo
 struct LazyMaterializingRows;
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
-/// One bucket (lane) of a distributed leaf read: the marks this worker reads.
-/// When `needs_merge`, it is a FINAL intersecting layer -- read in order, trimmed to the interval
-/// (borders[index-1], borders[index]], and merge-deduplicated; `borders` are its span's layer borders and
-/// `index` is its position among them. Otherwise it is a plain or non-intersecting read with no merge, and
-/// `borders`/`index` are unused.
-struct DistributedReadBucket
-{
-    RangesInDataPartsDescription marks;
-    bool needs_merge = false;
-    std::vector<std::vector<Field>> borders;
-    size_t index = 0;
-};
+/// `DistributedReadBucket` and `buildDistributedFinalPipe` live in `MergeTreeFinalMerge.h`.
 
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.

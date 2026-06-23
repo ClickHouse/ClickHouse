@@ -1,5 +1,8 @@
 #include <Processors/QueryPlan/MergeTreeFinalMerge.h>
 
+#include <Common/Exception.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CoalescingSortedTransform.h>
@@ -9,6 +12,8 @@
 #include <Processors/Merges/ReplacingSortedTransform.h>
 #include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
+#include <Processors/QueryPlan/PartsSplitter.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/SelectByIndicesTransform.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
@@ -16,6 +21,17 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool compile_sort_description;
+    extern const SettingsUInt64 min_count_to_compile_sort_description;
+}
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 void addMergingFinal(
     Pipe & pipe,
@@ -79,6 +95,100 @@ void addMergingFinal(
     if (enable_vertical_final)
         pipe.addSimpleTransform([](const SharedHeader & header_)
                                 { return std::make_shared<SelectByIndicesTransform>(header_); });
+}
+
+namespace
+{
+
+ActionsDAG createProjection(const Block & header)
+{
+    return ActionsDAG(header.getNamesAndTypesList());
+}
+
+}
+
+Pipe buildDistributedFinalPipe(
+    const std::vector<DistributedReadBucket> & lanes,
+    const StorageMetadataPtr & metadata_snapshot,
+    MergeTreeData::MergingParams merging_params,
+    size_t max_block_size_rows,
+    bool enable_vertical_final,
+    ContextPtr context,
+    std::optional<ActionsDAG> & out_projection,
+    const DistributedFinalReadStepGetter & read_lane_in_order,
+    const DistributedFinalReadStepGetter & read_non_intersecting)
+{
+    const auto & settings = context->getSettingsRef();
+    auto sorting_expr = metadata_snapshot->getSortingKey().expression;
+
+    const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    auto in_reverse_order = deriveReverseOrder(primary_key, metadata_snapshot->getSortingKey());
+
+    Names sort_columns = metadata_snapshot->getSortingKeyColumns();
+    std::vector<bool> reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
+    SortDescription sort_description;
+    sort_description.compile_sort_description = settings[Setting::compile_sort_description];
+    sort_description.min_count_to_compile_sort_description = settings[Setting::min_count_to_compile_sort_description];
+    sort_description.reserve(sort_columns.size());
+    for (size_t i = 0; i < sort_columns.size(); ++i)
+        sort_description.emplace_back(sort_columns[i], (!reverse_flags.empty() && reverse_flags[i]) ? -1 : 1);
+
+    /// One merge pipe per intersecting lane; the non-intersecting lanes are read once. Parallelism across lanes.
+    Pipes final_merge_pipes;
+    RangesInDataPartsDescription non_intersecting_marks;
+    for (const auto & lane : lanes)
+    {
+        if (!lane.needs_merge)
+        {
+            for (const auto & part_marks : lane.marks)
+                non_intersecting_marks.push_back(part_marks);
+            continue;
+        }
+
+        if (!in_reverse_order)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Distributed FINAL got primary-key-range layers for a table whose primary key cannot be range-split");
+
+        Pipe pipe = read_lane_in_order(lane.marks);
+        pipe.addSimpleTransform([sorting_expr](const SharedHeader & header)
+                                { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
+        addLayerRangeFilterToPipe(pipe, primary_key, lane.borders, lane.index, *in_reverse_order, context);
+        if (!out_projection)
+            out_projection = createProjection(pipe.getHeader());
+        addMergingFinal(pipe, sort_description, merging_params, metadata_snapshot, max_block_size_rows, enable_vertical_final);
+        final_merge_pipes.emplace_back(std::move(pipe));
+    }
+
+    Pipes final_non_merge_pipes;
+    if (!non_intersecting_marks.empty())
+        final_non_merge_pipes.emplace_back(read_non_intersecting(non_intersecting_marks));
+
+    if (!final_merge_pipes.empty() && !final_non_merge_pipes.empty())
+    {
+        out_projection = {}; /// Projection happens via the converting transform below.
+        Pipes pipes;
+        pipes.resize(2);
+        pipes[0] = Pipe::unitePipes(std::move(final_merge_pipes));
+        pipes[1] = Pipe::unitePipes(std::move(final_non_merge_pipes));
+        auto conversion_action = ActionsDAG::makeConvertingActions(
+            pipes[0].getHeader().getColumnsWithTypeAndName(),
+            pipes[1].getHeader().getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name,
+            context);
+        auto converting_expr = std::make_shared<ExpressionActions>(std::move(conversion_action));
+        pipes[0].addSimpleTransform([converting_expr](const SharedHeader & header)
+                                    { return std::make_shared<ExpressionTransform>(header, converting_expr); });
+        return Pipe::unitePipes(std::move(pipes));
+    }
+
+    if (final_merge_pipes.empty())
+    {
+        Pipe pipe = Pipe::unitePipes(std::move(final_non_merge_pipes));
+        if (!out_projection)
+            out_projection = createProjection(pipe.getHeader());
+        return pipe;
+    }
+    return Pipe::unitePipes(std::move(final_merge_pipes));
 }
 
 }
