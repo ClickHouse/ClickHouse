@@ -3,7 +3,6 @@
 #include <cstdint>
 #include <cstddef>
 #include <cstring>
-#include <base/defines.h>
 #include <base/extended_types.h>
 
 
@@ -152,7 +151,7 @@ struct DecomposedFloat
         {
             if (rhs == std::numeric_limits<Int>::lowest())
             {
-                chassert(isNegative());
+                assert(isNegative());
 
                 if (normalizedExponent() < static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>))
                     return 1;

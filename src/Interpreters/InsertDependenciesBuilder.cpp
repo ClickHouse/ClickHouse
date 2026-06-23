@@ -14,7 +14,6 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageValues.h>
 
-#include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
@@ -75,6 +74,7 @@
 #include <base/defines.h>
 
 #include <atomic>
+#include <cassert>
 #include <exception>
 #include <memory>
 #include <unordered_map>
@@ -148,41 +148,6 @@ size_t capMinBlockSizeBytesForMemoryLimit(size_t value)
     if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
         return std::min<size_t>(value, static_cast<size_t>(static_cast<double>(memory_limit) * 0.9) / 8);
     return value;
-}
-
-/// True when `target` is an Enum that contains `source` with the same in-memory width, i.e. `source`
-/// is a narrower Enum whose members are a subset of `target`. This mirrors the compatibility that
-/// StorageInMemoryMetadata::check allows but that is not type equality.
-bool isWidenedEnumTarget(const IDataType & target, const IDataType & source)
-{
-    if (const auto * enum_type = dynamic_cast<const IDataTypeEnum *>(&target))
-        return enum_type->contains(source) && enum_type->getMaximumSizeOfValueInMemory() == source.getMaximumSizeOfValueInMemory();
-    return false;
-}
-
-/// Return the input columns with only the Enum-widening ones retyped to their target. That pair is
-/// the single case the metadata check accepts as compatible while the column keeps its narrow type,
-/// so it must be converted here or the chain trips the structure-equality check at the sink. Every
-/// other pair is left untouched, so genuine mismatches still raise TYPE_MISMATCH at the check and a
-/// Nullable column feeding a non-Nullable one under insert_null_as_default is still defaulted by the
-/// defaults step (which needs it to stay Nullable).
-ColumnsWithTypeAndName mapWidenedEnumColumnsToTargetTypes(const Block & input, const Block & output)
-{
-    const auto & dst = output.getColumnsWithTypeAndName();
-    NameToIndexMap name_to_index_dst_map;
-    for (size_t i = 0; i < dst.size(); ++i)
-        name_to_index_dst_map[dst[i].name] = i;
-
-    ColumnsWithTypeAndName result;
-    for (const auto & column : input.getColumnsWithTypeAndName())
-    {
-        auto it = name_to_index_dst_map.find(column.name);
-        if (it != name_to_index_dst_map.end() && isWidenedEnumTarget(*dst[it->second].type, *column.type))
-            result.push_back(dst[it->second]);
-        else
-            result.push_back(column);
-    }
-    return result;
 }
 }
 
@@ -528,7 +493,7 @@ private:
 };
 
 
-static DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, StoragePtr storage)
+DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, StoragePtr storage)
 {
     auto constraints = metadata->getConstraints();
 
@@ -818,9 +783,9 @@ struct SquashingTransformContext
 
 }
 
-VectorWithMemoryTracking<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllStreams() const
+std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllStreams() const
 {
-    VectorWithMemoryTracking<Chain> insert_chains;
+    std::vector<Chain> insert_chains;
     std::vector<SquashingProcessorsMap> squashing_processor_maps;
     std::unordered_map<
         StorageIDMaybeEmpty,
@@ -938,7 +903,7 @@ VectorWithMemoryTracking<Chain> InsertDependenciesBuilder::createChainWithDepend
         result_data.push_back(std::make_pair(std::move(processor_list), std::move(resources)));
     }
 
-    VectorWithMemoryTracking<Chain> result_chains;
+    std::vector<Chain> result_chains;
     result_chains.reserve(result_data.size());
 
     for (auto & [processor_list, resources] : result_data)
@@ -1430,20 +1395,8 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDMaybeEmpty view_id) cons
     if (auto * merge_tree = dynamic_cast<MergeTreeData *>(storages.at(inner_table_id).get()))
         inner_share_nested_offsets = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
-    /// Widen Enum columns to their target type before adding defaults, so the valid Enum-widening
-    /// conversion is applied here rather than tripping the structure-equality check when this chain
-    /// connects to the sink built from the target header. addMissingDefaults only fills columns that
-    /// are absent from the input, never retypes present ones.
-    auto to_convert = mapWidenedEnumColumnsToTargetTypes(*input_headers.at(view_id), *output_header);
-
-    auto converting_types_dag = ActionsDAG::makeConvertingActions(
-        input_headers.at(view_id)->getColumnsWithTypeAndName(),
-        to_convert,
-        ActionsDAG::MatchColumnsMode::Name,
-        insert_context);
-
     auto adding_missing_defaults_dag = addMissingDefaults(
-        Block(to_convert),
+        *input_headers.at(view_id),
         output_header->getNamesAndTypesList(),
         inner_metadata->getColumns(),
         insert_context,
@@ -1451,13 +1404,11 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDMaybeEmpty view_id) cons
         inner_share_nested_offsets);
 
     auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(
-        Block(to_convert),
+        *input_headers.at(view_id),
         adding_missing_defaults_dag.getRequiredColumnsNames(),
         insert_context);
 
-    auto merged_dag = ActionsDAG::merge(
-        std::move(converting_types_dag),
-        ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(adding_missing_defaults_dag)));
+    auto merged_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(adding_missing_defaults_dag));
 
     /// Actually we don't know structure of input blocks from query/table,
     /// because some clients break insertion protocol (columns != header)
@@ -1503,13 +1454,10 @@ Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
     if (!constraints.empty())
         result.addSink(std::make_shared<CheckConstraintsTransform>(inner_table_id, header, constraints, insert_context));
 
-    const bool has_dependent_materialized_views = !dependent_views.at(view_id).empty();
-
     if (auto * window_view = dynamic_cast<StorageWindowView *>(inner_storage.get()))
     {
         auto sink = std::make_shared<PushingToWindowViewSink>(std::make_shared<const Block>(window_view->getInputHeader()), *window_view, insert_context);
         sink->setRuntimeData(thread_groups.at(view_id));
-        sink->setHasDependentMaterializedViews(has_dependent_materialized_views);
         result.addSink(std::move(sink));
     }
     else if (dynamic_cast<StorageMaterializedView *>(inner_storage.get()))
@@ -1521,7 +1469,6 @@ Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
     {
         auto sink = inner_storage->write(select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_context, async_insert);
         sink->setRuntimeData(thread_groups.at(view_id));
-        sink->setHasDependentMaterializedViews(has_dependent_materialized_views);
         result.addSink(std::move(sink));
     }
 
@@ -1535,7 +1482,7 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
     if (dependent_views_ids.empty())
         return {};
 
-    VectorWithMemoryTracking<Chain> view_chains;
+    std::vector<Chain> view_chains;
     view_chains.reserve(dependent_views_ids.size());
 
     std::vector<Block> output_view_chains_headers;
@@ -1584,7 +1531,7 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
 }
 
 
-static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
+String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 {
     String res = q->formatWithSecretsOneLine();
     if (auto masker = SensitiveDataMasker::getInstance())

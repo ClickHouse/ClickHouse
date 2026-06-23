@@ -29,7 +29,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class FunctionMapPopulateSeries final : public IFunction
+class FunctionMapPopulateSeries : public IFunction
 {
 public:
     static constexpr auto name = "mapPopulateSeries";
@@ -394,7 +394,7 @@ private:
         MutableColumnPtr result_key_column;
         MutableColumnPtr result_value_column;
         MutableColumnPtr result_offset_column;
-        IColumn * result_offset_column_raw{};
+        IColumn * result_offset_column_raw;
         /// If we return tuple of two arrays, this offset need to be the same as result_offset_column
         MutableColumnPtr result_array_additional_offset_column;
     };

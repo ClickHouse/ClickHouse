@@ -13,7 +13,7 @@ using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 /// Implements building a Bloom Filter from all values of the specified column. When building is finished the filter is saved into
 /// per-query filter map under the specified name. This allows to find the filter by name and use it in Expressions with the help of
 /// a special function 'filterContains'
-class BuildRuntimeFilterTransform final : public ISimpleTransform
+class BuildRuntimeFilterTransform : public ISimpleTransform
 {
 public:
     BuildRuntimeFilterTransform(
@@ -21,7 +21,6 @@ public:
         String filter_column_name_,
         const DataTypePtr & filter_column_type_,
         String filter_name_,
-        String filter_key_,
         size_t filters_to_merge_,
         UInt64 exact_values_limit_,
         UInt64 bloom_filter_bytes_,
@@ -44,8 +43,6 @@ private:
     const DataTypePtr filter_column_original_type;
     const DataTypePtr filter_column_target_type;
     const String filter_name;
-    /// Random per-plan-build key the built filter is registered under (matches `__applyFilter`).
-    const String filter_key;
 
     FunctionBasePtr cast_to_target_type;
 
