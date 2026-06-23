@@ -144,6 +144,11 @@ private:
         for (const auto & [_, count] : data->class_totals)
             total += count;
 
+        if (total == 0)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "NaiveBayes dictionary: proportional priors require a positive total n-gram count, but every count is zero");
+
         for (const auto & [class_id, count] : data->class_totals)
             log_class_priors[class_id] = std::log(static_cast<double>(count) / static_cast<double>(total));
     }
