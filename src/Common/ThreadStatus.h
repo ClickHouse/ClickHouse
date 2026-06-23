@@ -72,6 +72,7 @@ public:
     ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
     explicit ThreadGroup(ThreadGroupPtr parent);
     ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent);
+    ~ThreadGroup();
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -88,6 +89,13 @@ public:
     MemorySpillScheduler::Ptr memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
+
+    /// When true, the destructor runs `background_memory_tracker.adjustOnBackgroundTaskEnd(&memory_tracker)`.
+    /// Set for the ownerless background groups that parent their tracker directly to
+    /// `background_memory_tracker` and have no external cleanup owner (scope / materialized-view /
+    /// system-log flush groups). The merge/mutate path instead owns this cleanup via
+    /// `MergeListElement` (see `MergeListElement::owns_thread_group`), so its groups keep this false.
+    bool adjust_background_memory_tracker_on_destroy = false;
 
     struct SharedData
     {

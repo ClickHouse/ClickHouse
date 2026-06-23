@@ -162,6 +162,18 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_)
     };
 }
 
+ThreadGroup::~ThreadGroup()
+{
+    /// Ownerless background groups that parent their tracker to `background_memory_tracker` must
+    /// subtract their retained allocations from it when the work ends; otherwise residual memory
+    /// stays charged to `background_memory_tracker` / `MergesMutationsMemoryTracking` and skews
+    /// background-memory admission. The merge/mutate path does this via `MergeListElement`, the
+    /// rest (scope / materialized-view / system-log flush) relies on this single cleanup point,
+    /// which runs exactly once when the last reference to the group is dropped.
+    if (adjust_background_memory_tracker_on_destroy)
+        background_memory_tracker.adjustOnBackgroundTaskEnd(&memory_tracker);
+}
+
 std::vector<UInt64> ThreadGroup::getInvolvedThreadIds() const
 {
     std::vector<UInt64> res;
@@ -312,6 +324,8 @@ ThreadGroupPtr ThreadGroup::createForScope()
         /// any query context (`ThreadStatus::applyQuerySettings` is skipped for them).
         res_group = create(query_context);
         res_group->memory_tracker.setParent(&background_memory_tracker);
+        /// No external owner cleans this group up, so it must adjust `background_memory_tracker` itself.
+        res_group->adjust_background_memory_tracker_on_destroy = true;
     }
     res_group->memory_tracker.setDescription("ThreadGroupScope");
     return res_group;
@@ -334,6 +348,8 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr query_context)
         /// `system.part_log` rows they produce.
         res_group = create(query_context);
         res_group->memory_tracker.setParent(&background_memory_tracker);
+        /// No external owner cleans this group up, so it must adjust `background_memory_tracker` itself.
+        res_group->adjust_background_memory_tracker_on_destroy = true;
     }
     res_group->memory_tracker.setDescription("MaterializedView");
     return res_group;

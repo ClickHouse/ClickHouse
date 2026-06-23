@@ -671,6 +671,9 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         addSettingsForQuery(insert_context, IAST::QueryKind::Insert);
 
         auto thread_group = ThreadGroup::createForBackgroundOps(insert_context);
+        /// Unlike merge/mutate background tasks, the system-log flush group has no `MergeListElement`
+        /// owner, so it has to subtract its own residual from `background_memory_tracker` on destruction.
+        thread_group->adjust_background_memory_tracker_on_destroy = true;
         ThreadGroupSwitcher thread_group_switcher(thread_group, ThreadName::SYSTEM_LOG_FLUSH, true);
 
         LOG_TRACE(log, "Flushing system log, {} entries to flush up to offset {}",
