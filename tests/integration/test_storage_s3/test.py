@@ -3054,9 +3054,13 @@ def test_file_pruning_with_hive_style_partitioning(started_cluster):
     if need_restart:
         node_old.restart_with_original_version(clear_data_dir=True)
 
+    # Explicit credentials: this table is queried again after `restart_with_latest_version`, and a bare-URL S3
+    # table would resolve the server's environment credentials, which are restricted for user queries by
+    # default and would make it inaccessible after the restart. The old version has no way to enable the
+    # override (the setting does not exist there), so use explicit keys instead.
     node_old.query(
         f"""
-    CREATE TABLE {table_name}_3 (a Int32) ENGINE = S3('{url}/**', 'Parquet')
+    CREATE TABLE {table_name}_3 (a Int32) ENGINE = S3('{url}/**', 'minio', '{minio_secret_key}', 'Parquet')
     """
     )
     assert 5 == int(
@@ -3232,9 +3236,13 @@ def test_file_pruning_with_hive_style_partitioning_2(started_cluster):
     if need_restart:
         node_old.restart_with_original_version(clear_data_dir=True)
 
+    # Explicit credentials: this table is queried again after `restart_with_latest_version`, and a bare-URL S3
+    # table would resolve the server's environment credentials, which are restricted for user queries by
+    # default and would make it inaccessible after the restart. The old version has no way to enable the
+    # override (the setting does not exist there), so use explicit keys instead.
     node_old.query(
         f"""
-    CREATE TABLE {table_name}_1 (a Int32, d Int32) ENGINE = S3('{url}/**', 'Parquet')
+    CREATE TABLE {table_name}_1 (a Int32, d Int32) ENGINE = S3('{url}/**', 'minio', '{minio_secret_key}', 'Parquet')
     """
     )
     query_id = f"{table_name}_query_1"
