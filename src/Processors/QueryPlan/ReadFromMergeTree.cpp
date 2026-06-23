@@ -4747,6 +4747,10 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
     if (modifiers && (modifiers->hasSampleSizeRatio() || modifiers->hasSampleOffsetRatio()))
         return 0;
 
+    /// `Graphite` rollup parameters are not shipped to the worker, so its FINAL cannot be range-split. Read serially.
+    if (data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
+        return 0;
+
     const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
     if (!isSafePrimaryKey(primary_key))
         return 0;
@@ -4913,6 +4917,29 @@ Strings ReadFromMergeTree::getShardsForDistributedRead() const
 }
 
 
+void ReadFromMergeTree::verifyBucketedReadSupported() const
+{
+    /// A bucketed read is pinned to the coordinator's part list and cannot re-derive read-in-order,
+    /// deferred FINAL filters, a projection, or text index tasks. A non-bucket read is rebuilt and
+    /// re-optimized on the worker, which re-derives them, so it has no such limitation.
+    if (distributed_read_bucket_count == 0)
+        return;
+
+    if (query_info.input_order_info)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan does not support a read-in-order distributed read");
+    if (deferred_row_level_filter || deferred_prewhere_info)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan does not support a distributed read with deferred FINAL filters");
+    if (analyzed_result_ptr && analyzed_result_ptr->readFromProjection())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan does not support a distributed read from a projection");
+    if (!index_read_tasks.empty())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan does not support a distributed read using direct text index tasks");
+}
+
+
 void ReadFromMergeTree::serialize(Serialization & ctx) const
 {
     /// Serializing the STREAM modifier is not implemented yet, so reject it instead of silently
@@ -4922,24 +4949,7 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan does not support a distributed read with the STREAM modifier");
 
-    /// Needed only for a bucketed read: it is pinned to the coordinator's part list and cannot
-    /// re-derive read-in-order, deferred FINAL filters, a projection, or text index tasks. A
-    /// non-bucket read is rebuilt and re-optimized on the worker, which re-derives them.
-    if (distributed_read_bucket_count > 0)
-    {
-        if (query_info.input_order_info)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "make_distributed_plan does not support a read-in-order distributed read");
-        if (deferred_row_level_filter || deferred_prewhere_info)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "make_distributed_plan does not support a distributed read with deferred FINAL filters");
-        if (analyzed_result_ptr && analyzed_result_ptr->readFromProjection())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "make_distributed_plan does not support a distributed read from a projection");
-        if (!index_read_tasks.empty())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "make_distributed_plan does not support a distributed read using direct text index tasks");
-    }
+    verifyBucketedReadSupported();
 
     StorageID table_id = data.getStorageID();
     writeStringBinary(table_id.getDatabaseName(), ctx.out);

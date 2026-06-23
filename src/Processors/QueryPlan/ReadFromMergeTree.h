@@ -425,6 +425,11 @@ public:
     const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
     const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }
     size_t getDistributedReadBucketCount() const { return distributed_read_bucket_count; }
+    bool getEnableVerticalFinal() const { return enable_vertical_final; }
+
+    /// Throws if this is a bucketed distributed read using a feature it cannot reproduce from pinned
+    /// marks (read-in-order, deferred FINAL filters, a projection, or direct text index tasks).
+    void verifyBucketedReadSupported() const;
 
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }

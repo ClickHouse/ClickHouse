@@ -1050,13 +1050,17 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                 ReadFromMergeTree * read_merge_tree = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
                 if (read_merge_tree && !optimization_settings.distributed_plan_prefer_replicas_over_workers)
                 {
+                    /// Ship each bucket's authoritative marks (and FINAL borders + index) the same way the
+                    /// replica path does, so the worker reads exactly its slice and does FINAL per-lane.
+                    std::vector<String> read_buckets = read_merge_tree->serializeDistributedReadBuckets();
+
                     auto worker_step = ReadFromMergeTreeAtWorker::createFrom(*read_merge_tree);
                     auto shards_for_read = worker_step->getShardsForDistributedRead();
 
                     current_plan = std::make_unique<QueryPlan>();
                     current_plan->addStep(std::move(worker_step));
 
-                    populate_shards(std::move(shards_for_read));
+                    populate_shards(std::move(shards_for_read), std::move(read_buckets));
                 }
                 else
 #endif
