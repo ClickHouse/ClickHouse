@@ -19,6 +19,7 @@ class RunnerLabels:
     FUNC_TESTER_ARM = ["self-hosted", "arm-medium"]
     AMD_LARGE = ["self-hosted", "amd-large"]
     ARM_LARGE = ["self-hosted", "arm-large"]
+    ARM_LARGE_STORAGE = ["self-hosted", "arm-large-storage"]
     AMD_MEDIUM = ["self-hosted", "amd-medium"]
     ARM_MEDIUM = ["self-hosted", "arm-medium"]
     AMD_MEDIUM_CPU = ["self-hosted", "amd-medium-cpu"]
@@ -336,11 +337,8 @@ class JobNames:
     DOCKER_BUILDS_ARM = "Dockers build (arm)"
     DOCKER_BUILDS_AMD = "Dockers build (amd)"
     STYLE_CHECK = "Style check"
-    PR_BODY = "PR formatter"
     CODE_REVIEW = "Code Review"
-    CI_RESULTS_REVIEW = "CI Results Review"
     FAST_TEST = "Fast test"
-    SMOKE_TEST_MACOS = "Smoke test (amd_darwin)"
     BUILD = "Build"
     UNITTEST = "Unit tests"
     STATELESS = "Stateless tests"
@@ -357,6 +355,7 @@ class JobNames:
     DOCKER_KEEPER = "Docker keeper image"
     SQL_TEST = "SQLTest"
     SQL_LOGIC_TEST = "SQLLogic test"
+    SQL_STORM_TEST = "SQLStorm test"
     SQLANCER = "SQLancer"
     LLVM_COVERAGE = "LLVM Coverage"
     INSTALL_TEST = "Install packages"
@@ -371,6 +370,8 @@ class JobNames:
     LIBFUZZER_TEST = "libFuzzer tests"
     BUILD_TOOLCHAIN = "Build Toolchain (PGO, BOLT)"
     UPDATE_TOOLCHAIN_DOCKERFILE = "Update Toolchain Dockerfile"
+    COLLECT_CLICKHOUSE_PROFILES = "Collect ClickHouse Profiles (PGO, BOLT)"
+    CI_TESTS = "CI Tests"
 
 
 class ToolSet:
@@ -443,10 +444,14 @@ class ArtifactNames:
 
     ARM_FUZZERS = "ARM_FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
-    PARSER_MEMORY_PROFILER = "PARSER_MEMORY_PROFILER"
 
     TOOLCHAIN_PGO_BOLT_AMD = "TOOLCHAIN_PGO_BOLT_AMD"
     TOOLCHAIN_PGO_BOLT_ARM = "TOOLCHAIN_PGO_BOLT_ARM"
+
+    CLICKHOUSE_PGO_PROFILE_AMD = "CLICKHOUSE_PGO_PROFILE_AMD"
+    CLICKHOUSE_PGO_PROFILE_ARM = "CLICKHOUSE_PGO_PROFILE_ARM"
+    CLICKHOUSE_BOLT_PROFILE_AMD = "CLICKHOUSE_BOLT_PROFILE_AMD"
+    CLICKHOUSE_BOLT_PROFILE_ARM = "CLICKHOUSE_BOLT_PROFILE_ARM"
 
 
 LLVM_FT_NUM_BATCHES = 3
@@ -460,12 +465,12 @@ LLVM_FT_ARTIFACTS_LIST = [
 
 LLVM_FT_ARTIFACTS_LIST += [
     # default.profdata files for 6 jobs from Functional tests with Old Analyzer + S3 + AsyncInsert + parallel/sequential execution
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_parallel",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_sequential",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_parallel",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_sequential",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_parallel",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_sequential",
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_old_s3_db_repl_wasm_parallel",
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_old_s3_db_repl_wasm_sequential",
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_parallel",
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_sequential",
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_parallel",
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_sequential",
 ]
 
 LLVM_IT_ARTIFACTS_LIST = [
@@ -535,7 +540,7 @@ class ArtifactConfigs:
         name="...",
         type=Artifact.Type.S3,
         path=[
-            f"./*.profdata",
+            "./*.profdata",
         ],
     ).parametrize(names=LLVM_ARTIFACTS_LIST)
 
@@ -610,11 +615,6 @@ class ArtifactConfigs:
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/programs/*_seed_corpus.zip",
     )
-    parser_memory_profiler = Artifact.Config(
-        name=ArtifactNames.PARSER_MEMORY_PROFILER,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/src/Parsers/examples/parser_memory_profiler",
-    )
     toolchain_pgo_bolt_amd = Artifact.Config(
         name=ArtifactNames.TOOLCHAIN_PGO_BOLT_AMD,
         type=Artifact.Type.S3,
@@ -624,4 +624,24 @@ class ArtifactConfigs:
         name=ArtifactNames.TOOLCHAIN_PGO_BOLT_ARM,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/clang-pgo-bolt.tar.zst",
+    )
+    clickhouse_pgo_profile_amd = Artifact.Config(
+        name=ArtifactNames.CLICKHOUSE_PGO_PROFILE_AMD,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clickhouse-pgo.profdata.zst",
+    )
+    clickhouse_pgo_profile_arm = Artifact.Config(
+        name=ArtifactNames.CLICKHOUSE_PGO_PROFILE_ARM,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clickhouse-pgo.profdata.zst",
+    )
+    clickhouse_bolt_profile_amd = Artifact.Config(
+        name=ArtifactNames.CLICKHOUSE_BOLT_PROFILE_AMD,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clickhouse-bolt.fdata.zst",
+    )
+    clickhouse_bolt_profile_arm = Artifact.Config(
+        name=ArtifactNames.CLICKHOUSE_BOLT_PROFILE_ARM,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clickhouse-bolt.fdata.zst",
     )

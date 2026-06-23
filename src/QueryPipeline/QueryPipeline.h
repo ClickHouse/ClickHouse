@@ -9,6 +9,8 @@
 
 #include <functional>
 
+#include <list>
+
 namespace DB
 {
 
@@ -17,7 +19,7 @@ class OutputPort;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::vector<ProcessorPtr>;
+using Processors = std::list<ProcessorPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
@@ -51,7 +53,9 @@ public:
     QueryPipeline(QueryPipeline &&) noexcept;
     QueryPipeline(const QueryPipeline &) = delete;
 
-    QueryPipeline & operator=(QueryPipeline &&) noexcept;
+    /// Not noexcept: move-assignment appends QueryPlanResourceHolder resources, which allocates
+    /// through memory-tracking containers and can throw MEMORY_LIMIT_EXCEEDED.
+    QueryPipeline & operator=(QueryPipeline &&); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
     QueryPipeline & operator=(const QueryPipeline &) = delete;
 
     ~QueryPipeline();
