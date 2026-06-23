@@ -31,6 +31,16 @@ $CH -q "SELECT sum(if(materialize(toUInt8(1)), toInt64(1), toUInt64(2)))" 2>&1 |
 $CH -q "SELECT min([toInt64(1), 'str'::String])" 2>&1 | grep -cF "$hint"
 $CH -q "SELECT min([toInt64(1), toUInt64(2)])" 2>&1 | grep -cF "$hint"
 
+# if/multiIf/coalesce over composite branches resolve to a top-level Variant of the composites
+# (Variant(Array, Array), not Array(Variant(...))), which the lossy fallback cannot re-resolve: it
+# only retries top-level branch types and the Variant's alternatives are not numeric. The hint must
+# stay silent here, otherwise it would point users at a setting that does not help.
+$CH -q "SELECT min(if(materialize(1), [toDecimal64(1, 2)], [0.]))" 2>&1 | grep -cF "$hint"
+$CH -q "SELECT min(multiIf(materialize(1), [toDecimal64(1, 2)], materialize(2), [toInt64(3)], [0.]))" 2>&1 | grep -cF "$hint"
+$CH -q "SELECT max(if(materialize(1), map('a', toDecimal64(1, 2)), map('a', 0.)))" 2>&1 | grep -cF "$hint"
+# The setting genuinely cannot help: the branch stays a Variant even with it on, so the silence above is correct.
+${CLICKHOUSE_CLIENT} --use_variant_as_common_type=1 --allow_lossy_numeric_supertype=1 -q "SELECT toTypeName(if(materialize(1), [toDecimal64(1, 2)], [0.]))"
+
 # Numeric Variant Map key: a Map key cannot be Nullable, so the resolved type is identical for a
 # nullable and a non-nullable key. The setting resolves only a non-nullable key (FunctionMap maps it
 # to Float64); a nullable key stays a Variant. min/max cannot tell the two apart here, so the Map-key
