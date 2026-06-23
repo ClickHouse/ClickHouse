@@ -50,3 +50,31 @@ EXISTS DICTIONARY nb_life;
 SELECT naiveBayesClassifier('nb_life', 'good'); -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE nb_life_src;
+
+
+-- The dedicated functions update query_count just like dictGet, so dictionary usage statistics reflect them.
+DROP DICTIONARY IF EXISTS nb_qc;
+DROP TABLE IF EXISTS nb_qc_src;
+CREATE TABLE nb_qc_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO nb_qc_src VALUES (0, 'good', 10), (1, 'bad', 10);
+CREATE DICTIONARY nb_qc
+(
+    ngram String,
+    class_id UInt32 DEFAULT 0,
+    count UInt64 DEFAULT 0
+)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'nb_qc_src' DB currentDatabase()))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
+LIFETIME(0);
+
+SELECT 'query_count after five function lookups';
+SELECT naiveBayesClassifier('nb_qc', concat('w', toString(number))) FROM numbers(5) FORMAT Null;
+SELECT query_count FROM system.dictionaries WHERE database = currentDatabase() AND name = 'nb_qc';
+
+SELECT 'query_count after three more dictGet lookups';
+SELECT dictGet('nb_qc', 'class_id', concat('w', toString(number))) FROM numbers(3) FORMAT Null;
+SELECT query_count FROM system.dictionaries WHERE database = currentDatabase() AND name = 'nb_qc';
+
+DROP DICTIONARY nb_qc;
+DROP TABLE nb_qc_src;
