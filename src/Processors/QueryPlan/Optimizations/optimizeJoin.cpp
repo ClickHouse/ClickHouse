@@ -844,31 +844,27 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
     RelationStats stats = estimateReadRowsCount(*node);
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
-    if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache)
+    /// An already-exact count is the true current size (from table metadata); the cache is only a
+    /// staler measurement of the same thing, so it can never improve it -- don't touch an exact
+    /// leaf. The cache is applied only when we have no exact count.
+    if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache
+        && stats.estimated_rows_kind != RowCountKind::Exact)
     {
         /// The cached size comes from `HashTablesStatistics`, a process-global cache that keeps a
         /// max-like value: it tracks growth immediately but only shrinks when a new size drops
         /// below half of the stored one. It is the real number of rows this subtree fed into its
         /// build on a previous execution (the post-filter size from that run). We TAG it `Cached`
         /// and let it anchor the upper-bound swap (see `canAnchorUpperBoundSwap`) -- a deliberate
-        /// choice that trusts the measurement and accepts a stale-cache mis-swap risk. The one
-        /// guard we can prove is the `cache <= prior value` check below: it must never raise the
-        /// estimate above what we already know.
-        ///  * an exact leaf stays exact -- the min only tightens it and remains a valid lower bound;
-        ///  * otherwise the cache is used only when it is at or below the prior value (an upper
-        ///    bound, or a heuristic), tagged `Cached`. A stale-high cache that EXCEEDS the current
-        ///    scan upper bound (the table physically shrank) is ignored: the known upper bound is
-        ///    kept (and stays UpperBound, so it cannot anchor with a size it no longer measures).
-        ///    A selectivity change at a fixed table size is NOT caught here -- that is the accepted
-        ///    risk noted on `canAnchorUpperBoundSwap`.
+        /// choice that trusts the measurement and accepts a stale-cache mis-swap risk.
+        ///
+        /// Use the cache only when it is at or below the prior value (an upper bound, or a
+        /// heuristic). A stale-high cache that EXCEEDS the current scan upper bound (the table
+        /// physically shrank) is ignored: the known upper bound is kept (and stays UpperBound, so
+        /// it cannot anchor with a size it no longer measures). A selectivity change at a fixed
+        /// table size is NOT caught here -- that is the accepted risk noted on
+        /// `canAnchorUpperBoundSwap`.
         const UInt64 cached_rows = num_rows_from_cache.value();
-        if (stats.estimated_rows_kind == RowCountKind::Exact)
-            /// If the cache is stale-low (the table grew since the last build, so cached < exact),
-            /// the result is Exact(cached) -- a smaller-than-true "exact" count. This can only make
-            /// the right side look smaller, so at worst it misses a beneficial swap; the join stays
-            /// correct, so we keep the (cheap, monotone) min rather than tracking growth.
-            stats.estimated_rows = std::min<UInt64>(stats.estimated_rows.value(), cached_rows);
-        else if (cached_rows <= stats.estimated_rows.value_or(MAX_ROWS))
+        if (cached_rows <= stats.estimated_rows.value_or(MAX_ROWS))
         {
             stats.estimated_rows = cached_rows;
             stats.estimated_rows_kind = RowCountKind::Cached;
