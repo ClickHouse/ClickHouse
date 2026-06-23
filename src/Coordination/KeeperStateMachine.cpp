@@ -1145,8 +1145,27 @@ typename KeeperStateMachine<Storage>::LocalSnapshotPublishOutcome KeeperStateMac
     outcome.published = snapshot_manager.publishSnapshotFile(requested_idx, written_file_info);
     if (outcome.published != written_file_info)
     {
-        /// A saved-but-not-applied install already registered this index; adopt it (it's pinned by
-        /// `protected_pending_snapshot_log_idx`) and retire our file.
+        /// A saved-but-not-applied install already registered this index; validate it is still
+        /// present before retiring our freshly written file (fail-closed: if the registered file
+        /// is gone we must not silently adopt a missing path).
+        bool registered_accessible = false;
+        try
+        {
+            registered_accessible = outcome.published->disk->existsFile(outcome.published->path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to check existence of registered snapshot file");
+        }
+        if (!registered_accessible)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Snapshot with last log idx {} is already registered (file {} on disk {}) but cannot "
+                "be confirmed present; refusing to adopt it",
+                requested_idx,
+                outcome.published->path,
+                outcome.published->disk->getName());
+
         snapshot_manager.retireUnpublishedSnapshotFile(written_file_info);
         outcome.loser_to_remove = written_file_info;
         advanceLatestSnapshotMeta(written_snapshot_meta);
