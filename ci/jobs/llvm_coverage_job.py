@@ -55,6 +55,69 @@ def _download_extra_baselines(master_commits: list[str], first_base_commit: str)
     return found
 
 
+def _supplement_missing_profdata(master_commits: list[str]) -> None:
+    """Download profdata for test types skipped in this PR run from master.
+
+    When integration or unit coverage jobs are skipped (binary unchanged, only
+    one test type changed), their profdata is absent from ci/tmp. Supplementing
+    from the most recent compatible master run ensures the coverage merge
+    reflects all test types, not just the ones that ran in this PR.
+    The binary is identical (test-only PR), so master profdata is compatible.
+    """
+    existing = list(Path(TEMP_DIR).glob("*.profdata"))
+    has_it   = any(p.name.startswith("it-") for p in existing)
+    has_unit = any(p.name == "unit-tests.profdata" for p in existing)
+
+    if has_it and has_unit:
+        return  # nothing to supplement
+
+    missing = ([] if has_it else ["integration"]) + ([] if has_unit else ["unit"])
+    print(f"Supplementing missing profdata for skipped test types: {', '.join(missing)}")
+
+    S3 = "s3://clickhouse-builds/REFs/master"
+    IT_BATCHES = 5
+
+    for sha in master_commits:
+        if has_it and has_unit:
+            break
+
+        if not has_it:
+            # Check if IT batch 1 exists as a proxy for the full IT run.
+            probe = Shell.get_output(
+                f"aws s3 ls '{S3}/{sha}/integration_tests_amd_llvm_coverage_1_{IT_BATCHES}/' 2>/dev/null",
+                verbose=False,
+            )
+            if probe.strip():
+                ok = True
+                for i in range(1, IT_BATCHES + 1):
+                    src  = (f"{S3}/{sha}/integration_tests_amd_llvm_coverage_{i}_{IT_BATCHES}/"
+                            f"it-amd_llvm_coverage_{i}_{IT_BATCHES}.profdata")
+                    dest = Path(TEMP_DIR) / f"it-amd_llvm_coverage_{i}_{IT_BATCHES}.profdata"
+                    if Shell.run(f"aws s3 cp '{src}' '{dest}'", verbose=True) != 0:
+                        ok = False
+                        break
+                if ok:
+                    print(f"Supplemented integration test profdata from master {sha[:12]}")
+                    has_it = True
+                else:
+                    # Clean up partial downloads
+                    for i in range(1, IT_BATCHES + 1):
+                        (Path(TEMP_DIR) / f"it-amd_llvm_coverage_{i}_{IT_BATCHES}.profdata").unlink(missing_ok=True)
+
+        if not has_unit:
+            src  = f"{S3}/{sha}/unit_tests_amd_llvm_coverage/unit-tests.profdata"
+            dest = Path(TEMP_DIR) / "unit-tests.profdata"
+            probe = Shell.get_output(f"aws s3 ls '{src}' 2>/dev/null", verbose=False)
+            if probe.strip():
+                if Shell.run(f"aws s3 cp '{src}' '{dest}'", verbose=True) == 0:
+                    print(f"Supplemented unit test profdata from master {sha[:12]}")
+                    has_unit = True
+
+    if not has_it:
+        print("Warning: could not supplement missing integration test profdata from master")
+    if not has_unit:
+        print("Warning: could not supplement missing unit test profdata from master")
+
 
 
 def get_lcov_summary(
@@ -228,6 +291,13 @@ if __name__ == "__main__":
     _diff_ran = False
 
     results = []
+
+    # Before merging profdata, supplement any test types that were skipped in
+    # this PR run (e.g. IT/unit jobs skipped for a stateless-only PR). Download
+    # their profdata from the most recent compatible master run so the merged
+    # llvm_coverage.info reflects all test types, not just the ones that ran.
+    if not is_master_branch:
+        _supplement_missing_profdata(master_track_commits)
 
     gen_report_res = Result.from_commands_run(
         name="Generate LLVM Coverage Report",
