@@ -5,6 +5,7 @@
 #include <Common/ZooKeeper/TestKeeper.h>
 
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ShuffleHost.h>
@@ -43,11 +44,28 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
 }
+namespace FailPoints
+{
+    extern const char keeper_fault_on_watch_request[];
+}
 }
 
 
 namespace zkutil
 {
+
+namespace
+{
+    /// Fail point that fails all requests with watches but allows requests without watches.
+    bool shouldInjectWatchFault(const Coordination::WatchCallbackPtrOrEventPtr & watch_callback)
+    {
+        if (!watch_callback)
+            return false;
+        bool inject = false;
+        fiu_do_on(DB::FailPoints::keeper_fault_on_watch_request, { inject = true; });
+        return inject;
+    }
+}
 
 const int CreateMode::Persistent = 0;
 const int CreateMode::Ephemeral = 1;
@@ -299,6 +317,8 @@ Coordination::Error ZooKeeper::getChildrenImpl(const std::string & path, Strings
                                    Coordination::WatchCallbackPtr watch_callback,
                                    Coordination::ListRequestType list_request_type)
 {
+    if (shouldInjectWatchFault(watch_callback))
+        return Coordination::Error::ZCONNECTIONLOSS;
     auto future_result = asyncTryGetChildrenNoThrow(path, watch_callback, list_request_type);
 
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
@@ -560,6 +580,9 @@ Coordination::Error ZooKeeper::tryRemove(const std::string & path, int32_t versi
 
 Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback)
 {
+    if (shouldInjectWatchFault(watch_callback))
+        return Coordination::Error::ZCONNECTIONLOSS;
+
     auto future_result = asyncTryExistsNoThrow(path, watch_callback);
 
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
@@ -604,6 +627,9 @@ bool ZooKeeper::existsWatch(const std::string & path, Coordination::Stat * stat,
 Coordination::Error ZooKeeper::getImpl(
     const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallbackPtr watch_callback)
 {
+    if (shouldInjectWatchFault(watch_callback))
+        return Coordination::Error::ZCONNECTIONLOSS;
+
     auto future_result = asyncTryGetNoThrow(path, watch_callback);
 
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
