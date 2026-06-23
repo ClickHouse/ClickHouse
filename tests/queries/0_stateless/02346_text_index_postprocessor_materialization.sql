@@ -370,4 +370,27 @@ SELECT count() FROM tab WHERE hasAnyTokens(val, ['foo']);    -- 2
 SYSTEM START MERGES tab;
 DROP TABLE tab;
 
+SELECT '14. Array(FixedString) + array tokenizer + postprocessor: fallback normalizes elements to String.';
+-- The build path tokenizes to String tokens, so the postprocessor is validated and applied on String. The
+-- row-scan fallback must normalize FixedString elements to String too; otherwise a postprocessor like
+-- lowerUTF8 (which rejects FixedString) fails on unmaterialized parts even though the index built fine.
+
+CREATE TABLE tab (id UInt64, val Array(FixedString(3))) ENGINE = MergeTree ORDER BY id;
+
+SYSTEM STOP MERGES tab;
+
+INSERT INTO tab VALUES (1, ['FOO', 'BAR']);  -- old part: no index, evaluated by the row-scan fallback
+
+ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'array', postprocessor = lowerUTF8(val));
+
+INSERT INTO tab VALUES (2, ['FOO', 'BAR']);  -- new part: indexed
+
+-- Both rows postprocess to ['foo','bar']; each needle must match both parts (and the fallback must not throw).
+SELECT count() FROM tab WHERE hasAnyTokens(val, ['foo']);          -- 2
+SELECT count() FROM tab WHERE hasAllTokens(val, ['foo', 'bar']);   -- 2
+SELECT count() FROM tab WHERE hasAnyTokens(val, ['xyz']);          -- 0
+
+SYSTEM START MERGES tab;
+DROP TABLE tab;
+
 DROP TABLE IF EXISTS tab;

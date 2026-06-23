@@ -117,34 +117,24 @@ ActionsDAG MergeTreeIndexTextPostprocessor::getOriginalActionsDAG(
     replaceExpressionToIdentifier(expr, index_column_name, postprocessor_lambda_arg);
 
     /// Build the token stream the postprocessor maps over so that it matches the index-build path
-    /// (tokenize first, then postprocess each token). Three cases:
-    ///   - Array column + 'array' tokenizer: the elements are the final tokens, but drop empty ones first:
-    ///     the build path tokenizes each element via forEachToken, which skips empty elements, so a
-    ///     postprocessor mapping '' to a non-empty token must not fabricate a token the index never stored.
-    ///   - Array column + any other tokenizer: tokenize every element and flatten, mirroring
-    ///     tokenizeToArray which runs the tokenizer per element. Using the elements directly here would
-    ///     postprocess whole multi-token elements (e.g. 'foo bar') instead of their tokens ('foo', 'bar').
+    /// (tokenize first, then postprocess each token). Two cases:
+    ///   - Array column: tokenize every element and flatten, mirroring tokenizeToArray which runs the
+    ///     tokenizer per element. For the 'array' tokenizer this keeps each element as a single token; for
+    ///     any other tokenizer it splits multi-token elements (e.g. 'foo bar' -> 'foo', 'bar').
     ///   - Non-array column: tokenize the whole value with tokens(col, '<tokenizer>').
-    /// tokens always yields String tokens, so it also normalizes FixedString elements to String.
+    /// tokens always yields String tokens (normalizing FixedString elements to String to match the build
+    /// path and the postprocessor validation) and drops empty tokens, so an empty element never reaches the
+    /// postprocessor and cannot fabricate a token the index never stored.
     ASTPtr tokens_ast = make_intrusive<ASTIdentifier>(col_name);
-    const bool is_array_tokenizer = tokenizer_description == ArrayTokenizer::getName();
     if (isArray(col_type))
     {
-        if (!is_array_tokenizer)
-            tokens_ast = makeASTFunction("arrayFlatten",
-                makeASTFunction("arrayMap",
-                    makeASTLambda({postprocessor_element_arg},
-                        makeASTFunction("tokens",
-                            make_intrusive<ASTIdentifier>(postprocessor_element_arg),
-                            make_intrusive<ASTLiteral>(Field(tokenizer_description)))),
-                    std::move(tokens_ast)));
-        else
-            tokens_ast = makeASTFunction("arrayFilter",
+        tokens_ast = makeASTFunction("arrayFlatten",
+            makeASTFunction("arrayMap",
                 makeASTLambda({postprocessor_element_arg},
-                    makeASTFunction("notEquals",
+                    makeASTFunction("tokens",
                         make_intrusive<ASTIdentifier>(postprocessor_element_arg),
-                        make_intrusive<ASTLiteral>(Field(String{})))),
-                std::move(tokens_ast));
+                        make_intrusive<ASTLiteral>(Field(tokenizer_description)))),
+                std::move(tokens_ast)));
     }
     else
     {

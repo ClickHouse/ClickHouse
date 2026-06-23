@@ -91,3 +91,7 @@ wo	1
 13. Array tokenizer + postprocessor: empty elements are dropped before postprocessing (row-scan agrees).
 0
 2
+14. Array(FixedString) + array tokenizer + postprocessor: fallback normalizes elements to String.
+2
+2
+0
