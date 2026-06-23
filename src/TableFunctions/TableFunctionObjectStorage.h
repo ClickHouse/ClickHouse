@@ -46,7 +46,7 @@ public:
     bool supportsReadingSubsetOfColumns(const ContextPtr & context) override
     {
         return configuration->format != "auto"
-            && FormatFactory::instance().checkIfFormatSupportsReadingSubsetOfColumns(configuration->format, context);
+            && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context);
     }
 
     NameSet getVirtualsToCheckBeforeUsingStructureHint() const override
