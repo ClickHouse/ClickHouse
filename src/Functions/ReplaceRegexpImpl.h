@@ -208,7 +208,7 @@ struct ReplaceRegexpImpl
 
         /// Build the short pattern: concatenation of all nodes except the trailing `.*` and `$`.
         /// The compose helpers consume one reference per sub, so Incref each before passing them in.
-        std::vector<re2::Regexp *> short_subs;
+        VectorWithMemoryTracking<re2::Regexp *> short_subs;
         short_subs.reserve(nsub - 2);
         for (int i = 0; i < nsub - 2; ++i)
             short_subs.push_back(subs[i]->Incref());
