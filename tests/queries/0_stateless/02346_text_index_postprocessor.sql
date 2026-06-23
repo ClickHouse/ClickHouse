@@ -140,8 +140,9 @@ INSERT INTO tab VALUES
 SELECT count() FROM tab WHERE hasToken(val, 'ERROR');                -- 2
 SELECT count() FROM tab WHERE hasToken(val, 'connection');           -- 1
 SELECT count() FROM tab WHERE hasToken(val, 'server');               -- 1
--- The timestamp token maps to '' via the postprocessor; the index never stored it.
-SELECT count() FROM tab WHERE hasToken(val, '2024-01-15T10:23:45'); -- 0
+-- The timestamp token maps to '' via the postprocessor; the index never stored it. hasToken cannot take a
+-- separator-containing needle, so use hasAnyTokens, which tokenizes the needle (one splitByString token).
+SELECT count() FROM tab WHERE hasAnyTokens(val, ['2024-01-15T10:23:45']); -- 0
 
 -- The index stores only message-level tokens.
 SELECT token, cardinality
