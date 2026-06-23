@@ -1,40 +1,18 @@
-import os.path as p
-import random
-import threading
 import time
 import uuid
-from random import randrange
 
-import psycopg2
 import pytest
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import pg_pass
 from helpers.postgres_utility import (
     PostgresManager,
-    assert_nested_table_is_created,
-    assert_number_of_columns,
     check_several_tables_are_synchronized,
     check_tables_are_synchronized,
-    create_postgres_schema,
-    create_postgres_table,
-    create_postgres_table_with_schema,
-    create_replication_slot,
-    drop_postgres_schema,
-    drop_postgres_table,
-    drop_postgres_table_with_schema,
-    drop_replication_slot,
     get_postgres_conn,
-    postgres_table_template,
-    postgres_table_template_2,
-    postgres_table_template_3,
-    postgres_table_template_4,
-    postgres_table_template_5,
     postgres_table_template_6,
-    queries,
 )
-from helpers.test_tools import TSV, assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -170,11 +148,11 @@ def test_table_override(started_cluster):
 
 
 def test_materialized_view(started_cluster):
-    pg_manager.execute(f"DROP TABLE IF EXISTS test_table")
+    pg_manager.execute("DROP TABLE IF EXISTS test_table")
     pg_manager.execute(
-        f"CREATE TABLE test_table (key integer PRIMARY KEY, value integer)"
+        "CREATE TABLE test_table (key integer PRIMARY KEY, value integer)"
     )
-    pg_manager.execute(f"INSERT INTO test_table SELECT 1, 2")
+    pg_manager.execute("INSERT INTO test_table SELECT 1, 2")
     instance.query("DROP DATABASE IF EXISTS test_database")
     instance.query(
         "CREATE DATABASE test_database ENGINE = MaterializedPostgreSQL(postgres1) SETTINGS materialized_postgresql_tables_list='test_table'"
@@ -185,7 +163,7 @@ def test_materialized_view(started_cluster):
         "CREATE MATERIALIZED VIEW mv ENGINE=MergeTree ORDER BY tuple() POPULATE AS SELECT * FROM test_database.test_table"
     )
     assert "1\t2" == instance.query("SELECT * FROM mv").strip()
-    pg_manager.execute(f"INSERT INTO test_table SELECT 3, 4")
+    pg_manager.execute("INSERT INTO test_table SELECT 3, 4")
     check_tables_are_synchronized(instance, "test_table")
     assert "1\t2\n3\t4" == instance.query("SELECT * FROM mv ORDER BY 1, 2").strip()
     instance.query("DROP VIEW mv")
@@ -199,7 +177,7 @@ def test_too_many_parts(started_cluster):
         ip=started_cluster.postgres_ip,
         port=started_cluster.postgres_port,
         settings=[
-            f"materialized_postgresql_tables_list = 'test_table', materialized_postgresql_backoff_min_ms = 100, materialized_postgresql_backoff_max_ms = 100"
+            "materialized_postgresql_tables_list = 'test_table', materialized_postgresql_backoff_min_ms = 100, materialized_postgresql_backoff_max_ms = 100"
         ],
     )
     check_tables_are_synchronized(
@@ -391,7 +369,7 @@ def test_failed_load_from_snapshot(started_cluster):
 def test_symbols_in_publication_name(started_cluster):
     id = uuid.uuid4()
     db = f"test_{id}"
-    table = f"test_symbols_in_publication_name"
+    table = "test_symbols_in_publication_name"
 
     pg_manager3 = PostgresManager()
     pg_manager3.init(
