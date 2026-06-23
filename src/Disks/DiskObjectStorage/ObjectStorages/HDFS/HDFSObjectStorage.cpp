@@ -31,27 +31,20 @@ namespace
 {
 
 /// HDFS has no native ETag, so we synthesise a version identifier from the
-/// attributes available in `hdfsFileInfo`: the last modification time and the
-/// size. This is used as a cache key the same way an S3 ETag is — an in-place
-/// rewrite that changes either the mtime or the size invalidates the cache.
+/// attributes available in `hdfsFileInfo`: the last modification time and the size.
 ///
-/// IMPORTANT: the precision of this token is only one second. Although the HDFS
-/// NameNode keeps the modification time in milliseconds, libhdfs3 truncates it
-/// to seconds when populating `hdfsFileInfo::mLastMod` (it computes
-/// `getModificationTime() / 1000`), and the public C API exposes no other field
-/// (no file id, no checksum) that changes on a content rewrite. Consequently a
-/// rewrite that happens within the same wall-clock second AND produces the exact
-/// same byte size but different content cannot be distinguished and yields the
-/// same ETag.
-///
-/// This is acceptable for the `_etag` virtual column, but it means caches keyed
-/// on this token (`use_parquet_metadata_cache`, the filesystem cache, the page
-/// cache) can serve stale data in that rare same-second/same-size case. For
-/// Parquet this is extremely unlikely because the footer almost always changes
-/// the file length, and it mirrors the mtime-based versioning already used for
-/// local files (which, however, has sub-second precision). If stronger
-/// guarantees are needed, libhdfs3 must be extended to expose the millisecond
-/// modification time.
+/// This token is NOT a strong content identifier and therefore must never be used
+/// as a content-cache key (see `ObjectMetadata::etag_is_strong`, which we set to
+/// `false`). Its precision is only one second: although the HDFS NameNode keeps the
+/// modification time in milliseconds, libhdfs3 truncates it to seconds when
+/// populating `hdfsFileInfo::mLastMod` (it computes `getModificationTime() / 1000`),
+/// and the public C API exposes no other field (no file id, no checksum) that
+/// changes on a content rewrite. Consequently a rewrite within the same wall-clock
+/// second that keeps the exact same byte size yields the same token for different
+/// content. That is acceptable for the informational `_etag` virtual column, but if
+/// it keyed the Parquet metadata / filesystem / page caches it could serve stale
+/// data. To use these caches with HDFS, libhdfs3 must be extended to expose the
+/// millisecond modification time (or a real version token).
 std::string getHDFSETag(tTime last_modified, tOffset size)
 {
     return fmt::format("{}_{}", static_cast<Int64>(last_modified), static_cast<Int64>(size));
@@ -255,6 +248,7 @@ std::optional<ObjectMetadata> HDFSObjectStorage::tryGetObjectMetadata(const std:
     metadata.size_bytes = static_cast<size_t>(file_info.file_info->mSize);
     metadata.last_modified = Poco::Timestamp::fromEpochTime(file_info.file_info->mLastMod);
     metadata.etag = getHDFSETag(file_info.file_info->mLastMod, file_info.file_info->mSize);
+    metadata.etag_is_strong = false;
 
     return metadata;
 }
@@ -301,6 +295,7 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
                     .size_bytes = static_cast<uint64_t>(ls.file_info[i].mSize),
                     .last_modified = Poco::Timestamp::fromEpochTime(ls.file_info[i].mLastMod),
                     .etag = getHDFSETag(ls.file_info[i].mLastMod, ls.file_info[i].mSize),
+                    .etag_is_strong = false,
                     .tags = {},
                     .attributes = {},
                 }));
