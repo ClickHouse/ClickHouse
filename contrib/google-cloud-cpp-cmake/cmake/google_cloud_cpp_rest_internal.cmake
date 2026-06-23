@@ -118,10 +118,6 @@ target_link_libraries(
            nlohmann_json::nlohmann_json)
 target_link_libraries(google_cloud_cpp_rest_internal PUBLIC OpenSSL::SSL OpenSSL::Crypto)
 target_link_libraries(google_cloud_cpp_rest_internal PRIVATE Poco::Net Poco::Net::SSL Poco::Foundation)
-# Some headers (`curl_wrappers.h`, `curl_options.h`) are still included for
-# declarations and option types; only the curl headers are needed, not the library.
-target_include_directories(google_cloud_cpp_rest_internal SYSTEM
-    PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/curl/include")
 target_include_directories(
     google_cloud_cpp_rest_internal
     PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>

@@ -158,7 +158,6 @@ if(WITH_SASL_CYRUS)
 endif()
 
 if(WITH_HTTP)
-  target_include_directories(_rdkafka SYSTEM PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/curl/include")
   target_include_directories(_rdkafka PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
   target_link_libraries(_rdkafka PRIVATE Poco::Net Poco::Net::SSL Poco::Foundation)
 endif()

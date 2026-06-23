@@ -4,8 +4,8 @@
  *
  * Also implements the few libcurl functions that
  * rdkafka_sasl_oauthbearer_oidc.c calls directly (curl_slist_append,
- * curl_slist_free_all, curl_easy_escape): the libcurl headers are used
- * only for declarations, the library is not linked.
+ * curl_slist_free_all, curl_easy_escape): their declarations come from
+ * rdhttp_curl_compat.h (via rdhttp.h), libcurl is not included nor linked.
  */
 
 #include "rdkafka_int.h"
@@ -14,7 +14,6 @@
 #include <ctype.h>
 #include <stdarg.h>
 
-#include <curl/curl.h>
 #include "rdhttp.h"
 
 #include "rdhttp_poco_transport.h"
