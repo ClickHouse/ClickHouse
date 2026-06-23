@@ -1,4 +1,4 @@
 -- distributed read over a projected table does not abort
-20099
+499
 -- matches the single-node result
-20099
+499

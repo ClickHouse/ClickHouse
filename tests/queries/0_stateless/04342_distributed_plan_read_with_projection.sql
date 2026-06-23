@@ -12,14 +12,17 @@ DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
 CREATE TABLE t1 (id UInt32, s String) ENGINE = MergeTree ORDER BY id;
-CREATE TABLE t2 (id1 UInt32, id2 UInt32) ENGINE = MergeTree ORDER BY id1 SETTINGS index_granularity = 1;
+-- Small granularity so the read spans several granules; the projection split must produce a
+-- non-trivial read on both Union branches to reach the sharded-read decision (a single-granule read
+-- does not reproduce). A few hundred granules is plenty and keeps the fixture cheap.
+CREATE TABLE t2 (id1 UInt32, id2 UInt32) ENGINE = MergeTree ORDER BY id1 SETTINGS index_granularity = 16;
 
 -- Two inserts so some parts are served by the projection and some by the surviving parts; the
 -- projection ADD between them leaves the first batch's parts without the projection. This mix of
 -- projection / non-projection parts is what reproduces the shard-list mismatch, so keep it.
-INSERT INTO t2 SELECT number, number % 10 FROM numbers(100000);
+INSERT INTO t2 SELECT number, number % 10 FROM numbers(2000);
 ALTER TABLE t2 ADD PROJECTION proj (SELECT id2 ORDER BY id2);
-INSERT INTO t2 SELECT number, number % 10 FROM numbers(100000);
+INSERT INTO t2 SELECT number, number % 10 FROM numbers(2000);
 
 INSERT INTO t1 SELECT number, toString(number) FROM numbers(100);
 
@@ -32,7 +35,7 @@ SET max_rows_to_group_by = 0;
 -- randomized settings could raise it above the selected row count and skip the sharded read.
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
     distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3,
-    distributed_plan_max_rows_to_broadcast = 1000;
+    distributed_plan_max_rows_to_broadcast = 10;
 
 -- t2's read is sharded; the projection match would split it into a Union. t1 is broadcast.
 SELECT '-- distributed read over a projected table does not abort';
