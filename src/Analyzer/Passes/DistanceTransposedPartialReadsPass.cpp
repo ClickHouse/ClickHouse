@@ -8,7 +8,9 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Storages/IStorage.h>
@@ -29,6 +31,31 @@ extern const SettingsBool optimize_qbit_distance_function_reads;
 
 namespace
 {
+
+/// The mask-lifting rewrite below reinstates the null mask with `isNull(ref)` and otherwise feeds
+/// the call `assumeNotNull(ref)` cast to `Array(element_type)`. That faithfully reproduces the
+/// original result only when every non-NULL row holds an array: the default `Variant`/`Dynamic`
+/// adaptor turns a non-array alternative into NULL (under `*_throw_on_type_mismatch = 0`), but the
+/// rewrite would instead cast it to an array (wrong result) or fail to parse it. So the rewrite is
+/// only safe when the reference always yields an array where it is not NULL: a `Nullable` /
+/// `LowCardinalityNullable` array (the nested type is an array) or a `Variant` whose alternatives
+/// are all arrays. A `Dynamic` reference, or a `Variant` with any non-array alternative, may carry a
+/// non-array value, so it is not safe.
+bool nonNullValueIsAlwaysArray(const DataTypePtr & type)
+{
+    if (isVariant(type))
+    {
+        const auto & variants = assert_cast<const DataTypeVariant &>(*type).getVariants();
+        for (const auto & variant : variants)
+            if (!isArray(variant))
+                return false;
+        return true;
+    }
+    if (isDynamic(type))
+        return false;
+    /// Nullable / LowCardinalityNullable: safe iff the value type itself is an array.
+    return isArray(removeLowCardinalityAndNullable(type));
+}
 
 /// The reference vector is referenced more than once in the rewrite (the null mask, the
 /// `assumeNotNull` value and the NULL-row dummy guard). Reusing the expression node is only
@@ -129,6 +156,13 @@ public:
         const bool ref_vec_is_nullable
             = ref_vec_type->isNullable() || ref_vec_type->isLowCardinalityNullable() || isVariant(ref_vec_type)
             || isDynamic(ref_vec_type);
+
+        /// The mask-lifting rewrite reinstates the null mask with `isNull(ref)` only. That matches the
+        /// original result only when every non-NULL row holds an array (see `nonNullValueIsAlwaysArray`).
+        /// A `Dynamic` reference, or a `Variant` with a non-array alternative, can carry a non-array value
+        /// that the original turns into NULL, so skip the optimization there and read the whole column.
+        if (ref_vec_is_nullable && !nonNullValueIsAlwaysArray(ref_vec_type))
+            return;
 
         /// The mask-lifting rewrite below evaluates the reference expression at several places
         /// (the null mask, the `assumeNotNull` value and the NULL-row dummy guard). For a
