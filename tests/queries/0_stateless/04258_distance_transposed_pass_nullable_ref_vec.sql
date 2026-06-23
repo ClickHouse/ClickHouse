@@ -2,6 +2,10 @@
 -- (Nullable / Variant / Dynamic), broader than the always-NULL `Nullable(Nothing)` subcase that
 -- `03829_distance_transposed_pass_nullable_nothing.sql` covers.
 
+-- The pass is an analyzer-only rewrite and the `EXPLAIN QUERY TREE` assertions below need the
+-- analyzer, so force it on (matches sibling `03375_l2_distance_transposed_partial_reads_pass.sql`).
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS qbit_test;
 CREATE TABLE qbit_test (id UInt64, vec QBit(Float32, 3)) ENGINE = Memory;
 INSERT INTO qbit_test VALUES (1, [0,1,2]), (2, [1,2,3]), (3, [2,3,4]);
