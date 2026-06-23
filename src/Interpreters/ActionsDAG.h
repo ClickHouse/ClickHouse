@@ -199,7 +199,10 @@ public:
     void addAliases(const NamesWithAliases & aliases);
 
     /// Add alias actions. Also specify result columns order in outputs.
-    void project(const NamesWithAliases & projection);
+    /// `keep_inputs` are forwarded to the internal `removeUnusedActions` as `used_inputs`: source
+    /// constants get re-created as free-standing COLUMN outputs by folding, orphaning their INPUTs;
+    /// keeping the INPUTs lets the columns keep flowing (needed at distributed stage boundaries).
+    void project(const NamesWithAliases & projection, const std::unordered_set<const Node *> & keep_inputs = {});
 
     /// Add input for every column from sample_block which is not mapped to existing input.
     void appendInputsForUnusedColumns(const Block & sample_block);
@@ -377,7 +380,8 @@ public:
         bool ignore_constant_values = false,
         bool add_cast_columns = false,
         NameToNameMap * new_names = nullptr,
-        NameSet * columns_contain_compiled_function = nullptr);
+        NameSet * columns_contain_compiled_function = nullptr,
+        bool materialize_constants=true);
     /// Create expression which add const column and then materialize it.
     static ActionsDAG makeAddingColumnActions(ColumnConstPtr column, DataTypePtr type, std::string name);
     static ActionsDAG makeAddingConstantColumnActions(const std::string & name, const DataTypePtr & type, const Field & value);

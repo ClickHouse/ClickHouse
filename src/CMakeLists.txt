@@ -550,6 +550,10 @@ if (TARGET ch_contrib::libfiu)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::libfiu)
 endif()
 
+if (TARGET ch_contrib::silk_fibers)
+    target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::silk_fibers)
+endif()
+
 if (TARGET ch_contrib::cpuid)
     target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::cpuid)
 endif()
@@ -898,6 +902,10 @@ if (ENABLE_TESTS)
         -Wno-sign-compare
     )
 
+    target_compile_definitions(unit_tests_dbms PRIVATE
+        CLICKHOUSE_TESTS_CONFIG_DIR="${ClickHouse_SOURCE_DIR}/tests/config"
+    )
+
     target_link_libraries(unit_tests_dbms PRIVATE
         ch_contrib::gmock_all
         ch_contrib::gtest
@@ -909,6 +917,10 @@ if (ENABLE_TESTS)
         clickhouse_common_zookeeper_base
         clickhouse_common_config
         clickhouse_common_zookeeper)
+
+    if (TARGET ch_contrib::krb5)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::krb5)
+    endif()
 
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)
@@ -932,6 +944,10 @@ if (ENABLE_TESTS)
 
     if (TARGET ch_contrib::parquet)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
+    endif()
+
+    if (TARGET ch_contrib::silk_fibers)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::silk_fibers)
     endif()
 endif ()
 

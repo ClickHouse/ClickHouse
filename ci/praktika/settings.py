@@ -223,7 +223,7 @@ def _get_settings() -> _Settings:
                 value = getattr(foo, setting)
                 res.__setattr__(setting, value)
                 # print(f"- read user defined setting [{setting} = {value}]")
-            except Exception as e:
+            except Exception:
                 # print(f"Exception while read user settings: {e}")
                 pass
 
