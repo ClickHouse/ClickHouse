@@ -497,7 +497,7 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
     if (main_query_node.hasGroupBy() || main_query_node.hasPrewhere() || main_query_node.hasHaving() || main_query_node.hasQualify())
         return false;
 
-    if (settings[Setting::allow_experimental_query_deduplication] || settings[Setting::empty_result_for_aggregation_by_empty_set])
+    if (settings[Setting::empty_result_for_aggregation_by_empty_set])
         return false;
 
     QueryTreeNodes aggregates = collectAggregateFunctionNodes(query_tree);
