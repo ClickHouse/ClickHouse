@@ -502,7 +502,7 @@ def test_cancel_during_direct_select_does_not_drop_messages(nats_cluster):
         while time.time() < deadline and len(collected) < n:
             res = instance.query(
                 f"SELECT key FROM test.{table} "
-                f"SETTINGS stream_like_engine_allow_direct_select = 1",
+                "SETTINGS stream_like_engine_allow_direct_select = 1",
                 ignore_error=True,
             )
             for line in res.split():
@@ -927,7 +927,7 @@ def test_detach_last_view_does_not_busy_loop(nats_cluster):
     viewless = _cpu_over(4)
     assert viewless < baseline + 150, ( # based on test runs, where it's ~15, or ~400-800 for busy
         f"viewless streaming task appears to busy-loop: baseline={baseline} viewless={viewless} "
-        f"CPU jiffies over 4s"
+        "CPU jiffies over 4s"
     )
 
 
@@ -1045,7 +1045,7 @@ def test_resubscribe_failure_backs_off(nats_cluster):
     # Backoff is ~one attempt per RESCHEDULE_MS (500ms) => ~10 over 5s; a busy-loop would be far more.
     assert attempts < 25, (
         f"resubscribe appears to busy-spin: {attempts} subscribe attempts in {window}s "
-        f"(expected ~10 with 500ms backoff)"
+        "(expected ~10 with 500ms backoff)"
     )
 
     # Server stays alive throughout.

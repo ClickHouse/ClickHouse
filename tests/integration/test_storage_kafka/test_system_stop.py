@@ -1,6 +1,13 @@
 """Test SYSTEM STOP/PAUSE/CANCEL/REFRESH and ALL BACKGROUND controls on a Kafka table."""
 
-from helpers.kafka.common_direct import *
+import json
+import logging
+import threading
+import time
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
 import helpers.kafka.common as k
 
 cluster = ClickHouseCluster(__file__)

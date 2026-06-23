@@ -477,7 +477,7 @@ def test_cancel_during_direct_select_does_not_drop_messages(rabbitmq_cluster):
         while time.time() < deadline and len(collected) < n:
             res = instance.query(
                 f"SELECT key FROM test.{table} "
-                f"SETTINGS stream_like_engine_allow_direct_select = 1",
+                "SETTINGS stream_like_engine_allow_direct_select = 1",
                 ignore_error=True,
             )
             for line in res.split():
@@ -671,7 +671,7 @@ def test_cancel_wakes_flush_wait_promptly(rabbitmq_cluster):
     elapsed = time.time() - t0
     assert elapsed < 10, (
         f"SYSTEM CANCEL took {elapsed:.1f}s to abort the in-flight block; it should wake the flush "
-        f"wait promptly instead of waiting out rabbitmq_flush_interval_ms"
+        "wait promptly instead of waiting out rabbitmq_flush_interval_ms"
     )
 
 

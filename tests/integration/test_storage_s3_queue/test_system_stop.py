@@ -105,7 +105,7 @@ def setup_slow_consuming_table(started_cluster, node, table, engine_name="S3Queu
     node.query(f"DROP TABLE IF EXISTS {table}_dst")
     node.query(
         f"CREATE TABLE {table}_dst (column1 UInt32, column2 UInt32, column3 UInt32) "
-        f"ENGINE = MergeTree ORDER BY column1"
+        "ENGINE = MergeTree ORDER BY column1"
     )
     # `sleepEachRow(0.1)` * 10 rows/file = ~1s per committed file (under the per-block sleep limit),
     # which stretches the drain out in time so a command can land mid-drain.
@@ -270,7 +270,7 @@ def test_stop_aborts_inflight_batch_pause_commits_it(started_cluster):
         node.query(f"DROP TABLE IF EXISTS {table}_dst")
         node.query(
             f"CREATE TABLE {table}_dst (column1 UInt32, column2 UInt32, column3 UInt32) "
-            f"ENGINE = MergeTree ORDER BY column1"
+            "ENGINE = MergeTree ORDER BY column1"
         )
         # `sleepEachRow` slows the per-file blocks (0.1s * 10 rows = 1s/file, under the per-block
         # sleep limit) so the batch stays in-flight for ~n_files seconds.
@@ -323,7 +323,7 @@ def test_cancel_during_insert_does_not_duplicate(started_cluster):
     node.query(f"DROP TABLE IF EXISTS {table}_dst")
     node.query(
         f"CREATE TABLE {table}_dst (column1 UInt32, column2 UInt32, column3 UInt32) "
-        f"ENGINE = MergeTree ORDER BY column1"
+        "ENGINE = MergeTree ORDER BY column1"
     )
     node.query(
         f"CREATE MATERIALIZED VIEW {table}_mv TO {table}_dst AS "
@@ -485,7 +485,7 @@ def test_pause_stops_after_current_batch(started_cluster):
     # below the full backlog instead of draining every remaining file.
     settled = wait_count_stabilizes(node, table)
     assert 0 < settled < n_files * ROWS_PER_FILE, (
-        f"PAUSE should stop after the current batch's durable boundary, but "
+        "PAUSE should stop after the current batch's durable boundary, but "
         f"{settled // ROWS_PER_FILE}/{n_files} files were processed"
     )
 
@@ -543,7 +543,7 @@ def test_azure_queue_pause_stops_after_current_batch(started_cluster):
 
     settled = wait_count_stabilizes(node, table)
     assert 0 < settled < n_files * ROWS_PER_FILE, (
-        f"PAUSE should stop after the current batch's durable boundary, but "
+        "PAUSE should stop after the current batch's durable boundary, but "
         f"{settled // ROWS_PER_FILE}/{n_files} files were processed"
     )
 
