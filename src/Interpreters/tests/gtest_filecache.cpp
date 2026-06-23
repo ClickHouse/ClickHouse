@@ -24,7 +24,7 @@
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Interpreters/FileCache/SLRUFileCachePriority.h>
 #if CLICKHOUSE_CLOUD
-#include <Interpreters/Cache/OvercommitFileCachePriority.h>
+#include <Interpreters/FileCache/OvercommitFileCachePriority.h>
 #endif
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -50,6 +50,20 @@
 #include <Disks/tests/gtest_disk.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/scope_guard.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric FilesystemCachePriorityQueueElements;
+    extern const Metric FilesystemCacheInvalidatedElements;
+}
+
+namespace ProfileEvents
+{
+    extern const Event FilesystemCacheDowngradedFileSegments;
+    extern const Event FilesystemCacheEvictedFileSegments;
+}
 
 using namespace std::chrono_literals;
 namespace fs = std::filesystem;
@@ -75,6 +89,8 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsBool load_metadata_asynchronously;
     extern const FileCacheSettingsBool write_cache_per_user_id_directory;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
+    extern const FileCacheSettingsBool enable_bypass_cache_with_threshold;
+    extern const FileCacheSettingsUInt64 bypass_cache_threshold;
 }
 
 void printRanges(const auto & segments)
@@ -198,8 +214,8 @@ static void assertProtectedOrProbationary(const std::vector<FileSegmentInfo> & f
     for (const auto & f : file_segments)
     {
         auto range = FileSegment::Range(f.range_left, f.range_right);
-        bool is_protected = (f.queue_entry_type == FileCacheQueueEntryType::SLRU_Protected);
-        bool is_probationary = (f.queue_entry_type == FileCacheQueueEntryType::SLRU_Probationary);
+        bool is_protected = (f.queue_entry_type == IFileCachePriority::QueueEntryType::SLRU_Protected);
+        bool is_probationary = (f.queue_entry_type == IFileCachePriority::QueueEntryType::SLRU_Probationary);
         ASSERT_TRUE(is_probationary || is_protected);
 
         std::cerr << fmt::format("{} (protected: {})", range.toString(), is_protected) <<  ", ";
@@ -1113,6 +1129,62 @@ catch (...)
     throw;
 }
 
+/// `getDownloadedContiguousOrEmpty` must inspect the actually downloaded segments even when
+/// `enable_bypass_cache_with_threshold` is on and the requested range exceeds the threshold.
+/// Otherwise getImpl() would return a synthetic DETACHED placeholder and the helper would
+/// wrongly report present-but-large data (e.g. distributed-cache temporary data) as missing.
+TEST_F(FileCacheTest, GetDownloadedContiguousIgnoresBypassThreshold)
+try
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const size_t bypass_threshold = 100;
+    const size_t chunk = bypass_threshold; /// each cached segment stays at/below the threshold
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 100_KiB;
+    settings[FileCacheSetting::max_file_segment_size] = chunk;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    /// Any read larger than `bypass_threshold` bytes would normally bypass the cache.
+    settings[FileCacheSetting::enable_bypass_cache_with_threshold] = true;
+    settings[FileCacheSetting::bypass_cache_threshold] = bypass_threshold;
+
+    DB::FileCache file_cache("bypass-temp", settings);
+    file_cache.initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    const auto key = FileCacheKey::fromPath("bypass_temp_key");
+
+    /// Populate several contiguous segments, each no larger than the bypass threshold (a single
+    /// write larger than the threshold would itself bypass the cache and never be stored). The
+    /// downloaded data covers a range that, when read at once, exceeds the threshold.
+    const size_t num_chunks = 3;
+    const size_t downloaded_size = num_chunks * chunk;
+    for (size_t i = 0; i < num_chunks; ++i)
+    {
+        auto holder = file_cache.getOrSet(key, i * chunk, chunk, downloaded_size, CreateFileSegmentSettings{}, 0, user);
+        download(holder);
+    }
+
+    const auto & user_id = user.user_id;
+
+    /// The whole downloaded range is larger than the threshold but must still be reported present.
+    EXPECT_FALSE(file_cache.getDownloadedContiguousOrEmpty(key, 0, downloaded_size, user_id)->empty());
+    /// A sub-range that also exceeds the threshold is present too.
+    EXPECT_FALSE(file_cache.getDownloadedContiguousOrEmpty(key, 10, downloaded_size - 10, user_id)->empty());
+    /// A range past the downloaded data is correctly reported as missing.
+    EXPECT_TRUE(file_cache.getDownloadedContiguousOrEmpty(key, 0, downloaded_size + 1, user_id)->empty());
+}
+catch (...)
+{
+    std::cerr << getCurrentExceptionMessage(true) << std::endl;
+    throw;
+}
+
 TEST_F(FileCacheTest, CachedReadBuffer)
 {
     ServerUUID::setRandomForUnitTests();
@@ -1246,6 +1318,7 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
 }
 
 TEST_F(FileCacheTest, SLRUPolicy)
+try
 {
     ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
@@ -1455,6 +1528,11 @@ TEST_F(FileCacheTest, SLRUPolicy)
         assertProtected(cache->dumpQueue(), { Range(10, 14), Range(0, 4), Range(5, 9)  });
     }
 }
+catch (...)
+{
+    std::cerr << getCurrentExceptionMessage(true) << "\n";
+    throw;
+}
 
 TEST_F(FileCacheTest, SLRUDynamicResizeCorrectEviction)
 {
@@ -1579,7 +1657,7 @@ TEST_F(FileCacheTest, SLRUFreeSpaceKeepingProtectedOnly)
     const size_t max_size = 30;
     const size_t max_elements = 6;
     const double slru_size_ratio = 0.5;
-    SLRUFileCachePriority priority(max_size, max_elements, slru_size_ratio, "test_104307");
+    SLRUFileCachePriority priority(IFileCachePriority::QueueType::Main, max_size, max_elements, slru_size_ratio, "test_104307");
 
     const std::string cache_path = caches_dir / "test_slru_104307";
     fs::create_directories(cache_path);
@@ -1715,7 +1793,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     size_t max_size = 50;
     size_t max_elements = 3;
 
-    LRUFileCachePriority priority(max_size, max_elements);
+    LRUFileCachePriority priority(IFileCachePriority::QueueType::Main, max_size, max_elements);
 
     std::string cache_path = std::filesystem::path(caches_dir) / "test_eviction_pos";
     CacheMetadata cache_metadata(cache_path, 0, 0, false);
@@ -1763,7 +1841,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
 
     FileCacheReserveStat stat;
     IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
-    auto evicted = std::make_unique<EvictionCandidates>();
+    auto evicted = std::make_unique<EvictionCandidates>(&FileCache::onSegmentEvicted);
 
     auto eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, origin, state_guard.lock());
     priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, origin, cache_guard, state_guard);
@@ -1778,7 +1856,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
     ASSERT_EQ(priority.getEvictionPosCount(), 3); /// queue.end()
 
-    evicted = std::make_unique<EvictionCandidates>();
+    evicted = std::make_unique<EvictionCandidates>(&FileCache::onSegmentEvicted);
     stat = {};
     eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, origin, state_guard.lock());
     priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, origin, cache_guard, state_guard);
@@ -1813,7 +1891,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
     ASSERT_EQ(priority.getEvictionPosCount(), 0);
 
-    evicted = std::make_unique<EvictionCandidates>();
+    evicted = std::make_unique<EvictionCandidates>(&FileCache::onSegmentEvicted);
     stat = {};
     eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, origin, state_guard.lock());
     priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, origin, cache_guard, state_guard);
@@ -1835,8 +1913,8 @@ TEST_F(FileCacheTest, MoveEvictionPos)
 
     /// Two independent LRU queues, modelling SLRU's protected/probationary sub-queues
     /// between which `LRUFileCachePriority::move` transfers entries.
-    LRUFileCachePriority src(/* max_size */100, /* max_elements */10, "src");
-    LRUFileCachePriority dst(/* max_size */100, /* max_elements */10, "dst");
+    LRUFileCachePriority src(IFileCachePriority::QueueType::Main, /* max_size */100, /* max_elements */10, "src");
+    LRUFileCachePriority dst(IFileCachePriority::QueueType::Main, /* max_size */100, /* max_elements */10, "dst");
 
     std::string cache_path = std::filesystem::path(caches_dir) / "test_move_eviction_pos";
     CacheMetadata cache_metadata(cache_path, 0, 0, false);
@@ -2181,7 +2259,7 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
             auto infos = cache->getFileSegmentInfos(key, user.user_id);
             ASSERT_EQ(infos.size(), 2u);
             for (const auto & info : infos)
-                ASSERT_NE(info.queue_entry_type, FileCacheQueueEntryType::None);
+                ASSERT_NE(info.queue_entry_type, IFileCachePriority::QueueEntryType::None);
         }
     }
 
@@ -2200,15 +2278,17 @@ namespace
 {
     /// Creators for SplitFileCachePriority inner queues used by the split-cache tests below.
     std::unique_ptr<IFileCachePriority> makeLRUInner(
-        size_t max_size, size_t max_elements, double /* size_ratio */, size_t /* overcommit_step */, String desc)
+        IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements,
+        double /* size_ratio */, size_t /* overcommit_step */, String desc)
     {
-        return std::make_unique<LRUFileCachePriority>(max_size, max_elements, desc);
+        return std::make_unique<LRUFileCachePriority>(queue_type, max_size, max_elements, desc);
     }
 
     std::unique_ptr<IFileCachePriority> makeSLRUInner(
-        size_t max_size, size_t max_elements, double size_ratio, size_t /* overcommit_step */, String desc)
+        IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements,
+        double size_ratio, size_t /* overcommit_step */, String desc)
     {
-        return std::make_unique<SLRUFileCachePriority>(max_size, max_elements, size_ratio, desc);
+        return std::make_unique<SLRUFileCachePriority>(queue_type, max_size, max_elements, size_ratio, desc);
     }
 }
 
@@ -2221,7 +2301,7 @@ TEST_F(FileCacheTest, SLRUModifySizeLimitsRollbackOnThrow)
     const size_t max_size = 30;
     const size_t max_elements = 6;
     const double slru_size_ratio = 0.5; /// protected 15/3, probationary 15/3
-    SLRUFileCachePriority priority(max_size, max_elements, slru_size_ratio, "test_slru_modify_rollback");
+    SLRUFileCachePriority priority(IFileCachePriority::QueueType::Main, max_size, max_elements, slru_size_ratio, "test_slru_modify_rollback");
 
     const std::string cache_path = caches_dir / "test_slru_modify_rollback";
     fs::create_directories(cache_path);
@@ -2272,7 +2352,8 @@ TEST_F(FileCacheTest, SplitTotalSpaceCleanupReclaimsSystemQueue)
     const size_t max_size = 100;
     const size_t max_elements = 100;
     SplitFileCachePriority priority(
-        makeLRUInner, max_size, max_elements, /* slru_size_ratio */ 0.5, /* split_cache_ratio */ 0.5,
+        IFileCachePriority::QueueType::Main, makeLRUInner, max_size, max_elements,
+        /* slru_size_ratio */ 0.5, /* split_cache_ratio */ 0.5,
         "test_split_total_cleanup");
 
     const std::string cache_path = caches_dir / "test_split_total_cleanup";
@@ -2316,7 +2397,8 @@ TEST_F(FileCacheTest, SplitResizeCollectsSystemCandidates)
     const size_t max_size = 100;
     const size_t max_elements = 100;
     SplitFileCachePriority priority(
-        makeLRUInner, max_size, max_elements, /* slru_size_ratio */ 0.5, /* split_cache_ratio */ 0.5,
+        IFileCachePriority::QueueType::Main, makeLRUInner, max_size, max_elements,
+        /* slru_size_ratio */ 0.5, /* split_cache_ratio */ 0.5,
         "test_split_resize");
 
     const std::string cache_path = caches_dir / "test_split_resize";
@@ -2369,7 +2451,7 @@ TEST_F(FileCacheTest, SplitResizeCollectsSystemCandidates)
 
     FileCacheReserveStat stat;
     IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
-    EvictionCandidates evicted;
+    EvictionCandidates evicted(IFileCachePriority::OnEvictCallback{});
     priority.collectCandidatesForEviction(
         *eviction_info, stat, evicted, invalidated_entries, /* reservee */ nullptr,
         /* continue_from_last_eviction_pos */ false, /* max_candidates_size */ 0,
@@ -2390,7 +2472,7 @@ TEST_F(FileCacheTest, SLRUDowngradeRollbackResetsEvictingOnSkippedFinalization)
     const size_t max_size = 30;
     const size_t max_elements = 6;
     const double slru_size_ratio = 0.5; /// protected 15/3, probationary 15/3
-    SLRUFileCachePriority priority(max_size, max_elements, slru_size_ratio, "test_slru_downgrade_rollback");
+    SLRUFileCachePriority priority(IFileCachePriority::QueueType::Main, max_size, max_elements, slru_size_ratio, "test_slru_downgrade_rollback");
 
     const std::string cache_path = caches_dir / "test_slru_downgrade_rollback";
     fs::create_directories(cache_path);
@@ -2445,7 +2527,7 @@ TEST_F(FileCacheTest, SLRUDowngradeRollbackResetsEvictingOnSkippedFinalization)
     FileCacheReserveStat stat;
     IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
     {
-        auto evicted = std::make_unique<EvictionCandidates>();
+        auto evicted = std::make_unique<EvictionCandidates>(IFileCachePriority::OnEvictCallback{});
         priority.collectCandidatesForEviction(
             *eviction_info, stat, *evicted, invalidated_entries, reservee,
             /* continue_from_last_eviction_pos */ false, /* max_candidates_size */ 0,
@@ -2479,7 +2561,8 @@ TEST_F(FileCacheTest, SplitSLRUTotalSpaceCleanupSystemOnly)
     const size_t max_size = 100;
     const size_t max_elements = 100;
     SplitFileCachePriority priority(
-        makeSLRUInner, max_size, max_elements, /* slru_size_ratio */ 0.5, /* split_cache_ratio */ 0.5,
+        IFileCachePriority::QueueType::Main, makeSLRUInner, max_size, max_elements,
+        /* slru_size_ratio */ 0.5, /* split_cache_ratio */ 0.5,
         "test_split_slru_total_cleanup");
 
     const std::string cache_path = caches_dir / "test_split_slru_total_cleanup";
@@ -2528,7 +2611,7 @@ TEST_F(FileCacheTest, SplitSLRUTotalSpaceCleanupSystemOnly)
 
     FileCacheReserveStat stat;
     IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
-    EvictionCandidates evicted;
+    EvictionCandidates evicted(IFileCachePriority::OnEvictCallback{});
     /// Must not throw on the empty Data SLRU's absent queue ids.
     ASSERT_NO_THROW(priority.collectCandidatesForEviction(
         *eviction_info, stat, evicted, invalidated_entries, /* reservee */ nullptr,
@@ -2536,4 +2619,97 @@ TEST_F(FileCacheTest, SplitSLRUTotalSpaceCleanupSystemOnly)
         /* is_total_space_cleanup */ true, FileCache::getInternalOrigin(), cache_guard, state_guard));
 
     ASSERT_GT(evicted.size(), 0u);
+}
+
+TEST_F(FileCacheTest, PriorityQueueElementsMetrics)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    const auto cache_path = caches_dir / "test_queue_metrics";
+    fs::create_directories(cache_path);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    const auto key = DB::FileCacheKey::fromPath("metrics_key");
+    const auto & origin = FileCache::getCommonOrigin();
+    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+
+    CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
+
+    const auto elements_before = CurrentMetrics::get(CurrentMetrics::FilesystemCachePriorityQueueElements);
+    const auto invalidated_before = CurrentMetrics::get(CurrentMetrics::FilesystemCacheInvalidatedElements);
+
+    /// Only the Main queue contributes to the global gauges; the Query queue must not.
+    auto run_cycle = [&](IFileCachePriority::QueueType queue_type)
+    {
+        const int delta = queue_type == IFileCachePriority::QueueType::Main ? 1 : 0;
+        LRUFileCachePriority priority(queue_type, 100, 10);
+
+        IFileCachePriority::IteratorPtr it;
+        {
+            auto write_lock = cache_guard.writeLock();
+            auto state_lock = state_guard.lock();
+            it = priority.add(key_metadata, 0, 10, write_lock, &state_lock);
+        }
+        ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::FilesystemCachePriorityQueueElements), elements_before + delta);
+
+        it->invalidate();
+        ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::FilesystemCacheInvalidatedElements), invalidated_before + delta);
+
+        it->remove(cache_guard.writeLock());
+        ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::FilesystemCachePriorityQueueElements), elements_before);
+        ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::FilesystemCacheInvalidatedElements), invalidated_before);
+    };
+
+    run_cycle(IFileCachePriority::QueueType::Main);
+    run_cycle(IFileCachePriority::QueueType::Query);
+}
+
+TEST_F(FileCacheTest, SLRUDowngradeMetric)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    /// protected = 10 bytes / 1 element, probationary = 20 bytes / 2 elements.
+    SLRUFileCachePriority priority(IFileCachePriority::QueueType::Main, 30, 3, 1.0 / 3, "test_downgrade");
+
+    const auto cache_path = caches_dir / "test_slru_downgrade";
+    fs::create_directories(cache_path);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    const auto key = DB::FileCacheKey::fromPath("downgrade_key");
+    const auto & origin = FileCache::getCommonOrigin();
+    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+
+    CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
+
+    auto add_segment = [&](size_t offset, size_t size, IFileCachePriority::QueueEntryType qtype)
+    {
+        IFileCachePriority::IteratorPtr it;
+        {
+            auto write_lock = cache_guard.writeLock();
+            auto state_lock = state_guard.lock();
+            it = priority.addForRestore(key_metadata, offset, size, qtype, write_lock, &state_lock);
+        }
+        const auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, origin);
+        fs::create_directories(fs::path(path).parent_path());
+        WriteBufferFromFile wb(path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+        DB::writeString(std::string(size, '0'), wb);
+        wb.finalize();
+        auto file_segment = std::make_shared<FileSegment>(
+            key, offset, size, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings{}, false, nullptr, key_metadata, it);
+        LockedKey(key_metadata).emplace(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment)));
+        return it;
+    };
+
+    add_segment(0, 10, IFileCachePriority::QueueEntryType::SLRU_Protected);   /// fills protected
+    auto prob_it = add_segment(10, 10, IFileCachePriority::QueueEntryType::SLRU_Probationary);
+
+    auto & events = CurrentThread::getProfileEvents();
+    const auto downgraded_before = events[ProfileEvents::FilesystemCacheDowngradedFileSegments].load();
+    const auto evicted_before = events[ProfileEvents::FilesystemCacheEvictedFileSegments].load();
+
+    /// Protected is full, so promoting the probationary entry downgrades (moves) the protected one, not evicts it.
+    ASSERT_TRUE(priority.tryIncreasePriority(*prob_it, /* is_space_reservation_complete */true, cache_guard, state_guard));
+
+    ASSERT_EQ(events[ProfileEvents::FilesystemCacheDowngradedFileSegments].load(), downgraded_before + 1);
+    ASSERT_EQ(events[ProfileEvents::FilesystemCacheEvictedFileSegments].load(), evicted_before);
 }

@@ -370,6 +370,7 @@ PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column)
         .remove_filter_column = remove_filter_column,
         .need_filter = true,
         .perform_alter_conversions = true,
+        .columns_overwritten_by_chain = {},
         .mutation_version = std::nullopt,
     };
 

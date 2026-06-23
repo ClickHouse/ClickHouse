@@ -259,7 +259,7 @@ bool tryBuildPrewhereSteps(
     /// `value > 0` step must filter rows before evaluating the potentially-throwing conversion).
     ///
     /// For the WHERE-to-PREWHERE path this is not a problem: `MergeTreeWhereOptimizer` already groups
-    /// conditions by `table_storage_columns`, so subcolumns of the same column arrive here adjacent.
+    /// conditions by their physical storage columns, so subcolumns of the same column arrive here adjacent.
     std::vector<std::vector<const ActionsDAG::Node *>> condition_groups;
     for (const auto & node : condition_nodes)
     {
@@ -378,6 +378,7 @@ bool tryBuildPrewhereSteps(
                     step.original_node && !all_outputs.contains(step.original_node) && node_to_step[step.original_node] <= step_index,
                 .need_filter = force_short_circuit_execution,
                 .perform_alter_conversions = true,
+                .columns_overwritten_by_chain = {},
                 .mutation_version = std::nullopt,
             };
 

@@ -672,7 +672,7 @@ ORDER BY f.name)sql";
 
     String buf;
     static const std::unordered_set<String> nulls_clause_funcs = {"any", "anyLast", "first_value", "last_value"};
-    static const std::unordered_set<String> common_func_names = {"arrayJoin", "if", "materialize", "toNullable", "toLowCardinality"};
+    static const std::unordered_set<String> common_func_names = {"if", "materialize", "toNullable", "toLowCardinality"};
     static const std::unordered_set<String> two_arg_aggrs
         = {"analysisOfVariance",
            "approx_top_count",
@@ -814,7 +814,6 @@ ORDER BY f.name)sql";
             else
             {
                 CHFunction func(name, lambda_kind, min_args, max_args);
-                /// arrayJoin may not be deterministic
                 if (common_func_names.contains(name))
                     common_funcs.push_back(func);
                 if (is_deterministic)
@@ -925,12 +924,15 @@ void FuzzConfig::loadServerConfigurations()
     loadServerSettings<String>(this->caches, "caches", "SHOW FILESYSTEM CACHES");
     /// keeper_leader_sets_invalid_digest, libcxx_hardening_out_of_bounds_assertion - The server aborts legitimately, can't be used
     /// terminate_with_exception, terminate_with_std_exception - Terminates the server
+    /// tcp_handler_fail_connection_setup - Fails every new TCP connection setup, so once enabled the fuzzer can neither
+    ///     reconnect nor disable it again over its TCP connection (it would deadlock; the test controls it over HTTP)
     loadServerSettings<String>(
         this->failpoints,
         "failpoints",
         "SELECT \"name\" FROM \"system\".\"fail_points\""
         " WHERE \"name\" NOT IN ('keeper_leader_sets_invalid_digest', 'terminate_with_exception', "
-        "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion')");
+        "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion', "
+        "'tcp_handler_fail_connection_setup')");
     loadServerSettings<String>(this->tokenizers, "tokenizers", R"(SELECT "name" FROM "system"."tokenizers")");
     loadFunctions();
 }
