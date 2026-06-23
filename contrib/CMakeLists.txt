@@ -143,7 +143,6 @@ add_contrib (aws-cmake
     aws-cmake
 )
 
-add_contrib (base64-cmake base64)
 add_contrib (simdjson-cmake simdjson)
 add_contrib (simdutf-cmake simdutf)
 add_contrib (rapidjson-cmake rapidjson)

@@ -1,7 +1,7 @@
 #pragma once
 #include "config.h"
 
-#if USE_BASE64
+#if USE_SIMDUTF
 #    include <base/MemorySanitizer.h>
 #    include <Columns/ColumnFixedString.h>
 #    include <Columns/ColumnString.h>
@@ -71,7 +71,11 @@ struct Base64DecodeTraits
     static std::optional<size_t> perform(std::string_view src, UInt8 * dst, const std::function<void()> & = {})
     {
         constexpr auto options = (variant == Base64Variant::URL) ? simdutf::base64_url : simdutf::base64_default;
-        const simdutf::result res = simdutf::base64_to_binary(src.data(), src.size(), reinterpret_cast<char *>(dst), options);
+        /// The standard variant requires a complete, padded final chunk: reject truncated input such as the
+        /// 3-character "foo". The URL variant is defined to omit padding, so partial final chunks are valid.
+        constexpr auto last_chunk = (variant == Base64Variant::URL) ? simdutf::loose : simdutf::strict;
+        const simdutf::result res
+            = simdutf::base64_to_binary(src.data(), src.size(), reinterpret_cast<char *>(dst), options, last_chunk);
         if (res.error != simdutf::SUCCESS) [[unlikely]]
             return std::nullopt;
 
