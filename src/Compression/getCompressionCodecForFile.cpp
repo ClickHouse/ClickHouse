@@ -43,24 +43,26 @@ getCompressionCodecForFile(ReadBuffer & read_buffer, UInt32 & size_compressed, U
     {
         compressed_buffer.resize(1);
         read_buffer.readStrict(compressed_buffer.data(), 1);
-        compressed_buffer.resize(1 + compressed_buffer[0]);
-        read_buffer.readStrict(compressed_buffer.data() + 1, compressed_buffer[0]);
+        const size_t codecs_count = static_cast<UInt8>(compressed_buffer[0]);
+        const size_t bytes_needed = static_cast<UInt32>(header_size) + 1 + codecs_count;
+
+        if (size_compressed < bytes_needed)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Compressed block header reports compressed size {}, too small for its declared {}-codec chain (needs {} bytes)",
+                size_compressed,
+                codecs_count,
+                bytes_needed);
+
+        compressed_buffer.resize(1 + codecs_count);
+        read_buffer.readStrict(compressed_buffer.data() + 1, codecs_count);
         auto codecs_bytes = CompressionCodecMultiple::getCodecsBytesFromData(compressed_buffer.data());
         Codecs codecs;
         for (auto byte : codecs_bytes)
             codecs.push_back(CompressionCodecFactory::instance().get(byte));
 
-        const size_t bytes_consumed = read_buffer.count() - starting_bytes;
-
-        if (size_compressed < bytes_consumed)
-            throw Exception(
-                ErrorCodes::CORRUPTED_DATA,
-                "Compressed block header reports compressed size {} smaller than the {} bytes already consumed for the chain",
-                size_compressed,
-                bytes_consumed);
-
         if (skip_to_next_block)
-            read_buffer.ignore(size_compressed - bytes_consumed);
+            read_buffer.ignore(size_compressed - bytes_needed);
 
         return std::make_shared<CompressionCodecMultiple>(codecs);
     }
