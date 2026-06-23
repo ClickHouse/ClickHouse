@@ -50,12 +50,10 @@ public:
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
+    /// Every input is classifiable, so the found rate is one once any query has run.
     double getFoundRate() const override
     {
-        size_t queries = query_count.load(std::memory_order_relaxed);
-        if (queries == 0)
-            return 0;
-        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / static_cast<double>(queries);
+        return query_count.load(std::memory_order_relaxed) == 0 ? 0.0 : 1.0;
     }
 
     double getHitRate() const override { return 1.0; }
@@ -126,7 +124,6 @@ private:
     size_t element_count = 0;
 
     mutable std::atomic<size_t> query_count{0};
-    mutable std::atomic<size_t> found_count{0};
 
     LoggerPtr log;
 };

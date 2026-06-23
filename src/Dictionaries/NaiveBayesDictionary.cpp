@@ -253,7 +253,6 @@ ColumnPtr NaiveBayesDictionary::getColumn(
     });
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
-    found_count.fetch_add(rows, std::memory_order_relaxed);
 
     return result;
 }
@@ -269,7 +268,6 @@ ColumnUInt8::Ptr NaiveBayesDictionary::hasKeys(
     result->getData().assign(rows, static_cast<UInt8>(1));
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
-    found_count.fetch_add(rows, std::memory_order_relaxed);
 
     return result;
 }
