@@ -167,6 +167,26 @@ PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_bad_src')) LAYOUT(NAIVE_BAYES(clas
 SELECT dictGet('nb_bad', 'class_id', 'good'); -- { serverError BAD_ARGUMENTS }
 DROP DICTIONARY nb_bad;
 
+-- ---------- codepoint mode rejects invalid UTF-8 ----------
+
+-- The bytes C2 41 are not valid UTF-8 (C2 must be followed by a continuation byte), so a codepoint model
+-- rejects them.
+DROP TABLE IF EXISTS nb_utf8_src;
+CREATE TABLE nb_utf8_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO nb_utf8_src VALUES (0, unhex('C241'), 100), (1, 'AB', 1);
+CREATE DICTIONARY nb_bad (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_utf8_src')) LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'codepoint')) LIFETIME(0);
+SELECT dictGet('nb_bad', 'class_id', 'AB'); -- { serverError BAD_ARGUMENTS }
+DROP DICTIONARY nb_bad;
+
+-- byte mode treats every byte literally, so the same source loads and classifies.
+SELECT 'byte mode accepts the same bytes';
+CREATE DICTIONARY nb_byte_ok (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_utf8_src')) LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'byte')) LIFETIME(0);
+SELECT naiveBayesClassifier('nb_byte_ok', unhex('C241')) = 0;
+DROP DICTIONARY nb_byte_ok;
+DROP TABLE nb_utf8_src;
+
 -- ---------- Valid models (baseline + alternative unsigned types) ----------
 
 SELECT 'valid UInt32/UInt64';
