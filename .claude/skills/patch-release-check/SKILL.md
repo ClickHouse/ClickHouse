@@ -188,26 +188,51 @@ whose `origin` is `ClickHouse/ClickHouse`:
 BR=<release-branch>   # e.g. 25.8
 git fetch -q origin "$BR" --tags                         # need branch + tags locally
 TAG=$(git tag --list "v$BR.*" --sort=-v:refname | head -1)
-CANDIDATE=""
-# first-parent since the tag, drop the oldest (version-bump) commit, newest 8 only.
-for sha in $(git rev-list --first-parent "$TAG..FETCH_HEAD" | sed '$d' | head -8); do
-  # AutoReleaseInfo gate 1: every Actions check-run must be completed. The combined
-  # /commits/<sha>/status rollup does NOT reflect check-runs, so query them directly.
-  pending=$(env -u GH_CONFIG_DIR gh api "repos/ClickHouse/ClickHouse/commits/$sha/check-runs?per_page=100" \
-    --jq '[.check_runs[] | select(.status != "completed")] | length')
-  # AutoReleaseInfo gate 2: no non-success legacy commit status context.
-  failed=$(env -u GH_CONFIG_DIR gh api "repos/ClickHouse/ClickHouse/commits/$sha/statuses" \
-    --jq '[.[] | select(.state != "success")] | length')
-  echo "${sha:0:12} pending-checks=$pending failed-statuses=$failed"
-  # fail-closed: a non-numeric value (failed/garbled read) counts as NOT green.
-  [ "${pending:-x}" = 0 ] && [ "${failed:-x}" = 0 ] && { CANDIDATE=$sha; break; }
-done
+# Candidate SHAs: first-parent since the tag, drop the oldest (version-bump) commit,
+# newest 8 — exactly AutoReleaseInfo's set.
+CANDS=$(git rev-list --first-parent "$TAG..FETCH_HEAD" | sed '$d' | head -8)
+# Pick the newest CI-green SHA, mirroring ci_utils.GH exactly:
+#   check_wf_completed   — /check-runs must be NON-EMPTY and every run "completed"
+#   get_failed_statuses  — paginate /statuses, keep the newest state PER CONTEXT,
+#                          require none non-success
+# (Re-reading the combined /status rollup is insufficient — it is blind to check-runs
+# and to status history, so it both over- and under-reports.) Chosen SHA -> stdout.
+CANDIDATE=$(SHAS="$CANDS" python3 - <<'PY'
+import os, sys, json, subprocess
+REPO = "ClickHouse/ClickHouse"
+def gh(args):
+    env = dict(os.environ); env.pop("GH_CONFIG_DIR", None)   # avoid a poisoned config dir
+    r = subprocess.run(["gh", "api"] + args, capture_output=True, text=True, env=env)
+    if r.returncode != 0:
+        raise SystemExit(f"gh api failed ({' '.join(args)}): {r.stderr.strip()}")
+    return r.stdout
+def wf_completed(sha):                       # ci_utils.GH.check_wf_completed
+    runs = (json.loads(gh([f"repos/{REPO}/commits/{sha}/check-runs?per_page=100"]))
+            .get("check_runs") or [])
+    return bool(runs) and all(c["status"] == "completed" for c in runs)
+def failed_statuses(sha):                    # ci_utils.GH.get_failed_statuses
+    out = gh(["--paginate", "--jq", ".[]",
+              f"repos/{REPO}/commits/{sha}/statuses?per_page=100"])
+    latest = {}
+    for line in out.splitlines():
+        if not line.strip():
+            continue
+        st = json.loads(line); c = st["context"]
+        if c not in latest or latest[c]["updated_at"] < st["updated_at"]:
+            latest[c] = st
+    return sorted(c for c, d in latest.items() if d["state"] != "success")
+for sha in os.environ["SHAS"].split():
+    done = wf_completed(sha)
+    fails = failed_statuses(sha) if done else None
+    print(f"  {sha[:12]} completed={done} "
+          f"failed_statuses={fails if fails is not None else 'n/a (CI not completed)'}",
+          file=sys.stderr)
+    if done and not fails:
+        print(sha); break
+PY
+)
 echo "release candidate: ${CANDIDATE:?no CI-green commit in the first 8 first-parent commits — investigate; do not release branch head}"
 ```
-
-This applies the same two gates `AutoReleaseInfo` uses (`GH.check_wf_completed` over
-`/check-runs`, then `GH.get_failed_statuses` over `/statuses`) — re-reading the combined
-`/status` rollup is insufficient, as it is blind to check-run completion.
 
 After explicit confirmation, dispatch with that SHA (the official runbook also accepts
 a commit SHA in the `Git reference` field, e.g. when a prior run failed with a missing
