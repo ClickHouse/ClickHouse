@@ -20,9 +20,6 @@ extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
 
-/// Batched dot-product kernels: each processes every row in a single call so the load stream over the
-/// input column(s) stays continuous. A per-row NO_INLINE call boundary stalls the hardware prefetcher
-/// (which regressed Float64 array distances on Zen5); one call over the whole column keeps it streaming.
 MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(template <typename ResultType, typename ArgumentType> static void NO_SANITIZE_UNDEFINED NO_INLINE),
     dotProductBatchImpl,
