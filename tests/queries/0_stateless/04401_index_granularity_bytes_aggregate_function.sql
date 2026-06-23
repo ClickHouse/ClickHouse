@@ -25,6 +25,28 @@ FROM (SELECT g, uniqExactMerge(s) AS u FROM amt_granule GROUP BY g);
 
 DROP TABLE IF EXISTS amt_granule;
 
+-- An AggregateFunction leaf nested inside a Tuple must be sized the same way: the granularity
+-- accountant recurses through wrappers (Tuple/Array/Map/...) and corrects every nested leaf.
+DROP TABLE IF EXISTS amt_nested;
+
+CREATE TABLE amt_nested (g UInt64, s Tuple(AggregateFunction(uniqExact, UInt64)))
+ENGINE = MergeTree ORDER BY g
+SETTINGS index_granularity = 8192, index_granularity_bytes = 65536, min_bytes_for_wide_part = 0;
+
+INSERT INTO amt_nested
+SELECT g, tuple(uniqExactState(v))
+FROM (SELECT number % 2000 AS g, number AS v FROM numbers(1000000)) GROUP BY g;
+
+SELECT
+    max(data_uncompressed_bytes / marks) <= 65536 AS bytes_per_granule_within_cap,
+    any(marks) > 10 AS split_into_many_granules
+FROM system.parts WHERE table = 'amt_nested' AND active AND database = currentDatabase();
+
+SELECT min(u) = 500 AND max(u) = 500 AS all_groups_correct
+FROM (SELECT g, uniqExactMerge(s.1) AS u FROM amt_nested GROUP BY g);
+
+DROP TABLE IF EXISTS amt_nested;
+
 -- Control: an ordinary String column of comparable per-row size already honors the cap.
 DROP TABLE IF EXISTS str_granule;
 

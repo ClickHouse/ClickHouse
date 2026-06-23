@@ -78,18 +78,37 @@ void MergeTreeIndexGranularity::addRowsToLastMark(size_t rows_count)
     }
 }
 
+/// Granularity size of one (possibly composite) column. byteSize() already sums nested children,
+/// but under-reports ColumnAggregateFunction leaves (pointer-only), so for every such leaf at any
+/// depth we add the serializedSizeEstimate()-vs-byteSize() delta. forEachSubcolumnRecursively does
+/// not visit the column itself, hence the explicit top-level call. Saturating: guard underflow.
+static size_t getColumnSizeForGranularity(const IColumn & column)
+{
+    size_t res = column.byteSize();
+
+    auto add_agg_correction = [&](const IColumn & sub)
+    {
+        if (const auto * agg = typeid_cast<const ColumnAggregateFunction *>(&sub))
+        {
+            const size_t serialized = agg->serializedSizeEstimate();
+            const size_t counted = agg->byteSize();
+            if (serialized > counted)
+                res += serialized - counted;
+        }
+    };
+
+    add_agg_correction(column);
+    column.forEachSubcolumnRecursively(add_agg_correction);
+
+    return res;
+}
+
 size_t getBlockSizeForGranularity(const Block & block)
 {
     size_t res = 0;
     for (const auto & elem : block)
-    {
-        if (!elem.column)
-            continue;
-        if (const auto * agg = typeid_cast<const ColumnAggregateFunction *>(elem.column.get()))
-            res += agg->serializedSizeEstimate();
-        else
-            res += elem.column->byteSize();
-    }
+        if (elem.column)
+            res += getColumnSizeForGranularity(*elem.column);
     return res;
 }
 
