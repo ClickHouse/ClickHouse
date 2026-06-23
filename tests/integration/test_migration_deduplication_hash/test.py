@@ -428,3 +428,63 @@ def test_new_unified_async_enable_follows_sync_window(cluster):
     ):
         two_identical_async_inserts("t_async_enable_unified_zero")
         assert node.query("SELECT count() FROM t_async_enable_unified_zero").strip() == "2"
+
+
+def test_alias_async_insert_uses_async_window_compatible(cluster):
+    # Functional test 04204 (Part 2) checks that an async insert routed through an Alias engine uses
+    # the ASYNC deduplication window like a direct insert. It distinguishes the async path from the
+    # sync path by disabling the sync window (replicated_deduplication_window = 0) and enabling only
+    # the async one (replicated_deduplication_window_for_async_inserts = 10000) - a distinction that
+    # exists only while the legacy per-source async window is honored. Under the default new_unified_hash
+    # both paths share the sync window, so 04204 can no longer tell whether the Alias sink kept
+    # async_insert = true. This pins the scenario to compatible_double_hashes (node_compatible), where
+    # the async window is still used and the regression - the Alias sink built as a sync insert - is
+    # observable again.
+    node = cluster.instances["node_compatible"]
+
+    create_tables = \
+"""
+    DROP TABLE IF EXISTS alias_async_direct SYNC;
+    DROP TABLE IF EXISTS alias_async_target SYNC;
+    DROP TABLE IF EXISTS alias_async_alias SYNC;
+
+    CREATE TABLE alias_async_direct (a UInt64)
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/alias_async_direct', '{replica}')
+    ORDER BY a
+    SETTINGS replicated_deduplication_window = 0, replicated_deduplication_window_for_async_inserts = 10000;
+
+    CREATE TABLE alias_async_target (a UInt64)
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/alias_async_target', '{replica}')
+    ORDER BY a
+    SETTINGS replicated_deduplication_window = 0, replicated_deduplication_window_for_async_inserts = 10000;
+
+    CREATE TABLE alias_async_alias ENGINE = Alias(currentDatabase(), 'alias_async_target')
+"""
+
+    drop_tables = \
+"""
+    DROP TABLE IF EXISTS alias_async_alias SYNC;
+    DROP TABLE IF EXISTS alias_async_target SYNC;
+    DROP TABLE IF EXISTS alias_async_direct SYNC
+"""
+
+    def two_identical_async_batches(table):
+        for _ in range(2):
+            node.query(
+                f"INSERT INTO {table} "
+                f"SETTINGS async_insert = 1, wait_for_async_insert = 1, deduplicate_insert = 'enable' VALUES (1), (2), (3)"
+            )
+
+    with with_tables(
+        nodes=[node],
+        create_query=create_tables,
+        drop_query=drop_tables,
+    ):
+        two_identical_async_batches("alias_async_direct")
+        two_identical_async_batches("alias_async_alias")
+
+        # The async window deduplicates the repeated batch for a direct insert (3 rows). The Alias must
+        # behave identically; the unfixed Alias sink ran with async_insert = false, took the sync window
+        # (= 0, no dedup) and kept both batches (6 rows).
+        assert node.query("SELECT count() FROM alias_async_direct").strip() == "3"
+        assert node.query("SELECT count() FROM alias_async_alias").strip() == "3"
