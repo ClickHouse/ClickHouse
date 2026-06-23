@@ -79,6 +79,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"format_avro_schema_registry_retry_initial_backoff_ms", 100, 100, "New setting controlling the initial backoff (in milliseconds) before retrying a failed Confluent Schema Registry request. The backoff doubles on each retry, capped at 10 seconds. Has no effect when `format_avro_schema_registry_max_retries = 0` (the pre-26.6 behavior restored by `compatibility = '26.5'`)."},
             {"enable_join_transitive_predicates", false, true, "Turn on enable_join_transitive_predicates by default"},
             {"allow_experimental_delta_lake_writes", true, true, "Turn on allow_experimental_delta_lake_writes by default"},
+            {"allow_delta_lake_writes", true, true, "New non-experimental alias for allow_experimental_delta_lake_writes"},
             {"allow_experimental_query_deduplication", false, false, "The setting is obsolete, the feature has been removed."},
             {"query_plan_min_columns_for_join_lazy_indexing", 0, 3, "Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN"},
             {"query_plan_max_limit_for_join_lazy_indexing", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"},
