@@ -120,35 +120,46 @@ echo
 # 2. Per-version staleness
 # ============================================================================
 echo "== 2. Per-version staleness (latest patch, age, unreleased commits) =="
-RELEASES_JSON="$(GH api "repos/$REPO/releases?per_page=100" --jq '[.[] | {tag: .tag_name, published: .published_at}]' 2>/dev/null)"
-# Fail-close: a releases-fetch failure must NOT silently become a healthy verdict.
-if ! printf '%s' "$RELEASES_JSON" | python3 -c 'import sys,json; d=json.load(sys.stdin); sys.exit(0 if isinstance(d,list) and d else 1)' 2>/dev/null; then
-    echo "ERROR: could not fetch releases for $REPO (API failure / empty) — aborting (fail-close)." >&2
-    exit 3
-fi
 printf "   %-7s %-26s %6s  %-10s %s\n" "branch" "latest patch" "age" "rel/tot" "verdict"
 printf "   %-7s %-26s %6s  %-10s %s\n" "------" "------------" "---" "-------" "-------"
-MISSING_LIST=""
+MISSING_LIST=""; NOTAG_LIST=""
 for v in $VERSIONS; do
-    # newest tag for this major (sorted by published_at), via python over the releases list
-    read -r TAG PUBLISHED AGE < <(printf '%s' "$RELEASES_JSON" | NOW="$NOW_EPOCH" python3 -c '
-import sys, os, json, datetime
-v = sys.argv[1]
-rel = json.load(sys.stdin)
-cands = [r for r in rel if r["tag"].startswith("v" + v + ".")]
-if not cands:
-    print("none - 0"); sys.exit()
-cands.sort(key=lambda r: r["published"] or "", reverse=True)
-top = cands[0]
-pub = datetime.datetime.strptime(top["published"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
-age = (int(os.environ["NOW"]) - int(pub.timestamp())) // 86400
-print(top["tag"], top["published"][:10], age)
-' "$v")
-
-    if [[ "$TAG" == "none" ]]; then
-        printf "   %-7s %-26s %6s  %-10s %s\n" "$v" "(no release found)" "-" "-" "⚠️  no tag"
+    # Resolve the newest tag for this major from git/matching-refs — this is the
+    # COMPLETE tag list for the branch, not a single recent-releases page, so a
+    # quiet/older supported LTS is never falsely seen as having no release. Sort by
+    # numeric version tuple (lexical sort would rank v25.8.9 above v25.8.24).
+    REFS="$(GH api "repos/$REPO/git/matching-refs/tags/v${v}." 2>/dev/null)" \
+        || { echo "ERROR: failed to list tags for v$v (gh exited non-zero) — aborting (fail-close)." >&2; exit 3; }
+    need_json "$REFS" "tags for v$v" || exit 3
+    TAG="$(printf '%s' "$REFS" | python3 -c '
+import sys, json, re
+refs = [r["ref"].split("refs/tags/")[-1] for r in json.load(sys.stdin)]
+def key(t):
+    m = re.match(r"v(\d+)\.(\d+)\.(\d+)\.(\d+)", t)
+    return tuple(int(x) for x in m.groups()) if m else (-1,)
+refs = [t for t in refs if re.match(r"v\d+\.\d+\.\d+\.\d+", t)]
+print(sorted(refs, key=key)[-1] if refs else "")
+')"
+    # Fail-closed: a supported version with NO release tag must make the final
+    # verdict non-green — never silently pass as healthy.
+    if [[ -z "$TAG" ]]; then
+        NOTAG_LIST="$NOTAG_LIST $v"
+        printf "   %-7s %-26s %6s  %-10s %s\n" "$v" "(no release tag)" "-" "-" "⚠️  NO TAG — investigate"
         continue
     fi
+    # Age from the tag's GitHub release. If the tag has no published release (or the
+    # date can't be read), treat it as no-tag (fail-closed) rather than guessing.
+    PUBLISHED="$(GH api "repos/$REPO/releases/tags/$TAG" --jq '.published_at' 2>/dev/null)"
+    if ! [[ "$PUBLISHED" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T ]]; then
+        NOTAG_LIST="$NOTAG_LIST $v"
+        printf "   %-7s %-26s %6s  %-10s %s\n" "$v" "$TAG" "-" "-" "⚠️  tag but no published release"
+        continue
+    fi
+    AGE="$(NOW="$NOW_EPOCH" PUB="$PUBLISHED" python3 -c '
+import os, datetime
+pub = datetime.datetime.strptime(os.environ["PUB"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+print((int(os.environ["NOW"]) - int(pub.timestamp())) // 86400)
+')"
     # Release-worthy commits, matching AutoReleaseInfo's intent: it drops the
     # post-release version-bump commit before deciding if a branch has a patch
     # candidate (tests/ci/auto_release.py excludes the oldest commit in tag..branch).
@@ -184,7 +195,13 @@ print(ahead, worthy)
     printf "   %-7s %-26s %5sd  %-10s %s\n" "$v" "$TAG" "$AGE" "$WORTHY/$AHEAD" "$verdict"
 done
 echo
-if [[ -n "${MISSING_LIST// /}" ]]; then
+# A supported version with no resolvable release tag is a hard failure, not a
+# warning row: never let the run end green after printing "NO TAG".
+if [[ -n "${NOTAG_LIST// /}" ]]; then
+    echo "   VERDICT: FAILED — no release tag for:$NOTAG_LIST (cannot confirm release health)"
+    [[ -n "${MISSING_LIST// /}" ]] && echo "   also missing/overdue ->$MISSING_LIST"
+    exit 3
+elif [[ -n "${MISSING_LIST// /}" ]]; then
     echo "   VERDICT: missing/overdue ->$MISSING_LIST"
 elif [[ -n "${EXCLUDE_VERSIONS// /}" ]]; then
     echo "   VERDICT: all ANALYZED versions have a recent patch — NOT checked (excluded):$EXCLUDE_VERSIONS"

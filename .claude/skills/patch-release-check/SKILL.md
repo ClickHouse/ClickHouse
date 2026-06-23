@@ -49,9 +49,13 @@ It prints four blocks (each ending in a one-line verdict):
 
 1. **Targeted versions** — the ✔️ rows of `SECURITY.md` (`supported`), what was
    excluded by config (`excluded`), and what is actually `analyzed`.
-2. **Per-version staleness** — latest patch tag, age in days, unreleased commits
-   (`ahead_by`), and a `⚠️ MISSING` flag when a version is older than `STALE_DAYS`
-   (default 18) *and* has unreleased commits.
+2. **Per-version staleness** — latest patch tag (resolved from the complete
+   `git/matching-refs` tag list, so a quiet/older LTS is never missed), age in days,
+   release-worthy / total commits (`rel/tot`), and a `⚠️ MISSING` flag when a version
+   is older than `STALE_DAYS` (default 18) *and* has release-worthy commits. A
+   supported version with **no release tag** (or a tag with no published release) is a
+   hard failure: the block prints `NO TAG` and the final verdict is `FAILED` (exit 3),
+   never green.
 3. **Failure scan** — `AutoReleases` and `CreateRelease` runs in the window, each
    `AutoReleases` failure classified `GUARD` / `RUNNER` / `OTHER`, plus a tally.
 4. **Guard re-check** — the live result of the exact guard query, i.e. the PR(s)
