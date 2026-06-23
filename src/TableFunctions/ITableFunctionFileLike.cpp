@@ -33,7 +33,7 @@ std::optional<String> ITableFunctionFileLike::tryGetFormatFromFirstArgument()
 bool ITableFunctionFileLike::supportsReadingSubsetOfColumns(const ContextPtr & context)
 {
     return format != "auto"
-        && FormatFactory::instance().checkIfFormatSupportsReadingSubsetOfColumns(format, context);
+        && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format, context);
 }
 
 NameSet ITableFunctionFileLike::getVirtualsToCheckBeforeUsingStructureHint() const
