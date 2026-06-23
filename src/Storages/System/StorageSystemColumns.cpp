@@ -93,7 +93,7 @@ namespace
 }
 
 
-class ColumnsSource final : public ISource
+class ColumnsSource : public ISource
 {
 public:
     ColumnsSource(
@@ -155,7 +155,7 @@ protected:
                     continue;
                 }
 
-                const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+                StorageMetadataPtr metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
                 columns = metadata_snapshot->getColumns();
 
                 /// Certain information about a table - should be calculated only when the corresponding columns are queried.
