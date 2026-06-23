@@ -403,6 +403,50 @@ sequenceDiagram
 
 The connection returns to `READY` on `EndOfStream` or a handled `Exception`. Protocol violations and I/O errors terminate it.
 
+### INSERT ... RETURNING phase {#insert-returning-phase}
+
+`INSERT ... RETURNING` extends the [INSERT phase](#insert-phase) with a full query-result stream after the row upload. Once the client sends the end-of-input terminator (the empty Data block), the server executes the `RETURNING` subquery and streams its output exactly as the [Query phase](#query-phase) does: a header block, zero or more result blocks, optional `Totals`/`Extremes`, and finally `EndOfStream` or `Exception`.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant S as Server
+
+    C->>S: Query packet (INSERT … RETURNING body)
+    C->>S: External-table Data packets (0 or more)
+    opt metadata before schema
+        S->>C: TableColumns / Progress / ...
+    end
+    S->>C: Data packet — INSERT schema block (columns, 0 rows)
+    loop one or more blocks
+        C->>S: Data packet (rows N)
+    end
+    C->>S: Data packet — empty block, end-of-input terminator
+    S->>C: Data packet — RETURNING result header (columns, 0 rows)
+    loop until EndOfStream or Exception
+        S->>C: Data — result block / Progress / ProfileInfo / Log / ProfileEvents
+    end
+    opt WITH TOTALS
+        S->>C: Totals
+    end
+    opt extremes setting
+        S->>C: Extremes
+    end
+    S->>C: EndOfStream
+```
+
+Steps 1–5 are identical to the plain INSERT phase. After the end-of-input terminator:
+
+6. The server sends a `Data` header block for the `RETURNING` result (0 rows, full column structure).
+7. The server streams result blocks interleaved with `Progress`, `ProfileInfo`, `Log`, and `ProfileEvents` packets, exactly as in the Query phase response loop.
+8. If `WITH TOTALS` is active the server sends a `Totals` packet; if `extremes` is enabled it sends an `Extremes` packet.
+9. The server sends `EndOfStream`.
+
+**Client implementation note.** A client that handles plain `INSERT` by draining until `EndOfStream`/`Exception` and discarding all non-`EndOfStream` packets will silently drop the `RETURNING` result. To consume the result the client must detect the `Data` header packet that arrives after the end-of-input terminator and switch into the Query-phase response loop. The simplest safe approach is to treat the post-terminator response identically to a `SELECT` response: accumulate `Data` blocks, handle `Totals`/`Extremes`, and exit on `EndOfStream` or `Exception`.
+
+**Settings restriction.** `max_execution_time` and `timeout_overflow_mode` are not honoured in the `RETURNING` subquery `SETTINGS` clause and raise `NOT_IMPLEMENTED` if supplied. The executor's periodic time-limit check uses the shared `ProcessListElement` whose `Stopwatch` starts at `INSERT` registration, so a per-phase timeout cannot be enforced correctly. Result-shaping limits (`max_result_rows`, `max_result_bytes`, `result_overflow_mode`) are fully supported.
+
 ## Message reference {#message-reference}
 
 Fields are listed in wire order. The `Type` column uses:
