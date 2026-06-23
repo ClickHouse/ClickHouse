@@ -19,7 +19,7 @@ class IStreamingStorage : public IStorage
 public:
     using IStorage::IStorage;
 
-    bool isStreamingStorage() const override { return true; }
+    bool isStreamingStorage() const final { return true; }
 
     /// STOP/PAUSE: block future cycles
     ActionLock getActionLock(StorageActionBlockType action_type) override

@@ -22,18 +22,18 @@ namespace DB
 ///   STOP            yes                      yes   (= PAUSE + CANCEL)
 ///   PAUSE           yes                      no    (let it finish and commit/ack/mark)
 ///   CANCEL          no                       yes   (abort, but keep running)
-///   START         releases block             —     (resume continuous cycles)
-///   REFRESH         —                        —     (run exactly one cycle, even while blocked)
+///   START         releases block             -     (resume continuous cycles)
+///   REFRESH         -                        -     (run exactly one cycle, even while blocked)
 ///
 /// Backed by:
-///   - `blocker`          — STOP/PAUSE block future cycles; START releases. An ActionBlocker so it
+///   - `blocker`          - STOP/PAUSE block future cycles; START releases. An ActionBlocker so it
 ///                          plugs into the action-locks manager and the `... ALL BACKGROUND` fan-out.
-///   - `cancel_epoch`     — STOP/CANCEL abort the in-flight cycle *before* its durable boundary (the source
+///   - `cancel_epoch`     - STOP/CANCEL abort the in-flight cycle *before* its durable boundary (the source
 ///                          discards its block, so it is redelivered/reprocessed, or lost for core NATS). A
 ///                          monotonic counter, not a resettable flag: each consumer (a streaming cycle or a
 ///                          direct SELECT) snapshots it at start and is cancelled once it advances, so a stale
 ///                          flag can't poison a later read and concurrent cycles can't clear each other.
-///   - `refresh_epoch`    — REFRESH runs one out-of-order cycle even while blocked. A monotonic counter;
+///   - `refresh_epoch`    - REFRESH runs one out-of-order cycle even while blocked. A monotonic counter;
 ///                          each worker consumes one per cycle, so every worker serves each REFRESH and N
 ///                          queued REFRESHes run N cycles. Mirrors `SYSTEM REFRESH VIEW` for refreshable views.
 class StreamingBackgroundControl

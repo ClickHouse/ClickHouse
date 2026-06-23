@@ -56,8 +56,7 @@ def setup_consuming_table(table, topic, keeper=False):
     # `keeper=True` stores offsets in Keeper, which selects the separate `StorageKafka2`
     # implementation (its own background task and abort path) instead of `StorageKafka`.
     keeper_settings = (
-        f",\n                     kafka_keeper_path = '/clickhouse/kafka2/{table}',"
-        f"\n                     kafka_replica_name = 'r1'"
+        f", kafka_keeper_path = '/clickhouse/kafka2/{table}', kafka_replica_name = 'r1'"
         if keeper
         else ""
     )
@@ -100,8 +99,7 @@ def wait_dst_count(table, expected):
 
 
 def assert_dst_count_stable(table, expected, seconds=5):
-    """The consumer is expected to be stopped, so the row count must not grow.
-    Still-running consumer polls every kafka_flush_interval_ms (500ms here)."""
+    """The count cannot grow: check it stays at `expected` for `seconds`."""
     deadline = time.time() + seconds
     while time.time() < deadline:
         assert int(instance.query(f"SELECT count() FROM test.{table}_dst")) == expected
@@ -123,8 +121,8 @@ def produce_to_partition(kafka_cluster, topic, partition, start, count):
 
 
 def read_direct(table, expected, timeout=60):
-    """Accumulate rows over repeated direct SELECTs (each returns one polled batch and
-    commits its offsets) until `expected` rows have been seen or the timeout expires."""
+    """Accumulate rows over repeated direct SELECTs until `expected` are seen or the timeout expires.
+    A direct SELECT returns whatever is available now (maybe nothing yet, before assignment), so retry."""
     total = 0
     deadline = time.time() + timeout
     while total < expected and time.time() < deadline:
@@ -712,7 +710,7 @@ def test_direct_select_not_poisoned_by_stop_or_cancel(kafka_cluster, verb):
         instance.query(f"SYSTEM {verb} test.{table}")
         if verb == "STOP":
             instance.query(f"SYSTEM START test.{table}")
-        assert read_direct(table, 10) == 10
+        assert read_direct(table, 10) >= 10
 
 
 def test_multi_consumer_stop_aborts_all_inflight_blocks(kafka_cluster):
@@ -831,8 +829,7 @@ def test_cancel_during_direct_select_does_not_drop_messages(kafka_cluster, keepe
     table = f"kafka_direct_cancel_{'v2' if keeper else 'v1'}_{k.random_string(6)}"
     n = 20
     keeper_settings = (
-        f",\n                     kafka_keeper_path = '/clickhouse/kafka2/{table}',"
-        f"\n                     kafka_replica_name = 'r1'"
+        f", kafka_keeper_path = '/clickhouse/kafka2/{table}', kafka_replica_name = 'r1'"
         if keeper
         else ""
     )
