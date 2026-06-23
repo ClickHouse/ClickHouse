@@ -18,7 +18,6 @@ namespace DB::S3AuthSetting
 {
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
-    extern const S3AuthSettingsString external_id;
 }
 
 #endif
@@ -56,8 +55,6 @@ namespace
 #endif
 
 
-void registerBackupEngineS3(BackupFactory &);
-
 void registerBackupEngineS3(BackupFactory & factory)
 {
     auto creator_fn = []([[maybe_unused]] const BackupFactory::CreateParams & params) -> std::unique_ptr<IBackup>
@@ -70,7 +67,6 @@ void registerBackupEngineS3(BackupFactory & factory)
         String secret_access_key;
         String role_arn;
         String role_session_name;
-        String external_id;
 
         if (auto collection = params.backup_info.getNamedCollection(params.context))
         {
@@ -79,7 +75,6 @@ void registerBackupEngineS3(BackupFactory & factory)
             secret_access_key = collection->getOrDefault<String>("secret_access_key", "");
             role_arn = collection->getOrDefault<String>("role_arn", "");
             role_session_name = collection->getOrDefault<String>("role_session_name", "");
-            external_id = collection->getOrDefault<String>("external_id", "");
 
             if (collection->has("filename"))
                 s3_uri = std::filesystem::path(s3_uri) / collection->get<String>("filename");
@@ -112,7 +107,6 @@ void registerBackupEngineS3(BackupFactory & factory)
 
                 role_arn = std::move(auth_settings[S3AuthSetting::role_arn]);
                 role_session_name = std::move(auth_settings[S3AuthSetting::role_session_name]);
-                external_id = std::move(auth_settings[S3AuthSetting::external_id]);
             }
         }
 
@@ -142,7 +136,6 @@ void registerBackupEngineS3(BackupFactory & factory)
                 secret_access_key,
                 role_arn,
                 role_session_name,
-                external_id,
                 params.allow_s3_native_copy,
                 params.read_settings,
                 params.write_settings,
@@ -162,7 +155,6 @@ void registerBackupEngineS3(BackupFactory & factory)
                 secret_access_key,
                 role_arn,
                 role_session_name,
-                external_id,
                 params.allow_s3_native_copy,
                 params.read_settings,
                 params.write_settings,
@@ -182,7 +174,6 @@ void registerBackupEngineS3(BackupFactory & factory)
                     secret_access_key,
                     role_arn,
                     role_session_name,
-                    external_id,
                     params.allow_s3_native_copy,
                     params.read_settings,
                     params.write_settings,
@@ -200,7 +191,6 @@ void registerBackupEngineS3(BackupFactory & factory)
                 secret_access_key,
                 std::move(role_arn),
                 std::move(role_session_name),
-                std::move(external_id),
                 params.allow_s3_native_copy,
                 params.s3_storage_class,
                 params.read_settings,

@@ -39,7 +39,6 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString region;
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
-    extern const S3AuthSettingsString external_id;
     extern const S3AuthSettingsString secret_access_key;
     extern const S3AuthSettingsString server_side_encryption_customer_key_base64;
     extern const S3AuthSettingsString session_token;
@@ -139,8 +138,6 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
             .is_s3express_bucket = S3::isS3ExpressEndpoint(new_uri.endpoint),
         };
 
-        auto shared_cache = S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(new_uri.endpoint, new_uri.bucket);
-
         auto client = S3::ClientFactory::instance().create(
             client_configuration,
             client_settings,
@@ -157,11 +154,9 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
                 auth_settings[S3AuthSetting::no_sign_request],
                 auth_settings[S3AuthSetting::role_arn],
                 auth_settings[S3AuthSetting::role_session_name],
-                auth_settings[S3AuthSetting::external_id],
                 /*sts_endpoint_override=*/""
             },
-            credentials.GetSessionToken(),
-            shared_cache);
+            credentials.GetSessionToken());
 
         auto new_client = std::make_shared<KeeperSnapshotManagerS3::S3Configuration>(std::move(new_uri), std::move(auth_settings), std::move(client));
 

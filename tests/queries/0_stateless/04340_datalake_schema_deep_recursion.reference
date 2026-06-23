@@ -1,3 +1,0 @@
-delta_depth: JSONException
-iceberg_depth: JSONException
-paimon_depth: JSONException
