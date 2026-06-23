@@ -104,6 +104,17 @@ SELECT dictGet('nb_bad', 'class_id', 'good'); -- { serverError RECEIVED_EMPTY_DA
 DROP DICTIONARY nb_bad;
 DROP TABLE nb_empty_src;
 
+-- ---------- All-zero counts (proportional priors cannot be computed) ----------
+
+DROP TABLE IF EXISTS nb_zero_src;
+CREATE TABLE nb_zero_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO nb_zero_src VALUES (0, 'zero', 0), (1, 'one', 0);
+CREATE DICTIONARY nb_bad (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_zero_src')) LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token')) LIFETIME(0);
+SELECT dictGet('nb_bad', 'class_id', 'zero'); -- { serverError BAD_ARGUMENTS }
+DROP DICTIONARY nb_bad;
+DROP TABLE nb_zero_src;
+
 -- ---------- Configured n does not match the source n-grams ----------
 
 -- nb_bad_src holds unigrams, so loading them as bigrams is rejected.
