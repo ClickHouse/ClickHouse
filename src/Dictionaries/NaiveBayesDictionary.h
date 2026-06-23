@@ -9,7 +9,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
-#include <Functions/naiveBayesClassifier.h>
+#include <Dictionaries/NaiveBayesModel.h>
 
 
 namespace DB
