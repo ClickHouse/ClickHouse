@@ -403,6 +403,9 @@ protected:
     mutable std::condition_variable cancelled_cv;
 
     size_t max_size = 0;        /// 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
+    
+    /// Count of currently running queries per normalized query hash
+    std::unordered_map<UInt64, size_t> queries_per_normalized_hash;
 
     /// Stores per-user info: queries, statistics and limits
     UserToQueries user_to_queries;
