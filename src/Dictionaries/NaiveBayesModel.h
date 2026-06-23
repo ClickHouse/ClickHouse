@@ -14,6 +14,7 @@
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/PODArray.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/isValidUTF8.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
@@ -55,6 +56,16 @@ concept Tokenizer = requires
     { T::end_token } -> std::convertible_to<std::string_view>;
 };
 
+/// What `prepareNgram` returns for one source n-gram: the key to store, the number of tokens it resolves to
+/// (validated against n), and whether it is well-formed for the tokenizer. Only code-point mode can report
+/// `valid == false`, when the bytes are not valid UTF-8.
+struct PreparedNgram
+{
+    std::string_view key;
+    size_t token_count;
+    bool valid = true;
+};
+
 /// Byte-level tokenizer: each token is a single byte.
 struct BytePolicy
 {
@@ -87,7 +98,7 @@ struct BytePolicy
 
     /// Returns the key to store for `s` and its token count (one per byte). Byte n-grams are stored verbatim:
     /// every byte is significant, so the source key already matches what a query looks up.
-    std::pair<std::string_view, size_t> prepareNgram(std::string_view s, NaiveBayesScratch &) const
+    PreparedNgram prepareNgram(std::string_view s, NaiveBayesScratch &) const
     {
         return {s, s.size()};
     }
@@ -145,9 +156,14 @@ struct CodePointPolicy
     }
 
     /// Returns the key to store for `s` and its code-point count. Code-point n-grams are stored verbatim: every
-    /// code point is significant, so the source key already matches what a query looks up.
-    std::pair<std::string_view, size_t> prepareNgram(std::string_view s, NaiveBayesScratch &) const
+    /// code point is significant, so the source key already matches what a query looks up. The bytes must be
+    /// valid UTF-8 first; otherwise the per-code-point lengths below would be meaningless, so it is reported as
+    /// invalid for the caller to reject.
+    PreparedNgram prepareNgram(std::string_view s, NaiveBayesScratch &) const
     {
+        if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(s.data()), s.size()))
+            return {s, 0, false};
+
         size_t count = 0;
         for (size_t at = 0; at < s.size(); at += DB::UTF8::seqLength(static_cast<UInt8>(s[at])))
             ++count;
@@ -237,7 +253,7 @@ struct TokenPolicy
     /// that source n-grams differing only in whitespace (leading, trailing, or repeated spaces, or tabs) fold
     /// onto the key a query produces instead of being stored under an unreachable key. A rebuilt key stays
     /// valid until the next call.
-    std::pair<std::string_view, size_t> prepareNgram(std::string_view s, NaiveBayesScratch & scratch) const
+    PreparedNgram prepareNgram(std::string_view s, NaiveBayesScratch & scratch) const
     {
         size_t count = 0;
         bool canonical = true;

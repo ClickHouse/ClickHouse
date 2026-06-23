@@ -177,14 +177,20 @@ void NaiveBayesDictionary::loadData()
                 const UInt64 count = count_col->getUInt(i);
                 std::visit([&](auto & t)
                 {
-                    const auto [key, tokens] = t.prepareNgram(ngram_sv);
-                    if (tokens != configuration.n)
+                    const auto prepared = t.prepareNgram(ngram_sv);
+                    if (!prepared.valid)
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "NaiveBayes dictionary: source n-gram '{}' is not valid UTF-8 for mode '{}'. Use mode "
+                            "'byte' for arbitrary byte sequences.",
+                            ngram_sv, configuration.mode);
+                    if (prepared.token_count != configuration.n)
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
                             "NaiveBayes dictionary: source n-gram '{}' resolves to {} token(s) for mode '{}', but the "
                             "layout specifies n = {}. The source n-grams must match the configured size and mode.",
-                            ngram_sv, tokens, configuration.mode, configuration.n);
-                    t.addNgram(class_id, key, count);
+                            ngram_sv, prepared.token_count, configuration.mode, configuration.n);
+                    t.addNgram(class_id, prepared.key, count);
                 }, trainer);
             }
 

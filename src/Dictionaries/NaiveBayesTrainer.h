@@ -49,9 +49,10 @@ public:
         class_total += count;
     }
 
-    /// Returns the canonical key to store for `ngram` and its token count, for validating against n. The key is
-    /// built in a reused scratch buffer, so it stays valid only until the next call.
-    std::pair<std::string_view, size_t> prepareNgram(std::string_view ngram)
+    /// Returns the canonical key to store for `ngram`, its token count (for validating against n), and whether
+    /// it is well-formed for the tokenizer. The key is built in a reused scratch buffer, so it stays valid only
+    /// until the next call.
+    PreparedNgram prepareNgram(std::string_view ngram)
     {
         return data->tokenizer.prepareNgram(ngram, canonicalization_scratch);
     }
