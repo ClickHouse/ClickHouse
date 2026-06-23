@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-replicated-database
+# Random settings limits: use_sparsity_info_for_pruning=('off', 'off')
 # no-replicated-database: hypothetical indexes are session-scoped and not replicated
+# use_sparsity_info_for_pruning: Avoid altering the plan and granules read (`WHERE p = 1 AND b = 0`)
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
