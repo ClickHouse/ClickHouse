@@ -9,7 +9,6 @@
 #include <Common/MultiVersion.h>
 #include <azure/storage/blobs.hpp>
 #include <azure/storage/files/datalake/datalake_file_client.hpp>
-#include <azure/core/http/curl_transport.hpp>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 
 namespace Poco
