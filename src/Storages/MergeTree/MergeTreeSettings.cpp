@@ -2078,6 +2078,8 @@ namespace ErrorCodes
     When enabled, merges and mutations adaptively choose each block's codec for columns that use the default codec
     (no `CODEC` clause or `CODEC(Default)`). The smallest output wins among per-type candidates,
     the default codec and `NONE`, so compression is never worse than the default and incompressible blocks are stored raw.
+    Currently only types with a specialized candidate codec (integer-like types) go adaptive and get this guarantee.
+    Other default-codec columns keep the default unchanged. A future version will extend this to all types.
     Adaptive selection is skipped for a column whose default codec includes encryption (e.g. `AES_128_GCM_SIV`), so the encryption is always applied.
     Inserts are unaffected. Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/sql-reference/table-functions/mergeTreeCodecBlockCounts) table function.
     )", EXPERIMENTAL) \
