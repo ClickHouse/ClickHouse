@@ -118,6 +118,27 @@ node_include_from_external = cluster_include_from_external.add_instance(
     stay_alive=True,
 )
 
+# Negative case: a non-static handler (e.g. `redirect`) ignores `response_content`. Only a
+# `static` handler consumes a `config://` reference, so the validator must NOT exempt a top-level
+# key referenced from `response_content` on a non-static handler — doing so would let a genuinely
+# unknown section pass validation (a false negative).
+cluster_non_static_ref = ClickHouseCluster(__file__, name="non_static_ref")
+node_non_static_ref = cluster_non_static_ref.add_instance(
+    "node_non_static_ref",
+    main_configs=["configs/config.d/non_static_handler_config_ref.xml"],
+)
+caught_non_static_ref_exception = ""
+
+# Negative case: `StaticRequestHandler` reads its `config://` payload only from `response_content`,
+# never from `response_expression`. A `config://` reference in the unused `response_expression`
+# field is ignored by the server, so the validator must NOT exempt the referenced top-level key.
+cluster_static_wrong_field = ClickHouseCluster(__file__, name="static_wrong_field")
+node_static_wrong_field = cluster_static_wrong_field.add_instance(
+    "node_static_wrong_field",
+    main_configs=["configs/config.d/static_handler_response_expression.xml"],
+)
+caught_static_wrong_field_exception = ""
+
 
 @pytest.fixture(scope="module")
 def start_bad_cluster():
@@ -214,6 +235,38 @@ def start_include_from_external_cluster():
     cluster_include_from_external.shutdown()
 
 
+@pytest.fixture(scope="module")
+def start_non_static_ref_cluster():
+    global caught_non_static_ref_exception
+    try:
+        cluster_non_static_ref.start()
+    except Exception as e:
+        caught_non_static_ref_exception = str(e)
+        err_log = os.path.join(node_non_static_ref.logs_dir, "clickhouse-server.err.log")
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_non_static_ref_exception += "\n" + f.read()
+    yield
+    cluster_non_static_ref.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_static_wrong_field_cluster():
+    global caught_static_wrong_field_exception
+    try:
+        cluster_static_wrong_field.start()
+    except Exception as e:
+        caught_static_wrong_field_exception = str(e)
+        err_log = os.path.join(
+            node_static_wrong_field.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_static_wrong_field_exception += "\n" + f.read()
+    yield
+    cluster_static_wrong_field.shutdown()
+
+
 def test_unknown_config_option_rejected(start_bad_cluster):
     assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_exception
     assert "some_completely_unknown_option" in caught_exception
@@ -232,6 +285,23 @@ def test_config_ref_in_http_handler_accepted(start_ok_cluster):
     response = node_static_config_ref.http_request("my_static_response", method="GET")
     assert response.status_code == 200
     assert response.text == "Hello from config://"
+
+
+def test_non_static_handler_config_ref_not_exempted(start_non_static_ref_cluster):
+    # A `redirect` handler ignores `response_content`, so `config://redirect_ignored_payload`
+    # is never consumed by any server code. The unknown top-level key must still be rejected
+    # (only a `static` handler may exempt a `config://`-referenced key).
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_non_static_ref_exception
+    assert "redirect_ignored_payload" in caught_non_static_ref_exception
+
+
+def test_static_handler_response_expression_field_not_exempted(
+    start_static_wrong_field_cluster,
+):
+    # `StaticRequestHandler` reads `response_content`, not `response_expression`; a `config://`
+    # reference in the unused field must not exempt the unknown top-level key.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_static_wrong_field_exception
+    assert "static_response_expression_payload" in caught_static_wrong_field_exception
 
 
 def test_config_ref_with_bracket_index_accepted(start_indexed_ref_cluster):
