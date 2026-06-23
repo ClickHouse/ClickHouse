@@ -61,102 +61,94 @@ def _supplement_missing_profdata(master_commits: list[str]) -> None:
     When some coverage sub-jobs are skipped (binary unchanged, only one test
     type changed), their profdata is absent from ci/tmp. Supplementing from
     the most recent compatible master run ensures the coverage merge reflects
-    all test types, not just the ones that ran in this PR.
-    The binary is identical (test-only PR), so master profdata is compatible.
+    all test types. The binary is identical (test-only PR), so master profdata
+    is compatible. ALL supplemental files must come from the same master commit.
 
-    All artifact directories for a coverage run follow a known naming scheme.
-    We detect which are missing by comparing existing *.profdata prefixes
-    against the full expected set, then download from master using
-    'aws s3 cp --recursive', which avoids hardcoding exact filenames inside
-    each directory.
+    URLs follow the pattern:
+      https://s3.amazonaws.com/clickhouse-test-reports/REFs/master/<sha>/<dir>/<file>
+    Artifact dir names are lower-cased by praktika; profdata filenames preserve
+    the original casing from the job parameter (e.g. "AsyncInsert", "ParallelReplicas").
     """
-    # All S3 artifact directories that should contribute *.profdata to the merge.
-    # Derived from LLVM_ARTIFACTS_LIST in ci/defs/defs.py (job names normalised
-    # to lower-case by praktika when forming the S3 key).
-    IT_BATCHES = 5
-    FT_BATCHES = 3
-    ALL_ARTIFACT_DIRS = (
+    # Complete mapping: artifact_dir (S3 key, lower-case) → profdata filename (original case).
+    ARTIFACT_MAP: dict[str, str] = {
         # Functional tests — basic batches
-        [f"stateless_tests_amd_llvm_coverage_{i}_{FT_BATCHES}" for i in range(1, FT_BATCHES + 1)]
+        "stateless_tests_amd_llvm_coverage_1_3": "ft-amd_llvm_coverage_1_3.profdata",
+        "stateless_tests_amd_llvm_coverage_2_3": "ft-amd_llvm_coverage_2_3.profdata",
+        "stateless_tests_amd_llvm_coverage_3_3": "ft-amd_llvm_coverage_3_3.profdata",
         # Functional tests — special configs
-        + [
-            "stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_databasereplicated_wasmedge_parallel",
-            "stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_databasereplicated_wasmedge_sequential",
-            "stateless_tests_amd_llvm_coverage_parallelreplicas_s3_storage_parallel",
-            "stateless_tests_amd_llvm_coverage_parallelreplicas_s3_storage_sequential",
-            "stateless_tests_amd_llvm_coverage_asyncinsert_s3_storage_parallel",
-            "stateless_tests_amd_llvm_coverage_asyncinsert_s3_storage_sequential",
-        ]
+        "stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_databasereplicated_wasmedge_parallel":
+            "ft-amd_llvm_coverage_old_analyzer_s3_storage_DatabaseReplicated_WasmEdge_parallel.profdata",
+        "stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_databasereplicated_wasmedge_sequential":
+            "ft-amd_llvm_coverage_old_analyzer_s3_storage_DatabaseReplicated_WasmEdge_sequential.profdata",
+        "stateless_tests_amd_llvm_coverage_parallelreplicas_s3_storage_parallel":
+            "ft-amd_llvm_coverage_ParallelReplicas_s3_storage_parallel.profdata",
+        "stateless_tests_amd_llvm_coverage_parallelreplicas_s3_storage_sequential":
+            "ft-amd_llvm_coverage_ParallelReplicas_s3_storage_sequential.profdata",
+        "stateless_tests_amd_llvm_coverage_asyncinsert_s3_storage_parallel":
+            "ft-amd_llvm_coverage_AsyncInsert_s3_storage_parallel.profdata",
+        "stateless_tests_amd_llvm_coverage_asyncinsert_s3_storage_sequential":
+            "ft-amd_llvm_coverage_AsyncInsert_s3_storage_sequential.profdata",
         # Integration tests
-        + [f"integration_tests_amd_llvm_coverage_{i}_{IT_BATCHES}" for i in range(1, IT_BATCHES + 1)]
+        "integration_tests_amd_llvm_coverage_1_5": "it-amd_llvm_coverage_1_5.profdata",
+        "integration_tests_amd_llvm_coverage_2_5": "it-amd_llvm_coverage_2_5.profdata",
+        "integration_tests_amd_llvm_coverage_3_5": "it-amd_llvm_coverage_3_5.profdata",
+        "integration_tests_amd_llvm_coverage_4_5": "it-amd_llvm_coverage_4_5.profdata",
+        "integration_tests_amd_llvm_coverage_5_5": "it-amd_llvm_coverage_5_5.profdata",
         # Unit tests
-        + ["unit_tests_amd_llvm_coverage"]
-    )
+        "unit_tests_amd_llvm_coverage": "unit-tests.profdata",
+    }
 
     existing_files = {p.name for p in Path(TEMP_DIR).glob("*.profdata")}
     if not existing_files:
-        print("No profdata files found — skipping supplement (nothing to supplement against)")
+        print("No profdata files in ci/tmp — nothing to supplement")
         return
 
-    # Determine which artifact dirs are already represented by checking profdata
-    # file prefixes. Each dir produces exactly one *.profdata whose name encodes
-    # the dir name (e.g. "ft-amd_llvm_coverage_1_3.profdata" from dir "stateless_..._1_3").
-    def _is_dir_present(artifact_dir: str) -> bool:
-        # Unit dir produces "unit-tests.profdata"
-        if artifact_dir == "unit_tests_amd_llvm_coverage":
-            return "unit-tests.profdata" in existing_files
-        # FT dirs: "stateless_tests_amd_llvm_coverage_<suffix>" → "ft-amd_llvm_coverage_<suffix>.profdata"
-        if artifact_dir.startswith("stateless_tests_"):
-            suffix = artifact_dir[len("stateless_tests_amd_llvm_coverage_"):]
-            return f"ft-amd_llvm_coverage_{suffix}.profdata" in existing_files
-        # IT dirs: "integration_tests_amd_llvm_coverage_<suffix>" → "it-amd_llvm_coverage_<suffix>.profdata"
-        if artifact_dir.startswith("integration_tests_"):
-            suffix = artifact_dir[len("integration_tests_amd_llvm_coverage_"):]
-            return f"it-amd_llvm_coverage_{suffix}.profdata" in existing_files
-        return False
+    missing: dict[str, str] = {
+        d: f for d, f in ARTIFACT_MAP.items() if f not in existing_files
+    }
+    if not missing:
+        return
 
-    missing_dirs = [d for d in ALL_ARTIFACT_DIRS if not _is_dir_present(d)]
-    if not missing_dirs:
-        return  # all test types present
+    print(f"Missing profdata for {len(missing)} artifact dir(s) — supplementing from master:")
+    for f in missing.values():
+        print(f"  {f}")
 
-    print(f"Missing profdata for {len(missing_dirs)} artifact dir(s) — supplementing from master:")
-    for d in missing_dirs:
-        print(f"  {d}")
-
-    S3 = "s3://clickhouse-builds/REFs/master"
+    BASE_URL = "https://s3.amazonaws.com/clickhouse-test-reports/REFs/master"
 
     for sha in master_commits:
-        if not missing_dirs:
-            break
+        # Probe the first missing file to confirm this commit has coverage artifacts.
+        first_dir, first_file = next(iter(missing.items()))
+        probe_url = f"{BASE_URL}/{sha}/{first_dir}/{first_file}"
+        check = Shell.get_output(f"wget --spider '{probe_url}' 2>&1 || true", verbose=False)
+        if "200 OK" not in check:
+            continue  # commit has no coverage artifacts
 
-        # Check if the first missing dir exists for this commit (fast probe)
-        probe = Shell.get_output(
-            f"aws s3 ls '{S3}/{sha}/{missing_dirs[0]}/' 2>/dev/null",
-            verbose=False,
-        )
-        if not probe.strip():
-            continue  # this master commit doesn't have coverage artifacts
-
-        # Download all still-missing dirs from this commit
-        still_missing = []
-        for artifact_dir in missing_dirs:
-            src = f"{S3}/{sha}/{artifact_dir}/"
-            rc = Shell.run(
-                f"aws s3 cp '{src}' '{TEMP_DIR}' --recursive"
-                f" --exclude '*' --include '*.profdata'",
-                verbose=True,
-            )
-            if rc == 0 and _is_dir_present(artifact_dir):
-                print(f"  Supplemented {artifact_dir} from master {sha[:12]}")
+        # All missing files must come from this same commit.
+        downloaded: list[str] = []
+        failed = False
+        for artifact_dir, filename in missing.items():
+            url  = f"{BASE_URL}/{sha}/{artifact_dir}/{filename}"
+            dest = Path(TEMP_DIR) / filename
+            rc   = Shell.run(f"wget --quiet '{url}' -O '{dest}'", verbose=True)
+            if rc == 0 and dest.exists() and dest.stat().st_size > 0:
+                downloaded.append(filename)
             else:
-                still_missing.append(artifact_dir)
+                dest.unlink(missing_ok=True)
+                failed = True
+                print(f"  Failed to download {filename} from master {sha[:12]} — trying next commit")
+                break
 
-        missing_dirs = still_missing
-        if not missing_dirs:
-            print(f"All missing profdata supplemented from master {sha[:12]}")
+        if failed:
+            # Clean up any partial downloads so the merge isn't corrupted.
+            for f in downloaded:
+                (Path(TEMP_DIR) / f).unlink(missing_ok=True)
+            continue
 
-    for d in missing_dirs:
-        print(f"Warning: could not supplement missing profdata for {d}")
+        print(f"Supplemented {len(downloaded)} profdata file(s) from master {sha[:12]}")
+        return
+
+    for f in missing.values():
+        print(f"Warning: could not supplement missing profdata: {f}")
 
 
 
