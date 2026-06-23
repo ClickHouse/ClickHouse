@@ -100,7 +100,7 @@ static bool sameSnapshotIdentity(const nuraft::snapshot & lhs, const nuraft::sna
         && lhs.get_last_log_term() == rhs.get_last_log_term();
 }
 
-IKeeperStateMachine::IKeeperStateMachine(
+KeeperStateMachine::KeeperStateMachine(
     KeeperResponseCallback response_callback_,
     SnapshotsQueue & snapshots_queue_,
     const KeeperContextPtr & keeper_context_,
@@ -116,41 +116,20 @@ IKeeperStateMachine::IKeeperStateMachine(
     , superdigest(superdigest_)
     , keeper_context(keeper_context_)
     , snapshot_manager_s3(snapshot_manager_s3_)
-{
-}
-
-template<typename Storage>
-KeeperStateMachine<Storage>::KeeperStateMachine(
-    KeeperResponseCallback response_callback_,
-    SnapshotsQueue & snapshots_queue_,
-    const KeeperContextPtr & keeper_context_,
-    KeeperSnapshotManagerS3 * snapshot_manager_s3_,
-    IKeeperStateMachine::CommitCallback commit_callback_,
-    const std::string & superdigest_)
-    : IKeeperStateMachine(
-        response_callback_,
-        snapshots_queue_,
-        keeper_context_,
-        snapshot_manager_s3_,
-        commit_callback_,
-        superdigest_),
-        snapshot_manager(
+    , snapshot_manager(
           keeper_context_->getCoordinationSettings()[CoordinationSetting::snapshots_to_keep],
           keeper_context_,
-          keeper_context_->getCoordinationSettings()[CoordinationSetting::compress_snapshots_with_zstd_format],
-          superdigest_,
-          keeper_context_->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds())
+          keeper_context_->getCoordinationSettings()[CoordinationSetting::compress_snapshots_with_zstd_format])
 {
 }
 
-void IKeeperStateMachine::setLogStore(KeeperLogStore * log_store_)
+void KeeperStateMachine::setLogStore(KeeperLogStore * log_store_)
 {
     chassert(!log_store);
     log_store = log_store_;
 }
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::init()
+void KeeperStateMachine::init()
 {
     /// Do everything without mutexes, no other threads exist.
     bool has_snapshots = snapshot_manager.totalSnapshots() != 0;
@@ -165,7 +144,10 @@ void KeeperStateMachine<Storage>::init()
             std::lock_guard lock(snapshots_lock);
 
             auto snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index);
-            auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf);
+            auto new_storage = std::make_unique<KeeperStorage>(
+                keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds(),
+                superdigest, keeper_context, /* initialize_system_nodes */ false);
+            auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf, *new_storage);
             auto latest_snapshot_info = snapshot_manager.getLatestSnapshotInfo();
             chassert(latest_snapshot_info);
 
@@ -180,7 +162,7 @@ void KeeperStateMachine<Storage>::init()
                 tryLogCurrentException(log, "Failed to get snapshot size during init");
             }
 
-            storage = std::move(snapshot_deserialization_result.storage);
+            storage = std::move(new_storage);
             advanceLatestSnapshotMeta(snapshot_deserialization_result.snapshot_meta);
             cluster_config = snapshot_deserialization_result.cluster_config;
             keeper_context->setLastCommitIndex(latest_snapshot_meta->get_last_log_idx());
@@ -203,12 +185,11 @@ void KeeperStateMachine<Storage>::init()
         LOG_DEBUG(log, "No existing snapshots, last committed log index {}", last_committed_idx);
 
     if (!storage)
-        storage = std::make_unique<Storage>(
+        storage = std::make_unique<KeeperStorage>(
             keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds(), superdigest, keeper_context);
 }
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::preprocessUncommittedLogEntries(uint64_t start_idx, uint64_t end_idx, bool lock_mutex)
+void KeeperStateMachine::preprocessUncommittedLogEntries(uint64_t start_idx, uint64_t end_idx, bool lock_mutex)
 {
     if (!log_store)
         /// We're in a unit test or a tool, not keeper server.
@@ -259,7 +240,7 @@ void assertDigest(
     uint64_t session_id,
     bool committing)
 {
-    if (!KeeperStorageBase::checkDigest(expected, actual))
+    if (!KeeperStorage::checkDigest(expected, actual))
     {
         LOG_FATAL(
             getLogger("KeeperStateMachine"),
@@ -297,8 +278,7 @@ union XidHelper
 
 }
 
-template<typename Storage>
-nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log_idx, nuraft::buffer & data)
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nuraft::buffer & data)
 {
     const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
 
@@ -367,7 +347,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log
 }
 
 // Serialize the request for the log entry
-nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperLogEntry(const KeeperRequestForSession & request_for_session)
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::getZooKeeperLogEntry(const KeeperRequestForSession & request_for_session)
 {
     DB::WriteBufferFromNuraftBuffer write_buf;
     DB::writeIntBinary(request_for_session.session_id, write_buf);
@@ -405,7 +385,7 @@ nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperLogEntry(const Keep
     return write_buf.getBuffer();
 }
 
-std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
+std::shared_ptr<KeeperRequestForSession> KeeperStateMachine::parseRequest(
     nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version, size_t * request_end_position)
 {
     ReadBufferFromNuraftBuffer buffer(data);
@@ -536,8 +516,7 @@ std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
     return request_for_session;
 }
 
-template<typename Storage>
-std::optional<KeeperDigest> KeeperStateMachine<Storage>::preprocess(const KeeperRequestForSession & request_for_session, bool lock_mutex) TSA_NO_THREAD_SAFETY_ANALYSIS
+std::optional<KeeperDigest> KeeperStateMachine::preprocess(const KeeperRequestForSession & request_for_session, bool lock_mutex) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     const auto op_num = request_for_session.request->getOpNum();
 
@@ -586,8 +565,7 @@ std::optional<KeeperDigest> KeeperStateMachine<Storage>::preprocess(const Keeper
     return digest_after_preprocessing;
 }
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::reconfigure(const KeeperRequestForSession & request_for_session)
+void KeeperStateMachine::reconfigure(const KeeperRequestForSession & request_for_session)
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     KeeperResponseForSession response = processReconfiguration(request_for_session);
@@ -595,8 +573,7 @@ void KeeperStateMachine<Storage>::reconfigure(const KeeperRequestForSession & re
         response_callback(std::move(response));
 }
 
-template<typename Storage>
-KeeperResponseForSession KeeperStateMachine<Storage>::processReconfiguration(
+KeeperResponseForSession KeeperStateMachine::processReconfiguration(
     const KeeperRequestForSession & request_for_session)
 {
     ProfileEvents::increment(ProfileEvents::KeeperReconfigRequest);
@@ -663,8 +640,7 @@ KeeperResponseForSession KeeperStateMachine<Storage>::processReconfiguration(
     return { session_id, std::move(response) };
 }
 
-template<typename Storage>
-nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t log_idx, nuraft::buffer & data)
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
     const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
 
@@ -774,8 +750,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
     return nullptr;
 }
 
-template<typename Storage>
-bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
+bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 {
     try
     {
@@ -887,109 +862,13 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
             preprocessUncommittedLogEntries(uncommitted_start_idx, uncommitted_end_idx, /*lock_mutex=*/ false);
         };
 
-        if constexpr (std::is_same_v<Storage, KeeperMemoryStorage>)
-        {
-            /// Apply received snapshots in three phases to reduce peak memory:
-            /// 1. Under `snapshots_lock`, validate metadata and pin the snapshot file.
-            /// 2. Outside locks, read the file and validate its metadata prefix.
-            /// 3. Under `snapshots_lock` and exclusive storage lock, drop old storage, deserialize
-            ///    replacement storage, replay the tail, and publish the storage.
-            /// Any failure after `storage.reset` is not recoverable, so it terminates.
-            SnapshotFileInfoPtr snapshot_file_info;
-            {
-                std::lock_guard lock(snapshots_lock);
-                if (!validate_pending_snapshot_to_apply())
-                {
-                    snapshot_apply_finished = true;
-                    return true;
-                }
-
-                snapshot_file_info = getSnapshotPinUnlocked(s.get_last_log_idx());
-                if (!snapshot_file_info)
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Required to apply snapshot with last log index {}, but snapshot file info is not available",
-                        s.get_last_log_idx());
-                }
-            }
-
-            auto snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(*snapshot_file_info);
-            auto snapshot_meta_from_buffer = snapshot_manager.deserializeSnapshotMetadataFromBuffer(snapshot_buf);
-            if (!sameSnapshotIdentity(*snapshot_meta_from_buffer, s))
-            {
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Required to apply snapshot with last log index {} and term {}, but snapshot buffer "
-                    "metadata has last log index {} and term {}",
-                    s.get_last_log_idx(), s.get_last_log_term(),
-                    snapshot_meta_from_buffer->get_last_log_idx(), snapshot_meta_from_buffer->get_last_log_term());
-            }
-
-            {
-                std::lock_guard lock(snapshots_lock);
-                if (!validate_pending_snapshot_to_apply())
-                {
-                    snapshot_apply_finished = true;
-                    return true;
-                }
-
-                {
-                    KEEPER_STORAGE_LOCK_EXCLUSIVE(storage_lock);
-
-                    std::optional<uint64_t> latest_snapshot_meta_index_before_reset;
-                    if (latest_snapshot_meta)
-                        latest_snapshot_meta_index_before_reset = latest_snapshot_meta->get_last_log_idx();
-                    uint64_t last_uncommitted_log_idx = storage->getLastUncommittedLogIdx();
-
-                    storage.reset();
-
-                    try
-                    {
-                        auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf);
-                        /// This repeats the pre-reset prefix check deliberately. It
-                        /// catches future divergence between
-                        /// `deserializeSnapshotMetadataFromBuffer` and
-                        /// `deserializeSnapshotFromBuffer`.
-                        if (!sameSnapshotIdentity(*snapshot_deserialization_result.snapshot_meta, s))
-                            throw Exception(
-                                ErrorCodes::LOGICAL_ERROR,
-                                "Required to apply snapshot with last log index {} and term {}, but fully "
-                                "deserialized snapshot metadata has last log index {} and term {}",
-                                s.get_last_log_idx(), s.get_last_log_term(),
-                                snapshot_deserialization_result.snapshot_meta->get_last_log_idx(),
-                                snapshot_deserialization_result.snapshot_meta->get_last_log_term());
-
-                        snapshot_buf = nullptr;
-                        storage = std::move(snapshot_deserialization_result.storage);
-                        preprocess_uncommitted_entries(last_uncommitted_log_idx);
-                        /// An apply may legitimately target an index at or below the mark — never regress.
-                        advanceLatestSnapshotMeta(snapshot_deserialization_result.snapshot_meta);
-
-                        {
-                            std::lock_guard cluster_config_guard(cluster_config_lock);
-                            cluster_config = snapshot_deserialization_result.cluster_config;
-                        }
-                    }
-                    catch (...)
-                    {
-                        LOG_FATAL(
-                            log,
-                            "Failed to apply snapshot {} after dropping old `KeeperMemoryStorage` "
-                            "(latest snapshot metadata index before reset: {}): {}. Terminating to avoid inconsistent Keeper state",
-                            s.get_last_log_idx(),
-                            latest_snapshot_meta_index_before_reset ? std::to_string(*latest_snapshot_meta_index_before_reset) : "(None)",
-                            getCurrentExceptionMessage(true, true, false));
-                        std::terminate();
-                    }
-                }
-
-                snapshot_loader_info.reset();
-                snapshot_loader_info_log_idx = 0;
-                cancelIfHasUnfinishedSnapshotReceive();
-            }
-        }
-        else
+        /// Apply received snapshots in three phases to reduce peak memory:
+        /// 1. Under `snapshots_lock`, validate metadata and pin the snapshot file.
+        /// 2. Outside locks, read the file and validate its metadata prefix.
+        /// 3. Under `snapshots_lock` and exclusive storage lock, drop old storage, deserialize
+        ///    replacement storage, replay the tail, and publish the storage.
+        /// Any failure after `storage.reset` is not recoverable, so it terminates.
+        SnapshotFileInfoPtr snapshot_file_info;
         {
             std::lock_guard lock(snapshots_lock);
             if (!validate_pending_snapshot_to_apply())
@@ -998,48 +877,83 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
                 return true;
             }
 
-            SnapshotDeserializationResult<Storage> snapshot_deserialization_result
-                = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_manager.deserializeSnapshotBufferFromDisk(s.get_last_log_idx()));
-
-            /// Identity-strict check on the file's own metadata before the storage swap.
-            if (!sameSnapshotIdentity(*snapshot_deserialization_result.snapshot_meta, s))
+            snapshot_file_info = getSnapshotPinUnlocked(s.get_last_log_idx());
+            if (!snapshot_file_info)
+            {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "Required to apply snapshot with last log index {} and term {}, but deserialized "
-                    "snapshot metadata has last log index {} and term {}",
-                    s.get_last_log_idx(), s.get_last_log_term(),
-                    snapshot_deserialization_result.snapshot_meta->get_last_log_idx(),
-                    snapshot_deserialization_result.snapshot_meta->get_last_log_term());
+                    "Required to apply snapshot with last log index {}, but snapshot file info is not available",
+                    s.get_last_log_idx());
+            }
+        }
+
+        auto snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(*snapshot_file_info);
+        auto snapshot_meta_from_buffer = snapshot_manager.deserializeSnapshotMetadataFromBuffer(snapshot_buf);
+        if (!sameSnapshotIdentity(*snapshot_meta_from_buffer, s))
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Required to apply snapshot with last log index {} and term {}, but snapshot buffer "
+                "metadata has last log index {} and term {}",
+                s.get_last_log_idx(), s.get_last_log_term(),
+                snapshot_meta_from_buffer->get_last_log_idx(), snapshot_meta_from_buffer->get_last_log_term());
+        }
+
+        {
+            std::lock_guard lock(snapshots_lock);
+            if (!validate_pending_snapshot_to_apply())
+            {
+                snapshot_apply_finished = true;
+                return true;
+            }
 
             {
                 KEEPER_STORAGE_LOCK_EXCLUSIVE(storage_lock);
+
+                std::optional<uint64_t> latest_snapshot_meta_index_before_reset;
+                if (latest_snapshot_meta)
+                    latest_snapshot_meta_index_before_reset = latest_snapshot_meta->get_last_log_idx();
                 uint64_t last_uncommitted_log_idx = storage->getLastUncommittedLogIdx();
-                storage = std::move(snapshot_deserialization_result.storage);
 
                 try
                 {
+                    storage.reset();
+                    storage = std::make_unique<KeeperStorage>(
+                        keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds(),
+                        superdigest, keeper_context, /* initialize_system_nodes */ false);
+                    auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf, *storage);                    /// This repeats the pre-reset prefix check deliberately. It
+                    /// catches future divergence between
+                    /// `deserializeSnapshotMetadataFromBuffer` and
+                    /// `deserializeSnapshotFromBuffer`.
+                    if (!sameSnapshotIdentity(*snapshot_deserialization_result.snapshot_meta, s))
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Required to apply snapshot with last log index {} and term {}, but fully "
+                            "deserialized snapshot metadata has last log index {} and term {}",
+                            s.get_last_log_idx(), s.get_last_log_term(),
+                            snapshot_deserialization_result.snapshot_meta->get_last_log_idx(),
+                            snapshot_deserialization_result.snapshot_meta->get_last_log_term());
+
+                    snapshot_buf = nullptr;
                     preprocess_uncommitted_entries(last_uncommitted_log_idx);
+                    /// An apply may legitimately target an index at or below the mark — never regress.
+                    advanceLatestSnapshotMeta(snapshot_deserialization_result.snapshot_meta);
+
+                    {
+                        std::lock_guard cluster_config_guard(cluster_config_lock);
+                        cluster_config = snapshot_deserialization_result.cluster_config;
+                    }
                 }
                 catch (...)
                 {
-                    /// (Alternatively, we could do preprocessing on snapshot_deserialization_result.storage
-                    ///  before assigning `storage`. Then we wouldn't need to crash if it fails. But
-                    ///  that doesn't seem worth the complexity and error-proneness of making
-                    ///  preprocessUncommittedLogEntries support using different storage instance.)
                     LOG_FATAL(
                         log,
-                        "Failed to apply snapshot {} after dropping old `KeeperRocksDBStorage`: {}. Terminating to avoid inconsistent Keeper state",
+                        "Failed to apply snapshot {} after dropping old `KeeperStorage` "
+                        "(latest snapshot metadata index before reset: {}): {}. Terminating to avoid inconsistent Keeper state",
                         s.get_last_log_idx(),
+                        latest_snapshot_meta_index_before_reset ? std::to_string(*latest_snapshot_meta_index_before_reset) : "(None)",
                         getCurrentExceptionMessage(true, true, false));
                     std::terminate();
-                }
-
-                /// An apply may legitimately target an index at or below the mark — never regress.
-                advanceLatestSnapshotMeta(snapshot_deserialization_result.snapshot_meta);
-
-                {
-                    std::lock_guard cluster_config_guard(cluster_config_lock);
-                    cluster_config = snapshot_deserialization_result.cluster_config;
                 }
             }
 
@@ -1061,8 +975,7 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
     }
 }
 
-
-void IKeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf)
+void KeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf)
 {
     std::lock_guard lock(cluster_config_lock);
     auto tmp = new_conf->serialize();
@@ -1070,7 +983,7 @@ void IKeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nura
     keeper_context->setLastCommitIndex(log_idx);
 }
 
-void IKeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
+void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
 {
     /// Don't rollback anything until the first commit because nothing was preprocessed
     if (!keeper_context->localLogsPreprocessed())
@@ -1086,8 +999,7 @@ void IKeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
     rollbackRequest(*request_for_session, false);
 }
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::rollbackRequest(const KeeperRequestForSession & request_for_session, bool allow_missing)
+void KeeperStateMachine::rollbackRequest(const KeeperRequestForSession & request_for_session, bool allow_missing)
 {
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
         return;
@@ -1096,15 +1008,14 @@ void KeeperStateMachine<Storage>::rollbackRequest(const KeeperRequestForSession 
     storage->rollbackRequest(request_for_session.zxid, allow_missing);
 }
 
-nuraft::ptr<nuraft::snapshot> IKeeperStateMachine::last_snapshot()
+nuraft::ptr<nuraft::snapshot> KeeperStateMachine::last_snapshot()
 {
     /// Just return the latest snapshot.
     std::lock_guard lock(snapshots_lock);
     return latest_snapshot_meta;
 }
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::async_result<bool>::handler_type & when_done)
+void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_result<bool>::handler_type & when_done)
 {
     LOG_DEBUG(log, "Creating snapshot {}", s.get_last_log_idx());
 
@@ -1112,7 +1023,7 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
     CreateSnapshotTask snapshot_task;
     { /// lock storage for a short period time to turn on "snapshot mode". After that we can read consistent storage state without locking.
         KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-        snapshot_task.snapshot = std::make_shared<KeeperStorageSnapshot<Storage>>(
+        snapshot_task.snapshot = std::make_shared<KeeperStorageSnapshot>(
             storage.get(), snapshot_meta_copy, getClusterConfig(), keeper_context->getWriteSnapshotVersion());
     }
 
@@ -1122,7 +1033,7 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
         nuraft::ptr<std::exception> exception(nullptr);
         bool ret = false;
         SnapshotFileInfoPtr snapshot_file_info;
-        auto && snapshot = std::get<std::shared_ptr<KeeperStorageSnapshot<Storage>>>(std::move(snapshot_));
+        auto && snapshot = std::move(snapshot_);
         if (!execute_only_cleanup)
         {
             try
@@ -1270,9 +1181,8 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
             /// Destroy snapshot with lock
             KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
             LOG_TRACE(log, "Clearing garbage after snapshot");
-            /// Turn off "snapshot mode" and clear outdate part of storage state
+            /// Turn off "snapshot mode" and clear outdated part of storage state
             snapshot.reset();
-            storage->clearGarbageAfterSnapshot();
             LOG_TRACE(log, "Cleared garbage after snapshot");
         }
 
@@ -1301,8 +1211,7 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
         LOG_WARNING(log, "Cannot push snapshot task into queue");
 }
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::save_logical_snp_obj(
+void KeeperStateMachine::save_logical_snp_obj(
     nuraft::snapshot & s, uint64_t & obj_id, nuraft::buffer & data, bool is_first_obj, bool is_last_obj)
 {
     LOG_DEBUG(log, "Saving snapshot {} obj_id {}", s.get_last_log_idx(), obj_id);
@@ -1683,7 +1592,7 @@ struct SnapshotTransferCtx
 
 }
 
-int IKeeperStateMachine::read_logical_snp_obj(
+int KeeperStateMachine::read_logical_snp_obj(
     nuraft::snapshot & s, void *& user_snp_ctx, uint64_t obj_id, nuraft::ptr<nuraft::buffer> & data_out, bool & is_last_obj)
 {
     LOG_DEBUG(log, "Reading snapshot {} obj_id {}", s.get_last_log_idx(), obj_id);
@@ -1865,7 +1774,7 @@ int IKeeperStateMachine::read_logical_snp_obj(
     return 1;
 }
 
-void IKeeperStateMachine::free_user_snp_ctx(void *& user_snp_ctx)
+void KeeperStateMachine::free_user_snp_ctx(void *& user_snp_ctx)
 {
     if (!user_snp_ctx)
         return;
@@ -1874,8 +1783,7 @@ void IKeeperStateMachine::free_user_snp_ctx(void *& user_snp_ctx)
     user_snp_ctx = nullptr;
 }
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::processReadRequests(const KeeperRequestsForSessions & requests)
+void KeeperStateMachine::processReadRequests(const KeeperRequestsForSessions & requests)
 {
     /// Pure local request, just process them with storage
     KEEPER_STORAGE_LOCK_SHARED(storage_lock);
@@ -1890,8 +1798,7 @@ void KeeperStateMachine<Storage>::processReadRequests(const KeeperRequestsForSes
     }
 }
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::shutdownStorage()
+void KeeperStateMachine::shutdownStorage()
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     if (!storage)
@@ -1899,125 +1806,108 @@ void KeeperStateMachine<Storage>::shutdownStorage()
     storage->finalize();
 }
 
-template<typename Storage>
-std::vector<int64_t> KeeperStateMachine<Storage>::getDeadSessions()
+std::vector<int64_t> KeeperStateMachine::getDeadSessions()
 {
     KEEPER_STORAGE_LOCK_SHARED(lock);
     return storage->getDeadSessions();
 }
 
-template<typename Storage>
-int64_t KeeperStateMachine<Storage>::getNextZxid() const
+int64_t KeeperStateMachine::getNextZxid() const
 {
     KEEPER_STORAGE_LOCK_SHARED(lock);
     return storage->getNextZXID();
 }
 
-template<typename Storage>
-KeeperDigest KeeperStateMachine<Storage>::getNodesDigest() const
+KeeperDigest KeeperStateMachine::getNodesDigest() const
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getNodesDigest(false, /*lock_transaction_mutex=*/true);
 }
 
-template<typename Storage>
-int64_t KeeperStateMachine<Storage>::getLastProcessedZxid() const
+int64_t KeeperStateMachine::getLastProcessedZxid() const
 {
     KEEPER_STORAGE_LOCK_SHARED(lock);
     return storage->getZXID();
 }
 
-template<typename Storage>
-KeeperStorageStats KeeperStateMachine<Storage>::getStorageStats() const
+KeeperStorageStats KeeperStateMachine::getStorageStats() const
 {
     KEEPER_STORAGE_LOCK_SHARED(lock);
     return storage->getStorageStats();
 }
 
-template<typename Storage>
-uint64_t KeeperStateMachine<Storage>::getNodesCount() const
+uint64_t KeeperStateMachine::getNodesCount() const
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getNodesCount();
 }
 
-template<typename Storage>
-uint64_t KeeperStateMachine<Storage>::getTotalWatchesCount() const
+uint64_t KeeperStateMachine::getTotalWatchesCount() const
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getTotalWatchesCount();
 }
 
-template<typename Storage>
-uint64_t KeeperStateMachine<Storage>::getWatchedPathsCount() const
+uint64_t KeeperStateMachine::getWatchedPathsCount() const
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getWatchedPathsCount();
 }
 
-template<typename Storage>
-uint64_t KeeperStateMachine<Storage>::getSessionsWithWatchesCount() const
+uint64_t KeeperStateMachine::getSessionsWithWatchesCount() const
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getSessionsWithWatchesCount();
 }
 
-template<typename Storage>
-uint64_t KeeperStateMachine<Storage>::getTotalEphemeralNodesCount() const
+uint64_t KeeperStateMachine::getTotalEphemeralNodesCount() const
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getTotalEphemeralNodesCount();
 }
 
-template<typename Storage>
-uint64_t KeeperStateMachine<Storage>::getSessionWithEphemeralNodesCount() const
+uint64_t KeeperStateMachine::getSessionWithEphemeralNodesCount() const
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getSessionWithEphemeralNodesCount();
 }
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::dumpWatches(WriteBufferFromOwnString & buf) const
+void KeeperStateMachine::dumpWatches(WriteBufferFromOwnString & buf) const
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     storage->dumpWatches(buf);
 }
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
+void KeeperStateMachine::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     storage->dumpWatchesByPath(buf);
 }
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const
+void KeeperStateMachine::dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     storage->dumpSessionsAndEphemerals(buf);
 }
 
-template<typename Storage>
-uint64_t KeeperStateMachine<Storage>::getApproximateDataSize() const
+uint64_t KeeperStateMachine::getApproximateDataSize() const
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getApproximateDataSize();
 }
 
-template<typename Storage>
-uint64_t KeeperStateMachine<Storage>::getKeyArenaSize() const
+uint64_t KeeperStateMachine::getKeyArenaSize() const
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getArenaDataSize();
 }
 
-template<typename Storage>
-uint64_t KeeperStateMachine<Storage>::getLatestSnapshotSize() const
+uint64_t KeeperStateMachine::getLatestSnapshotSize() const
 {
     return latest_snapshot_size.load(std::memory_order_relaxed);
 }
 
-ClusterConfigPtr IKeeperStateMachine::getClusterConfig() const
+ClusterConfigPtr KeeperStateMachine::getClusterConfig() const
 {
     std::lock_guard lock(cluster_config_lock);
     if (cluster_config)
@@ -2029,8 +1919,7 @@ ClusterConfigPtr IKeeperStateMachine::getClusterConfig() const
     return nullptr;
 }
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::recalculateStorageStats()
+void KeeperStateMachine::recalculateStorageStats()
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     LOG_INFO(log, "Recalculating storage stats");
@@ -2038,14 +1927,12 @@ void KeeperStateMachine<Storage>::recalculateStorageStats()
     LOG_INFO(log, "Done recalculating storage stats");
 }
 
-template<typename Storage>
-SnapshotFileInfoPtr KeeperStateMachine<Storage>::getSnapshotPinUnlocked(uint64_t log_idx) const
+SnapshotFileInfoPtr KeeperStateMachine::getSnapshotPinUnlocked(uint64_t log_idx) const
 {
     return snapshot_manager.getSnapshotPin(log_idx);
 }
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::advanceLatestSnapshotMeta(const SnapshotMetadataPtr & candidate)
+void KeeperStateMachine::advanceLatestSnapshotMeta(const SnapshotMetadataPtr & candidate)
 {
     chassert(candidate);
     if (latest_snapshot_meta)
@@ -2071,8 +1958,7 @@ void KeeperStateMachine<Storage>::advanceLatestSnapshotMeta(const SnapshotMetada
     snapshot_manager.setProtectedSnapshotIndex(candidate->get_last_log_idx());
 }
 
-template<typename Storage>
-void KeeperStateMachine<Storage>::cancelIfHasUnfinishedSnapshotReceive()
+void KeeperStateMachine::cancelIfHasUnfinishedSnapshotReceive()
 {
     if (!snapshot_receive_ctx)
         return;
@@ -2097,8 +1983,7 @@ void KeeperStateMachine<Storage>::cancelIfHasUnfinishedSnapshotReceive()
     }
 }
 
-template<typename Storage>
-std::vector<KeeperSnapshotStatus> KeeperStateMachine<Storage>::getSnapshotsStatus() const
+std::vector<KeeperSnapshotStatus> KeeperStateMachine::getSnapshotsStatus() const
 {
     std::lock_guard lock(snapshots_lock);
 
@@ -2131,10 +2016,5 @@ std::vector<KeeperSnapshotStatus> KeeperStateMachine<Storage>::getSnapshotsStatu
 
     return result;
 }
-
-template class KeeperStateMachine<KeeperMemoryStorage>;
-#if USE_ROCKSDB
-template class KeeperStateMachine<KeeperRocksStorage>;
-#endif
 
 }

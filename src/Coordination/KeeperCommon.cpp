@@ -1,10 +1,14 @@
 #include <Coordination/KeeperCommon.h>
 
+#include <limits>
 #include <string>
 #include <filesystem>
 #include <thread>
 
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/SipHash.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/IDisk.h>
 #include <Coordination/KeeperContext.h>
@@ -13,6 +17,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace CoordinationSetting
 {
@@ -102,4 +111,117 @@ void moveFileBetweenDisks(
     if (!run_with_retries([&] { disk_from->removeFileIfExists(path_from); }, "removing file from source disk"))
         return;
 }
+
+void KeeperNodeStats::setNumChildrenAndIsEphemeral(uint32_t num_children, bool is_ephemeral)
+{
+    /// The low bit stores is_ephemeral, so num_children must fit in the remaining 31 bits.
+    if (num_children > (std::numeric_limits<uint32_t>::max() >> 1))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many children in a znode: {}", num_children);
+    chassert(!is_ephemeral || num_children == 0);
+    num_children_and_is_ephemeral = (num_children << 1) | uint32_t(is_ephemeral);
+}
+
+/// When this function is updated, update KEEPER_CURRENT_DIGEST_VERSION!!
+uint64_t KeeperNodeStats::calculateDigest(std::string_view path, std::string_view data) const
+{
+    /// Must match calculateDigest in KeeperStorage.cpp (KEEPER_CURRENT_DIGEST_VERSION).
+    SipHash hash;
+
+    hash.update(path);
+    if (!data.empty())
+        hash.update(data);
+
+    hash.update(czxid);
+    hash.update(mzxid);
+    hash.update(ctime);
+    hash.update(mtime);
+    hash.update(version);
+    hash.update(cversion);
+    hash.update(aversion);
+    hash.update(getEphemeralOwner());
+    hash.update(getNumChildren());
+    hash.update(pzxid);
+
+    uint64_t digest = hash.get64();
+
+    /// 0 means no calculated digest, it's not a valid digest value.
+    if (digest == 0)
+        digest = 1;
+
+    return digest;
+}
+
+void KeeperNodeStats::copyStats(const Coordination::Stat & stat)
+{
+    czxid = stat.czxid;
+    mzxid = stat.mzxid;
+    pzxid = stat.pzxid;
+
+    mtime = stat.mtime;
+    ctime = stat.ctime;
+
+    version = stat.version;
+    cversion = stat.cversion;
+    aversion = stat.aversion;
+
+    data_size = stat.dataLength;
+
+    if (stat.ephemeralOwner == 0)
+    {
+        setNumChildrenAndIsEphemeral(stat.numChildren, false);
+    }
+    else
+    {
+        setNumChildrenAndIsEphemeral(0, true);
+        ephemeral_owner_or_seq_num = stat.ephemeralOwner;
+    }
+}
+
+void KeeperNodeStats::setResponseStat(Coordination::Stat & response_stat) const
+{
+    response_stat.czxid = czxid;
+    response_stat.mzxid = mzxid;
+    response_stat.ctime = ctime;
+    response_stat.mtime = mtime;
+    response_stat.version = version;
+    response_stat.cversion = cversion;
+    response_stat.aversion = aversion;
+    response_stat.ephemeralOwner = getEphemeralOwner();
+    response_stat.dataLength = static_cast<int32_t>(data_size);
+    response_stat.numChildren = getNumChildren();
+    response_stat.pzxid = pzxid;
+}
+
+void KeeperNodeStats::increaseNumChildren()
+{
+    chassert(!isEphemeral());
+    setNumChildrenAndIsEphemeral(getNumChildren() + 1, false);
+}
+
+void KeeperNodeStats::decreaseNumChildren()
+{
+    chassert(!isEphemeral());
+    chassert(getNumChildren() > 0);
+    setNumChildrenAndIsEphemeral(getNumChildren() - 1, false);
+}
+
+void KeeperNodeStats::setEphemeralOwner(int64_t ephemeral_owner)
+{
+    chassert(ephemeral_owner != 0);
+    setNumChildrenAndIsEphemeral(0, true);
+    ephemeral_owner_or_seq_num = ephemeral_owner;
+}
+
+void KeeperNodeStats::setSeqNum(int64_t seq_num)
+{
+    chassert(!isEphemeral());
+    ephemeral_owner_or_seq_num = seq_num;
+}
+
+void KeeperNodeStats::increaseSeqNum()
+{
+    chassert(!isEphemeral());
+    ++ephemeral_owner_or_seq_num;
+}
+
 }

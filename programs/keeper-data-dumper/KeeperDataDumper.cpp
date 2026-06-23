@@ -25,7 +25,7 @@ namespace DB::CoordinationSetting
 namespace
 {
 
-void dumpMachine(std::shared_ptr<KeeperStateMachine<DB::KeeperMemoryStorage>> machine)
+void dumpMachine(std::shared_ptr<KeeperStateMachine> machine)
 {
     auto & storage = machine->getStorageUnsafe();
     std::queue<std::string> keys;
@@ -39,10 +39,10 @@ void dumpMachine(std::shared_ptr<KeeperStateMachine<DB::KeeperMemoryStorage>> ma
         auto value = storage.container.getValue(key);
         std::cout << "\tStat: {version: " << value.stats.version <<
             ", mtime: " << value.stats.mtime <<
-            ", emphemeralOwner: " << value.stats.ephemeralOwner() <<
+            ", emphemeralOwner: " << value.stats.getEphemeralOwner() <<
             ", czxid: " << value.stats.czxid <<
             ", mzxid: " << value.stats.mzxid <<
-            ", numChildren: " << value.numChildren() <<
+            ", numChildren: " << value.stats.getNumChildren() <<
             ", dataLength: " << value.stats.data_size <<
             "}" << std::endl;
         std::cout << "\tData: " << storage.container.getValue(key).getData() << std::endl;
@@ -80,7 +80,7 @@ int mainEntryClickHouseKeeperDataDumper(int argc, char ** argv)
     keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", argv[2]));
     keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", argv[1]));
 
-    auto state_machine = std::make_shared<KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, keeper_context, nullptr);
     state_machine->init();
     size_t last_commited_index = state_machine->last_commit_index();
 
