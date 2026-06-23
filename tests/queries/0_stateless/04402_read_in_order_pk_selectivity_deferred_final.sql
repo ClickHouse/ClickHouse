@@ -1,5 +1,10 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
 -- Test that the read-in-order PK-selectivity guard is NOT misfired by filters that are
 -- deferred after FINAL (apply_row_policy_after_final / apply_prewhere_after_final).
+-- This test asserts the exact shape of the query pipeline (presence/absence of
+-- PartialSortingTransform), so settings randomization (e.g. optimize_read_in_order) and
+-- merge-tree settings randomization (e.g. index_granularity) must be disabled, as in the
+-- sibling tests 04053 / 04202 / 04317.
 --
 -- Deferred filters are excluded from primary key / skip index analysis, so they never reduce
 -- the number of selected granules. Treating such a deferred-only filter as a primary-key filter
