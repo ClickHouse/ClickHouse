@@ -46,6 +46,24 @@ need_json() {  # need_json <payload> <description>
     fi
 }
 
+# Fetch a run's failed-step log, accepting it only when COMPLETE. `--log-failed`
+# is multi-MB and under bulk/rate-limited use it can return a non-empty but
+# truncated stream missing the trailing traceback — which would misclassify a
+# GUARD failure as OTHER. A failed step always ends with the GitHub Actions
+# marker `Process completed with exit code`, so we retry until we see it and
+# return non-zero if we never get a complete log (caller marks UNKNOWN, not OTHER).
+fetch_failed_log() {  # fetch_failed_log <run-id>  -> prints complete log, rc 0; else rc 1
+    local id="$1" log=""
+    for _attempt in 1 2 3; do
+        log="$(GH run view "$id" --repo "$REPO" --log-failed 2>/dev/null)"
+        if printf '%s' "$log" | grep -q 'Process completed with exit code'; then
+            printf '%s' "$log"
+            return 0
+        fi
+    done
+    return 1
+}
+
 # ---- preflight self-check (fail-close: no fabricated data) -------------------
 if ! command -v gh >/dev/null 2>&1; then
     echo "ERROR: gh CLI not found on PATH." >&2; exit 2
@@ -165,7 +183,7 @@ AR_RUNS="$(GH run list --repo "$REPO" --workflow auto_releases.yml --created ">=
     --json databaseId,conclusion,status,createdAt 2>/dev/null)" \
     || { echo "ERROR: failed to list AutoReleases runs (gh exited non-zero) — aborting (fail-close)." >&2; exit 3; }
 need_json "$AR_RUNS" "AutoReleases run list" || exit 3
-n_guard=0; n_runner=0; n_other=0; n_ok=0
+n_guard=0; n_runner=0; n_other=0; n_ok=0; n_unknown=0
 printf "   %-12s %-12s %-12s %s\n" "date" "conclusion" "class" "run-id"
 while IFS=$'\t' read -r id concl stat created; do
     [[ -z "$id" ]] && continue
@@ -175,12 +193,22 @@ while IFS=$'\t' read -r id concl stat created; do
         success)
             cls="ok"; n_ok=$((n_ok+1)) ;;
         failure)
-            # GUARD == AutoReleaseInfo died at auto_release.py:107 / raise RuntimeError
-            if GH run view "$id" --repo "$REPO" --log-failed 2>/dev/null \
-                 | grep -qE 'auto_release\.py", line 1[0-9][0-9]|raise RuntimeError'; then
-                cls="GUARD"; n_guard=$((n_guard+1))
+            # GUARD == the version-bump-PR guard specifically: the traceback must
+            # show both the `_prepare` frame AND a `raise RuntimeError` source line.
+            # Match the combination, NOT a line number (which drifts) and NOT bare
+            # `raise RuntimeError` — other `_prepare` failures (e.g. the `assert refs`
+            # candidate check) raise AssertionError and must classify as OTHER.
+            if flog="$(fetch_failed_log "$id")"; then
+                if printf '%s' "$flog" | grep -q 'in _prepare' \
+                   && printf '%s' "$flog" | grep -q 'raise RuntimeError'; then
+                    cls="GUARD"; n_guard=$((n_guard+1))
+                else
+                    cls="OTHER"; n_other=$((n_other+1))
+                fi
             else
-                cls="OTHER"; n_other=$((n_other+1))
+                # fail-closed: couldn't obtain a complete log, so we cannot rule out
+                # (or confirm) the guard — never silently downgrade to OTHER.
+                cls="UNKNOWN"; n_unknown=$((n_unknown+1))
             fi ;;
         cancelled|"")
             # RUNNER == first job never got a runner (empty steps / no runner_name)
@@ -200,7 +228,8 @@ import sys, json
 for r in json.load(sys.stdin):
     print("\t".join([str(r["databaseId"]), r.get("conclusion") or "", r.get("status") or "", r.get("createdAt") or ""]))
 ')
-echo "   tally: GUARD=$n_guard  RUNNER=$n_runner  OTHER=$n_other  ok=$n_ok"
+echo "   tally: GUARD=$n_guard  RUNNER=$n_runner  OTHER=$n_other  UNKNOWN=$n_unknown  ok=$n_ok"
+[[ "$n_unknown" -gt 0 ]] && echo "   note: UNKNOWN = failed run whose log could not be fetched — investigate manually, do not assume it is not a guard failure."
 echo
 
 echo "== 3b. CreateRelease runs since $SINCE (manual dispatches / matrix calls) =="

@@ -77,12 +77,19 @@ script's `⚠️ MISSING` flag encodes this.
 
 ### 4. Diagnose the failures
 
-**`GUARD`** — `AutoReleaseInfo` died at `tests/ci/auto_release.py:107`
-(`raise RuntimeError`), immediately after printing `Posting slack message`. This is
-the guard "check all previous version bump PRs were merged": it runs
+**`GUARD`** — `AutoReleaseInfo` died in the version-bump-PR guard inside
+`_prepare` (`raise RuntimeError`), immediately after printing `Posting slack message`.
+This is the guard "check all previous version bump PRs were merged": it runs
 `gh pr list --state open --search "Update version_date.tsv"` and aborts if the result
 is non-empty. Because the matrix `Releases` job `needs` this job, a guard failure
 **skips every branch** — nothing releases.
+
+> The script classifies `GUARD` only when the failed-step log shows **both** the
+> `in _prepare` traceback frame **and** the `raise RuntimeError` source line — not a
+> line number (which drifts) and not bare `RuntimeError`. Other `_prepare` failures
+> (e.g. the `assert refs` release-candidate check, which raises `AssertionError`)
+> classify as `OTHER`, not `GUARD`, so the operator is not sent to hunt version-bump
+> PRs when the guard is actually clear.
 
 > The GitHub Actions log does **not** name the offending PR — the list is sent to a
 > Slack alert, not stdout. Find it two ways:
@@ -103,11 +110,17 @@ change** — escalate in `#core-ci-info` and check the org/repo Actions runner s
 Note: clearing a `GUARD` blocker does nothing if `RUNNER` is also failing, and vice
 versa — both must be healthy for a release to happen.
 
-**`OTHER`** — read the failed step directly:
+**`OTHER`** — the run failed for some reason other than the guard or a missing
+runner. Read the failed step directly:
 
 ```bash
 command gh run view <run-id> --repo ClickHouse/ClickHouse --log-failed
 ```
+
+**`UNKNOWN`** — the script could not fetch a complete failed-step log for the run
+(transient API/rate-limit truncation), so it refuses to guess. This is fail-closed:
+do **not** assume it was not a guard failure — re-run the check, or read the log
+manually with the command above.
 
 ### 5. (gated) Remediate a guard blocker
 
