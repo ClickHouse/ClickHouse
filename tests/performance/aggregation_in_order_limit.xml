@@ -1,7 +1,7 @@
 <test>
     <!-- GROUP BY primary key column ORDER BY the same key LIMIT N.
          Exercises the aggregation-in-order limit push-down optimization:
-         early termination after producing enough groups. --!>
+         early termination after producing enough groups. -->
 
     <settings>
         <optimize_aggregation_in_order>1</optimize_aggregation_in_order>
