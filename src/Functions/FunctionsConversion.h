@@ -4727,7 +4727,7 @@ private:
     static ColumnPtr convertQBitToArray(ColumnsWithTypeAndName & arguments, size_t dimension);
 
     template <typename T>
-    WrapperType createQBitToArrayWrapper(const DataTypeQBit & from_qbit_type, const DataTypeArray & to_array_type) const;
+    WrapperType createQBitToArrayWrapper(const DataTypeQBit & from_qbit_type, const DataTypeArray & to_type) const;
 
     /// The case of: tuple([key1, key2, ..., key_n], [value1, value2, ..., value_n])
     WrapperType createTupleToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const;

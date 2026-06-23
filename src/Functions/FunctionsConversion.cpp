@@ -1283,7 +1283,7 @@ template <typename T>
 FunctionCast::WrapperType FunctionCast::createQBitToArrayWrapper(const DataTypeQBit & from_qbit_type, const DataTypeArray & to_type) const
 {
     /// A QBit reconstructs into an array of its own element type; the elements are converted to the requested type afterwards.
-    const DataTypePtr from_nested_type = from_qbit_type.getElementType();
+    const DataTypePtr & from_nested_type = from_qbit_type.getElementType();
     const DataTypePtr & to_nested_type = to_type.getNestedType();
     const size_t dimension = from_qbit_type.getDimension();
 
