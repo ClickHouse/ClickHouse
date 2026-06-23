@@ -169,10 +169,16 @@ KeeperRequestDispatcher::KeeperRequestDispatcher(KeeperServer * server_)
     in_flight_batches = std::vector<InFlightBatch>(std::max(size_t(coordination_settings[CoordinationSetting::max_in_flight_request_batches]), size_t(1)));
 }
 
-void KeeperRequestDispatcher::startup()
+void KeeperRequestDispatcher::startupResponseThread()
 {
-    dispatch_thread = ThreadFromGlobalPool([this] { dispatchThread(); });
+    chassert(!response_thread.joinable());
     response_thread = ThreadFromGlobalPool([this] { responseThread(); });
+}
+
+void KeeperRequestDispatcher::startupDispatchThread()
+{
+    chassert(!dispatch_thread.joinable());
+    dispatch_thread = ThreadFromGlobalPool([this] { dispatchThread(); });
 }
 
 void KeeperRequestDispatcher::shutdown(bool closed_all_connections)
@@ -298,7 +304,7 @@ bool KeeperRequestDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr
     int64_t max_request_queue_bytes = int64_t(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_queue_bytes_size]);
     auto try_push = [&]
     {
-        return requests_queue_bytes.load() <= max_request_queue_bytes && requests_queue.tryPush(std::move(request_info));
+        return requests_queue_bytes.load() <= max_request_queue_bytes && requests_queue.tryPush(request_info);
     };
 
     if (!try_push())
@@ -364,7 +370,7 @@ void KeeperRequestDispatcher::onResponse(KeeperResponseForSession response) noex
     int64_t max_response_queue_bytes = int64_t(keeper_context->getCoordinationSettings()[CoordinationSetting::max_response_queue_bytes_size]);
     auto try_push = [&]
     {
-        return response_bytes_in_all_queues.load() <= max_response_queue_bytes && responses_queue.tryPush(std::move(response));
+        return response_bytes_in_all_queues.load() <= max_response_queue_bytes && responses_queue.tryPush(response);
     };
 
     if (!try_push())
