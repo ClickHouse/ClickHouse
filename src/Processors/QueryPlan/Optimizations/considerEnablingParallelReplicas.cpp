@@ -259,7 +259,7 @@ void considerEnablingParallelReplicas(
                 || typeid_cast<const DelayedCreatingSetsStep *>(frame_node.step.get())
                 || typeid_cast<const CreatingSetsStep *>(frame_node.step.get());
             if (!step_is_supported)
-                unsupported_steps += (unsupported_steps.empty() ? "" : ", ") + frame_node.step->getName();
+                unsupported_steps += (unsupported_steps.empty() ? "" : ", ") + frame_node.step->getUniqID();
             plan_is_simple_enough &= step_is_supported;
         });
     if (!plan_is_simple_enough)
