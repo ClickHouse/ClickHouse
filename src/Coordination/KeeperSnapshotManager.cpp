@@ -813,7 +813,7 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
                 continue;
 
             LOG_TRACE(log, "Found {} on {}", snapshot_file, disk->getName());
-            size_t snapshot_up_to = getSnapshotPathUpToLogIdx(snapshot_file);
+            size_t snapshot_up_to = getLogIdxFromSnapshotPath(snapshot_file);
             if (existing_snapshots.contains(snapshot_up_to))
             {
                 /// Equivalent snapshots for the same committed index (upgrade races, crashed loser

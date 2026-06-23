@@ -70,7 +70,7 @@ inline static constexpr std::string_view tmp_keeper_file_prefix = "tmp_";
 
 /// Parse the log index out of a snapshot file name/path. Works for both legacy
 /// ("snapshot_100.bin.zstd") and unique ("snapshot_100_<uuid>.bin.zstd") names.
-uint64_t getSnapshotPathUpToLogIdx(const std::string & snapshot_path);
+uint64_t getLogIdxFromSnapshotPath(const std::string & snapshot_path);
 
 /// Canonical S3 key for a snapshot file: strips the unique suffix so every node uploads
 /// the same logical index under the same key, e.g. "snapshot_100_<uuid>.bin.zstd" -> "snapshot_100.bin.zstd".

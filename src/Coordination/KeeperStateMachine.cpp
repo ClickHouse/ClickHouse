@@ -1202,7 +1202,7 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
     snapshot_task.create_snapshot = [this, when_done, captured_storage](KeeperStorageSnapshotPtr && snapshot_, bool execute_only_cleanup)
     {
         nuraft::ptr<std::exception> exception(nullptr);
-        bool ret = false;
+        bool snapshot_published = false;
         SnapshotFileInfoPtr snapshot_file_info;
         auto && snapshot = std::get<std::shared_ptr<KeeperStorageSnapshot<Storage>>>(std::move(snapshot_));
         if (!execute_only_cleanup)
@@ -1247,7 +1247,7 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
 
                 if (already_covered)
                 {
-                    ret = true;
+                    snapshot_published = true;
                 }
                 else
                 {
@@ -1271,7 +1271,7 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
                         snapshot_file_info = std::move(outcome.published);
                         loser_file_info = std::move(outcome.loser_to_remove);
                         written_file_info.reset(); /// ownership transferred; catch must not retire a published file
-                        ret = true; /// publication decided — later exceptions are post-commit failures
+                        snapshot_published = true; /// publication decided — later exceptions are post-commit failures
                         if (outcome.won)
                         {
                             /// Cancel any in-flight receive; partial files are deleted outside the lock.
@@ -1284,7 +1284,7 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
                     loser_file_info.reset(); /// pin deleter unlinks it
                     if (detached_receive_files)
                         cleanupDetachedSnapshotReceive(*detached_receive_files);
-                    runSnapshotMaintenanceAfterUnlock(std::move(maintenance_tasks));
+                    runSnapshotMaintenance(std::move(maintenance_tasks));
                 }
             }
             catch (...)
@@ -1296,12 +1296,11 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
                     written_file_info.reset();
                 }
                 loser_file_info.reset();
-                if (ret)
+                if (snapshot_published)
                 {
                     if (detached_receive_files)
                         cleanupDetachedSnapshotReceive(*detached_receive_files);
-                    LOG_WARNING(log, "Exception happened after snapshot metadata was published");
-                    tryLogCurrentException(log, "Snapshot post-commit cleanup or maintenance failed");
+                    tryLogCurrentException(log, "Exception happened after snapshot metadata was published: post-commit cleanup or maintenance failed");
                 }
                 else
                 {
@@ -1320,9 +1319,9 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
             LOG_TRACE(log, "Cleared garbage after snapshot");
         }
 
-        when_done(ret, exception);
+        when_done(snapshot_published, exception);
 
-        return ret ? snapshot_file_info : nullptr;
+        return snapshot_published ? snapshot_file_info : nullptr;
     };
 
     if (keeper_context->getServerState() == KeeperContext::Phase::SHUTDOWN)
@@ -2208,7 +2207,7 @@ void KeeperStateMachine<Storage>::cleanupDetachedSnapshotReceive(const DetachedS
 }
 
 template<typename Storage>
-void KeeperStateMachine<Storage>::runSnapshotMaintenanceAfterUnlock(SnapshotMaintenanceTasks && tasks)
+void KeeperStateMachine<Storage>::runSnapshotMaintenance(SnapshotMaintenanceTasks && tasks)
 {
     try
     {

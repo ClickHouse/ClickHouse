@@ -334,7 +334,7 @@ private:
 
     std::optional<DetachedSnapshotReceiveFiles> detachUnfinishedSnapshotReceiveForCleanup() TSA_REQUIRES(snapshots_lock);
     void cleanupDetachedSnapshotReceive(const DetachedSnapshotReceiveFiles & files);
-    void runSnapshotMaintenanceAfterUnlock(SnapshotMaintenanceTasks && tasks);
+    void runSnapshotMaintenance(SnapshotMaintenanceTasks && tasks);
 
     /// Phase 2 of the create task: write+sync under a fresh unique name, outside `snapshots_lock`.
     SnapshotFileInfoPtr writeSnapshotToDisk(const KeeperStorageSnapshot<Storage> & snapshot);

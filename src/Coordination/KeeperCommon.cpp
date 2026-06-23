@@ -27,7 +27,7 @@ bool isLocalDisk(const IDisk & disk)
     return dynamic_cast<const DiskLocal *>(&disk) != nullptr;
 }
 
-uint64_t getSnapshotPathUpToLogIdx(const std::string & snapshot_path)
+uint64_t getLogIdxFromSnapshotPath(const std::string & snapshot_path)
 {
     std::filesystem::path path(snapshot_path);
     std::string filename = path.stem();
@@ -38,7 +38,7 @@ uint64_t getSnapshotPathUpToLogIdx(const std::string & snapshot_path)
 
 std::string getCanonicalSnapshotS3Name(const std::string & snapshot_path)
 {
-    const uint64_t up_to_log_idx = getSnapshotPathUpToLogIdx(snapshot_path);
+    const uint64_t up_to_log_idx = getLogIdxFromSnapshotPath(snapshot_path);
     return fmt::format("snapshot_{}.bin{}", up_to_log_idx, snapshot_path.ends_with(".zstd") ? ".zstd" : "");
 }
 

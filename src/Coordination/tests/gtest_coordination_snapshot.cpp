@@ -286,7 +286,7 @@ std::vector<std::string> snapshotFilesForIdx(const std::string & dir, uint64_t i
         }
         if (!name.starts_with("snapshot_"))
             continue;
-        if (DB::getSnapshotPathUpToLogIdx(name) == idx)
+        if (DB::getLogIdxFromSnapshotPath(name) == idx)
             result.push_back(entry.path().filename().string());
     }
     return result;
@@ -1557,7 +1557,7 @@ TEST(KeeperMemorySnapshotApplyTest, HighWaterMarkStaysServableAndNeverRegressesU
         nuraft::snapshot s2_again(2, 0, std::make_shared<nuraft::cluster_config>());
         auto info = executeCreateSnapshotTask(*state_machine, snapshots_queue, s2_again);
         ASSERT_NE(info, nullptr);
-        EXPECT_EQ(DB::getSnapshotPathUpToLogIdx(info->path), 2u);
+        EXPECT_EQ(DB::getLogIdxFromSnapshotPath(info->path), 2u);
     }
 
     /// (6) apply snapshot 6 -> mark advances to 6.
@@ -1739,7 +1739,7 @@ TEST(KeeperMemorySnapshotApplyTest, CreateSkipReturnsHighWaterMarkFileNotMapMax)
     nuraft::snapshot s2_again(2, 0, std::make_shared<nuraft::cluster_config>());
     auto info = executeCreateSnapshotTask(*state_machine, snapshots_queue, s2_again);
     ASSERT_NE(info, nullptr);
-    EXPECT_EQ(DB::getSnapshotPathUpToLogIdx(info->path), 2u); /// not snapshot_5
+    EXPECT_EQ(DB::getLogIdxFromSnapshotPath(info->path), 2u); /// not snapshot_5
     EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 2);
 }
 
@@ -1803,7 +1803,7 @@ TEST(KeeperMemorySnapshotApplyTest, LocalCreateBelowSavedInstallsSurvivesRetenti
         nuraft::snapshot s5_again(5, 0, std::make_shared<nuraft::cluster_config>());
         auto info = executeCreateSnapshotTask(*state_machine, snapshots_queue, s5_again);
         ASSERT_NE(info, nullptr);
-        EXPECT_EQ(DB::getSnapshotPathUpToLogIdx(info->path), 5u);
+        EXPECT_EQ(DB::getLogIdxFromSnapshotPath(info->path), 5u);
     }
 
     /// (6) convergence: save full 13 -> remove 10 -> {5,11,12,13}; idx 5 survives (protected).
@@ -2217,8 +2217,8 @@ TEST(KeeperSnapshotManagerCleanupTest, StartupScanKeepsOneRegisteredSnapshotPerI
     }
 
     /// Parser pins: unique and legacy names parse to the same index.
-    EXPECT_EQ(DB::getSnapshotPathUpToLogIdx("snapshot_100_ab12cd34.bin.zstd"), 100);
-    EXPECT_EQ(DB::getSnapshotPathUpToLogIdx("snapshot_100.bin.zstd"), 100);
+    EXPECT_EQ(DB::getLogIdxFromSnapshotPath("snapshot_100_ab12cd34.bin.zstd"), 100);
+    EXPECT_EQ(DB::getLogIdxFromSnapshotPath("snapshot_100.bin.zstd"), 100);
 }
 
 TEST(KeeperSnapshotManagerCleanupTest, StartupScanKeepsLatestIndexDuplicatesForRecovery)
@@ -2680,7 +2680,7 @@ TEST(KeeperSnapshotManagerCleanupTest, ApplySnapshotDoesNotWaitForLocalCreate)
     block_state->release();
     auto snapshot_file_info = create_future.get();
     ASSERT_NE(snapshot_file_info, nullptr);
-    EXPECT_EQ(DB::getSnapshotPathUpToLogIdx(snapshot_file_info->path), 2);
+    EXPECT_EQ(DB::getLogIdxFromSnapshotPath(snapshot_file_info->path), 2);
     EXPECT_TRUE(callback_called);
     EXPECT_TRUE(callback_result);
 
@@ -2751,7 +2751,7 @@ TEST(KeeperSnapshotManagerCleanupTest, CreateLosesRaceToNewerSnapshotRetiresWrit
     auto snapshot_file_info = create_future.get();
     ASSERT_NE(snapshot_file_info, nullptr);
     /// The create adopted the newer published snapshot and retired its own idx-1 file.
-    EXPECT_EQ(DB::getSnapshotPathUpToLogIdx(snapshot_file_info->path), 2);
+    EXPECT_EQ(DB::getLogIdxFromSnapshotPath(snapshot_file_info->path), 2);
     EXPECT_TRUE(callback_called);
     EXPECT_TRUE(callback_result);
 
@@ -2806,7 +2806,7 @@ TEST(KeeperSnapshotManagerCleanupTest, CreateForOlderRetainedIndexAdoptsLatestSn
     EXPECT_TRUE(callback_called);
     EXPECT_TRUE(callback_result);
     ASSERT_NE(snapshot_file_info, nullptr);
-    EXPECT_EQ(DB::getSnapshotPathUpToLogIdx(snapshot_file_info->path), 5);
+    EXPECT_EQ(DB::getLogIdxFromSnapshotPath(snapshot_file_info->path), 5);
     /// No new idx-3 file was written; the metadata stays at 5.
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 3).size(), 1);
     EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 5);
@@ -2875,7 +2875,7 @@ TEST(KeeperSnapshotManagerCleanupTest, CreateRacingNewerReceiveWithRetainedSameI
 
     /// Phase-3 latest-covering adoption fires (not the same-index branch): the create's
     /// own idx-3 file is retired and removed and the idx-5 entry is returned.
-    EXPECT_EQ(DB::getSnapshotPathUpToLogIdx(snapshot_file_info->path), 5);
+    EXPECT_EQ(DB::getLogIdxFromSnapshotPath(snapshot_file_info->path), 5);
     EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 5);
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 3).size(), 1);
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 3, /*include_tmp_markers=*/true).size(), 1);
