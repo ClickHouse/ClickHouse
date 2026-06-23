@@ -1,13 +1,66 @@
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
+#include <Columns/ColumnsCommon.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/Serializations/SerializationNullableWithParentNullMap.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
+namespace Setting
+{
+extern const SettingsBool allow_nullable_tuple_in_extracted_subcolumns;
+}
+
+static bool isNullableTupleInExtractedSubcolumnsEnabledByGlobalSetting()
+{
+    auto context = Context::getGlobalContextInstance();
+    return context && context->getSettingsRef()[Setting::allow_nullable_tuple_in_extracted_subcolumns];
+}
+
+static bool canExtractedSubcolumnsBeInsideNullable(const ColumnPtr & column)
+{
+    if (checkAndGetColumn<ColumnTuple>(column.get()))
+        return isNullableTupleInExtractedSubcolumnsEnabledByGlobalSetting();
+
+    return column->canBeInsideNullable();
+}
+
+bool canExtractedSubcolumnsBeInsideNullable(const DataTypePtr & type)
+{
+    if (isTuple(type))
+        return isNullableTupleInExtractedSubcolumnsEnabledByGlobalSetting();
+
+    return type->canBeInsideNullable();
+}
+
+bool canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(const DataTypePtr & type)
+{
+    return canExtractedSubcolumnsBeInsideNullable(removeLowCardinality(type));
+}
+
+DataTypePtr makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(const DataTypePtr & type)
+{
+    if (!canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(type))
+        return type;
+
+    return makeNullableOrLowCardinalityNullableSafe(type);
+}
 
 ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullMapPtr & null_map)
 {
@@ -67,22 +120,91 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
 }
 
 
+void applyParentNullMapToExtractedSubcolumn(
+    const MutableColumnPtr & column, const NullMap & parent_null_map, size_t column_offset, size_t parent_null_map_offset)
+{
+    chassert(column_offset <= column->size());
+    const size_t length = column->size() - column_offset;
+    chassert(parent_null_map_offset + length <= parent_null_map.size());
+
+    /// When no row of the range is NULL in the parent, the subcolumn already holds the correct values and
+    /// nothing needs to be marked NULL.
+    if (memoryIsZero(parent_null_map.data(), parent_null_map_offset, parent_null_map_offset + length))
+        return;
+
+    /// Build a keep-mask that covers only the applied range: zero for the rows that are NULL in the parent
+    /// and one elsewhere.
+    IColumn::Filter keep_mask(length);
+    for (size_t i = 0; i < length; ++i)
+        keep_mask[i] = !parent_null_map[parent_null_map_offset + i];
+
+    if (auto * nullable = typeid_cast<ColumnNullable *>(column.get()))
+    {
+        nullable->applyNegatedNullMap(keep_mask, column_offset);
+        return;
+    }
+
+    if (auto * variant = typeid_cast<ColumnVariant *>(column.get()))
+    {
+        variant->applyNegatedNullMap(keep_mask, column_offset);
+        return;
+    }
+
+    if (auto * dynamic = typeid_cast<ColumnDynamic *>(column.get()))
+    {
+        dynamic->applyNegatedNullMap(keep_mask, column_offset);
+        return;
+    }
+
+    if (auto * low_cardinality = typeid_cast<ColumnLowCardinality *>(column.get()))
+    {
+        low_cardinality->applyNegatedNullMap(keep_mask, column_offset);
+        return;
+    }
+
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR, "Cannot apply the parent null map to subcolumn {} that cannot represent NULL values", column->getName());
+}
+
+
 DataTypePtr NullableSubcolumnCreator::create(const DataTypePtr & prev) const
 {
+    if (!canExtractedSubcolumnsBeInsideNullable(prev))
+        return prev;
     return makeNullableSafe(prev);
 }
 
 SerializationPtr NullableSubcolumnCreator::create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const
 {
-    if (prev_type && !prev_type->canBeInsideNullable())
+    if (prev_type && !canExtractedSubcolumnsBeInsideNullable(prev_type))
+    {
+        /// The extracted subcolumn cannot be wrapped into Nullable, but some types can represent NULL
+        /// themselves: Nullable (possibly inside LowCardinality), Dynamic and Variant. For them return a
+        /// serialization that also reads the outer null map and marks the corresponding rows as NULL in
+        /// the subcolumn's own null representation.
+        if (canContainNull(*prev_type))
+            return SerializationNullableWithParentNullMap::create(prev_serialization);
         return prev_serialization;
-    return std::make_shared<SerializationNullable>(prev_serialization);
+    }
+
+    return SerializationNullable::create(prev_serialization);
 }
 
 ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
 {
-    if (prev->canBeInsideNullable())
+    if (canExtractedSubcolumnsBeInsideNullable(prev))
         return ColumnNullable::create(prev, null_map);
+
+    /// The extracted subcolumn cannot be wrapped into Nullable, but if it can represent NULL itself,
+    /// mark rows that are NULL in the outer column as NULL in it.
+    if (null_map && canContainNull(*prev))
+    {
+        const auto & outer_null_map_data = assert_cast<const ColumnUInt8 &>(*null_map).getData();
+        auto mutable_column = IColumn::mutate(prev);
+        applyParentNullMapToExtractedSubcolumn(mutable_column, outer_null_map_data, 0, 0);
+        return mutable_column;
+    }
+
     return prev;
 }
 

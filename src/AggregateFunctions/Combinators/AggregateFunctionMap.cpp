@@ -14,6 +14,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -32,7 +34,7 @@ template <typename KeyType>
 struct AggregateFunctionMapCombinatorData
 {
     using SearchType = KeyType;
-    std::unordered_map<KeyType, AggregateDataPtr> merged_maps;
+    UnorderedMapWithMemoryTracking<KeyType, AggregateDataPtr> merged_maps;
 
     static void writeKey(KeyType key, WriteBuffer & buf) { writeBinaryLittleEndian(key, buf); }
     static void readKey(KeyType & key, ReadBuffer & buf) { readBinaryLittleEndian(key, buf); }
@@ -50,7 +52,7 @@ struct AggregateFunctionMapCombinatorData<String>
     };
 
     using SearchType = std::string_view;
-    std::unordered_map<String, AggregateDataPtr, StringHash, std::equal_to<>> merged_maps;
+    UnorderedMapWithMemoryTracking<String, AggregateDataPtr, StringHash, std::equal_to<>> merged_maps;
 
     static void writeKey(String key, WriteBuffer & buf)
     {
@@ -75,7 +77,7 @@ struct AggregateFunctionMapCombinatorData<IPv6>
     };
 
     using SearchType = IPv6;
-    std::unordered_map<IPv6, AggregateDataPtr, IPv6Hash, std::equal_to<>> merged_maps;
+    UnorderedMapWithMemoryTracking<IPv6, AggregateDataPtr, IPv6Hash, std::equal_to<>> merged_maps;
 
     static void writeKey(const IPv6 & key, WriteBuffer & buf)
     {
@@ -177,7 +179,7 @@ public:
                 key = assert_cast<const ColumnVector<KeyType> &>(key_column).getData()[offset + i];
             }
 
-            AggregateDataPtr nested_place;
+            AggregateDataPtr nested_place = nullptr;
             auto it = merged_maps.find(key);
 
             if (it == merged_maps.end())
@@ -204,7 +206,7 @@ public:
         {
             const auto & it = merged_maps.find(elem.first);
 
-            AggregateDataPtr nested_place;
+            AggregateDataPtr nested_place = nullptr;
             if (it == merged_maps.end())
             {
                 // elem.second cannot be copied since this it will be destroyed after merging,
@@ -268,13 +270,13 @@ public:
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
-        UInt64 size;
+        UInt64 size = 0;
 
         readVarUInt(size, buf);
         for (UInt64 i = 0; i < size; ++i)
         {
-            KeyType key;
-            AggregateDataPtr nested_place;
+            KeyType key{};
+            AggregateDataPtr nested_place = nullptr;
 
             this->data(place).readKey(key, buf);
             nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
@@ -297,7 +299,7 @@ public:
         auto & merged_maps = this->data(place).merged_maps;
 
         // sort the keys
-        std::vector<KeyType> keys;
+        VectorWithMemoryTracking<KeyType> keys;
         keys.reserve(merged_maps.size());
         for (auto & it : merged_maps)
         {
@@ -459,9 +461,13 @@ public:
 
 }
 
+void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorMap>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorMap>(), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumMap`), it aggregates `Map` values key-wise.",
+        .syntax = "<aggregate_function>Map",
+        .related = {"Array"}});
 }
 
 }

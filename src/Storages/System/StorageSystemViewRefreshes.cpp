@@ -35,7 +35,7 @@ ColumnsDescription StorageSystemViewRefreshes::getColumnsDescription()
         {"last_refresh_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()),
             "Time when the latest refresh attempt finished (if known) or started (if unknown or still running). NULL if no refresh attempts happened since server startup or table creation."},
         {"last_refresh_replica", std::make_shared<DataTypeString>(), "If coordination is enabled, name of the replica that made the current (if running) or previous (if not running) refresh attempt."},
-        {"next_refresh_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time at which the next refresh is scheduled to start, if status = Scheduled."},
+        {"next_refresh_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time at which the next refresh is scheduled to start. NULL if the next refresh time is not currently known, e.g. when waiting for dependencies (status `WaitingForDependencies` or `MissingDependencies`)."},
         {"exception", std::make_shared<DataTypeString>(), "Error message from previous attempt if it failed."},
         {"retry", std::make_shared<DataTypeUInt64>(), "How many failed attempts there were so far, for the current refresh. Not available if status is `RunningOnAnotherReplica`."},
         {"progress", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()), "Progress of the current running or most recently completed refresh at the given replica, between 0 and 1. NULL if status is `RunningOnAnotherReplica` or the refresh is not running."},
@@ -84,7 +84,10 @@ void StorageSystemViewRefreshes::fillData(
             res_columns[i++]->insert(refresh.znode.last_attempt_time.time_since_epoch().count());
         res_columns[i++]->insert(refresh.znode.last_attempt_replica);
 
-        res_columns[i++]->insert(std::chrono::duration_cast<std::chrono::seconds>(refresh.next_refresh_time.time_since_epoch()).count());
+        if (refresh.next_refresh_time == std::chrono::system_clock::time_point::max())
+            res_columns[i++]->insertDefault(); // NULL when waiting indefinitely (e.g. dependencies not satisfied)
+        else
+            res_columns[i++]->insert(std::chrono::duration_cast<std::chrono::seconds>(refresh.next_refresh_time.time_since_epoch()).count());
 
         if (refresh.unexpected_error.has_value())
             res_columns[i++]->insert(*refresh.unexpected_error);
@@ -103,7 +106,9 @@ void StorageSystemViewRefreshes::fillData(
         res_columns[i++]->insert(retries);
         if (refresh.znode.last_attempt_replica.empty() || refresh.replica_name == refresh.znode.last_attempt_replica)
         {
-            res_columns[i++]->insert(Float64(refresh.progress.read_rows) / std::max(refresh.progress.total_rows_to_read, UInt64(1)));
+            res_columns[i++]->insert(
+                static_cast<double>(refresh.progress.read_rows)
+                / static_cast<double>(std::max(refresh.progress.total_rows_to_read, UInt64(1))));
             res_columns[i++]->insert(refresh.progress.read_rows);
             res_columns[i++]->insert(refresh.progress.read_bytes);
             res_columns[i++]->insert(refresh.progress.total_rows_to_read);

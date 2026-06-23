@@ -178,6 +178,7 @@ AggregateFunctionPtr createAggregateFunctionMeanZTest(
 
 }
 
+void registerAggregateFunctionMeanZTest(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMeanZTest(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -223,7 +224,7 @@ SELECT meanZTest(0.7, 0.45, 0.95)(sample_data, sample_index) FROM mean_ztest;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("meanZTest", {createAggregateFunctionMeanZTest, {}, documentation});
+    factory.registerFunction("meanZTest", {createAggregateFunctionMeanZTest, documentation});
 }
 
 }

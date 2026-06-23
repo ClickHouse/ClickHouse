@@ -2,7 +2,6 @@
 # pylint: disable=redefined-outer-name
 # pylint: disable=line-too-long
 
-import random
 import threading
 import time
 
@@ -35,7 +34,7 @@ def start_cluster():
 @pytest.fixture(scope="function", autouse=True)
 def clear_workloads_and_resources():
     node.query(
-        f"""
+        """
         drop workload if exists production2;
         drop workload if exists development2;
         drop workload if exists staging;
@@ -69,7 +68,7 @@ def with_custom_config(request):
             [
                 "bash",
                 "-c",
-                f"rm -f /etc/clickhouse-server/config.d/99-custom_config.xml",
+                "rm -f /etc/clickhouse-server/config.d/99-custom_config.xml",
             ]
         )
         node.query("system reload config")
@@ -87,7 +86,7 @@ def assert_profile_event(node, query_id, profile_event, check):
 
 def test_create_workload():
     node.query(
-        f"""
+        """
         create resource cpu (master thread, worker thread);
         create workload all settings max_concurrent_threads=100;
         create workload admin in all settings priority=0;
@@ -99,37 +98,37 @@ def test_create_workload():
     def do_checks():
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/admin/%' and type='fifo'"
+                "select count() from system.scheduler where path ilike '%/admin/%' and type='fifo'"
             )
             == "1\n"
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/admin' and type='unified' and priority=0"
+                "select count() from system.scheduler where path ilike '%/admin' and type='unified' and priority=0"
             )
             == "1\n"
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/production/%' and type='fifo'"
+                "select count() from system.scheduler where path ilike '%/production/%' and type='fifo'"
             )
             == "1\n"
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/production' and type='unified' and weight=9"
+                "select count() from system.scheduler where path ilike '%/production' and type='unified' and weight=9"
             )
             == "1\n"
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/development/%' and type='fifo'"
+                "select count() from system.scheduler where path ilike '%/development/%' and type='fifo'"
             )
             == "1\n"
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/all/%' and type='inflight_limit' and resource='cpu' and max_requests=100"
+                "select count() from system.scheduler where path ilike '%/all/%' and type='inflight_limit' and resource='cpu' and max_requests=100"
             )
             == "1\n"
         )
@@ -151,7 +150,7 @@ def test_create_workload():
 )
 def test_independent_pools(with_custom_config):
     node.query(
-        f"""
+        """
         create resource cpu (master thread, worker thread);
         create workload all;
         create workload production in all settings max_concurrent_threads=15;
@@ -194,6 +193,16 @@ def test_independent_pools(with_custom_config):
             query_id,
             "ConcurrencyControlDownscales",
             lambda x: x == 0,
+        )
+        # Verify ConcurrencyControlWaitMicroseconds is populated at query level.
+        # With independent pools all running concurrently, each query will experience
+        # scheduler wait time > 0. This serves as a smoke test for the wait timer fix
+        # (the metric is tracked at ThreadGroup level, not per-thread).
+        assert_profile_event(
+            node,
+            query_id,
+            "ConcurrencyControlWaitMicroseconds",
+            lambda x: x > 0,
         )
         # NOTE: checking thread_ids length is pointless, because query could downscale and then upscale again, gaining more threads than slots
 
@@ -278,6 +287,31 @@ class QueryPool:
         for thread in self.threads:
             thread.start()
 
+    def start_short_ignore_expected(self, count: int, max_threads: int, expected_errors: list[str]) -> None:
+        """Start running short queries, ignoring specified expected errors."""
+        assert self.stopped, "Pool is already running"
+        self.stopped = False
+
+        def query_thread() -> None:
+            while not self.stop_event.is_set():
+                mylog(f"Running query in workload {self.workload}")
+                try:
+                    node.query(
+                        f"SELECT sum(number) FROM numbers({count}) SETTINGS "
+                        f"workload='{self.workload}', max_threads={max_threads}"
+                    )
+                except QueryRuntimeException as e:
+                    error_str = str(e)
+                    if not any(expected in error_str for expected in expected_errors):
+                        mylog(f"Query in workload {self.workload} failed with unexpected exception: {e}")
+                        with self._errors_lock:
+                            self.errors += 1
+
+        for _ in range(self.num_queries):
+            self.threads.append(threading.Thread(target=query_thread, args=()))
+        for thread in self.threads:
+            thread.start()
+
     def get_errors(self) -> int:
         with self._errors_lock:
             return self.errors
@@ -332,7 +366,7 @@ def ensure_shares(minimum_runtime: float, assertions: list[tuple[str, float]]) -
 
 def test_threads_oversubscription():
     node.query(
-        f"""
+        """
         create resource cpu (master thread, worker thread);
         create workload all settings max_concurrent_threads=1;
         create workload production in all;
@@ -362,7 +396,7 @@ def test_cpu_time_fairness(queries, threads, production_length, development_leng
     # In CI we should have at least one CPU core, so we never hit CPU bottleneck w/o hitting scheduler limit.
     # This turns ON fair scheduling and we test should not be flaky.
     node.query(
-        f"""
+        """
         create resource cpu (master thread, worker thread);
         create workload all settings max_concurrent_threads=8, max_cpus=1;
         create workload production in all settings weight=3;
@@ -444,11 +478,11 @@ class DynamicQueryPool:
     indirect=True,
 )
 def test_downscaling(with_custom_config):
-    if node.is_built_with_address_sanitizer() or node.is_built_with_thread_sanitizer():
+    if node.is_built_with_address_sanitizer() or node.is_built_with_thread_sanitizer() or node.is_built_with_llvm_coverage():
         pytest.skip("doesn't fit in timeouts due to heavy workload")
 
     node.query(
-        f"""
+        """
         create resource cpu (master thread, worker thread);
         create workload all settings max_concurrent_threads=2;
         create workload development in all;
@@ -475,10 +509,56 @@ def test_downscaling(with_custom_config):
             development.stop(tid)
 
 
+def test_drop_workload_during_query():
+    """Test for race condition when a workload is dropped while queries are still running.
+    Uses short queries to maximize the chance of hitting the race condition with query finish.
+    """
+    node.query(
+        """
+        create resource cpu (master thread, worker thread);
+        create workload all;
+        create workload production in all;
+    """
+    )
+
+    # Start query pool with short queries, ignoring expected errors when workload is dropped
+    production = QueryPool(4, "production")
+    production.start_short_ignore_expected(
+        100000,
+        1,
+        ["RESOURCE_ACCESS_DENIED", "INVALID_SCHEDULER_NODE"]
+    )
+
+    stop_event = threading.Event()
+
+    def drop_create_thread():
+        while not stop_event.is_set():
+            try:
+                node.query("DROP WORKLOAD IF EXISTS production")
+                node.query("CREATE WORKLOAD IF NOT EXISTS production IN all")
+            except QueryRuntimeException:
+                pass  # Ignore errors during drop/create
+
+    # Start drop/create thread
+    drop_create_t = threading.Thread(target=drop_create_thread)
+    drop_create_t.start()
+
+    # Run for 5 seconds
+    time.sleep(5)
+
+    # Stop all threads
+    stop_event.set()
+    drop_create_t.join()
+    production.stop()
+
+    # Check for unexpected errors
+    assert production.get_errors() == 0, "Unexpected errors occurred"
+
+
 def test_create_workload_under_load():
     """Test that creating a WORKLOAD while queries are running does not cause crashes or deadlocks."""
     node.query(
-        f"""
+        """
         create resource cpu (master thread, worker thread);
         create workload all settings max_concurrent_threads=3;
         create workload production in all settings weight=1;
@@ -498,7 +578,7 @@ def test_create_workload_under_load():
     # Try to create a new workload while the queries are running
     # This is sibling workload, so it should not affect existing queries
     node.query(
-        f"create workload staging in all settings weight=2, max_cpus=1;"
+        "create workload staging in all settings weight=2, max_cpus=1;"
     )
     time.sleep(1)
     assert production.get_errors() == 0, "Errors occurred in production workload"
@@ -506,7 +586,7 @@ def test_create_workload_under_load():
 
     # This make production non-usable, as it will be not a leaf workload anymore
     node.query(
-        f"create workload production2 in production;"
+        "create workload production2 in production;"
     )
     time.sleep(1)
     production.wait_for_all_errors()
@@ -518,7 +598,7 @@ def test_create_workload_under_load():
 
     # This make development non-usable, as it will be not a leaf workload anymore
     node.query(
-        f"create workload development2 in development;"
+        "create workload development2 in development;"
     )
     time.sleep(1)
     development.wait_for_all_errors()

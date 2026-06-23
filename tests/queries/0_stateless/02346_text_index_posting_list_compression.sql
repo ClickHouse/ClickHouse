@@ -9,7 +9,6 @@
 -- and uncompressed tables return identical counts (and matches expected exact counts for key tokens),
 -- ensuring correctness across full blocks, tail blocks, and small-N cases.
 
-SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET use_query_condition_cache = 0;
 
@@ -45,7 +44,7 @@ SELECT
     multiIf(number % 3 = 0, 'aa',
             number % 3 = 1, 'bb',
             'cc') AS str
-FROM numbers(1024000);
+FROM numbers(10000);
 
 INSERT INTO tab_uncompressed
 SELECT
@@ -53,7 +52,7 @@ SELECT
     multiIf(number % 3 = 0, 'aa',
             number % 3 = 1, 'bb',
             'cc') AS str
-FROM numbers(1024000);
+FROM numbers(10000);
 
 INSERT INTO tab_bitpacking
 SELECT

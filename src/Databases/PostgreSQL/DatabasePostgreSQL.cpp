@@ -4,14 +4,13 @@
 
 #if USE_LIBPQXX
 
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StoragePostgreSQL.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <DataTypes/dataTypeToAST.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
@@ -451,7 +450,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
 
     auto create_table_query = make_intrusive<ASTCreateQuery>();
     auto table_storage_define = database_engine_define->clone();
-    table_storage_define->as<ASTStorage>()->engine->kind = ASTFunction::Kind::TABLE_ENGINE;
+    table_storage_define->as<ASTStorage>()->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
     create_table_query->set(create_table_query->storage, table_storage_define);
 
     auto columns_declare_list = make_intrusive<ASTColumns>();
@@ -465,12 +464,12 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     create_table_query->setTable(table_id.table_name);
     create_table_query->setDatabase(table_id.database_name);
 
-    auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+    auto metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, false);
     for (const auto & column_type_and_name : metadata_snapshot->getColumns().getOrdinary())
     {
         const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
         column_declaration->name = column_type_and_name.name;
-        column_declaration->type = getColumnDeclaration(column_type_and_name.type);
+        column_declaration->setType(dataTypeToAST(column_type_and_name.type));
         columns_expression_list->children.emplace_back(column_declaration);
     }
 
@@ -500,25 +499,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
 }
 
 
-ASTPtr DatabasePostgreSQL::getColumnDeclaration(const DataTypePtr & data_type) const
-{
-    WhichDataType which(data_type);
-
-    if (which.isNullable())
-        return makeASTDataType("Nullable", getColumnDeclaration(typeid_cast<const DataTypeNullable *>(data_type.get())->getNestedType()));
-
-    if (which.isArray())
-        return makeASTDataType("Array", getColumnDeclaration(typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType()));
-
-    if (which.isDateTime64())
-        return makeASTDataType("DateTime64", make_intrusive<ASTLiteral>(static_cast<UInt32>(6)));
-
-    if (which.isDecimal())
-        return makeASTDataType("Decimal", make_intrusive<ASTLiteral>(getDecimalPrecision(*data_type)), make_intrusive<ASTLiteral>(getDecimalScale(*data_type)));
-
-    return makeASTDataType(data_type->getName());
-}
-
+void registerDatabasePostgreSQL(DatabaseFactory & factory);
 void registerDatabasePostgreSQL(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -597,7 +578,149 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
             use_table_cache,
             args.uuid);
     };
-    factory.registerDatabase("PostgreSQL", create_fn, {.supports_arguments = true});
+    factory.registerDatabase("PostgreSQL", create_fn, {
+        .supports_arguments = true,
+        .is_external = true,
+        .source_access_type = AccessTypeObjects::Source::POSTGRES,
+    }, Documentation{
+        .description = R"DOCS_MD(
+Allows to connect to databases on a remote [PostgreSQL](https://www.postgresql.org) server. Supports read and write operations (`SELECT` and `INSERT` queries) to exchange data between ClickHouse and PostgreSQL.
+
+Gives the real-time access to table list and table structure from remote PostgreSQL with the help of `SHOW TABLES` and `DESCRIBE TABLE` queries.
+
+Supports table structure modifications (`ALTER TABLE ... ADD|DROP COLUMN`). If `use_table_cache` parameter (see the Engine Parameters below) is set to `1`, the table structure is cached and not checked for being modified, but can be updated with `DETACH` and `ATTACH` queries.
+
+## Creating a database {#creating-a-database}
+
+```sql
+CREATE DATABASE test_database
+ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use_table_cache`]);
+```
+
+**Engine Parameters**
+
+- `host:port` — PostgreSQL server address.
+- `database` — Remote database name.
+- `user` — PostgreSQL user.
+- `password` — User password.
+- `schema` — PostgreSQL schema.
+- `use_table_cache` —  Defines if the database table structure is cached or not. Optional. Default value: `0`.
+
+## Data types support {#data_types-support}
+
+| PostgreSQL       | ClickHouse                                                   |
+|------------------|--------------------------------------------------------------|
+| DATE             | [Date](../../sql-reference/data-types/date.md)               |
+| TIMESTAMP        | [DateTime](../../sql-reference/data-types/datetime.md)       |
+| REAL             | [Float32](../../sql-reference/data-types/float.md)           |
+| DOUBLE           | [Float64](../../sql-reference/data-types/float.md)           |
+| DECIMAL, NUMERIC | [Decimal](../../sql-reference/data-types/decimal.md)       |
+| SMALLINT         | [Int16](../../sql-reference/data-types/int-uint.md)          |
+| INTEGER          | [Int32](../../sql-reference/data-types/int-uint.md)          |
+| BIGINT           | [Int64](../../sql-reference/data-types/int-uint.md)          |
+| SERIAL           | [UInt32](../../sql-reference/data-types/int-uint.md)         |
+| BIGSERIAL        | [UInt64](../../sql-reference/data-types/int-uint.md)         |
+| TEXT, CHAR       | [String](../../sql-reference/data-types/string.md)           |
+| INTEGER          | Nullable([Int32](../../sql-reference/data-types/int-uint.md))|
+| ARRAY            | [Array](../../sql-reference/data-types/array.md)             |
+
+## Examples of use {#examples-of-use}
+
+Database in ClickHouse, exchanging data with the PostgreSQL server:
+
+```sql
+CREATE DATABASE test_database
+ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 'schema_name',1);
+```
+
+```sql
+SHOW DATABASES;
+```
+
+```text
+┌─name──────────┐
+│ default       │
+│ test_database │
+│ system        │
+└───────────────┘
+```
+
+```sql
+SHOW TABLES FROM test_database;
+```
+
+```text
+┌─name───────┐
+│ test_table │
+└────────────┘
+```
+
+Reading data from the PostgreSQL table:
+
+```sql
+SELECT * FROM test_database.test_table;
+```
+
+```text
+┌─id─┬─value─┐
+│  1 │     2 │
+└────┴───────┘
+```
+
+Writing data to the PostgreSQL table:
+
+```sql
+INSERT INTO test_database.test_table VALUES (3,4);
+SELECT * FROM test_database.test_table;
+```
+
+```text
+┌─int_id─┬─value─┐
+│      1 │     2 │
+│      3 │     4 │
+└────────┴───────┘
+```
+
+Consider the table structure was modified in PostgreSQL:
+
+```sql
+postgre> ALTER TABLE test_table ADD COLUMN data Text
+```
+
+As the `use_table_cache` parameter was set to `1` when the database was created, the table structure in ClickHouse was cached and therefore not modified:
+
+```sql
+DESCRIBE TABLE test_database.test_table;
+```
+```text
+┌─name───┬─type──────────────┐
+│ id     │ Nullable(Integer) │
+│ value  │ Nullable(Integer) │
+└────────┴───────────────────┘
+```
+
+After detaching the table and attaching it again, the structure was updated:
+
+```sql
+DETACH TABLE test_database.test_table;
+ATTACH TABLE test_database.test_table;
+DESCRIBE TABLE test_database.test_table;
+```
+```text
+┌─name───┬─type──────────────┐
+│ id     │ Nullable(Integer) │
+│ value  │ Nullable(Integer) │
+│ data   │ Nullable(String)  │
+└────────┴───────────────────┘
+```
+
+## Related content {#related-content}
+
+- Blog: [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
+- Blog: [ClickHouse and PostgreSQL - a Match Made in Data Heaven - part 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)
+)DOCS_MD",
+        .syntax = "ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, schema, use_table_cache])",
+        .related = {"MaterializedPostgreSQL", "MySQL"}});
 }
 }
 

@@ -1,5 +1,6 @@
 #include <Columns/IColumn.h>
 #include <Processors/Formats/Impl/RawBLOBRowOutputFormat.h>
+#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBuffer.h>
 
@@ -25,6 +26,7 @@ void RawBLOBRowOutputFormat::writeField(const IColumn & column, const ISerializa
 }
 
 
+void registerOutputFormatRawBLOB(FormatFactory & factory);
 void registerOutputFormatRawBLOB(FormatFactory & factory)
 {
     factory.registerOutputFormat("RawBLOB", [](

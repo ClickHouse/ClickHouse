@@ -193,8 +193,23 @@ def test_insert_quorum_with_drop_partition(started_cluster, add_new_data):
             second.query(f"SELECT * FROM {table_name}")
         )
     else:
-        assert TSV("") == TSV(zero.query(f"SELECT * FROM {table_name}"))
-        assert TSV("") == TSV(second.query(f"SELECT * FROM {table_name}"))
+        # Use select_sequential_consistency=0 because after DROP PARTITION the /quorum/last_part
+        # node is cleaned, but there's a race condition where updateQuorum could re-add the entry
+        # if it was retrying due to a concurrent modification.
+        # Since we're just checking that the partition is empty (not reading consistent data),
+        # we don't need sequential consistency here.
+        assert TSV("") == TSV(
+            zero.query(
+                f"SELECT * FROM {table_name}",
+                settings={"select_sequential_consistency": 0},
+            )
+        )
+        assert TSV("") == TSV(
+            second.query(
+                f"SELECT * FROM {table_name}",
+                settings={"select_sequential_consistency": 0},
+            )
+        )
 
     zero.query(f"DROP TABLE IF EXISTS {table_name} ON CLUSTER cluster")
 
@@ -276,8 +291,23 @@ def test_insert_quorum_with_move_partition(started_cluster, add_new_data):
             second.query(f"SELECT * FROM {source_table_name}")
         )
     else:
-        assert TSV("") == TSV(zero.query(f"SELECT * FROM {source_table_name}"))
-        assert TSV("") == TSV(second.query(f"SELECT * FROM {source_table_name}"))
+        # Use select_sequential_consistency=0 because after MOVE PARTITION the /quorum/last_part
+        # node is cleaned, but there's a race condition where updateQuorum could re-add the entry
+        # if it was retrying due to a concurrent modification.
+        # Since we're just checking that the partition is empty (not reading consistent data),
+        # we don't need sequential consistency here.
+        assert TSV("") == TSV(
+            zero.query(
+                f"SELECT * FROM {source_table_name}",
+                settings={"select_sequential_consistency": 0},
+            )
+        )
+        assert TSV("") == TSV(
+            second.query(
+                f"SELECT * FROM {source_table_name}",
+                settings={"select_sequential_consistency": 0},
+            )
+        )
 
     zero.query(f"DROP TABLE IF EXISTS {source_table_name} ON CLUSTER cluster")
     zero.query(f"DROP TABLE IF EXISTS {destination_table_name} ON CLUSTER cluster")

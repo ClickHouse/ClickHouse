@@ -7,6 +7,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
+#include <DataTypes/FieldToDataType.h>
 #include <Common/SipHash.h>
 #include <DataTypes/DataTypeDateTime64.h>
 
@@ -14,7 +15,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
-#include <DataTypes/FieldToDataType.h>
 #include <DataTypes/IDataType.h>
 
 #include <Parsers/ASTLiteral.h>
@@ -37,11 +37,11 @@ ConstantNode::ConstantNode(ConstantValue constant_value_)
     : ConstantNode(constant_value_, nullptr /*source_expression*/)
 {}
 
-ConstantNode::ConstantNode(ColumnPtr constant_column_, DataTypePtr value_data_type_)
-    : ConstantNode(ConstantValue{std::move(constant_column_), value_data_type_})
+ConstantNode::ConstantNode(ColumnConstPtr constant_column_, DataTypePtr value_data_type_)
+    : ConstantNode(ConstantValue{constant_column_, value_data_type_})
 {}
 
-ConstantNode::ConstantNode(ColumnPtr constant_column_)
+ConstantNode::ConstantNode(ColumnConstPtr constant_column_)
     : ConstantNode(constant_column_, applyVisitor(FieldToDataType(), (*constant_column_)[0]))
 {}
 
@@ -119,37 +119,21 @@ void ConstantNode::convertToNullable()
     constant_value = { makeNullableSafe(constant_value.getColumn()), makeNullableSafe(constant_value.getType()) };
 }
 
-bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const
+bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*compare_options*/) const
 {
     const auto & rhs_typed = assert_cast<const ConstantNode &>(rhs);
 
     const auto & column = constant_value.getColumn();
     const auto & rhs_column = rhs_typed.constant_value.getColumn();
 
-    if (compare_options.compare_types)
-        return constant_value.getType()->equals(*rhs_typed.constant_value.getType())
-               && column->compareAt(0, 0, *rhs_column, 1) == 0;
-
-    if (column->isNullAt(0))
-        return rhs_column->isNullAt(0);
-
-    auto not_nullable_type = removeNullable(constant_value.getType());
-    auto not_nullable_rhs_type = removeNullable(rhs_typed.constant_value.getType());
-
-    if (!constant_value.getType()->equals(*rhs_typed.constant_value.getType()))
-        return false;
-
-    auto not_nullable_column = removeNullable(column);
-    auto not_nullable_rhs_column = removeNullable(rhs_column);
-
-    return not_nullable_column->compareAt(0, 0, *not_nullable_rhs_column, 1) == 0;
+    return constant_value.getType()->equals(*rhs_typed.constant_value.getType())
+           && column->compareAt(0, 0, *rhs_column, 1) == 0;
 }
 
-void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const
+void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*compare_options*/) const
 {
     constant_value.getColumn()->updateHashFast(hash_state);
-    if (compare_options.compare_types)
-        constant_value.getType()->updateHash(hash_state);
+    constant_value.getType()->updateHash(hash_state);
 }
 
 QueryTreeNodePtr ConstantNode::cloneImpl() const
@@ -180,6 +164,9 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     static const auto from_column = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node.constant_value.getColumn(), 0, node.constant_value.getType())); };
     static const auto from_field = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(node.getValue()); };
 
+    if (options.use_source_expression_for_constants && source_expression)
+        return source_expression->toAST(options);
+
     if (!options.add_cast_for_constants)
         return getCachedAST(from_column);
 
@@ -191,15 +178,24 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 
     auto requires_cast = [this]()
     {
-        const auto & [_, type] = getValueNameAndType({});
-        return requiresCastCall(type, getResultType());
+        try
+        {
+            auto field_type = applyVisitor(FieldToDataType(), getValue());
+            return requiresCastCall(field_type, getResultType());
+        }
+        catch (...)
+        {
+            /// FieldToDataType may throw for complex cases like mixed-type arrays.
+            /// If we can't determine the natural type, a cast is needed.
+            return true;
+        }
     };
 
     if (source_expression != nullptr || requires_cast())
     {
         /// For some types we cannot just get a field from a column, because it can loose type information during serialization/deserialization of the literal.
         /// For example, DateTime64 will return Field with Decimal64 and we won't be able to parse it to DateTine64 back in some cases.
-        /// Also for Dynamic and Object types we can loose types information, so we need to create a Field carefully.
+        /// Also for Dynamic and Object types we can lose types information, so we need to create a Field carefully.
         auto constant_value_ast = getCachedAST(from_column);
         auto constant_type_name_ast = make_intrusive<ASTLiteral>(constant_value_type->getName());
         return makeASTFunction("_CAST", std::move(constant_value_ast), std::move(constant_type_name_ast));
@@ -208,7 +204,7 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     auto constant_value_ast = getCachedAST(from_field);
 
     if (isBool(constant_value_type))
-        constant_value_ast->custom_type = constant_value_type;
+        constant_value_ast->value = Field(constant_value_ast->value.safeGet<UInt64>() != 0);
 
     return constant_value_ast;
 }

@@ -23,7 +23,7 @@ function thread_insert()
     local i=0
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "INSERT INTO part_race SELECT $i" 2>/dev/null
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "INSERT INTO part_race SELECT $i" &>/dev/null
         ((i++)) || true
     done
 }
@@ -33,7 +33,7 @@ function thread_drop_partition()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "ALTER TABLE part_race DROP PARTITION ID '$((RANDOM % 10))'" 2>/dev/null
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "ALTER TABLE part_race DROP PARTITION ID '$((RANDOM % 10))'" &>/dev/null
         sleep 0.0$RANDOM
     done
 }
@@ -43,7 +43,7 @@ function thread_select_parts()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT name, path FROM system.parts WHERE database = '${CLICKHOUSE_DATABASE}' AND table = 'part_race' FORMAT Null" 2>/dev/null
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT name, path FROM system.parts WHERE database = '${CLICKHOUSE_DATABASE}' AND table = 'part_race' FORMAT Null" &>/dev/null
     done
 }
 

@@ -323,12 +323,13 @@ To disable `error_log` setting, you should create the following file `/etc/click
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
-List of prefixes for [custom settings](/operations/settings/query-level#custom_settings). The prefixes must be separated with commas.
+List of prefixes used for [custom settings](/operations/settings/query-level#custom_settings).
+Multiple prefixes should be separated by commas.
 
 **Example**
 
 ```xml
-<custom_settings_prefixes>custom_</custom_settings_prefixes>
+<custom_settings_prefixes>SQL_</custom_settings_prefixes>
 ```
 
 **See Also**
@@ -371,7 +372,7 @@ Path:
 - The path can contain wildcards \* and ?.
 
 See also:
-- "[Dictionaries](../../sql-reference/dictionaries/index.md)".
+- "[Dictionaries](../../sql-reference/statements/create/dictionary/overview.md)".
 
 **Example**
 
@@ -465,16 +466,28 @@ Allows using custom HTTP handlers.
 To add a new http handler simply add a new `<rule>`.
 Rules are checked from top to bottom as defined,
 and the first match will run the handler.
+A rule with no match conditions (only `handler`) matches every request; since rules are checked in order,
+such a rule is only useful as a fallback placed last.
 
-The following settings can be configured by sub-tags:
+The following settings can be configured by sub-tags (all these sub-tags are optional except `handler`):
 
 | Sub-tags             | Definition                                                                                                                                        |
 |----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
-| `url`                | To match the request URL, you can use the 'regex:' prefix to use regex match (optional)                                                           |
-| `methods`            | To match request methods, you can use commas to separate multiple method matches (optional)                                                       |
-| `headers`            | To match request headers, match each child element (child element name is header name), you can use 'regex:' prefix to use regex match (optional) |
-| `handler`            | The request handler                                                                                                                               |
+| `url`                | To match the request URL path. The query string is ignored when matching |
+| `url_prefix`         | To match the request URL path against a base path: the path itself or anything below it on a path-segment boundary (e.g. '/api/v1' matches /api/v1, /api/v1/ and /api/v1/write, but not /api/v1beta). The query string is ignored when matching |
+| `url_regexp`         | To match the request URL path against a regular expression. The query string is ignored when matching |
+| `full_url`           | To match the complete request URL `scheme://host:port/path`. The query string is ignored when matching, and the host is the connection IP address (not the `Host` header) |
+| `full_url_prefix`    | To match the complete request URL `scheme://host:port/path` against base URL `scheme://host:port/base_path`, on a path-segment boundary (see `url_prefix`). The query string is ignored when matching |
+| `full_url_regexp`    | To match the complete request URL `scheme://host:port/path` against a regular expression. The query string is ignored when matching |
+| `methods`            | To match request methods, you can use commas to separate multiple method matches |
+| `headers`            | To match request headers, match each child element (child element name is header name) |
+| `headers_regexp`     | Like `headers`, but each child element's value is matched against a regular expression |
 | `empty_query_string` | Check that there is no query string in the URL                                                                                                    |
+| `handler`            | The request handler (required)                                                                                                                    |
+
+:::note
+Instead of `url_regexp`, `full_url_regexp` and `headers_regexp` you can also write a regular expression in `url`, `full_url` or `headers` using the `regex:` prefix (e.g. `<url>regex:/api/.*</url>`). This is still supported for backward compatibility, but is obsolete: prefer the dedicated `url_regexp`, `full_url_regexp` and `headers_regexp` sub-tags.
+:::
 
 `handler` contains the following settings, which can be configured by sub-tags:
 
@@ -610,7 +623,7 @@ A username and a password used to connect to other servers during [replication](
 
 :::note
 - By default, if `interserver_http_credentials` section is omitted, authentication is not used during replication.
-- `interserver_http_credentials` settings do not relate to a ClickHouse client credentials [configuration](../../interfaces/cli.md#configuration_files).
+- `interserver_http_credentials` settings do not relate to a ClickHouse client credentials [configuration](../../interfaces/client.md#configuration_files).
 - These credentials are common for replication via `HTTP` and `HTTPS`.
 :::
 
@@ -742,9 +755,11 @@ The location and format of log messages.
 | Key                    | Description                                                                                                                                                        |
 |------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `async` | When `true` (default) logging will happen asynchronously (one background thread per output channel). Otherwise it will log inside the thread calling LOG           |
-| `async_queue_max_size` | When using async logging, the max amount of messages that will be kept in the the queue waiting for flushing. Extra messages will be dropped                       |
+| `async_queue_max_size` | When using async logging, the max amount of messages that will be kept in the queue waiting for flushing. Extra messages will be dropped                       |
 | `console` | Enable logging to the console. Set to `1` or `true` to enable. Default is `1` if ClickHouse does not run in daemon mode, `0` otherwise.                            |
 | `console_log_level` | Log level for console output. Defaults to `level`.                                                                                                                 |
+| `console_shutdown_log_level` | Shutdown level is used to set the console log level at server Shutdown.   
+| `console_startup_log_level` | Startup level is used to set the console log level at server startup. After startup log level is reverted to the `console_log_level` setting                                   |   
 | `count` | Rotation policy: How many historical log files ClickHouse are kept at most.                                                                                        |
 | `errorlog` | The path to the error log file.                                                                                                                                    |
 | `formatting.type` | Log format for console output. Currently, only `json` is supported                                                                                                 |
@@ -1194,7 +1209,7 @@ Keys for server/client settings:
 | `extendedVerification` | If enabled, verify that the certificate CN or SAN matches the peer hostname.                                                                                                                                                                                                                                                                                                                                                                                           | `false`                                    |
 | `fips` | Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.                                                                                                                                                                                                                                                                                                                                                                                 | `false`                                    |
 | `invalidCertificateHandler` | Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>` .                                                                                                                                                                                                                                                                           | `RejectCertificateHandler`                 |
-| `loadDefaultCAFile` | Wether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `/etc/ssl/cert.pem` (resp. the directory `/etc/ssl/certs`) or in file (resp. directory) specified by the environment variable `SSL_CERT_FILE` (resp. `SSL_CERT_DIR`).                                                                                                                                                                        | `true`                                     |
+| `loadDefaultCAFile` | Whether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `/etc/ssl/cert.pem` (resp. the directory `/etc/ssl/certs`) or in file (resp. directory) specified by the environment variable `SSL_CERT_FILE` (resp. `SSL_CERT_DIR`).                                                                                                                                                                        | `true`                                     |
 | `preferServerCiphers` | Client-preferred server ciphers.                                                                                                                                                                                                                                                                                                                                                                                                                                       | `false`                                    |
 | `privateKeyFile` | Path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.                                                                                                                                                                                                                                                                                                                                              |                                            |
 | `privateKeyPassphraseHandler` | Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.                                                                                                                                                                                                | `KeyConsoleHandler`                        |
@@ -1828,12 +1843,14 @@ Settings for optional improvements in the access control system.
 | `select_from_system_db_requires_grant` | Sets whether `SELECT * FROM system.<table>` requires any grants and can be executed by any user. If set to true then this query requires `GRANT SELECT ON system.<table>` just as for non-system tables. Exceptions: a few system tables (`tables`, `columns`, `databases`, and some constant tables like `one`, `contributors`) are still accessible for everyone; and if there is a `SHOW` privilege (e.g. `SHOW USERS`) granted then the corresponding system table (i.e. `system.users`) will be accessible. | `true`  |
 | `settings_constraints_replace_previous` | Sets whether a constraint in a settings profile for some setting will cancel actions of the previous constraint (defined in other profiles) for that setting, including fields which are not set by the new constraint. It also enables the `changeable_in_readonly` constraint type.                                                                                                                                                                                                                            | `true`  |
 | `table_engines_require_grant` | Sets whether creating a table with a specific table engine requires a grant.                                                                                                                                                                                                                                                                                                                                                                                                                                     | `false` |
+| `throw_on_unmatched_row_policies` | Sets whether reading from a table should throw an exception if the table has row policies, but none of them are for the current user | `false` |
 | `users_without_row_policies_can_read_rows` | Sets whether users without permissive row policies can still read rows using a `SELECT` query. For example, if there are two users A and B and a row policy is defined only for A, then if this setting is true, user B will see all rows. If this setting is false, user B will see no rows.                                                                                                                                                                                                                    | `true`  |
 
 Example:
 
 ```xml
 <access_control_improvements>
+    <throw_on_unmatched_row_policies>true</throw_on_unmatched_row_policies>
     <users_without_row_policies_can_read_rows>true</users_without_row_policies_can_read_rows>
     <on_cluster_queries_require_cluster_grant>true</on_cluster_queries_require_cluster_grant>
     <select_from_system_db_requires_grant>true</select_from_system_db_requires_grant>
@@ -1894,6 +1911,8 @@ The following settings can be configured by sub-tags:
 | `fallback_session_lifetime.max` (optional) | Maximum limit for the lifetime of a zookeeper session to the fallback node when primary is unavailable (load-balancing). Set in seconds. Default: 6 hours.                                                                                                                                                                                                                                                                                                                                                              |
 | `identity` (optional)                      | User and password required by ZooKeeper to access requested znodes.                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `use_compression` (optional)               | Enables compression in Keeper protocol if set to true.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `use_xid_64` (optional)                    | Enables 64-bit transaction IDs. Set to `true` to enable extended transaction ID format. Default: `false`.                                                                                                                                                                                                                                                                                                                                                |
+| `pass_opentelemetry_tracing_context` (optional) | Enables propagation of OpenTelemetry tracing context to Keeper requests. When enabled, tracing spans will be created for Keeper operations, allowing distributed tracing across ClickHouse and Keeper. See [Tracing ClickHouse Keeper Requests](/operations/opentelemetry#tracing-clickhouse-keeper-requests) for more details. Default: `false`.                                                                                                                                      |
 
 There is also the `zookeeper_load_balancing` setting (optional) which lets you select the algorithm for ZooKeeper node selection:
 
@@ -1903,6 +1922,8 @@ There is also the `zookeeper_load_balancing` setting (optional) which lets you s
 | `in_order`                       | selects the first ZooKeeper node, if it's not available then the second, and so on.                                            |
 | `nearest_hostname`               | selects a ZooKeeper node with a hostname that is most similar to the server's hostname, hostname is compared with name prefix. |
 | `hostname_levenshtein_distance`  | just like nearest_hostname, but it compares hostname in a levenshtein distance manner.                                         |
+| `hostname_longest_common_prefix` | just like nearest_hostname, but prefers the node whose hostname shares the longest common prefix with the server's hostname.   |
+| `hostname_longest_common_suffix` | just like nearest_hostname, but prefers the node whose hostname shares the longest common suffix with the server's hostname.   |
 | `first_or_random`                | selects the first ZooKeeper node, if it's not available then randomly selects one of remaining ZooKeeper nodes.                |
 | `round_robin`                    | selects the first ZooKeeper node, if reconnection happens selects the next.                                                    |
 
@@ -1924,8 +1945,12 @@ There is also the `zookeeper_load_balancing` setting (optional) which lets you s
     <root>/path/to/zookeeper/node</root>
     <!-- Optional. Zookeeper digest ACL string. -->
     <identity>user:password</identity>
-    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / hostname_levenshtein_distance / first_or_random / round_robin</zookeeper_load_balancing>-->
+    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / hostname_levenshtein_distance / hostname_longest_common_prefix / hostname_longest_common_suffix / first_or_random / round_robin</zookeeper_load_balancing>-->
     <zookeeper_load_balancing>random</zookeeper_load_balancing>
+    <!-- Optional. Enable 64-bit transaction IDs. -->
+    <use_xid_64>false</use_xid_64>
+    <!-- Optional. Enable OpenTelemetry tracing context propagation. -->
+    <pass_opentelemetry_tracing_context>false</pass_opentelemetry_tracing_context>
 </zookeeper>
 ```
 

@@ -3,11 +3,13 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -20,6 +22,7 @@
 #include <Storages/Utils.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -53,7 +56,7 @@ namespace ErrorCodes
 }
 namespace
 {
-void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
+void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescription & virtuals, ContextPtr context)
 {
     /// First validate that the query can be parsed
     const auto serialized_query = query.formatWithSecretsOneLine();
@@ -88,7 +91,7 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
         const auto & col_decl = ast->as<ASTColumnDeclaration &>();
         /// There might be some special columns for which `columns_desc.get` would throw, e.g. Nested column when flatten_nested is enabled.
         /// At the time of writing I am not aware of anything else, but my knowledge is limited and new types might be added, so let's be safe.
-        if (!col_decl.default_expression)
+        if (!col_decl.getDefaultExpression())
             continue;
 
         /// If no column description for the name, let's skip the validation of default expressions, but let's log the fact that something went wrong
@@ -115,7 +118,7 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
     if (columns.projections)
     {
         for (const auto & child : columns.projections->children)
-            ProjectionDescription::getProjectionFromAST(child, columns_desc, context);
+            ProjectionDescription::getProjectionFromAST(child, columns_desc, nullptr, context);
     }
     if (!new_query.storage)
         return;
@@ -124,15 +127,15 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
     std::optional<KeyDescription> primary_key;
     /// First get the key description from order by, so if there is no primary key we will use that
     if (storage.order_by)
-        primary_key = KeyDescription::getKeyFromAST(storage.getChild(*storage.order_by), columns_desc, context);
+        primary_key = KeyDescription::getKeyFromAST(storage.order_by->ptr(), columns_desc, virtuals, context);
     if (storage.primary_key)
-        primary_key = KeyDescription::getKeyFromAST(storage.getChild(*storage.primary_key), columns_desc, context);
+        primary_key = KeyDescription::getKeyFromAST(storage.primary_key->ptr(), columns_desc, virtuals, context);
     if (storage.partition_by)
-        KeyDescription::getKeyFromAST(storage.getChild(*storage.partition_by), columns_desc, context);
+        KeyDescription::getKeyFromAST(storage.partition_by->ptr(), columns_desc, virtuals, context);
     if (storage.sample_by)
-        KeyDescription::getKeyFromAST(storage.getChild(*storage.sample_by), columns_desc, context);
+        KeyDescription::getKeyFromAST(storage.sample_by->ptr(), columns_desc, virtuals, context);
     if (storage.ttl_table && primary_key.has_value())
-        TTLTableDescription::getTTLForTableFromAST(storage.getChild(*storage.ttl_table), columns_desc, context, *primary_key, true);
+        TTLTableDescription::getTTLForTableFromAST(storage.ttl_table->ptr(), columns_desc, context, *primary_key, true);
 }
 }
 
@@ -190,7 +193,7 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
         ASTStorage & storage_ast = *ast_create_query.storage;
 
         bool is_extended_storage_def
-            = storage_ast.partition_by || storage_ast.primary_key || storage_ast.order_by || storage_ast.sample_by || storage_ast.settings;
+            = storage_ast.partition_by || storage_ast.primary_key || storage_ast.order_by || storage_ast.unique_key || storage_ast.sample_by || storage_ast.settings;
 
         if (is_extended_storage_def)
         {
@@ -203,12 +206,17 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
             if (metadata.sampling_key.definition_ast)
                 storage_ast.set(storage_ast.sample_by, metadata.sampling_key.definition_ast);
             else if (storage_ast.sample_by != nullptr) /// SAMPLE BY was removed
-                storage_ast.sample_by = nullptr;
+                storage_ast.reset(storage_ast.sample_by);
+
+            if (metadata.unique_key.definition_ast)
+                storage_ast.set(storage_ast.unique_key, metadata.unique_key.definition_ast);
+            else if (storage_ast.unique_key != nullptr) /// UNIQUE KEY was removed
+                storage_ast.reset(storage_ast.unique_key);
 
             if (metadata.table_ttl.definition_ast)
                 storage_ast.set(storage_ast.ttl_table, metadata.table_ttl.definition_ast);
             else if (storage_ast.ttl_table != nullptr) /// TTL was removed
-                storage_ast.ttl_table = nullptr;
+                storage_ast.reset(storage_ast.ttl_table);
 
             if (metadata.settings_changes)
                 storage_ast.set(storage_ast.settings, metadata.settings_changes);
@@ -227,15 +235,15 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
         ast_create_query.set(ast_create_query.comment, make_intrusive<ASTLiteral>(metadata.comment));
 
     if (validate_new_create_query)
-        validateCreateQuery(ast_create_query, context);
+        validateCreateQuery(ast_create_query, metadata.virtuals, context);
 }
 
 
 ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_storage, bool only_ordinary,
-    uint32_t max_parser_depth, uint32_t max_parser_backtracks, bool throw_on_error)
+    uint32_t max_parser_depth, uint32_t max_parser_backtracks, bool throw_on_error, ContextPtr context)
 {
     auto table_id = storage->getStorageID();
-    auto metadata_ptr = storage->getInMemoryMetadataPtr();
+    auto metadata_ptr = storage->getInMemoryMetadataPtr(context, false);
     if (metadata_ptr == nullptr)
     {
         if (throw_on_error)
@@ -280,12 +288,12 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
                                         backQuote(table_id.database_name), backQuote(table_id.table_name));
                     return nullptr;
                 }
-                ast_column_declaration->type = ast_type;
+                ast_column_declaration->setType(std::move(ast_type));
 
                 if (auto column_default = metadata_ptr->columns.getDefault(column_name_and_type.name))
                 {
-                    ast_column_declaration->default_specifier = toString(column_default->kind);
-                    ast_column_declaration->default_expression = column_default->expression;
+                    ast_column_declaration->default_specifier = toColumnDefaultSpecifier(column_default->kind);
+                    ast_column_declaration->setDefaultExpression(column_default->expression->clone());
                 }
             }
             ast_expression_list->children.emplace_back(ast_column_declaration);
@@ -311,10 +319,10 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
 
     /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
     if (!query.isView())
-        query.select = nullptr;
+        query.reset(query.select);
 
-    query.format_ast = nullptr;
-    query.out_file = nullptr;
+    query.reset(query.format_ast);
+    query.reset(query.out_file);
 }
 
 String readMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path)
@@ -343,30 +351,58 @@ void DatabaseWithAltersOnDiskBase::alterDatabaseComment(const AlterCommand & com
     if (!command.comment)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to obtain database comment from query");
 
+    auto component_guard = Coordination::setCurrentComponent("DatabaseWithAltersOnDiskBase::alterDatabaseComment");
+
+    const String & new_comment = command.comment.value();
+
+#if CLICKHOUSE_CLOUD
+    if (SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(getEngineName()))
+    {
+        if (!SharedDatabaseCatalog::isInitialQuery(query_context))
+        {
+            std::lock_guard lock{mutex};
+            comment = new_comment;
+            return;
+        }
+
+        /// Build the create query with the new comment, but leave the in-memory value
+        /// untouched, so concurrent readers never observe an uncommitted comment.
+        ASTPtr create_query;
+        {
+            std::lock_guard lock{mutex};
+            const String old_comment = comment;
+            comment = new_comment;
+            try
+            {
+                create_query = getCreateDatabaseQueryImpl();
+                if (!create_query)
+                    throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
+            }
+            catch (...)
+            {
+                comment = old_comment;
+                throw;
+            }
+            comment = old_comment;
+        }
+
+        auto version_to_wait = SharedDatabaseCatalog::instance().alterDatabase(getUUID(), create_query);
+        query_context->setVersionToWaitSharedCatalog(version_to_wait);
+
+        std::lock_guard lock{mutex};
+        comment = new_comment;
+        return;
+    }
+#endif
+
     std::lock_guard lock{mutex};
-
     const String old_comment = comment;
-    comment = command.comment.value();
-
+    comment = new_comment;
     try
     {
-#if CLICKHOUSE_CLOUD
-        bool managed_by_shared_catalog = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(getEngineName());
-        if (managed_by_shared_catalog && !SharedDatabaseCatalog::isInitialQuery(query_context))
-            return;
-#endif
         const ASTPtr create_query = getCreateDatabaseQueryImpl();
         if (!create_query)
             throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
-#if CLICKHOUSE_CLOUD
-        if (managed_by_shared_catalog)
-        {
-
-            auto version_to_wait = SharedDatabaseCatalog::instance().alterDatabase(getUUID(), create_query);
-            query_context->setVersionToWaitSharedCatalog(version_to_wait);
-            return;
-        }
-#endif
         DatabaseCatalog::instance().updateMetadataFile(database_name, create_query);
     }
     catch (...)
@@ -470,7 +506,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     auto table_id = table_storage->getStorageID();
     if (table_id.hasUUID())
     {
-        assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
+        chassert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
         DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
     }
 
@@ -492,7 +528,7 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
 
     if (table_id.hasUUID())
     {
-        assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
+        chassert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
         DatabaseCatalog::instance().addUUIDMapping(table_id.uuid, shared_from_this(), table);
     }
 
@@ -539,7 +575,7 @@ void DatabaseWithOwnTablesBase::shutdown()
         kv.second->flushAndShutdown();
         if (table_id.hasUUID())
         {
-            assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
+            chassert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
             DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
         }
     }

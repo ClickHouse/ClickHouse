@@ -11,6 +11,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/SipHash.h>
+#include <Common/Crypto/X509Certificate.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -323,7 +324,7 @@ Session::~Session()
         LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(user_id.value_or(UUID{})));
         if (auto session_log = getSessionLog())
         {
-            session_log->addLogOut(auth_id, user, user_authenticated_with, getClientInfo());
+            session_log->addLogOut(auth_id, user, user_authenticated_with, getClientInfo(), certificate_info);
         }
     }
 }
@@ -352,18 +353,18 @@ std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFai
     {
         LOG_ERROR(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
         if (auto session_log = getSessionLog())
-            session_log->addLoginFailure(auth_id, getClientInfo(), user_name, e);
+            session_log->addLoginFailure(auth_id, getClientInfo(), user_name, e, certificate_info);
 
         throw;
     }
 }
 
-void Session::authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address, const Strings & external_roles_)
+void Session::authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address, const std::optional<Poco::Net::SocketAddress> & connection_address, const Strings & external_roles_)
 {
-    authenticate(BasicCredentials{user_name, password}, address, external_roles_);
+    authenticate(BasicCredentials{user_name, password}, address, connection_address, external_roles_);
 }
 
-void Session::authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const Strings & external_roles_)
+void Session::authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const std::optional<Poco::Net::SocketAddress> & connection_address, const Strings & external_roles_)
 {
     if (session_context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "If there is a session context it must be created after authentication");
@@ -378,10 +379,10 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     LOG_DEBUG(log, "Authenticating user '{}' from {}",
             credentials_.getUserName(), address.toString());
 
+    AuthResult auth_result;
     try
     {
-        auto auth_result =
-            global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo());
+        auth_result = global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo());
         user_id = auth_result.user_id;
         user_authenticated_with = auth_result.authentication_data;
         settings_from_auth_server = auth_result.settings;
@@ -402,9 +403,11 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
         throw;
     }
 
-    prepared_client_info->current_user = credentials_.getUserName();
-    prepared_client_info->authenticated_user = credentials_.getUserName();
+    chassert(!auth_result.user_name.empty());
+    prepared_client_info->current_user = auth_result.user_name;
+    prepared_client_info->authenticated_user = auth_result.user_name;
     prepared_client_info->current_address = std::make_shared<Poco::Net::SocketAddress>(address);
+    prepared_client_info->connection_address = std::make_shared<Poco::Net::SocketAddress>(connection_address ? *connection_address : address);
 }
 
 void Session::checkIfUserIsStillValid()
@@ -426,8 +429,29 @@ void Session::onAuthenticationFailure(const std::optional<String> & user_name, c
         /// Add source address to the log
         auto info_for_log = *prepared_client_info;
         info_for_log.current_address = std::make_shared<Poco::Net::SocketAddress>(address_);
-        session_log->addLoginFailure(auth_id, info_for_log, user_name, e);
+        session_log->addLoginFailure(auth_id, info_for_log, user_name, e, certificate_info);
     }
+}
+
+void Session::setClientCertificate(const X509Certificate & certificate)
+{
+#if USE_SSL
+    ClientCertificateInfo info;
+
+    auto subjects = certificate.extractAllSubjects();
+    for (auto type : {X509Certificate::Subjects::Type::CN, X509Certificate::Subjects::Type::SAN})
+        for (const auto & subject : subjects.at(type))
+            info.subjects.push_back(subjects.toString(type) + ":" + subject);
+
+    info.serial = certificate.serialNumber();
+    info.issuer = certificate.issuerName();
+    info.not_before = certificate.notBefore();
+    info.not_after = certificate.notAfter();
+
+    certificate_info = std::move(info);
+#else
+    (void)certificate;
+#endif
 }
 
 const ClientInfo & Session::getClientInfo() const
@@ -738,7 +762,8 @@ void Session::recordLoginSuccess(ContextPtr login_context) const
                                      access->getAccess(),
                                      getClientInfo(),
                                      user,
-                                     user_authenticated_with);
+                                     user_authenticated_with,
+                                     certificate_info);
     }
 
     notified_session_log_about_login = true;

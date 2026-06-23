@@ -12,6 +12,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/Serializations/SerializationArray.h>
+#include <DataTypes/Serializations/SerializationTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnFixedString.h>
@@ -19,6 +21,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnMap.h>
+#include <base/find_symbols.h>
 
 #include <boost/algorithm/string.hpp>
 
@@ -1010,7 +1013,7 @@ namespace
 
         std::unique_ptr<ICapnProtoSerializer> nested_serializer;
         capnp::StructSchema struct_schema;
-        capnp::_::StructSize struct_size;
+        capnp::_::StructSize struct_size{};
         UInt32 discriminant_offset;
         UInt16 null_discriminant;
         UInt16 nested_discriminant;
@@ -1101,17 +1104,23 @@ namespace
             UInt32 size = list_reader.size();
             auto & column_array = assert_cast<ColumnArray &>(column);
             auto & offsets = column_array.getOffsets();
-            offsets.push_back(offsets.back() + list_reader.size());
-
             auto & nested_column = column_array.getData();
-            for (UInt32 i = 0; i != size; ++i)
-                nested_serializer->readRow(nested_column, list_reader, i);
+
+            auto read_array = [&]()
+            {
+                for (UInt32 i = 0; i != size; ++i)
+                    nested_serializer->readRow(nested_column, list_reader, i);
+
+                offsets.push_back(offsets.back() + list_reader.size());
+            };
+
+            SerializationArray::readArraySafe(column, read_array);
         }
 
         capnp::ListSchema list_schema;
         std::unique_ptr<ICapnProtoSerializer> nested_serializer;
         capnp::ElementSize element_size;
-        capnp::_::StructSize element_struct_size;
+        capnp::_::StructSize element_struct_size{};
         bool element_is_struct = false;
 
     };
@@ -1234,7 +1243,7 @@ namespace
 
         std::unique_ptr<ICapnProtoSerializer> nested_serializer;
         capnp::StructSchema struct_schema;
-        capnp::_::StructSize struct_size;
+        capnp::_::StructSize struct_size{};
         UInt32 entries_slot_offset;
     };
 
@@ -1382,16 +1391,21 @@ namespace
         {
             if (auto * tuple_column = typeid_cast<ColumnTuple *>(&column))
             {
-                for (size_t i = 0; i != tuple_column->tupleSize(); ++i)
-                    fields_serializers[i]->readRow(tuple_column->getColumn(i), struct_reader, fields_offsets[i]);
+                auto read_tuple = [&]()
+                {
+                    for (size_t i = 0; i != tuple_column->tupleSize(); ++i)
+                        fields_serializers[i]->readRow(tuple_column->getColumn(i), struct_reader, fields_offsets[i]);
+                };
+
+                SerializationTuple::readElementsSafe(column, read_tuple);
             }
             else
                 fields_serializers[0]->readRow(column, struct_reader, fields_offsets[0]);
         }
 
         capnp::StructSchema struct_schema;
-        capnp::_::StructSize struct_size;
-        size_t fields_count;
+        capnp::_::StructSize struct_size{};
+        size_t fields_count{};
         std::vector<std::unique_ptr<ICapnProtoSerializer>> fields_serializers;
         std::vector<UInt32> fields_offsets;
         std::vector<size_t> fields_indexes;

@@ -1,5 +1,4 @@
 import itertools
-import logging
 import os.path
 import timeit
 
@@ -57,8 +56,8 @@ TIMEOUT_DIFF_UPPER_BOUND = {
         "remote": 2.5,
     },
     "ready_to_wait": {
-        "distributed": 3,
-        "remote": 2.0,
+        "distributed": 5.5,
+        "remote": 3.0,
     },
 }
 

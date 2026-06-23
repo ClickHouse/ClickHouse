@@ -10,8 +10,10 @@ ch_format() {
 
 format_query() {
   local query="$1"
-  echo "Original:  $query"
-  echo 'Formatted:' "$(echo "$query" | ch_format)"
+  echo "Original:          $query"
+  local formatted="$(echo "$query" | ch_format)"
+  echo "format(original):  $formatted"
+  echo 'format(formatted):' "$(echo "$formatted" | ch_format)"
   echo
 }
 
@@ -43,3 +45,32 @@ format_query "SELECT NOT ((1, 1, 1))"
 format_query "select (((1), (2)))"
 format_query "select * from tuple('42', '3141592')"
 format_query "SELECT 1 FROM VALUES (1, (NOT 1 IS NULL)) tx"
+
+# Test that INSERT INTO with EXCEPT does not crash debug build
+format_query "INSERT INTO tab2 SELECT * FROM tab EXCEPT SELECT * FROM tab;"
+
+# Test weird SELECT/EXCEPT/SELECT statement
+format_query "SELECT 1,2,3 EXCEPT SELECT 1,2,3;"
+
+# Allow alias in MODIFY ORDER BY
+format_query "ALTER TABLE \`t55\` (MODIFY ORDER BY ((\`c0\` AS \`a0\`)));"
+
+# Complex tuple expression with index
+format_query "select (tab.*).2 from tab;"
+format_query "with (((1,1),1),1) as t1 select t1.1.1.1;"
+
+# Array with tuple element access (should not add extra parens around array)
+format_query "SELECT [['hello']].1;"
+
+# SETTINGS on SelectWithUnionQuery: parenthesized subqueries preserve SETTINGS attachment
+format_query "(SELECT 1) UNION ALL (SELECT 2) SETTINGS max_threads = 1"
+
+# SETTINGS on SelectWithUnionQuery inside EXPLAIN AST
+format_query "EXPLAIN AST (SELECT 1) UNION ALL (SELECT 2) SETTINGS max_threads = 1 INTO OUTFILE '/dev/null' FORMAT Null"
+
+# complex row policy with aliases should be consistent
+format_query "CREATE ROW POLICY OR REPLACE p0 ON t0 USING (1 AND (2 AND (4 AS a)) AND (3 as b))"
+format_query "ALTER ROW POLICY p0 ON t0 USING (1 AND (2 AND (4 AS a)) AND (3 as b))"
+# WITH CHECK is parsed but not implemented, so it is ignored by the formatter for now
+format_query "CREATE ROW POLICY OR REPLACE p0 ON t0 WITH CHECK (2 AND (3 AS b))"
+format_query "ALTER ROW POLICY p0 ON t0 WITH CHECK (2 AND (3 AS b))"

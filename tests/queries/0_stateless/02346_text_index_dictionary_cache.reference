@@ -1,17 +1,22 @@
-Tokens between text_000 -> text_127 are in the first dictionary block and text_128 -> text_255 are in the second dictionary block.
---- cache miss on the first dictionary block.
+--- cache miss on a new token.
 1
 cache_hits = 0, cache_misses = 1
---- cache miss on the second dictionary block.
+--- cache miss on another new token.
 1
 cache_hits = 0, cache_misses = 1
---- cache hit on the first dictionary block.
+--- cache hit on a previously queried token.
 1
 cache_hits = 1, cache_misses = 0
-Clear text index cache
---- cache miss on the first dictionary block.
+--- cache miss on a token not previously queried.
 1
 cache_hits = 0, cache_misses = 1
---- cache miss on the second dictionary block.
+Clear text index tokens cache
+--- cache miss after clearing cache.
 1
 cache_hits = 0, cache_misses = 1
+--- cache miss on another token after clearing cache.
+1
+cache_hits = 0, cache_misses = 1
+--- cache hit on a token queried after clearing cache.
+1
+cache_hits = 1, cache_misses = 0

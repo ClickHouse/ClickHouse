@@ -1,6 +1,7 @@
 #include <chrono>
 #include <variant>
 #include <Columns/ColumnTuple.h>
+#include <Common/SipHash.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -22,15 +23,47 @@
 #include <Processors/Sinks/NullSink.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
+
+namespace
+{
+
+/// Check if any step in the query plan tree contains correlated expressions (PLACEHOLDER nodes).
+/// Such plans cannot be executed standalone — they require decorrelation first.
+/// We must traverse both `node->children` and any nested plans returned by `step->getChildPlans()`
+/// (e.g. `ReadFromMerge`), otherwise correlated `PLACEHOLDER` actions inside a child plan can be
+/// missed and we may attempt standalone execution and hit `Trying to execute PLACEHOLDER action`.
+bool hasCorrelatedExpressions(QueryPlan::Node * node)
+{
+    if (!node)
+        return false;
+
+    if (node->step->hasCorrelatedExpressions())
+        return true;
+
+    for (auto * child : node->children)
+        if (hasCorrelatedExpressions(child))
+            return true;
+
+    for (auto * child_plan : node->step->getChildPlans())
+        if (child_plan && hasCorrelatedExpressions(child_plan->getRootNode()))
+            return true;
+
+    return false;
+}
+
+}
+
 namespace Setting
 {
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode set_overflow_mode;
@@ -114,30 +147,87 @@ FutureSetFromTuple::FutureSetFromTuple(
 DataTypes FutureSetFromTuple::getTypes() const { return set->getElementsTypes(); }
 FutureSet::Hash FutureSetFromTuple::getHash() const { return hash; }
 
-Columns FutureSetFromTuple::getKeyColumns()
+void FutureSetFromTuple::fillSetElementsOnce() const
 {
-    if (!set->hasExplicitSetElements())
+    callOnce(fill_set_elements_once, [this]
     {
         set->fillSetElements();
         set->appendSetElements(set_key_columns);
+    });
+}
+
+Columns FutureSetFromTuple::getKeyColumns() const
+{
+    fillSetElementsOnce();
+    return set->getSetElements();
+}
+
+FutureSet::Hash FutureSetFromTuple::getContentHash() const
+{
+    callOnce(content_hash_once, [this] { content_hash = computeContentHash(); });
+    return content_hash;
+}
+
+Columns FutureSetFromTuple::getUniqueKeyColumns() const
+{
+    /// Apply the deduplication filter from set_key_columns without calling fillSetElementsOnce().
+    /// This avoids permanently materializing set->set_elements, which buildOrderedSetInplace
+    /// guards behind use_index_for_in_with_subqueries_max_values. The returned columns are
+    /// temporary and freed by the caller.
+    const size_t n_cols = set_key_columns.key_columns.size();
+    Columns result;
+    result.reserve(n_cols);
+    if (n_cols > 0 && set_key_columns.filter)
+    {
+        const auto & filter_data = set_key_columns.filter->getData();
+        for (const auto * col : set_key_columns.key_columns)
+            result.push_back(col->filter(filter_data, -1));
+    }
+    return result;
+}
+
+FutureSet::Hash FutureSetFromTuple::computeContentHash() const
+{
+    /// Hash the normalized elements (deduplicated, NULL-filtered, sorted by value) so that
+    /// permutations and duplicate inputs produce the same hash. Used by the aggregate
+    /// projection matcher (actionsDAGUtils.cpp) to compare IN-clause sets.
+    const DataTypes element_types = set->getElementsTypes();
+    const Columns normalized = getUniqueKeyColumns();
+    const size_t normalized_rows = normalized.empty() ? 0 : normalized[0]->size();
+
+    IColumn::Permutation perm;
+    if (!normalized.empty() && normalized_rows > 0)
+    {
+        EqualRanges ranges{{0, normalized_rows}};
+        normalized[0]->getPermutation(
+            IColumn::PermutationSortDirection::Ascending,
+            IColumn::PermutationSortStability::Stable, 0, 1, perm);
+        for (size_t i = 1; i < normalized.size(); ++i)
+            normalized[i]->updatePermutation(
+                IColumn::PermutationSortDirection::Ascending,
+                IColumn::PermutationSortStability::Stable, 0, 1, perm, ranges);
     }
 
-    return set->getSetElements();
+    SipHash siphasher;
+    for (size_t i = 0; i < normalized.size(); ++i)
+    {
+        const auto type_name = element_types[i]->getName();
+        siphasher.update(type_name.data(), type_name.size());
+        if (!perm.empty())
+            normalized[i]->permute(perm, 0)->updateHashFast(siphasher);
+        else
+            normalized[i]->updateHashFast(siphasher);
+    }
+    return getSipHash128AsPair(siphasher);
 }
 
 SetPtr FutureSetFromTuple::buildOrderedSetInplace(const ContextPtr & context)
 {
-    if (set->hasExplicitSetElements())
-        return set;
-
     const auto & settings = context->getSettingsRef();
     size_t max_values = settings[Setting::use_index_for_in_with_subqueries_max_values];
     bool too_many_values = max_values && max_values < set->getTotalRowCount();
     if (!too_many_values)
-    {
-        set->fillSetElements();
-        set->appendSetElements(set_key_columns);
-    }
+        fillSetElementsOnce();
 
     return set;
 }
@@ -179,6 +269,20 @@ FutureSetFromSubquery::FutureSetFromSubquery(
 
 FutureSetFromSubquery::~FutureSetFromSubquery() = default;
 
+void FutureSetFromSubquery::replaceSetAndKey(SetAndKeyPtr set)
+{
+    if (set->key != set_and_key->key)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to exchange sets with different keys: {} vs {}", set->key, set_and_key->key);
+    set_and_key = std::move(set);
+}
+
+SetAndKeyPtr FutureSetFromSubquery::detachSetAndKey()
+{
+    SetAndKeyPtr ret;
+    std::swap(ret, set_and_key);
+    return ret;
+}
+
 SetPtr FutureSetFromSubquery::get() const
 {
     if (set_and_key->set != nullptr && set_and_key->set->isCreated())
@@ -201,7 +305,7 @@ void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external
     if (set.empty())
         return;
 
-    auto metadata = external_table_->getInMemoryMetadataPtr();
+    auto metadata = external_table_->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     const auto & expected_columns = metadata->getColumns().getAllPhysical();
 
     Columns set_elements = set.getSetElements();
@@ -283,6 +387,11 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     if (external_table_set)
         external_table_set->buildSetInplace(context);
 
+    /// Correlated subqueries contain PLACEHOLDER actions that cannot be executed standalone.
+    /// They will be decorrelated and executed as part of the outer query instead.
+    if (source && hasCorrelatedExpressions(source->getRootNode()))
+        return;
+
     const auto & settings = context->getSettingsRef();
     SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
     auto prepared_sets_cache = context->getPreparedSetsCache();
@@ -297,7 +406,15 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
 
     CompletedPipelineExecutor executor(pipeline);
+    if (context->hasQueryContext())
+    {
+        if (auto cancel_callback = context->getQueryContext()->getInteractiveCancelCallback())
+            executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
+    }
     executor.execute();
+
+    /// Finalize write in query cache to save subquery result (no-op if no cache writers exist in the pipeline)
+    pipeline.finalizeWriteInQueryResultCache();
 }
 
 SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
@@ -323,6 +440,11 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         }
     }
 
+    /// Correlated subqueries contain PLACEHOLDER actions that cannot be executed standalone.
+    /// They will be decorrelated and executed as part of the outer query instead.
+    if (source && hasCorrelatedExpressions(source->getRootNode()))
+        return nullptr;
+
     const auto & settings = context->getSettingsRef();
     SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
     auto prepared_sets_cache = context->getPreparedSetsCache();
@@ -337,6 +459,11 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
 
     CompletedPipelineExecutor executor(pipeline);
+    if (context->hasQueryContext())
+    {
+        if (auto cancel_callback = context->getQueryContext()->getInteractiveCancelCallback())
+            executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
+    }
     executor.execute();
 
     /// SET may not be created successfully at this step because of the sub-query timeout, but if we have
@@ -346,6 +473,9 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         return nullptr;
 
     logProcessorProfile(context, pipeline.getProcessors());
+
+    /// Finalize write in query cache to save subquery result (no-op if no cache writers exist in the pipeline)
+    pipeline.finalizeWriteInQueryResultCache();
 
     return set_and_key->set;
 }

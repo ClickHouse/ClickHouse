@@ -25,7 +25,13 @@ public:
 
     virtual ~IMergedBlockOutputStream() = default;
 
-    using WrittenOffsetColumns = std::set<std::string>;
+
+    struct GatheredData
+    {
+        MergeTreeData::DataPart::Checksums checksums;
+        ColumnsSubstreams columns_substreams;
+        ColumnsStatistics statistics;
+    };
 
     virtual void write(const Block & block) = 0;
     virtual void cancel() noexcept = 0;
@@ -45,9 +51,20 @@ public:
         return writer ? writer->releaseCachedMarks() : PlainMarksByName{};
     }
 
+    PlainMarksByName releaseCachedIndexMarks()
+    {
+        return writer ? writer->releaseCachedIndexMarks() : PlainMarksByName{};
+    }
+
     size_t getNumberOfOpenStreams() const
     {
         return writer->getNumberOfOpenStreams();
+    }
+
+    /// See IMergeTreeDataPartWriter::getSkipIndicesPackedWriter.
+    class PackedFilesWriter * getSkipIndicesPackedWriter()
+    {
+        return writer ? writer->getSkipIndicesPackedWriter() : nullptr;
     }
 
 protected:

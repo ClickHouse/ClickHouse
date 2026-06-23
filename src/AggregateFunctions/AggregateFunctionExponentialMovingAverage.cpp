@@ -81,6 +81,7 @@ public:
     }
 };
 
+void registerAggregateFunctionExponentialMovingAverage(AggregateFunctionFactory & factory);
 void registerAggregateFunctionExponentialMovingAverage(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -237,7 +238,6 @@ ORDER BY time ASC
                         "Both arguments for aggregate function {} must have numeric type, got {}", name, type->getName());
             return std::make_shared<AggregateFunctionExponentialMovingAverage>(argument_types, params);
         },
-        {},
         documentation
     });
 }

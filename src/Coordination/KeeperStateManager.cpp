@@ -112,10 +112,10 @@ std::optional<AuthenticationData> getClientPasswordAuthentication(const Poco::Ut
                 if (password.length() > Coordination::PASSWORD_LENGTH)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Password cannot be longer than {} characters, specified {}", Coordination::PASSWORD_LENGTH, password.size());
 
-                data->setPassword(password, true);
+                data->setPassword(password, /* second_factor */ {}, /* validate */ true);
             }
             else
-                data->setPasswordHashHex(config.getString(config_password_name), true);
+                data->setPasswordHashHex(config.getString(config_password_name), /* second_factor */ {}, /* validate */ true);
         }
     }
 
@@ -449,7 +449,7 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
             uint64_t read_checksum{0};
             readIntBinary(read_checksum, *read_buf);
 
-            uint8_t version;
+            uint8_t version = 0;
             readIntBinary(version, *read_buf);
 
             auto buffer_size = content_size - sizeof read_checksum - sizeof version;

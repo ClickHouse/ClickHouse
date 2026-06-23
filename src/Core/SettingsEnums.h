@@ -5,6 +5,7 @@
 #include <Core/LoadBalancing.h>
 #include <Core/LogsLevel.h>
 #include <Core/MergeSelectorAlgorithm.h>
+#include <Core/MergeTreeSerializationEnums.h>
 #include <Core/ParallelReplicasMode.h>
 #include <Core/QueryLogElementType.h>
 #include <Core/SchemaInferenceMode.h>
@@ -223,6 +224,14 @@ enum class DefaultTableEngine : uint8_t
 
 DECLARE_SETTING_ENUM(DefaultTableEngine)
 
+enum class TextIndexPostingListApplyMode : uint8_t
+{
+    MATERIALIZE,
+    LAZY,
+};
+
+DECLARE_SETTING_ENUM(TextIndexPostingListApplyMode)
+
 DECLARE_SETTING_ENUM(DistributedCacheLogMode)
 
 DECLARE_SETTING_ENUM(DistributedCachePoolBehaviourOnLimit)
@@ -286,6 +295,8 @@ DECLARE_SETTING_ENUM_WITH_RENAME(EscapingRule, FormatSettings::EscapingRule)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(MsgPackUUIDRepresentation, FormatSettings::MsgPackUUIDRepresentation)
 
+DECLARE_SETTING_ENUM_WITH_RENAME(GeoJSONUnsupportedGeometryHandling, FormatSettings::UnsupportedGeometryHandling)
+
 DECLARE_SETTING_ENUM_WITH_RENAME(ParquetCompression, FormatSettings::ParquetCompression)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(ArrowCompression, FormatSettings::ArrowCompression)
@@ -298,6 +309,7 @@ enum class Dialect : uint8_t
     kusto,
     prql,
     promql,
+    polyglot,
 };
 
 DECLARE_SETTING_ENUM(Dialect)
@@ -404,6 +416,7 @@ DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
 DECLARE_SETTING_ENUM(SchemaInferenceMode)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateTimeOverflowBehavior)
+DECLARE_SETTING_ENUM_WITH_RENAME(InputFormatColumnMatchingCaseSensitivity, FormatSettings::InputFormatColumnMatchingCaseSensitivity)
 
 DECLARE_SETTING_ENUM(SQLSecurityType)
 
@@ -427,6 +440,7 @@ enum class DatabaseDataLakeCatalogType : uint8_t
     GLUE,
     ICEBERG_HIVE,
     ICEBERG_ONELAKE,
+    ICEBERG_BIGLAKE,
     PAIMON_REST,
 };
 
@@ -436,6 +450,8 @@ enum class FileCachePolicy : uint8_t
 {
     LRU,
     SLRU,
+    SLRU_OVERCOMMIT,
+    LRU_OVERCOMMIT,
 };
 
 DECLARE_SETTING_ENUM(FileCachePolicy)
@@ -457,56 +473,16 @@ enum class GeoToH3ArgumentOrder : uint8_t
 
 DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
 
-enum class MergeTreeSerializationInfoVersion : uint8_t
-{
-    BASIC = 0,
-    WITH_TYPES = 1,
-};
 
 DECLARE_SETTING_ENUM(MergeTreeSerializationInfoVersion)
-
-enum class MergeTreeStringSerializationVersion : uint8_t
-{
-    SINGLE_STREAM = 0,
-    WITH_SIZE_STREAM = 1,
-};
-
 DECLARE_SETTING_ENUM(MergeTreeStringSerializationVersion)
-
-enum class MergeTreeNullableSerializationVersion : uint8_t
-{
-    BASIC = 0,
-    ALLOW_SPARSE = 1,
-};
-
 DECLARE_SETTING_ENUM(MergeTreeNullableSerializationVersion)
-
-enum class MergeTreeObjectSerializationVersion : uint8_t
-{
-    V1,
-    V2,
-    V3,
-};
-
 DECLARE_SETTING_ENUM(MergeTreeObjectSerializationVersion)
-
-enum class MergeTreeObjectSharedDataSerializationVersion : uint8_t
-{
-    MAP,
-    MAP_WITH_BUCKETS,
-    ADVANCED,
-};
-
 DECLARE_SETTING_ENUM(MergeTreeObjectSharedDataSerializationVersion)
-
-enum class MergeTreeDynamicSerializationVersion : uint8_t
-{
-    V1,
-    V2,
-    V3,
-};
-
 DECLARE_SETTING_ENUM(MergeTreeDynamicSerializationVersion)
+DECLARE_SETTING_ENUM(MergeTreeMapSerializationVersion)
+DECLARE_SETTING_ENUM(MergeTreeMapBucketsStrategy)
+
 
 enum class SearchOrphanedPartsDisks : uint8_t
 {
@@ -516,6 +492,26 @@ enum class SearchOrphanedPartsDisks : uint8_t
 };
 
 DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
+
+enum class TextIndexPostingListCodec : uint8_t
+{
+    None,
+    Bitpacking
+};
+
+DECLARE_SETTING_ENUM(TextIndexPostingListCodec)
+
+/// NOTE: Part level min-max index depends on strict columns order.
+///       That means if you want to add new columns segment to index - it will not be materialized until
+///       previous segment will be materialized in all data parts via mutation or merge.
+///       This is an upgrade semantics of this index.
+enum class MergeTreePartMinMaxIndexColumns : uint64_t
+{
+    PARTITION_KEY_ONLY = 0,
+    WITH_BLOCK_NUMBER_OFFSET = 1,
+};
+
+DECLARE_SETTING_ENUM(MergeTreePartMinMaxIndexColumns)
 
 enum class DecorrelationJoinKind : uint8_t
 {
@@ -534,7 +530,6 @@ enum class IcebergMetadataLogLevel : uint8_t
     ManifestFileMetadata = 4,
     ManifestFileEntry = 5,
 };
-
 DECLARE_SETTING_ENUM(IcebergMetadataLogLevel)
 
 enum class ObjectStorageGranularityLevel : uint8_t
@@ -556,10 +551,53 @@ enum class DeduplicateInsertSelectMode : uint8_t
 {
     DISABLE = 0,
     FORCE_ENABLE,
-    ENABLE_WHEN_PROSSIBLE,
+    ENABLE_WHEN_POSSIBLE,
     ENABLE_EVEN_FOR_BAD_QUERIES
 };
 
 DECLARE_SETTING_ENUM(DeduplicateInsertSelectMode)
+
+enum class DeduplicateInsertMode : uint8_t
+{
+    BACKWARD_COMPATIBLE_CHOICE = 0,
+    ENABLE,
+    DISABLE
+};
+
+DECLARE_SETTING_ENUM(DeduplicateInsertMode)
+
+enum class InsertDeduplicationVersions : uint8_t
+{
+    OLD_SEPARATE_HASHES = 0,
+    COMPATIBLE_DOUBLE_HASHES,
+    NEW_UNIFIED_HASHES,
+};
+
+DECLARE_SETTING_ENUM(InsertDeduplicationVersions)
+
+enum class JemallocProfileFormat : uint8_t
+{
+    Raw = 0,
+    Symbolized,
+    Collapsed
+};
+
+DECLARE_SETTING_ENUM(JemallocProfileFormat)
+
+enum class S3UriStyle : uint8_t
+{
+    AUTO,
+    PATH,
+    VIRTUAL_HOSTED,
+};
+
+DECLARE_SETTING_ENUM(S3UriStyle)
+
+enum class FileLikeEngineDefaultPartitionStrategy : uint8_t
+{
+    WILDCARD,
+    HIVE,
+};
+DECLARE_SETTING_ENUM(FileLikeEngineDefaultPartitionStrategy)
 
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Types.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 

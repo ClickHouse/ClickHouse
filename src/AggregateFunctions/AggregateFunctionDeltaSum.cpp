@@ -153,6 +153,7 @@ AggregateFunctionPtr createAggregateFunctionDeltaSum(
 }
 }
 
+void registerAggregateFunctionDeltaSum(AggregateFunctionFactory & factory);
 void registerAggregateFunctionDeltaSum(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -213,7 +214,7 @@ SELECT deltaSum(arrayJoin([2.25, 3, 4.5]))
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true };
 
-    factory.registerFunction("deltaSum", { createAggregateFunctionDeltaSum, properties, documentation });
+    factory.registerFunction("deltaSum", { createAggregateFunctionDeltaSum, documentation, properties });
 }
 
 }

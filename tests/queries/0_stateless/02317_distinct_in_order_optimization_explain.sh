@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel-replicas
+# no-parallel-replicas - because explain produced different plan
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -77,7 +79,7 @@ echo "-- enabled, only part of distinct columns form prefix of sorting key"
 
 $CLICKHOUSE_CLIENT --max_threads=0 -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, c from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER | tail -n 1
 
-echo "=== disable new analyzer ==="
+echo "=== disable analyzer ==="
 DISABLE_ANALYZER="set enable_analyzer=0"
 
 echo "-- enabled, check that sorting properties are propagated from ReadFromMergeTree till preliminary distinct"
@@ -99,7 +101,7 @@ $CLICKHOUSE_CLIENT -q "$DISABLE_ANALYZER;$ENABLE_OPTIMIZATION;$ENABLE_READ_IN_OR
 echo "-- enabled, check that disabling other 'read in order' optimizations do not disable distinct in order optimization"
 $CLICKHOUSE_CLIENT -q "$DISABLE_ANALYZER;$ENABLE_OPTIMIZATION;set optimize_read_in_order=0;set optimize_aggregation_in_order=0;set optimize_read_in_window_order=0;explain plan sorting=1 select distinct a,b from distinct_in_order_explain" | eval $FIND_SORTING_PROPERTIES
 
-echo "=== enable new analyzer ==="
+echo "=== enable analyzer ==="
 ENABLE_ANALYZER="set enable_analyzer=1"
 
 echo "-- enabled, check that sorting properties are propagated from ReadFromMergeTree till preliminary distinct"

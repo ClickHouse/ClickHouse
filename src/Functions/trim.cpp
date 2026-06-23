@@ -1,10 +1,13 @@
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/IColumn.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <base/find_symbols.h>
+
+#include <array>
 
 namespace DB
 {
@@ -16,14 +19,23 @@ namespace ErrorCodes
 namespace
 {
 
-template <typename Mode>
-class FunctionTrim : public IFunction
+/// Membership table for the optional second argument of trim* functions.
+/// Unlike `SearchSymbols` (a SIMD primitive capped at 16 symbols), it supports
+/// a trim character set of any length and looks up each byte in O(1).
+using TrimCharsTable = std::array<bool, 256>;
+
+class FunctionTrim final : public IFunction
 {
 public:
-    static constexpr auto name = Mode::name;
+    FunctionTrim(const char * name_, bool trim_left_, bool trim_right_)
+        : function_name(name_), trim_left(trim_left_), trim_right(trim_right_) {}
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTrim<Mode>>(); }
-    String getName() const override { return name; }
+    static FunctionPtr create(ContextPtr, const char * name, bool trim_left, bool trim_right)
+    {
+        return std::make_shared<FunctionTrim>(name, trim_left, trim_right);
+    }
+
+    String getName() const override { return function_name; }
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -46,19 +58,27 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        std::optional<SearchSymbols> custom_trim_characters;
+        std::optional<TrimCharsTable> custom_trim_characters;
         if (arguments.size() == 2 && input_rows_count > 0)
         {
+            String trim_characters_string;
             if (const ColumnString * col_trim_characters = checkAndGetColumn<ColumnString>(arguments[1].column.get()))
             {
-                const String trim_characters_string{col_trim_characters->getDataAt(0)};
-                custom_trim_characters = std::make_optional<SearchSymbols>(trim_characters_string);
+                trim_characters_string = String(col_trim_characters->getDataAt(0));
             }
             else if (const ColumnConst * col_trim_characters_const = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
             {
-                const String trim_characters_string{col_trim_characters_const->getDataAt(0)};
-                custom_trim_characters = std::make_optional<SearchSymbols>(trim_characters_string);
+                trim_characters_string = String(col_trim_characters_const->getDataAt(0));
             }
+            else
+            {
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column type of argument 2 of function {}: {}", getName(), arguments[1].column->getName());
+            }
+
+            TrimCharsTable table{};
+            for (char c : trim_characters_string)
+                table[static_cast<UInt8>(c)] = true;
+            custom_trim_characters = table;
         }
 
         ColumnPtr col_input_full;
@@ -91,13 +111,19 @@ public:
         return col_res;
     }
 
-    static void vector(
+private:
+    const char * const function_name;
+    const bool trim_left;
+    const bool trim_right;
+
+    template <bool do_trim_left, bool do_trim_right>
+    void vectorImpl(
         const ColumnString::Chars & input_data,
         const ColumnString::Offsets & input_offsets,
-        const std::optional<SearchSymbols> & custom_trim_characters,
+        const std::optional<TrimCharsTable> & custom_trim_characters,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
-        size_t input_rows_count)
+        size_t input_rows_count) const
     {
         res_offsets.resize_exact(input_rows_count);
         res_data.reserve_exact(input_data.size());
@@ -105,12 +131,12 @@ public:
         size_t prev_offset = 0;
         size_t res_offset = 0;
 
-        const UInt8 * start;
-        size_t length;
+        const UInt8 * start = nullptr;
+        size_t length = 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            execute(reinterpret_cast<const UInt8 *>(&input_data[prev_offset]), input_offsets[i] - prev_offset, custom_trim_characters, start, length);
+            executeImpl<do_trim_left, do_trim_right>(reinterpret_cast<const UInt8 *>(&input_data[prev_offset]), input_offsets[i] - prev_offset, custom_trim_characters, start, length);
 
             res_data.resize(res_data.size() + length);
             memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], start, length);
@@ -121,13 +147,28 @@ public:
         }
     }
 
-    static void vectorFixed(
+    void vector(
         const ColumnString::Chars & input_data,
-        size_t n,
-        const std::optional<SearchSymbols> & custom_trim_characters,
+        const ColumnString::Offsets & input_offsets,
+        const std::optional<TrimCharsTable> & custom_trim_characters,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
-        size_t input_rows_count)
+        size_t input_rows_count) const
+    {
+        dispatch([&](auto trim_left_v, auto trim_right_v)
+        {
+            vectorImpl<trim_left_v, trim_right_v>(input_data, input_offsets, custom_trim_characters, res_data, res_offsets, input_rows_count);
+        });
+    }
+
+    template <bool do_trim_left, bool do_trim_right>
+    void vectorFixedImpl(
+        const ColumnString::Chars & input_data,
+        size_t n,
+        const std::optional<TrimCharsTable> & custom_trim_characters,
+        ColumnString::Chars & res_data,
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count) const
     {
         res_offsets.resize_exact(input_rows_count);
         res_data.reserve_exact(input_data.size());
@@ -135,12 +176,12 @@ public:
         size_t prev_offset = 0;
         size_t res_offset = 0;
 
-        const UInt8 * start;
-        size_t length;
+        const UInt8 * start = nullptr;
+        size_t length = 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            execute(reinterpret_cast<const UInt8 *>(&input_data[prev_offset]), n, custom_trim_characters, start, length);
+            executeImpl<do_trim_left, do_trim_right>(reinterpret_cast<const UInt8 *>(&input_data[prev_offset]), n, custom_trim_characters, start, length);
 
             res_data.resize(res_data.size() + length);
             memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], start, length);
@@ -151,69 +192,68 @@ public:
         }
     }
 
-    static void execute(const UInt8 * data, size_t size, const std::optional<SearchSymbols> & custom_trim_characters, const UInt8 *& res_data, size_t & res_size)
+    void vectorFixed(
+        const ColumnString::Chars & input_data,
+        size_t n,
+        const std::optional<TrimCharsTable> & custom_trim_characters,
+        ColumnString::Chars & res_data,
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count) const
+    {
+        dispatch([&](auto trim_left_v, auto trim_right_v)
+        {
+            vectorFixedImpl<trim_left_v, trim_right_v>(input_data, n, custom_trim_characters, res_data, res_offsets, input_rows_count);
+        });
+    }
+
+    template <bool do_trim_left, bool do_trim_right>
+    static void executeImpl(const UInt8 * data, size_t size, const std::optional<TrimCharsTable> & custom_trim_characters, const UInt8 *& res_data, size_t & res_size)
     {
         const char * char_begin = reinterpret_cast<const char *>(data);
         const char * char_end = char_begin + size;
 
-        if constexpr (Mode::trim_left)
+        if constexpr (do_trim_left)
         {
-            const char * found = nullptr;
             if (!custom_trim_characters)
-                found = find_first_not_symbols<' '>(char_begin, char_end);
+                char_begin = find_first_not_symbols<' '>(char_begin, char_end);
             else
             {
-                std::string_view input(char_begin, char_end);
-                found = find_first_not_symbols(input, *custom_trim_characters);
+                const TrimCharsTable & table = *custom_trim_characters;
+                while (char_begin < char_end && table[static_cast<UInt8>(*char_begin)])
+                    ++char_begin;
             }
-            size_t num_chars = found - char_begin;
-            char_begin += num_chars;
         }
-        if constexpr (Mode::trim_right)
+        if constexpr (do_trim_right)
         {
-            const char * found = nullptr;
             if (!custom_trim_characters)
-                found = find_last_not_symbols_or_null<' '>(char_begin, char_end);
+            {
+                const char * found = find_last_not_symbols_or_null<' '>(char_begin, char_end);
+                char_end = found ? found + 1 : char_begin;
+            }
             else
             {
-                std::string_view input(char_begin, char_end);
-                found = find_last_not_symbols_or_null(input, *custom_trim_characters);
+                const TrimCharsTable & table = *custom_trim_characters;
+                while (char_end > char_begin && table[static_cast<UInt8>(char_end[-1])])
+                    --char_end;
             }
-            if (found)
-                char_end = found + 1;
-            else
-                char_end = char_begin;
         }
 
         res_data = reinterpret_cast<const UInt8 *>(char_begin);
         res_size = char_end - char_begin;
     }
-};
 
-struct TrimModeLeft
-{
-    static constexpr auto name = "trimLeft";
-    static constexpr bool trim_left = true;
-    static constexpr bool trim_right = false;
+    /// Dispatch runtime trim_left/trim_right to compile-time template parameters
+    template <typename Func>
+    void dispatch(Func && func) const
+    {
+        if (trim_left && trim_right)
+            func(std::bool_constant<true>{}, std::bool_constant<true>{});
+        else if (trim_left)
+            func(std::bool_constant<true>{}, std::bool_constant<false>{});
+        else
+            func(std::bool_constant<false>{}, std::bool_constant<true>{});
+    }
 };
-
-struct TrimModeRight
-{
-    static constexpr auto name = "trimRight";
-    static constexpr bool trim_left = false;
-    static constexpr bool trim_right = true;
-};
-
-struct TrimModeBoth
-{
-    static constexpr auto name = "trimBoth";
-    static constexpr bool trim_left = true;
-    static constexpr bool trim_right = true;
-};
-
-using FunctionTrimLeft = FunctionTrim<TrimModeLeft>;
-using FunctionTrimRight = FunctionTrim<TrimModeRight>;
-using FunctionTrimBoth = FunctionTrim<TrimModeBoth>;
 
 }
 
@@ -290,11 +330,11 @@ By default, removes common whitespace (ASCII) characters.
     };
     FunctionDocumentation documentation_both = {description_both, syntax_both, arguments_both, {}, returned_value_both, examples_both, introduced_in, category};
 
-    factory.registerFunction<FunctionTrimLeft>(documentation_left);
-    factory.registerFunction<FunctionTrimRight>(documentation_right);
-    factory.registerFunction<FunctionTrimBoth>(documentation_both);
-    factory.registerAlias("ltrim", FunctionTrimLeft::name);
-    factory.registerAlias("rtrim", FunctionTrimRight::name);
-    factory.registerAlias("trim", FunctionTrimBoth::name);
+    factory.registerFunction("trimLeft", [](ContextPtr){ return FunctionTrim::create({}, "trimLeft", true, false); }, documentation_left);
+    factory.registerFunction("trimRight", [](ContextPtr){ return FunctionTrim::create({}, "trimRight", false, true); }, documentation_right);
+    factory.registerFunction("trimBoth", [](ContextPtr){ return FunctionTrim::create({}, "trimBoth", true, true); }, documentation_both);
+    factory.registerAlias("ltrim", "trimLeft");
+    factory.registerAlias("rtrim", "trimRight");
+    factory.registerAlias("trim", "trimBoth");
 }
 }

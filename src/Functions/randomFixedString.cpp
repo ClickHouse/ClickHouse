@@ -30,6 +30,11 @@ class FunctionRandomFixedString : public IFunction
 public:
     static constexpr auto name = "randomFixedString";
 
+    static FunctionPtr create(ContextPtr)
+    {
+        return std::make_shared<FunctionRandomFixedString>();
+    }
+
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
@@ -40,7 +45,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!isUInt(arguments[0].type))
+        if (!isNativeUInt(arguments[0].type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be unsigned integer", getName());
 
         if (!arguments[0].column || !isColumnConst(*arguments[0].column))
@@ -63,7 +68,7 @@ public:
         if (input_rows_count == 0)
             return col_to;
 
-        size_t total_size;
+        size_t total_size = 0;
         if (common::mulOverflow(input_rows_count, n, total_size))
             throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
 
@@ -73,8 +78,6 @@ public:
 
         return col_to;
     }
-
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRandomFixedString>(); }
 };
 
 }

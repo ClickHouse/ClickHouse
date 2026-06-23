@@ -22,12 +22,25 @@ namespace ErrorCodes
 extern const int INCORRECT_ELEMENT_OF_SET;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int UNKNOWN_ELEMENT_OF_ENUM;
-extern const int LOGICAL_ERROR;
-
 }
 
 namespace
 {
+
+/// Unwrap Nullable to get to the underlying Tuple type.
+/// Also unwrap LowCardinality for robustness, even though LowCardinality(Tuple) is not supported.
+const DataTypeTuple * getTupleType(const DataTypePtr & type)
+{
+    const IDataType * current = type.get();
+
+    if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(current))
+        current = lc_type->getDictionaryType().get();
+
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(current))
+        current = nullable_type->getNestedType().get();
+
+    return typeid_cast<const DataTypeTuple *>(current);
+}
 
 size_t getCompoundTypeDepth(const IDataType & type)
 {
@@ -67,7 +80,7 @@ size_t getCompoundTypeDepth(const IDataType & type)
     return depth;
 }
 
-/// The `convertFieldToTypeStrict` is used to prevent unexpected results in case of conversion with loss of precision.
+/// Uses `convertFieldToType` with `strict=true` to prevent unexpected results in case of conversion with loss of precision.
 /// Example: `SELECT 33.3 :: Decimal(9, 1) AS a WHERE a IN (33.33 :: Decimal(9, 2))`
 /// 33.33 in the set is converted to 33.3, but it is not equal to 33.3 in the column, so the result should still be empty.
 /// We can not include values that don't represent any possible value from the type of filtered column to the set.
@@ -76,7 +89,17 @@ std::optional<Field> convertFieldToTypeCheckEnum(
 {
     try
     {
-        return convertFieldToTypeStrict(from_value, from_type, to_type);
+        Field result = convertFieldToType(from_value, to_type, &from_type, {}, /*strict=*/ true);
+
+        /// `convertFieldToType` with `strict=true` returns Null on failed conversion (out-of-range,
+        /// loss of precision, non-representable Bool values like 10, etc). We treat this as
+        /// "not representable in the target type" and return nullopt so the value is excluded
+        /// from the set, rather than being inserted as NULL. The NULL -> NULL case is kept valid
+        /// because a genuine NULL in the source should remain NULL in the set.
+        if (!from_value.isNull() && result.isNull())
+            return std::nullopt;
+
+        return result;
     }
     catch (const Exception & e)
     {
@@ -148,15 +171,11 @@ ColumnsWithTypeAndName createBlockFromCollection(
                         lhs_tuple_element_types.size());
 
                 const DataTypePtr & rhs_element_type = rhs_types[collection_index];
-
-                const DataTypeTuple * rhs_tuple_type = nullptr;
-                if (const auto * rhs_nullable_type = typeid_cast<const DataTypeNullable *>(rhs_element_type.get()))
-                    rhs_tuple_type = typeid_cast<const DataTypeTuple *>(rhs_nullable_type->getNestedType().get());
-                else
-                    rhs_tuple_type = typeid_cast<const DataTypeTuple *>(rhs_element_type.get());
+                const DataTypeTuple * rhs_tuple_type = getTupleType(rhs_element_type);
 
                 if (!rhs_tuple_type)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Tuple or Nullable(Tuple) type");
+                    throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET,
+                        "Invalid element type in set. Expected Tuple, got {}", rhs_element_type->getName());
 
                 const DataTypes & rhs_tuple_element_types = rhs_tuple_type->getElements();
 
@@ -241,21 +260,11 @@ ColumnsWithTypeAndName createBlockFromCollection(
         const auto & rhs_element_as_tuple = rhs_element.template safeGet<Tuple>();
 
         const DataTypePtr & rhs_element_type = rhs_types[collection_index];
-
-        const DataTypeTuple * tuple_type = nullptr;
-        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(rhs_element_type.get()))
-        {
-            /// RHS type is Nullable(Tuple(...))
-            tuple_type = typeid_cast<const DataTypeTuple *>(nullable_type->getNestedType().get());
-        }
-        else
-        {
-            /// RHS type is Tuple(...)
-            tuple_type = typeid_cast<const DataTypeTuple *>(rhs_element_type.get());
-        }
+        const DataTypeTuple * tuple_type = getTupleType(rhs_element_type);
 
         if (!tuple_type)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Tuple or Nullable(Tuple) type");
+            throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET,
+                "Invalid element type in set. Expected Tuple, got {}", rhs_element_type->getName());
 
         const DataTypes & rhs_element_unpacked_types = tuple_type->getElements();
 
@@ -387,7 +396,9 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
                 element_type = low_cardinality_type->getDictionaryType();
         }
 
-        DataTypePtr nested_tuple_type = std::make_shared<DataTypeTuple>(nested_tuple_element_types);
+        DataTypePtr nested_tuple_type = lhs_tuple_type->hasExplicitNames()
+            ? std::make_shared<DataTypeTuple>(nested_tuple_element_types, lhs_tuple_type->getElementNames())
+            : std::make_shared<DataTypeTuple>(nested_tuple_element_types);
         lhs_unpacked_types = {std::make_shared<DataTypeNullable>(nested_tuple_type)};
     }
 

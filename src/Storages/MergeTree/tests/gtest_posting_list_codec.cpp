@@ -17,7 +17,7 @@ namespace
 {
 std::vector<uint32_t> generateRandomData(size_t count, uint32_t max_bits, size_t seed = 42)
 {
-    std::mt19937 rng(seed);
+    std::mt19937 rng(static_cast<std::mt19937::result_type>(seed));
     std::vector<uint32_t> data(count);
     if (max_bits == 0)
     {

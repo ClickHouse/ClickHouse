@@ -11,6 +11,7 @@ TRUSTED_CONTRIBUTORS = {
         "taiyang-li",
         "ucasFL",  # Amos Bird's friend
         "canhld94",
+        "uladzislauNestsiaruk",  # Student working on https://github.com/ClickHouse/ClickHouse/pull/91416, remove by 05/2026
     ]
 }
 
@@ -26,7 +27,7 @@ def user_in_trusted_org(user_name: str) -> bool:
     return user_name in [line.strip() for line in lines.splitlines() if line.strip()]
 
 
-def can_be_trusted():
+def can_be_tested():
     info = Info()
     if info.repo_name == Info().fork_name:
         print("It's an internal contributor")
@@ -48,5 +49,5 @@ def can_be_trusted():
 
 
 if __name__ == "__main__":
-    if can_be_trusted() != "":
+    if can_be_tested() != "":
         sys.exit(1)

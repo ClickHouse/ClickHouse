@@ -20,6 +20,7 @@ static constexpr auto DEFAULT_CONNECTION_POOL_SIZE = 15000;
 static constexpr auto DEFAULT_CONNECTION_TTL_SEC = 200;
 static constexpr auto DEFAULT_CONNECT_MAX_TRIES = 5;
 static constexpr auto DEFAULT_READ_REQUEST_MAX_TRIES = 10;
+static constexpr auto DEFAULT_WRITE_REQUEST_MAX_TRIES = 10;
 static constexpr auto DEFAULT_CREDENTIALS_REFRESH_PERIOD_SECONDS = 5;
 static constexpr auto DEFAULT_CONNECT_BACKOFF_MIN_MS = 0;
 static constexpr auto DEFAULT_CONNECT_BACKOFF_MAX_MS = 50;

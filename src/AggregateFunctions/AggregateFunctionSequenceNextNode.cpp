@@ -1,14 +1,16 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <base/sort.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Interpreters/Context.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
@@ -95,7 +97,7 @@ struct NodeBase
 
     static Node * read(ReadBuffer & buf, Arena * arena)
     {
-        UInt64 size;
+        UInt64 size = 0;
         readVarUInt(size, buf);
         if (unlikely(size > max_node_size_deserialize))
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large node state size");
@@ -105,7 +107,7 @@ struct NodeBase
         buf.readStrict(node->data(), size);
 
         readBinary(node->event_time, buf);
-        UInt64 ulong_bitset;
+        UInt64 ulong_bitset = 0;
         readBinary(ulong_bitset, buf);
         node->events_bitset = ulong_bitset;
         readBinary(node->can_be_base, buf);
@@ -165,7 +167,7 @@ struct SequenceNextNodeGeneralData
     {
         if (!sorted)
         {
-            std::stable_sort(std::begin(value), std::end(value), Comparator{});
+            ::stableSort(std::begin(value), std::end(value), Comparator{});
             sorted = true;
         }
     }
@@ -272,7 +274,7 @@ public:
         using Comparator = typename SequenceNextNodeGeneralData<Node>::Comparator;
 
         if (!data(place).sorted && !data(rhs).sorted)
-            std::stable_sort(std::begin(a), std::end(a), Comparator{});
+            ::stableSort(std::begin(a), std::end(a), Comparator{});
         else
         {
             const auto begin = std::begin(a);
@@ -280,10 +282,10 @@ public:
             const auto end = std::end(a);
 
             if (!data(place).sorted)
-                std::stable_sort(begin, middle, Comparator{});
+                ::stableSort(begin, middle, Comparator{});
 
             if (!data(rhs).sorted)
-                std::stable_sort(middle, end, Comparator{});
+                ::stableSort(middle, end, Comparator{});
 
             std::inplace_merge(begin, middle, end, Comparator{});
         }
@@ -328,7 +330,7 @@ public:
     {
         readBinary(data(place).sorted, buf);
 
-        UInt64 size;
+        UInt64 size = 0;
         readVarUInt(size, buf);
 
         if (unlikely(size == 0))
@@ -466,7 +468,7 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function '{}' requires 'String' parameters", name);
 
     String param_dir = parameters.at(0).safeGet<String>();
-    std::unordered_map<std::string, SequenceDirection> seq_dir_mapping{
+    UnorderedMapWithMemoryTracking<std::string, SequenceDirection> seq_dir_mapping{
         {"forward", SequenceDirection::Forward},
         {"backward", SequenceDirection::Backward},
     };
@@ -475,7 +477,7 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
     SequenceDirection direction = seq_dir_mapping[param_dir];
 
     String param_base = parameters.at(1).safeGet<String>();
-    std::unordered_map<std::string, SequenceBase> seq_base_mapping{
+    UnorderedMapWithMemoryTracking<std::string, SequenceBase> seq_base_mapping{
         {"head", SequenceBase::Head},
         {"tail", SequenceBase::Tail},
         {"first_match", SequenceBase::FirstMatch},
@@ -544,10 +546,11 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
 
 }
 
+void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
-    factory.registerFunction("sequenceNextNode", { createAggregateFunctionSequenceNode, properties });
+    factory.registerFunction("sequenceNextNode", { createAggregateFunctionSequenceNode, {}, properties });
 }
 
 }

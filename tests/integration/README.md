@@ -187,9 +187,10 @@ export ZOO_SECURE_CLIENT_PORT=2281
 export RABBITMQ_COOKIE_FILE=/tmp/stub
 export MONGO_SECURE_CONFIG_DIR=/tmp/stub
 export PROMETHEUS_WRITER_PORT=8080
-export PROMETHEUS_REMOTE_WRITE_HANDLER=/stub
-export PROMETHEUS_REMOTE_READ_HANDLER=/stub
+export PROMETHEUS_REMOTE_WRITE_HANDLERS=/stub
+export PROMETHEUS_REMOTE_READ_HANDLERS=/stub
 export PROMETHEUS_READER_PORT=8080
+export PROMETHEUS_RECEIVER_PORT=8080
 docker compose $(find ${HOME}/ClickHouse/tests/integration -name '*compose*yml' -exec echo --file {} ' ' \; ) pull
 ```
 
@@ -202,4 +203,10 @@ sudo vim /etc/docker/daemon.json
 {
   "ipv6": false
 }
+```
+
+### "Permission denied" errors in ClickHouse repository after running integration tests
+Sometimes after running integration tests natively docker seems to change the permissions of the ClickHouse code repository and running normal `clickhouse-test` tests fails due to these permission errors. To fix it, chown back to your user and group:
+```bash
+sudo chown -R <user>:<group> ClickHouse/
 ```

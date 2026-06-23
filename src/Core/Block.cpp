@@ -81,7 +81,16 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
     const IColumn * actual_column = actual.column.get();
     const IColumn * expected_column = expected.column.get();
 
-    /// If we allow to materialize columns, omit Const, Replicated and Sparse columns.
+    /// A Sparse column is structurally equal to the full column of the same type it wraps, and every
+    /// consumer can process sparse, so it must compare equal to a non-sparse column even in the
+    /// strict path. Unwrap Sparse on both sides here; Const and Replicated stay strict unless
+    /// allow_materialize.
+    if (const auto * actual_sparse = typeid_cast<const ColumnSparse *>(actual_column))
+        actual_column = &actual_sparse->getValuesColumn();
+    if (const auto * expected_sparse = typeid_cast<const ColumnSparse *>(expected_column))
+        expected_column = &expected_sparse->getValuesColumn();
+
+    /// If we allow to materialize columns, omit Const and Replicated columns too.
     if (allow_materialize)
     {
         actual_column = getActualColumn(actual_column);
@@ -558,6 +567,14 @@ MutableColumns Block::mutateColumns()
     return columns;
 }
 
+Columns Block::detachColumns()
+{
+    size_t num_columns = data.size();
+    Columns columns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        columns[i] = data[i].column ? std::move(data[i].column) : data[i].type->createColumn();
+    return columns;
+}
 
 void Block::setColumns(MutableColumns && columns)
 {
@@ -1024,7 +1041,7 @@ String addDummyColumnWithRowCount(Block & block, size_t num_rows)
     {
         if (column.column)
         {
-            assert(column.column->size() == num_rows);
+            chassert(column.column->size() == num_rows);
             has_columns = true;
             break;
         }

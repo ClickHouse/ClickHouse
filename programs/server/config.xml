@@ -31,6 +31,14 @@
              It is useful for debugging shutdown issues -->
         <!-- <shutdown_level>trace</shutdown_level> -->
 
+        <!-- Startup console level is used to set the console logger level at server startup.
+             It is useful for debugging startup issues.
+             The console logger level will be reset to the default level after the server is fully initialized -->
+        <!-- <startup_console_log_level>trace</startup_console_log_level> -->
+       <!-- Shutdown console log level is used to set the console logger level at server Shutdown.
+             It is useful for debugging shutdown issues -->
+        <!-- <shutdown_console_log_level>trace</shutdown_console_log_level> -->
+
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
         <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
         <!-- Rotation policy
@@ -272,6 +280,25 @@
         <password></password>
     </interserver_http_credentials>-->
 
+    <!-- Multi-stage distributed query execution (experimental, enabled per query with the
+         `make_distributed_plan` setting). When a query uses streaming exchanges, workers connect
+         directly to each other on this port to pass intermediate results.
+
+         Security: the streaming exchange handshake is NOT authenticated. The port must be treated
+         like the interserver port: reachable only from trusted ClickHouse nodes in the same cluster,
+         never from untrusted networks. For that reason the listener is started only when an explicit
+         `streaming_exchange_listen_host` is configured; setting only the port logs an error and does
+         not start the listener. Bind it to a private interface and protect it with a firewall.
+         Exchanges are keyed by a random per-query identifier, which makes blind injection into a
+         running query impractical, but this is defense in depth, not an access-control mechanism.
+      -->
+    <!--
+    <distributed_query>
+        <streaming_exchange_port>9223</streaming_exchange_port>
+        <streaming_exchange_listen_host>127.0.0.1</streaming_exchange_listen_host>
+    </distributed_query>
+    -->
+
     <!-- Listen specified address.
          Use :: (wildcard IPv6 address), if you want to accept connections both with IPv4 and IPv6 from everywhere.
          Notes:
@@ -411,7 +438,7 @@
     -->
     <concurrent_threads_soft_limit_num>0</concurrent_threads_soft_limit_num>
     <concurrent_threads_soft_limit_ratio_to_cores>2</concurrent_threads_soft_limit_ratio_to_cores>
-    <concurrent_threads_scheduler>fair_round_robin</concurrent_threads_scheduler>
+    <concurrent_threads_scheduler>max_min_fair</concurrent_threads_scheduler>
 
     <!-- Maximum number of concurrent queries. -->
     <max_concurrent_queries>1000</max_concurrent_queries>
@@ -459,7 +486,17 @@
       -->
     <async_load_databases>true</async_load_databases>
 
-    <!-- On memory constrained environments you may have to set this to value larger than 1.
+    <!-- The maximum amount of memory the server is allowed to use, as a ratio to the available memory.
+
+         Besides capping the hard memory limit at startup, the background memory worker periodically
+         recomputes the limit at runtime as (resident memory + system available memory) * this ratio,
+         so the server leaves room for other processes on the same host. In a cgroup with a finite
+         memory limit, the cgroup's available memory is used instead of the host-wide value.
+
+         On memory constrained environments you may have to set this to a value larger than 1.
+         A value of 0 disables both the startup cap and the runtime adjustment.
+         To keep only the static cap (the behavior of previous versions), set
+         memory_worker_dynamic_hard_limit to 0.
       -->
     <max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>
 
@@ -820,6 +857,11 @@
     </user_directories>
 
     <access_control_improvements>
+        <!-- Whether reading from a table should throw an exception if the table has row policies,
+             but none of them are for the current user.
+             By default this setting is false. -->
+        <throw_on_unmatched_row_policies>false</throw_on_unmatched_row_policies>
+
         <!-- Enables logic that users without permissive row policies can still read rows using a SELECT query.
              For example, if there two users A, B and a row policy is defined only for A, then
              if this setting is true the user B will see all rows, and if this setting is false the user B will see no rows.
@@ -850,6 +892,9 @@
              It also enables 'changeable_in_readonly' constraint type -->
         <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
 
+        <!-- Enable/disable the IMPERSONATE feature (EXECUTE AS target_user). -->
+        <allow_impersonate_user>true</allow_impersonate_user>
+
         <!-- By default, for backward compatibility creating table with a specific table engine ignores grant,
              however you can change this behaviour by setting this to true -->
         <table_engines_require_grant>false</table_engines_require_grant>
@@ -870,6 +915,11 @@
 
     <!-- System profile of settings. This settings are used by internal processes (Distributed DDL worker and so on). -->
     <!-- <system_profile>default</system_profile> -->
+
+    <!-- Background profile of settings. This profile is used by background operations (e.g. Merge, Mutate). 
+         Default profile name is 'background', which can be changed via the following setting. If such profile is not configured, system_profile is used.
+    -->
+    <!-- <background_profile>background</background_profile> -->
 
     <!-- Buffer profile of settings.
          This settings are used by Buffer storage to flush data to the underlying table.
@@ -980,6 +1030,13 @@
                     <!-- <secure>0</secure> -->
                     <!-- Optional. Bind to specific host before connecting to use a specific network. -->
                     <!-- <bind_host>10.0.0.1</bind_host> -->
+                    <!-- Optional. Per-node ports for the multi-stage distributed query engine
+                         (make_distributed_plan): the interserver port the initiator dispatches
+                         tasks to, and the streaming-exchange listener port. When unset, the
+                         initiator falls back to its stateless_worker_client.port /
+                         distributed_query.streaming_exchange_port. -->
+                    <!-- <stateless_worker_port>9009</stateless_worker_port> -->
+                    <!-- <streaming_exchange_port>9223</streaming_exchange_port> -->
                 </replica>
             </shard>
         </default>
@@ -1785,12 +1842,21 @@
     <!-- Uncomment to use custom http handlers.
 
         rules are checked from top to bottom, first match runs the handler
-            url - to match request URL (path and query string only), you can use 'regex:' prefix to use regex match(optional)
-            full_url - to match request **full** URL (schema, host:port, path and query string), you can use 'regex:' prefix to use regex match(optional)
-                       note, ClickHouse does not support "virtual hosts" so "host" will contain IP address not the "Host" header.
+            url - to match request URL path (query string is excluded) (optional)
+            url_prefix - to match request URL path against a base path: the path itself or anything below it on a
+                         path-segment boundary, e.g. /api/v1 matches /api/v1, /api/v1/ and /api/v1/write but not
+                         /api/v1beta (query string is excluded) (optional)
+            url_regexp - to match request URL path against a regular expression (query string is excluded) (optional)
+            full_url - to match the complete request URL `scheme://host:port/path` (host is an IP address here;
+                       query string is excluded) (optional)
+            full_url_prefix - to match the complete request URL `scheme://host:port/path` against base
+                              (see url_prefix above; query string is excluded) (optional)
+            full_url_regexp - to match the complete request URL `scheme://host:port/path` against a regular expression
+                             (query string is excluded) (optional)
             empty_query_string - check that there is no query string in the URL
             methods - to match request method, you can use commas to separate multiple method matches(optional)
-            headers - to match request headers, match each child element (child element name is header name), you can use 'regex:' prefix to use regex match(optional)
+            headers - to match request headers, match each child element (child element name is header name)(optional)
+            headers_regexp - like headers, but each child element's value is matched against a regular expression (optional)
 
         handler is request handler
             type - supported types: static, dynamic_query_handler, predefined_query_handler, redirect
@@ -1832,7 +1898,7 @@
         </rule>
 
         <rule>
-            <full_url>regex:http?://[^/]/dashboard</full_url>
+            <full_url_regexp>http?://[^/]/dashboard</full_url_regexp>
             <handler>
                 <type>redirect</type>
                 <location>/dashboard?user=play</location>

@@ -1,3 +1,4 @@
+#include <stack>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <Common/typeid_cast.h>
@@ -14,7 +15,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-size_t tryConvertOuterJoinToInnerJoinLegacy(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
+static size_t tryConvertOuterJoinToInnerJoinLegacy(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 {
     auto & parent = parent_node->step;
     auto * filter = typeid_cast<FilterStep *>(parent.get());
@@ -219,7 +220,7 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
     QueryPlan::Node * child_node = parent_node->children.front();
     auto & child = child_node->step;
     auto * join = typeid_cast<JoinStepLogical *>(child.get());
-    if (!join || !join->typeChangingSides().empty() || child_node->children.size() != 2)
+    if (!join || child_node->children.size() != 2)
         return 0;
 
     auto isStorageJoin = [](auto & step)

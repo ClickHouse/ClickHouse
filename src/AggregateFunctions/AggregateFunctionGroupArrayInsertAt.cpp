@@ -229,6 +229,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArrayInsertAt(
 
 }
 
+void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -298,7 +299,7 @@ SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("groupArrayInsertAt", {createAggregateFunctionGroupArrayInsertAt, {}, documentation});
+    factory.registerFunction("groupArrayInsertAt", {createAggregateFunctionGroupArrayInsertAt, documentation});
 }
 
 }

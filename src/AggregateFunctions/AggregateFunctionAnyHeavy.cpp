@@ -26,16 +26,22 @@ struct AggregateFunctionAnyHeavyData
     using Self = AggregateFunctionAnyHeavyData;
 
 private:
-    SingleValueDataBaseMemoryBlock v_data;
+    /// Raw storage populated by `generateSingleValueFromType` via placement construction in the
+    /// `DataTypePtr` constructor. Default-initializing with `{}` would zero the whole block on every
+    /// aggregate-state creation (hot for high-cardinality `GROUP BY`); skip it deliberately.
+    SingleValueDataBaseMemoryBlock v_data; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     UInt64 counter = 0;
 
 public:
-    [[noreturn]] explicit AggregateFunctionAnyHeavyData()
+    [[noreturn]] explicit AggregateFunctionAnyHeavyData() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionAnyHeavyData initialized empty");
     }
 
-    explicit AggregateFunctionAnyHeavyData(const DataTypePtr & value_type) { generateSingleValueFromType(value_type, v_data); }
+    explicit AggregateFunctionAnyHeavyData(const DataTypePtr & value_type) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+    {
+        generateSingleValueFromType(value_type, v_data);
+    }
 
     ~AggregateFunctionAnyHeavyData() { data().~SingleValueDataBase(); }
 
@@ -118,9 +124,9 @@ public:
         data(place).add(*columns[0], row_num, arena);
     }
 
-    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t, Arena * arena) const override
+    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const override
     {
-        data(place).addManyDefaults(*columns[0], 0, arena);
+        data(place).addManyDefaults(*columns[0], length, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -159,6 +165,7 @@ createAggregateFunctionAnyHeavy(const std::string & name, const DataTypes & argu
 
 }
 
+void registerAggregateFunctionAnyHeavy(AggregateFunctionFactory & factory);
 void registerAggregateFunctionAnyHeavy(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_anyHeavy = R"(
@@ -192,7 +199,7 @@ FROM ontime;
     FunctionDocumentation documentation_anyHeavy = {description_anyHeavy, syntax_anyHeavy, arguments_anyHeavy, {}, returned_value_anyHeavy, examples_anyHeavy, introduced_in_anyHeavy, category_anyHeavy};
 
     AggregateFunctionProperties default_properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
-    factory.registerFunction("anyHeavy", {createAggregateFunctionAnyHeavy, default_properties, documentation_anyHeavy});
+    factory.registerFunction("anyHeavy", {createAggregateFunctionAnyHeavy, documentation_anyHeavy, default_properties});
 }
 
 }

@@ -1,4 +1,5 @@
 #include <Processors/Port.h>
+#include <DataTypes/DataTypeString.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Compression/CompressionFactory.h>
@@ -21,6 +22,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 namespace MergeTreeSetting
@@ -132,6 +134,9 @@ IProcessor::Status BuildTextIndexTransform::prepare()
 
 void BuildTextIndexTransform::aggregate(const Block & block)
 {
+    if (block.rows() == 0)
+        return;
+
     /// Threshold for the number of processed tokens to flush the segment.
     /// Calculating used RAM or number of processed unique tokens adds significant overhead,
     /// so we use a simple trade-off threshold, which is reasonable in normal scenarios.
@@ -200,19 +205,40 @@ void BuildTextIndexTransform::writeTemporarySegment(size_t i)
         stream->finalize();
 }
 
+static PostingsSerialization createPostingsSerialization(const IMergeTreeIndex & index)
+{
+    const auto * codec = typeid_cast<const MergeTreeIndexText &>(index).getPostingListCodec();
+    auto codec_type = codec ? codec->getType() : IPostingListCodec::Type::None;
+    auto codec_copy = PostingListCodecFactory::createPostingListCodec(codec_type);
+
+    /// The merged part is written in the current on-disk format.
+    return PostingsSerialization(std::move(codec_copy), static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec));
+}
+
+static PostingsSerialization createSourcePostingsSerialization(MergeTreeIndexReaderStream & header_stream)
+{
+    header_stream.seekToStart();
+    /// Only the version and codec are needed here, so skip deserializing the sparse index.
+    auto header = TextIndexSerialization::deserializeHeaderPrefix(*header_stream.getDataBuffer());
+    return PostingsSerialization(PostingListCodecFactory::createPostingListCodec(header.codec_type), header.version);
+}
+
 MergeTextIndexesTask::MergeTextIndexesTask(
     std::vector<TextIndexSegment> segments_,
     MergeTreeMutableDataPartPtr new_data_part_,
+    size_t num_rows_,
     MergeTreeIndexPtr index_ptr_,
     std::shared_ptr<MergedPartOffsets> merged_part_offsets_,
     const MergeTreeReaderSettings & reader_settings_,
     const MergeTreeWriterSettings & writer_settings_)
     : segments(std::move(segments_))
     , new_data_part(std::move(new_data_part_))
+    , num_rows(num_rows_)
     , index_ptr(std::move(index_ptr_))
     , merged_part_offsets(std::move(merged_part_offsets_))
     , writer_settings(writer_settings_)
     , step_time_ms((*new_data_part->storage.getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds())
+    , postings_serialization(createPostingsSerialization(*index_ptr))
 {
     cursors.resize(segments.size());
     inputs.resize(segments.size());
@@ -220,7 +246,6 @@ MergeTextIndexesTask::MergeTextIndexesTask(
 
     output_tokens = ColumnString::create();
     params = typeid_cast<const MergeTreeIndexText &>(*index_ptr).getParams();
-    posting_list_codec = typeid_cast<const MergeTreeIndexText &>(*index_ptr).getPostingListCodec();
     sparse_index_tokens = ColumnString::create();
     sparse_index_offsets = ColumnUInt64::create();
 
@@ -247,6 +272,15 @@ MergeTextIndexesTask::MergeTextIndexesTask(
             input_streams[i][substream.type] = stream.get();
             input_streams_holders.emplace_back(std::move(stream));
         }
+    }
+
+    /// Resolve each source part's codec from its own header.
+    source_postings_serializations.reserve(segments.size());
+
+    for (size_t i = 0; i < segments.size(); ++i)
+    {
+        auto * stream = input_streams[i].at(MergeTreeIndexSubstream::Type::Regular);
+        source_postings_serializations.emplace_back(createSourcePostingsSerialization(*stream));
     }
 }
 
@@ -280,7 +314,7 @@ void MergeTextIndexesTask::readDictionaryBlock(size_t source_num)
     if (data_buffer->eof())
         return;
 
-    inputs[source_num] = TextIndexSerialization::deserializeDictionaryBlock(*data_buffer, posting_list_codec);
+    inputs[source_num] = TextIndexSerialization::deserializeDictionaryBlock(*data_buffer, &source_postings_serializations[source_num]);
     const auto & tokens = inputs[source_num].tokens;
     cursors[source_num].reset({tokens}, getHeader(), tokens->size());
     queue.push(cursors[source_num]);
@@ -301,7 +335,7 @@ std::vector<PostingListPtr> MergeTextIndexesTask::readPostingLists(size_t source
     for (const auto offset_in_file : token_info.offsets)
     {
         stream->seekToMark({offset_in_file, 0});
-        postings.emplace_back(PostingsSerialization::deserialize(*data_buffer, token_info.header, token_info.cardinality, posting_list_codec));
+        postings.emplace_back(source_postings_serializations[source_num].deserialize(*data_buffer, token_info.header, token_info.cardinality));
     }
 
     return postings;
@@ -326,7 +360,7 @@ void MergeTextIndexesTask::flushPostingList()
 {
     auto * postings_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
     PostingListBuilder builder(&output_postings);
-    auto token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params, posting_list_codec);
+    auto token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params, postings_serialization);
 
     if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
         token_info.embedded_postings = std::make_shared<PostingList>(output_postings);
@@ -369,7 +403,7 @@ void MergeTextIndexesTask::flushDictionaryBlock()
         if (output_infos[i].header & PostingsSerialization::Flags::EmbeddedPostings)
         {
             const auto & roaring_bitmap = output_infos[i].embedded_postings->roaring;
-            PostingsSerialization::serialize(roaring_bitmap, output_infos[i].header, ostr);
+            postings_serialization.serialize(roaring_bitmap, output_infos[i].header, ostr);
         }
     }
 
@@ -393,9 +427,18 @@ bool MergeTextIndexesTask::executeStep()
         is_initialized = true;
         initializeQueue();
         /// Write marks for compatibility with other skip indexes.
+        /// An empty part carries no marks at all, exactly like every other skip index on an
+        /// empty part. Writing one here would leave the marks file with a single mark while
+        /// `getMarksCountForSkipIndex` reports zero, so reading the marks back (e.g. when the
+        /// mark cache is prewarmed on attach) fails with `Too many marks in file`.
+        /// The part is not finalized yet at this stage, so its `index_granularity` is empty;
+        /// rely on the merged row count instead.
         chassert(new_data_part);
-        bool can_use_adaptive_granularity = new_data_part->index_granularity_info.mark_type.adaptive;
-        writeMarks(output_streams, can_use_adaptive_granularity);
+        if (num_rows != 0)
+        {
+            bool can_use_adaptive_granularity = new_data_part->index_granularity_info.mark_type.adaptive;
+            writeMarks(output_streams, can_use_adaptive_granularity);
+        }
     }
 
     if (!queue.isValid())
@@ -453,7 +496,7 @@ void MergeTextIndexesTask::finalize()
 
     auto * index_stream = output_streams.at(MergeTreeIndexSubstream::Type::Regular);
     DictionarySparseIndex sparse_index(std::move(sparse_index_tokens), std::move(sparse_index_offsets));
-    TextIndexSerialization::serializeSparseIndex(sparse_index, index_stream->compressed_hashing);
+    TextIndexSerialization::serializeHeader(sparse_index, postings_serialization.getPostingListCodec()->getType(), index_stream->compressed_hashing);
 
     for (auto & stream : output_streams_holders)
         stream->finalize();
@@ -501,17 +544,22 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
 {
     static constexpr size_t marks_count = 1;
 
+    /// Check for both original and hashed filenames (hashed if the index name is too long)
+    auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, *data_part_storage);
+    if (!actual_stream_name)
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File for text index stream {} does not exist", stream_name + extension);
+
     /// Use reader stream that doesn't read marks,
     /// because text index always has one mark.
     return std::make_unique<MergeTreeReaderStreamSingleColumnWholePart>(
         data_part_storage,
-        stream_name,
+        *actual_stream_name,
         extension,
         marks_count,
         MarkRanges{{0, marks_count}},
         reader_settings,
         /*uncompressed_cache=*/ nullptr,
-        data_part_storage->getFileSize(stream_name + extension),
+        data_part_storage->getFileSize(*actual_stream_name + extension),
         /*marks_loader=*/ nullptr,
         ReadBufferFromFileBase::ProfileCallback{},
         CLOCK_MONOTONIC_COARSE);

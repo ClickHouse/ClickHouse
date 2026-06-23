@@ -62,15 +62,15 @@ void StatisticsUniq::serialize(WriteBuffer & buf)
     collector->serialize(data, buf);
 }
 
-void StatisticsUniq::deserialize(ReadBuffer & buf)
+void StatisticsUniq::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
 {
-    bool is_null;
+    bool is_null = false;
     readBinary(is_null, buf);
     auto nested_func = collector->getNestedFunction();
     /// when serialize is nullable, but we removed the nullable
     if (is_null && !nested_func)
     {
-        bool serialize_flag;
+        bool serialize_flag = false;
         readBinary(serialize_flag, buf);
         if (!serialize_flag)
             return;

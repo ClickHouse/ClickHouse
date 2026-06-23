@@ -10,9 +10,13 @@
 #include <Common/SSHWrapper.h>
 #include <Common/typeid_cast.h>
 #include <Poco/SHA1Engine.h>
+#include <Access/Common/OneTimePassword.h>
 
 #include <base/types.h>
 #include "config.h"
+
+#include <algorithm>
+#include <string_view>
 
 #if USE_SSL
 #    include <Common/OpenSSLHelpers.h>
@@ -30,32 +34,6 @@ namespace
 {
     using Digest = AuthenticationData::Digest;
     using Util = AuthenticationData::Util;
-
-    bool checkPasswordPlainText(const String & password, const Digest & password_plaintext)
-    {
-        return (Util::stringToDigest(password) == password_plaintext);
-    }
-
-    bool checkPasswordDoubleSHA1(std::string_view password, const Digest & password_double_sha1)
-    {
-        return (Util::encodeDoubleSHA1(password) == password_double_sha1);
-    }
-
-    bool checkPasswordBcrypt(std::string_view password, const Digest & password_bcrypt)
-    {
-        return Util::checkPasswordBcrypt(password, password_bcrypt);
-    }
-
-    bool checkPasswordSHA256(std::string_view password, const Digest & password_sha256, const String & salt)
-    {
-        return Util::encodeSHA256(String(password).append(salt)) == password_sha256;
-    }
-
-    bool checkPasswordScramSHA256(std::string_view password, const Digest & password_scram_sha256, const String & salt)
-    {
-        auto digest = Util::encodeScramSHA256(password, salt);
-        return digest == password_scram_sha256;
-    }
 
     bool checkPasswordDoubleSHA1MySQL(std::string_view scramble, std::string_view scrambled_password, const Digest & password_double_sha1)
     {
@@ -170,51 +148,104 @@ namespace
         }
     }
 
-    bool checkBasicAuthentication(
+    /// pAssw0rd+123456
+    std::pair<std::string_view, std::string_view>
+    splitOneTimePasswordAndPassword(std::string_view password_with_otp, const std::optional<OneTimePasswordSecret> & otp_secret)
+    {
+        if (!otp_secret)
+            return {password_with_otp, ""};
+        auto num_digits = otp_secret->params.num_digits;
+        if (password_with_otp.size() <= static_cast<size_t>(num_digits))
+            return {password_with_otp, ""};
+        size_t separator_pos = password_with_otp.size() - num_digits - 1;
+        if (password_with_otp[separator_pos] != '+')
+            return {password_with_otp, ""};
+        if (!std::ranges::all_of(password_with_otp.substr(separator_pos + 1), [](char c) { return std::isdigit(c); }))
+            return {password_with_otp, ""};
+        return {password_with_otp.substr(0, separator_pos), password_with_otp.substr(separator_pos + 1)};
+    }
+
+     Authentication::CredentialsCheckResult checkBasicAuthentication(
         const BasicCredentials * basic_credentials,
         const AuthenticationData & authentication_method,
         const ExternalAuthenticators & external_authenticators,
         const ClientInfo & client_info,
         SettingsChanges & settings)
     {
+        const auto & provided_password = basic_credentials->getPassword();
+        const auto & otp_secret = authentication_method.getOneTimePassword();
+        auto [password, one_time_password] = splitOneTimePasswordAndPassword(provided_password, otp_secret);
+        Authentication::CredentialsCheckResult on_success = Authentication::CredentialsCheckResult::Success;
+        if (otp_secret)
+        {
+            if (authentication_method.getType() == AuthenticationType::NO_PASSWORD)
+            {
+                if (one_time_password.empty())
+                {
+                    one_time_password = password;
+                    password = "";
+                }
+            }
+
+            if (one_time_password.empty())
+                on_success = Authentication::CredentialsCheckResult::NeedSecondFactor;
+            else if (!checkOneTimePassword(one_time_password, *otp_secret))
+                return Authentication::CredentialsCheckResult::Fail;
+        }
+
         switch (authentication_method.getType())
         {
             case AuthenticationType::NO_PASSWORD:
             {
-                return true; // N.B. even if the password is not empty!
+                return on_success; // N.B. even if the password is not empty!
             }
             case AuthenticationType::PLAINTEXT_PASSWORD:
             {
-                return checkPasswordPlainText(basic_credentials->getPassword(), authentication_method.getPasswordHashBinary());
+                const auto & password_plaintext = authentication_method.getPasswordHashBinary();
+                return Util::stringToDigest(password) == password_plaintext ? on_success : Authentication::CredentialsCheckResult::Fail;
             }
             case AuthenticationType::SHA256_PASSWORD:
             {
-                return checkPasswordSHA256(
-                    basic_credentials->getPassword(), authentication_method.getPasswordHashBinary(), authentication_method.getSalt());
+                const auto & password_sha256 = authentication_method.getPasswordHashBinary();
+                const auto & salt = authentication_method.getSalt();
+                String salted_password = String(password).append(salt);
+                return Util::encodeSHA256(salted_password) == password_sha256 ? on_success : Authentication::CredentialsCheckResult::Fail;
             }
             case AuthenticationType::SCRAM_SHA256_PASSWORD:
             {
-                return checkPasswordScramSHA256(
-                    basic_credentials->getPassword(), authentication_method.getPasswordHashBinary(), authentication_method.getSalt());
+                const auto & password_scram_sha256 = authentication_method.getPasswordHashBinary();
+                const auto & salt = authentication_method.getSalt();
+                auto digest = Util::encodeScramSHA256(password, salt);
+                return digest == password_scram_sha256 ? on_success : Authentication::CredentialsCheckResult::Fail;
             }
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
             {
-                return checkPasswordDoubleSHA1(basic_credentials->getPassword(), authentication_method.getPasswordHashBinary());
+                const auto & password_double_sha1 = authentication_method.getPasswordHashBinary();
+                return Util::encodeDoubleSHA1(password) == password_double_sha1 ? on_success : Authentication::CredentialsCheckResult::Fail;
             }
             case AuthenticationType::LDAP:
             {
-                return external_authenticators.checkLDAPCredentials(authentication_method.getLDAPServerName(), *basic_credentials);
+                if (otp_secret)
+                    /// One-time password supported only with password-based authentication methods.
+                    return Authentication::CredentialsCheckResult::Fail;
+                return external_authenticators.checkLDAPCredentials(authentication_method.getLDAPServerName(), *basic_credentials) ?
+                    on_success : Authentication::CredentialsCheckResult::Fail;
             }
             case AuthenticationType::BCRYPT_PASSWORD:
             {
-                return checkPasswordBcrypt(basic_credentials->getPassword(), authentication_method.getPasswordHashBinary());
+                const auto & password_bcrypt = authentication_method.getPasswordHashBinary();
+                return Util::checkPasswordBcrypt(password, password_bcrypt) ? on_success : Authentication::CredentialsCheckResult::Fail;
             }
             case AuthenticationType::HTTP:
             {
+                if (otp_secret)
+                    /// One-time password supported only with password-based authentication methods.
+                    return Authentication::CredentialsCheckResult::Fail;
                 if (authentication_method.getHTTPAuthenticationScheme() == HTTPAuthenticationScheme::BASIC)
                 {
                     return external_authenticators.checkHTTPBasicCredentials(
-                        authentication_method.getHTTPAuthenticationServerName(), *basic_credentials, client_info, settings);
+                        authentication_method.getHTTPAuthenticationServerName(), *basic_credentials, client_info, settings) ?
+                        on_success : Authentication::CredentialsCheckResult::Fail;
                 }
                 break;
             }
@@ -222,7 +253,7 @@ namespace
                 break;
         }
 
-        return false;
+        return Authentication::CredentialsCheckResult::Fail;
     }
 
 #if USE_SSL
@@ -291,7 +322,7 @@ namespace
 #endif
 }
 
-bool Authentication::areCredentialsValid(
+Authentication::CredentialsCheckResult Authentication::areCredentialsValid(
     const Credentials & credentials,
     const AuthenticationData & authentication_method,
     const ExternalAuthenticators & external_authenticators,
@@ -299,16 +330,18 @@ bool Authentication::areCredentialsValid(
     SettingsChanges & settings)
 {
     if (!credentials.isReady())
-        return false;
+        return CredentialsCheckResult::Fail;
 
     if (const auto * gss_acceptor_context = typeid_cast<const GSSAcceptorContext *>(&credentials))
     {
-        return checkKerberosAuthentication(gss_acceptor_context, authentication_method, external_authenticators);
+        return checkKerberosAuthentication(gss_acceptor_context, authentication_method, external_authenticators) ?
+            CredentialsCheckResult::Success : CredentialsCheckResult::Fail;
     }
 
     if (const auto * mysql_credentials = typeid_cast<const MySQLNative41Credentials *>(&credentials))
     {
-        return checkMySQLAuthentication(mysql_credentials, authentication_method);
+        return checkMySQLAuthentication(mysql_credentials, authentication_method) ?
+            CredentialsCheckResult::Success : CredentialsCheckResult::Fail;
     }
 
     if (const auto * basic_credentials = typeid_cast<const BasicCredentials *>(&credentials))
@@ -318,32 +351,36 @@ bool Authentication::areCredentialsValid(
 
     if (const auto * scram_shh256_credentials = typeid_cast<const ScramSHA256Credentials *>(&credentials))
     {
-        return checkScramSHA256Authentication(scram_shh256_credentials, authentication_method);
+        return checkScramSHA256Authentication(scram_shh256_credentials, authentication_method) ?
+            CredentialsCheckResult::Success : CredentialsCheckResult::Fail;
     }
 
 #if USE_SSL
     if (const auto * ssl_certificate_credentials = typeid_cast<const SSLCertificateCredentials *>(&credentials))
     {
-        return checkSSLCertificateAuthentication(ssl_certificate_credentials, authentication_method);
+        return checkSSLCertificateAuthentication(ssl_certificate_credentials, authentication_method) ?
+            CredentialsCheckResult::Success : CredentialsCheckResult::Fail;
     }
 #endif
 
 #if USE_SSH
     if (const auto * ssh_credentials = typeid_cast<const SshCredentials *>(&credentials))
     {
-        return checkSshAuthentication(ssh_credentials, authentication_method);
+        return checkSshAuthentication(ssh_credentials, authentication_method) ?
+            CredentialsCheckResult::Success : CredentialsCheckResult::Fail;
     }
 
     if (const auto * ssh_login_credentials = typeid_cast<const SSHPTYCredentials *>(&credentials))
     {
-        return checkSSHLoginAuthentication(ssh_login_credentials, authentication_method);
+        return checkSSHLoginAuthentication(ssh_login_credentials, authentication_method) ?
+            CredentialsCheckResult::Success : CredentialsCheckResult::Fail;
     }
 #endif
 
     if ([[maybe_unused]] const auto * always_allow_credentials = typeid_cast<const AlwaysAllowCredentials *>(&credentials))
-        return true;
+        return CredentialsCheckResult::Success;
 
-    return false;
+    return CredentialsCheckResult::Fail;
 }
 
 }

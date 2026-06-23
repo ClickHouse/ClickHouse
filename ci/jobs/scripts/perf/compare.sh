@@ -31,14 +31,14 @@ function wait_for_server # port, pid
 {
     for _ in {1..60}
     do
-        if clickhouse-client --port "$1" --query "select 1" || ! kill -0 "$2"
+        if clickhouse-client --port "$1" --receive_timeout=5 --query "select 1" || ! kill -0 "$2"
         then
             break
         fi
         sleep 1
     done
 
-    if ! clickhouse-client --port "$1" --query "select 1"
+    if ! clickhouse-client --port "$1" --receive_timeout=5 --query "select 1"
     then
         echo "Cannot connect to ClickHouse server at $1"
         return 1
@@ -123,6 +123,15 @@ function configure
 
     cp -al db0/ right/db/
     cp -R coordination0 right/coordination
+
+    # Symlink user_files from the repository into both servers' user_files directories
+    if [ -d "$script_dir/../../../../tests/performance/user_files" ]; then
+        for f in "$script_dir/../../../../tests/performance/user_files"/*; do
+            [ -e "$f" ] || continue
+            ln -sf "$(readlink -f "$f")" left/db/user_files/
+            ln -sf "$(readlink -f "$f")" right/db/user_files/
+        done
+    fi
 }
 
 function restart
@@ -309,9 +318,9 @@ function run_tests
     do
         echo "$current_test of $total_tests tests complete" > status.txt
         # Check that both servers are alive, and restart them if they die.
-        clickhouse-client --port $LEFT_SERVER_PORT --query "select 1 format Null" \
+        clickhouse-client --port $LEFT_SERVER_PORT --receive_timeout=5 --query "select 1 format Null" \
             || { echo $test_name >> left-server-died.log ; restart ; }
-        clickhouse-client --port $RIGHT_SERVER_PORT --query "select 1 format Null" \
+        clickhouse-client --port $RIGHT_SERVER_PORT --receive_timeout=5 --query "select 1 format Null" \
             || { echo $test_name >> right-server-died.log ; restart ; }
 
         test_name=$(basename "$test" ".xml")
@@ -405,8 +414,8 @@ function get_profiles
 
     # Just check that the servers are alive so that we return a proper exit code.
     # We don't consistently check the return codes of the above background jobs.
-    clickhouse-client --port $LEFT_SERVER_PORT --query "select 1"
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "select 1"
+    clickhouse-client --port $LEFT_SERVER_PORT --receive_timeout=5 --query "select 1"
+    clickhouse-client --port $RIGHT_SERVER_PORT --receive_timeout=5 --query "select 1"
 }
 
 # Build and analyze randomization distribution for all queries.
@@ -658,9 +667,17 @@ create view query_metric_stats as
 create table report_thresholds engine File(TSVWithNamesAndTypes, 'report/thresholds.tsv')
     as select
         query_display_names.test test, query_display_names.query_index query_index,
-        ceil(greatest(0.1, historical_thresholds.max_diff,
+        -- The floors (0.15 for 'changed', 0.25 for 'unstable') are the minimum
+        -- relative difference we treat as a real change. They are intentionally
+        -- above the level of run-to-run noise observed on CI runners: micro
+        -- benchmarks routinely swing by 10-15% between two binaries because of
+        -- machine noise (noisy neighbours, frequency scaling) and code-layout
+        -- artifacts (function alignment/inlining shifts) unrelated to the tested
+        -- change. For historically noisier queries the learned thresholds
+        -- (1.5 * historical p99) are larger and take over.
+        ceil(greatest(0.15, historical_thresholds.max_diff,
             test_thresholds.report_threshold), 2) changed_threshold,
-        ceil(greatest(0.2, historical_thresholds.max_stat_threshold,
+        ceil(greatest(0.25, historical_thresholds.max_stat_threshold,
             test_thresholds.report_threshold + 0.1), 2) unstable_threshold,
         query_display_names.query_display_name query_display_name
     from query_display_names
@@ -910,14 +927,29 @@ create table queries_old_format engine File(TSVWithNamesAndTypes, 'queries.rep')
     ;
 
 -- new report for all queries with all metrics (no page yet)
+-- The trailing changed_threshold/unstable_threshold columns are the per-query
+-- thresholds computed in report_thresholds above (the 0.15/0.25 floors raised
+-- by historical and per-test thresholds). They are exported so downstream
+-- consumers (e.g. .claude/tools/fetch_perf_report.py) can classify queries
+-- with the same effective thresholds as the CI gate instead of only the floor
+-- constants. They are appended at the end to keep the existing column
+-- positions stable for older consumers.
 create table all_query_metrics_tsv engine File(TSV, 'report/all-query-metrics.tsv') as
     select metric_name, left, right, diff,
         floor(left > right ? left / right : right / left, 3),
-        stat_threshold, test, query_index, query_display_name
+        stat_threshold,
+        query_metric_stats.test test, query_metric_stats.query_index query_index,
+        query_display_names.query_display_name query_display_name,
+        report_thresholds.changed_threshold changed_threshold,
+        report_thresholds.unstable_threshold unstable_threshold
     from query_metric_stats
     left join query_display_names
         on query_metric_stats.test = query_display_names.test
             and query_metric_stats.query_index = query_display_names.query_index
+    left join report_thresholds
+        on query_display_names.test = report_thresholds.test
+            and query_display_names.query_index = report_thresholds.query_index
+            and query_display_names.query_display_name = report_thresholds.query_display_name
     order by test, query_index;
 " 2> >(tee -a report/errors.log 1>&2)
 
@@ -1169,7 +1201,7 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
         fromUnixTimestamp($CHPC_CHECK_START_TIMESTAMP) check_start_time,
         test_name :: LowCardinality(String) AS test_name ,
         test_status :: LowCardinality(String) AS test_status,
-        test_duration_ms :: UInt64 AS test_duration_ms,
+        test_duration_ms :: Float64 AS test_duration_ms,
         report_url,
         $PR_TO_TEST = 0
             ? 'https://github.com/ClickHouse/ClickHouse/commit/$SHA_TO_TEST'

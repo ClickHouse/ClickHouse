@@ -14,15 +14,31 @@
 
 int mainEntryClickHouseServer(int argc, char ** argv);
 
-static std::string clickhouse("clickhouse-server");
-static std::vector<char *> args{clickhouse.data()};
-static std::future<int> main_app;
+namespace
+{
 
-static std::string s_host("0.0.0.0");
-static char * host = s_host.data();
-static int64_t port = 9000;
+std::string clickhouse("clickhouse-server");
+std::vector<char *> args{clickhouse.data()};
+std::future<int> main_app;
+
+std::string s_host("0.0.0.0");
+char * host = s_host.data();
+int64_t port = 9000;
 
 using namespace std::chrono_literals;
+
+bool isMerge(int argc, const char * const * argv)
+{
+    for (int i = 1; i < argc; ++i)
+    {
+        std::string_view arg{argv[i]};
+        if (std::string_view{arg.begin(), std::ranges::find(arg, '=')} == "-ignore_remaining_args")
+            break;
+        if (std::string_view{arg.begin(), std::ranges::find(arg, '=')} == "-merge")
+            return true;
+    }
+    return false;
+}
 
 void on_exit()
 {
@@ -30,9 +46,18 @@ void on_exit()
     main_app.wait();
 }
 
+}
+
+extern "C" int LLVMFuzzerInitialize(int * argc, char ***argv);
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
+
 extern "C"
 int LLVMFuzzerInitialize(int * argc, char ***argv)
 {
+        // If it's a merge coordinator don't initialize anything
+    if (isMerge(*argc, *argv))
+        return 0;
+
     for (int i = 1; i < *argc; ++i)
     {
         if ((*argv)[i][0] == '-')
@@ -120,6 +145,7 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
     }
     catch (...)
     {
+        // Ok
     }
 
     return 0;

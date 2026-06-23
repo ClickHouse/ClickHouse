@@ -4,6 +4,7 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTWithAlias.h>
 
 
 namespace DB
@@ -67,22 +68,26 @@ void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & 
 {
     if (auto expr = getExpression())
     {
+        auto nested_frame = frame;
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(expr.get()); ast_alias && !ast_alias->tryGetAlias().empty())
+            nested_frame.need_parens = true;
+
         if (part_of_create_index_query)
         {
             if (expr->as<ASTExpressionList>())
             {
                 ostr << "(";
-                expr->format(ostr, s, state, frame);
+                expr->format(ostr, s, state, nested_frame);
                 ostr << ")";
             }
             else
-                expr->format(ostr, s, state, frame);
+                expr->format(ostr, s, state, nested_frame);
         }
         else
         {
             s.writeIdentifier(ostr, name, /*ambiguous=*/false);
             ostr << " ";
-            expr->format(ostr, s, state, frame);
+            expr->format(ostr, s, state, nested_frame);
         }
     }
 
@@ -92,11 +97,8 @@ void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         type->format(ostr, s, state, frame);
     }
 
-    if (granularity)
-    {
-        ostr << " GRANULARITY ";
-        ostr << granularity;
-    }
+    /// Always emit so AST round-trip is invariant for every granularity (zero included).
+    ostr << " GRANULARITY " << granularity;
 }
 
 UInt64 getSecondaryIndexGranularity(const boost::intrusive_ptr<ASTFunction> & type, const ASTPtr & granularity)

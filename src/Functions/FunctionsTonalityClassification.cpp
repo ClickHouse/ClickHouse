@@ -6,8 +6,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsTextClassification.h>
 
-#include <unordered_map>
-
 namespace DB
 {
 
@@ -55,8 +53,8 @@ struct FunctionDetectTonalityImpl
         /// Calculate average value of tonality.
         /// Convert values -12..6 to -1..1
         if (weight > 0)
-            return static_cast<Float32>(weight / count_words / 6);
-        return static_cast<Float32>(weight / count_words / 12);
+            return static_cast<Float32>(weight / static_cast<Float64>(count_words) / 6);
+        return static_cast<Float32>(weight / static_cast<Float64>(count_words) / 12);
     }
 
     static void vector(
@@ -90,6 +88,11 @@ Determines the sentiment of the provided text data.
 
 :::note Limitation
 This function is limited in its current form in that it makes use of the embedded emotional dictionary and only works for the Russian language.
+:::
+
+:::warning
+This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
+Set `allow_experimental_nlp_functions = 1` to enable it.
 :::
 )";
     FunctionDocumentation::Syntax syntax = "detectTonality(s)";
