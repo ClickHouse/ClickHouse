@@ -132,9 +132,6 @@ static const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::strin
                     "Illegal type {} of column {} for filter. Must be native integer or float type",
                     node->result_type->getName(), name);
 
-            if (!isUInt8(removeNullable(removeLowCardinality(node->result_type))))
-                return nullptr;
-
             if (remove)
             {
                 outputs.erase(it);

@@ -90,7 +90,6 @@ SELECT c0 FROM t_106099_u8 ORDER BY c0 SETTINGS enable_analyzer = 0;
 SELECT c0 FROM t_106099_u8 ORDER BY c0 SETTINGS enable_analyzer = 1;
 SELECT count() FROM t_106099_u8 SETTINGS enable_analyzer = 0;
 SELECT count() FROM t_106099_u8 SETTINGS enable_analyzer = 1;
--- Forcing projection use must fail (projection is bailed, not silently skipped).
 SELECT c0 FROM t_106099_u8 ORDER BY c0 SETTINGS force_optimize_projection = 1, enable_analyzer = 0;
 SELECT c0 FROM t_106099_u8 ORDER BY c0 SETTINGS force_optimize_projection = 1, enable_analyzer = 1;
 -- Same `UInt8` projection trap via `additional_table_filters`.
