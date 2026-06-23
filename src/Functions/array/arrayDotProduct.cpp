@@ -31,7 +31,8 @@ MULTITARGET_FUNCTION_X86_V4(
          const ArgumentType * __restrict data_y,
          const ColumnArray::Offset * __restrict offsets,
          ResultType * __restrict result,
-         size_t rows) {
+         size_t rows)
+         {
             ColumnArray::Offset prev = 0;
             for (size_t row = 0; row < rows; ++row)
             {
