@@ -6,8 +6,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Processors/StepWallClock.h>
-#include <Processors/StepMemoryTracker.h>
-
 
 #include <memory>
 #include <shared_mutex>
@@ -24,10 +22,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ExecutingGraph::ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_, bool track_step_stats_, UInt64 query_start_ns_)
+ExecutingGraph::ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_, bool measure_step_wall_clock_, UInt64 query_start_ns_)
     : processors(std::move(processors_))
     , profile_processors(profile_processors_)
-    , track_step_stats(track_step_stats_)
+    , measure_step_wall_clock(measure_step_wall_clock_)
     , query_start_ns(query_start_ns_)
 {
     /// Create nodes for every processor.
@@ -49,18 +47,13 @@ ExecutingGraph::Node & ExecutingGraph::addNode(Processors::iterator processor_it
     if (!inserted)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} was already added to pipeline", processor->getName());
 
-    if (track_step_stats)
+    if (measure_step_wall_clock)
     {
         auto key = std::make_pair(processor->getQueryPlanStep(), processor->getQueryPlanStepGroup());
-        auto & clock = clocks[key];   /// inserts a null shared_ptr if absent
-        auto & mem_tracker = mem_trackers[key];
+        auto & clock = clocks[key];   // inserts a null shared_ptr if absent
         if (!clock)
             clock = std::make_shared<StepWallClock>(query_start_ns);
-        if (!mem_tracker)
-            mem_tracker = std::make_shared<StepMemoryTracker>();
-
         processor->setStepWallClock(clock);
-        processor->setStepMemoryTracker(mem_tracker);
     }
 
     return new_node;

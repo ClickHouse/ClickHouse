@@ -12,7 +12,7 @@
 
 class EventCounter;
 class StepWallClock;
-class StepMemoryTracker;
+
 
 namespace DB
 {
@@ -35,7 +35,6 @@ using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::list<ProcessorPtr>;
 
 using StepWallClockPtr = std::shared_ptr<StepWallClock>;
-using StepMemoryTrackerPtr = std::shared_ptr<StepMemoryTracker>;
 
 /** Processor is an element (low level building block) of a query execution pipeline.
   * It has zero or more input ports and zero or more output ports.
@@ -401,10 +400,8 @@ public:
     inline bool isSpillable() const { return spillable; }
 
     void setStepWallClock(const StepWallClockPtr & clock) { step_wall_clock = clock; }
-    void setStepMemoryTracker(const StepMemoryTrackerPtr & mem_tracker) { step_mem_tracker = mem_tracker; }
 
     const StepWallClockPtr & getStepWallClock() { return step_wall_clock; }
-    const StepMemoryTrackerPtr & getStepMemoryTracker() { return step_mem_tracker; }
 
     virtual ProcessorMemoryStats getMemoryStats()
     {
@@ -431,7 +428,6 @@ private:
     friend class ExecutingGraph;
 
     StepWallClockPtr step_wall_clock;
-    StepMemoryTrackerPtr step_mem_tracker;
 
     std::string processor_description;
 
@@ -451,6 +447,7 @@ private:
     size_t processor_index = 0;
     String plan_step_name;
     String plan_step_description;
+
 };
 
 

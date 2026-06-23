@@ -131,7 +131,7 @@ public:
     using ProcessorsMap = std::unordered_map<const IProcessor *, Node *>;
     ProcessorsMap processors_map;
 
-    explicit ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_, bool track_step_stats_ = false, UInt64 query_start_ns = 0);
+    explicit ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_, bool measure_step_wall_clock_ = false, UInt64 query_start_ns = 0);
 
     const Processors & getProcessors() const { return *processors; }
 
@@ -193,12 +193,10 @@ private:
     using StepAndGroup = std::pair<IQueryPlanStep *, size_t>;
     using Hash = boost::hash<std::pair<const IQueryPlanStep *, size_t>>;
     using MapStepToWallClock = std::unordered_map<StepAndGroup, std::shared_ptr<StepWallClock>, Hash>;
-    using MapStepToStepMemoryTracker = std::unordered_map<StepAndGroup, std::shared_ptr<StepMemoryTracker>, Hash>;
 
-    bool track_step_stats = false;
+    bool measure_step_wall_clock = false;
     UInt64 query_start_ns = 0;
     MapStepToWallClock clocks;
-    MapStepToStepMemoryTracker mem_trackers;
 };
 
 }

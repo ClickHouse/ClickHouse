@@ -40,8 +40,6 @@ struct AnalyzeStats
     /// TODO: how to account for output wait time
     /// among several processors?
     UInt64 max_output_wait_ns = 0;
-
-    Int64 peak_memory = 0;
 };
 
 class AnalyzeStepsStats

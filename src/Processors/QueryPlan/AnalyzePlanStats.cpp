@@ -6,7 +6,6 @@
 #include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/StepWallClock.h>
-#include <Processors/StepMemoryTracker.h>
 #include <base/defines.h>
 #include <base/types.h>
 
@@ -82,12 +81,6 @@ AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 exec
             chassert(proc->getStepWallClock().get());
             stats.wall_clock_time_ns = proc->getStepWallClock()->getStepWallTime();
         }
-
-        if (stats.peak_memory == 0)
-        {
-            chassert(proc->getStepMemoryTracker().get());
-            stats.peak_memory = proc->getStepMemoryTracker()->getPeak();
-        }
     }
 
     /// Compute the per-processor elapsed time distribution for each (step, group).
@@ -159,15 +152,7 @@ void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer 
         std::string parallelism_string = stats.wall_clock_time_ns ? fmt::format("{:.2f}", parallelism) : "Unknown";
         UInt64 max_parallelism_per_step = std::min(max_num_threads_per_query, stats.total_num_processors);
         std::string max_parallelism_per_step_string = stats.wall_clock_time_ns ? fmt::format("/{}", max_parallelism_per_step) : "";
-        out << " · parallelism " << parallelism_string << max_parallelism_per_step_string;
-
-        if (stats.peak_memory > 0)
-        {
-            String peak_memory_str = formatReadableSizeWithBinarySuffix(static_cast<double>(stats.peak_memory));
-            out << " · peak memory " << peak_memory_str;
-        }
-
-        out << "\n";
+        out << " · parallelism " << parallelism_string << max_parallelism_per_step_string << "\n";
 
         if (processors_info)
         {
