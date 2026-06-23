@@ -83,6 +83,10 @@ public:
 
         const double log_alpha = std::log(data->alpha);
         const double smoothing = data->alpha * static_cast<double>(vocabulary_size);
+        if (!std::isfinite(smoothing))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "NaiveBayes dictionary: alpha is too large; the smoothing term (alpha * vocabulary size) is not finite");
         for (size_t c = 0; c < num_classes; ++c)
         {
             const UInt32 class_id = classes[c];

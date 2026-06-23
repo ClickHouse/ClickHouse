@@ -422,8 +422,8 @@ void registerDictionaryNaiveBayes(DictionaryFactory & factory)
                 mode);
 
         const double alpha = config.getDouble(layout_prefix + ".alpha", 1.0);
-        if (alpha <= 0.0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary: alpha must be greater than 0");
+        if (!std::isfinite(alpha) || alpha <= 0.0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary: alpha must be a finite number greater than 0");
 
         const String priors_mode_str = config.getString(layout_prefix + ".priors_mode", "proportional");
         PriorsMode priors_mode = PriorsMode::Uniform;
