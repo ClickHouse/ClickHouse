@@ -633,7 +633,7 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     Names partition_columns = snapshot->getPartitionColumns();
 
     auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper);
-    delta_transaction->create();
+    delta_transaction->create(partition_columns, snapshot->getTableSchema());
 
     if (partition_columns.empty())
     {

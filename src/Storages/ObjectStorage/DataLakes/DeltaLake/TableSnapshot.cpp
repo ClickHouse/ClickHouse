@@ -487,6 +487,11 @@ public:
         ffi::SharedScanMetadata * scan_metadata)
     {
         auto * iter = static_cast<Iterator *>(engine_context);
+        /// `visit_scan_metadata` returns an `ExternResult`, so `unwrapResult` may throw.
+        /// Release the handle on all exit paths to avoid leaking it.
+        SCOPE_EXIT({
+            ffi::free_scan_metadata(scan_metadata);
+        });
         KernelUtils::unwrapResult(
             ffi::visit_scan_metadata(
                 scan_metadata,
@@ -494,7 +499,6 @@ public:
                 engine_context,
                 Iterator::scanCallback),
             "visit_scan_metadata");
-        ffi::free_scan_metadata(scan_metadata);
     }
 
     static bool scanCallback(
@@ -771,6 +775,11 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
         static void visitData(void * engine_context, ffi::SharedScanMetadata * scan_metadata)
         {
             auto * visitor = static_cast<StatsVisitor *>(engine_context);
+            /// `visit_scan_metadata` returns an `ExternResult`, so `unwrapResult` may throw.
+            /// Release the handle on all exit paths to avoid leaking it.
+            SCOPE_EXIT({
+                ffi::free_scan_metadata(scan_metadata);
+            });
             KernelUtils::unwrapResult(
                 ffi::visit_scan_metadata(
                     scan_metadata,
@@ -778,7 +787,6 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
                     engine_context,
                     StatsVisitor::visit),
                 "visit_scan_metadata");
-            ffi::free_scan_metadata(scan_metadata);
         }
     };
 

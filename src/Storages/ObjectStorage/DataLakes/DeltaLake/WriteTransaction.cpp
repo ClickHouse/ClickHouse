@@ -147,7 +147,7 @@ const std::string & WriteTransaction::getDataPath() const
     return path_prefix;
 }
 
-void WriteTransaction::create()
+void WriteTransaction::create(const DB::Names & partition_columns, const DB::NamesAndTypesList & table_schema)
 {
     auto * engine_builder = kernel_helper->createBuilder();
     engine = DeltaLake::KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
@@ -164,18 +164,32 @@ void WriteTransaction::create()
             engine.get()),
         "with_engine_info");
 
-    write_context = DeltaLake::KernelUtils::unwrapResult(
-        ffi::get_unpartitioned_write_context(transaction.get(), engine.get()),
-        "get_unpartitioned_write_context");
-    write_schema = DeltaLake::getWriteSchema(write_context.get(), engine.get());
+    if (partition_columns.empty())
+    {
+        /// Unpartitioned tables: let the kernel build the write context.
+        write_context = DeltaLake::KernelUtils::unwrapResult(
+            ffi::get_unpartitioned_write_context(transaction.get(), engine.get()),
+            "get_unpartitioned_write_context");
+        write_schema = DeltaLake::getWriteSchema(write_context.get(), engine.get());
 
-    auto * write_path_raw = static_cast<std::string *>(
-        ffi::get_write_path(write_context.get(), DeltaLake::KernelUtils::allocateString));
-    if (!write_path_raw)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Failed to get write path");
+        auto * write_path_raw = static_cast<std::string *>(
+            ffi::get_write_path(write_context.get(), DeltaLake::KernelUtils::allocateString));
+        if (!write_path_raw)
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Failed to get write path");
 
-    write_path = *write_path_raw;
-    delete write_path_raw;
+        write_path = *write_path_raw;
+        delete write_path_raw;
+    }
+    else
+    {
+        /// Partitioned tables: delta-kernel v23 does not expose a partitioned write context via
+        /// FFI (TODO(#2355) upstream) and `get_unpartitioned_write_context` errors for partitioned
+        /// tables. The write context is only used to obtain the write schema (validated by column
+        /// name) and the write path (the table root); both are already known here, so derive them
+        /// directly. Per-partition values are handled separately when committing the Add actions.
+        write_schema = table_schema;
+        write_path = kernel_helper->getTableLocation();
+    }
 
     auto pos = write_path.find("://");
     if (pos == std::string::npos)
