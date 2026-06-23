@@ -336,6 +336,31 @@ DROP DICTIONARY IF EXISTS nb_stored_reordered;
 DROP TABLE IF EXISTS nb_stored_reordered_source;
 
 
+-- The class attribute can be named anything; naiveBayesClassifier and dictGet using that exact name agree,
+-- which is the documented equivalence.
+DROP TABLE IF EXISTS nb_label_source;
+DROP DICTIONARY IF EXISTS nb_label_model;
+CREATE TABLE nb_label_source (label UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (label, ngram);
+INSERT INTO nb_label_source VALUES (0, 'good', 10), (0, 'great', 8), (1, 'bad', 10), (1, 'awful', 7);
+CREATE DICTIONARY nb_label_model
+(
+    ngram String,
+    label UInt32 DEFAULT 0,
+    count UInt64 DEFAULT 0
+)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'nb_label_source'))
+LAYOUT(NAIVE_BAYES(class_attribute 'label' n 1 mode 'token'))
+LIFETIME(0);
+
+SELECT 'Function equals dictGet on the configured class attribute name';
+SELECT naiveBayesClassifier('nb_label_model', 'good') = dictGet('nb_label_model', 'label', 'good');
+SELECT naiveBayesClassifier('nb_label_model', 'bad') = dictGet('nb_label_model', 'label', 'bad');
+
+DROP DICTIONARY nb_label_model;
+DROP TABLE nb_label_source;
+
+
 DROP DICTIONARY IF EXISTS nb_token_model;
 DROP DICTIONARY IF EXISTS nb_byte_model;
 DROP DICTIONARY IF EXISTS nb_codepoint_model;

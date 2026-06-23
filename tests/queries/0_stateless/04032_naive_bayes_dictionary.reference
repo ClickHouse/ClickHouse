@@ -102,3 +102,6 @@ Still classifies
 Read training rows with class_id as the second attribute
 alpha	3	0
 gamma	4	1
+Function equals dictGet on the configured class attribute name
+1
+1
