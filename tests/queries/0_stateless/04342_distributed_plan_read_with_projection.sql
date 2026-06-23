@@ -22,6 +22,10 @@ INSERT INTO t2 SELECT number, number % 10 FROM numbers(1000000);
 
 INSERT INTO t1 SELECT number, toString(number) FROM numbers(100);
 
+-- distributed aggregation rejects a nonzero max_rows_to_group_by; some configs (e.g. the Fast test
+-- profile) set it nonzero by default, which would make the count() below throw before the read path.
+SET max_rows_to_group_by = 0;
+
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
     distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3;
 
