@@ -12,6 +12,7 @@
 #include <Core/Joins.h>
 #include <Core/NamesAndTypes.h>
 
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/NullsAction.h>
 #include <Functions/IFunction.h>
 
