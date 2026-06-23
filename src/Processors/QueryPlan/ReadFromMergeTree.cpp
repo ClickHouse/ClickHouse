@@ -2518,9 +2518,25 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     if (indexes->part_values && indexes->part_values->empty())
         return std::make_shared<AnalysisResult>(std::move(result));
 
+    /// When parallel replicas read through a view, the force_index_by_date / force_primary_key guards
+    /// cannot be enforced at this per-replica reading-step level: the partition/primary-key predicate
+    /// is applied in a FilterStep outside the view's inner query (above the view's subquery on the
+    /// initiator, and above the remote read on a follower), so it never reaches this step's
+    /// filter_actions_dag. The index then looks unused here even though the query has a valid
+    /// predicate, producing a false-positive INDEX_NOT_USED. Skip the guards in two cases:
+    ///   - the inner query of a view read with parallel replicas on the initiator (isViewInnerQuery),
+    ///   - any parallel replicas follower, where the shipped subquery carries no predicate at all
+    ///     (it is applied above the remote read on the initiator).
+    /// Ordinary parallel-replicas reads from a table on the initiator still carry the predicate in the
+    /// reading step, so they keep enforcing the guards (and a genuinely index-less query throws on the
+    /// initiator before any follower runs).
+    /// See https://github.com/ClickHouse/support-escalation/issues/7976.
+    const bool skip_force_index_guards = is_parallel_reading_from_replicas_
+        && (context_->isViewInnerQuery() || context_->canUseParallelReplicasOnFollower());
+
     if (indexes->key_condition.alwaysUnknownOrTrue())
     {
-        if (settings[Setting::force_primary_key])
+        if (settings[Setting::force_primary_key] && !skip_force_index_guards)
         {
             throw Exception(ErrorCodes::INDEX_NOT_USED,
                 "Primary key ({}) is not used and setting 'force_primary_key' is set",
@@ -2556,7 +2572,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         context_,
         max_block_numbers_to_read.get(),
         log,
-        result.index_stats);
+        result.index_stats,
+        /*enforce_force_index_by_date=*/ !skip_force_index_guards);
 
     res_parts = MergeTreeDataSelectExecutor::filterPartsByStatistics(
         res_parts, metadata_snapshot, query_info_, mutations_snapshot, context_, log, result.index_stats);
