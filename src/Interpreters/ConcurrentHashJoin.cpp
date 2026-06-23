@@ -392,17 +392,32 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
             hash_join->buffered_blocks.emplace_back(std::move(dispatched_block));
         }
 
-        /// Size limits cannot be enforced here the way the streaming build does: `getTotalRowCount`
-        /// would count the buffered *source* rows (the streaming build checks distinct-key map cells,
-        /// so duplicates would over-count and reject queries the streaming path accepts), and
-        /// `getProjectedTotalByteCount` omits the `RowRefList` arena nodes (so `max_bytes_in_join`
-        /// would be under-counted). Record that the caller wants the limits enforced and re-check the
-        /// real maps after the replay in `onBuildPhaseFinish`. `break` never reaches here (the
-        /// deferral is disabled for it in the constructor); the replay itself inserts with
-        /// `check_limits = false`. The spill threshold is handled separately by the wrapping
-        /// `SpillingHashJoin` via `getProjectedTotalByteCount`.
+        /// Size limits cannot be enforced *exactly* here the way the streaming build does:
+        /// `getTotalRowCount` would count the buffered *source* rows (the streaming build checks
+        /// distinct-key map cells, so duplicates would over-count and reject queries the streaming
+        /// path accepts), and `getProjectedTotalByteCount` omits the `RowRefList` arena nodes (so
+        /// `max_bytes_in_join` would be under-counted). Record that the caller wants the limits
+        /// enforced and re-check the real maps after the replay in `onBuildPhaseFinish`. `break`
+        /// never reaches here (the deferral is disabled for it in the constructor, so the mode is
+        /// always `throw`); the replay itself inserts with `check_limits = false`. The spill
+        /// threshold is handled separately by the wrapping `SpillingHashJoin` via
+        /// `getProjectedTotalByteCount`.
         if (check_limits && table_join->sizeLimits().hasLimits())
+        {
             deferred_limits_check_requested.store(true, std::memory_order_relaxed);
+
+            /// The buffered block bytes are a lower bound on the final join footprint (the replay
+            /// only adds the maps and arena on top), so fail early on the byte cap once even that
+            /// lower bound crosses `max_bytes_in_join`, instead of buffering the whole right side
+            /// and only throwing at `onBuildPhaseFinish` (which could overshoot the join cap or hit
+            /// `max_memory_usage` first). Pass `rows = 0` so only the byte dimension can trip here:
+            /// the buffered source-row count over-counts distinct keys and must wait for the exact
+            /// post-replay check. The terminal `onBuildPhaseFinish` check still enforces both
+            /// dimensions exactly. This keeps the streaming build's incremental-byte-guard behavior.
+            if (table_join->sizeLimits().max_bytes)
+                table_join->sizeLimits().check(
+                    0, getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+        }
         return true;
     }
 
