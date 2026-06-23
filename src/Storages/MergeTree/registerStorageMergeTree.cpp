@@ -2425,7 +2425,7 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 | MinMax        | ✔                                                  | ✗                     |
 | TDigest       | ✔                                                  | ✗                     |
 | Uniq          | ✔                                                  | ✔                     |
-| UniqCombined  | ✔                                                  | ✔                     |
+| uniq_v2  | ✔                                                  | ✔                     |
 
 ### Supported operations {#supported-operations}
 
@@ -2435,7 +2435,7 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 | MinMax        | ✗                     | ✔                              |
 | TDigest       | ✗                     | ✔                              |
 | Uniq          | ✔                     | ✗                              |
-| UniqCombined  | ✔                     | ✗                              |
+| uniq_v2  | ✔                     | ✗                              |
 
 ## Column-level settings {#column-level-settings}
 

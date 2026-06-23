@@ -58,7 +58,7 @@ bool StatisticsUniq::isCompatibleWith(const IStatistics & other) const
     const auto * other_uniq = typeid_cast<const StatisticsUniq *>(&other);
     if (!other_uniq)
         return false;
-    return StatisticsUtils::aggregateEqual(*collector, *other_uniq->collector);
+    return StatisticsUtils::isSame(*collector, *other_uniq->collector);
 }
 
 void StatisticsUniq::serialize(WriteBuffer & buf)

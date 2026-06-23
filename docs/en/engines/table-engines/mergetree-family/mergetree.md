@@ -1315,15 +1315,15 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 - `Uniq`
 
-    [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) sketches which provide an estimation how many distinct values a column contains.
+    [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) sketches which provide an estimation how many distinct values a column contains. Internally uses [`uniq`](/sql-reference/aggregate-functions/reference/uniq).
 
     Syntax: `uniq`
 
-- `Uniq_V2`
+- `Uniq_v2`
 
-    A cardinality estimator that provides a distinct-value estimate for numeric types, `String`, and `FixedString` (including `Nullable` and `LowCardinality` wrappers). Internally uses `uniqCombined64(12)`.
+    A cardinality estimator that provides a distinct-value estimate for numeric types, `String`, and `FixedString` (including `Nullable` and `LowCardinality` wrappers), similar to `Uniq` but consumes less memory than and can be build faster. Internally uses [`uniqCombined`](/sql-reference/aggregate-functions/reference/uniqcombined)`(12)`.
 
-    Syntax: `Uniq_V2`
+    Syntax: `Uniq_v2`
 
 - `CountMin`
 
@@ -1340,7 +1340,7 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 | MinMax        | ✔                                                  | ✔    | ✗                     |
 | TDigest       | ✔                                                  | ✗    | ✗                     |
 | Uniq          | ✔                                                  | ✔    | ✔                     |
-| Uniq_V2       | ✔                                                  | ✔    | ✔                     |
+| Uniq_v2       | ✔                                                  | ✔    | ✔                     |
 
 All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers of the listed types. `Basic` may additionally be declared on `Nullable` wrappers of types like `UUID` or `IPv6` purely to track the null count.
 
@@ -1353,7 +1353,7 @@ All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers 
 | MinMax        | ✗                      | ✔ (numeric columns only)        |
 | TDigest       | ✗                      | ✔ (numeric columns only)        |
 | Uniq          | ✔                      | ✗                               |
-| Uniq_V2       | ✔                      | ✗                               |
+| Uniq_v2       | ✔                      | ✗                               |
 
 For `Basic` on `String` / `FixedString` columns the statistic only records the total
 non-NULL byte length (used to estimate average string length) and the null count;

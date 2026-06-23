@@ -40,7 +40,7 @@ namespace ErrorCodes
 }
 
 
-bool StatisticsUtils::aggregateEqual(const IAggregateFunction & a, const IAggregateFunction & b)
+bool StatisticsUtils::isSame(const IAggregateFunction & a, const IAggregateFunction & b)
 {
     if (a.sizeOfData() != b.sizeOfData())
         return false;
@@ -138,12 +138,12 @@ std::optional<Float64> StatisticsUtils::interpolateLessLinear(
     return interpolateLessLinearTyped<Float64>(Field(*val_as_float), Field(*min_as_float), Field(*max_as_float), row_count);
 }
 
-/// Returns the first available uniq-style cardinality estimator (prefers Uniq over UniqCombined).
+/// Returns the first available uniq-style cardinality estimator (prefers Uniq over UniqV2).
 static const IStatistics * findUniqStats(const ColumnStatistics::StatsMap & m)
 {
     if (auto it = m.find(StatisticsType::Uniq); it != m.end())
         return it->second.get();
-    if (auto it = m.find(StatisticsType::UniqCombined); it != m.end())
+    if (auto it = m.find(StatisticsType::UniqV2); it != m.end())
         return it->second.get();
     return nullptr;
 }
@@ -655,8 +655,8 @@ MergeTreeStatisticsFactory::MergeTreeStatisticsFactory()
     registerValidator(StatisticsType::Uniq, uniqStatisticsValidator);
     registerCreator(StatisticsType::Uniq, uniqStatisticsCreator);
 
-    registerValidator(StatisticsType::UniqCombined, uniqV2StatisticsValidator);
-    registerCreator(StatisticsType::UniqCombined, uniqV2StatisticsCreator);
+    registerValidator(StatisticsType::UniqV2, uniqV2StatisticsValidator);
+    registerCreator(StatisticsType::UniqV2, uniqV2StatisticsCreator);
 
 #if USE_DATASKETCHES
     registerValidator(StatisticsType::CountMinSketch, countMinSketchStatisticsValidator);

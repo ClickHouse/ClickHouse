@@ -63,7 +63,7 @@ bool StatisticsUniqV2::isCompatibleWith(const IStatistics & other) const
     const auto * other_v2 = typeid_cast<const StatisticsUniqV2 *>(&other);
     if (!other_v2)
         return false;
-    return StatisticsUtils::aggregateEqual(*collector, *other_v2->collector);
+    return StatisticsUtils::isSame(*collector, *other_v2->collector);
 }
 
 void StatisticsUniqV2::serialize(WriteBuffer & buf)

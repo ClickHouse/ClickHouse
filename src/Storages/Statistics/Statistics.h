@@ -47,11 +47,11 @@ struct StatisticsUtils
     static std::optional<Float64> interpolateLessLinear(
         const Field & val, const Field & min, const Field & max, UInt64 row_count, const DataTypePtr & data_type);
 
-    /// Returns true iff two aggregate functions are compatible for state merging: same state layout
-    /// (sizeOfData) and pairwise-equal argument types (via IDataType::equals). Used by statistics
-    /// implementations to detect hash-domain changes (e.g. numeric → String) that would make
-    /// states of the same byte size semantically incompatible.
-    static bool aggregateEqual(const IAggregateFunction & a, const IAggregateFunction & b);
+    /// Returns true iff two aggregate functions have the same state size and identical argument
+    /// types. Statistics implementations use this to decide whether states from two parts can be
+    /// merged: a column type change (e.g. numeric → String) may preserve the state size while
+    /// switching to a different hash function, producing wrong estimates if the states are mixed.
+    static bool isSame(const IAggregateFunction & a, const IAggregateFunction & b);
 };
 
 class IStatistics;
