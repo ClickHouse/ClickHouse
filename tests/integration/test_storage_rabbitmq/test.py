@@ -93,17 +93,22 @@ def unique(request):
 
 
 def check_expected_result_polling(expected, query, instance=instance, timeout=DEFAULT_TIMEOUT_SEC):
+    # Fail only if consumption from RabbitMQ stalls, i.e. there is no progress for `timeout`
+    # seconds. As long as the result keeps increasing, consumption is still in progress, so we
+    # keep waiting regardless of how long the whole consumption takes. This matters for heavy
+    # tests (e.g. consuming many large messages on a slow remote-disk configuration): a fixed
+    # deadline would abandon a test that is still steadily consuming.
     deadline = time.monotonic() + timeout
     prev_result = 0
     result = None
     while time.monotonic() < deadline:
         result = int(instance.query(query))
-        # In case it's consuming successfully from RabbitMQ in latest iteration, extend the deadline
-        if result > prev_result:
-            deadline += 1
-        prev_result = result
         if result == expected:
             break
+        # Progress was made since the previous iteration: reset the no-progress deadline.
+        if result > prev_result:
+            deadline = time.monotonic() + timeout
+        prev_result = result
         logging.debug(f"Result: {result} / {expected}. Now {time.monotonic()}, deadline {deadline}")
         time.sleep(1)
     else:
@@ -444,7 +449,6 @@ def test_rabbitmq_materialized_view(rabbitmq_cluster, db, unique):
 
     instance.wait_for_log_line("Started streaming to 2 attached views")
 
-    messages = []
     for i in range(50):
         message = json.dumps({"key": i, "value": i})
         channel.basic_publish(exchange=f"{unique}_mv", routing_key="", body=message)
@@ -816,7 +820,7 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster, db, unique):
         time.sleep(1)
     else:
         pytest.fail(
-            f"Time limit of 180 seconds reached. The result did not match the expected value."
+            "Time limit of 180 seconds reached. The result did not match the expected value."
         )
 
     for thread in threads:
@@ -885,7 +889,6 @@ def test_rabbitmq_insert(rabbitmq_cluster, db, unique):
     insert_messages = []
 
     def onReceived(channel, method, properties, body):
-        i = 0
         insert_messages.append(body.decode())
         if len(insert_messages) == 50:
             channel.stop_consuming()
@@ -953,7 +956,6 @@ def test_rabbitmq_insert_headers_exchange(rabbitmq_cluster, db, unique):
     insert_messages = []
 
     def onReceived(channel, method, properties, body):
-        i = 0
         insert_messages.append(body.decode())
         if len(insert_messages) == 50:
             channel.stop_consuming()
@@ -1036,6 +1038,12 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster, db, unique):
         CREATE MATERIALIZED VIEW {db}.consumer_many TO {db}.view_many AS
             SELECT * FROM {db}.rabbitmq_consume;
     """
+    )
+
+    # db is per-test unique, so scoping to it avoids matching a stale
+    # "Started streaming" line from an earlier RabbitMQ test in the tail buffer.
+    instance.wait_for_log_line(
+        rf"StorageRabbitMQ \({db}\.rabbitmq_consume\).*Started streaming to 1 attached views"
     )
 
     for thread in threads:
@@ -2165,7 +2173,7 @@ def test_rabbitmq_drop_table_properly(rabbitmq_cluster, db, unique):
 
     try:
         exists = channel.queue_declare(queue=f"{unique}_rabbit_queue_drop", passive=True)
-    except Exception as e:
+    except Exception:
         exists = False
 
     assert not exists
@@ -2232,7 +2240,6 @@ def test_rabbitmq_queue_consume(rabbitmq_cluster, db, unique):
     def produce():
         connection = pika.BlockingConnection(parameters)
         channel = connection.channel()
-        messages = []
         for _ in range(messages_num):
             message = json.dumps({"key": i[0], "value": i[0]})
             channel.basic_publish(exchange="", routing_key=queue_name, body=message)
@@ -2483,7 +2490,7 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster, db, unique):
             break
         time.sleep(0.05)
     else:
-        pytest.fail(f"Time limit of 30 seconds reached. The count is still 0.")
+        pytest.fail("Time limit of 30 seconds reached. The count is still 0.")
 
     instance.query(f"DROP TABLE {db}.drop_mv")
     assert count > 0
@@ -3385,7 +3392,7 @@ def view_test(expected_num_messages, _exchange_name, db):
 
 
 def dead_letter_queue_test(expected_num_messages, exchange_name, _db):
-    result = instance.query(f"SELECT * FROM system.dead_letter_queue FORMAT Vertical")
+    result = instance.query("SELECT * FROM system.dead_letter_queue FORMAT Vertical")
 
     logging.debug(f"system.dead_letter_queue content is {result}")
 

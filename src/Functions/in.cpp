@@ -58,10 +58,11 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    /// We handle constant folding manually because the default implementation
-    /// unconditionally changes input_rows_count from 0 to 1 when unwrapping constants.
-    /// With a not-ready set (from a subquery), this would cause the function to fail
-    /// during header computation where input_rows_count is 0.
+    /// We can't use the default constant-folding wrapper because it would wrap a
+    /// dry-run result as a ColumnConst, and `FilterTransform`'s header evaluation
+    /// would then see a subquery-IN with an unbuilt set as "always false" (the
+    /// dry-run path returns 0) and skip the filter entirely. Handle the size-0
+    /// ColumnConst arguments produced by `ActionsDAG::addColumn` directly below.
     bool useDefaultImplementationForConstants() const override { return false; }
 
     bool useDefaultImplementationForDynamic() const override
@@ -120,15 +121,14 @@ public:
         if (set->getTotalRowCount() == 0)
             return ColumnConst::create(ColumnUInt8::create(1, negative), input_rows_count);
 
-        if (input_rows_count == 0)
-            return ColumnUInt8::create();
-
         /// Unwrap ColumnConst for the first argument if needed.
         ColumnWithTypeAndName left_arg = arguments[0];
         bool left_is_const = isColumnConst(*left_arg.column);
 
         if (left_is_const)
             left_arg.column = assert_cast<const ColumnConst &>(*left_arg.column).getDataColumnPtr();
+        else if (input_rows_count == 0)
+            return ColumnUInt8::create();
 
         const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(left_arg.column.get());
         const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(left_arg.type.get());

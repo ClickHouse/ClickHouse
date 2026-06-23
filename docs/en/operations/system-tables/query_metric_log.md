@@ -125,7 +125,7 @@ by default). The data is also collected when the query finishes if the query tak
 - `ProfileEvent_TextIndexHeaderCacheHits` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a header has been found in the cache.
 - `ProfileEvent_TextIndexHeaderCacheMisses` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a header has not been found in the cache.
 - `ProfileEvent_TextIndexPostingsCacheHits` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a text index posting list has been found in the cache.
-- `ProfileEvent_TextIndexPostingsCacheMisses` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a a text index posting list has not been found in the cache.
+- `ProfileEvent_TextIndexPostingsCacheMisses` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a text index posting list has not been found in the cache.
 - `ProfileEvent_TextIndexReadSparseIndexBlocks` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a sparse index block has been read from the text index.
 - `ProfileEvent_TextIndexReaderTotalMicroseconds` ([UInt64](/sql-reference/data-types/int-uint)) — Total time spent reading the text index.
 - `ProfileEvent_TextIndexReadGranulesMicroseconds` ([UInt64](/sql-reference/data-types/int-uint)) — Total time spent reading and analyzing granules of the text index.
@@ -734,7 +734,7 @@ by default). The data is also collected when the query finishes if the query tak
 - `ProfileEvent_FilesystemCacheEvictedBytes` ([UInt64](/sql-reference/data-types/int-uint)) — Number of bytes evicted from filesystem cache
 - `ProfileEvent_FilesystemCacheCreatedKeyDirectories` ([UInt64](/sql-reference/data-types/int-uint)) — Number of created key directories
 - `ProfileEvent_FilesystemCacheEvictedFileSegments` ([UInt64](/sql-reference/data-types/int-uint)) — Number of file segments evicted from filesystem cache
-- `ProfileEvent_FilesystemCacheEvictedFileSegmentsDuringPriorityIncrease` ([UInt64](/sql-reference/data-types/int-uint)) — Number of file segments evicted from filesystem cache when increasing priority of file segments (Applies to SLRU cache policy)
+- `ProfileEvent_FilesystemCacheDowngradedFileSegments` ([UInt64](/sql-reference/data-types/int-uint)) — Number of file segments downgraded (moved) from the protected to the probationary queue in SLRU cache policy. This is an internal move within the cache, not an eviction.
 - `ProfileEvent_FilesystemCacheBackgroundDownloadQueuePush` ([UInt64](/sql-reference/data-types/int-uint)) — Number of file segments sent for background download in filesystem cache
 - `ProfileEvent_FilesystemCacheEvictionSkippedFileSegments` ([UInt64](/sql-reference/data-types/int-uint)) — Number of file segments skipped for eviction because of being in unreleasable state
 - `ProfileEvent_FilesystemCacheEvictionSkippedEvictingFileSegments` ([UInt64](/sql-reference/data-types/int-uint)) — Number of file segments skipped for eviction because of being in evicting state
