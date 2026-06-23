@@ -271,32 +271,29 @@ INSERT INTO uk_src_for_plain VALUES (1, 10, 'a');
 ALTER TABLE plain_dst_from_uk ATTACH PARTITION 10 FROM uk_src_for_plain;  -- { serverError SUPPORT_IS_DISABLED }
 ALTER TABLE plain_dst_from_uk REPLACE PARTITION 10 FROM uk_src_for_plain; -- { serverError SUPPORT_IS_DISABLED }
 
--- 22. Regression for https://github.com/ClickHouse/ClickHouse/issues/104963.
--- CREATE TABLE combining UNIQUE KEY and TTL aborted the debug server with
--- `Inconsistent AST formatting` (debug-only round-trip check). Root cause:
--- `ParserStorage::parseImpl`, `ASTStorage::clone`, and `ASTStorage::formatImpl`
--- set storage children in different orders.
+-- 22. Regression for https://github.com/ClickHouse/ClickHouse/issues/104963:
+-- CREATE combining UNIQUE KEY and TTL aborted the debug server with `Inconsistent
+-- AST formatting` (ParserStorage::parseImpl / ASTStorage::clone / formatImpl set
+-- storage children in different orders). UNIQUE KEY + TTL is now rejected at CREATE
+-- (see 04159), but the statement must still parse and round-trip cleanly first —
+-- the crash was an AST round-trip failure during parsing, before the reject — so
+-- these still guard the regression: a reappearance surfaces a parse error / abort,
+-- not SUPPORT_IS_DISABLED.
 DROP TABLE IF EXISTS uk_ttl_inline_pk;
 DROP TABLE IF EXISTS uk_ttl_storage_pk;
 DROP TABLE IF EXISTS uk_ttl_full;
 
--- 22a. The exact failing statement from the issue. With the fix it now reports
--- the correct user-facing `BAD_ARGUMENTS` (constant TTL).
+-- 22a. Constant TTL: the BAD_ARGUMENTS check fires before the UNIQUE KEY + TTL reject.
 CREATE TABLE uk_ttl_inline_pk (c0 Int PRIMARY KEY)
 ENGINE = MergeTree() UNIQUE KEY (c0) TTL 1; -- { serverError BAD_ARGUMENTS }
 
--- 22b. Same shape with a valid TTL succeeds and round-trips.
+-- 22b. Inline PRIMARY KEY.
 CREATE TABLE uk_ttl_inline_pk (c0 Int PRIMARY KEY, ts DateTime)
-ENGINE = MergeTree() UNIQUE KEY (c0) TTL ts + INTERVAL 1 DAY;
+ENGINE = MergeTree() UNIQUE KEY (c0) TTL ts + INTERVAL 1 DAY; -- { serverError SUPPORT_IS_DISABLED }
 
-SHOW CREATE TABLE uk_ttl_inline_pk FORMAT TSVRaw;
-
--- 22c. Storage-level PRIMARY KEY (not inline). `normalizeChildrenOrder` is not
--- called on this path, so this shape exposed the original bug.
+-- 22c. Storage-level PRIMARY KEY (not inline); `normalizeChildrenOrder` is not called here.
 CREATE TABLE uk_ttl_storage_pk (c0 Int, ts DateTime)
-ENGINE = MergeTree() PRIMARY KEY (c0) UNIQUE KEY (c0) TTL ts + INTERVAL 1 DAY;
-
-SHOW CREATE TABLE uk_ttl_storage_pk FORMAT TSVRaw;
+ENGINE = MergeTree() PRIMARY KEY (c0) UNIQUE KEY (c0) TTL ts + INTERVAL 1 DAY; -- { serverError SUPPORT_IS_DISABLED }
 
 -- 22d. All storage clauses present at once.
 CREATE TABLE uk_ttl_full (c0 UInt32, sk UInt64, ts DateTime)
@@ -306,9 +303,7 @@ PRIMARY KEY (c0, sk)
 ORDER BY (c0, sk)
 SAMPLE BY sk
 UNIQUE KEY (c0)
-TTL ts + INTERVAL 1 DAY;
-
-SHOW CREATE TABLE uk_ttl_full FORMAT TSVRaw;
+TTL ts + INTERVAL 1 DAY; -- { serverError SUPPORT_IS_DISABLED }
 
 DROP TABLE uk_t;
 DROP TABLE uk_t_src;
