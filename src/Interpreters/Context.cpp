@@ -1271,6 +1271,7 @@ ContextData::ContextData(const ContextData &o) :
     file_progress_callback(o.file_progress_callback),
     process_list_elem(o.process_list_elem),
     has_process_list_elem(o.has_process_list_elem),
+    normalized_query_hash(o.normalized_query_hash),
     insertion_table_info(o.insertion_table_info),
     is_distributed(o.is_distributed),
     default_format(o.default_format),
