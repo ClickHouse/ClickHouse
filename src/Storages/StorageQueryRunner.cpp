@@ -721,7 +721,8 @@ SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const Stora
 
 void StorageQueryRunner::drop()
 {
-    if (getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->sql_security_type == SQLSecurityType::DEFINER)
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    if (metadata_snapshot->sql_security_type == SQLSecurityType::DEFINER)
         DefinerDependencies::instance().removeDependencies(getStorageID());
 }
 
