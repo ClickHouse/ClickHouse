@@ -92,8 +92,11 @@ struct DPJoinEntry
     /// For leaf nodes
     int relation_id = -1;
 
-    /// Constructor for a leaf node (base relation)
-    DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_ = {}, RowCountKind rows_kind = RowCountKind::Unknown);
+    /// Constructor for a leaf node (base relation). `rows_kind` is required (no default): every
+    /// solver that builds leaves must classify the row count, so a new construction site cannot
+    /// silently default to `Unknown` and disable the build-side swap (as happened when DPhyp was
+    /// merged in -- see `solveDPhyp`).
+    DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_, RowCountKind rows_kind);
 
     /// Constructor for a join node
     DPJoinEntry(DPJoinEntryPtr lhs,
