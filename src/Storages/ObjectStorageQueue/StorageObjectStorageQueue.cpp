@@ -632,7 +632,15 @@ void StorageObjectStorageQueue::read(
 
     auto this_ptr = std::static_pointer_cast<StorageObjectStorageQueue>(shared_from_this());
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
+    auto read_from_format_info = prepareReadingFromFormat(
+        column_names,
+        storage_snapshot,
+        local_context,
+        supportsSubsetOfColumns(local_context),
+        /*supports_tuple_elements*/ false,
+        PrepareReadingFromFormatHiveParams {file_columns,
+            hive_partition_columns_to_read_from_file_path.getNameToTypeMap()}
+    );
     if (FormatFactory::instance().checkIfFormatSupportsSubsetOfColumnsByPosition(configuration->format, local_context, format_settings))
     {
         const auto & columns_in_data_file = file_columns.empty()
