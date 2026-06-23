@@ -41,7 +41,8 @@ static std::string getOrCreateCustomDisk(
 
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
     {
-        auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context, attach);
+        bool load_anonymously = false;
+        auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context, attach, &load_anonymously);
 
         Poco::AutoPtr<Poco::XML::NamePool> name_pool(new Poco::XML::NamePool());
         Poco::XML::DOMParser dom_parser(name_pool);
@@ -61,6 +62,10 @@ static std::string getOrCreateCustomDisk(
             &zk_node_cache);
 
         config->load(xml_document);
+
+        /// Applied after `processIncludes`, so an `include` cannot re-introduce server credentials.
+        if (load_anonymously)
+            forceAnonymousS3DiskConfig(*config);
     }
 
     Poco::Util::AbstractConfiguration::Keys disk_settings_keys;

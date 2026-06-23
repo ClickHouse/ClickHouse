@@ -4,6 +4,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <Disks/DiskFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -36,6 +37,11 @@ namespace Setting
     extern const SettingsBool dynamic_disk_allow_from_zk;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsBool s3_load_table_anonymously_if_credentials_restricted;
+}
+
 [[noreturn]] static void throwBadConfiguration(const std::string & message = "")
 {
     throw Exception(
@@ -44,7 +50,7 @@ namespace Setting
         message.empty() ? "" : ": " + message);
 }
 
-Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & disk_args, ContextPtr context, bool is_loading_from_existing_metadata)
+Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & disk_args, ContextPtr context, bool is_loading_from_existing_metadata, bool * load_anonymously)
 {
     if (disk_args.empty())
         throwBadConfiguration("expected non-empty list of arguments");
@@ -182,16 +188,22 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     }
 
     /// A user-created S3 disk must not resolve the server's own credentials (environment/IMDS/IRSA,
-    /// role_arn-based STS, AWS config files, or the GCP metadata service). Skip the check when loading from
-    /// existing metadata, so a disk that was created while it was allowed keeps loading after a restart. The
-    /// check is bypassed for trusted clients via the `s3_allow_server_credentials_in_user_queries` setting
-    /// (see shouldRestrictUserQueryS3Credentials).
+    /// role_arn-based STS, AWS config files, or the GCP metadata service). The check is bypassed for trusted
+    /// clients via the `s3_allow_server_credentials_in_user_queries` setting (see
+    /// shouldRestrictUserQueryS3Credentials).
+    ///
+    /// The check is also applied when loading from existing metadata (server startup or RESTORE): a disk
+    /// definition that resolves server-managed credentials -- e.g. one created before this restriction existed,
+    /// or while it was allowed -- must not silently keep using the server's identity on restart, since a user
+    /// `CREATE`/`ATTACH` of the same definition would be refused. To avoid aborting startup, such a disk is
+    /// forced anonymous on load (it becomes inaccessible for a private bucket) rather than throwing, governed by
+    /// the server setting `s3_load_table_anonymously_if_credentials_restricted`.
     ///
     /// `include` could pull S3 fields from server config, and a `from_env`/`from_zk` substitution on the
     /// disk type or on a credential/auth field could hide an S3 disk or resolve a server-side value, so any
     /// of those is treated as potentially-S3 and rejected.
     const bool maybe_s3_disk = is_s3_disk || type_is_indirect || has_include;
-    if (!is_loading_from_existing_metadata && maybe_s3_disk && context->shouldRestrictUserQueryS3Credentials())
+    if (maybe_s3_disk && context->shouldRestrictUserQueryS3Credentials())
     {
         const bool has_explicit_credentials = has_access_key_id && has_secret_access_key;
         const bool has_explicit_gcp_adc
@@ -209,23 +221,56 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             || (wants_gcp_oauth ? !has_explicit_gcp_adc
                                 : (!has_explicit_credentials && !has_no_sign_request && !allowed_anonymous));
         if (denied)
-            throw Exception(
-                ErrorCodes::ACCESS_DENIED,
-                "A dynamic S3 disk created from user SQL must provide a complete explicit "
-                "`access_key_id`/`secret_access_key` pair, `no_sign_request`, or `use_environment_credentials = 0` "
-                "(or, for `http_client = gcp_oauth`, a complete explicit Google ADC triple), with literal values "
-                "and no `include`. It may not fall back to the server's own credentials. Enable the setting "
-                "`s3_allow_server_credentials_in_user_queries` to allow it.");
+        {
+            if (is_loading_from_existing_metadata
+                && context->getGlobalContext()->getServerSettings()[ServerSetting::s3_load_table_anonymously_if_credentials_restricted])
+            {
+                LOG_WARNING(
+                    getLogger("getDiskConfigurationFromAST"),
+                    "Loading a dynamic S3 disk anonymously: it resolves server-managed credentials that are "
+                    "restricted for user queries (s3_allow_server_credentials_in_user_queries = 0). The disk will "
+                    "be inaccessible until its credentials resolve to a permitted source. Set the server setting "
+                    "s3_load_table_anonymously_if_credentials_restricted = 0 to fail loading instead.");
+
+                /// Do not abort startup: tell the caller to force the disk anonymous once the configuration is
+                /// loaded (and any `include` is resolved), see forceAnonymousS3DiskConfig. We cannot rewrite the
+                /// DOM here because in DiskFromAST an `include` is processed after this function returns and
+                /// could otherwise re-introduce server credentials.
+                if (load_anonymously)
+                    *load_anonymously = true;
+            }
+            else
+                throw Exception(
+                    ErrorCodes::ACCESS_DENIED,
+                    "A dynamic S3 disk created from user SQL must provide a complete explicit "
+                    "`access_key_id`/`secret_access_key` pair, `no_sign_request`, or `use_environment_credentials = 0` "
+                    "(or, for `http_client = gcp_oauth`, a complete explicit Google ADC triple), with literal values "
+                    "and no `include`. It may not fall back to the server's own credentials. Enable the setting "
+                    "`s3_allow_server_credentials_in_user_queries` to allow it.");
+        }
     }
 
     return xml_document;
 }
 
+void forceAnonymousS3DiskConfig(Poco::Util::AbstractConfiguration & config)
+{
+    /// Clear `http_client` (which would mint a GCP token at the HTTP layer regardless of the credentials
+    /// provider) and force `no_sign_request = 1`, so the S3 client is built unsigned regardless of
+    /// `use_environment_credentials`/`role_arn` (see getCredentialsProvider) and never resolves the server's
+    /// own credentials. `setString` overwrites any value the definition (or an `include`) supplied.
+    config.setString("http_client", "");
+    config.setString("no_sign_request", "1");
+}
+
 DiskConfigurationPtr getDiskConfigurationFromAST(const ASTs & disk_args, ContextPtr context)
 {
-    auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context);
+    bool load_anonymously = false;
+    auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context, /* is_loading_from_existing_metadata = */ false, &load_anonymously);
     Poco::AutoPtr<Poco::Util::XMLConfiguration> conf(new Poco::Util::XMLConfiguration());
     conf->load(xml_document);
+    if (load_anonymously)
+        forceAnonymousS3DiskConfig(*conf);
     return conf;
 }
 

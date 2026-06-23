@@ -1355,18 +1355,21 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(Max number of S3 redirects hops allowed.)", 0) \
     DECLARE(UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, R"(Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries)", 0) \
     DECLARE(Bool, s3_load_table_anonymously_if_credentials_restricted, true, R"(
-Controls what happens when a persistent `S3` or `S3Queue` table is loaded from existing metadata (server
-startup or `RESTORE`) and its definition would resolve the server's own (ambient) S3 credentials that are
-blocked for user queries by `s3_allow_server_credentials_in_user_queries`.
+Controls what happens when a persistent `S3` or `S3Queue` table, a dynamic `disk(type = s3, ...)`, or a
+`DataLakeCatalog` (Glue, BigLake) database is loaded from existing metadata (server startup or `RESTORE`) and
+its definition would resolve the server's own (ambient) S3/cloud credentials that are blocked for user
+queries by `s3_allow_server_credentials_in_user_queries`.
 
-When enabled (the default), the table is loaded with an anonymous S3 client instead: the server starts, but
-the table is inaccessible (its requests to a private bucket are denied) until its credentials resolve to a
-permitted source again. It never silently regains the server's identity. This keeps a single such table —
-for example one created in an older version before the restriction existed, or one whose named collection
-was later re-bound to `use_environment_credentials = 1` — from aborting server startup.
+When enabled (the default), the object is loaded without those credentials instead of aborting startup: an
+`S3`/`S3Queue` table or a dynamic S3 disk is built with an anonymous S3 client, and a `DataLakeCatalog`
+database is left with an unavailable catalog. The server starts, but the object is inaccessible (its requests
+to a private bucket are denied, or the catalog reports a clear error) until its credentials resolve to a
+permitted source again. It never silently regains the server's identity. This keeps a single such object —
+for example one created in an older version before the restriction existed, or one whose named collection was
+later re-bound to `use_environment_credentials = 1` — from aborting server startup.
 
-When disabled, loading such a table instead fails, which can prevent the server from starting. Use this only
-if you prefer a hard failure over a silently inaccessible table.
+When disabled, loading such an object instead fails, which can prevent the server from starting. Use this only
+if you prefer a hard failure over a silently inaccessible table, disk, or catalog database.
 )", 0) \
     DECLARE(Int32, os_threads_nice_value_merge_mutate, 0, R"(
     Linux nice value for merge and mutation threads. Lower values mean higher CPU priority.

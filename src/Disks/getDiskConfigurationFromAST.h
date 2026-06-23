@@ -27,10 +27,19 @@ DiskConfigurationPtr getDiskConfigurationFromAST(const ASTs & disk_args, Context
 
 /// The same as above function, but return XML::Document for easier modification of result configuration.
 /// When `is_loading_from_existing_metadata` is true (loading from existing metadata — server restart,
-/// force-restore, or `UNDROP TABLE`), security checks are skipped because the disk configuration
-/// was already validated when the object was originally created. User-initiated `ATTACH TABLE`
-/// / `ATTACH DATABASE` queries pass false so the `dynamic_disk_allow_*` restrictions apply.
-[[ maybe_unused ]] Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & disk_args, ContextPtr context, bool is_loading_from_existing_metadata = false);
+/// force-restore, or `UNDROP TABLE`), the `dynamic_disk_allow_*` restrictions are skipped because the disk
+/// configuration was already validated when the object was originally created. User-initiated `ATTACH TABLE`
+/// / `ATTACH DATABASE` queries pass false so those restrictions apply.
+///
+/// The server-managed S3 credential restriction (see `Context::shouldRestrictUserQueryS3Credentials`) is
+/// applied even on metadata load. If the definition would resolve server-managed credentials there, the
+/// function does not throw but sets `*load_anonymously` to true; the caller must then pass the loaded
+/// configuration to `forceAnonymousS3DiskConfig` so the disk is built anonymous (inaccessible) instead of
+/// using the server's identity. See the server setting `s3_load_table_anonymously_if_credentials_restricted`.
+[[ maybe_unused ]] Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & disk_args, ContextPtr context, bool is_loading_from_existing_metadata = false, bool * load_anonymously = nullptr);
+
+/// Rewrite a dynamic disk configuration so its S3 client is built anonymously (see `getDiskConfigurationFromASTImpl`).
+void forceAnonymousS3DiskConfig(Poco::Util::AbstractConfiguration & config);
 
 /*
  * A reverse function.
