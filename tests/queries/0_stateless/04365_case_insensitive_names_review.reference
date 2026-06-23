@@ -32,6 +32,10 @@ Smith	30
 Alice	Smith	0
 Smith	30
 Alice	Smith	0
+--- JOIN USING case-insensitive duplicate / matcher qualifier quoting ---
+--- information_schema mixed-case view names canonicalize ---
+1
+1
 --- AST hash distinguishes quoted vs unquoted CTE output aliases / INTERPOLATE targets ---
 1
 1

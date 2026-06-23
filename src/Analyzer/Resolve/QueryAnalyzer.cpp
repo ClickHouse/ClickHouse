@@ -1859,7 +1859,8 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
 /// But in planner we do not distinguish such cases.
 void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
     QueryTreeNodesWithNames & result_matched_column_nodes_with_names,
-    IdentifierResolveScope & scope)
+    IdentifierResolveScope & scope,
+    bool qualifier_pins_case_sensitive)
 {
     auto * nearest_query_scope = scope.getNearestQueryScope();
     auto * nearest_query_scope_query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
@@ -1882,8 +1883,12 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
         const auto & join_using_nodes = join_using_list.getNodes();
         /// In `standard` mode the matcher-resolved column name and the USING key name may differ only
         /// by case (the USING side is canonicalized through case-insensitive lookup). Compare names
-        /// case-insensitively so the supertype propagation does not get silently skipped.
+        /// case-insensitively so the supertype propagation does not get silently skipped. But when
+        /// the matcher carried a double-quoted qualifier (`qualifier_pins_case_sensitive` — e.g.
+        /// `"T".*`), the matched columns must stay exact; otherwise we would re-resolve the matcher
+        /// against a differently-cased USING key.
         const bool standard_mode = scope.isStandardMode();
+        const bool case_insensitive_compare = standard_mode && !qualifier_pins_case_sensitive;
 
         for (auto & [matched_column_node, _] : result_matched_column_nodes_with_names)
         {
@@ -1895,7 +1900,7 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
                 auto & join_using_column_node = join_using_node->as<ColumnNode &>();
                 const auto & join_using_column_name = join_using_column_node.getColumnName();
 
-                const bool names_match = standard_mode
+                const bool names_match = case_insensitive_compare
                     ? Poco::icompare(matched_column_name, join_using_column_name) == 0
                     : matched_column_name == join_using_column_name;
                 if (!names_match)
@@ -2097,7 +2102,17 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
         matched_columns,
         scope);
 
-    updateMatchedColumnsFromJoinUsing(result_matched_column_nodes_with_names, scope);
+    /// A double-quoted qualifier part (`"T".*`) pins the matched columns to their canonical case so
+    /// the USING-side type adjustment can't re-resolve them case-insensitively. Backticks behave
+    /// like unquoted here (not preserved by the formatter, so semantically case-insensitive).
+    bool matcher_qualifier_pins_case_sensitive = false;
+    for (auto style : qualifier_quote_styles)
+        if (style == IdentifierQuoteStyle::DoubleQuote)
+        {
+            matcher_qualifier_pins_case_sensitive = true;
+            break;
+        }
+    updateMatchedColumnsFromJoinUsing(result_matched_column_nodes_with_names, scope, matcher_qualifier_pins_case_sensitive);
 
     return result_matched_column_nodes_with_names;
 }
@@ -5389,6 +5404,12 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
     {
         auto & join_using_list = join_node_typed.getJoinExpression()->as<ListNode &>();
         std::unordered_set<std::string> join_using_identifiers;
+        /// In `standard` mode an unquoted USING key folds case-insensitively (it can resolve to a
+        /// physical column of a different case). Track lowercase forms of unquoted entries so a
+        /// `USING (Key, key)` clause over a single physical `Key` is rejected here, before both
+        /// entries resolve to the same join key and silently break the duplicate-key invariant.
+        const bool standard_mode = scope.isStandardMode();
+        std::unordered_set<std::string> join_using_lowercase_unquoted;
 
         for (auto & join_using_node : join_using_list.getNodes())
         {
@@ -5409,24 +5430,67 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
             join_using_identifiers.insert(identifier_full_name);
 
+            if (standard_mode)
+            {
+                bool any_part_double_quoted = false;
+                for (auto style : identifier_node->getQuoteStyles())
+                    if (style == IdentifierQuoteStyle::DoubleQuote) { any_part_double_quoted = true; break; }
+                if (!any_part_double_quoted)
+                {
+                    const String lowered = Poco::toLower(identifier_full_name);
+                    if (!join_using_lowercase_unquoted.insert(lowered).second)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "JOIN {} identifier '{}' appears more than once in USING clause "
+                            "(case-insensitive duplicate under `case_insensitive_names = 'standard'`)",
+                            join_node_typed.formatASTForErrorMessage(),
+                            identifier_full_name);
+                }
+            }
+
             const auto & settings = scope.context->getSettingsRef();
 
             /** While resolving JOIN USING identifier, try to resolve identifier from parent subquery projection.
               * Example: SELECT a + 1 AS b FROM (SELECT 1 AS a) t1 JOIN (SELECT 2 AS b) USING b
               * In this case `b` is not in the left table expression, but it is in the parent subquery projection.
               */
-            auto try_resolve_identifier_from_query_projection = [this](const String & identifier_full_name_,
-                                                                       const QueryTreeNodePtr & left_table_expression,
-                                                                       const IdentifierResolveScope & scope_) -> QueryTreeNodePtr
+            /// Capture the USING identifier's quote style for use in alias-matching below.
+            bool using_identifier_any_double_quoted = false;
+            for (auto style : identifier_node->getQuoteStyles())
+                if (style == IdentifierQuoteStyle::DoubleQuote)
+                {
+                    using_identifier_any_double_quoted = true;
+                    break;
+                }
+            const bool using_identifier_case_insensitive = standard_mode && !using_identifier_any_double_quoted;
+
+            auto try_resolve_identifier_from_query_projection = [this, using_identifier_case_insensitive](
+                const String & identifier_full_name_,
+                const QueryTreeNodePtr & left_table_expression,
+                const IdentifierResolveScope & scope_) -> QueryTreeNodePtr
             {
                 const QueryNode * query_node = scope_.scope_node ? scope_.scope_node->as<QueryNode>() : nullptr;
                 if (!query_node)
                     return nullptr;
 
+                /// Exact-first / case-insensitive-if-unquoted / double-quoted-stays-exact alias match,
+                /// matching how regular alias lookups behave in `standard` mode.
+                auto alias_matches = [&](const QueryTreeNodePtr & projection_node) -> bool
+                {
+                    if (!projection_node->hasAlias())
+                        return false;
+                    if (projection_node->getAlias() == identifier_full_name_)
+                        return true;
+                    if (!using_identifier_case_insensitive)
+                        return false;
+                    if (projection_node->isAliasDoubleQuoted())
+                        return false;
+                    return Poco::icompare(projection_node->getAlias(), identifier_full_name_) == 0;
+                };
+
                 const auto & projection_list = query_node->getProjection();
                 for (const auto & projection_node : projection_list.getNodes())
                 {
-                    if (projection_node->hasAlias() && identifier_full_name_ == projection_node->getAlias())
+                    if (alias_matches(projection_node))
                     {
                         auto left_subquery = std::make_shared<QueryNode>(query_node->getMutableContext());
                         left_subquery->getProjection().getNodes().push_back(projection_node->clone());
@@ -5507,7 +5571,13 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                 {
                     for (const auto & projection_node : query_node->getProjection().getNodes())
                     {
-                        if (projection_node->hasAlias() && identifier_full_name == projection_node->getAlias())
+                        if (!projection_node->hasAlias())
+                            continue;
+                        const bool exact_match = identifier_full_name == projection_node->getAlias();
+                        const bool fold_match = using_identifier_case_insensitive
+                            && !projection_node->isAliasDoubleQuoted()
+                            && Poco::icompare(projection_node->getAlias(), identifier_full_name) == 0;
+                        if (exact_match || fold_match)
                         {
                             extra_message = fmt::format(
                                 ", but alias '{}' is present in SELECT list."

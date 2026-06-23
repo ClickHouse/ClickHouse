@@ -73,6 +73,25 @@ SELECT * REPLACE STRICT (0 AS age) FROM t_xform;
 
 DROP TABLE IF EXISTS t_xform;
 
+SELECT '--- JOIN USING case-insensitive duplicate / matcher qualifier quoting ---';
+DROP TABLE IF EXISTS t_jl;
+DROP TABLE IF EXISTS t_jr;
+CREATE TABLE t_jl (Key Int32, V1 Int32) ENGINE = Memory;
+CREATE TABLE t_jr (Key Int32, V2 Int32) ENGINE = Memory;
+INSERT INTO t_jl VALUES (1, 10);
+INSERT INTO t_jr VALUES (1, 100);
+-- USING (Key, key) over column `Key`: both fold to the same canonical key in standard mode → ambiguous.
+SELECT * FROM t_jl JOIN t_jr USING (Key, key); -- { serverError BAD_ARGUMENTS }
+-- USING (Key, "key") stays distinct (the quoted entry is case-sensitive); but there is no `key` column,
+-- so this fails with UNKNOWN_IDENTIFIER instead.
+SELECT * FROM t_jl JOIN t_jr USING (Key, "key"); -- { serverError UNKNOWN_IDENTIFIER }
+DROP TABLE IF EXISTS t_jl;
+DROP TABLE IF EXISTS t_jr;
+
+SELECT '--- information_schema mixed-case view names canonicalize ---';
+SELECT count() > 0 FROM information_schema.TaBlEs WHERE TABLE_SCHEMA = 'system';
+SELECT count() > 0 FROM INFORMATION_SCHEMA.TaBlEs WHERE TABLE_SCHEMA = 'system';
+
 SELECT '--- AST hash distinguishes quoted vs unquoted CTE output aliases / INTERPOLATE targets ---';
 -- Format/reparse must preserve the quote style of CTE output aliases and INTERPOLATE targets so
 -- their AST hashes differ — otherwise `QueryResultCache::Key` would collide queries that differ

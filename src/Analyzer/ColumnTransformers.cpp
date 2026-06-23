@@ -142,27 +142,45 @@ bool ExceptColumnTransformerNode::isColumnMatching(const std::string & column_na
     if (column_matcher)
         return re2::RE2::PartialMatch(column_name, *column_matcher);
 
+    /// First pass: exact match wins regardless of `standard_mode` (mirrors column/alias lookup).
     for (size_t i = 0, n = except_column_names.size(); i < n; ++i)
     {
-        const auto & name = except_column_names[i];
-        if (column_name == name)
+        if (column_name == except_column_names[i])
         {
             if (matched_target)
-                *matched_target = name;
-            return true;
-        }
-        /// In `standard` mode an unquoted EXCEPT target folds case-insensitively. Quoted targets
-        /// (tracked in the parallel `target_is_double_quoted` vector) stay case-sensitive even when
-        /// the surrounding query uses standard semantics.
-        const bool target_quoted = i < target_is_double_quoted.size() && target_is_double_quoted[i];
-        if (standard_mode && !target_quoted && Poco::icompare(column_name, name) == 0)
-        {
-            if (matched_target)
-                *matched_target = name;
+                *matched_target = except_column_names[i];
             return true;
         }
     }
 
+    if (!standard_mode)
+        return false;
+
+    /// `standard` mode: unquoted EXCEPT targets fold case-insensitively. Quoted targets (tracked in
+    /// `target_is_double_quoted`) stay case-sensitive. Multiple distinct unquoted targets that fold
+    /// to the same column are ambiguous — mirror the column/alias/REPLACE rule rather than silently
+    /// picking the first.
+    size_t matched_index = std::numeric_limits<size_t>::max();
+    for (size_t i = 0, n = except_column_names.size(); i < n; ++i)
+    {
+        const bool target_quoted = i < target_is_double_quoted.size() && target_is_double_quoted[i];
+        if (target_quoted)
+            continue;
+        if (Poco::icompare(column_name, except_column_names[i]) != 0)
+            continue;
+        if (matched_index != std::numeric_limits<size_t>::max()
+            && except_column_names[matched_index] != except_column_names[i])
+            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                "EXCEPT column transformer target for column '{}' is ambiguous: matches multiple targets with different cases: '{}' and '{}'",
+                column_name, except_column_names[matched_index], except_column_names[i]);
+        matched_index = i;
+    }
+    if (matched_index != std::numeric_limits<size_t>::max())
+    {
+        if (matched_target)
+            *matched_target = except_column_names[matched_index];
+        return true;
+    }
     return false;
 }
 

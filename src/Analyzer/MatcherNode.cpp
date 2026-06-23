@@ -243,20 +243,23 @@ void MatcherNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) con
     hash_state.update(qualified_identifier_full_name.size());
     hash_state.update(qualified_identifier_full_name);
 
-    /// Mix in qualifier quote styles only when at least one part was actually quoted,
-    /// so plain `T.*` keeps the previous hash unchanged
-    bool any_qualifier_quoted = false;
+    /// Mix in qualifier quote styles only when at least one part was actually double-quoted.
+    /// Backticks are not preserved by the formatter, so including them would diverge the hash
+    /// between the original tree and a reparsed copy on the remote side (same shape of bug as
+    /// `IdentifierNode::updateTreeHashImpl` — see commit b65a03641a7). Encode only the per-part
+    /// double-quote bit; for plain `T.*` / `\`T\`.*` the previous hash is preserved.
+    bool any_qualifier_double_quoted = false;
     for (auto style : qualified_identifier_quote_styles)
-        if (style != IdentifierQuoteStyle::None)
+        if (style == IdentifierQuoteStyle::DoubleQuote)
         {
-            any_qualifier_quoted = true;
+            any_qualifier_double_quoted = true;
             break;
         }
-    if (any_qualifier_quoted)
+    if (any_qualifier_double_quoted)
     {
         hash_state.update(qualified_identifier_quote_styles.size());
         for (auto style : qualified_identifier_quote_styles)
-            hash_state.update(static_cast<uint8_t>(style));
+            hash_state.update(static_cast<uint8_t>(style == IdentifierQuoteStyle::DoubleQuote));
     }
 
     for (const auto & identifier : columns_identifiers)
@@ -266,23 +269,27 @@ void MatcherNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) con
         hash_state.update(identifier_full_name);
     }
 
-    /// Mix in per-argument quote styles only when at least one argument had a quoted part
-    bool any_arg_quoted = false;
+    /// Same rule for per-argument quote styles: only DoubleQuote is observable through format.
+    bool any_arg_double_quoted = false;
     for (const auto & arg_quotes : columns_identifiers_quote_styles)
+    {
         for (auto style : arg_quotes)
-            if (style != IdentifierQuoteStyle::None)
+            if (style == IdentifierQuoteStyle::DoubleQuote)
             {
-                any_arg_quoted = true;
+                any_arg_double_quoted = true;
                 break;
             }
-    if (any_arg_quoted)
+        if (any_arg_double_quoted)
+            break;
+    }
+    if (any_arg_double_quoted)
     {
         hash_state.update(columns_identifiers_quote_styles.size());
         for (const auto & arg_quotes : columns_identifiers_quote_styles)
         {
             hash_state.update(arg_quotes.size());
             for (auto style : arg_quotes)
-                hash_state.update(static_cast<uint8_t>(style));
+                hash_state.update(static_cast<uint8_t>(style == IdentifierQuoteStyle::DoubleQuote));
         }
     }
 

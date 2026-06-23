@@ -230,7 +230,13 @@ private:
         const NamesAndTypes & matched_columns,
         IdentifierResolveScope & scope);
 
-    void updateMatchedColumnsFromJoinUsing(QueryTreeNodesWithNames & result_matched_column_nodes_with_names, IdentifierResolveScope & scope);
+    /// `qualifier_pins_case_sensitive` is true when the matcher carries a double-quoted qualifier
+    /// part (e.g. `"T".*`) in `standard` mode — under that case the matcher-side column name must
+    /// stay exact and the case-insensitive comparison with USING keys is disabled.
+    void updateMatchedColumnsFromJoinUsing(
+        QueryTreeNodesWithNames & result_matched_column_nodes_with_names,
+        IdentifierResolveScope & scope,
+        bool qualifier_pins_case_sensitive = false);
 
     QueryTreeNodesWithNames resolveQualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 

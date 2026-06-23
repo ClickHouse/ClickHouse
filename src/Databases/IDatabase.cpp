@@ -62,6 +62,34 @@ String IDatabase::tryResolveTableNameCaseInsensitive(const String & name, Contex
     if (tryGetTable(name, context))
         return name;
 
+    /// `information_schema` (and its uppercase twin) intentionally expose each predefined view in
+    /// two cases (`tables` and `TABLES`, etc.). Settings documentation promises those pairs are
+    /// canonical aliases of one logical view, so a mixed-case lookup like `TaBlEs` must resolve to
+    /// one of them rather than throw on the otherwise-ambiguous case-insensitive scan.
+    {
+        const String & db_name = getDatabaseName();
+        const bool is_info_schema_lower = db_name == "information_schema";
+        const bool is_info_schema_upper = db_name == "INFORMATION_SCHEMA";
+        if (is_info_schema_lower || is_info_schema_upper)
+        {
+            static constexpr std::string_view predefined_views[] = {
+                "schemata", "tables", "views", "columns",
+                "key_column_usage", "referential_constraints", "statistics",
+                "character_sets", "collations", "engines",
+            };
+            const String lowered_name = Poco::toLower(name);
+            for (const auto view : predefined_views)
+            {
+                if (lowered_name != view)
+                    continue;
+                /// Canonical view name: lowercase variant for the lowercase schema, uppercase for the uppercase one.
+                String canonical = is_info_schema_upper ? Poco::toUpper(name) : Poco::toLower(name);
+                if (tryGetTable(canonical, context))
+                    return canonical;
+            }
+        }
+    }
+
     String found_name;
     for (auto table_it = getTablesIterator(context); table_it->isValid(); table_it->next())
     {
