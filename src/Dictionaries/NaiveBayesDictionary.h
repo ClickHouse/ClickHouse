@@ -53,6 +53,10 @@ public:
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
+    /// Records `count` classified rows from the dedicated functions, which bypass `getColumn` but should still
+    /// be reflected in the dictionary query statistics.
+    void incrementQueryCount(size_t count) const { query_count.fetch_add(count, std::memory_order_relaxed); }
+
     /// Every input is classifiable, so the found rate is one once any query has run.
     double getFoundRate() const override
     {

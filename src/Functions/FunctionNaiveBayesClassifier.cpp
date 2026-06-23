@@ -87,6 +87,10 @@ void executeNaiveBayes(
             classify_row(model, scratch, text, i);
         }
     });
+
+    /// These functions bypass `getColumn`, so record the classified rows here to keep the dictionary query
+    /// statistics consistent with the equivalent `dictGet` path.
+    nb_dict->incrementQueryCount(input_rows_count);
 }
 
 DataTypePtr makeClassProbTuple()
