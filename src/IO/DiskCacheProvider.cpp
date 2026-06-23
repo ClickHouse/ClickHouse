@@ -140,6 +140,48 @@ void preadSegmentNode(
         anchors->set(path, reader);
 }
 
+/// Append every committed sub-range of `holder` overlapping `sub_in_object`
+/// (object-local) to `result`, in segment order, via `preadSegmentNode`. Shared by
+/// the read buffer and the write buffer's served-prefix read; they differ only in
+/// whether a streaming-reader slot / anchors / throttler are supplied.
+void readOverlappingSegments(
+    ChainedBuffers & result,
+    FileSegmentsHolder & holder,
+    ByteRange sub_in_object,
+    size_t object_file_offset,
+    const ThrottlerPtr & local_throttler,
+    ReaderAnchorCache * anchors,
+    StreamingReaderSlot * stream_slot)
+{
+    for (const auto & segment : holder)
+    {
+        const auto state = segment->state();
+        if (state != FileSegmentState::DOWNLOADED
+            && state != FileSegmentState::PARTIALLY_DOWNLOADED
+            && state != FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION
+            && state != FileSegmentState::DOWNLOADING)
+            continue;
+
+        const auto & seg_range = segment->range();
+        const size_t seg_left = seg_range.left;
+        const size_t downloaded_end = (state == FileSegmentState::DOWNLOADED)
+            ? seg_range.right + 1
+            : segment->getCurrentWriteOffset();
+
+        if (downloaded_end <= sub_in_object.offset || seg_left >= sub_in_object.end())
+            continue;
+
+        const size_t overlap_start = std::max<size_t>(seg_left, sub_in_object.offset);
+        const size_t overlap_end = std::min(downloaded_end, sub_in_object.end());
+        if (overlap_end <= overlap_start)
+            continue;
+
+        preadSegmentNode(
+            result, *segment, overlap_start, overlap_end - overlap_start,
+            object_file_offset, local_throttler, anchors, stream_slot);
+    }
+}
+
 }
 
 DiskCacheReader::DiskCacheReader(
@@ -217,34 +259,8 @@ ChainedBuffers DiskCacheReader::read(ByteRange sub)
     chassert(sub.offset >= object_file_offset);
     ByteRange sub_in_object{sub.offset - object_file_offset, sub.size};
 
-    for (const auto & segment : *holder)
-    {
-        const auto state = segment->state();
-        if (state != FileSegmentState::DOWNLOADED
-            && state != FileSegmentState::PARTIALLY_DOWNLOADED
-            && state != FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION
-            && state != FileSegmentState::DOWNLOADING)
-            continue;
-
-        const auto & seg_range = segment->range();
-        const size_t seg_left = seg_range.left;
-
-        const size_t downloaded_end = (state == FileSegmentState::DOWNLOADED)
-            ? seg_range.right + 1
-            : segment->getCurrentWriteOffset();
-
-        if (downloaded_end <= sub_in_object.offset || seg_left >= sub_in_object.end())
-            continue;
-
-        const size_t overlap_start = std::max<size_t>(seg_left, sub_in_object.offset);
-        const size_t overlap_end = std::min(downloaded_end, sub_in_object.end());
-        if (overlap_end <= overlap_start)
-            continue;
-
-        preadSegmentNode(
-            result, *segment, overlap_start, overlap_end - overlap_start,
-            object_file_offset, local_throttler, anchors, stream_slot);
-    }
+    readOverlappingSegments(result, *holder, sub_in_object, object_file_offset,
+        local_throttler, anchors, stream_slot);
     return result;
 }
 
@@ -411,34 +427,8 @@ ChainedBuffers DiskCacheWriter::read(ByteRange sub)
 
     /// Serve an already-committed prefix from this buffer's own held holder,
     /// downloader-independent (a fresh pread reader, no `StreamingReaderSlot`).
-    for (const auto & segment : *holder)
-    {
-        const auto state = segment->state();
-        if (state != FileSegmentState::DOWNLOADED
-            && state != FileSegmentState::PARTIALLY_DOWNLOADED
-            && state != FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION
-            && state != FileSegmentState::DOWNLOADING)
-            continue;
-
-        const auto & seg_range = segment->range();
-        const size_t seg_left = seg_range.left;
-        const size_t downloaded_end = (state == FileSegmentState::DOWNLOADED)
-            ? seg_range.right + 1
-            : segment->getCurrentWriteOffset();
-
-        if (downloaded_end <= sub_in_object.offset || seg_left >= sub_in_object.end())
-            continue;
-
-        const size_t overlap_start = std::max<size_t>(seg_left, sub_in_object.offset);
-        const size_t overlap_end = std::min(downloaded_end, sub_in_object.end());
-        if (overlap_end <= overlap_start)
-            continue;
-
-        preadSegmentNode(
-            result, *segment, overlap_start, overlap_end - overlap_start,
-            object_file_offset, /*local_throttler=*/nullptr,
-            /*anchors=*/nullptr, /*stream_slot=*/nullptr);
-    }
+    readOverlappingSegments(result, *holder, sub_in_object, object_file_offset,
+        /*local_throttler=*/nullptr, /*anchors=*/nullptr, /*stream_slot=*/nullptr);
     return result;
 }
 

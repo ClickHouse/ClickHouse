@@ -459,7 +459,11 @@ private:
         /// The PHYSICAL cache-aligned window the fetch step reads
         /// (`fetchWindowAt` widened); collect backfills the caches over it.
         ByteRange physical_window;
-        std::shared_ptr<const CoverageMap> geometry;
+        /// The plan's memory-pressure level, snapshotted at launch - the only
+        /// geometry field the worker reads (sizes the fetch block / suppresses
+        /// read-ahead). A future stage needing other geometry fields on the
+        /// worker must re-add a snapshot rather than reach into shared state.
+        MemoryPressureLevel pressure_snapshot{};
         /// The advertised read extent at launch: the worker bounds its source
         /// connection with THIS, never the live `read_extent_end` member - a
         /// soft-cancelled machine must not race `setReadExtent`.

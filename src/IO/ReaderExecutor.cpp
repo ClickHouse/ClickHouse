@@ -1378,7 +1378,7 @@ bool ReaderExecutor::fetchAndBackfillGaps(
 void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
 {
     const ByteRange window = m.physical_window;
-    const MemoryPressureLevel level = m.geometry->pressure_level;
+    const MemoryPressureLevel level = m.pressure_snapshot;
 
     /// Elect the FileCache downloader over the window's fill-target writers (recorded at
     /// launch). Segments WE win (`led_misses`) this worker fetches+writes inline below - it is
@@ -1759,9 +1759,7 @@ ChainedBuffers ReaderExecutor::readFromSource(
         /// is cache-aligned), or the connection cannot continue at all, drop and reopen.
         bool split = false;
         if ((*lc)->servesObject(object.remote_path)
-            && offset >= (*lc)->current_position
-            && (offset == (*lc)->current_position || offset - (*lc)->current_position < min_bytes_for_seek)
-            && offset < (*lc)->read_until)
+            && (*lc)->canStartServing(offset, min_bytes_for_seek))
         {
             const size_t prefix_span = (*lc)->read_until - offset;
             size_t prefix_bytes = 0;
@@ -2353,7 +2351,7 @@ void ReaderExecutor::launchRetrieve(size_t ri)
     m->requested_range = ByteRange{base - data_start_offset, chunk};
     m->physical_window = next_physical_window;
     m->retrieve_index = ri;
-    m->geometry = read_plan.geometry();
+    m->pressure_snapshot = read_plan.geometry()->pressure_level;
     m->extent_snapshot = read_extent_end;
     /// Record the fill-target writers now so the worker can write its led segments inline
     /// during the fetch step (the collect's `schedulePutStep` reuses these views).
