@@ -194,9 +194,11 @@ namespace Setting
     extern const SettingsBool enable_automatic_decision_for_merging_across_partitions_for_final;
     extern const SettingsBool enable_vertical_final;
     extern const SettingsBool force_aggregate_partitions_independently;
+    extern const SettingsBool force_distinct_partitions_independently;
     extern const SettingsBool force_primary_key;
     extern const SettingsString ignore_data_skipping_indices;
     extern const SettingsUInt64 max_number_of_partitions_for_independent_aggregation;
+    extern const SettingsUInt64 max_number_of_partitions_for_independent_distinct;
     extern const SettingsInt64 max_partitions_to_read;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_rows_to_read_leaf;
@@ -3024,6 +3026,75 @@ bool ReadFromMergeTree::isVectorColumnReplaced() const
     return std::ranges::find(all_column_names, "_distance") != all_column_names.end();
 }
 
+bool ReadFromMergeTree::isPartitionIndependentProcessingProfitable(ProcessorKind kind) const
+{
+    const bool is_distinct = kind == ProcessorKind::Distinct;
+    const std::string_view operation = is_distinct ? "DISTINCT" : "aggregation";
+    const std::string_view force_setting
+        = is_distinct ? "force_distinct_partitions_independently" : "force_aggregate_partitions_independently";
+    const std::string_view max_partitions_setting
+        = is_distinct ? "max_number_of_partitions_for_independent_distinct" : "max_number_of_partitions_for_independent_aggregation";
+
+    const auto & settings = context->getSettingsRef();
+    const UInt64 max_partitions = is_distinct
+        ? settings[Setting::max_number_of_partitions_for_independent_distinct]
+        : settings[Setting::max_number_of_partitions_for_independent_aggregation];
+    const auto partitions_cnt = countPartitions(getParts());
+
+    if (partitions_cnt == 1 || partitions_cnt < settings[Setting::max_threads] / 2)
+    {
+        LOG_TRACE(
+            log,
+            "Independent {} by partitions won't be used because there are too few of them: {}. You can set {} to suppress this check",
+            operation,
+            partitions_cnt,
+            force_setting);
+        return false;
+    }
+
+    if (partitions_cnt > max_partitions)
+    {
+        LOG_TRACE(
+            log,
+            "Independent {} by partitions won't be used because there are too many of them: {}. You can increase {} "
+            "(current value is {}) or set {} to suppress this check",
+            operation,
+            partitions_cnt,
+            max_partitions_setting,
+            max_partitions,
+            force_setting);
+        return false;
+    }
+
+    std::unordered_map<String, size_t> partition_rows;
+    for (const auto & part : getParts())
+        partition_rows[part.data_part->info.getPartitionId()] += part.data_part->rows_count;
+    size_t sum_rows = 0;
+    size_t max_rows = 0;
+    for (const auto & [_, rows] : partition_rows)
+    {
+        sum_rows += rows;
+        max_rows = std::max(max_rows, rows);
+    }
+
+    /// Merging shouldn't take more time than the per-stream pre-step in normal cases, and exec time is
+    /// proportional to the amount of data. We assume exec time of independent processing is proportional
+    /// to the maximum partition size, and of ordinary processing to (sum / threads) * 2 (pre-step + merge).
+    const size_t avg_rows_in_partition = sum_rows / settings[Setting::max_threads];
+    if (max_rows > avg_rows_in_partition * 2)
+    {
+        LOG_TRACE(
+            log,
+            "Independent {} by partitions won't be used because of too big skew in the number of rows between partitions. "
+            "You can set {} to suppress this check",
+            operation,
+            force_setting);
+        return false;
+    }
+
+    return true;
+}
+
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForAggregation()
 {
     if (isQueryWithFinal())
@@ -3034,68 +3105,17 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForAggregat
     if (is_parallel_reading_from_replicas)
         return false;
 
-    const auto & settings = context->getSettingsRef();
-
-    const auto partitions_cnt = countPartitions(getParts());
-    if (!settings[Setting::force_aggregate_partitions_independently]
-        && (partitions_cnt == 1 || partitions_cnt < settings[Setting::max_threads] / 2))
-    {
-        LOG_TRACE(
-            log,
-            "Independent aggregation by partitions won't be used because there are too few of them: {}. You can set "
-            "force_aggregate_partitions_independently to suppress this check",
-            partitions_cnt);
+    if (!context->getSettingsRef()[Setting::force_aggregate_partitions_independently]
+        && !isPartitionIndependentProcessingProfitable(ProcessorKind::Aggregation))
         return false;
-    }
-
-    if (!settings[Setting::force_aggregate_partitions_independently]
-        && (partitions_cnt > settings[Setting::max_number_of_partitions_for_independent_aggregation]))
-    {
-        LOG_TRACE(
-            log,
-            "Independent aggregation by partitions won't be used because there are too many of them: {}. You can increase "
-            "max_number_of_partitions_for_independent_aggregation (current value is {}) or set "
-            "force_aggregate_partitions_independently to suppress this check",
-            partitions_cnt,
-            settings[Setting::max_number_of_partitions_for_independent_aggregation].value);
-        return false;
-    }
-
-    if (!settings[Setting::force_aggregate_partitions_independently])
-    {
-        std::unordered_map<String, size_t> partition_rows;
-        for (const auto & part : getParts())
-            partition_rows[part.data_part->info.getPartitionId()] += part.data_part->rows_count;
-        size_t sum_rows = 0;
-        size_t max_rows = 0;
-        for (const auto & [_, rows] : partition_rows)
-        {
-            sum_rows += rows;
-            max_rows = std::max(max_rows, rows);
-        }
-
-        /// Merging shouldn't take more time than preaggregation in normal cases. And exec time is proportional to the amount of data.
-        /// We assume that exec time of independent aggr is proportional to the maximum of sizes and
-        /// exec time of ordinary aggr is proportional to sum of sizes divided by number of threads and multiplied by two (preaggregation + merging).
-        const size_t avg_rows_in_partition = sum_rows / settings[Setting::max_threads];
-        if (max_rows > avg_rows_in_partition * 2)
-        {
-            LOG_TRACE(
-                log,
-                "Independent aggregation by partitions won't be used because there are too big skew in the number of rows between "
-                "partitions. You can set force_aggregate_partitions_independently to suppress this check");
-            return false;
-        }
-    }
 
     return output_each_partition_through_separate_port = true;
 }
 
-/// The LIMIT BY version is much more lenient than the GROUP BY alternative. The reason being
-/// is that ordinary LIMIT BY merges all incoming streams into one and the transform happens
-/// in a single stream. We only try to optimize simple cases, SELECT * FROM table [WHERE ...] LIMIT .. BY
-/// key; for such cases, the main cost is in LIMIT BY. As a result, if we can get any parallelism
-/// at all in LIMIT BY, it will be a win.
+/// The LIMIT BY version is much more lenient than the GROUP BY / DISTINCT alternatives. The reason is
+/// that ordinary LIMIT BY merges all incoming streams into one and the transform happens in a single
+/// stream. Only simple cases are optimized, such as SELECT * FROM table [WHERE ...] LIMIT .. BY key; for
+/// such cases the main cost is in LIMIT BY, so any parallelism at all in LIMIT BY is a win.
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForLimitBy()
 {
     if (isQueryWithFinal())
@@ -3108,6 +3128,25 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForLimitBy(
 
     /// This becomes no different from ordinary LIMIT BY which is single stream anyway.
     if (countPartitions(getParts()) == 1)
+        return false;
+
+    return output_each_partition_through_separate_port = true;
+}
+
+/// DISTINCT uses the same cost heuristic as GROUP BY. Similar to GROUP BY, the ordinary DISTINCT plan has
+/// a parallel preliminary `DistinctTransform` per stream.
+bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForDistinct()
+{
+    if (isQueryWithFinal())
+        return false;
+
+    /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
+    /// With distinct-by-partitions optimisation we might create a separate pool for each partition.
+    if (is_parallel_reading_from_replicas)
+        return false;
+
+    if (!context->getSettingsRef()[Setting::force_distinct_partitions_independently]
+        && !isPartitionIndependentProcessingProfitable(ProcessorKind::Distinct))
         return false;
 
     return output_each_partition_through_separate_port = true;
