@@ -2,11 +2,15 @@
 -- JOIN runtime bloom filter so that it stays active and filters.
 
 SET enable_analyzer = 1;
+SET max_threads = 8;
+SET enable_parallel_replicas = 0;
+SET query_plan_optimize_join_order_limit = 10;
+SET join_algorithm = 'parallel_hash'; -- use a join algorithm that collects statistics.
+
 SET enable_join_runtime_filters = 1;
 SET collect_hash_table_stats_during_joins = 1;
 SET join_runtime_bloom_filter_bytes = 256;
 SET join_runtime_filter_from_fixed_hash_table = 0; -- runtime filter from fixed hash table overrides bloom filter.
-SET join_algorithm = 'parallel_hash'; -- use a join algorithm that collects statistics.
 
 CREATE TABLE rf_build (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE rf_probe (k UInt64) ENGINE = MergeTree ORDER BY tuple();
