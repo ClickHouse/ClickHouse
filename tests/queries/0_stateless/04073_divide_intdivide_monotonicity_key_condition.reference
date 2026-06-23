@@ -42,13 +42,13 @@ Expression (Project names)
           Min-Max
             Keys:
               x
-            Condition: and((divide(10, x) in (\'4\', +Inf)), (x not in [\'0\', \'0\']))
+            Condition: and((divide(10, x) in (4, +Inf)), (x not in [0, 0]))
             Parts: 2/3
             Granules: 2/3
           Partition
             Keys:
               x
-            Condition: and((divide(10, x) in (\'4\', +Inf)), (x not in [\'0\', \'0\']))
+            Condition: and((divide(10, x) in (4, +Inf)), (x not in [0, 0]))
             Parts: 2/2
             Granules: 2/2
           Ranges: 2
