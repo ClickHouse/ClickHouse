@@ -1555,13 +1555,21 @@ std::unique_ptr<EvictionInfo> FileCache::collectFreeSpaceEvictionInfo(
     if (!size_to_evict && !elements_to_evict)
         return nullptr;
 
-    return main_priority->collectEvictionInfo(
+    auto eviction_info = main_priority->collectEvictionInfo(
         size_to_evict, elements_to_evict, /* reservee */nullptr,
         /* is_total_space_cleanup */true, getInternalOrigin(), lock);
+
+    chassert(eviction_info);
+    chassert(!eviction_info->hasHoldSpace());
+    chassert(eviction_info->requiresEviction());
+    return eviction_info;
 }
 
 void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
 {
+    /// First eviction info, collected against the live size (nothing in flight yet).
+    /// Kept and reused for the first loop iteration below instead of being recomputed.
+    std::unique_ptr<EvictionInfo> eviction_info;
     {
         auto lock = cache_state_guard.tryLockFor(std::chrono::milliseconds(free_space_keeping_state_lock_timeout_ms));
         if (!lock)
@@ -1569,9 +1577,10 @@ void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
             reschedule_ms = free_space_keeping_lock_failed_reschedule_ms;
             return;
         }
-        if (!collectFreeSpaceEvictionInfo(lock, 0, 0))
-            return;
+        eviction_info = collectFreeSpaceEvictionInfo(lock, 0, 0);
     }
+    if (!eviction_info)
+        return;
 
     ProfileEvents::increment(ProfileEvents::FilesystemCacheFreeSpaceKeepingThreadRun);
 
@@ -1669,11 +1678,13 @@ void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
 
         while (!shutdown)
         {
-            /// Finalize what the removers have deleted, then re-evaluate against the live size.
-            finalize_removed(/* blocking */false);
-
-            std::unique_ptr<EvictionInfo> eviction_info;
+            /// On the first iteration `eviction_info` is the one collected above; afterwards it is
+            /// recomputed against the live size, discounting what is already in flight.
+            if (!eviction_info)
             {
+                /// Finalize what the removers have deleted, then re-evaluate against the live size.
+                finalize_removed(/* blocking */false);
+
                 auto lock = cache_state_guard.tryLockFor(std::chrono::milliseconds(free_space_keeping_state_lock_timeout_ms));
                 if (!lock)
                 {
@@ -1681,10 +1692,9 @@ void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
                     break;
                 }
                 eviction_info = collectFreeSpaceEvictionInfo(lock, in_flight_size, in_flight_elements);
+                if (!eviction_info)
+                    break;
             }
-
-            if (!eviction_info)
-                break;
 
             LOG_TRACE(log, "Collecting eviction candidates to keep free space ({}), in flight: {}/{} (size/elements)",
                       eviction_info->toString(), in_flight_size, in_flight_elements);
@@ -1698,6 +1708,9 @@ void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
                 /* max_candidates_size */keep_up_free_space_remove_batch,
                 /* is_total_space_cleanup */true, getInternalOrigin(),
                 cache_guard, cache_state_guard);
+
+            /// Consumed: the next iteration recomputes against the updated live size.
+            eviction_info.reset();
 
             const size_t batch_size = batch->candidates->size();
             if (batch_size == 0)
