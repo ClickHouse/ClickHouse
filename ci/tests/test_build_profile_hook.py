@@ -13,6 +13,9 @@ Two layers are covered:
   treat a remote-upload rejection as best-effort (logged, never fatal) so a
   successful build is not reported as failed when the shared analytics DB
   rejects the telemetry INSERT.
+* The upload transport (``LogCluster.do_query``): the telemetry INSERT runs
+  with parallel parsing disabled so its peak parse memory stays under the
+  shared cluster's per-user limit.
 """
 
 import os
@@ -26,6 +29,7 @@ from ci.jobs.scripts.job_hooks.build_profile_hook import (
     _has_data,
     _upload_profile_artifacts,
 )
+from ci.jobs.scripts.log_cluster import LogCluster
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _PRODUCER = _REPO_ROOT / "utils" / "prepare-time-trace" / "prepare-time-trace.sh"
@@ -187,3 +191,38 @@ def test_one_artifact_rejection_does_not_block_the_rest(tmp_path):
     )
 
     assert recorded == [str(b)]
+
+
+# --- upload transport: parallel parsing disabled --------------------------
+
+
+def test_do_query_disables_parallel_parsing():
+    """The telemetry INSERT must run with parallel parsing off.
+
+    Parallel parsing buffers many chunks at once; that peak is what crosses the
+    shared cluster's per-user memory limit when all Build variants upload at
+    once (Code 241 MEMORY_LIMIT_EXCEEDED While executing
+    ParallelParsingBlockInputFormat). do_query must send
+    input_format_parallel_parsing=0 so the INSERT is accepted and the telemetry
+    is kept.
+    """
+
+    class _Resp:
+        ok = True
+
+    class _Session:
+        def __init__(self):
+            self.params = None
+
+        def post(self, url, params, data, headers, timeout):
+            self.params = params
+            return _Resp()
+
+    cluster = LogCluster()
+    cluster.is_ready = lambda: True
+    cluster.url = "https://example"
+    cluster._auth = {}
+    cluster._session = _Session()
+
+    assert cluster.do_query("INSERT INTO t FORMAT JSONEachRow", data=b"")
+    assert cluster._session.params["input_format_parallel_parsing"] == 0
