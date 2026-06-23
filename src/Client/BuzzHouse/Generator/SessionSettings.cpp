@@ -435,8 +435,8 @@ std::unordered_map<String, CHSetting> performanceSettings
             false)},
        {"query_plan_optimize_join_order_algorithm",
         CHSetting(
-            [](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"greedy", "dpsize", "dpsub"}); },
-            {"'greedy'", "'dpsize'", "'dpsub'"},
+            [](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"greedy", "dpsize"}); },
+            {"'greedy'", "'dpsize'"},
             false)},
        {"query_plan_optimize_join_order_randomize",
         CHSetting(

@@ -1,5 +1,4 @@
-
-in single condition ---
+--- Join single condition ---
 Output: a, b, x, y
 
 Join (JOIN FillRightFirst)
