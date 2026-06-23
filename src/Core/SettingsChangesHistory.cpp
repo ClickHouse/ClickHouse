@@ -42,6 +42,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.7",
         {
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
+            {"use_text_index_tokens_cache", false, true, "Enabled the text index tokens cache globally."},
+            {"use_text_index_header_cache", false, true, "Enabled the text index header cache globally."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
