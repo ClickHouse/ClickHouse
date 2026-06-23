@@ -639,6 +639,20 @@ public:
 
     using MutationsSnapshotPtr = std::shared_ptr<const IMutationsSnapshot>;
 
+    enum class ColumnDefaultnessStatsUnavailableReason : uint8_t
+    {
+        None,
+        ActiveTransaction,
+        PatchParts,
+        DataMutations,
+        AlterMutations,
+    };
+
+    static ColumnDefaultnessStatsUnavailableReason
+    getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context, const MutationsSnapshotPtr & mutations_snapshot);
+    ColumnDefaultnessStatsUnavailableReason getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context) const;
+    static const char * columnDefaultnessStatsUnavailableReasonToString(ColumnDefaultnessStatsUnavailableReason reason);
+
     /// Snapshot for MergeTree contains the current set of data parts
     /// and mutations required to be applied at the moment of the start of query.
     struct SnapshotData : public StorageSnapshot::Data

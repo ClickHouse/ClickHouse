@@ -170,10 +170,8 @@ bool sparsityStatsUnsafeForQuery(
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot)
 {
     return query_info.isFinal()
-        || context->getCurrentTransaction()
-        || (mutations_snapshot && (mutations_snapshot->hasDataMutations()
-                                   || mutations_snapshot->hasAlterMutations()
-                                   || mutations_snapshot->hasPatchParts()));
+        || MergeTreeData::getColumnDefaultnessStatsUnavailableReason(context, mutations_snapshot)
+        != MergeTreeData::ColumnDefaultnessStatsUnavailableReason::None;
 }
 
 }
@@ -837,9 +835,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsBySparsityInfo(
 {
     const auto & settings = context->getSettingsRef();
 
-    /// Reliability rules mirror `MergeTreeData::getColumnDefaultnessStats`. Part-level
-    /// pruning runs whenever the mode isn't `Off`; granule-level pruning runs in
-    /// `Planning` / `DataRead` mode.
+    /// Use the same defaultness-stats availability check as
+    /// `MergeTreeData::getColumnDefaultnessStats`; `FINAL` and joined tables are
+    /// additional query-shape constraints for pruning. Part-level pruning runs
+    /// whenever the mode isn't `Off`; granule-level pruning runs in `Planning` /
+    /// `DataRead` mode.
     if (settings[Setting::use_sparsity_info_for_pruning] == SparsityPruningMode::Off
         || sparsityStatsUnsafeForQuery(query_info, context, mutations_snapshot)
         || queryHasJoinedTable(query_info.query_tree))

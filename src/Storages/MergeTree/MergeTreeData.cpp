@@ -5972,30 +5972,78 @@ size_t MergeTreeData::getTotalUncompressedBytesInPatches() const
     return total_uncompressed_bytes_in_patches.load();
 }
 
-std::optional<IStorage::ColumnDefaultnessStats>
-MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr query_context) const
+MergeTreeData::ColumnDefaultnessStatsUnavailableReason
+MergeTreeData::getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context, const MutationsSnapshotPtr & mutations_snapshot)
 {
     /// A transaction can change which parts are visible vs the snapshot we'd reason about.
     if (query_context->getCurrentTransaction())
-    {
-        LOG_DEBUG(log, "No defaultness stats for column {}: active transaction", column_name);
-        return std::nullopt;
-    }
+        return ColumnDefaultnessStatsUnavailableReason::ActiveTransaction;
+
+    if (!mutations_snapshot)
+        return ColumnDefaultnessStatsUnavailableReason::None;
+
+    if (mutations_snapshot->hasPatchParts())
+        return ColumnDefaultnessStatsUnavailableReason::PatchParts;
+    if (mutations_snapshot->hasDataMutations())
+        return ColumnDefaultnessStatsUnavailableReason::DataMutations;
+    if (mutations_snapshot->hasAlterMutations())
+        return ColumnDefaultnessStatsUnavailableReason::AlterMutations;
+
+    return ColumnDefaultnessStatsUnavailableReason::None;
+}
+
+MergeTreeData::ColumnDefaultnessStatsUnavailableReason
+MergeTreeData::getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context) const
+{
+    /// A transaction can change which parts are visible vs the snapshot we'd reason about.
+    if (query_context->getCurrentTransaction())
+        return ColumnDefaultnessStatsUnavailableReason::ActiveTransaction;
 
     /// Patch parts apply updates/deletes at read time and don't update the base part's
     /// `serialization.json`, so the recorded `num_defaults` would be stale.
     if (!getPatchPartsVectorForInternalUsage().empty())
-    {
-        LOG_DEBUG(log, "No defaultness stats for column {}: table has patch parts", column_name);
-        return std::nullopt;
-    }
+        return ColumnDefaultnessStatsUnavailableReason::PatchParts;
+
+    auto mutation_counters = getMutationCounters();
+
+    /// Pending data mutations can change values read on the fly, so the stat can
+    /// mismatch the post-mutation default semantics.
+    if (mutation_counters.num_data > 0)
+        return ColumnDefaultnessStatsUnavailableReason::DataMutations;
 
     /// Pending alter mutations (e.g. `MODIFY COLUMN` with on-the-fly conversion) leave
     /// `serialization.json` describing source-type defaults while reads return the new
     /// type. The stat would mismatch the post-conversion default semantics.
-    if (getMutationCounters().num_alter > 0)
+    if (mutation_counters.num_alter > 0)
+        return ColumnDefaultnessStatsUnavailableReason::AlterMutations;
+
+    return ColumnDefaultnessStatsUnavailableReason::None;
+}
+
+const char * MergeTreeData::columnDefaultnessStatsUnavailableReasonToString(ColumnDefaultnessStatsUnavailableReason reason)
+{
+    switch (reason)
     {
-        LOG_DEBUG(log, "No defaultness stats for column {}: pending alter mutations", column_name);
+        case ColumnDefaultnessStatsUnavailableReason::None: return "available";
+        case ColumnDefaultnessStatsUnavailableReason::ActiveTransaction: return "active transaction";
+        case ColumnDefaultnessStatsUnavailableReason::PatchParts: return "table has patch parts";
+        case ColumnDefaultnessStatsUnavailableReason::DataMutations: return "pending data mutations";
+        case ColumnDefaultnessStatsUnavailableReason::AlterMutations: return "pending alter mutations";
+    }
+    UNREACHABLE();
+}
+
+std::optional<IStorage::ColumnDefaultnessStats>
+MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr query_context) const
+{
+    auto unavailable_reason = getColumnDefaultnessStatsUnavailableReason(query_context);
+    if (unavailable_reason != ColumnDefaultnessStatsUnavailableReason::None)
+    {
+        LOG_DEBUG(
+            log,
+            "No defaultness stats for column {}: {}",
+            column_name,
+            columnDefaultnessStatsUnavailableReasonToString(unavailable_reason));
         return std::nullopt;
     }
 
