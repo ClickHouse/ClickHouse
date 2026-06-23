@@ -39,7 +39,8 @@ dictGet(dictionary_name, 'class_id', input_text)
 
 - `dictionary_name` — Name of a dictionary with `NAIVE_BAYES` layout. Must be a constant. [String](../data-types/string.md)
 - `input_text` — Text to classify. [String](../data-types/string.md)
-  Input is processed exactly as provided (case/punctuation preserved).
+  Input is processed exactly as provided (case/punctuation preserved). An empty string is accepted and
+  classified from the priors and boundary n-grams, identically to `dictGet`.
 
 **Returned Value**
 - Predicted class ID as an unsigned integer. [UInt32](../data-types/int-uint.md)

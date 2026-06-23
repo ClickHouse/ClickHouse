@@ -84,13 +84,6 @@ void executeNaiveBayes(
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const std::string_view text = text_column->getDataAt(i);
-
-            if (text.empty())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Input text is empty for dictionary {}. Please provide a non-empty string.",
-                    dictionary_name);
-
             classify_row(model, scratch, text, i);
         }
     });

@@ -224,7 +224,7 @@ SELECT dictGet('nb_empty_model', 'class_id', 'test'); -- { serverError RECEIVED_
 
 DROP DICTIONARY IF EXISTS nb_empty_model;
 
--- Empty input text — all three functions
+-- A valid NaiveBayes dictionary, reused by the argument-type and attribute negative cases below.
 
 CREATE DICTIONARY nb_err_dict
 (
@@ -236,10 +236,6 @@ PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_err_source'))
 LAYOUT(NAIVE_BAYES(n 1 mode 'token'))
 LIFETIME(0);
-
-SELECT naiveBayesClassifier('nb_err_dict', '');          -- { serverError BAD_ARGUMENTS }
-SELECT naiveBayesClassifierWithProb('nb_err_dict', '');  -- { serverError BAD_ARGUMENTS }
-SELECT naiveBayesClassifierAllProbs('nb_err_dict', '');  -- { serverError BAD_ARGUMENTS }
 
 -- Wrong argument types — all three functions
 
