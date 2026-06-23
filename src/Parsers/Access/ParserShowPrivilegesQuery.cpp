@@ -8,7 +8,7 @@ namespace DB
 
 bool ParserShowPrivilegesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto query = make_intrusive<ASTShowPrivilegesQuery>();
+    auto query = std::make_shared<ASTShowPrivilegesQuery>();
 
     if (!ParserKeyword(Keyword::SHOW_PRIVILEGES).ignore(pos, expected))
         return false;

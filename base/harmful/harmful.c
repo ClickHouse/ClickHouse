@@ -3,10 +3,8 @@
   * (by terminating the program immediately).
   */
 
-#include <base/sanitizer_defs.h>
-
-/// We check for "harmful" functions if it's a debug build or with a sanitizer.
-#if defined(DEBUG_OR_SANITIZER_BUILD)
+/// It is only enabled in debug build (its intended use is for CI checks).
+#if !defined(NDEBUG)
 
 #pragma clang diagnostic ignored "-Wincompatible-library-redeclaration"
 
@@ -139,7 +137,6 @@ TRAP(qecvt)
 TRAP(qfcvt)
 TRAP(register_printf_function)
 TRAP(seed48)
-TRAP(select)
 //TRAP(setenv)
 TRAP(setfsent)
 TRAP(setgrent)
@@ -158,9 +155,7 @@ TRAP(siginterrupt)
 TRAP(sigpause)
 //TRAP(sigprocmask)
 TRAP(sigsuspend)
-#if !USE_FUZZING_MODE
-TRAP(sleep) // Used by libFuzzer
-#endif
+TRAP(sleep)
 TRAP(srand48)
 //TRAP(strerror) // Used by RocksDB and many other libraries, unfortunately.
 //TRAP(strsignal) // This function is imported from Musl and is thread safe.
