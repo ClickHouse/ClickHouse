@@ -35,7 +35,16 @@ public:
 
         auto disk_ptr = disk.getDisk();
         if (!disk_ptr->existsFile(path))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "File {} on disk {} doesn't exist", path_arg, disk_ptr->getName());
+        {
+            if (disk_ptr->existsDirectory(path))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Path {} on disk {} is a directory, but wc must be called on a file.",
+                    path_arg,
+                    disk_ptr->getName());
+
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "File {} on disk {} doesn't exist.", path_arg, disk_ptr->getName());
+        }
 
         bool count_bytes = options.contains("bytes");
         bool count_lines = options.contains("lines");

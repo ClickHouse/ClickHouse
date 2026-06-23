@@ -58,7 +58,7 @@ subdir="$dir/wc_dir"
 run "mkdir $subdir"
 echo "--- directory ---"
 clickhouse-disks -C "$config" --disk "$disk_name" --query "wc $subdir" 2>&1 >/dev/null \
-    | grep -o "doesn't exist" | head -n1
+    | grep -o "is a directory" | head -n1
 
 # Clean up.
 run "remove -r $dir"
