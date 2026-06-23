@@ -143,7 +143,6 @@ void BM_Batched_UInt64(benchmark::State & state, size_t k, size_t num_shards, si
 #define REGISTER_SWEEP(K, P, SRC, N) \
     do \
     { \
-        static const auto cols_K##K##_P##P##_B##SRC = makeUInt64Sources(K, N, SRC); \
         benchmark::RegisterBenchmark( \
             "BM_legacy_UInt64/K" #K "_P" #P "_B" #SRC "_N" #N, \
             [](benchmark::State & st) { BM_Legacy_UInt64(st, K, P, SRC, N); }); \
