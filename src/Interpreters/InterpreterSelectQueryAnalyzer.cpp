@@ -406,8 +406,13 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 
     query_plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
+    /// Optimize the plan up front so its cost is attributed to QueryPlanOptimizeMicroseconds.
+    /// Otherwise buildQueryPipeline would optimize internally and QueryPipelineBuildMicroseconds
+    /// would double-count the optimization phase.
+    query_plan.optimize(optimization_settings);
+
     ProfileEventTimeIncrement<Microseconds> pipeline_build_time_watch(ProfileEvents::QueryPipelineBuildMicroseconds);
-    return std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings));
+    return std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings, /*do_optimize=*/false));
 }
 
 void InterpreterSelectQueryAnalyzer::addStorageLimits(const StorageLimitsList & storage_limits)
