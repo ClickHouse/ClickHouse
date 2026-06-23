@@ -85,8 +85,12 @@ struct BytePolicy
         return count;
     }
 
-    /// Number of byte tokens in `s` (one per byte). Used to check a model against the configured n.
-    size_t tokenCount(std::string_view s) const { return s.size(); }
+    /// Returns the key to store for `s` and its token count (one per byte). Byte n-grams are stored verbatim:
+    /// every byte is significant, so the source key already matches what a query looks up.
+    std::pair<std::string_view, size_t> prepareNgram(std::string_view s, NaiveBayesScratch &) const
+    {
+        return {s, s.size()};
+    }
 };
 
 /// CodePoint-level tokenizer: each token is a single Unicode (UTF-8) code point.
@@ -140,13 +144,14 @@ struct CodePointPolicy
         return count;
     }
 
-    /// Number of code-point tokens in `s`. Used to check a model against the configured n.
-    size_t tokenCount(std::string_view s) const
+    /// Returns the key to store for `s` and its code-point count. Code-point n-grams are stored verbatim: every
+    /// code point is significant, so the source key already matches what a query looks up.
+    std::pair<std::string_view, size_t> prepareNgram(std::string_view s, NaiveBayesScratch &) const
     {
         size_t count = 0;
         for (size_t at = 0; at < s.size(); at += DB::UTF8::seqLength(static_cast<UInt8>(s[at])))
             ++count;
-        return count;
+        return {s, count};
     }
 };
 
@@ -226,22 +231,48 @@ struct TokenPolicy
         return count;
     }
 
-    /// Number of whitespace-delimited word tokens in `s`. Used to check a model against the configured n.
-    size_t tokenCount(std::string_view s) const
+    /// Returns the key to store for `s` and its word-token count, in a single pass. The key is the form the
+    /// tokenizer emits at query time: word tokens joined by single spaces. When `s` is already in that form
+    /// (the common case) it is returned verbatim with no copy; otherwise it is rebuilt in the scratch buffer so
+    /// that source n-grams differing only in whitespace (leading, trailing, or repeated spaces, or tabs) fold
+    /// onto the key a query produces instead of being stored under an unreachable key. A rebuilt key stays
+    /// valid until the next call.
+    std::pair<std::string_view, size_t> prepareNgram(std::string_view s, NaiveBayesScratch & scratch) const
     {
         size_t count = 0;
+        bool canonical = true;
+        const size_t size = s.size();
         size_t pos = 0;
-        while (pos < s.size())
+        while (pos < size)
         {
-            while (pos < s.size() && isAsciiWhitespace(s[pos]))
-                ++pos;
-            if (pos == s.size())
-                break;
-            ++count;
-            while (pos < s.size() && !isAsciiWhitespace(s[pos]))
-                ++pos;
+            if (isAsciiWhitespace(s[pos]))
+            {
+                /// A separator is canonical only as a single ' ' between two tokens, never leading the string.
+                if (count == 0 || s[pos] != ' ')
+                    canonical = false;
+                const size_t ws_start = pos;
+                while (pos < size && isAsciiWhitespace(s[pos]))
+                    ++pos;
+                if (pos - ws_start > 1 || pos == size)
+                    canonical = false;
+            }
+            else
+            {
+                ++count;
+                while (pos < size && !isAsciiWhitespace(s[pos]))
+                    ++pos;
+            }
         }
-        return count;
+
+        /// An empty or all-whitespace n-gram (count 0) is left for the caller's arity check to reject, so its
+        /// original text appears in the error.
+        if (canonical || count == 0)
+            return {s, count};
+
+        scratch.tokens.clear();
+        tokenize(s, scratch.tokens);
+        join(scratch.tokens.data(), scratch.tokens.size(), scratch.ngram_buffer);
+        return {std::string_view(scratch.ngram_buffer), count};
     }
 };
 

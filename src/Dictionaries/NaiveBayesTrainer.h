@@ -25,7 +25,8 @@ public:
     {
     }
 
-    /// Adds a single observation of a class, an n-gram, and its count.
+    /// Adds a single observation of a class, an n-gram already in canonical form (see `prepareNgram`), and its
+    /// count.
     void addNgram(UInt32 class_id, std::string_view ngram, UInt64 count)
     {
         ArenaKeyHolder key_holder{ngram, data->pool};
@@ -48,8 +49,12 @@ public:
         class_total += count;
     }
 
-    /// Number of tokens the configured tokenizer sees in `ngram`. Used to validate the source against n.
-    size_t tokenCount(std::string_view ngram) const { return data->tokenizer.tokenCount(ngram); }
+    /// Returns the canonical key to store for `ngram` and its token count, for validating against n. The key is
+    /// built in a reused scratch buffer, so it stays valid only until the next call.
+    std::pair<std::string_view, size_t> prepareNgram(std::string_view ngram)
+    {
+        return data->tokenizer.prepareNgram(ngram, canonicalization_scratch);
+    }
 
     /// Computes the class priors according to the given mode, compiles the accumulated counts into the flat CSR
     /// arrays (reusing the existing n-gram index and arena), frees the per-n-gram count maps, and returns the
@@ -197,6 +202,9 @@ private:
     }
 
     std::unique_ptr<NaiveBayesData<Tok>> data;
+
+    /// Reused buffers for rewriting each source n-gram into its canonical form during accumulation.
+    NaiveBayesScratch canonicalization_scratch;
 };
 
 }
