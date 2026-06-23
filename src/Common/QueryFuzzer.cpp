@@ -2407,7 +2407,8 @@ void QueryFuzzer::fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuer
              "column_structure",
              "pretty"}},
            {ASTExplainQuery::ExplainKind::TableOverride, {}},
-           {ASTExplainQuery::ExplainKind::CurrentTransaction, {}}};
+           {ASTExplainQuery::ExplainKind::CurrentTransaction, {}},
+           {ASTExplainQuery::ExplainKind::WhatIf, {"empirical"}}};
 
     const auto & settings = settings_by_kind.at(kind);
     if (fuzz_rand() % 50 == 0 && !changes.empty())
