@@ -1515,21 +1515,25 @@ void ReaderExecutor::assembleAndWriteBack(
     const ChainedBuffers & source_bytes, ChainedBuffers & result, IntervalSet & covered, bool push_to_writers, Stats & out_stats)
 {
     /// Append the source bytes for the still-uncovered gaps of `fetch_window`, in offset
-    /// order (assembly truth is the SOURCE ChainedBuffers, `[CF-contiguity]`). CLAMP every append to
-    /// what `source_bytes` ACTUALLY delivered: a size-unknown EOF read returns fewer bytes
-    /// than the window, and a cold-segment miss head can sit BEFORE the window - those head
-    /// bytes were never fetched, so they stay a hole here and the held write buffer's
-    /// append-at-`cwo` skips them.
-    const ByteRange delivered = source_bytes.range();
+    /// order (assembly truth is the SOURCE ChainedBuffers, `[CF-contiguity]`). Cover ONLY the
+    /// bytes `source_bytes` ACTUALLY materialized - iterate its runs (`getIntervals`), never its
+    /// bounding `range()`. The source can be internally non-contiguous: a size-unknown EOF short
+    /// read, a cold-segment miss head before the window, or - on the synchronous `readBigAt` path
+    /// under concurrency - a sibling-led interior segment (another reader leads the middle cell,
+    /// so the two led runs are fetched into one holed `source_bytes`). Covering such an interior
+    /// hole from the bounding span would wrongly mark it served, suppressing the sibling-led
+    /// serve and the loser-tail that must still fill it and leaving a non-contiguous window that
+    /// trips `finalizeAssembledWindow`'s single-run guard.
     size_t served_requested = 0;
-    for (const auto & miss : covered.subtract(fetch_window))
+    for (const auto & gap : covered.subtract(fetch_window))
     {
-        const size_t lo = std::max(miss.offset, delivered.offset);
-        const size_t hi = std::min(miss.end(), delivered.end());
-        if (lo >= hi)
-            continue;
-        for (const auto & sub : covered.subtract(ByteRange{lo, hi - lo}))
+        for (const auto & run : source_bytes.getIntervals())
         {
+            const size_t lo = std::max(gap.offset, run.offset);
+            const size_t hi = std::min(gap.end(), run.end());
+            if (lo >= hi)
+                continue;
+            const ByteRange sub{lo, hi - lo};
             result.append(source_bytes.slice(sub));
             covered.add(sub);
             const size_t rlo = std::max(sub.offset, requested_window.offset);
