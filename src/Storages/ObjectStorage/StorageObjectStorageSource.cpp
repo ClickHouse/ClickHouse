@@ -1136,18 +1136,20 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// 2. object etag suggests a cache key in case we use filesystem cache
     /// 3. object etag as a cache key for parquet metadata caching
     /// 4. object etag to detect a concurrent in-place overwrite during the read
-    /// The s3Cluster skip_object_metadata path yields an empty-etag placeholder; refetch so
-    /// read-time ETag validation has an etag.
+    /// The s3Cluster skip_object_metadata path yields a size-unknown placeholder (no metadata was
+    /// fetched); fetch it here so read-time ETag validation has an etag. A fetched object whose backend
+    /// simply omits the ETag (e.g. GCS, where the size IS known) is left as-is: validation is skipped
+    /// rather than paying an extra HEAD per read - `is_size_known` distinguishes the two cases.
     if (!object_info.metadata)
     {
         object_info.metadata = object_storage->getObjectMetadata(object_info.getPath(), /*with_tags=*/ false);
     }
-    else if (settings[Setting::s3_validate_etag_on_read] && object_info.metadata->etag.empty()
-             && object_storage->getType() == ObjectStorageType::S3)
+    else if (!object_info.metadata->is_size_known && settings[Setting::s3_validate_etag_on_read]
+             && object_info.metadata->etag.empty() && object_storage->getType() == ObjectStorageType::S3)
     {
-        /// Refresh only to obtain the ETag for read-time validation. A with_tags=false HEAD would
-        /// drop tags already fetched for the _tags virtual column (an S3-compatible store can return
-        /// tags but omit the ETag in the listing), so carry the previously known tags over.
+        /// Refresh the placeholder to obtain size + ETag for read-time validation. A with_tags=false
+        /// HEAD would drop tags already fetched for the _tags virtual column (an S3-compatible store can
+        /// return tags but omit the ETag in the listing), so carry the previously known tags over.
         auto previous_tags = std::move(object_info.metadata->tags);
         object_info.metadata = object_storage->getObjectMetadata(object_info.getPath(), /*with_tags=*/ false);
         if (object_info.metadata->tags.empty())
@@ -1536,6 +1538,10 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
             else
                 object_metadata = object_storage->getObjectMetadata(key, with_tags);
         }
+        else
+            /// No metadata was fetched: mark the size as not known so consumers (e.g. read-time ETag
+            /// validation) can tell this placeholder apart from a fetched object that merely lacks an ETag.
+            object_metadata.is_size_known = false;
 
         if (file_progress_callback)
             file_progress_callback(FileProgress(0, object_metadata.size_bytes));
