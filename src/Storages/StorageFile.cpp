@@ -418,15 +418,22 @@ void listFilesWithRegexpMatchingOnDisk(
         }
         else if (is_dir)
         {
+            /// Recurse into the matched directory. The remaining glob suffix
+            /// (`suffix_with_globs.substr(...)` and `current_glob`) always begins
+            /// with '/', so the parent directory is passed WITHOUT a trailing
+            /// separator. Appending one would join as `dirA/` + `/data.csv` =
+            /// `dirA//data.csv`: harmless on POSIX local disks (which collapse the
+            /// `//`), but object-storage disks treat that as a key distinct from
+            /// `dirA/data.csv` and would silently miss the matching object.
             if (recursive)
             {
-                listFilesWithRegexpMatchingOnDisk(disk, full_entry_path + "/",
+                listFilesWithRegexpMatchingOnDisk(disk, full_entry_path,
                     looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob,
                     total_bytes_to_read, result, recursive, depth + 1);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
             {
-                listFilesWithRegexpMatchingOnDisk(disk, full_entry_path + "/",
+                listFilesWithRegexpMatchingOnDisk(disk, full_entry_path,
                     suffix_with_globs.substr(next_slash_after_glob_pos),
                     total_bytes_to_read, result, false, depth + 1);
             }

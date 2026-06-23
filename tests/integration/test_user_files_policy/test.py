@@ -582,6 +582,53 @@ def test_s3_truncate_then_insert():
     node_s3.query("DROP TABLE s3_truncate_insert")
 
 
+def test_s3_glob_wildcard_directory_component():
+    """A glob with a wildcard *directory* component (e.g. `dir*/data.csv`) must match
+    nested objects on an S3-backed `user_files_policy` disk.
+
+    Regression for the disk-glob walker join: after a directory-component glob matches
+    (say `wglob_a`), the walker recursed with the parent passed as `wglob_a/` and the
+    remaining suffix `/data.csv`, joining them as `wglob_a//data.csv`. POSIX local disks
+    collapse the `//`, but object-storage disks treat `wglob_a//data.csv` as a key
+    distinct from `wglob_a/data.csv`, so the matching objects were silently missed and
+    the query returned no rows."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('wglob_a/data.csv', 'CSV', 'x UInt64') SELECT 1"
+    )
+    node_s3.query(
+        "INSERT INTO FUNCTION file('wglob_b/data.csv', 'CSV', 'x UInt64') SELECT 2"
+    )
+
+    result = node_s3.query(
+        "SELECT * FROM file('wglob_*/data.csv', 'CSV', 'x UInt64') ORDER BY x"
+    )
+    assert result.strip() == "1\n2", result
+
+
+def test_s3_recursive_glob_nested_object():
+    """A `**` recursive glob must descend into nested directories on an S3-backed disk.
+
+    This covers the recursive branch of the disk-glob walker, which used the same
+    parent-directory join that produced a `dir//suffix` double slash. With the bug, the
+    file directly under the glob root (`gstar_root/top.csv`) was still found, but the
+    object one level deeper (`gstar_root/sub/deep.csv`) was reached only via a recursive
+    descent whose prefix became `gstar_root/sub//`, so it was silently missed on object
+    storage."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('gstar_root/top.csv', 'CSV', 'x UInt64') SELECT 10"
+    )
+    node_s3.query(
+        "INSERT INTO FUNCTION file('gstar_root/sub/deep.csv', 'CSV', 'x UInt64') SELECT 20"
+    )
+
+    # Both the top-level and the nested object must be matched; the nested one only
+    # surfaces if the recursive descent joins paths with a single separator.
+    result = node_s3.query(
+        "SELECT sum(x) FROM file('gstar_root/**', 'CSV', 'x UInt64')"
+    )
+    assert result.strip() == "30", result
+
+
 def test_user_files_policy_precedence_over_bad_local_path():
     """`user_files_policy` must take precedence over `user_files_path` during startup.
 
