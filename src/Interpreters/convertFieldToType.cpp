@@ -758,16 +758,28 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return src;
 
         /// Otherwise try to convert field to any variant.
-        /// Prefer an alternative that represents the value exactly: first look for a strict
-        /// (lossless) conversion, and only fall back to a lossy one if none exists. Without
-        /// this, a value that fits one alternative without loss (e.g. an Int64 in `Array(Int64)`)
-        /// could be stored lossily in an earlier-listed alternative (e.g. `Array(Float64)`),
-        /// because non-strict conversion to a floating-point type accepts the nearest value.
-        for (bool try_strict : {true, false})
+        /// Among the alternatives, prefer one that represents the value exactly: first try a
+        /// strict (lossless) conversion across all variants, and only fall back to a lossy
+        /// conversion if no alternative is exact. Without the exact-first pass, a value that
+        /// fits one alternative without loss (e.g. an Int64 in `Array(Int64)`) could be stored
+        /// lossily in an earlier-listed alternative (e.g. `Array(Float64)`), because non-strict
+        /// conversion to a floating-point type accepts the nearest value.
+        ///
+        /// A strict outer conversion (the `IN` operator) must never round: it only accepts an
+        /// exact alternative, so set membership stays consistent with the `=` operator. The
+        /// lossy fallback therefore runs only when `strict` is false.
+        for (const auto & variant : type_variant->getVariants())
+        {
+            auto res = tryConvertFieldToType(src, *variant, from_type_hint, format_settings, /*strict=*/true);
+            if (!res.isNull())
+                return res;
+        }
+
+        if (!strict)
         {
             for (const auto & variant : type_variant->getVariants())
             {
-                auto res = tryConvertFieldToType(src, *variant, from_type_hint, format_settings, try_strict);
+                auto res = tryConvertFieldToType(src, *variant, from_type_hint, format_settings, /*strict=*/false);
                 if (!res.isNull())
                     return res;
             }
