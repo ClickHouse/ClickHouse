@@ -906,6 +906,7 @@ private:
         auto poco_proxy_config = proxy_configuration.isEmpty()
             ? Poco::Net::HTTPClientSession::ProxyConfig{}
             : proxyConfigurationToPocoProxyConfig(proxy_configuration);
+        /// Mirrors `Poco::Net::HTTPClientSession::bypassProxy`; keep in sync on Poco upgrades.
         const bool proxy_bypassed_for_host = !poco_proxy_config.nonProxyHosts.empty()
             && Poco::RegularExpression::match(
                 host,
@@ -917,9 +918,7 @@ private:
             return prepareConnectionViaProxy(timeouts, connect_time, poco_proxy_config);
 
         /// When DNS returns several addresses for a host (e.g. an IPv4 and an IPv6 record),
-        /// try the next one if the first fails with a network error. Without this, a single
-        /// broken address (a typical case is a host advertising AAAA on a network without
-        /// IPv6 routing) makes the request fail even though a working address is known.
+        /// try the next one if the first fails with a network error.
         /// `max_connect_attempts` bounds the number of real network connect attempts.
         /// Duplicate addresses returned by the resolver (possible when failure rebalancing
         /// reintroduces a previously failed address) are skipped without consuming a connect
@@ -934,10 +933,7 @@ private:
         size_t connect_attempts = 0;
 
         /// Report the cumulative time spent across all connect attempts, including the failed
-        /// ones, rather than only the last attempt. A request that waits through a slow or
-        /// blackholed address before succeeding on a later one would otherwise understate the
-        /// connection-establishment latency reported to callers (e.g. the S3/Azure connect-time
-        /// histograms). The accumulated value is written back on every exit from the loop below -
+        /// ones. The accumulated value is written back on every exit from the loop below -
         /// success or failure - by this scope guard. `connect_time == nullptr` callers are
         /// unaffected: the guard only writes through a non-null pointer.
         UInt64 total_connect_time = 0;
