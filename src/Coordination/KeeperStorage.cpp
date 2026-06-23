@@ -801,11 +801,6 @@ void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta,
         uncommitted_node = &emplaced_it->second;
     }
 
-    /// Cache the zxid_to_nodes set reference and node membership once,
-    /// avoiding repeated std::map lookups inside the variant visitor.
-    auto & zxid_nodes = zxid_to_nodes[delta.zxid];
-    const bool node_not_yet_in_zxid = !zxid_nodes.contains(node_it);
-
     /// if it's the first time we see that node in the transaction
     /// we need to subtract it's digest from the point before
     /// we started the transaction
@@ -825,7 +820,7 @@ void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta,
             }
             else if constexpr (std::same_as<DeltaType, RemoveNodeDelta>)
             {
-                if (digest && node_not_yet_in_zxid)
+                if (digest && !zxid_to_nodes[delta.zxid].contains(node_it))
                     *digest -= node->getDigest(delta.path);
 
                 chassert(node);
@@ -833,7 +828,7 @@ void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta,
             }
             else if constexpr (std::same_as<DeltaType, UpdateNodeStatDelta>)
             {
-                if (digest && node_not_yet_in_zxid)
+                if (digest && !zxid_to_nodes[delta.zxid].contains(node_it))
                     *digest -= node->getDigest(delta.path);
 
                 chassert(node);
@@ -842,7 +837,7 @@ void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta,
             }
             else if constexpr (std::same_as<DeltaType, UpdateNodeDataDelta>)
             {
-                if (digest && node_not_yet_in_zxid)
+                if (digest && !zxid_to_nodes[delta.zxid].contains(node_it))
                     *digest -= node->getDigest(delta.path);
 
                 chassert(node);
@@ -855,7 +850,7 @@ void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta,
             }
 
             applied_zxids.push_back(delta.zxid);
-            zxid_nodes.insert(node_it);
+            zxid_to_nodes[delta.zxid].insert(node_it);
         },
         delta.operation);
 }
@@ -1856,8 +1851,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     ProfileEvents::increment(ProfileEvents::KeeperGetRequest);
 
     if (zk_request.path == Coordination::keeper_api_feature_flags_path
-        || zk_request.path == Coordination::keeper_config_path
-        || zk_request.path == Coordination::keeper_availability_zone_path)
+        || zk_request.path == Coordination::keeper_config_path)
         return {};
 
     if (!storage.uncommitted_state.getNode(zk_request.path))

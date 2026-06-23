@@ -107,9 +107,9 @@ bool SLRUFileCachePriority::canFit( /// NOLINT
     const CacheStateGuard::Lock & lock,
     IteratorPtr reservee,
     const OriginInfo &,
-    bool best_effort) const
+    bool is_initial_load) const
 {
-    if (best_effort)
+    if (is_initial_load)
         return probationary_queue.canFit(size, elements, lock) || protected_queue.canFit(size, elements, lock);
 
     if (reservee)
@@ -128,10 +128,10 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
     size_t size,
     const CachePriorityGuard::WriteLock & lock,
     const CacheStateGuard::Lock * state_lock,
-    bool is_startup)
+    bool is_initial_load)
 {
     bool is_protected = false;
-    if (is_startup)
+    if (is_initial_load)
     {
         chassert(size);
         if (!state_lock)
@@ -149,6 +149,27 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
             "Adding non-zero size entry without state lock "
             "(key: {}, offset: {})", key_metadata->key, offset);
     }
+
+    auto entry = std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata);
+    return std::make_shared<SLRUIterator>(
+        this,
+        is_protected
+            ? protected_queue.add(std::move(entry), lock, state_lock)
+            : probationary_queue.add(std::move(entry), lock, state_lock),
+        is_protected);
+}
+
+IFileCachePriority::IteratorPtr SLRUFileCachePriority::addForRestore( /// NOLINT
+    KeyMetadataPtr key_metadata,
+    size_t offset,
+    size_t size,
+    QueueEntryType original_queue_type,
+    const CachePriorityGuard::WriteLock & lock,
+    const CacheStateGuard::Lock * state_lock)
+{
+    /// Restore to the original queue: protected entries go back to protected,
+    /// everything else goes to probationary.
+    bool is_protected = (original_queue_type == QueueEntryType::SLRU_Protected);
 
     auto entry = std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata);
     return std::make_shared<SLRUIterator>(
@@ -261,9 +282,13 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
 {
     if (is_total_space_cleanup)
     {
+        /// Use per-queue local stat objects so that each sub-queue's
+        /// stopping condition sees only its own accumulated releasable bytes,
+        /// not the cumulative total from both passes.
+        FileCacheReserveStat probationary_stat;
         bool success_probationary = probationary_queue.collectCandidatesForEviction(
             eviction_info,
-            stat,
+            probationary_stat,
             res,
             invalidated_entries,
             reservee,
@@ -280,9 +305,10 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
         /// We do not use collectCandidatesForEvictionInProtected method,
         /// because it will "downgrade" instead of remove,
         /// but for total space cleanup we need remove.
+        FileCacheReserveStat protected_stat;
         bool success_protected = protected_queue.collectCandidatesForEviction(
             eviction_info,
-            stat,
+            protected_stat,
             res,
             invalidated_entries,
             reservee,
@@ -292,6 +318,9 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             origin_info,
             cache_guard,
             state_guard);
+
+        stat += probationary_stat;
+        stat += protected_stat;
 
         return success_probationary && success_protected;
     }
@@ -496,7 +525,8 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
                 /// Once we have state lock, we will increment size for new entry
                 /// and reset size for the old entry,
                 /// thus size will be transferred from one entry to another.
-                auto empty_entry = std::make_shared<Entry>(entry->key, entry->offset, /* size */0, entry->key_metadata);
+                /// PreActive: iterateImpl skips this entry until setIterator atomically transitions it to Active.
+                auto empty_entry = std::make_shared<Entry>(entry->key, entry->offset, /* size */0, entry->key_metadata, Entry::State::PreActive);
                 auto new_iterator = probationary_queue.add(std::move(empty_entry), lk, /* state_lock */nullptr);
                 downgraded_entries->add(DowngradedEntryInfo{
                     .slru_iterator = iterator,
@@ -658,11 +688,13 @@ bool SLRUFileCachePriority::tryIncreasePriority(
         downgrade_candidates.afterEvictWrite(lock);
         removeEntries(invalidated_entries, lock);
 
+        /// PreActive: iterateImpl skips this entry until setIterator atomically transitions it to Active.
         auto empty_entry = std::make_shared<Entry>(
             prev_entry->key,
             prev_entry->offset,
             /* size */0,
-            prev_entry->key_metadata);
+            prev_entry->key_metadata,
+            Entry::State::PreActive);
 
         return protected_queue.add(
             std::move(empty_entry), lock, /* state_lock */nullptr);
@@ -808,7 +840,7 @@ SLRUFileCachePriority::EntryPtr SLRUFileCachePriority::SLRUIterator::getEntry() 
 void SLRUFileCachePriority::SLRUIterator::setIterator(
     LRUIterator && iterator_,
     bool is_protected_,
-    const CacheStateGuard::Lock &)
+    const CacheStateGuard::Lock & state_lock)
 {
     auto new_entry = iterator_.getEntry();
     chassert(new_entry->size > 0);
@@ -818,6 +850,14 @@ void SLRUFileCachePriority::SLRUIterator::setIterator(
 
     std::lock_guard lock(entry_mutex);
     entry = new_entry;
+    /// Atomically activate the new entry together with the pointer update.
+    /// `iterateImpl` reads entry state without holding `entry_mutex`, so it sees either:
+    ///   - PreActive  → skips the entry (not evictable yet), or
+    ///   - Active     → calls getEntry() under entry_mutex and is guaranteed to see new_entry.
+    /// This eliminates the race where iterateImpl finds new_entry as evictable but
+    /// getEntry() still returns the previous queue entry, causing setEvictingFlag
+    /// to be called on an entry that is not in Active state.
+    new_entry->setActiveFlag(state_lock);
 }
 
 void SLRUFileCachePriority::SLRUIterator::incrementSize(size_t size, const CacheStateGuard::Lock & lock)

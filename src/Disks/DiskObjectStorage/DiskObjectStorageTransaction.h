@@ -20,10 +20,16 @@ namespace DB
 /// 2. Commit metadata transaction.
 struct DiskObjectStorageTransaction : public IDiskTransaction, public std::enable_shared_from_this<DiskObjectStorageTransaction>
 {
+    void waitBlobRemoval(const StoredObjects & blobs) const;
+
 protected:
     const ClusterConfigurationPtr cluster;
     const MetadataStoragePtr metadata_storage;
     const ObjectStorageRouterPtr object_storages;
+    const BlobKillerThreadPtr blob_killer;
+    const bool wait_blob_removal;
+    const std::string read_resource_name;
+    const std::string write_resource_name;
 
     MetadataTransactionPtr metadata_transaction;
     std::vector<std::function<void(MetadataTransactionPtr tx)>> operations_to_execute;
@@ -33,7 +39,11 @@ public:
     DiskObjectStorageTransaction(
         ClusterConfigurationPtr cluster_,
         MetadataStoragePtr metadata_storage_,
-        ObjectStorageRouterPtr object_storages_);
+        ObjectStorageRouterPtr object_storages_,
+        BlobKillerThreadPtr blob_killer_,
+        bool wait_blob_removal_,
+        std::string read_resource_name_,
+        std::string write_resource_name_);
 
     void commit() override;
     TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override;
@@ -110,7 +120,9 @@ struct MultipleDisksObjectStorageTransaction final : public DiskObjectStorageTra
         ObjectStorageRouterPtr source_object_storages_,
         ClusterConfigurationPtr destination_cluster_,
         MetadataStoragePtr destination_metadata_storage_,
-        ObjectStorageRouterPtr destination_object_storages_);
+        ObjectStorageRouterPtr destination_object_storages_,
+        std::string read_resource_name_,
+        std::string write_resource_name_);
 
     void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings &) override;
 };

@@ -1606,7 +1606,11 @@ static BlockIO executeQueryImpl(
                 if (settings[Setting::wait_for_async_insert])
                 {
                     auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
-                    auto source = std::make_shared<WaitForAsyncInsertSource>(std::move(result.future), timeout);
+                    auto source = std::make_shared<WaitForAsyncInsertSource>(
+                        std::move(result.future),
+                        timeout,
+                        context->getProcessListElement(),
+                        context->getProgressCallback());
                     res.pipeline = QueryPipeline(Pipe(std::move(source)));
                     res.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(Block())));
                 }
@@ -2036,12 +2040,10 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
     for (size_t i = 0; i < num_runs; ++i)
     {
         ASTPtr fuzzed_ast;
-        NameToNameMap fuzzed_query_params;
         {
             auto [fuzzer, lock] = getGlobalASTFuzzer();
             fuzzed_ast = base_ast->clone();
             fuzzer->fuzzMain(fuzzed_ast);
-            fuzzed_query_params = fuzzer->getLastQueryParameters();
         }
 
         WriteBufferFromOwnString fuzzed_query_buf;
@@ -2070,8 +2072,6 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             fuzz_context->makeQueryContext();
             fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
             fuzz_context->setCurrentQueryId("");
-            if (!fuzzed_query_params.empty())
-                fuzz_context->setQueryParameters(fuzzed_query_params);
 
             auto result = executeQuery(fuzzed_query, fuzz_context, QueryFlags{.internal = true});
 
@@ -2106,7 +2106,7 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
 
 
 std::pair<ASTPtr, BlockIO> executeQuery(
-    const String & query,
+    std::string_view query,
     ContextMutablePtr context,
     QueryFlags flags,
     QueryProcessingStage::Enum stage)

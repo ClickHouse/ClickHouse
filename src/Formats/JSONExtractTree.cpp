@@ -2206,6 +2206,7 @@ private:
                     }
                 }
 
+                if (format_settings.try_infer_datetimes)
                 {
                     DateTime64 value;
                     if (tryInferDateTime64FromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))

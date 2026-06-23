@@ -485,6 +485,9 @@ void IMergeTreeDataPart::removeIndexFromCache(PrimaryIndexCache * index_cache) c
     index_cache->remove(key);
 }
 
+/// Remove all vector similarity index cache entries for this part.
+/// The cache key must use `getRelativePathOfActivePart` (not `getFullPath`) to match
+/// the key used during insertion in `MergeTreeIndexReader::read`.
 void IMergeTreeDataPart::removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const
 {
     if (!vector_similarity_index_cache)
@@ -1085,6 +1088,8 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
 
 ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
 {
+    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
+
     if (auto * reader = getStatisticsPackedReader())
         return loadStatisticsPacked(*reader, {});
 
@@ -2017,6 +2022,37 @@ void IMergeTreeDataPart::loadColumnsSubstreams()
     if (auto in = readFileIfExists(COLUMNS_SUBSTREAMS_FILE_NAME))
     {
         columns_substreams.readText(*in);
+
+        /// Validate that all substream names have valid prefixes matching their column names.
+        /// This detects a specific corruption caused by a bug in getFileNameForRenamedColumnStream
+        /// (fixed in https://github.com/ClickHouse/ClickHouse/pull/102689) where renaming a column
+        /// produced wrong substream names in columns_substreams.txt.
+        /// For Wide parts this file is not mandatory, so we can safely discard it and proceed
+        /// as if it didn't exist.
+        if (part_type == MergeTreeDataPartType::Wide)
+        {
+            auto [invalid_substream, invalid_column] = columns_substreams.findInvalidSubstreamName();
+            if (!invalid_substream.empty())
+            {
+                LOG_WARNING(
+                    storage.log,
+                    "Ignoring corrupted {} in part {}: substream '{}' has invalid prefix for column '{}' "
+                    "(expected prefix '{}' or '{}' followed by '.' or '%2E'). "
+                    "The file was likely corrupted by a bug in column rename. "
+                    "The part will work correctly without this file.",
+                    COLUMNS_SUBSTREAMS_FILE_NAME,
+                    name,
+                    invalid_substream,
+                    invalid_column,
+                    escapeForFileName(invalid_column),
+                    escapeForFileName(Nested::extractTableName(invalid_column)));
+
+                columns_substreams = {};
+                return;
+            }
+        }
+
+        columns_substreams.validateColumns(getColumns().getNames());
     }
     /// In Compact part with marks for substreams we must have substreams file. For other cases it's not mandatory.
     else if (part_type == MergeTreeDataPartType::Compact && index_granularity_info.mark_type.with_substreams)
@@ -2220,13 +2256,26 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
         read_settings.local_fs_method = LocalFSReadMethod::pread;
         auto buf = getDataPartStorage().readFileIfExists(TXN_VERSION_METADATA_FILE_NAME, read_settings, small_file_size);
         if (!buf)
-            return false;
+        {
+            /// The part directory may have been removed externally (e.g., between
+            /// DETACH and ATTACH in an Ordinary database). If the directory is gone,
+            /// there is nothing to validate.
+            return !getDataPartStorage().exists();
+        }
 
         readStringUntilEOF(content, *buf);
         ReadBufferFromString str_buf{content};
         VersionMetadata file;
         file.read(str_buf);
         bool valid_creation_tid = version.creation_tid == file.creation_tid;
+
+        /// If the creation TID on disk doesn't match in-memory state, the file
+        /// belongs to a different incarnation of the part (e.g., an Ordinary database
+        /// reusing the same data directory path after DROP + CREATE). There is nothing
+        /// to validate in this case.
+        if (!valid_creation_tid)
+            return true;
+
         bool valid_removal_tid = version.removal_tid == file.removal_tid || version.removal_tid == Tx::PrehistoricTID;
         /// CSN may have been learned from the transaction log and cached in memory
         /// (e.g., by VersionMetadata::isVisible) but not yet appended to the on-disk file.
@@ -2238,7 +2287,7 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
             || file.removal_csn == Tx::UnknownCSN;
         bool valid_removal_tid_lock = (version.removal_tid.isEmpty() && version.removal_tid_lock == 0)
             || (version.removal_tid_lock == version.removal_tid.getHash());
-        if (!valid_creation_tid || !valid_removal_tid || !valid_creation_csn || !valid_removal_csn || !valid_removal_tid_lock)
+        if (!valid_removal_tid || !valid_creation_csn || !valid_removal_csn || !valid_removal_tid_lock)
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid version metadata file");
         return true;
     }

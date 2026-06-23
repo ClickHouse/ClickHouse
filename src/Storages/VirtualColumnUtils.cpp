@@ -1,5 +1,6 @@
 #include <memory>
 #include <stack>
+#include <unordered_set>
 
 #include <Storages/VirtualColumnUtils.h>
 
@@ -7,6 +8,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/convertFieldToType.h>
@@ -92,6 +94,57 @@ void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, boo
 void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
 {
     buildSetsForDagImpl(dag, context, /* ordered = */ false);
+}
+
+void buildSetsForDAGExcludingGlobalIn(const ActionsDAG & dag, const ContextPtr & context)
+{
+    /// Collect ColumnSet nodes that are arguments to globalIn/globalNotIn functions.
+    /// These sets must NOT be built synchronously here because ReadFromRemote needs to
+    /// attach external tables to them first (via setExternalTable). Building them early
+    /// would make the set "created" without explicit elements, causing a LOGICAL_ERROR.
+    std::unordered_set<const ActionsDAG::Node *> global_in_set_nodes;
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
+        {
+            auto name = node.function_base->getName();
+            if (functionIsGlobalInOperator(name))
+            {
+                /// The set is the second argument (index 1)
+                if (node.children.size() >= 2)
+                    global_in_set_nodes.insert(node.children[1]);
+            }
+        }
+    }
+
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::COLUMN && !global_in_set_nodes.contains(&node))
+        {
+            const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
+            if (!column_set)
+                column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
+
+            if (column_set)
+            {
+                auto future_set = column_set->getData();
+                if (!future_set->get())
+                {
+                    if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
+                    {
+                        /// Prefer ordered build so that the set retains explicit elements,
+                        /// which `KeyCondition` and skip-index analysis require to use the set
+                        /// for primary-key / skip-index filtering (via `buildOrderedSetInplace`).
+                        /// If `use_index_for_in_with_subqueries` is disabled, the ordered build
+                        /// returns `nullptr` without building; fall back to unordered so the set
+                        /// is still ready when PREWHERE is evaluated at read time.
+                        if (!set_from_subquery->buildOrderedSetInplace(context))
+                            set_from_subquery->buildSetInplace(context);
+                    }
+                }
+            }
+        }
+    }
 }
 
 void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
@@ -254,9 +307,7 @@ static void addPathAndFileToVirtualColumns(
             if (const auto * column = block.findByName(key))
             {
                 ReadBufferFromString buf(value);
-                auto hive_format_settings = format_settings;
-                hive_format_settings.allow_number_leading_zeros = true;
-                column->type->getDefaultSerialization()->deserializeWholeText(column->column->assumeMutableRef(), buf, hive_format_settings);
+                column->type->getDefaultSerialization()->deserializeWholeText(column->column->assumeMutableRef(), buf, format_settings);
             }
         }
     }
@@ -413,19 +464,17 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                         column->insertValue(i + row_num_offset);
                 auto null_map = ColumnUInt8::create(chunk.getNumRows(), static_cast<UInt8>(0));
                 chunk.addColumn(ColumnNullable::create(std::move(column), std::move(null_map)));
-                continue;
+                return;
             }
             /// Row numbers not known, _row_number = NULL.
             chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
         else if (auto it = hive_map.find(virtual_column.getNameInStorage()); it != hive_map.end())
         {
-            FormatSettings hive_format_settings;
-            hive_format_settings.allow_number_leading_zeros = true;
             chunk.addColumn(
                 virtual_column.type->createColumnConst(
                     chunk.getNumRows(),
-                    convertFieldToType(Field(String(it->second)), *virtual_column.type, nullptr, hive_format_settings))->convertToFullColumnIfConst());
+                    convertFieldToType(Field(it->second), *virtual_column.type))->convertToFullColumnIfConst());
         }
     }
 }

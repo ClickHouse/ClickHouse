@@ -1043,6 +1043,18 @@ Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) a
     DECLARE(Bool, use_variant_default_implementation_for_comparisons, true, R"(
 Enables or disables default implementation for Variant type in comparison functions.
 )", 0) \
+    DECLARE(Bool, variant_throw_on_type_mismatch, true, R"(
+When applying a function to a [Variant](../../sql-reference/data-types/variant.md) column using the default implementation,
+controls what happens for rows whose actual type is incompatible with the function:
+- `true` (default) — throw an exception.
+- `false` — return `NULL` for those rows instead.
+)", 0) \
+    DECLARE(Bool, dynamic_throw_on_type_mismatch, true, R"(
+When applying a function to a [Dynamic](../../sql-reference/data-types/dynamic.md) column using the default implementation,
+controls what happens for rows whose actual type is incompatible with the function:
+- `true` (default) — throw an exception.
+- `false` — return `NULL` for those rows instead.
+)", 0) \
     DECLARE(Bool, compile_expressions, true, R"(
 Compile some scalar functions and operators to native code.
 )", 0) \
@@ -1525,6 +1537,27 @@ This can be useful when PREWHERE references columns that may have different valu
 and you want FINAL to select the winning row before filtering. When disabled, PREWHERE is applied during reading.
 Note: If apply_row_level_security_after_final is enabled and row policy uses non-sorting-key columns, PREWHERE will also
 be deferred to maintain correct execution order (row policy must be applied before PREWHERE).
+)", 0) \
+    DECLARE(Bool, defer_partition_pruning_after_final, true, R"(
+When enabled (default), partition pruning is skipped for `FINAL` queries on tables whose
+partition-key columns are not part of the sorting key. This is the correctness-safe behavior
+introduced in 26.3: `FINAL` may need to deduplicate rows that share a primary key but live
+in different partitions, and partition pruning would silently exclude such rows from the
+deduplication input.
+
+When disabled, partition pruning is applied even with `FINAL`, restoring the pre-26.3
+behavior. This can be substantially faster for queries with `WHERE` predicates on the
+partition column, but is only correct when rows with the same primary key cannot exist
+in different partitions — e.g. event-log tables whose partition column is set at insert
+time and never changes.
+
+This setting only affects partitioned tables whose partition-key columns are not contained
+in the sorting key; for other tables partition pruning is always applied.
+
+Possible values:
+
+- 0 — Apply partition pruning before `FINAL` (pre-26.3 behavior, faster but unsafe in the general case).
+- 1 — Defer partition pruning to after `FINAL` (default, correctness-safe).
 )", 0) \
     \
     DECLARE(UInt64, mysql_max_rows_to_insert, 65536, R"(
@@ -2515,14 +2548,20 @@ Possible values:
 
 - Positive integer.
 )", 0) \
-    DECLARE(UInt64, http_max_fields, 1000000, R"(
+    DECLARE(UInt64, http_max_fields, 1000, R"(
 Maximum number of fields in HTTP header
 )", 0) \
-    DECLARE(UInt64, http_max_field_name_size, 128 * 1024, R"(
+    DECLARE(UInt64, http_max_field_name_size, 4 * 1024, R"(
 Maximum length of field name in HTTP header
 )", 0) \
     DECLARE(UInt64, http_max_field_value_size, 128 * 1024, R"(
 Maximum length of field value in HTTP header
+)", 0) \
+    DECLARE(UInt64, http_max_request_header_size, 10 * 1024 * 1024, R"(
+Maximum total size of all HTTP request headers (names and values combined) in bytes.
+)", 0) \
+    DECLARE(Seconds, http_headers_read_timeout, 30, R"(
+Maximum time in seconds to read all HTTP request headers. This is a total deadline for the entire header parsing phase, not a per-read timeout. Protects against slowloris-style attacks where a client trickles header data slowly to hold connections open.
 )", 0) \
     DECLARE(Bool, http_skip_not_found_url_for_globs, true, R"(
 Skip URLs for globs with HTTP_NOT_FOUND error
@@ -6943,9 +6982,9 @@ Query Iceberg table using the snapshot that was current at a specific timestamp.
     DECLARE(Int64, iceberg_snapshot_id, 0, R"(
 Query Iceberg table using the specific snapshot id.
 )", 0) \
-    DECLARE(Bool, show_data_lake_catalogs_in_system_tables, false, R"(
-Enables showing data lake catalogs in system tables.
-)", 0) \
+    DECLARE_WITH_ALIAS(Bool, show_remote_databases_in_system_tables, false, R"(
+Enables showing remote databases (data lake catalogs, MySQL, PostgreSQL) in system tables.
+)", 0, show_data_lake_catalogs_in_system_tables) \
     DECLARE(Bool, delta_lake_enable_expression_visitor_logging, false, R"(
 Enables Test level logs of DeltaLake expression visitor. These logs can be too verbose even for test logging.
 )", 0) \

@@ -261,7 +261,7 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
     size_t limit,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state,
-    UnorderedMapWithMemoryTracking<String, size_t> & variants_statistics,
+    std::unordered_map<String, size_t> & variants_statistics,
     size_t & total_size_of_variants) const
 {
     const ColumnVariant & col = assert_cast<const ColumnVariant &>(column);
@@ -486,7 +486,7 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreams(
     DB::ISerialization::SerializeBinaryBulkSettings & settings,
     DB::ISerialization::SerializeBinaryBulkStatePtr & state) const
 {
-    UnorderedMapWithMemoryTracking<String, size_t> tmp_statistics;
+    std::unordered_map<String, size_t> tmp_statistics;
     size_t tmp_size;
     serializeBinaryBulkWithMultipleStreamsAndUpdateVariantStatistics(column, offset, limit, settings, state, tmp_statistics, tmp_size);
 }
@@ -670,7 +670,12 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
             }
 
             if (col.getVariantByLocalDiscriminator(i).size() < variant_limits[i])
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of variant {} is expected to be not less than {} according to discriminators, but it is {}", variant_names[i], variant_limits[i], col.getVariantByLocalDiscriminator(i).size());
+                throw Exception(
+                    settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
+                    "Size of variant {} is expected to be not less than {} according to discriminators, but it is {}",
+                    variant_names[i],
+                    variant_limits[i],
+                    col.getVariantByLocalDiscriminator(i).size());
 
             variant_offsets.push_back(col.getVariantByLocalDiscriminator(i).size() - variant_limits[i]);
         }

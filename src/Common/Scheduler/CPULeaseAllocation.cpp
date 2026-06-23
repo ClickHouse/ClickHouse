@@ -202,6 +202,13 @@ CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink mast
     , scheduled_increment(CurrentMetrics::ConcurrencyControlScheduled, 0)
     , lease_id(lease_counter.fetch_add(1, std::memory_order_relaxed))
 {
+    // Capture query-level counters (ThreadGroup) that outlive all worker threads.
+    // Cannot use CurrentThread::getProfileEvents() in schedule() — it returns the calling
+    // thread's counters, which may be destroyed before the timer is flushed (UAF).
+    wait_thread_group = CurrentThread::getGroup();
+    if (wait_thread_group)
+        wait_counters = &wait_thread_group->performance_counters;
+
     std::unique_lock lock{mutex};
     if (!schedule(lock))
         grantImpl(lock);
@@ -221,6 +228,7 @@ void CPULeaseAllocation::free()
 
     shutdown = true;
     acquirable.store(false, std::memory_order_relaxed);
+    wait_timer.reset();
 
     // Wake up all preempted threads
     while (true)
@@ -597,7 +605,7 @@ bool CPULeaseAllocation::schedule(std::unique_lock<std::mutex> &)
     if (requests.enqueue(cost, requested_ns))
     {
         scheduled_increment.add();
-        wait_timer.emplace(CurrentThread::getProfileEvents().timer(ProfileEvents::ConcurrencyControlWaitMicroseconds));
+        wait_timer.emplace(wait_counters->timer(ProfileEvents::ConcurrencyControlWaitMicroseconds));
         LOG_EVENT(E);
         return true;
     }

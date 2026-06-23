@@ -683,7 +683,7 @@ class ClickHouseCluster:
 
         self.spark_session = None
         self.with_iceberg_catalog = False
-        self._iceberg_rest_catalog_port = None
+        self.iceberg_rest_catalog_port = 8182
         self.with_glue_catalog = False
         self.glue_catalog_port = 3000
         self.with_hms_catalog = False
@@ -996,13 +996,6 @@ class ClickHouseCluster:
             return self._mongo_secure_port
         self._mongo_secure_port = self.port_pool.get_port()
         return self._mongo_secure_port
-
-    @property
-    def iceberg_rest_catalog_port(self):
-        if self._iceberg_rest_catalog_port:
-            return self._iceberg_rest_catalog_port
-        self._iceberg_rest_catalog_port = self.port_pool.get_port()
-        return self._iceberg_rest_catalog_port
 
     @property
     def redis_port(self):
@@ -1724,8 +1717,6 @@ class ClickHouseCluster:
         file_name = "docker_compose_iceberg_rest_catalog.yml"
         if extra_parameters is not None and extra_parameters["docker_compose_file_name"] != "":
             file_name = extra_parameters["docker_compose_file_name"]
-        if file_name == "docker_compose_iceberg_rest_catalog.yml":
-            env_variables["ICEBERG_REST_CATALOG_PORT"] = str(self.iceberg_rest_catalog_port)
         self.base_cmd.extend(
             [
                 "--file",
@@ -5513,7 +5504,7 @@ class ClickHouseInstance:
                         f.write(key + "=" + value + "\n")
 
     @contextmanager
-    def with_replace_config(self, path, replacement):
+    def with_replace_config(self, path, replacement, reload_before=False, reload_after=False):
         """Create a copy of existing config (if exists) and revert on leaving the context"""
         _directory, filename = os.path.split(path)
         basename, extension = os.path.splitext(filename)
@@ -5525,12 +5516,16 @@ class ClickHouseInstance:
         self.exec_in_container(
             ["bash", "-c", "echo '{}' > {}".format(replacement, path)]
         )
+        if reload_before:
+            self.query("SYSTEM RELOAD CONFIG")
         try:
             yield
         finally:
             self.exec_in_container(
                 ["bash", "-c", f"test ! -f {backup_path} || mv {backup_path} {path}"]
             )
+            if reload_after:
+                self.query("SYSTEM RELOAD CONFIG")
 
     def replace_config(self, path_to_config, replacement):
         self.exec_in_container(

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <vector>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/AlterConversions.h>
@@ -71,8 +72,13 @@ struct IndexReadTask
     bool is_final = false;
 };
 
-using IndexReadTasks = std::unordered_map<String, IndexReadTask>;
-using IndexReadColumns = std::unordered_map<String, VirtualColumnsDescription>;
+/// Ordered map to ensure deterministic iteration order.
+/// `IndexReadTasks` may be copied (e.g. into `MergeTreeReadPoolBase`) and then
+/// iterated independently in `getPrewhereActions` / `getReadTaskColumns`.
+/// `std::unordered_map` does not guarantee the same iteration order after copy,
+/// which leads to mismatched prewhere readers and actions.
+using IndexReadTasks = std::map<String, IndexReadTask>;
+using IndexReadColumns = std::map<String, VirtualColumnsDescription>;
 
 struct MergeTreeReadTaskColumns
 {
@@ -195,6 +201,13 @@ public:
 
     void addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_);
     const MarkRanges & getPrewhereUnmatchedMarks() { return prewhere_unmatched_marks; }
+
+    /// Returns true if a reader earlier in the chain than PREWHERE can skip whole marks based on
+    /// secondary indexes (skip-index or projection-index). When true, marks that appear in
+    /// `read_mark_ranges` with `row_count == 0` may have been filtered before PREWHERE evaluated
+    /// them, so they must not be attributed to the PREWHERE predicate in the QueryConditionCache.
+    /// See Issue #104781.
+    bool readersChainCanSkipMarksBeforePrewhere() const;
 
     Readers releaseReaders() { return std::move(readers); }
 
