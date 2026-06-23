@@ -24,6 +24,7 @@ public:
         String filter_key_,
         size_t filters_to_merge_,
         UInt64 exact_values_limit_,
+        UInt64 bytes_limit_,
         UInt64 bloom_filter_bytes_,
         UInt64 bloom_filter_hash_functions_,
         Float64 pass_ratio_threshold_for_disabling_,

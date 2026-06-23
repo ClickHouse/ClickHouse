@@ -1,6 +1,8 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -17,12 +19,13 @@ public:
         String filter_name_,
         String filter_key_,
         UInt64 exact_values_limit_,
-        UInt64 bloom_filter_bytes_,
+        UInt64 default_bloom_filter_bytes_,
         UInt64 bloom_filter_hash_functions_,
         Float64 pass_ratio_threshold_for_disabling,
         UInt64 blocks_to_skip_before_reenabling,
         Float64 max_ratio_of_set_bits_in_bloom_filter,
-        bool allow_to_use_not_exact_filter_);
+        bool allow_to_use_not_exact_filter_,
+        std::optional<UInt64> distinct_keys_hint_ = std::nullopt);
 
     BuildRuntimeFilterStep(const BuildRuntimeFilterStep & other) = default;
 
@@ -58,7 +61,9 @@ private:
     String filter_key;
 
     UInt64 exact_values_limit;
-    UInt64 bloom_filter_bytes;
+    UInt64 default_bloom_filter_bytes;
+    /// Expected number of distinct values in the filter, taken from previous hash table statistics.
+    std::optional<UInt64> distinct_keys_hint;
     UInt64 bloom_filter_hash_functions;
     Float64 pass_ratio_threshold_for_disabling;
     UInt64 blocks_to_skip_before_reenabling;

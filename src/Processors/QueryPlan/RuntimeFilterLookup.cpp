@@ -219,9 +219,11 @@ ApproximateRuntimeFilter::ApproximateRuntimeFilter(
     UInt64 blocks_to_skip_before_reenabling_,
     UInt64 bytes_limit_,
     UInt64 exact_values_limit_,
+    UInt64 bloom_filter_bytes_,
     UInt64 bloom_filter_hash_functions_,
     Float64 max_ratio_of_set_bits_in_bloom_filter_)
     : RuntimeFilterBase(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_, bytes_limit_, exact_values_limit_)
+    , bloom_filter_bytes(bloom_filter_bytes_)
     , bloom_filter_hash_functions(bloom_filter_hash_functions_)
     , max_ratio_of_set_bits_in_bloom_filter(max_ratio_of_set_bits_in_bloom_filter_)
     , bloom_filter(nullptr)
@@ -371,7 +373,7 @@ void ApproximateRuntimeFilter::switchToBloomFilter()
     if (bloom_filter)
         return;
 
-    bloom_filter = std::make_unique<BloomFilter>(getBytesLimit(), bloom_filter_hash_functions, BLOOM_FILTER_SEED);
+    bloom_filter = std::make_unique<BloomFilter>(bloom_filter_bytes, bloom_filter_hash_functions, BLOOM_FILTER_SEED);
     insertIntoBloomFilter(getValuesColumn());
 
     releaseExactValues();

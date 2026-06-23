@@ -245,6 +245,7 @@ public:
         UInt64 blocks_to_skip_before_reenabling_,
         UInt64 bytes_limit_,
         UInt64 exact_values_limit_,
+        UInt64 bloom_filter_bytes_,
         UInt64 bloom_filter_hash_functions_,
         Float64 max_ratio_of_set_bits_in_bloom_filter_);
 
@@ -266,6 +267,7 @@ private:
     /// Disables bloom filter if it is likely to have bad selectivity
     void checkBloomFilterWorthiness();
 
+    const UInt64 bloom_filter_bytes;
     const UInt64 bloom_filter_hash_functions;
     const Float64 max_ratio_of_set_bits_in_bloom_filter = 0.7;
 
