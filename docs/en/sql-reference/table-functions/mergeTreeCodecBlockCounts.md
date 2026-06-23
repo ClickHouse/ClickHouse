@@ -11,6 +11,8 @@ Reports, per (part, column, substream) of a MergeTree table, how many compressed
 
 Selecting `codec_block_counts` reads `.bin` data files, not just metadata. The other columns are metadata-only.
 
+Only parts that record their substreams in `columns_substreams.txt` are listed. Parts predating that file are omitted: adaptive selection runs only on merge, which writes the file, so an omitted part cannot contain adaptively-selected codecs. It uses the uniform default codec, still visible in [`system.parts_columns`](/operations/system-tables/parts_columns).
+
 ## Syntax {#syntax}
 
 ```sql
