@@ -26,5 +26,9 @@ query="SELECT DISTINCT 1025, toFixedString('%', 1048576), 100 UNION ALL SELECT 9
 start=$SECONDS
 for _ in {1..500}; do
     $CLICKHOUSE_CLIENT --memory_tracker_fault_probability=0.001 --max_untracked_memory=0 --query="$query" >/dev/null 2>&1 ||:
-    (( SECONDS - start >= 60 )) && break
+    (( SECONDS - start < 60 )) || break
 done
+
+# The loop's last evaluated command is the arithmetic test above, which is false (status 1) when the
+# time budget is not yet reached. Exit explicitly so the script's status does not depend on it.
+exit 0
