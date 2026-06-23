@@ -161,7 +161,7 @@ GROUP BY UserID;
 ```
 
 :::note
-Performance of such a query depends on the table layout. The optimisation is enabled by default since version 26.6; runtime heuristics automatically skip it when the layout is unfavorable (the section below lists the relevant criteria).
+Performance of such a query depends on the table layout. The optimisation is enabled by default since version 26.6; runtime heuristics automatically skip it when the partition layout is unfavorable — specifically, when there are too few partitions (fewer than `max_threads / 2`), too many partitions (more than `max_number_of_partitions_for_independent_aggregation`), or the partition sizes are heavily skewed (the largest partition holds more than twice the average number of rows). The list below describes the layout factors for good performance in general; of these, only the partition count and the size skew are enforced by the runtime heuristics.
 :::
 
 The key factors for a good performance:
