@@ -45,6 +45,11 @@
 
 using namespace DB;
 
+namespace DB::ErrorCodes
+{
+    extern const int INVALID_SCHEDULER_NODE;
+}
+
 namespace ProfileEvents
 {
     extern const Event ConcurrencyControlUpscales;
@@ -187,7 +192,9 @@ struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
     explicit ResourceTest(size_t thread_count = 1)
         : ResourceTestManager(thread_count, DoNotInitManager)
     {
-        manager = std::make_shared<WorkloadResourceManager>(storage);
+        /// The test owns `storage` on the stack, so pass a non-owning shared_ptr.
+        manager = std::make_shared<WorkloadResourceManager>(
+            std::shared_ptr<IWorkloadEntityStorage>(&storage, [](IWorkloadEntityStorage *) {}));
     }
 
     void query(const String & query_str)
@@ -445,6 +452,125 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueueLong)
     sync_before_drop.arrive_and_wait(); // main thread triggers FifoQueue destruction by adding a unified child
     t.query("CREATE WORKLOAD leaf IN intermediate");
     sync_after_drop.arrive_and_wait();
+
+    t.wait(); // Wait for threads to finish before destructing locals
+}
+
+// Regression test: a thread reuses the `ResourceGuard::Request::local()` thread-local instance across requests.
+// After a request fails (queue destroyed), a subsequent request granted on the same thread must not observe the
+// previous request's stale `exception` and spuriously throw `RESOURCE_ACCESS_DENIED`.
+// The failing request uses the `Lock::Defer` path here, so `~ResourceGuard()` runs and brings the request back to
+// the `Finished` state; only the stale `exception` would leak without the fix in `Request::enqueue()`.
+TEST(SchedulerWorkloadResourceManager, ReuseRequestAfterFailedDeferRequestIsGranted)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
+    t.query("CREATE WORKLOAD all");
+    t.query("CREATE WORKLOAD production IN all SETTINGS max_io_requests = 1");
+    t.query("CREATE WORKLOAD analytics IN all SETTINGS max_io_requests = 1");
+
+    std::barrier<std::__empty_completion> sync_before_enqueue(2);
+    std::barrier<std::__empty_completion> sync_before_drop(3);
+    std::barrier<std::__empty_completion> sync_after_drop(2);
+
+    // Leader holds the only `production` slot so the worker's request stays queued and is failed by the drop.
+    t.async("production", "res1", [&] (ResourceLink link)
+    {
+        TestGuard g(t, link, 1);
+        sync_before_enqueue.arrive_and_wait();
+        sync_before_drop.arrive_and_wait();
+        sync_after_drop.arrive_and_wait();
+    });
+
+    sync_before_enqueue.arrive_and_wait(); // to maintain correct order of resource requests
+
+    t.async("production", "res1", [&] (ResourceLink prod_link)
+    {
+        // A healthy resource link in a sibling workload that is not affected by dropping `production`'s queue.
+        ClassifierPtr c_analytics = t.manager->acquire("analytics");
+        ResourceLink analytics_link = c_analytics->get("res1");
+
+        {
+            TestGuard g(t, prod_link, 1, EnqueueOnly);
+            sync_before_drop.arrive_and_wait(); // resource request is enqueued
+            g.waitFailed("is about to be destructed"); // request fails; `~g` finishes it but leaves a stale `exception`
+        }
+
+        // Reuse the thread-local `Request` for a request that is granted: it must not throw.
+        // NOTE: an uncaught exception in this worker thread would be swallowed, so assert explicitly.
+        EXPECT_NO_THROW({
+            ResourceGuard g2(ResourceGuard::Metrics::getIOWrite(), analytics_link, 1, ResourceGuard::Lock::Default);
+            g2.consume(1);
+            g2.unlock(1);
+        });
+    });
+
+    sync_before_drop.arrive_and_wait(); // main thread triggers FifoQueue destruction by adding a unified child
+    t.query("CREATE WORKLOAD child IN production");
+    sync_after_drop.arrive_and_wait();
+
+    t.wait(); // Wait for threads to finish before destructing locals
+}
+
+// Regression test for the `Lock::Default` failure path: when `ResourceGuard`'s constructor throws (the request
+// failed in `enqueue()` or `wait()`), `~ResourceGuard()` does not run, so the reused thread-local `Request` must be
+// restored to the `Finished` state by the constructor itself. Otherwise the next request enqueued on the same thread
+// would hit `chassert(state == Finished)`.
+TEST(SchedulerWorkloadResourceManager, ReuseRequestAfterFailedDefaultRequestIsGranted)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
+    t.query("CREATE WORKLOAD all");
+    t.query("CREATE WORKLOAD production IN all SETTINGS max_io_requests = 1");
+    t.query("CREATE WORKLOAD analytics IN all SETTINGS max_io_requests = 1");
+
+    std::barrier<std::__empty_completion> sync_leader_ready(2);
+    std::barrier<std::__empty_completion> sync_worker_ready(2);
+    std::barrier<std::__empty_completion> sync_after_drop(2);
+
+    // Leader holds the only `production` slot so the worker's request can never be granted before the drop.
+    t.async("production", "res1", [&] (ResourceLink link)
+    {
+        TestGuard g(t, link, 1);
+        sync_leader_ready.arrive_and_wait();
+        sync_after_drop.arrive_and_wait();
+    });
+
+    t.async("production", "res1", [&] (ResourceLink prod_link)
+    {
+        ClassifierPtr c_analytics = t.manager->acquire("analytics");
+        ResourceLink analytics_link = c_analytics->get("res1");
+
+        sync_worker_ready.arrive_and_wait(); // about to enqueue the failing request
+
+        // `Lock::Default` enqueues and waits inside the constructor. The request is failed by the drop (either it is
+        // queued and `wait()` throws `RESOURCE_ACCESS_DENIED`, or the queue is already gone and `enqueue()` throws
+        // `INVALID_SCHEDULER_NODE`); in both cases the constructor throws and `~ResourceGuard()` does not run.
+        try
+        {
+            ResourceGuard g(ResourceGuard::Metrics::getIOWrite(), prod_link, 1, ResourceGuard::Lock::Default);
+            FAIL() << "expected the request on a dropped queue to fail";
+        }
+        catch (const Exception & e)
+        {
+            ASSERT_TRUE(e.code() == ErrorCodes::RESOURCE_ACCESS_DENIED || e.code() == ErrorCodes::INVALID_SCHEDULER_NODE);
+        }
+
+        // Reuse the thread-local `Request` for a request that is granted: it must not abort or throw.
+        // NOTE: an uncaught exception in this worker thread would be swallowed, so assert explicitly.
+        EXPECT_NO_THROW({
+            ResourceGuard g2(ResourceGuard::Metrics::getIOWrite(), analytics_link, 1, ResourceGuard::Lock::Default);
+            g2.consume(1);
+            g2.unlock(1);
+        });
+    });
+
+    sync_leader_ready.arrive_and_wait(); // leader is holding the `production` slot
+    sync_worker_ready.arrive_and_wait(); // worker is about to enqueue its (doomed) request
+    t.query("CREATE WORKLOAD child IN production"); // triggers FifoQueue destruction, failing the worker's request
+    sync_after_drop.arrive_and_wait(); // release the leader
 
     t.wait(); // Wait for threads to finish before destructing locals
 }
@@ -1708,6 +1834,246 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingThrottlingAndFairn
             .check();
         DBG_PRINT("--- Stop ---");
     }
+
+    t.wait();
+}
+
+// Unit-test coverage for the lazy-allocation path in CPULeaseAllocation
+// (current_max_slots gated schedule + setMax growth). Higher-level fairness /
+// preemption behaviour is exercised by the PreemptiveCPUScheduling* tests above;
+// these are focused on the new `initial_max_slots` constructor argument and the
+// `setMax` override added by PR #102928.
+namespace
+{
+    // Poll until predicate returns true or the timeout elapses. Returns the
+    // final predicate value so the caller can assert on it. Used to let the
+    // scheduler's event-queue thread make progress (grants arrive asynchronously).
+    template <typename Pred>
+    bool waitFor(Pred pred, std::chrono::milliseconds timeout = std::chrono::seconds(5))
+    {
+        auto deadline = std::chrono::steady_clock::now() + timeout;
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (pred())
+                return true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return pred();
+    }
+
+    CPULeaseSettings makeLeaseSettings(const String & workload)
+    {
+        CPULeaseSettings settings;
+        settings.workload = workload;
+        // No preemption timeout — these tests never let a lease run out of credit, so
+        // we don't want a wall-clock timer kicking in and failing the test on slow CI.
+        settings.preemption_timeout = std::chrono::milliseconds::max();
+        return settings;
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingLazyStartsAtInitialMax)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all");
+
+    t.async("all", "cpu", "cpu", [&](ResourceLink master_link, ResourceLink worker_link)
+    {
+        // max_threads=5 caps the request chain; initial_max_slots=1 says
+        // "only request one slot up front — caller will grow via setMax".
+        auto lease = std::make_shared<CPULeaseAllocation>(
+            /*max_threads=*/5, master_link, worker_link, makeLeaseSettings("all"), /*initial_max_slots=*/1);
+
+        // The initial schedule() enqueued one request — wait for the grant.
+        auto first = lease->acquire();
+        ASSERT_TRUE(first);
+
+        // No more slots should be granted, since current_max_slots == 1 and we
+        // never consume / call setMax. Holding `first` keeps `granted` at 0 and
+        // `allocated` at 1 (== current_max_slots), so schedule() bails on every
+        // chance. Verify by busy-trying for a short window — none should succeed.
+        bool extra_granted = false;
+        waitFor([&] {
+            if (auto extra = lease->tryAcquire())
+            {
+                extra_granted = true;
+                return true;
+            }
+            return false;
+        }, std::chrono::milliseconds(50));
+        EXPECT_FALSE(extra_granted) << "Lazy lease handed out a slot beyond initial_max_slots=1";
+
+        // No pending request either — the chain stopped after the first grant.
+        EXPECT_FALSE(lease->isRequesting());
+    });
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingLazySetMaxGrows)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all");
+
+    t.async("all", "cpu", "cpu", [&](ResourceLink master_link, ResourceLink worker_link)
+    {
+        auto lease = std::make_shared<CPULeaseAllocation>(
+            /*max_threads=*/5, master_link, worker_link, makeLeaseSettings("all"), /*initial_max_slots=*/1);
+
+        // Acquire the master slot first (consuming the initial grant).
+        auto master = lease->acquire();
+        ASSERT_TRUE(master);
+
+        // Grow the ceiling to 4. setMax should kick off scheduling for the
+        // additional capacity; the grant chain in grantImpl then fills up to
+        // current_max_slots=4 one request at a time.
+        lease->setMax(4);
+
+        // Wait for three more slots to land (one per additional grant). We
+        // accumulate them so they don't trigger consume() during teardown.
+        std::vector<AcquiredSlotPtr> workers;
+        bool got_all = waitFor([&] {
+            while (auto slot = lease->tryAcquire())
+                workers.push_back(std::move(slot));
+            return workers.size() >= 3;
+        });
+        ASSERT_TRUE(got_all) << "Got only " << workers.size() << " of 3 expected worker slots after setMax(4)";
+        EXPECT_EQ(workers.size(), 3u);
+
+        // current_max_slots reached — no more grants should appear.
+        EXPECT_FALSE(lease->isRequesting());
+    });
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingLazySetMaxClampedByMaxThreads)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all");
+
+    t.async("all", "cpu", "cpu", [&](ResourceLink master_link, ResourceLink worker_link)
+    {
+        // max_threads=2 is the hard cap (sizes the internal `requests` ring buffer
+        // and `threads` bitsets). setMax must never let the working set exceed it.
+        auto lease = std::make_shared<CPULeaseAllocation>(
+            /*max_threads=*/2, master_link, worker_link, makeLeaseSettings("all"), /*initial_max_slots=*/1);
+
+        auto master = lease->acquire();
+        ASSERT_TRUE(master);
+
+        // Ask for more than max_threads. Implementation clamps to max_threads.
+        lease->setMax(100);
+
+        // We should be able to acquire one more slot (total 2 = max_threads), no more.
+        std::vector<AcquiredSlotPtr> workers;
+        bool got_one_more = waitFor([&] {
+            while (auto slot = lease->tryAcquire())
+                workers.push_back(std::move(slot));
+            return !workers.empty();
+        });
+        ASSERT_TRUE(got_one_more);
+
+        // Verify the chain has stopped — we shouldn't see additional requests
+        // even with a wide setMax target.
+        bool extra_granted = false;
+        waitFor([&] {
+            if (auto extra = lease->tryAcquire())
+            {
+                extra_granted = true;
+                workers.push_back(std::move(extra));
+                return true;
+            }
+            return false;
+        }, std::chrono::milliseconds(50));
+        EXPECT_FALSE(extra_granted) << "Clamp ignored — got more than max_threads=2 slots";
+        EXPECT_EQ(workers.size(), 1u);
+        EXPECT_FALSE(lease->isRequesting());
+    });
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingLazySetMaxShrinkDoesNotReclaim)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all");
+
+    t.async("all", "cpu", "cpu", [&](ResourceLink master_link, ResourceLink worker_link)
+    {
+        auto lease = std::make_shared<CPULeaseAllocation>(
+            /*max_threads=*/5, master_link, worker_link, makeLeaseSettings("all"), /*initial_max_slots=*/1);
+
+        auto master = lease->acquire();
+        ASSERT_TRUE(master);
+
+        // Grow to 3 and collect both extra slots.
+        lease->setMax(3);
+        std::vector<AcquiredSlotPtr> workers;
+        bool got_two_more = waitFor([&] {
+            while (auto slot = lease->tryAcquire())
+                workers.push_back(std::move(slot));
+            return workers.size() >= 2;
+        });
+        ASSERT_TRUE(got_two_more);
+
+        // Shrink to 1. Already-acquired slots remain valid (we hold three).
+        // The shrink only caps future grants — no in-flight request was enqueued
+        // here (chain ended when allocated reached current_max_slots), so nothing
+        // to cancel.
+        lease->setMax(1);
+        EXPECT_TRUE(master);
+        EXPECT_EQ(workers.size(), 2u);
+        EXPECT_FALSE(lease->isRequesting());
+
+        // Trying for more should still fail — nothing got granted because
+        // allocated >= current_max_slots(=1) immediately on entry to schedule().
+        bool extra_granted = false;
+        waitFor([&] {
+            if (auto extra = lease->tryAcquire())
+            {
+                extra_granted = true;
+                workers.push_back(std::move(extra));
+                return true;
+            }
+            return false;
+        }, std::chrono::milliseconds(50));
+        EXPECT_FALSE(extra_granted);
+    });
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingEagerDefaultIsUnchanged)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all");
+
+    t.async("all", "cpu", "cpu", [&](ResourceLink master_link, ResourceLink worker_link)
+    {
+        // No `initial_max_slots` argument: existing callers (and the pre-this-PR
+        // codepath via use_concurrency_control eager rollback) must continue to
+        // request all `max_threads` slots up front.
+        auto lease = std::make_shared<CPULeaseAllocation>(
+            /*max_threads=*/3, master_link, worker_link, makeLeaseSettings("all"));
+
+        // We should be able to drain all max_threads slots without ever calling setMax.
+        std::vector<AcquiredSlotPtr> slots;
+        if (auto first = lease->acquire())
+            slots.push_back(std::move(first));
+        bool got_all = waitFor([&] {
+            while (auto slot = lease->tryAcquire())
+                slots.push_back(std::move(slot));
+            return slots.size() >= 3;
+        });
+        ASSERT_TRUE(got_all) << "Eager default lease granted only " << slots.size() << "/3 slots";
+        EXPECT_EQ(slots.size(), 3u);
+    });
 
     t.wait();
 }
