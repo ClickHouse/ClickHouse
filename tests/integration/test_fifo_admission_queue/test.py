@@ -968,7 +968,8 @@ def test_secondary_limit_not_rejected_on_early_release(started_cluster):
             except Exception as e:
                 errors.append(str(e))
 
-        results = [pool.apply_async(run_query, (i,)) for i in range(num_queries)]
+        for i in range(num_queries):
+            pool.apply_async(run_query, (i,))
         pool.close()
         pool.join()
 
@@ -1026,7 +1027,8 @@ def test_secondary_limit_not_rejected_on_early_release_default_wait(started_clus
             except Exception as e:
                 errors.append(str(e))
 
-        results = [pool.apply_async(run_query, (i,)) for i in range(num_queries)]
+        for i in range(num_queries):
+            pool.apply_async(run_query, (i,))
         pool.close()
         pool.join()
 
@@ -1080,7 +1082,7 @@ def test_fast_path_slot_not_hoarded_at_secondary_limit(started_cluster):
                 query_id=a_id,
             )
 
-        a_future = pool.apply_async(run_blocker)
+        pool.apply_async(run_blocker)
         wait_for_query_start(node, a_id)
 
         # B: fast path (1 of 2 slots used), then the per-user limit is full because
