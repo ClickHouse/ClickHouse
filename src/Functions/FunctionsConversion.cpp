@@ -261,8 +261,12 @@ ColumnPtr ConvertImplFromVariantToColumn::execute(
         nested_result = nested_result->convertToFullColumnIfConst();
 
         /// Expand the result back to original size, filling filtered-out rows with defaults.
-        nested_result->assumeMutable()->expand(filter, false);
-        return nested_result;
+        /// nested_convert may return the input variant subcolumn unchanged (e.g. toString of a
+        /// String variant), so nested_result can alias it; mutate() clones when shared, unlike
+        /// assumeMutable() which would expand the shared subcolumn in place and corrupt the source.
+        auto mutable_result = IColumn::mutate(std::move(nested_result));
+        mutable_result->expand(filter, false);
+        return mutable_result;
     }
 
     /// General case: multiple variants. Convert each variant separately and assemble row-by-row.
@@ -2181,9 +2185,8 @@ FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper() const
                 if (!accurate::convertNumeric<typename ColumnNumberType::ValueType, FieldType, false>(in_data[i], converted_value))
                     throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be converted to enum type", toString(in_data[i]));
 
-                // This checks the number value exists in Enum values.
-                /// If not found, an error is thrown.
-                result_type.findByValue(converted_value);
+                /// Validate that value exists in Enum (throws if not found)
+                result_type.getNameForValue(converted_value);
                 out_data[i] = converted_value;
             }
         }
