@@ -10,11 +10,20 @@
 #include <Core/SettingsEnums.h>
 #include <IO/ConnectionTimeouts.h>
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <poll.h>
+#include <sys/eventfd.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
 #include <chrono>
 #include <future>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <thread>
+#include <vector>
 
 using namespace DB;
 
@@ -29,14 +38,102 @@ namespace Setting
 namespace
 {
 
-ConnectionPoolPtr makeUnreachablePool()
+/// A local TCP listener that accepts connections but never replies to the handshake.
+///
+/// The async establisher connects (succeeds instantly on loopback), sends its `Hello`, then
+/// blocks reading the server `Hello` that never arrives - so it yields a pending file
+/// descriptor and stays in-process (NOT_READY) until cancelled. Unlike pointing at a
+/// supposedly non-routable address, this is deterministic: it does not depend on host
+/// routing tables and never falls into a real connect timeout.
+class BlackholeListener
 {
-    /// Non-routable address: connect() returns EINPROGRESS and never completes, so the
-    /// async establisher stays in-process until it is cancelled - the state we need.
+public:
+    BlackholeListener()
+    {
+        listen_fd = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (listen_fd < 0)
+            throw std::runtime_error("socket() failed, errno=" + std::to_string(errno));
+
+        int one = 1;
+        ::setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        addr.sin_port = 0; /// Ephemeral port.
+        if (::bind(listen_fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0)
+            throw std::runtime_error("bind() failed, errno=" + std::to_string(errno));
+
+        socklen_t addr_len = sizeof(addr);
+        if (::getsockname(listen_fd, reinterpret_cast<sockaddr *>(&addr), &addr_len) < 0)
+            throw std::runtime_error("getsockname() failed, errno=" + std::to_string(errno));
+        port = ntohs(addr.sin_port);
+
+        if (::listen(listen_fd, 16) < 0)
+            throw std::runtime_error("listen() failed, errno=" + std::to_string(errno));
+
+        shutdown_event = ::eventfd(0, EFD_NONBLOCK);
+        if (shutdown_event < 0)
+            throw std::runtime_error("eventfd() failed, errno=" + std::to_string(errno));
+
+        accept_thread = std::thread([this] { acceptLoop(); });
+    }
+
+    ~BlackholeListener()
+    {
+        /// Signal the accept loop to stop, then drain it.
+        uint64_t value = 1;
+        [[maybe_unused]] ssize_t written = ::write(shutdown_event, &value, sizeof(value));
+        if (accept_thread.joinable())
+            accept_thread.join();
+
+        for (int fd : accepted_fds)
+            ::close(fd);
+        ::close(shutdown_event);
+        ::close(listen_fd);
+    }
+
+    UInt16 getPort() const { return port; }
+
+private:
+    void acceptLoop()
+    {
+        pollfd fds[2];
+        fds[0] = {listen_fd, POLLIN, 0};
+        fds[1] = {shutdown_event, POLLIN, 0};
+        while (true)
+        {
+            if (::poll(fds, 2, -1) < 0)
+            {
+                if (errno == EINTR)
+                    continue;
+                break;
+            }
+            if (fds[1].revents & POLLIN)
+                break;
+            if (fds[0].revents & POLLIN)
+            {
+                /// Accept and hold the connection open without responding.
+                int fd = ::accept(listen_fd, nullptr, nullptr);
+                if (fd >= 0)
+                    accepted_fds.push_back(fd);
+            }
+        }
+    }
+
+    int listen_fd = -1;
+    int shutdown_event = -1;
+    UInt16 port = 0;
+    std::vector<int> accepted_fds;
+    std::thread accept_thread;
+};
+
+ConnectionPoolPtr makeBlackholePool(UInt16 port)
+{
     return std::make_shared<ConnectionPool>(
         /* max_connections */ 1,
-        /* host */ "10.255.255.1",
-        /* port */ 9000,
+        /* host */ "127.0.0.1",
+        /* port */ port,
         /* default_database */ "",
         /* user */ "default",
         /* password */ "",
@@ -55,6 +152,7 @@ ConnectionPoolPtr makeUnreachablePool()
 /// can outlive the test via a shared_ptr if the failure path leaks a detached worker.
 struct Fixture
 {
+    BlackholeListener listener;
     Settings settings;
     ConnectionPoolWithFailoverPtr pool;
     ConnectionTimeouts timeouts;
@@ -65,7 +163,7 @@ struct Fixture
         /// High timeout so the connection attempt stays in-process for the whole test.
         settings[Setting::connect_timeout_with_failover_ms] = 60000;
         pool = std::make_shared<ConnectionPoolWithFailover>(
-            ConnectionPoolPtrs{makeUnreachablePool()}, LoadBalancing::RANDOM);
+            ConnectionPoolPtrs{makeBlackholePool(listener.getPort())}, LoadBalancing::RANDOM);
         timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
         factory.emplace(
             pool,
