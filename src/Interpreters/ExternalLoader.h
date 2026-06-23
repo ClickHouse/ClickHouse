@@ -222,6 +222,10 @@ protected:
     virtual bool doesConfigChangeRequiresReloadingObject(const Poco::Util::AbstractConfiguration & /* old_config */, const String & /* old_key_in_config */,
                                                          const Poco::Util::AbstractConfiguration & /* new_config */, const String & /* new_key_in_config */) const { return true; /* always reload */ }
 
+    /// Returns whether an object should be loaded lazily.
+    /// std::nullopt = no per-object configuration, use the global policy.
+    virtual std::optional<bool> shouldLoadObjectLazily(const Poco::Util::AbstractConfiguration & /* config */, const String & /* key_in_config */) const { return std::nullopt; }
+
     /// Updates the object from the configuration without reloading as much as possible.
     virtual void updateObjectFromConfigWithoutReloading(
         IExternalLoadable & /* object */, const Poco::Util::AbstractConfiguration & /* config */, const String & /* key_in_config */) const {}

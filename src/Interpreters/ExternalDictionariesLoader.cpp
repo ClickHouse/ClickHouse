@@ -69,6 +69,14 @@ bool ExternalDictionariesLoader::doesConfigChangeRequiresReloadingObject(const P
     return !isSameConfiguration(old_config, old_key_in_config, new_config, new_key_in_config, ignore_keys);
 }
 
+std::optional<bool> ExternalDictionariesLoader::shouldLoadObjectLazily(const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const
+{
+    const auto lazy_load_key = key_in_config + ".lazy_load";
+    if (!config.has(lazy_load_key))
+        return std::nullopt;
+    return config.getBool(lazy_load_key);
+}
+
 void ExternalDictionariesLoader::updateObjectFromConfigWithoutReloading(IExternalLoadable & object, const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const
 {
     IDictionary & dict = static_cast<IDictionary &>(object);

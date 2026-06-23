@@ -694,6 +694,14 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
     buildSourceConfiguration(xml_document, current_dictionary, query.dictionary->source, query.dictionary->dict_settings, full_dictionary_name, context);
     buildLifetimeConfiguration(xml_document, current_dictionary, query.dictionary->lifetime);
 
+    if (query.dictionary->lazy_load.has_value())
+    {
+        AutoPtr<Element> lazy_load_element(xml_document->createElement("lazy_load"));
+        current_dictionary->appendChild(lazy_load_element);
+        AutoPtr<Text> lazy_load_value(xml_document->createTextNode(*query.dictionary->lazy_load ? "1" : "0"));
+        lazy_load_element->appendChild(lazy_load_value);
+    }
+
     if (query.dictionary->range)
         buildRangeConfiguration(xml_document, structure_element, query.dictionary->range, all_attr_names_and_types);
 

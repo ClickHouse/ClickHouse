@@ -51,6 +51,8 @@ protected:
     bool doesConfigChangeRequiresReloadingObject(const Poco::Util::AbstractConfiguration & old_config, const String & old_key_in_config,
                                                  const Poco::Util::AbstractConfiguration & new_config, const String & new_key_in_config) const override;
 
+    std::optional<bool> shouldLoadObjectLazily(const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const override;
+
     void updateObjectFromConfigWithoutReloading(
         IExternalLoadable & object, const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const override;
 

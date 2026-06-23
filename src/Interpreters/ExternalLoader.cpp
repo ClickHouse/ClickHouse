@@ -490,9 +490,10 @@ public:
             if (!infos.contains(name))
             {
                 Info & info = infos.emplace(name, Info{name, config}).first->second;
-                if (always_load_everything)
+                std::optional<bool> lazy = external_loader.shouldLoadObjectLazily(*config->config, config->key_in_config);
+                if (!lazy.value_or(!always_load_everything))
                 {
-                    LOG_TRACE(log, "Will load '{}' because always_load_everything flag is set.", name);
+                    LOG_TRACE(log, "Will load '{}' because it is not loaded lazily.", name);
                     startLoading(info);
                 }
             }

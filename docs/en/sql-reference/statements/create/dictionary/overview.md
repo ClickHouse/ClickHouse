@@ -45,6 +45,7 @@ SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
 LAYOUT(LAYOUT_NAME([param_name param_value]))
 LIFETIME({MIN min_val MAX max_val | max_val})
 SETTINGS(setting_name = setting_value, setting_name = setting_value, ...)
+LAZY_LOAD(0|1)
 COMMENT 'Comment'
 ```
 
@@ -57,6 +58,7 @@ COMMENT 'Comment'
 | [`LIFETIME`](./lifetime.md) | Sets the refresh interval for the dictionary. |
 | [`ON CLUSTER`](../../../distributed-ddl.md) | Creates the dictionary on a cluster. Optional. |
 | `SETTINGS` | Additional dictionary settings. Optional. |
+| `LAZY_LOAD` | Overrides the server-level `dictionaries_lazy_load` setting for this dictionary: `1` defers loading until first use, `0` loads it at creation. Optional. |
 | `COMMENT` | Adds a text comment to the dictionary. Optional. |
 
 ## Creating a dictionary with a configuration file {#creating-a-dictionary-with-a-configuration-file}
