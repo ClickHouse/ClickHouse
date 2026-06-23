@@ -28,8 +28,13 @@ modes, and they need different fixes:
 ## Hard rules
 
 - **Investigation is read-only.** Steps 1–4 never change anything.
-- **Always use `command gh`.** In some interactive shells `gh` is aliased (e.g. to
-  `history | fzf`); `command gh` reaches the real GitHub CLI.
+- **Reach the CLI as `env -u GH_CONFIG_DIR gh`** (this is what the script's `GH()`
+  wrapper does). Dropping `GH_CONFIG_DIR` avoids a poisoned config dir — one whose
+  token passes `gh auth status` but 403s on the API — by falling back to the default
+  config / `GH_TOKEN`. Do **not** use `command gh`: `command` only bypasses an
+  interactive alias (irrelevant in a non-interactive script) and does **not** strip
+  `GH_CONFIG_DIR`, so it inherits the poisoned config; and `env -u GH_CONFIG_DIR
+  command gh` is wrong too — it tries to exec a nonexistent `command` binary on Linux.
 - **Working files go in `tmp/`**, never `/tmp`. (The script also points
   `XDG_CACHE_HOME` at a repo-local `tmp/gh-cache` when the default `~/.cache` is not
   writable — some sandboxes mount a read-only HOME, which would otherwise make
@@ -53,12 +58,14 @@ It prints four blocks (each ending in a one-line verdict):
 1. **Targeted versions** — the ✔️ rows of `SECURITY.md` (`supported`), what was
    excluded by config (`excluded`), and what is actually `analyzed`.
 2. **Per-version staleness** — latest patch tag (resolved from the complete
-   `git/matching-refs` tag list, so a quiet/older LTS is never missed), age in days,
-   release-worthy / total commits (`rel/tot`), and a `⚠️ MISSING` flag when a version
-   is older than `STALE_DAYS` (default 18) *and* has release-worthy commits. A
-   supported version with **no release tag** (or a tag with no published release) is a
-   hard failure: the block prints `NO TAG` and the final verdict is `FAILED` (exit 3),
-   never green.
+   `git/matching-refs` tag list, so a quiet/older LTS is never missed), age in days
+   (from the annotated tag's `tagger.date`, matching `auto_release.py`), release-worthy
+   / first-parent-total commits (`rel/tot`, reconstructed from the first-parent chain
+   like `AutoReleaseInfo`), and a `⚠️ MISSING` flag when a version is older than
+   `STALE_DAYS` (default 18) *and* has release-worthy commits. A supported version with
+   **no release tag** is a hard failure: the block prints `NO TAG` and the final
+   verdict is `FAILED` (exit 3), never green. (A valid git tag with no published GitHub
+   Release is still healthy — the date comes from the tag object.)
 3. **Failure scan** — `AutoReleases` and `CreateRelease` runs in the window, each
    `AutoReleases` failure classified `GUARD` / `RUNNER` / `OTHER`, plus a tally.
 4. **Guard re-check** — the live result of the exact guard query, i.e. the PR(s)
@@ -124,11 +131,14 @@ happen. A run that is still `queued`/`in_progress` (empty conclusion) is **not**
 `RUNNER` — the script prints its live status instead, since a queued daily run has no
 runner/steps yet but is not an outage.
 
-**`OTHER`** — the run failed for some reason other than the guard or a missing
-runner. Read the failed step directly:
+**`OTHER`** — the run failed for some reason other than the guard or a missing runner.
+Any unexpected conclusion (`startup_failure`, `timed_out`, `action_required`, …) also
+counts here, so the tally never reads all-zeros while a run actually failed;
+`startup_failure`/`timed_out` usually point at the `release-maker` runner or a timeout.
+Read the failed step directly:
 
 ```bash
-command gh run view <run-id> --repo ClickHouse/ClickHouse --log-failed
+env -u GH_CONFIG_DIR gh run view <run-id> --repo ClickHouse/ClickHouse --log-failed
 ```
 
 **`UNKNOWN`** — the script could not fetch the required GitHub data to classify the
@@ -143,14 +153,14 @@ Only if block 4 shows an orphaned, superseded `robot-clickhouse` `auto/v*` bump 
 Confirm the supersession first (a newer tag exists on that branch):
 
 ```bash
-command gh pr view <n> --repo ClickHouse/ClickHouse --json headRefName,author,title,state
-command gh api 'repos/ClickHouse/ClickHouse/releases?per_page=100' --jq '.[].tag_name' | grep '^v<major>'
+env -u GH_CONFIG_DIR gh pr view <n> --repo ClickHouse/ClickHouse --json headRefName,author,title,state
+env -u GH_CONFIG_DIR gh api 'repos/ClickHouse/ClickHouse/git/matching-refs/tags/v<major>.' --jq '.[].ref'
 ```
 
 Ask the user for confirmation, then:
 
 ```bash
-command gh pr close <n> --repo ClickHouse/ClickHouse
+env -u GH_CONFIG_DIR gh pr close <n> --repo ClickHouse/ClickHouse
 ```
 
 ⚠️ **Re-run block 4 afterward.** Closing one match does not clear the guard if other
@@ -181,23 +191,30 @@ TAG=$(git tag --list "v$BR.*" --sort=-v:refname | head -1)
 CANDIDATE=""
 # first-parent since the tag, drop the oldest (version-bump) commit, newest 8 only.
 for sha in $(git rev-list --first-parent "$TAG..FETCH_HEAD" | sed '$d' | head -8); do
-  state=$(command gh api "repos/ClickHouse/ClickHouse/commits/$sha/status" --jq '.state')  # success|failure|pending
-  echo "${sha:0:12} $state"
-  [ "$state" = success ] && { CANDIDATE=$sha; break; }
+  # AutoReleaseInfo gate 1: every Actions check-run must be completed. The combined
+  # /commits/<sha>/status rollup does NOT reflect check-runs, so query them directly.
+  pending=$(env -u GH_CONFIG_DIR gh api "repos/ClickHouse/ClickHouse/commits/$sha/check-runs?per_page=100" \
+    --jq '[.check_runs[] | select(.status != "completed")] | length')
+  # AutoReleaseInfo gate 2: no non-success legacy commit status context.
+  failed=$(env -u GH_CONFIG_DIR gh api "repos/ClickHouse/ClickHouse/commits/$sha/statuses" \
+    --jq '[.[] | select(.state != "success")] | length')
+  echo "${sha:0:12} pending-checks=$pending failed-statuses=$failed"
+  # fail-closed: a non-numeric value (failed/garbled read) counts as NOT green.
+  [ "${pending:-x}" = 0 ] && [ "${failed:-x}" = 0 ] && { CANDIDATE=$sha; break; }
 done
 echo "release candidate: ${CANDIDATE:?no CI-green commit in the first 8 first-parent commits — investigate; do not release branch head}"
 ```
 
-(The combined `status.state` is a quick proxy; before dispatching, confirm the commit
-is genuinely all-green — workflows completed, no failed checks — as `AutoReleaseInfo`
-requires.)
+This applies the same two gates `AutoReleaseInfo` uses (`GH.check_wf_completed` over
+`/check-runs`, then `GH.get_failed_statuses` over `/statuses`) — re-reading the combined
+`/status` rollup is insufficient, as it is blind to check-run completion.
 
 After explicit confirmation, dispatch with that SHA (the official runbook also accepts
 a commit SHA in the `Git reference` field, e.g. when a prior run failed with a missing
 artifacts error):
 
 ```bash
-command gh workflow run create_release.yml --repo ClickHouse/ClickHouse \
+env -u GH_CONFIG_DIR gh workflow run create_release.yml --repo ClickHouse/ClickHouse \
   --ref master -f ref="$CANDIDATE" -f type=patch
 ```
 

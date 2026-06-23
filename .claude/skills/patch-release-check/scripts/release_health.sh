@@ -12,8 +12,8 @@
 # Usage:  bash release_health.sh [lookback_days]      # default 14
 #
 # Notes:
-#   - `gh` is aliased to `history | fzf` in some interactive shells, so this
-#     script always calls `command gh` to reach the real GitHub CLI.
+#   - All GitHub calls go through the GH() wrapper, which execs the gh binary with
+#     GH_CONFIG_DIR dropped (see its definition for why).
 #   - Read-only: it never closes PRs, dispatches workflows, or writes anything.
 #   - ponytail: classification is a grep on the failed-step log + one job-info
 #     lookup for cancelled runs — good enough; deepen only if a case is ambiguous.
@@ -89,7 +89,7 @@ if ! ( mkdir -p "$_cache" && [ -w "$_cache" ] ) 2>/dev/null; then
 fi
 export XDG_CACHE_HOME="$_cache"
 if ! GH auth status >/dev/null 2>&1; then
-    echo "ERROR: gh is not authenticated (run: command gh auth login)." >&2; exit 2
+    echo "ERROR: gh is not authenticated (run: gh auth login)." >&2; exit 2
 fi
 # Prove the repo is readable up front. `gh api repos/<repo>` exits non-zero on a
 # not-found / no-access / API outage (unlike `gh pr list`, which returns [] exit 0),
@@ -151,15 +151,18 @@ for v in $VERSIONS; do
     REFS="$(GH api "repos/$REPO/git/matching-refs/tags/v${v}." 2>/dev/null)" \
         || { echo "ERROR: failed to list tags for v$v (gh exited non-zero) — aborting (fail-close)." >&2; exit 3; }
     need_json "$REFS" "tags for v$v" || exit 3
-    TAG="$(printf '%s' "$REFS" | python3 -c '
+    TAGINFO="$(printf '%s' "$REFS" | python3 -c '
 import sys, json, re
-refs = [r["ref"].split("refs/tags/")[-1] for r in json.load(sys.stdin)]
+data = json.load(sys.stdin)
+m = {r["ref"].split("refs/tags/")[-1]: r["object"]["sha"] for r in data}
 def key(t):
-    m = re.match(r"v(\d+)\.(\d+)\.(\d+)\.(\d+)", t)
-    return tuple(int(x) for x in m.groups()) if m else (-1,)
-refs = [t for t in refs if re.match(r"v\d+\.\d+\.\d+\.\d+", t)]
-print(sorted(refs, key=key)[-1] if refs else "")
+    mm = re.match(r"v(\d+)\.(\d+)\.(\d+)\.(\d+)", t)
+    return tuple(int(x) for x in mm.groups()) if mm else (-1,)
+refs = [t for t in m if re.match(r"v\d+\.\d+\.\d+\.\d+", t)]
+t = sorted(refs, key=key)[-1] if refs else ""
+print(t, (m.get(t, "") if t else ""))
 ')"
+    TAG="${TAGINFO%% *}"; TAGSHA="${TAGINFO##* }"
     # Fail-closed: a supported version with NO release tag must make the final
     # verdict non-green — never silently pass as healthy.
     if [[ -z "$TAG" ]]; then
@@ -167,41 +170,68 @@ print(sorted(refs, key=key)[-1] if refs else "")
         printf "   %-7s %-26s %6s  %-10s %s\n" "$v" "(no release tag)" "-" "-" "⚠️  NO TAG — investigate"
         continue
     fi
-    # Age from the tag's GitHub release. If the tag has no published release (or the
-    # date can't be read), treat it as no-tag (fail-closed) rather than guessing.
-    PUBLISHED="$(GH api "repos/$REPO/releases/tags/$TAG" --jq '.published_at' 2>/dev/null)"
-    if ! [[ "$PUBLISHED" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T ]]; then
+    # Age from the annotated tag object's tagger date — exactly what auto_release.py
+    # uses (repo.get_git_tag(ref.object.sha).tagger.date). Fall back to the GitHub
+    # Release publish date only if the tag object carries no date (e.g. a lightweight
+    # tag): a valid recent git tag alone is healthy, even with no published Release.
+    TAGDATE="$(GH api "repos/$REPO/git/tags/$TAGSHA" --jq '.tagger.date' 2>/dev/null)"
+    if ! [[ "$TAGDATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T ]]; then
+        TAGDATE="$(GH api "repos/$REPO/releases/tags/$TAG" --jq '.published_at' 2>/dev/null)"
+    fi
+    AGE="$(NOW="$NOW_EPOCH" PUB="$TAGDATE" python3 -c '
+import os, datetime
+s = os.environ["PUB"].strip().replace("Z", "+00:00")
+try:
+    pub = datetime.datetime.fromisoformat(s)
+except ValueError:
+    raise SystemExit(1)
+if pub.tzinfo is None:
+    pub = pub.replace(tzinfo=datetime.timezone.utc)
+print((int(os.environ["NOW"]) - int(pub.timestamp())) // 86400)
+' 2>/dev/null)"
+    # Fail-closed: if neither the tag object nor a Release yields a parseable date we
+    # cannot assess staleness — treat as no-tag, never default to a green "ok".
+    if ! [[ "$AGE" =~ ^-?[0-9]+$ ]]; then
         NOTAG_LIST="$NOTAG_LIST $v"
-        printf "   %-7s %-26s %6s  %-10s %s\n" "$v" "$TAG" "-" "-" "⚠️  tag but no published release"
+        printf "   %-7s %-26s %6s  %-10s %s\n" "$v" "$TAG" "-" "-" "⚠️  could not read tag date"
         continue
     fi
-    AGE="$(NOW="$NOW_EPOCH" PUB="$PUBLISHED" python3 -c '
-import os, datetime
-pub = datetime.datetime.strptime(os.environ["PUB"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
-print((int(os.environ["NOW"]) - int(pub.timestamp())) // 86400)
-')"
-    # Release-worthy commits, matching AutoReleaseInfo's intent: it drops the
-    # post-release version-bump commit before deciding if a branch has a patch
-    # candidate (tests/ci/auto_release.py excludes the oldest commit in tag..branch).
-    # Raw ahead_by includes that bump, so a branch whose ONLY post-tag commit is
-    # "Update autogenerated version ..." would look MISSING with nothing to ship.
-    # Count commits whose first message line is NOT a version bump.
+    # Release-worthy commits, reproducing AutoReleaseInfo: it takes the FIRST-PARENT
+    # commits of <tag>..<branch>, drops the oldest (post-release version-bump) commit,
+    # and a branch with no non-bump commit has nothing to release. The raw compare set
+    # / ahead_by counts side commits off the first-parent chain and over-reports, so we
+    # reconstruct the first-parent chain from the compare payload's parents (no extra
+    # API calls). rel/tot = release-worthy / first-parent commits since the tag.
     CMP="$(GH api "repos/$REPO/compare/${TAG}...${v}" 2>/dev/null)"
-    read -r AHEAD WORTHY < <(printf '%s' "$CMP" | python3 -c '
+    read -r WORTHY FPTOTAL < <(printf '%s' "$CMP" | python3 -c '
 import sys, json, re
 d = json.load(sys.stdin)
 ahead = int(d["ahead_by"])
+commits = d.get("commits", [])
 bump = re.compile(r"^(Update autogenerated version|Update version_date\.tsv)")
-msgs = [c["commit"]["message"].splitlines()[0] for c in d.get("commits", [])]
-nonbump = sum(1 for m in msgs if not bump.match(m))
-# .commits is capped (~250) by the API; any commits beyond that are real
-# backports, so they count toward release-worthy too.
-worthy = nonbump + max(0, ahead - len(msgs))
-print(ahead, worthy)
+by = {c["sha"]: c for c in commits}
+chain = []
+if commits:
+    cur = commits[-1]["sha"]; seen = set()
+    while cur in by and cur not in seen:
+        seen.add(cur); c = by[cur]
+        chain.append(c["commit"]["message"].splitlines()[0])
+        p = c.get("parents", []); cur = p[0]["sha"] if p else None
+# Fail-closed: a non-empty compare that yields no first-parent chain means the
+# reconstruction is wrong — abort rather than risk under-counting (hiding a gap).
+if commits and not chain:
+    raise SystemExit(1)
+cand = chain[:-1] if chain else []   # drop oldest = the version-bump commit
+worthy = sum(1 for m in cand if not bump.match(m))
+# If the compare payload was truncated (>~250 reachable commits) there are certainly
+# real backports beyond what we walked, so never report 0.
+if ahead > len(commits):
+    worthy = max(worthy, 1)
+print(worthy, len(chain))
 ' 2>/dev/null)
     # Fail-close: a failed/garbled compare must NOT be silently treated as "ok".
-    if ! [[ "$AHEAD" =~ ^[0-9]+$ && "$WORTHY" =~ ^[0-9]+$ ]]; then
-        echo "ERROR: could not compare ${TAG}...${v} for branch $v (API failure) — aborting (fail-close)." >&2
+    if ! [[ "$WORTHY" =~ ^[0-9]+$ && "$FPTOTAL" =~ ^[0-9]+$ ]]; then
+        echo "ERROR: could not compute first-parent commits for ${TAG}...${v} (API failure / unexpected payload) — aborting (fail-close)." >&2
         exit 3
     fi
 
@@ -212,7 +242,7 @@ print(ahead, worthy)
     elif [[ "$AGE" -gt "$STALE_DAYS" && "$WORTHY" == "0" ]]; then
         verdict="ok (stale but only a version-bump commit — nothing to release)"
     fi
-    printf "   %-7s %-26s %5sd  %-10s %s\n" "$v" "$TAG" "$AGE" "$WORTHY/$AHEAD" "$verdict"
+    printf "   %-7s %-26s %5sd  %-10s %s\n" "$v" "$TAG" "$AGE" "$WORTHY/$FPTOTAL" "$verdict"
 done
 echo
 # A supported version with no resolvable release tag is a hard failure, not a
@@ -242,7 +272,7 @@ AR_RUNS="$(GH run list --repo "$REPO" --workflow auto_releases.yml --created ">=
 need_json "$AR_RUNS" "AutoReleases run list" || exit 3
 n_guard=0; n_runner=0; n_other=0; n_ok=0; n_unknown=0
 printf "   %-12s %-12s %-12s %s\n" "date" "conclusion" "class" "run-id"
-while IFS=$'\t' read -r id concl stat created; do
+while IFS='|' read -r id concl stat created; do
     [[ -z "$id" ]] && continue
     day="${created:0:10}"
     cls=""
@@ -256,8 +286,12 @@ while IFS=$'\t' read -r id concl stat created; do
             # `raise RuntimeError` — other `_prepare` failures (e.g. the `assert refs`
             # candidate check) raise AssertionError and must classify as OTHER.
             if flog="$(fetch_failed_log "$id")"; then
-                if printf '%s' "$flog" | grep -q 'in _prepare' \
-                   && printf '%s' "$flog" | grep -q 'raise RuntimeError'; then
+                # Use here-strings, NOT `printf "$flog" | grep -q`: grep -q exits on
+                # first match and SIGPIPEs the producer (rc 141), which `set -o pipefail`
+                # propagates, short-circuiting the && to the OTHER branch — silently
+                # misclassifying a real GUARD failure on a multi-MB log.
+                if grep -q 'in _prepare' <<<"$flog" \
+                   && grep -q 'raise RuntimeError' <<<"$flog"; then
                     cls="GUARD"; n_guard=$((n_guard+1))
                 else
                     cls="OTHER"; n_other=$((n_other+1))
@@ -296,15 +330,19 @@ while IFS=$'\t' read -r id concl stat created; do
             # live status; do NOT classify it as a runner outage (a queued daily run
             # legitimately has no runner/steps yet).
             cls="${stat:-pending}" ;;
-        *) cls="$concl" ;;
+        *)  # Any other non-success conclusion (startup_failure, timed_out,
+            # action_required, neutral, ...) is a real anomaly — count it as OTHER so
+            # the tally can never read all-zeros while a scheduled run actually failed.
+            cls="$concl"; n_other=$((n_other+1)) ;;
     esac
     printf "   %-12s %-12s %-12s %s\n" "$day" "${concl:-$stat}" "$cls" "$id"
 done < <(printf '%s' "$AR_RUNS" | python3 -c '
 import sys, json
 for r in json.load(sys.stdin):
-    print("\t".join([str(r["databaseId"]), r.get("conclusion") or "", r.get("status") or "", r.get("createdAt") or ""]))
+    print("|".join([str(r["databaseId"]), r.get("conclusion") or "", r.get("status") or "", r.get("createdAt") or ""]))
 ')
 echo "   tally: GUARD=$n_guard  RUNNER=$n_runner  OTHER=$n_other  UNKNOWN=$n_unknown  ok=$n_ok"
+[[ "$n_other" -gt 0 ]] && echo "   note: OTHER = a non-guard failure or an unexpected conclusion (startup_failure/timed_out/action_required/...) — read its log; startup_failure/timed_out usually mean the release-maker runner never came up or the job timed out."
 [[ "$n_unknown" -gt 0 ]] && echo "   note: UNKNOWN = required GitHub data (failed-step log or job metadata) could not be fetched — investigate manually; do not assume it is healthy / not a guard failure."
 echo
 
