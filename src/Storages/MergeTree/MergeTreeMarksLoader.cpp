@@ -145,7 +145,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     /// A part with zero granules has nothing to load: return early without opening the file.
     if (marks_count == 0)
     {
-        auto res = std::make_shared<MarksInCompressedFile>(PODArray<MarkInCompressedFile>{});
+        auto res = MarksInCompressedFile::create(PODArray<MarkInCompressedFile>{});
         ProfileEvents::increment(ProfileEvents::LoadedMarksFiles);
         return res;
     }

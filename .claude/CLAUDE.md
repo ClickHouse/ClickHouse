@@ -2,15 +2,13 @@ When working with a branch, do not use rebase or amend - add new commits instead
 
 Do not commit to the master branch. Create a new branch for every task.
 
-Do not create stacked pull requests. Every pull request must target `master` directly (or, in rare cases, a release branch), not another feature branch. CI only runs for pull requests whose base is `master` or a release branch, so a pull request stacked on another feature branch gets no checks. If a change depends on unmerged work, wait for that work to merge into `master` first, or include all the changes in a single pull request.
+Never commit `.claude/CLAUDE.md` changes together with code changes. The `CLAUDE.md` file contains local instructions and should not be included in pull request commits.
 
 When writing text such as documentation, comments, or commit messages, wrap literal names from ClickHouse SQL language, classes and functions, or literal excerpts from log messages inside inline code blocks, such as: `MergeTree`.
 
 When adding headers to documentation files under `docs/`, every header must include an explicit anchor in the form `{#kebab-case-anchor}` at the end of the header line, e.g. `## My Section {#my-section}`. This is mandatory for all heading levels. New documentation files must also include a frontmatter block at the top (before the first heading) with `description`, `sidebar_label`, `sidebar_position`, `slug`, `title`, and `doc_type` fields, modelled on existing files such as `docs/en/development/continuous-integration.md`.
 
 When writing text such as documentation, comments, or commit messages, write names of functions and methods as `f` instead of `f()` - we prefer it for mathematical purity when it refers a function itself rather than its application.
-
-Whenever changes are added, modified, or deleted that relate to the `Native` format - its wire/serialization format, type encodings (e.g. `LowCardinality`, `Array`, `Map`, `Variant`, `Dynamic`, `JSON`), the block/column structure, the compression frame, the `NativeReader`/`NativeWriter`, or the user-facing doc `docs/en/interfaces/formats/Native.md` - also update the official specification `docs/en/interfaces/specs/NativeFormat.md` (slug `/interfaces/specs/NativeFormat`) accordingly in the same change. The spec is the single source of truth for the format; if unsure whether the spec needs updating, flag it.
 
 When mentioning logical errors, say "exception" instead of "crash", because they don't crash the server in the release build.
 
@@ -140,7 +138,7 @@ You can build multiple versions of ClickHouse inside `build_*` directories, such
 
 You can run integration tests as in `tests/integration/README.md` using: `python -m ci.praktika run "integration" --test <selectors>` invoked from the repository root.
 
-When writing tests, do not add "no-*" tags (like "no-parallel") unless strictly necessarily.
+When writing tests, do not add tags (like "no-fasttest", "no-parallel", or any other "no-*" tags) unless strictly necessary. Most tests do not need any tags at all. Only add a tag when the test genuinely cannot run in that configuration.
 
 When writing tests in tests/queries, prefer adding a new test instead of extending existing ones.
 
@@ -176,4 +174,12 @@ Use the keyword `Closes` (not `Fixes` or `Resolves`) for consistency, even thoug
 ARM machines in CI are not slow. They are similar to x86 in performance.
 
 Use `tmp` subdirectory in the current directory for temporary files (logs, downloads, scripts, etc.), do not use `/tmp`. Create the directory if needed.
+
+When asked to fix a bug or implement a fix, always plan the fix first. Present a detailed plan describing what changes will be made and where, then ask for modifications or confirmation before implementing it.
+
+After implementing a fix and tests, never run a build without explicit confirmation from the user. Before asking for confirmation, show a clickable list of all changed files in the format `path/to/file:line_number` with a short description of what changed, so the user can quickly review each file. Always use the full file path — never truncate or abbreviate it with `...` or similar, as that breaks clickability.
+
+When trying to reproduce an error, prefer `clickhouse-local` if the query or scenario can work with it. If `clickhouse-local` is not sufficient, use `clickhouse-client` to connect to a currently running server. If the server is not running, ask the user to start it — do not start the server yourself.
+
+The server must always run from `/home/avogar/tmp/server` directory. Never run the server from any other directory. Use configs from that directory when running the server.
 
