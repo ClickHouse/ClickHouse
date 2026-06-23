@@ -188,6 +188,24 @@ FROM (
     SETTINGS query_plan_push_down_volume_reducing_functions = 0
 );
 
+SELECT *
+FROM (
+    SELECT id, length(s), length(arr), empty(arr), notEmpty(fs)
+    FROM volume_reducing_function_push_down
+    ORDER BY id DESC
+    LIMIT 2
+    SETTINGS query_plan_push_down_volume_reducing_functions = 0
+)
+EXCEPT ALL
+SELECT *
+FROM (
+    SELECT id, length(s), length(arr), empty(arr), notEmpty(fs)
+    FROM volume_reducing_function_push_down
+    ORDER BY id DESC
+    LIMIT 2
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1
+);
+
 SELECT 'eq: group by';
 SELECT length(s), count()
 FROM volume_reducing_function_push_down
