@@ -371,7 +371,7 @@ void registerDictionaryNaiveBayes(DictionaryFactory & factory)
         if (alpha <= 0.0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary: alpha must be greater than 0");
 
-        const String priors_mode_str = config.getString(layout_prefix + ".priors_mode", "uniform");
+        const String priors_mode_str = config.getString(layout_prefix + ".priors_mode", "proportional");
         PriorsMode priors_mode = PriorsMode::Uniform;
         std::map<UInt32, double> explicit_priors;
         if (priors_mode_str == "uniform")

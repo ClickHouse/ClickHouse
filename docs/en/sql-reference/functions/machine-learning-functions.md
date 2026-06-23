@@ -128,13 +128,13 @@ SELECT naiveBayesClassifier('sentiment_model', 'this is terrible');
 | **n**            | N-gram size. `1` = unigrams, `2` = bigrams, `3` = trigrams. | `2` | *Required* |
 | **mode**         | Tokenization method: `byte` (raw bytes), `codepoint` (Unicode characters), or `token` (whitespace-delimited words). | `token` | *Required* |
 | **alpha**        | Laplace smoothing factor for unseen n-grams. | `0.5` | `1.0` |
-| **priors_mode**  | How class prior probabilities are determined: `uniform`, `proportional`, or `explicit`. See below. | `proportional` | `uniform` |
+| **priors_mode**  | How class prior probabilities are determined: `uniform`, `proportional`, or `explicit`. See below. | `uniform` | `proportional` |
 | **priors**       | Explicit class priors, required when `priors_mode` is `explicit`. Must sum to `1.0`. | `'0=0.6,1=0.4'` | — |
 | **store_source** | Retain the source n-gram rows so `SELECT * FROM dictionary` works. Doubles memory. | `1` | `0` |
 
 **Prior modes:**
-- `uniform` (default) — equal probability across all classes.
-- `proportional` — derived from total n-gram counts per class.
+- `proportional` (default) — each class's prior is proportional to its total n-gram count in the training data, i.e. classes seen more often are more likely a priori. Use this when the training class frequencies reflect the real-world frequencies you expect at query time.
+- `uniform` — equal probability across all classes. Use this when classes are balanced, or when the training frequencies are not representative of query-time frequencies (so that the prediction depends only on the text).
 - `explicit` — probabilities given via the `priors` parameter, e.g. `priors '0=0.6,1=0.4'` (one entry per class, summing to `1.0`).
 
 ---

@@ -16,8 +16,8 @@ Byte mode — English text
 Byte mode — Dutch text
 1
 1
-(1,0.9985)
-[(1,0.9985),(0,0.0015)]
+(1,0.9984)
+[(1,0.9984),(0,0.0016)]
 Codepoint mode — Latin text
 0
 0
@@ -86,8 +86,8 @@ Membership via dictHas
 Duplicate ngram accumulation
 0
 1
-(0,0.9187)
-[(0,0.9187),(1,0.0813)]
+(0,0.9443)
+[(0,0.9443),(1,0.0557)]
 Probability invariants
 1
 2
