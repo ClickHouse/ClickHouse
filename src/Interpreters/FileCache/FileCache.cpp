@@ -99,6 +99,9 @@ namespace FileCacheSetting
     extern const FileCacheSettingsDouble keep_free_space_size_ratio;
     extern const FileCacheSettingsDouble keep_free_space_elements_ratio;
     extern const FileCacheSettingsUInt64 keep_free_space_remove_batch;
+    extern const FileCacheSettingsNonZeroUInt64 invalidated_entries_cleanup_interval_ms;
+    extern const FileCacheSettingsNonZeroUInt64 invalidated_entries_cleanup_threshold;
+    extern const FileCacheSettingsNonZeroUInt64 invalidated_entries_cleanup_remove_batch;
     extern const FileCacheSettingsBool enable_bypass_cache_with_threshold;
     extern const FileCacheSettingsUInt64 bypass_cache_threshold;
     extern const FileCacheSettingsBool write_cache_per_user_id_directory;
@@ -311,6 +314,11 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
             cache_name
         );
     }
+    main_priority->setCleanupSettings(
+        settings[FileCacheSetting::invalidated_entries_cleanup_threshold],
+        settings[FileCacheSetting::invalidated_entries_cleanup_interval_ms],
+        settings[FileCacheSetting::invalidated_entries_cleanup_remove_batch]);
+
     LOG_DEBUG(log, "Using {} cache policy", settings[FileCacheSetting::cache_policy].value);
 
     if (settings[FileCacheSetting::enable_filesystem_query_cache_limit])
@@ -444,6 +452,9 @@ void FileCache::initializeImpl(bool load_metadata)
 
     try
     {
+        /// Publish the invalidate notifier before loadMetadata spawns threads that can invalidate entries.
+        main_priority->startup(Context::getGlobalContextInstance()->getSchedulePool(), cache_guard);
+
         if (load_metadata)
             loadMetadata();
 
@@ -451,6 +462,9 @@ void FileCache::initializeImpl(bool load_metadata)
     }
     catch (...)
     {
+        /// startup() may have scheduled the background cleanup task; stop it so a retried
+        /// initialization does not leave an orphaned task rescheduling on `this`.
+        main_priority->deactivateBackgroundOperations();
         init_exception = std::current_exception();
         tryLogCurrentException(__PRETTY_FUNCTION__);
         throw;
@@ -2166,6 +2180,8 @@ void FileCache::deactivateBackgroundOperations()
     metadata.shutdown();
     if (keep_up_free_space_ratio_task)
         keep_up_free_space_ratio_task->deactivate();
+    if (main_priority)
+        main_priority->deactivateBackgroundOperations();
 }
 
 std::vector<FileSegment::Info> FileCache::getFileSegmentInfos(const UserID & user_id)
