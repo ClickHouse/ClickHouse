@@ -445,7 +445,17 @@ Steps 1–5 are identical to the plain INSERT phase. After the end-of-input term
 
 **Client implementation note.** A client that handles plain `INSERT` by draining until `EndOfStream`/`Exception` and discarding all non-`EndOfStream` packets will silently drop the `RETURNING` result. To consume the result the client must detect the `Data` header packet that arrives after the end-of-input terminator and switch into the Query-phase response loop. The simplest safe approach is to treat the post-terminator response identically to a `SELECT` response: accumulate `Data` blocks, handle `Totals`/`Extremes`, and exit on `EndOfStream` or `Exception`.
 
-**Settings restriction.** `max_execution_time` and `timeout_overflow_mode` are not honoured in the `RETURNING` subquery `SETTINGS` clause and raise `NOT_IMPLEMENTED` if supplied. The executor's periodic time-limit check uses the shared `ProcessListElement` whose `Stopwatch` starts at `INSERT` registration, so a per-phase timeout cannot be enforced correctly. Result-shaping limits (`max_result_rows`, `max_result_bytes`, `result_overflow_mode`) are fully supported.
+**Settings restriction.** The following settings raise `NOT_IMPLEMENTED` if supplied in the `RETURNING` subquery `SETTINGS` clause, because they operate on shared query-level state that is captured at `INSERT` registration and cannot be correctly scoped to the subquery alone:
+
+| Category | Rejected settings |
+|---|---|
+| Memory | `max_memory_usage`, `max_memory_usage_for_user` |
+| Execution time | `max_execution_time`, `timeout_overflow_mode` |
+| Temporary data on disk | `max_temporary_data_on_disk_size_for_query`, `max_temporary_data_on_disk_size_for_user` |
+| Network bandwidth | `max_network_bandwidth_for_user`, `max_network_bandwidth_for_all_users`, `max_remote_read_network_bandwidth`, `max_remote_write_network_bandwidth`, `max_local_read_bandwidth`, `max_local_write_bandwidth` |
+| Concurrency / admission | `max_concurrent_queries_for_user`, `max_concurrent_queries_for_all_users`, `queue_max_wait_ms`, `replace_running_query`, `replace_running_query_max_wait_ms`, `priority`, `low_priority_query_wait_time_ms` |
+
+Result-shaping limits (`max_result_rows`, `max_result_bytes`, `result_overflow_mode`) are fully supported, as they operate only on the result pipeline.
 
 ## Message reference {#message-reference}
 
