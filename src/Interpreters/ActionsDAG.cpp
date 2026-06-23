@@ -1845,22 +1845,11 @@ void ActionsDAG::removeFromOutputs(const NameSet & node_names)
     NodeRawConstPtrs new_outputs;
     new_outputs.reserve(outputs.size());
 
-    NameSet removed;
     for (const auto * output : outputs)
-    {
-        if (node_names.contains(output->result_name))
-            removed.insert(output->result_name);
-        else
+        if (!node_names.contains(output->result_name))
             new_outputs.push_back(output);
-    }
-
-    for (const auto & node_name : node_names)
-        if (!removed.contains(node_name))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found node with {} in the outputs of ActionsDAG\n{}", node_name, dumpDAG());
 
     outputs = std::move(new_outputs);
-
-    removeUnusedActions(/*allow_remove_inputs=*/false);
 }
 
 ActionsDAG ActionsDAG::clone() const

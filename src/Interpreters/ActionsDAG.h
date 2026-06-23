@@ -220,9 +220,8 @@ public:
     /// Do not remove any inputs.
     void removeFromOutputs(const std::string & node_name);
 
-    /// Same as above for a set of names: every name in `node_names` must be present in the outputs,
-    /// otherwise LOGICAL_ERROR is thrown. Removes all matching outputs, then removes unused actions. Does
-    /// not remove any inputs.
+    /// Remove all outputs whose result name is in `node_names`. Unlike the single-name overload above,
+    /// names not present among the outputs are ignored (no throw), and unused actions are not pruned.
     void removeFromOutputs(const NameSet & node_names);
 
     /// Remove actions that are not needed to compute output nodes.
