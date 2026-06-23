@@ -7258,6 +7258,15 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     if (!backup->hasFiles(data_path_in_backup))
         return;
 
+    /// TODO(unique-key): sidecar-aware backup/restore. Delete-bitmap sidecars
+    /// are not preserved across backup/restore, so restoring data parts would
+    /// resurrect deleted rows. BACKUP is already rejected; gate the symmetric
+    /// restore path too for backups produced by older builds.
+    if (auto uk_metadata = getInMemoryMetadataPtr(getContext(), false); uk_metadata && uk_metadata->hasUniqueKey())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "RESTORE of data is not supported for UNIQUE KEY tables yet: delete-bitmap "
+            "sidecars are not preserved across backup/restore.");
+
     if (!restorer.isNonEmptyTableAllowed() && getTotalActiveSizeInBytes() && backup->hasFiles(data_path_in_backup))
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
