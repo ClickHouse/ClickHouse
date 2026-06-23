@@ -77,17 +77,17 @@ SECRETS = [
     azure_secret,
     chcache_secret,
     Secret.Config(
-        name="woolenwolf_gh_app.clickhouse-app-id",
+        name="/github-app/clickhouse-gh.clickhouse-app-id",
         type=Secret.Type.AWS_SSM_SECRET,
         region="us-east-1",
     ),
     Secret.Config(
-        name="woolenwolf_gh_app.clickhouse-app-key",
+        name="/github-app/clickhouse-gh.clickhouse-app-key",
         type=Secret.Type.AWS_SSM_SECRET,
         region="us-east-1",
     ),
     Secret.Config(
-        name="woolenwolf_gh_app.installation_id",
+        name="/github-app/clickhouse-gh.installation_id",
         type=Secret.Type.AWS_SSM_SECRET,
         region="us-east-1",
     ),
