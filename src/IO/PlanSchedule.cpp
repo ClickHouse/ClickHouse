@@ -131,7 +131,6 @@ VectorWithMemoryTracking<PlanSchedule::WriteTarget> writeTargetsFor(
 PlanSchedule buildSchedule(
     const CoverageMap & geometry,
     ByteRange request_extent,
-    MemoryPressureLevel /*pressure*/,
     size_t min_bytes_for_seek)
 {
     PlanSchedule sched;

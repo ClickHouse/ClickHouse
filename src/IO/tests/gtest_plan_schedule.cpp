@@ -33,7 +33,7 @@ CoverageMap geometry(size_t plan_start, size_t plan_end, std::vector<GeometryEnt
 
 PlanSchedule describe(const CoverageMap & g, ByteRange request)
 {
-    return buildSchedule(g, request, MemoryPressureLevel{}, /*min_bytes_for_seek=*/2);
+    return buildSchedule(g, request, /*min_bytes_for_seek=*/2);
 }
 
 struct Seg { size_t off; size_t size; PlanSchedule::Purpose purpose; bool resident; };
@@ -66,7 +66,7 @@ constexpr auto Fill = PlanSchedule::Purpose::FillOnly;
 
 PlanSchedule describeSeek(const CoverageMap & g, ByteRange request, size_t min_bytes_for_seek)
 {
-    return buildSchedule(g, request, MemoryPressureLevel{}, min_bytes_for_seek);
+    return buildSchedule(g, request, min_bytes_for_seek);
 }
 
 bool intoHas(const PlanSchedule::Retrieve & r, size_t entry, ByteRange cell)

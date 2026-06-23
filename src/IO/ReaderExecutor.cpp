@@ -572,7 +572,7 @@ std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t st
     /// `prefetch_pool` and `reader_executor_log` are intentionally NOT propagated:
     /// a one-shot `readBigAt` can't amortise prefetch latency, and per-call log rows
     /// would spam `system.reader_executor_log`. (Fills/promotes always run inline.)
-    /// `long_connection_limit` is shared (dormant until the long-connection rework).
+    /// `long_connection_limit` is shared so transient reads honour the server-wide cap.
     Options transient_options;
     transient_options.window_size = window_size;
     transient_options.min_bytes_for_seek = min_bytes_for_seek;
@@ -1445,7 +1445,7 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
     /// guard over ALL writer views, with a `nullptr` interrupt so it never stops half-done.
     ChainedBuffers led_bytes;
     SCOPE_EXIT_SAFE({
-        pushChainToWriters(m.writer_views, window, led_bytes, Stats::BytesPushedToCacheSync,
+        pushChainToWriters(m.writer_views, window, led_bytes,
             /*interrupt=*/nullptr, m.stats);
         m.fetched = std::move(led_bytes);
     });
@@ -1620,7 +1620,7 @@ void ReaderExecutor::pushAssembledToWriteBuffers(ByteRange physical_window, cons
     for (size_t i = 0; i < read_plan.bufs.size(); ++i)
         for (auto & w : read_plan.bufs[i].writers)
             if (w.writer && isScheduledFillTarget(physical_window, i, w.range))
-                writeSliceToWriter(w.writer.get(), physical_window, result, Stats::BytesPushedToCacheSync, out_stats);
+                writeSliceToWriter(w.writer.get(), physical_window, result, out_stats);
 }
 
 bool ReaderExecutor::isScheduledFillTarget(ByteRange window, size_t entry, ByteRange cell) const
@@ -1637,7 +1637,7 @@ bool ReaderExecutor::isScheduledFillTarget(ByteRange window, size_t entry, ByteR
 }
 
 void ReaderExecutor::writeSliceToWriter(CacheWriter * writer, ByteRange window, const ChainedBuffers & chain,
-    Stats::Counter bytes_counter, Stats & out_stats)
+    Stats & out_stats)
 {
     chassert(writer);
     /// Clamp the write target to the window's served portion and the buffer's own
@@ -1667,14 +1667,14 @@ void ReaderExecutor::writeSliceToWriter(CacheWriter * writer, ByteRange window, 
             continue;
         out_stats.add(Stats::CachePopulateRequests);
         StatTimer put_scope(out_stats, Stats::CachePopulateMicroseconds);
-        out_stats.add(bytes_counter, writer->write(std::move(slice)));
+        out_stats.add(Stats::BytesPushedToCacheSync, writer->write(std::move(slice)));
         HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
             static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
     }
 }
 
 void ReaderExecutor::pushChainToWriters(const VectorWithMemoryTracking<WriterView> & views, ByteRange window,
-    const ChainedBuffers & chain, Stats::Counter bytes_counter, const std::atomic<bool> * interrupt, Stats & out_stats)
+    const ChainedBuffers & chain, const std::atomic<bool> * interrupt, Stats & out_stats)
 {
     for (const auto & view : views)
     {
@@ -1683,7 +1683,7 @@ void ReaderExecutor::pushChainToWriters(const VectorWithMemoryTracking<WriterVie
         /// `interrupt_requested` is cleared in `schedulePutStep`.)
         if (interrupt && interrupt->load(std::memory_order_relaxed))
             break;
-        writeSliceToWriter(view.writer, window, chain, bytes_counter, out_stats);
+        writeSliceToWriter(view.writer, window, chain, out_stats);
     }
 }
 
@@ -2176,9 +2176,6 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Chai
     if (m->writer_views.empty())
         return;  /// nothing to fill for this window
 
-    /// Inline now: this fill writes synchronously on the read thread, so it credits the
-    /// sync populate counter (the async counter is retired with the put lane).
-    m->put_bytes_counter = Stats::BytesPushedToCacheSync;
     m->fill_chain = assembled;
     /// The machine is being re-armed for a second step: a takeover collect set
     /// `interrupt_requested` to stop the FETCH - the put must not inherit it.
@@ -2192,7 +2189,7 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Chai
             ? self->physical_window.offset
             : std::min(self->physical_window.end(), self->fill_chain.range().end());
         pushChainToWriters(self->writer_views, self->physical_window, self->fill_chain,
-            self->put_bytes_counter, &self->interrupt_requested, self->stats);
+            &self->interrupt_requested, self->stats);
         /// Pin the partial segment under the just-written frontier until the
         /// reap (see `fill_pin`): the foreground's finalize pinned BEFORE this
         /// fill landed, so a fresh segment was not pinnable there.
@@ -2368,7 +2365,6 @@ void ReaderExecutor::launchRetrieve(size_t ri)
     const ByteRange next_physical_window{base, chunk};
 
     auto m = std::make_shared<FetchMachine>();
-    abandoned_machines.reserve(abandoned_machines.size() + 1);
     m->requested_range = ByteRange{base - data_start_offset, chunk};
     m->physical_window = next_physical_window;
     m->retrieve_index = ri;
@@ -2716,7 +2712,6 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     read_plan.schedule = buildSchedule(
         *read_plan.geometry(),
         ByteRange{plan_range.offset, plan_range.size},
-        read_plan.geometry()->pressure_level,
         min_bytes_for_seek);
 
     /// Feed this plan's predicted source reads into the continuity estimator so its

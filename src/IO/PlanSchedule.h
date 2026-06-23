@@ -3,7 +3,6 @@
 #include <IO/CoverageMap.h>
 #include <IO/ChainedBuffers.h>
 #include <IO/ICacheProvider.h>
-#include <Common/MemoryPressureMonitor.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <optional>
@@ -82,12 +81,11 @@ struct PlanSchedule
 
 /// Describe the work of the plan `geometry` for the half-open logical request
 /// `request_extent` (physical coords here; the caller adds the encryption-header
-/// shift). Pure function of the geometry; `pressure` and `min_bytes_for_seek`
-/// shape connection width and streaming footprint.
+/// shift). Pure function of the geometry; `min_bytes_for_seek` shapes the bridge
+/// threshold (the streaming footprint).
 PlanSchedule buildSchedule(
     const CoverageMap & geometry,
     ByteRange request_extent,
-    MemoryPressureLevel pressure,
     size_t min_bytes_for_seek);
 
 }

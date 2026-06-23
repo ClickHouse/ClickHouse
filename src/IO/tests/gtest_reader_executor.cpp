@@ -4115,7 +4115,7 @@ void validateScheduleMatchesReality(
     }
 
     ASSERT_NE(geom, nullptr);
-    auto sched = buildSchedule(*geom, ByteRange{0, file_size}, MemoryPressureLevel{}, min_bytes_for_seek);
+    auto sched = buildSchedule(*geom, ByteRange{0, file_size}, min_bytes_for_seek);
 
     ASSERT_EQ(outputs.size(), sched.steps.size()) << "step count vs live windows";
     for (size_t i = 0; i < outputs.size(); ++i)
@@ -4483,7 +4483,7 @@ TEST(ReaderExecutor, SchedulePredictsByteKpis)
     }
     ASSERT_NE(geom, nullptr);
 
-    auto sched = buildSchedule(*geom, ByteRange{32 * 1024, file - 32 * 1024}, MemoryPressureLevel{}, 0);
+    auto sched = buildSchedule(*geom, ByteRange{32 * 1024, file - 32 * 1024}, 0);
     auto k = predictKpi(sched);
 
     EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesFromSource].load() - src0, k.from_source) << "R";
@@ -4714,8 +4714,8 @@ String chainBytes(const ChainedBuffers & chain)
 }
 
 /// A plain (unencrypted) single-object executor for exercising the long-connection
-/// mechanics in isolation - the open path is not wired into the read funnel yet, so
-/// the tests drive `openLong*` / `serveFromLong*` / `dropLong*` directly.
+/// mechanics in isolation - the tests drive `openLong*` / `serveFromLong*` /
+/// `dropLong*` directly via the inspector, independent of the read funnel.
 struct LongConnRig
 {
     String content;
@@ -4845,7 +4845,7 @@ TEST(ReaderExecutor, LongConnectionClampReachAndShouldOpen)
 
     EXPECT_EQ(inspect(ex).clampReach(/*reach=*/size * 4, /*phys_off=*/1000), size); /// clamped to file end
     EXPECT_EQ(inspect(ex).clampReach(/*reach=*/2000, /*phys_off=*/1000), 3000u);    /// within file, unchanged
-    EXPECT_FALSE(inspect(ex).shouldOpenLong(0));            /// open path not wired (Stage 1)
+    EXPECT_FALSE(inspect(ex).shouldOpenLong(0));            /// no continuity feed yet -> predicted reach 0, not "long"
 }
 
 TEST(ReaderExecutor, LongConnectionForegroundDrainsWholeFile)

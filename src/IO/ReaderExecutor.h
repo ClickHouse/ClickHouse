@@ -61,7 +61,9 @@ public:
     /// separately; a gap at or above it reopens, and if a faster tier holds it the
     /// bytes are filled down from there. Near the bandwidth/request cost breakeven.
     static constexpr size_t DEFAULT_MIN_BYTES_FOR_SEEK = 2 * 1024 * 1024; /// 2 MiB
-    /// Drain bound for the future long-connection rework; dormant for now.
+    /// Drain bound: if only a tail of at most this many bytes remains to a long
+    /// connection's read bound, drain it so the connection completes pool-reusable
+    /// (see `maybeDrainLongTail`) instead of being abandoned mid-response.
     static constexpr size_t DEFAULT_MAX_TAIL_FOR_DRAIN = 1 * 1024 * 1024; /// 1 MiB
     static constexpr size_t CHAINED_BUFFER_BLOCK_SIZE = 1 * 1024 * 1024; /// 1 MiB per ChainedBuffers node
     /// Look-ahead span over which residency is planned ONCE (plan-then-stream),
@@ -484,7 +486,8 @@ private:
         /// foreground at launch (a machine never opens one itself - the foreground is
         /// the sole opener), drained by the worker's fetch step instead of a one-shot
         /// GET, reclaimed by the foreground at collect, or accounted + released at reap
-        /// if the machine is abandoned. Empty until the open path is wired in.
+        /// if the machine is abandoned. Empty when the foreground carried no connection
+        /// into this launch.
         std::optional<LongConnection> long_conn;
         Stats stats;
         bool reached_eof = false;
@@ -506,8 +509,6 @@ private:
         /// sibling's fill at collect (waiting on the query thread). Empty with no contention
         /// (the worker then leads - and fetches - the whole window).
         VectorWithMemoryTracking<CacheWriter::SiblingLed> sibling_led;
-        /// Which byte counter the fill credits (`BytesPushedToCacheSync`).
-        Stats::Counter put_bytes_counter = Stats::BytesPushedToCacheSync;
         /// Strategy-A pin taken by the fill step over the partial segment it just
         /// filled, held until the reap: the foreground finalize runs BEFORE the fill,
         /// so its `writerPinAt` finds a still-empty segment - without this, an eviction
@@ -659,16 +660,16 @@ private:
 
     /// The per-writer-list body shared by the put step and the parked-inline
     /// write: write `chain ∩ writer-range ∩ window` into each (already
-    /// schedule-filtered) writer, counted into `bytes_counter`. `interrupt`
-    /// (nullable) is polled between writers - the put step's stop point;
-    /// remaining writers are left untouched for the caller's abandon path.
+    /// schedule-filtered) writer. `interrupt` (nullable) is polled between
+    /// writers - the put step's stop point; remaining writers are left untouched
+    /// for the caller's abandon path.
     void pushChainToWriters(const VectorWithMemoryTracking<WriterView> & views, ByteRange window,
-        const ChainedBuffers & chain, Stats::Counter bytes_counter, const std::atomic<bool> * interrupt, Stats & out_stats);
+        const ChainedBuffers & chain, const std::atomic<bool> * interrupt, Stats & out_stats);
 
     /// Write `chain ∩ writer-range ∩ window` into ONE writer (the body of the
-    /// loops above), counted into `bytes_counter`.
+    /// loops above).
     void writeSliceToWriter(CacheWriter * writer, ByteRange window, const ChainedBuffers & chain,
-        Stats::Counter bytes_counter, Stats & out_stats);
+        Stats & out_stats);
 
     /// Whether the plan schedule designates `(entry, cell)` a fill target for a
     /// retrieve overlapping `window`. A cell holding the request is a target in
@@ -971,11 +972,12 @@ private:
     /// touches it). NOT long-connection state - a one-shot fill needs it too.
     CacheWriter::CacheSegmentPin inflight_segment_pin;
     /// Server-wide long-connection limit handle, shared with
-    /// `makeTransientForReadAt`. Gates long-connection opens; dormant for now.
+    /// `makeTransientForReadAt`. Gates long-connection opens (the
+    /// `reader_executor_use_long_connections` setting).
     std::shared_ptr<LongConnectionLimit> long_connection_limit;
-    /// The held long source connection. Foreground hold (it rides the machine
-    /// payload when a prefetch carries it - a later stage). Empty until the open
-    /// path is wired in; Stage 1 introduces the type and mechanics only.
+    /// The held long source connection. Foreground hold; it rides the machine
+    /// payload when a prefetch carries it (`takeLong` at launch, reclaimed at
+    /// collect). Empty when no long connection is currently open.
     std::optional<LongConnection> long_conn;
 
     /// Continuous-read pattern estimator, fed each plan's predicted source reads
