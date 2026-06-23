@@ -1243,6 +1243,11 @@ Output trailing zeros when printing Decimal values. E.g. 1.230000 instead of 1.2
 
 Disabled by default.
 )", 0) \
+    DECLARE(Bool, output_format_always_write_decimal_point_in_float_and_decimal, false, R"(
+Always print a decimal point for floating-point and Decimal numbers in text formats, even when the value is a whole number. For example, output `1.` instead of `1`.
+
+Disabled by default.
+)", 0) \
     DECLARE(UInt64, output_format_float_precision, 0, R"(
 When non-zero, format floating-point output (`Float32`, `Float64`, `BFloat16`) with at most this many digits after the decimal point (trailing zeros are removed).
 When 0 (the default), use the shortest round-trip representation.
@@ -1279,6 +1284,15 @@ If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` ar
 )", 0) \
     DECLARE(String, input_format_record_errors_file_path, "", R"(
 Path of the file used to record errors while reading text formats (CSV, TSV).
+)", 0) \
+    DECLARE(GeoJSONUnsupportedGeometryHandling, input_format_geojson_unsupported_geometry_handling, FormatSettings::UnsupportedGeometryHandling::Throw, R"(
+Controls what happens when a valid `GeoJSON` geometry type that cannot be represented in ClickHouse's `Geometry` type (such as `GeometryCollection` or `MultiPoint`) must be stored in the `geometry` column while reading `GeoJSON` input.
+
+Possible values:
+- `'throw'` (default) — throw an exception.
+- `'null'` — insert a `NULL` value for the `geometry` column and continue parsing.
+
+This applies only when the `geometry` column is materialized. When it is not a requested output column, such a geometry is validated for well-formedness but does not trigger the handling.
 )", 0) \
     DECLARE(String, errors_output_format, "CSV", R"(
 Method to write Errors to text output.

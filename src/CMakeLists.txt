@@ -441,6 +441,8 @@ if (TARGET ch_contrib::arrow_flight)
     add_object_library(clickhouse_server_arrowflight Server/ArrowFlight)
 endif()
 add_object_library(clickhouse_server_embedded_client Server/ClientEmbedded)
+add_object_library(clickhouse_server_statelessworker Server/StatelessWorker)
+add_object_library(clickhouse_server_distributedquery Server/DistributedQuery)
 add_object_library(clickhouse_formats Formats)
 add_object_library(clickhouse_processors Processors)
 add_object_library(clickhouse_processors_executors Processors/Executors)
@@ -652,10 +654,14 @@ target_link_libraries(
 
 target_link_libraries(clickhouse_common_io PUBLIC
     ch_contrib::miniselect
-    ch_contrib::pdqsort)
+    ch_contrib::pdqsort
+    ch_contrib::ipnsort
+    ch_contrib::driftsort)
 target_link_libraries(dbms PUBLIC
     ch_contrib::miniselect
-    ch_contrib::pdqsort)
+    ch_contrib::pdqsort
+    ch_contrib::ipnsort
+    ch_contrib::driftsort)
 
 target_link_libraries(dbms PRIVATE ch_contrib::zstd)
 
@@ -809,6 +815,10 @@ if (TARGET ch_contrib::bzip2)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::bzip2)
 endif()
 
+if (TARGET ch_contrib::base64)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::base64)
+endif()
+
 if (TARGET ch_contrib::libarchive)
     target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::libarchive)
 endif()
@@ -907,6 +917,10 @@ if (ENABLE_TESTS)
         clickhouse_common_zookeeper_base
         clickhouse_common_config
         clickhouse_common_zookeeper)
+
+    if (TARGET ch_contrib::krb5)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::krb5)
+    endif()
 
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)
