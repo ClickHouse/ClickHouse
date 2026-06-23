@@ -88,11 +88,8 @@ PositionList TextIndexPhraseSearch::intersect(const PositionList & lhs, const Po
     if (matches.empty())
         return result;
 
-    /// Sort by key and coalesce duplicate (doc_id, group) keys (OR their bitmaps).
-    /// Sorting by key alone suffices: same-key entries become adjacent and bitmap OR is
-    /// order-independent.
-    std::sort(matches.begin(), matches.end(),
-              [](const auto & a, const auto & b) { return a.first < b.first; });
+    chassert(std::is_sorted(matches.begin(), matches.end(),
+                            [](const auto & a, const auto & b) { return a.first < b.first; }));
 
     result.reserve(matches.size());
     for (size_t i = 0; i < matches.size();)
