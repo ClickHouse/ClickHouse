@@ -34,7 +34,7 @@ def start_cluster():
 def is_json(log_json):
     try:
         json.loads(log_json)
-    except ValueError:
+    except ValueError as e:
         return False
     return True
 
@@ -109,7 +109,7 @@ def validate_log_config_relation(config, logs, config_type):
             ):
                 return False
 
-    except ValueError:
+    except ValueError as e:
         return False
     return True
 
