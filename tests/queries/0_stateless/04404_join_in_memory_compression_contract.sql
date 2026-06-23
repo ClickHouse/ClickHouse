@@ -1,6 +1,14 @@
 -- Tags: no-random-settings
 -- (the `parallel_hash` case asserts that compression keeps the join under `max_bytes_in_join`; randomized
 -- block-size / memory settings shift the per-slot footprint and make that threshold flaky)
+--
+-- `enable_analyzer = 1` is pinned on both outer queries (like 04403): the scenarios use
+-- `query_plan_join_swap_table = 'false'` to force the right (compressible) table as the build side, and
+-- that is an analyzer/query-plan-only setting. Under the old analyzer it is a no-op, so the build-side
+-- choice (and therefore the per-slot footprint) is undefined and the tight `max_bytes_in_join` limit can
+-- be exceeded before compression catches up (observed `SET_SIZE_LIMIT_EXCEEDED` only on the old-analyzer
+-- run, while every new-analyzer config passes). The old-analyzer compression path itself is still covered
+-- by 04402, which is not analyzer-pinned.
 
 -- Regression tests for the documented contract of `enable_join_in_memory_compression` beyond plain
 -- `hash`: the setting must compress the stored right-side blocks under memory pressure for
@@ -27,7 +35,7 @@ SELECT (SELECT sum(cityHash64(l.k, r.rv, r.pad)) FROM jimc_c_left AS l INNER JOI
             SETTINGS join_algorithm = 'parallel_hash', max_threads = 4, enable_join_in_memory_compression = 0)
      = (SELECT sum(cityHash64(l.k, r.rv, r.pad)) FROM jimc_c_left AS l INNER JOIN jimc_c_right AS r ON l.k = r.k
             SETTINGS join_algorithm = 'parallel_hash', max_threads = 4, enable_join_in_memory_compression = 1, max_bytes_in_join = 12000000, query_plan_join_swap_table = 'false')
-SETTINGS log_comment = '04404_parallel_hash';
+SETTINGS log_comment = '04404_parallel_hash', enable_analyzer = 1;
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['JoinInMemoryCompressedColumns'] > 0 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '04404_parallel_hash' AND type = 'QueryFinish'
@@ -39,7 +47,7 @@ SELECT (SELECT sum(cityHash64(l.k, r.rv, r.pad)) FROM jimc_c_left AS l INNER JOI
             SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 1, enable_join_in_memory_compression = 0)
      = (SELECT sum(cityHash64(l.k, r.rv, r.pad)) FROM jimc_c_left AS l INNER JOIN jimc_c_right AS r ON l.k = r.k
             SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 1, enable_join_in_memory_compression = 1, max_bytes_in_join = 8000000, query_plan_join_swap_table = 'false')
-SETTINGS log_comment = '04404_grace_hash';
+SETTINGS log_comment = '04404_grace_hash', enable_analyzer = 1;
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['JoinInMemoryCompressedColumns'] > 0 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '04404_grace_hash' AND type = 'QueryFinish'
