@@ -85,7 +85,7 @@ jobs:
           python3 ./tests/ci/create_release.py --prepare-release-info \
             --ref ${{ inputs.ref }} --release-type ${{ inputs.type }} \
             ${{ inputs.dry-run == true && '--dry-run' || '' }} \
-            ${{ (inputs.only-repo == true || inputs.only-docker == true) && '--skip-tag-check' || '' }}
+            ${{ (inputs.only-repo == true || inputs.only-docker == true) && '--skip-tag-check --recovery' || '' }}
           echo "::group::Release Info"
           python3 -m json.tool /tmp/release_info.json
           echo "::endgroup::"
