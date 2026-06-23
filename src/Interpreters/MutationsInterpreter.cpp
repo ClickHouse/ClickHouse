@@ -1228,39 +1228,46 @@ void MutationsInterpreter::prepare(bool dry_run)
             }
 
             /// A TTL expression can also depend on a *subcolumn* of a rewritten column (e.g.
-            /// `TTL t.k + INTERVAL 1 DAY` while materializing the parent column `t`). The TTL
-            /// dependency is then recorded under the subcolumn name (`t.k`), which the exact-name
-            /// `getAllColumnDependencies` recalculation below does not pick up — and unlike skip
-            /// indices, projections and statistics (handled above via the subcolumn-aware
+            /// `TTL t.k + INTERVAL 1 DAY` while materializing the parent Tuple column `t`, or
+            /// `TTL j.d + INTERVAL 1 DAY` over a dynamic path of a JSON column `j`). The TTL
+            /// dependency is then recorded under the subcolumn name (`t.k` / `j.d`), which the
+            /// exact-name `getAllColumnDependencies` recalculation below does not pick up — and
+            /// unlike skip indices, projections and statistics (handled above via the subcolumn-aware
             /// `column_required_by`), recomputing the part's `ttl_infos` for a subcolumn dependency
             /// is not implemented. Following the same fail-close approach used for key columns,
             /// refuse the command rather than leaving stale TTL bounds in the new part.
-            for (const auto & rewritten_column : rewritten_columns)
+            ///
+            /// Scan the TTL dependency names themselves and resolve each to its name in storage,
+            /// rather than enumerating the rewritten column's subcolumns: `IDataType::getSubcolumnNames`
+            /// does not list dynamic subcolumns (JSON / Dynamic paths), so enumerating them would miss
+            /// a `TTL j.d` dependency, while `tryGetColumnOrSubcolumn` does resolve a dynamic subcolumn
+            /// name to its parent.
+            auto refuse_if_ttl_depends_on_subcolumn = [&](const Names & ttl_columns)
             {
-                auto column_in_storage = columns_desc.tryGetPhysical(rewritten_column);
-                if (!column_in_storage)
-                    continue;
-
-                for (const auto & subcolumn : column_in_storage->type->getSubcolumnNames())
+                for (const auto & ttl_column : ttl_columns)
                 {
-                    const String subcolumn_name = Nested::concatenateName(rewritten_column, subcolumn);
-
-                    const bool ttl_depends_on_subcolumn = std::ranges::any_of(
-                        getAllColumnDependencies(metadata_snapshot, NameSet{subcolumn_name}, has_dependency),
-                        [](const auto & dependency)
-                        {
-                            return dependency.kind == ColumnDependency::TTL_EXPRESSION
-                                || dependency.kind == ColumnDependency::TTL_TARGET;
-                        });
-
-                    if (ttl_depends_on_subcolumn)
+                    auto resolved = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, ttl_column);
+                    if (resolved && resolved->isSubcolumn() && rewritten_columns.contains(resolved->getNameInStorage()))
                         throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
                             "Refused to materialize column {} because a TTL expression depends on its subcolumn {}. "
                             "Recomputing the column would require recalculating the TTL bounds, which is not "
                             "supported for subcolumn dependencies",
-                            backQuote(command.column_name), backQuote(subcolumn_name));
+                            backQuote(command.column_name), backQuote(ttl_column));
                 }
-            }
+            };
+
+            if (metadata_snapshot->hasRowsTTL())
+                refuse_if_ttl_depends_on_subcolumn(metadata_snapshot->getRowsTTL().expression_columns.getNames());
+            for (const auto & ttl_entry : metadata_snapshot->getRowsWhereTTLs())
+                refuse_if_ttl_depends_on_subcolumn(ttl_entry.expression_columns.getNames());
+            for (const auto & ttl_entry : metadata_snapshot->getGroupByTTLs())
+                refuse_if_ttl_depends_on_subcolumn(ttl_entry.expression_columns.getNames());
+            for (const auto & ttl_entry : metadata_snapshot->getRecompressionTTLs())
+                refuse_if_ttl_depends_on_subcolumn(ttl_entry.expression_columns.getNames());
+            for (const auto & ttl_entry : metadata_snapshot->getColumnTTLs())
+                refuse_if_ttl_depends_on_subcolumn(ttl_entry.second.expression_columns.getNames());
+            for (const auto & ttl_entry : metadata_snapshot->getMoveTTLs())
+                refuse_if_ttl_depends_on_subcolumn(ttl_entry.expression_columns.getNames());
 
             /// A TTL expression reading any rewritten column must be recalculated too, so the new
             /// part's `ttl_infos` reflect the new values. This mirrors the UPDATE path, which obtains

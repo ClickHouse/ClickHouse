@@ -214,3 +214,16 @@ CREATE TABLE t_mat_ttl_subcolumn (a Int, t Tuple(k DateTime, v UInt64) MATERIALI
     ENGINE = MergeTree() ORDER BY a TTL t.k + INTERVAL 1 DAY;
 ALTER TABLE t_mat_ttl_subcolumn MATERIALIZE COLUMN t; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_ttl_subcolumn;
+
+-- Case 21: Same as Case 20, but the TTL reads a *dynamic* subcolumn — a JSON path (TTL j.d while
+-- materializing the parent JSON column j). `IDataType::getSubcolumnNames` does not enumerate dynamic
+-- subcolumns, so the dependency name `j.d` is discovered by scanning the TTL dependencies themselves
+-- and resolving each to its name in storage. As with the Tuple subcolumn case, recomputing the
+-- part's TTL bounds for a subcolumn dependency is not supported, so the command is refused.
+SET allow_experimental_json_type = 1;
+DROP TABLE IF EXISTS t_mat_ttl_dynamic_subcolumn;
+CREATE TABLE t_mat_ttl_dynamic_subcolumn
+    (a Int, j JSON MATERIALIZED CAST(concat('{"d":"', toString(toDateTime(1800000000 + a)), '"}'), 'JSON'))
+    ENGINE = MergeTree() ORDER BY a TTL j.d::DateTime + INTERVAL 1 DAY;
+ALTER TABLE t_mat_ttl_dynamic_subcolumn MATERIALIZE COLUMN j; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_ttl_dynamic_subcolumn;
