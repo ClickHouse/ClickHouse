@@ -1271,6 +1271,19 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
     const MergeTreeTransactionPtr & txn,
     bool optimize_skip_merged_partitions)
 {
+    /// Merges are disabled for UNIQUE KEY tables: a background merge can outdate
+    /// a DELETE's target part between part-resolution and marker publish (the
+    /// per-partition UK mutex guards DELETE but not merges), silently dropping the
+    /// delete. Until merge-side bitmap forwarding + late-kill lands, gate every
+    /// merge here — the single chokepoint for both background selection and the
+    /// OPTIMIZE -> merge() path. Marker + data parts simply accumulate for now.
+    /// TODO(unique-key): remove when merge-side bitmap forwarding + late-kill (PR-14) lands.
+    if (metadata_snapshot->hasUniqueKey())
+        return std::unexpected(SelectMergeFailure{
+            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+            .explanation = PreformattedMessage::create("Merges are disabled for UNIQUE KEY tables"),
+        });
+
     auto merge_predicate = std::make_shared<MergeTreeMergePredicate>(*this, lock);
     auto parts_collector = std::make_shared<MergeTreePartsCollector>(*this, txn, merge_predicate);
 
@@ -1965,8 +1978,18 @@ bool StorageMergeTree::optimize(
 {
     assertNotReadonly();
 
-    const auto mode = (*getSettings())[MergeTreeSetting::deduplicate_merge_projection_mode];
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+
+    /// Merges are disabled for UNIQUE KEY tables (see selectPartsToMerge). Reject
+    /// explicit OPTIMIZE up front with an actionable message rather than letting it
+    /// fall through to a no-op merge.
+    /// TODO(unique-key): remove when merge-side bitmap forwarding + late-kill (PR-14) lands.
+    if (metadata_snapshot->hasUniqueKey())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "OPTIMIZE is not supported for UNIQUE KEY tables: merges are currently disabled "
+                        "to preserve DELETE correctness. Parts will not be compacted.");
+
+    const auto mode = (*getSettings())[MergeTreeSetting::deduplicate_merge_projection_mode];
     if (deduplicate && metadata_snapshot->hasProjections()
         && (mode == DeduplicateMergeProjectionMode::THROW || mode == DeduplicateMergeProjectionMode::IGNORE))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -3016,6 +3039,14 @@ void StorageMergeTree::onActionLockRemove(StorageActionBlockType action_type)
 IStorage::DataValidationTasksPtr StorageMergeTree::getCheckTaskList(
     const std::variant<std::monostate, ASTPtr, String> & check_task_filter, ContextPtr local_context)
 {
+    /// TODO(unique-key): sidecar-aware check. The per-part delete-bitmap
+    /// sidecars are not enumerated as part artifacts, so checkDataPart treats
+    /// them as UNEXPECTED_FILE_IN_DATA_PART. Reject for now.
+    if (auto uk_metadata = getInMemoryMetadataPtr(local_context, false); uk_metadata && uk_metadata->hasUniqueKey())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "CHECK TABLE is not supported for UNIQUE KEY tables yet: delete-bitmap "
+            "sidecars are not yet recognized as part artifacts.");
+
     DataPartsVector data_parts;
     if (const auto * partition_opt = std::get_if<ASTPtr>(&check_task_filter))
     {
@@ -3094,6 +3125,14 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
 {
     const auto & backup_settings = backup_entries_collector.getBackupSettings();
     auto local_context = backup_entries_collector.getContext();
+
+    /// TODO(unique-key): sidecar-aware backup. The per-part delete-bitmap
+    /// sidecars are not enumerated as part artifacts, so BACKUP would silently
+    /// omit them and restore would resurrect deleted rows. Reject for now.
+    if (auto uk_metadata = getInMemoryMetadataPtr(local_context, false); uk_metadata && uk_metadata->hasUniqueKey())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "BACKUP is not supported for UNIQUE KEY tables yet: delete-bitmap sidecars "
+            "are not preserved across backup/restore.");
 
     DataPartsVector data_parts;
     if (partitions)
