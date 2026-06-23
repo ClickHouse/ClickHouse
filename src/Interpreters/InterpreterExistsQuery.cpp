@@ -60,9 +60,20 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
             bool allowed_as_dictionary = !access->isGranted(AccessType::SHOW_TABLES, database, table)
                 && access->isGranted(AccessType::SHOW_DICTIONARIES, database, table)
                 && DatabaseCatalog::instance().isDictionaryExist({database, table});
-            if (!allowed_as_dictionary)
+            if (allowed_as_dictionary)
+            {
+                /// The privilege decision was made by observing a dictionary via `isDictionaryExist`.
+                /// Report existence from that same observation instead of a second `isTableExist` lookup:
+                /// otherwise a concurrent drop of the dictionary and creation of a regular table under the
+                /// same name could let a user with only `SHOW DICTIONARIES` see the regular table without
+                /// the `SHOW TABLES` privilege, widening visibility for regular tables.
+                result = true;
+            }
+            else
+            {
                 getContext()->checkAccess(AccessType::SHOW_TABLES, database, table);
-            result = DatabaseCatalog::instance().isTableExist({database, table}, getContext());
+                result = DatabaseCatalog::instance().isTableExist({database, table}, getContext());
+            }
         }
     }
     else if ((exists_query = query_ptr->as<ASTExistsViewQuery>()))
