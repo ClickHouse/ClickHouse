@@ -76,8 +76,8 @@ std::map<UInt32, double> parseExplicitPriors(const String & priors_str)
                 ErrorCodes::BAD_ARGUMENTS, "Invalid priors entry '{}': could not parse class id or probability", String(entry));
         }
 
-        if (prob <= 0.0 || prob > 1.0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prior probability for class {} must be in (0, 1], got {}", class_id, prob);
+        if (!std::isfinite(prob) || prob <= 0.0 || prob > 1.0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prior probability for class {} must be a finite number in (0, 1], got {}", class_id, prob);
 
         if (!priors.emplace(class_id, prob).second)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate prior for class {}", class_id);
