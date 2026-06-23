@@ -482,7 +482,9 @@ void FileCache::initializeImpl(bool load_metadata)
             CurrentMetrics::FilesystemCacheEvictionThreads,
             CurrentMetrics::FilesystemCacheEvictionThreadsActive,
             CurrentMetrics::FilesystemCacheEvictionThreadsScheduled,
-            keep_up_free_space_eviction_threads);
+            /* max_threads */keep_up_free_space_eviction_threads,
+            /* max_free_threads */0,
+            /* queue_size */keep_up_free_space_eviction_threads);
 
         keep_up_free_space_ratio_task = Context::getGlobalContextInstance()->getSchedulePool().createTask(StorageID::createEmpty(), log->name(), [this] { freeSpaceRatioKeepingThreadFunc(); });
         keep_up_free_space_ratio_task->schedule();
