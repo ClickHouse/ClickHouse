@@ -389,7 +389,7 @@ WHERE number >= 100
             )"
         }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
