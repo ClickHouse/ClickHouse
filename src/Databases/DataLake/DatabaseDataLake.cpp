@@ -38,6 +38,8 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
+#include <Core/ServerSettings.h>
+#include <Common/logger_useful.h>
 
 #include <Formats/FormatFactory.h>
 
@@ -108,6 +110,11 @@ namespace DataLakeStorageSetting
     extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsBool s3_load_table_anonymously_if_credentials_restricted;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -115,6 +122,7 @@ namespace ErrorCodes
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int LOGICAL_ERROR;
+    extern const int ACCESS_DENIED;
 }
 
 namespace FailPoints
@@ -130,7 +138,8 @@ DatabaseDataLake::DatabaseDataLake(
     ASTPtr database_engine_definition_,
     ASTPtr table_engine_definition_,
     UUID uuid,
-    bool allow_server_credentials_in_user_queries_)
+    bool allow_server_credentials_in_user_queries_,
+    bool is_loading_from_existing_metadata_)
     : IDatabase(database_name_)
     , url(url_)
     , settings(settings_)
@@ -138,10 +147,37 @@ DatabaseDataLake::DatabaseDataLake(
     , table_engine_definition(table_engine_definition_)
     , log(getLogger("DatabaseDataLake(" + database_name_ + ")"))
     , allow_server_credentials_in_user_queries(allow_server_credentials_in_user_queries_)
+    , is_loading_from_existing_metadata(is_loading_from_existing_metadata_)
     , db_uuid(uuid)
 {
     validateSettings();
-    initialize();
+    try
+    {
+        initialize();
+    }
+    catch (const Exception & e)
+    {
+        /// When loading from existing metadata, a catalog whose credentials resolve the server's own
+        /// (restricted) identity must not abort server startup: leave the catalog unavailable so the server
+        /// starts and only this database is inaccessible, mirroring the persistent S3/S3Queue table behavior.
+        /// `getCatalog` reports the stored reason on every query. Disable via the server setting to fail loading.
+        if (is_loading_from_existing_metadata && e.code() == ErrorCodes::ACCESS_DENIED
+            && Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::s3_load_table_anonymously_if_credentials_restricted])
+        {
+            LOG_WARNING(
+                log,
+                "Loading this DataLakeCatalog database without a working catalog client: it resolves "
+                "server-managed credentials that are restricted for user queries "
+                "(s3_allow_server_credentials_in_user_queries = 0). The database will be inaccessible until "
+                "its credentials resolve to a permitted source. Set the server setting "
+                "s3_load_table_anonymously_if_credentials_restricted = 0 to fail loading instead. Reason: {}",
+                e.message());
+            catalog_impl = nullptr;
+            catalog_unavailable_reason = e.message();
+        }
+        else
+            throw;
+    }
 }
 
 void DatabaseDataLake::validateSettings()
@@ -313,6 +349,13 @@ void DatabaseDataLake::initialize()
 
 std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
 {
+    if (!catalog_impl)
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "DataLakeCatalog database is inaccessible: its catalog uses server-managed credentials that are "
+            "restricted for user queries and could not be resolved when the database was loaded from metadata. "
+            "Provide explicit credentials, or enable `s3_allow_server_credentials_in_user_queries`. Reason: {}",
+            catalog_unavailable_reason);
     return catalog_impl;
 }
 
@@ -1113,15 +1156,16 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                 break;
         }
 
-        /// The catalog clients (Glue, BigLake OAuth) are built once, lazily, and cached for every later
-        /// query against the database, so the effective `s3_allow_server_credentials_in_user_queries`
-        /// restriction must be captured now, from the CREATE query. When loading an already-created
-        /// database from existing metadata (server startup or RESTORE) the credentials were validated at
-        /// CREATE time, so the restriction is skipped; otherwise a database that legitimately used
-        /// server-managed credentials would fail after a restart. User `ATTACH` is still re-validated.
+        /// The catalog clients (Glue, BigLake OAuth) are built once and cached for every later query against
+        /// the database, so the effective `s3_allow_server_credentials_in_user_queries` restriction must be
+        /// captured now, from the CREATE query. The restriction is NOT relaxed when loading from existing
+        /// metadata: a database whose catalog resolves server-managed credentials (e.g. a Glue/BigLake catalog
+        /// created before the restriction existed, or whose server ambient identity changes later) must not
+        /// silently regain the server identity on restart. Instead, the load is flagged so a restricted catalog
+        /// is left unavailable (the database is inaccessible, server still starts) rather than escalating --
+        /// see the `DatabaseDataLake` constructor and `s3_load_table_anonymously_if_credentials_restricted`.
         const bool allow_server_credentials_in_user_queries
-            = isLoadingFromExistingMetadata(args.mode)
-            || args.context->getSettingsRef()[Setting::s3_allow_server_credentials_in_user_queries];
+            = args.context->getSettingsRef()[Setting::s3_allow_server_credentials_in_user_queries];
 
         return std::make_shared<DatabaseDataLake>(
             args.database_name,
@@ -1130,7 +1174,8 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             database_engine_define->clone(),
             std::move(engine_for_tables),
             args.uuid,
-            allow_server_credentials_in_user_queries);
+            allow_server_credentials_in_user_queries,
+            isLoadingFromExistingMetadata(args.mode));
     };
     /// TODO: DataLakeCatalog is polymorphic — underlying source (S3, Azure, HDFS, etc.) depends
     /// on the catalog type chosen at runtime. Consider adding source_access_type once a mechanism

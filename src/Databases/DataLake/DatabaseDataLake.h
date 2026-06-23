@@ -23,7 +23,8 @@ public:
         ASTPtr database_engine_definition_,
         ASTPtr table_engine_definition_,
         UUID uuid,
-        bool allow_server_credentials_in_user_queries_);
+        bool allow_server_credentials_in_user_queries_,
+        bool is_loading_from_existing_metadata_);
 
     String getEngineName() const override { return DataLake::DATABASE_ENGINE_NAME; }
     UUID getUUID() const override { return db_uuid; }
@@ -85,8 +86,16 @@ private:
     /// implied when it is loaded from existing metadata). The catalog clients are built once and cached, so
     /// the restriction cannot be read from the query context of whichever query touches the catalog first.
     const bool allow_server_credentials_in_user_queries;
+    /// True when the database is loaded from existing metadata (server startup or RESTORE). If the catalog
+    /// then fails to authenticate because its credentials are server-managed and restricted, the catalog is
+    /// left unavailable (rather than aborting startup), so the server still starts and only this database is
+    /// inaccessible -- mirroring the behavior of persistent S3/S3Queue tables.
+    const bool is_loading_from_existing_metadata;
 
     std::shared_ptr<DataLake::ICatalog> catalog_impl;
+    /// Set when `catalog_impl` could not be built because its server-managed credentials are restricted on
+    /// load; `getCatalog` then throws this so every query against the database reports a clear error.
+    String catalog_unavailable_reason;
 
     void validateSettings();
 
