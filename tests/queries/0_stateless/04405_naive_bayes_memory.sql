@@ -36,5 +36,24 @@ SELECT
     bytes_allocated / element_count < 256
 FROM system.dictionaries WHERE database = currentDatabase() AND name = 'nb_mem';
 
+-- store_source retains the source rows, so the same model with store_source enabled reports a larger
+-- footprint than without it (the retained columns are counted in bytes_allocated).
+CREATE DICTIONARY nb_mem_store
+(
+    ngram String,
+    class_id UInt32 DEFAULT 0,
+    count UInt64 DEFAULT 0
+)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'nb_mem_src' DB currentDatabase()))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' store_source 1))
+LIFETIME(0);
+SYSTEM RELOAD DICTIONARY nb_mem_store;
+
+SELECT
+    (SELECT bytes_allocated FROM system.dictionaries WHERE database = currentDatabase() AND name = 'nb_mem_store')
+    > (SELECT bytes_allocated FROM system.dictionaries WHERE database = currentDatabase() AND name = 'nb_mem');
+
+DROP DICTIONARY nb_mem_store;
 DROP DICTIONARY nb_mem;
 DROP TABLE nb_mem_src;
