@@ -335,7 +335,8 @@ Pipe NaiveBayesDictionary::read(const Names & column_names, size_t /* max_block_
         else
         {
             const auto & attribute = dict_struct.getAttribute(column_name);
-            if (column_name == dict_struct.attributes.front().name)
+            /// Pick the stored class or count column by the resolved class attribute, not by position.
+            if (column_name == dict_struct.attributes[configuration.class_index].name)
                 column_with_type.column = source_class_id_column;
             else
                 column_with_type.column = source_count_column;
