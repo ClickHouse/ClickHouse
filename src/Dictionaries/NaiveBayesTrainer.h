@@ -38,7 +38,14 @@ public:
 
         const UInt32 index = it->getMapped();
         data->entries.push_back(NaiveBayesEntry{(static_cast<UInt64>(index) << 32) | class_id, count});
-        data->class_totals[class_id] += count;
+
+        /// The class total is the largest count sum, so checking it here also guards every per-n-gram sum.
+        auto & class_total = data->class_totals[class_id];
+        if (count > std::numeric_limits<UInt64>::max() - class_total)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "NaiveBayes dictionary: the total count for class {} overflows a 64-bit integer", class_id);
+        class_total += count;
     }
 
     /// Number of tokens the configured tokenizer sees in `ngram`. Used to validate the source against n.
