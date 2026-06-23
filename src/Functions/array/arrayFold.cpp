@@ -319,9 +319,11 @@ public:
 private:
     QueryStatusPtr process_list_element;
 
-    /// checkTimeLimit() throws for KILL QUERY and for the 'throw' overflow mode, but for the 'break'
-    /// overflow mode it returns false instead. A fold has no meaningful partial result (a half-folded
-    /// accumulator is a wrong value, not a smaller one), so a 'break' request is turned into a hard stop here.
+    /// checkTimeLimit() throws for KILL QUERY and the 'throw' overflow mode; for the 'break' overflow
+    /// mode it returns false instead. A fold has no meaningful partial result (a half-folded accumulator
+    /// is a wrong value, not a smaller one), so we throw on the false (break) return to stop the runaway
+    /// fold. In 'break' mode the pipeline absorbs this timeout into a clean cancellation, so the query
+    /// ends without a client-visible error and yields no rows for the cancelled fold.
     void checkQueryTimeLimit() const
     {
         if (process_list_element && !process_list_element->checkTimeLimit())
