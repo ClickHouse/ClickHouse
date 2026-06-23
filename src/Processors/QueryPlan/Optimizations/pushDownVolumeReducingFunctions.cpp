@@ -1,9 +1,6 @@
 #include <Core/Block.h>
 #include <Core/Names.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <Functions/FunctionHelpers.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/DistinctStep.h>
