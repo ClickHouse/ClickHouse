@@ -591,6 +591,26 @@ void MergeTreeReaderWide::prefetchForColumn(
         if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
             return;
 
+        /// The values stream is skipped during deserialization when the caller only wants
+        /// `SparseOffsets`; mirror that here so the prefetcher doesn't issue reads for the
+        /// `SparseElements` substream we will never consume.
+        if (only_read_sparse_offsets)
+        {
+            for (const auto & elem : substream_path)
+                if (elem.type == ISerialization::Substream::SparseElements)
+                    return;
+        }
+
+        /// `SparseOffsets` already cached by the planning-mode analyzer; the scan will
+        /// serve them from `SparseOffsetsShare` without touching the file, so don't
+        /// prefetch (especially relevant for remote storage).
+        if (sparse_offsets_share && !substream_path.empty()
+            && substream_path.back().type == ISerialization::Substream::SparseOffsets)
+        {
+            if (sparse_offsets_share->findBucket(data_part_info_for_read->getNameWithParent(), name_and_type.getNameInStorage()))
+                return;
+        }
+
         auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
 
         if (stream_name && !prefetched_streams.contains(*stream_name))

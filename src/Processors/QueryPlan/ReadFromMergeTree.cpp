@@ -606,6 +606,12 @@ Pipe ReadFromMergeTree::readFromPool(
 
     if (use_prefetched_read_pool)
     {
+        /// Hand the analyzer-populated share to the pool so prefetched readers can
+        /// skip prefetching `SparseOffsets` streams that are already in memory.
+        SparseOffsetsSharePtr sparse_offsets_share;
+        if (index_build_context && index_build_context->index_reader_pool)
+            sparse_offsets_share = index_build_context->index_reader_pool->getSparseOffsetsShare();
+
         pool = std::make_shared<MergeTreePrefetchedReadPool>(
             std::move(parts_with_range),
             mutations_snapshot,
@@ -620,7 +626,8 @@ Pipe ReadFromMergeTree::readFromPool(
             pool_settings,
             block_size,
             context,
-            dataflow_cache_updater);
+            dataflow_cache_updater,
+            std::move(sparse_offsets_share));
     }
     else
     {
