@@ -123,6 +123,13 @@ PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_bad_src')) LAYOUT(NAIVE_BAYES(clas
 SELECT dictGet('nb_bad', 'class_id', 'good'); -- { serverError BAD_ARGUMENTS }
 DROP DICTIONARY nb_bad;
 
+-- ---------- n-gram size out of range (does not fit in 32 bits) ----------
+
+CREATE DICTIONARY nb_bad (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_bad_src')) LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 4294967297 mode 'token')) LIFETIME(0);
+SELECT dictGet('nb_bad', 'class_id', 'good'); -- { serverError BAD_ARGUMENTS }
+DROP DICTIONARY nb_bad;
+
 -- ---------- Valid models (baseline + alternative unsigned types) ----------
 
 SELECT 'valid UInt32/UInt64';
