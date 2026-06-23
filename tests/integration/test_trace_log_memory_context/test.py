@@ -4,7 +4,6 @@ import logging
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.client import QueryRuntimeException
 
 
 cluster = ClickHouseCluster(__file__)

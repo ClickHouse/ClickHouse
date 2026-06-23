@@ -355,6 +355,13 @@ public:
     virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() { return nullptr; }
 #endif
 
+    /// Invokes the catalog-vended credentials refresh callback (e.g. for Glue / Unity / REST
+    /// data-lake tables) and atomically swaps the internal S3 client to one signed with the
+    /// fresh credentials. Returns true if the callback was present and a new client was
+    /// installed. Used by delta-kernel's `ExpiredToken` recovery path, which bypasses the
+    /// `ReadBufferFromS3` / `getObjectMetadata` error handlers that normally invoke this.
+    virtual bool tryRefreshCredentialsViaCallback() { return false; }
+
 #if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
     /// Assign tag on objects
     virtual void tagObjects(const StoredObjects &, const std::string &, const std::string &)
