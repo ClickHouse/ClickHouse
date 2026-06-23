@@ -14,6 +14,7 @@
 #include <Common/logger_useful.h>
 
 #include <cmath>
+#include <limits>
 #include <unordered_set>
 
 
@@ -165,7 +166,13 @@ void NaiveBayesDictionary::loadData()
             for (size_t i = 0; i < rows; ++i)
             {
                 const std::string_view ngram_sv = ngram_col->getDataAt(i);
-                const auto class_id = static_cast<UInt32>(class_id_col->getUInt(i));
+                const UInt64 raw_class_id = class_id_col->getUInt(i);
+                if (raw_class_id > std::numeric_limits<UInt32>::max())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "NaiveBayes dictionary class id {} exceeds the supported maximum of {}",
+                        raw_class_id, std::numeric_limits<UInt32>::max());
+                const auto class_id = static_cast<UInt32>(raw_class_id);
                 const UInt64 count = count_col->getUInt(i);
                 std::visit([&](auto & t)
                 {
