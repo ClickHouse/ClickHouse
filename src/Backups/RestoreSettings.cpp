@@ -7,6 +7,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/FieldVisitorToString.h>
 #include <Backups/SettingsFieldOptionalUUID.h>
 #include <Backups/SettingsFieldOptionalString.h>
 #include <Backups/SettingsFieldOptionalUInt64.h>
@@ -275,6 +276,24 @@ void RestoreSettings::copySettingsToQuery(ASTBackupQuery & query) const
         query.reset(query.base_backup_name);
 
     query.cluster_host_ids = !cluster_host_ids.empty() ? BackupSettings::Util::clusterHostIDsToAST(cluster_host_ids) : nullptr;
+}
+
+std::map<String, String> RestoreSettings::getSerializedSettings() const
+{
+    std::map<String, String> res;
+
+#define SERIALIZE_RESTORE_SETTING(TYPE, NAME) \
+    res[#NAME] = convertFieldToString(static_cast<Field>(SettingField##TYPE{NAME}));
+
+    LIST_OF_RESTORE_SETTINGS(SERIALIZE_RESTORE_SETTING)
+#undef SERIALIZE_RESTORE_SETTING
+
+    /// Never expose the password; drop purely internal fields that are not user-facing settings
+    /// (`id` has its own column, the rest are internal plumbing for RESTORE ON CLUSTER).
+    for (const auto * key : {"password", "id", "internal", "host_id", "restore_uuid"})
+        res.erase(key);
+
+    return res;
 }
 
 }

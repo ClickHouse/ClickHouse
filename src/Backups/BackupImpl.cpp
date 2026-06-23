@@ -333,6 +333,15 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
     return base_backup;
 }
 
+std::map<String, String> BackupImpl::getEngineSettings() const
+{
+    if (writer)
+        return writer->getSerializedSettings();
+    if (reader)
+        return reader->getSerializedSettings();
+    return {};
+}
+
 size_t BackupImpl::getNumFiles() const
 {
     std::lock_guard lock{mutex};

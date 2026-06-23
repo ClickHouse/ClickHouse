@@ -462,7 +462,8 @@ struct BackupsWorker::BackupStarter
             backup_context->getCurrentQueryId(),
             is_internal_backup,
             process_list_element,
-            BackupStatus::CREATING_BACKUP);
+            BackupStatus::CREATING_BACKUP,
+            backup_settings.getSerializedSettings());
     }
 
     void doBackup()
@@ -659,6 +660,9 @@ void BackupsWorker::doBackup(
 #endif
 
     bool is_internal_backup = backup_settings.internal;
+
+    /// Record the engine's effective settings for observability (see `system.backups`).
+    setEngineSettings(backup_id, backup->getEngineSettings());
 
     maybeSleepForTesting();
 
@@ -918,7 +922,8 @@ struct BackupsWorker::RestoreStarter
             restore_context->getCurrentQueryId(),
             is_internal_restore,
             process_list_element,
-            BackupStatus::RESTORING);
+            BackupStatus::RESTORING,
+            restore_settings.getSerializedSettings());
     }
 
     void doRestore()
@@ -1065,6 +1070,9 @@ void BackupsWorker::doRestore(
 
     /// Open the backup for reading.
     BackupPtr backup = openBackupForReading(backup_info, restore_settings, context);
+
+    /// Record the engine's effective settings for observability (see `system.backups`).
+    setEngineSettings(restore_id, backup->getEngineSettings());
 
     String current_database = context->getCurrentDatabase();
 
@@ -1222,7 +1230,7 @@ BackupsWorker::makeRestoreCoordination(bool on_cluster, const RestoreSettings & 
 
 std::pair<bool, BackupStatus> BackupsWorker::addInfo(const OperationID & id, const String & name, const String & base_backup_name,
                                                      const String & query_id, bool internal, QueryStatusPtr process_list_element,
-                                                     BackupStatus status)
+                                                     BackupStatus status, std::map<String, String> settings)
 {
     ExtendedOperationInfo extended_info;
     auto & info = extended_info.info;
@@ -1232,6 +1240,7 @@ std::pair<bool, BackupStatus> BackupsWorker::addInfo(const OperationID & id, con
     info.query_id = query_id;
     info.internal = internal;
     info.status = status;
+    info.settings = std::move(settings);
     info.start_time_us = timeInMicroseconds(std::chrono::system_clock::now());
 
     bool is_final_status = isFinalStatus(status);
@@ -1342,6 +1351,18 @@ void BackupsWorker::setNumFilesAndSize(const OperationID & id, size_t num_files,
     info.compressed_size = compressed_size;
     info.num_read_files = num_read_files;
     info.num_read_bytes = num_read_bytes;
+}
+
+
+void BackupsWorker::setEngineSettings(const OperationID & id, std::map<String, String> engine_settings)
+{
+    /// Current operation's info entry is updated here. The backup_log table is updated on its basis within a subsequent setStatus() call.
+    std::lock_guard lock{infos_mutex};
+    auto it = infos.find(id);
+    if (it == infos.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown backup ID {}", id);
+
+    it->second.info.engine_settings = std::move(engine_settings);
 }
 
 

@@ -29,6 +29,35 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+    std::map<String, String> serializeAzureRequestSettings(const AzureBlobStorage::RequestSettings & settings)
+    {
+        return {
+            {"use_native_copy", settings.use_native_copy ? "true" : "false"},
+            {"check_objects_after_upload", settings.check_objects_after_upload ? "true" : "false"},
+            {"read_only", settings.read_only ? "true" : "false"},
+            {"max_single_part_upload_size", std::to_string(settings.max_single_part_upload_size)},
+            {"min_bytes_for_seek", std::to_string(settings.min_bytes_for_seek)},
+            {"max_single_read_retries", std::to_string(settings.max_single_read_retries)},
+            {"max_single_download_retries", std::to_string(settings.max_single_download_retries)},
+            {"list_object_keys_size", std::to_string(settings.list_object_keys_size)},
+            {"min_upload_part_size", std::to_string(settings.min_upload_part_size)},
+            {"max_upload_part_size", std::to_string(settings.max_upload_part_size)},
+            {"max_single_part_copy_size", std::to_string(settings.max_single_part_copy_size)},
+            {"max_unexpected_write_error_retries", std::to_string(settings.max_unexpected_write_error_retries)},
+            {"max_inflight_parts_for_one_file", std::to_string(settings.max_inflight_parts_for_one_file)},
+            {"max_blocks_in_multipart_upload", std::to_string(settings.max_blocks_in_multipart_upload)},
+            {"strict_upload_part_size", std::to_string(settings.strict_upload_part_size)},
+            {"upload_part_size_multiply_factor", std::to_string(settings.upload_part_size_multiply_factor)},
+            {"upload_part_size_multiply_parts_count_threshold", std::to_string(settings.upload_part_size_multiply_parts_count_threshold)},
+            {"sdk_max_retries", std::to_string(settings.sdk_max_retries)},
+            {"sdk_retry_initial_backoff_ms", std::to_string(settings.sdk_retry_initial_backoff_ms)},
+            {"sdk_retry_max_backoff_ms", std::to_string(settings.sdk_retry_max_backoff_ms)},
+        };
+    }
+}
+
 BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
     const AzureBlobStorage::ConnectionParams & connection_params_,
     const String & blob_path_,
@@ -59,6 +88,11 @@ BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
 }
 
 BackupReaderAzureBlobStorage::~BackupReaderAzureBlobStorage() = default;
+
+std::map<String, String> BackupReaderAzureBlobStorage::getSerializedSettings() const
+{
+    return serializeAzureRequestSettings(*settings);
+}
 
 bool BackupReaderAzureBlobStorage::fileExists(const String & file_name)
 {
@@ -230,6 +264,11 @@ void BackupWriterAzureBlobStorage::copyDataToFile(
 }
 
 BackupWriterAzureBlobStorage::~BackupWriterAzureBlobStorage() = default;
+
+std::map<String, String> BackupWriterAzureBlobStorage::getSerializedSettings() const
+{
+    return serializeAzureRequestSettings(*settings);
+}
 
 bool BackupWriterAzureBlobStorage::fileExists(const String & file_name)
 {
