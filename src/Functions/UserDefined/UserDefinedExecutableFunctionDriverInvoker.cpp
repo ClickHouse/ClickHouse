@@ -38,19 +38,20 @@ namespace
     /// variables before exec'ing `action_command`.
     constexpr auto ENV_BINARY = "/usr/bin/env";
 
+    /// Marker used in logs in place of secret values.
+    constexpr auto REDACTED_VALUE = "[HIDDEN]";
+
     struct DirectCommand
     {
         /// Arguments after `argv[0]`. The binary is always `ENV_BINARY`.
         std::vector<String> arguments; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
-        String describe() const
-        {
-            WriteBufferFromOwnString out;
-            out << ENV_BINARY;
-            for (const auto & arg : arguments)
-                out << ' ' << arg;
-            return out.str();
-        }
+        /// A human-readable form of the command for logging. Driver `env` values and engine
+        /// argument values are an operator/user-facing surface that can carry credentials or
+        /// tokens, so only their names (and the non-secret structural arguments) are recorded;
+        /// the values are replaced with `[HIDDEN]`. The actual `arguments` passed to the driver
+        /// keep the real values and are never logged.
+        String redacted_description;
     };
 
     DirectCommand buildCommand(
@@ -63,37 +64,49 @@ namespace
         const std::vector<std::pair<String, String>> & engine_argument_values) // STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
         DirectCommand cmd;
+        WriteBufferFromOwnString redacted;
+        redacted << ENV_BINARY;
 
         if (!working_directory.empty())
         {
             cmd.arguments.emplace_back("-C");
             cmd.arguments.emplace_back(working_directory);
+            redacted << " -C " << working_directory;
         }
 
         for (const auto & [name, value] : driver.env)
+        {
             cmd.arguments.emplace_back(name + '=' + value);
+            redacted << ' ' << name << '=' << REDACTED_VALUE;
+        }
 
         cmd.arguments.emplace_back(action_command);
+        redacted << ' ' << action_command;
 
         cmd.arguments.emplace_back("--name");
         cmd.arguments.emplace_back(function_name);
+        redacted << " --name " << function_name;
         if (!return_type.empty())
         {
             cmd.arguments.emplace_back("--return");
             cmd.arguments.emplace_back(return_type);
+            redacted << " --return " << return_type;
         }
         if (!args_signature.empty())
         {
             cmd.arguments.emplace_back("--args");
             cmd.arguments.emplace_back(args_signature);
+            redacted << " --args " << args_signature;
         }
 
         for (const auto & [name, value] : engine_argument_values)
         {
             cmd.arguments.emplace_back("--" + name);
             cmd.arguments.emplace_back(value);
+            redacted << " --" << name << ' ' << REDACTED_VALUE;
         }
 
+        cmd.redacted_description = redacted.str();
         return cmd;
     }
 
@@ -198,7 +211,7 @@ String UserDefinedExecutableFunctionDriverInvoker::runCreateCommand(
         working_directory, engine_argument_values);
 
     auto log = getLogger("UserDefinedExecutableFunctionDriverInvoker");
-    LOG_DEBUG(log, "Invoking driver '{}' create_command: {}", driver.name, cmd.describe());
+    LOG_DEBUG(log, "Invoking driver '{}' create_command: {}", driver.name, cmd.redacted_description);
 
     ShellCommand::Config config(ENV_BINARY);
     for (const auto & arg : cmd.arguments)
@@ -253,7 +266,7 @@ void UserDefinedExecutableFunctionDriverInvoker::runDropCommand(
         working_directory, engine_argument_values);
 
     auto log = getLogger("UserDefinedExecutableFunctionDriverInvoker");
-    LOG_DEBUG(log, "Invoking driver '{}' drop_command: {}", driver.name, cmd.describe());
+    LOG_DEBUG(log, "Invoking driver '{}' drop_command: {}", driver.name, cmd.redacted_description);
 
     ShellCommand::Config config(ENV_BINARY);
     for (const auto & arg : cmd.arguments)
