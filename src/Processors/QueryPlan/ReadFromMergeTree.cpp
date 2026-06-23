@@ -1556,29 +1556,6 @@ static NameSet getColumnsRequiredForMergingFinal(const SortDescription & sort_de
     return required_columns;
 }
 
-static std::pair<std::shared_ptr<ExpressionActions>, String> createExpressionForPositiveSign(const String & sign_column_name, const Block & header, const ContextPtr & context)
-{
-    ASTPtr sign_indentifier = make_intrusive<ASTIdentifier>(sign_column_name);
-    ASTPtr sign_filter = makeASTOperator("equals", sign_indentifier, make_intrusive<ASTLiteral>(Field(static_cast<Int8>(1))));
-    const auto & sign_column = header.getByName(sign_column_name);
-
-    auto syntax_result = TreeRewriter(context).analyze(sign_filter, {{sign_column.name, sign_column.type}});
-    auto actions = ExpressionAnalyzer(sign_filter, syntax_result, context).getActionsDAG(false);
-    return {std::make_shared<ExpressionActions>(std::move(actions)), sign_filter->getColumnName()};
-}
-
-static std::pair<std::shared_ptr<ExpressionActions>, String> createExpressionForIsDeleted(const String & is_deleted_column_name, const Block & header, const ContextPtr & context)
-{
-    ASTPtr is_deleted_identifier = make_intrusive<ASTIdentifier>(is_deleted_column_name);
-    ASTPtr is_deleted_filter = makeASTFunction("equals", is_deleted_identifier, make_intrusive<ASTLiteral>(Field(static_cast<Int8>(0))));
-
-    const auto & is_deleted_column = header.getByName(is_deleted_column_name);
-
-    auto syntax_result = TreeRewriter(context).analyze(is_deleted_filter, {{is_deleted_column.name, is_deleted_column.type}});
-    auto actions = ExpressionAnalyzer(is_deleted_filter, syntax_result, context).getActionsDAG(false);
-    return {std::make_shared<ExpressionActions>(std::move(actions)), is_deleted_filter->getColumnName()};
-}
-
 bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
 {
     const auto & settings = context->getSettingsRef();
@@ -1621,32 +1598,10 @@ Pipe ReadFromMergeTree::readNonIntersectingWithEngineFilter(
     size_t num_streams,
     const Names & origin_column_names)
 {
-    /// `Collapsing` does not expose unmatched negative-sign rows on FINAL, and `Replacing` with an
-    /// is-deleted column hides deleted rows; a non-intersecting range skips the merge, so add that filter
-    /// here. Other engines drop nothing on FINAL beyond the deduplication a single part already did.
-    if (data.merging_params.mode == MergeTreeData::MergingParams::Collapsing)
-    {
-        auto columns_with_sign = origin_column_names;
-        if (std::ranges::find(columns_with_sign, data.merging_params.sign_column) == columns_with_sign.end())
-            columns_with_sign.push_back(data.merging_params.sign_column);
-        Pipe pipe = spreadMarkRangesAmongStreams(std::move(parts), index_build_context, num_streams, columns_with_sign);
-        auto [expression, filter_name] = createExpressionForPositiveSign(data.merging_params.sign_column, pipe.getHeader(), context);
-        pipe.addSimpleTransform([&](const SharedHeader & header)
-            { return std::make_shared<FilterTransform>(header, expression, filter_name, true); });
-        return pipe;
-    }
-    if (!data.merging_params.is_deleted_column.empty())
-    {
-        auto columns_with_is_deleted = origin_column_names;
-        if (std::ranges::find(columns_with_is_deleted, data.merging_params.is_deleted_column) == columns_with_is_deleted.end())
-            columns_with_is_deleted.push_back(data.merging_params.is_deleted_column);
-        Pipe pipe = spreadMarkRangesAmongStreams(std::move(parts), index_build_context, num_streams, columns_with_is_deleted);
-        auto [expression, filter_name] = createExpressionForIsDeleted(data.merging_params.is_deleted_column, pipe.getHeader(), context);
-        pipe.addSimpleTransform([&](const SharedHeader & header)
-            { return std::make_shared<FilterTransform>(header, expression, filter_name, true); });
-        return pipe;
-    }
-    return spreadMarkRangesAmongStreams(std::move(parts), index_build_context, num_streams, origin_column_names);
+    return readNonIntersectingFinalWithEngineFilter(
+        data.merging_params, origin_column_names, context,
+        [&](const Names & columns)
+        { return spreadMarkRangesAmongStreams(std::move(parts), index_build_context, num_streams, columns); });
 }
 
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(

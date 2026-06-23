@@ -4,6 +4,11 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CoalescingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
@@ -14,6 +19,7 @@
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/SelectByIndicesTransform.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
@@ -105,6 +111,29 @@ ActionsDAG createProjection(const Block & header)
     return ActionsDAG(header.getNamesAndTypesList());
 }
 
+std::pair<std::shared_ptr<ExpressionActions>, String> createExpressionForPositiveSign(const String & sign_column_name, const Block & header, const ContextPtr & context)
+{
+    ASTPtr sign_indentifier = make_intrusive<ASTIdentifier>(sign_column_name);
+    ASTPtr sign_filter = makeASTOperator("equals", sign_indentifier, make_intrusive<ASTLiteral>(Field(static_cast<Int8>(1))));
+    const auto & sign_column = header.getByName(sign_column_name);
+
+    auto syntax_result = TreeRewriter(context).analyze(sign_filter, {{sign_column.name, sign_column.type}});
+    auto actions = ExpressionAnalyzer(sign_filter, syntax_result, context).getActionsDAG(false);
+    return {std::make_shared<ExpressionActions>(std::move(actions)), sign_filter->getColumnName()};
+}
+
+std::pair<std::shared_ptr<ExpressionActions>, String> createExpressionForIsDeleted(const String & is_deleted_column_name, const Block & header, const ContextPtr & context)
+{
+    ASTPtr is_deleted_identifier = make_intrusive<ASTIdentifier>(is_deleted_column_name);
+    ASTPtr is_deleted_filter = makeASTFunction("equals", is_deleted_identifier, make_intrusive<ASTLiteral>(Field(static_cast<Int8>(0))));
+
+    const auto & is_deleted_column = header.getByName(is_deleted_column_name);
+
+    auto syntax_result = TreeRewriter(context).analyze(is_deleted_filter, {{is_deleted_column.name, is_deleted_column.type}});
+    auto actions = ExpressionAnalyzer(is_deleted_filter, syntax_result, context).getActionsDAG(false);
+    return {std::make_shared<ExpressionActions>(std::move(actions)), is_deleted_filter->getColumnName()};
+}
+
 }
 
 Pipe buildDistributedFinalPipe(
@@ -189,6 +218,40 @@ Pipe buildDistributedFinalPipe(
         return pipe;
     }
     return Pipe::unitePipes(std::move(final_merge_pipes));
+}
+
+Pipe readNonIntersectingFinalWithEngineFilter(
+    const MergeTreeData::MergingParams & merging_params,
+    const Names & origin_column_names,
+    ContextPtr context,
+    const std::function<Pipe(const Names & columns)> & read)
+{
+    /// `Collapsing` does not expose unmatched negative-sign rows on FINAL, and `Replacing` with an is-deleted
+    /// column hides deleted rows; a non-intersecting range skips the merge, so add that filter here. Other
+    /// engines drop nothing on FINAL beyond the deduplication a single part already did.
+    if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
+    {
+        auto columns_with_sign = origin_column_names;
+        if (std::ranges::find(columns_with_sign, merging_params.sign_column) == columns_with_sign.end())
+            columns_with_sign.push_back(merging_params.sign_column);
+        Pipe pipe = read(columns_with_sign);
+        auto [expression, filter_name] = createExpressionForPositiveSign(merging_params.sign_column, pipe.getHeader(), context);
+        pipe.addSimpleTransform([&](const SharedHeader & header)
+            { return std::make_shared<FilterTransform>(header, expression, filter_name, true); });
+        return pipe;
+    }
+    if (!merging_params.is_deleted_column.empty())
+    {
+        auto columns_with_is_deleted = origin_column_names;
+        if (std::ranges::find(columns_with_is_deleted, merging_params.is_deleted_column) == columns_with_is_deleted.end())
+            columns_with_is_deleted.push_back(merging_params.is_deleted_column);
+        Pipe pipe = read(columns_with_is_deleted);
+        auto [expression, filter_name] = createExpressionForIsDeleted(merging_params.is_deleted_column, pipe.getHeader(), context);
+        pipe.addSimpleTransform([&](const SharedHeader & header)
+            { return std::make_shared<FilterTransform>(header, expression, filter_name, true); });
+        return pipe;
+    }
+    return read(origin_column_names);
 }
 
 }

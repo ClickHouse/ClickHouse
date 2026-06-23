@@ -39,6 +39,15 @@ struct DistributedReadBucket
 /// Reads one lane's marks into a pipe -- the part-source-specific seam of `buildDistributedFinalPipe`.
 using DistributedFinalReadStepGetter = std::function<Pipe(const RangesInDataPartsDescription & marks)>;
 
+/// Reads the non-intersecting (no-merge) lanes of a distributed FINAL, applying the engine's FINAL
+/// sign/is-deleted filter (`Collapsing` hides unmatched negative-sign rows; `Replacing` with an is-deleted
+/// column hides deleted rows; other engines need none). `read` reads the given columns into a pipe.
+Pipe readNonIntersectingFinalWithEngineFilter(
+    const MergeTreeData::MergingParams & merging_params,
+    const Names & origin_column_names,
+    ContextPtr context,
+    const std::function<Pipe(const Names & columns)> & read);
+
 /// Builds the FINAL read pipe for a distributed task's lanes, like single-node parallel FINAL: one in-order
 /// read + PK-range-layer trim + merge-dedup per intersecting lane, plus one engine-filtered read of the
 /// non-intersecting lanes, all united. `read_lane_in_order` and `read_non_intersecting` turn lane marks into
