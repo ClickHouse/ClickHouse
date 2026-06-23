@@ -48,16 +48,12 @@ SETTINGS log_comment = '03279_join_choose_build_table_idx' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
--- conditions are pushed down, but no filter by index applied.
--- NOTE: without a minmax index on `date`, the pushed-down `date` predicate cannot reduce the estimated row
--- count of `sales` at planning time, so the cost model sees `sales` (~1M rows) as larger than `products`
--- (100k rows) and the `query_plan_join_swap_table = 'auto'` heuristic builds the hash table on `products`.
--- This is the deliberate trade-off of returning the full relation size as a safe upper bound for an
--- un-estimable filter (an unknown cardinality collapses the join-order cost model and produces bad plans).
--- For the `products, sales` ordering this means build = `products` (~100k), probe = filtered `sales` (~1k).
+-- condtitions are pushed down, but no filter by index applied
+-- build table is as it's written in query
+
 SELECT
-    if(ProfileEvents['JoinBuildTableRowCount'] BETWEEN 90_000 AND 110_000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinBuildTableRowCount'])),
-    if(ProfileEvents['JoinProbeTableRowCount'] BETWEEN 100 AND 2000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinProbeTableRowCount'])),
+    if(ProfileEvents['JoinBuildTableRowCount'] BETWEEN 100 AND 2000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinBuildTableRowCount'])),
+    if(ProfileEvents['JoinProbeTableRowCount'] BETWEEN 90_000 AND 110_000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinProbeTableRowCount'])),
     if(ProfileEvents['JoinResultRowCount'] == 1000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinResultRowCount'])),
     Settings['query_plan_join_swap_table'],
 FROM system.query_log
