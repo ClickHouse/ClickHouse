@@ -5,6 +5,8 @@
 namespace DB
 {
 
+class Block;
+
 /// Class that contains information about index granularity in rows of IMergeTreeDataPart
 class MergeTreeIndexGranularity
 {
@@ -84,6 +86,12 @@ size_t computeIndexGranularity(
     size_t fixed_index_granularity_rows,
     bool blocks_are_granules,
     bool can_use_adaptive_index_granularity);
+
+/// Uncompressed size of the block as it will be written into a data part, used to choose the index
+/// granularity against index_granularity_bytes. Equal to Block::bytes() except for AggregateFunction
+/// state columns, whose true size Block::bytes() cannot report (their states live in shared arenas
+/// that ColumnAggregateFunction::byteSize() intentionally does not count).
+size_t getBlockSizeForGranularity(const Block & block);
 
 struct MergeTreeSettings;
 struct MergeTreeIndexGranularityInfo;

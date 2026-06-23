@@ -3,6 +3,9 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Columns/ColumnAggregateFunction.h>
+#include <Core/Block.h>
+#include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 
 namespace DB
@@ -73,6 +76,21 @@ void MergeTreeIndexGranularity::addRowsToLastMark(size_t rows_count)
     {
         adjustLastMark(getLastMarkRows() + rows_count);
     }
+}
+
+size_t getBlockSizeForGranularity(const Block & block)
+{
+    size_t res = 0;
+    for (const auto & elem : block)
+    {
+        if (!elem.column)
+            continue;
+        if (const auto * agg = typeid_cast<const ColumnAggregateFunction *>(elem.column.get()))
+            res += agg->serializedSizeEstimate();
+        else
+            res += elem.column->byteSize();
+    }
+    return res;
 }
 
 size_t computeIndexGranularity(

@@ -20,6 +20,7 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -943,7 +944,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         block.rows(),
-        block.bytes(),
+        getBlockSizeForGranularity(block),
         *data_settings,
         new_data_part->index_granularity_info,
         /*blocks_are_granules=*/ false);
@@ -1144,7 +1145,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
 
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         block.rows(),
-        block.bytes(),
+        getBlockSizeForGranularity(block),
         *data_settings,
         new_data_part->index_granularity_info,
         /*blocks_are_granules=*/ false);

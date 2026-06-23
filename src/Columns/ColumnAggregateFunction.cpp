@@ -6,6 +6,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
 #include <IO/Operators.h>
+#include <IO/NullWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteBufferFromString.h>
@@ -482,6 +483,27 @@ void ColumnAggregateFunction::updateHashFast(SipHash & hash) const
 size_t ColumnAggregateFunction::byteSize() const
 {
     return data.size() * sizeof(data[0]) + (my_arena ? my_arena->usedBytes() : 0);
+}
+
+size_t ColumnAggregateFunction::serializedSizeEstimate() const
+{
+    const size_t rows = data.size();
+    if (rows == 0)
+        return 0;
+
+    /// The on-disk footprint of a state equals its serialized size, so sample a few states and
+    /// extrapolate. Sampling keeps this cheap on large columns. States are immutable on the write
+    /// path, so serializing them here is safe even though they may live in shared arenas.
+    static constexpr size_t max_samples = 16;
+    const size_t samples = std::min(rows, max_samples);
+    const size_t stride = rows / samples;
+
+    NullWriteBuffer out;
+    for (size_t i = 0; i < samples; ++i)
+        func->serialize(data[i * stride], out, version);
+
+    /// Average serialized size of the sampled states, extrapolated to all rows, plus the pointer array.
+    return rows * (out.count() / samples) + rows * sizeof(data[0]);
 }
 
 size_t ColumnAggregateFunction::byteSizeAt(size_t) const

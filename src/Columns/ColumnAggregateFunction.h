@@ -189,6 +189,11 @@ public:
 
     size_t byteSize() const override;
 
+    /// Estimated uncompressed size of the states as serialized into a data part. byteSize() cannot be
+    /// used for this because it intentionally ignores states living in shared arenas (see byteSize()).
+    /// Sampled, so it stays cheap on large columns. Used to honor index_granularity_bytes at write time.
+    size_t serializedSizeEstimate() const;
+
     size_t byteSizeAt(size_t n) const override;
 
     size_t allocatedBytes() const override;
