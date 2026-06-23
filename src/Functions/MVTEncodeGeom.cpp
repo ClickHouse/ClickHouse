@@ -127,6 +127,72 @@ MultiPolygon<BPoint> fromWagyu(const mapbox::geometry::multi_polygon<Int64> & so
     return result;
 }
 
+/// Sutherland-Hodgman clip of a ring against the axis-aligned box [lo_x, hi_x] x [lo_y, hi_y]. Unlike
+/// bg::intersection it works on any ring, including self-intersecting ("bow-tie") ones, and it bounds the
+/// output coordinates to the box so the Int64 arithmetic in wagyu (slopes_equal) cannot overflow for geometry
+/// far from the tile. The clipped ring may still be self-intersecting and may include connector edges along the
+/// box boundary; wagyu repairs it into valid MVT polygons. Clip-introduced crossing points are rounded back to
+/// the integer grid (the input ring is already snapped).
+Ring<BPoint> clipRingToBox(const Ring<BPoint> & ring, Float64 lo_x, Float64 lo_y, Float64 hi_x, Float64 hi_y)
+{
+    Ring<BPoint> poly = ring;
+    /// Drop a duplicate closing vertex; the clip treats the vertex list as implicitly closed.
+    if (poly.size() >= 2 && bg::get<0>(poly.front()) == bg::get<0>(poly.back()) && bg::get<1>(poly.front()) == bg::get<1>(poly.back()))
+        poly.pop_back();
+
+    /// Clip the vertex list against one half-plane: axis 0 = x, axis 1 = y; keep_lower keeps coord >= bound,
+    /// otherwise coord <= bound.
+    auto clip_edge = [](const Ring<BPoint> & input, int axis, Float64 bound, bool keep_lower)
+    {
+        Ring<BPoint> output;
+        const size_t n = input.size();
+        if (n == 0)
+            return output;
+        auto coord = [axis](const BPoint & p) { return axis == 0 ? bg::get<0>(p) : bg::get<1>(p); };
+        auto inside = [&](const BPoint & p) { return keep_lower ? coord(p) >= bound : coord(p) <= bound; };
+        auto intersect = [axis, bound](const BPoint & a, const BPoint & b)
+        {
+            const Float64 ax = bg::get<0>(a);
+            const Float64 ay = bg::get<1>(a);
+            const Float64 bx = bg::get<0>(b);
+            const Float64 by = bg::get<1>(b);
+            if (axis == 0)
+            {
+                const Float64 t = (bound - ax) / (bx - ax);
+                return BPoint(bound, ay + t * (by - ay));
+            }
+            const Float64 t = (bound - ay) / (by - ay);
+            return BPoint(ax + t * (bx - ax), bound);
+        };
+        for (size_t i = 0; i < n; ++i)
+        {
+            const BPoint & cur = input[i];
+            const BPoint & prev = input[(i + n - 1) % n];
+            const bool cur_in = inside(cur);
+            if (cur_in)
+            {
+                if (!inside(prev))
+                    output.push_back(intersect(prev, cur));
+                output.push_back(cur);
+            }
+            else if (inside(prev))
+            {
+                output.push_back(intersect(prev, cur));
+            }
+        }
+        return output;
+    };
+
+    poly = clip_edge(poly, 0, lo_x, true);
+    poly = clip_edge(poly, 0, hi_x, false);
+    poly = clip_edge(poly, 1, lo_y, true);
+    poly = clip_edge(poly, 1, hi_y, false);
+
+    /// Round the clip-introduced crossing points back to the integer grid (the input ring is already snapped).
+    roundToGrid(poly);
+    return poly;
+}
+
 /// Accumulates the per-row tile-space geometries into a `Geometry` (Variant) result column.
 struct GeometryVariantBuilder
 {
@@ -185,11 +251,6 @@ public:
     static constexpr UInt64 default_extent = 4096;
     static constexpr UInt64 default_buffer = 1;
     static constexpr Int64 max_extent_or_buffer = std::numeric_limits<Int32>::max();
-    /// wagyu removes collinear points using Int64 products of coordinate deltas (slopes_equal), which overflow
-    /// once a delta exceeds ~2^31. A polygon clipped to the tile has deltas bounded by extent + 2 * buffer, but the
-    /// pre-clip subject ring does not, so a polygon spanning a huge pixel range (a world-scale polygon at a very
-    /// high zoom) is not clipped through wagyu. 2^30 keeps the products comfortably within Int64.
-    static constexpr Int64 max_subject_span = Int64{1} << 30;
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMVTEncodeGeom>(); }
 
@@ -371,40 +432,44 @@ public:
                 return;
             }
 
-            /// Bound the coordinates wagyu sees (see max_subject_span): a polygon whose projected envelope does not
-            /// reach the tile clips to nothing, and one spanning more pixels than wagyu's collinear-point arithmetic
-            /// can handle is dropped rather than fed in. Geometry that survives has deltas small enough to be safe.
             if (bg::num_points(polygons) == 0)
             {
                 builder.addNull();
                 return;
             }
-            const BBox envelope = bg::return_envelope<BBox>(polygons);
-            const double span_x = bg::get<bg::max_corner, 0>(envelope) - bg::get<bg::min_corner, 0>(envelope);
-            const double span_y = bg::get<bg::max_corner, 1>(envelope) - bg::get<bg::min_corner, 1>(envelope);
-            if (!bg::intersects(envelope, box) || span_x > max_subject_span || span_y > max_subject_span)
-            {
-                builder.addNull();
-                return;
-            }
 
-            /// Clip to the tile box and validate with wagyu: unlike bg::intersection it returns polygons that are
-            /// valid under the MVT winding rules, repairing self-intersections and nested rings. The even-odd fill
-            /// rule makes the result independent of the input ring winding and resolves self-intersecting rings.
+            /// Clip and validate with wagyu: unlike bg::intersection it repairs self-intersections and nested rings
+            /// into MVT-valid polygons. wagyu removes collinear points using Int64 products of coordinate deltas,
+            /// which overflow for geometry far from the tile, so each ring is first bounded to the tile box with a
+            /// Sutherland-Hodgman pre-clip (keeping the in-tile portion); the even-odd fill rule then resolves
+            /// self-intersections independently of the input ring winding.
+            const Float64 lo_x = bg::get<bg::min_corner, 0>(box);
+            const Float64 lo_y = bg::get<bg::min_corner, 1>(box);
+            const Float64 hi_x = bg::get<bg::max_corner, 0>(box);
+            const Float64 hi_y = bg::get<bg::max_corner, 1>(box);
+
             namespace wg = mapbox::geometry::wagyu;
             wg::wagyu<Int64> clipper;
+            auto add_clipped = [&](const Ring<BPoint> & ring)
+            {
+                const Ring<BPoint> clipped = clipRingToBox(ring, lo_x, lo_y, hi_x, hi_y);
+                if (clipped.size() >= 3)
+                    clipper.add_ring(toWagyuRing(clipped), wg::polygon_type_subject);
+            };
             for (const auto & poly : polygons)
             {
-                clipper.add_ring(toWagyuRing(poly.outer()), wg::polygon_type_subject);
+                add_clipped(poly.outer());
                 for (const auto & inner : poly.inners())
-                    clipper.add_ring(toWagyuRing(inner), wg::polygon_type_subject);
+                    add_clipped(inner);
             }
 
-            const Int64 lo_x = static_cast<Int64>(bg::get<bg::min_corner, 0>(box));
-            const Int64 lo_y = static_cast<Int64>(bg::get<bg::min_corner, 1>(box));
-            const Int64 hi_x = static_cast<Int64>(bg::get<bg::max_corner, 0>(box));
-            const Int64 hi_y = static_cast<Int64>(bg::get<bg::max_corner, 1>(box));
-            clipper.add_ring(WagyuRing{{lo_x, lo_y}, {hi_x, lo_y}, {hi_x, hi_y}, {lo_x, hi_y}, {lo_x, lo_y}}, wg::polygon_type_clip);
+            const auto box_lo_x = static_cast<Int64>(lo_x);
+            const auto box_lo_y = static_cast<Int64>(lo_y);
+            const auto box_hi_x = static_cast<Int64>(hi_x);
+            const auto box_hi_y = static_cast<Int64>(hi_y);
+            clipper.add_ring(
+                WagyuRing{{box_lo_x, box_lo_y}, {box_hi_x, box_lo_y}, {box_hi_x, box_hi_y}, {box_lo_x, box_hi_y}, {box_lo_x, box_lo_y}},
+                wg::polygon_type_clip);
 
             mapbox::geometry::multi_polygon<Int64> solution;
             clipper.execute(wg::clip_type_intersection, solution, wg::fill_type_even_odd, wg::fill_type_even_odd);

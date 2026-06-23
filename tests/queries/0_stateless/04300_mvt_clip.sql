@@ -99,9 +99,11 @@ SELECT wkt(MVTEncodeGeom([[(15.403, 0.667), (15.335, 0.28), (15.398, -0.186), (1
 SELECT '-- MVTEncodeGeom: a self-intersecting ring crossing the tile is repaired into two valid polygons (it was emitted as one self-intersecting ring)';
 SELECT wkt(MVTEncodeGeom([[(-10.0, -5.0), (100.0, 60.0), (-10.0, 60.0), (100.0, -5.0), (-10.0, -5.0)]]::Polygon, 2, 2, 1));
 
-SELECT '-- MVTEncodeGeom: a polygon spanning far more pixels than the tile is dropped (its pre-clip span exceeds what the integer clipper can process), at high zoom';
-SELECT MVTEncodeGeom([[(-179.0, -85.0), (179.0, -85.0), (179.0, 85.0), (-179.0, 85.0), (-179.0, -85.0)]]::Polygon, 24, 8388608, 8388608) IS NULL;
-SELECT MVTEncodeGeom([[(0.0, 0.0), (170.0, 80.0), (-170.0, 80.0), (0.0, 0.0)]]::Polygon, 24, 8388608, 8388608) IS NULL;
+SELECT '-- MVTEncodeGeom: a polygon far larger than the tile renders its in-tile portion at high zoom (clipped to the tile box)';
+SELECT wkt(MVTEncodeGeom([[(-179.0, -85.0), (179.0, -85.0), (179.0, 85.0), (-179.0, 85.0), (-179.0, -85.0)]]::Polygon, 24, 8388608, 8388608));
 
-SELECT '-- MVTEncodeGeom: the same world-spanning polygon still clips normally at a low zoom where its pixel span fits';
-SELECT wkt(MVTEncodeGeom([[(-179.0, -85.0), (179.0, -85.0), (179.0, 85.0), (-179.0, 85.0), (-179.0, -85.0)]]::Polygon, 2, 2, 2));
+SELECT '-- MVTEncodeGeom: a polygon entirely outside the tile becomes NULL';
+SELECT MVTEncodeGeom([[(100.0, 10.0), (150.0, 50.0), (100.0, 50.0), (150.0, 10.0), (100.0, 10.0)]]::Polygon, 2, 0, 0) IS NULL;
+
+SELECT '-- MVTEncodeGeom: a polygon with a hole keeps the hole through clipping';
+SELECT wkt(MVTEncodeGeom([[(13.3, 52.4), (13.7, 52.4), (13.7, 52.7), (13.3, 52.7), (13.3, 52.4)], [(13.45, 52.5), (13.55, 52.5), (13.55, 52.6), (13.45, 52.6), (13.45, 52.5)]]::Polygon, 10, 550, 335));
