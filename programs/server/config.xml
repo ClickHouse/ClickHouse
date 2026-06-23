@@ -337,7 +337,7 @@
     <!-- <max_connections>4096</max_connections> -->
 
     <!-- For 'Connection: keep-alive' in HTTP 1.1 -->
-    <keep_alive_timeout>10</keep_alive_timeout>
+    <keep_alive_timeout>30</keep_alive_timeout>
 
     <!-- Enable verbose output in /replicas_status handler. -->
     <!-- <enable_verbose_replicas_status/>true<enable_verbose_replicas_status>-->

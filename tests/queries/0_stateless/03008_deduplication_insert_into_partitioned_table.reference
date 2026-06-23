@@ -1,7 +1,9 @@
 no user deduplication token
-partitioned_table is deduplicated bacause deduplication works in scope of one partiotion:
+partitioned_table is not deduplicated because the inserts are different (deduplication works per insert):
+1	A
 1	A
 1	D
+2	B
 2	B
 2	C
 mv_table is not deduplicated because the inserted blocks was different:

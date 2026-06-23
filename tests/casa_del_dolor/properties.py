@@ -637,6 +637,19 @@ def remove_element(property_element: ET.Element, elem: str):
     remove_xml.text = ""
 
 
+def normalize_cache_properties(cache_element: ET.Element):
+    # `FileCacheSettings::validate` rejects split cache with overcommit policies.
+    use_split_cache = cache_element.find("use_split_cache")
+    cache_policy = cache_element.find("cache_policy")
+    if (
+        use_split_cache is not None
+        and use_split_cache.text == "1"
+        and cache_policy is not None
+        and cache_policy.text in ("LRU_OVERCOMMIT", "SLRU_OVERCOMMIT")
+    ):
+        use_split_cache.text = "0"
+
+
 def add_single_cluster(
     existing_nodes: list[str],
     next_cluster: ET.Element,
@@ -864,6 +877,7 @@ def add_single_disk(
             # Add random settings
             if random.randint(1, 100) <= 70:
                 apply_properties_recursively(next_disk, cache_storage_properties)
+                normalize_cache_properties(next_disk)
         else:
             enc_algorithm = random.choice(["aes_128_ctr", "aes_192_ctr", "aes_256_ctr"])
             algorithm_xml = ET.SubElement(next_disk, "algorithm")
@@ -1061,6 +1075,7 @@ def add_single_cache(i: int, next_cache: ET.Element):
     # Add random settings
     if random.randint(1, 100) <= 70:
         apply_properties_recursively(next_cache, cache_storage_properties)
+        normalize_cache_properties(next_cache)
 
 
 class CachePropertiesGroup(PropertiesGroup):

@@ -137,6 +137,7 @@ public:
     virtual void recalculateStorageStats() = 0;
 
     virtual void reconfigure(const KeeperRequestForSession& request_for_session) = 0;
+    virtual std::vector<std::pair<std::string, Int32>> getExpiredTTLPathsForGarbageCollector(size_t batch_size) const = 0;
 
     virtual std::vector<KeeperSnapshotStatus> getSnapshotsStatus() const = 0;
 
@@ -314,6 +315,7 @@ public:
     void recalculateStorageStats() override;
 
     void reconfigure(const KeeperRequestForSession& request_for_session) override;
+    std::vector<std::pair<std::string, Int32>> getExpiredTTLPathsForGarbageCollector(size_t batch_size) const override;
 
     std::vector<KeeperSnapshotStatus> getSnapshotsStatus() const override;
 

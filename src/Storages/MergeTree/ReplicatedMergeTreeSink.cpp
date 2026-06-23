@@ -132,9 +132,19 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     , allow_attach_while_readonly(allow_attach_while_readonly_)
     , quorum_parallel(quorum_parallel_)
     , deduplicate(
-        async_insert_
-        ? (*storage.getSettings())[MergeTreeSetting::replicated_deduplication_window_for_async_inserts] != 0
-        : (*storage.getSettings())[MergeTreeSetting::replicated_deduplication_window] != 0)
+        [&]
+        {
+            /// Under new_unified_hash sync and async inserts share the unified deduplication_hashes
+            /// directory, and the sync window governs both enabling and retention, so async inserts are
+            /// gated by replicated_deduplication_window too. The *_for_async_inserts window is legacy: it
+            /// applies only to old_separate_hashes / compatible_double_hashes (the async_blocks path).
+            const auto & mt_settings = *storage.getSettings();
+            const bool unified = context_->getServerSettings()[ServerSetting::insert_deduplication_version].value
+                == InsertDeduplicationVersions::NEW_UNIFIED_HASHES;
+            if (async_insert_ && !unified)
+                return mt_settings[MergeTreeSetting::replicated_deduplication_window_for_async_inserts] != 0;
+            return mt_settings[MergeTreeSetting::replicated_deduplication_window] != 0;
+        }())
     , log(getLogger(storage.getLogName() + " (Replicated OutputStream)"))
     , context(context_)
     , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))

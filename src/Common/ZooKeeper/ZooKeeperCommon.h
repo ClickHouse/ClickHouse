@@ -1,8 +1,8 @@
 #pragma once
 
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/OpenTelemetryTracingContext.h>
-#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/KeeperSpans.h>
 #include <Common/StaticString.h>
@@ -245,6 +245,8 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
 
     OpNum getOpNum() const override
     {
+        if (include_ttl)
+            return OpNum::CreateTTL;
         if (include_stats)
             return OpNum::Create2;
         return not_exists ? OpNum::CreateIfNotExists : OpNum::Create;
@@ -296,6 +298,13 @@ struct ZooKeeperCreateIfNotExistsResponse : ZooKeeperCreateResponse
 {
     OpNum getOpNum() const override { return OpNum::CreateIfNotExists; }
     using ZooKeeperCreateResponse::ZooKeeperCreateResponse;
+};
+
+struct ZooKeeperCreateTTLResponse final : ZooKeeperCreate2Response
+{
+    using ZooKeeperCreate2Response::ZooKeeperCreate2Response;
+
+    OpNum getOpNum() const override { return OpNum::CreateTTL; }
 };
 
 struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest
