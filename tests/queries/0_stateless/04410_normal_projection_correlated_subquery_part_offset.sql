@@ -15,9 +15,16 @@ INSERT INTO t_proj_corr SELECT number, 10 - number FROM numbers(5);
 -- A correlated scalar subquery decorrelates into a CROSS JOIN whose input reads via the normal
 -- projection (forced by PREWHERE on _part_offset). With join kind 'left' the projection-rewritten
 -- read used to leak the unused i/j columns past the join's declared header, aborting the server with
--- "Invalid number of columns in chunk pushed to OutputPort". Both queries must run without crashing.
+-- "Invalid number of columns in chunk pushed to OutputPort". Must run without crashing.
 SELECT count() FROM t_proj_corr PREWHERE _part_offset < (_part_offset + _part_starting_offset) WHERE ((SELECT _part_starting_offset) + _part_offset) >= 0 SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0, correlated_subqueries_default_join_kind = 'left';
 
 SELECT i, j FROM t_proj_corr PREWHERE _part_offset < (_part_offset + _part_starting_offset) WHERE ((SELECT _part_starting_offset) + _part_offset) = 8 ORDER BY ALL SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0, correlated_subqueries_default_join_kind = 'left';
+
+-- The fix must skip the projection when its rewritten stream cannot match the replaced read's
+-- structure, WITHOUT silently dropping rows: the skip path may not leave the regular read with the
+-- parts already filtered out. Assert the projection-on result equals the projection-off result. A
+-- regression returns fewer rows (e.g. 0) only with optimize_use_projections = 1.
+SELECT sum(i), sum(j), count() FROM t_proj_corr PREWHERE _part_offset < (_part_offset + _part_starting_offset) WHERE ((SELECT _part_starting_offset) + _part_offset) >= 0 SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0, correlated_subqueries_default_join_kind = 'left', optimize_use_projections = 1;
+SELECT sum(i), sum(j), count() FROM t_proj_corr PREWHERE _part_offset < (_part_offset + _part_starting_offset) WHERE ((SELECT _part_starting_offset) + _part_offset) >= 0 SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0, correlated_subqueries_default_join_kind = 'left', optimize_use_projections = 0;
 
 DROP TABLE t_proj_corr;

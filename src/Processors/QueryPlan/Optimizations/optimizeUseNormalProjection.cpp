@@ -428,6 +428,14 @@ std::optional<String> optimizeUseNormalProjections(
         reading->isParallelReadingEnabled(),
         reading->getParallelReadingExtension());
 
+    /// filterPartsByProjection mutates parent_reading_select_result in place. When it is the analyzed
+    /// result held by the parent ReadFromMergeTree, that mutation is visible to the regular read. If
+    /// the structure check below makes us skip the projection, the regular read must still see every
+    /// part, so remember the pre-filter result and restore it on that path.
+    ReadFromMergeTree::AnalysisResultPtr analyzed_result_to_restore_on_skip;
+    if (reading->getAnalyzedResult() == parent_reading_select_result)
+        analyzed_result_to_restore_on_skip = std::make_shared<ReadFromMergeTree::AnalysisResult>(*parent_reading_select_result);
+
     /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
     filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
 
@@ -497,7 +505,13 @@ std::optional<String> optimizeUseNormalProjections(
     }
 
     if (!blocksHaveEqualStructure(*main_stream, **proj_stream))
+    {
+        /// Skipping the projection: undo the filterPartsByProjection mutation so the regular read,
+        /// which stays in the plan, still sees all parts instead of silently returning too few rows.
+        if (analyzed_result_to_restore_on_skip)
+            reading->setAnalyzedResult(std::move(analyzed_result_to_restore_on_skip));
         return {};
+    }
 
     if (parent_reading_select_result->parts_with_ranges.empty())
     {
