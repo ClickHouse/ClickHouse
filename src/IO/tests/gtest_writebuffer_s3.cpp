@@ -38,6 +38,7 @@
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 
 #include <Common/filesystemHelpers.h>
+#include <Common/Crypto/OpenSSLInitializer.h>
 #include <Core/Settings.h>
 
 
@@ -964,10 +965,28 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmValidationAndNormalization)
 
     ASSERT_EQ("CRC32", request_settings[S3RequestSetting::upload_checksum_algorithm].value);
 
-    /// `MD5` is valid and upper-cased.
+    /// `MD5` normalizes to upper case, but is rejected under FIPS where it would send no checksum.
     getSettings()[Setting::s3_upload_checksum_algorithm] = "md5";
-    request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ true);
-    ASSERT_EQ("MD5", request_settings[S3RequestSetting::upload_checksum_algorithm].value);
+    if (DB::OpenSSLInitializer::instance().isFIPSEnabled())
+    {
+        EXPECT_THROW({
+            try
+            {
+                request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ true);
+            }
+            catch (const DB::Exception & e)
+            {
+                ASSERT_EQ(ErrorCodes::INVALID_SETTING_VALUE, e.code());
+                EXPECT_THAT(e.what(), testing::HasSubstr("cannot be MD5 when FIPS mode is enabled"));
+                throw;
+            }
+        }, DB::Exception);
+    }
+    else
+    {
+        request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ true);
+        ASSERT_EQ("MD5", request_settings[S3RequestSetting::upload_checksum_algorithm].value);
+    }
 
     getSettings()[Setting::s3_upload_checksum_algorithm] = "MD4";
 
