@@ -1,4 +1,7 @@
 SET enable_analyzer = 1;
+-- The `tuple(...)` literals below are converted to the destination tuple elements positionally, not by
+-- name, so disable `enable_named_columns_in_function_tuple` for this test.
+SET enable_named_columns_in_function_tuple = 0;
 
 -- { echo }
 -- Elements of a `Nullable(Tuple(...))` that can represent NULL themselves without being wrapped into

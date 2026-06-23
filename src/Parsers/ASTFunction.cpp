@@ -220,6 +220,12 @@ ASTPtr ASTFunction::toLiteral() const
     if (!arguments)
         return {};
 
+    /// A parametric tuple function `tuple('a', 'b')(1, 2)` creates a named tuple.
+    /// Folding it into a literal would lose the element names and make e.g. `tuple('a')(1)`
+    /// and `tuple('b')(1)` indistinguishable by column name despite having different types.
+    if (parameters)
+        return {};
+
     if (name == "array")
         return createLiteral<Array>(arguments->children);
 

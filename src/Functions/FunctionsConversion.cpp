@@ -886,6 +886,7 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
         element_wrappers.reserve(to_names.size());
         to_reverse_index.reserve(from_names.size());
 
+        size_t num_from_fields = 0;
         for (size_t i = 0; i < to_names.size(); ++i)
         {
             auto it = from_positions.find(to_names[i]);
@@ -893,12 +894,26 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
             {
                 element_wrappers.emplace_back(prepareUnpackDictionaries(from_element_types[it->second], to_element_types[i]));
                 to_reverse_index.emplace_back(it->second);
+                ++num_from_fields;
             }
             else
             {
                 element_wrappers.emplace_back();
                 to_reverse_index.emplace_back();
             }
+        }
+
+        /// When `allow_named_tuple_conversion_with_extra_source_fields` is disabled, named tuple conversions will
+        /// throw an exception if any fields are lost, helping prevent silent data loss. Otherwise, named tuple
+        /// conversions allow different sets of elements, filling missing elements with default values.
+        if (!settings.allow_named_tuple_conversion_with_extra_source_fields && num_from_fields < from_names.size())
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_CONVERT_TYPE,
+                "Some fields from source tuple are lost when casting {} to {} (allow_named_tuple_conversion_with_extra_source_fields "
+                "is disabled)",
+                from_type->getName(),
+                to_type->getName());
         }
     }
     else

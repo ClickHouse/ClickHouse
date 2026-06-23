@@ -80,4 +80,10 @@ private:
     SerializationInfoMutablePtr getSerializationInfoImpl(const IColumn & column) const;
 };
 
+/// Returns the type with explicit element names removed from all Tuples inside it (descends into
+/// Tuple, Array, Map, Nullable and LowCardinality). Returns the same type object if there is
+/// nothing to change. Used for implicit comparison casts (e.g. the left hand side of IN against
+/// the set elements), where the elements of tuples are matched positionally regardless of names.
+DataTypePtr recursiveRemoveTupleElementNames(const DataTypePtr & type);
+
 }
