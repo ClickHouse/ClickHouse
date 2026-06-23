@@ -22,6 +22,10 @@
 #   read goes through the plain reader), so the table has two parts and `max_threads = 2`.
 # - `allow_prefetched_read_pool_for_local_filesystem = 1` overrides the stateless default that disables
 #   the pool (tests/config/users.d/prefetch_settings.xml).
+# - `disk = 'default'` pins the table to the local disk so the test exercises the local read path on
+#   every CI configuration. Some configs override the default MergeTree `storage_policy` to object
+#   storage (e.g. tests/config/config.d/s3_storage_policy_for_merge_tree_by_default.xml); without this
+#   the parts land on S3 and the remote estimate (~1 MiB) wrongly admits the 8 MiB-budget deny case.
 # - `filesystem_prefetch_step_marks = 1` gives the pool look-ahead tasks to pre-schedule.
 # - Admission is observed via `asynchronous_read_counters['total_prefetch_tasks']` (counts only
 #   pool-scheduled prefetches); `max()` per log_comment collapses any flaky-check rerun duplicates.
@@ -37,7 +41,7 @@ DROP TABLE IF EXISTS test;
 -- the per-prefetch estimate is bounded by the buffer, not the column size. Two parts give the pool
 -- more than one stream so it is actually selected for the local read.
 CREATE TABLE test (s String CODEC(NONE)) ENGINE = MergeTree() ORDER BY ()
-SETTINGS min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1;
+SETTINGS disk = 'default', min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1;
 SYSTEM STOP MERGES test;
 INSERT INTO test SELECT repeat('a', 1024) FROM numbers(20000);
 INSERT INTO test SELECT repeat('a', 1024) FROM numbers(20000);
