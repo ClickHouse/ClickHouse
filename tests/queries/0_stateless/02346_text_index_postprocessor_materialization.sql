@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- Tag no-fasttest -- section 14 uses lowerUTF8, which is only available in builds with ICU.
+
 -- Tests the postprocessor argument in text indexes: index build, (partial) materialization and direct
 -- reads stay consistent with the row-scan fallback, including ngrams/sparseGrams tokenizer specifics.
 
