@@ -912,7 +912,7 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(
 
     const auto & matching_doc_ids = *doc_ids_it->second;
     const size_t window_end = row_offset + num_rows;
-    for (auto it = std::ranges::lower_bound(matching_doc_ids, row_offset);
+    for (const auto * it = std::ranges::lower_bound(matching_doc_ids, row_offset);
          it != matching_doc_ids.end() && *it < window_end;
          ++it)
     {
