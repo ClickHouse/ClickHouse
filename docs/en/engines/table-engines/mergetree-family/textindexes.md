@@ -296,8 +296,7 @@ When set to `1`, the index additionally stores positional data (in a `.pos` file
 Storing positions increases the on-disk size of the index and the write cost, so it is opt-in.
 The on-disk format is not yet stable, so this parameter is experimental and may change in a future release.
 Creating an index with `positions = 1` therefore requires the MergeTree setting [`allow_experimental_text_index_positions`](/operations/settings/merge-tree-settings#allow_experimental_text_index_positions) to be enabled.
-Set `positions = 0` to keep the posting-list-only storage.
-When the argument is omitted, the default comes from the MergeTree setting [`text_index_positions`](/operations/settings/merge-tree-settings#text_index_positions) (default `0`, i.e. position-less).
+Set `positions = 0` (the default) to keep the posting-list-only storage; text indexes created without this argument remain position-less.
 
 <details markdown="1">
 

@@ -1259,7 +1259,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"text_index_dictionary_block_frontcoding_compression", true, true, "New setting"},
             {"text_index_posting_list_block_size", 1048576, 1048576, "New setting"},
             {"text_index_posting_list_codec", "none", "none", "New setting"},
-            {"text_index_positions", false, false, "New setting"},
             {"allow_experimental_text_index_positions", false, false, "New setting"},
             {"materialize_projections_on_insert", true, true, "New setting"},
             {"materialize_projections_on_merge", false, false, "New setting"},
