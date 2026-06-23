@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -52,6 +53,13 @@ DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & sett
 
 void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidationSettings & settings)
 {
+    if (!settings.allow_experimental_nullable_array_type && hasNullableArray(type_to_check))
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Cannot create column with type '{}' because Nullable Array type is not allowed. "
+            "Set setting allow_experimental_nullable_array_type = 1 in order to allow it",
+            type_to_check->getName());
+
     auto validate_callback = [&](const IDataType & data_type)
     {
         if (!settings.allow_suspicious_low_cardinality_types)
@@ -157,20 +165,6 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
             }
         }
 
-        if (!settings.allow_experimental_nullable_array_type)
-        {
-            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&data_type))
-            {
-                if (isArray(nullable_type->getNestedType()))
-                {
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Cannot create column with type '{}' because Nullable Array type is not allowed. "
-                        "Set setting allow_experimental_nullable_array_type = 1 in order to allow it",
-                        data_type.getName());
-                }
-            }
-        }
     };
 
     validate_callback(*type_to_check);

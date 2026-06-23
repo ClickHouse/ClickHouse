@@ -950,6 +950,35 @@ inline void mergeRowNullMap(ColumnPtr & accumulated, const ColumnPtr & new_null_
     accumulated = std::move(mutable_accumulated);
 }
 
+inline ColumnPtr replicateNullMapByOffsets(const NullMap * row_null_map, const ColumnArray::Offsets & offsets, size_t num_rows)
+{
+    if (!row_null_map)
+        return nullptr;
+
+    if (row_null_map->size() != num_rows && row_null_map->size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Null map size {} does not match row count {} and is not a single constant value",
+            row_null_map->size(), num_rows);
+
+    auto result = ColumnUInt8::create(offsets.empty() ? 0 : offsets.back(), false);
+    auto & result_data = result->getData();
+
+    ColumnArray::Offset previous_offset = 0;
+    for (size_t row = 0; row < offsets.size(); ++row)
+    {
+        const auto current_offset = offsets[row];
+        const bool row_is_null = row_null_map->size() == 1 ? (*row_null_map)[0] : (*row_null_map)[row];
+        if (row_is_null)
+        {
+            for (size_t element = previous_offset; element < current_offset; ++element)
+                result_data[element] = 1;
+        }
+        previous_offset = current_offset;
+    }
+
+    return result;
+}
+
 inline UnwrappedNullableArrayColumn unwrapNullableArrayColumnForArithmetic(
     const ColumnPtr & column,
     const DataTypePtr & type,
@@ -2033,7 +2062,11 @@ class FunctionBinaryArithmetic : public IFunction
         return detail::wrapNullableArrayArithmeticResult(std::move(array_result), merged_null_map, result_type, input_rows_count);
     }
 
-    ColumnPtr executeArrayWithNumericImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
+    ColumnPtr executeArrayWithNumericImpl(
+        const ColumnsWithTypeAndName & args,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        const NullMap * right_nullmap = nullptr) const
     {
         ColumnsWithTypeAndName arguments = args;
         bool is_swapped = isNumber(removeNullable(args[0].type)); /// Defines the order of arguments (If array is first argument - is_swapped = false)
@@ -2050,7 +2083,7 @@ class FunctionBinaryArithmetic : public IFunction
         const auto * left_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
         const auto * right_const = typeid_cast<const ColumnConst *>(arguments[1].column.get());
 
-        if (left_const && right_const)
+        if (!right_nullmap && left_const && right_const)
         {
             new_arguments[0] = {left_const->getDataColumnPtr(), arguments[0].type, arguments[0].name};
             new_arguments[1] = {right_const->getDataColumnPtr(), arguments[1].type, arguments[1].name};
@@ -2058,13 +2091,13 @@ class FunctionBinaryArithmetic : public IFunction
             return ColumnConst::create(std::move(col), input_rows_count);
         }
 
-        if (right_const && is_swapped)
+        if (!right_nullmap && right_const && is_swapped)
         {
             new_arguments[0] = {arguments[0].column.get()->getPtr(), arguments[0].type, arguments[0].name};
             new_arguments[1] = {right_const->convertToFullColumnIfConst(), arguments[1].type, arguments[1].name};
             return executeImpl(new_arguments, result_type, input_rows_count);
         }
-        if (left_const && !is_swapped)
+        if (!right_nullmap && left_const && !is_swapped)
         {
             new_arguments[0] = {left_const->convertToFullColumnIfConst(), arguments[0].type, arguments[0].name};
             new_arguments[1] = {arguments[1].column.get()->getPtr(), arguments[1].type, arguments[1].name};
@@ -2097,6 +2130,14 @@ class FunctionBinaryArithmetic : public IFunction
         if (!left_offsets.empty())
             rows_count = left_offsets.back();
 
+        ColumnPtr right_element_null_map_column;
+        const NullMap * right_element_null_map = nullptr;
+        if (right_nullmap && !detail::isArrayOrNullableArray(*args[1].type))
+        {
+            right_element_null_map_column = detail::replicateNullMapByOffsets(right_nullmap, left_offsets, input_rows_count);
+            right_element_null_map = &assert_cast<const ColumnUInt8 &>(*right_element_null_map_column).getData();
+        }
+
         new_arguments[0] = {left_array_col->getDataPtr(), left_array_elements_type, arguments[0].name};
         if (right_const)
             new_arguments[1] = {right_col->cloneResized(rows_count), arguments[1].type, arguments[1].name};
@@ -2107,7 +2148,7 @@ class FunctionBinaryArithmetic : public IFunction
 
         if (is_swapped)
             std::swap(new_arguments[1], new_arguments[0]);
-        auto res = executeImpl(new_arguments, result_array_type, rows_count);
+        auto res = executeImpl2(new_arguments, result_array_type, rows_count, right_element_null_map);
 
         auto array_result = ColumnArray::create(res, left_array_col->getOffsetsPtr());
         return detail::wrapNullableArrayArithmeticResult(
@@ -3367,7 +3408,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             const bool left_is_array = detail::isArrayOrNullableArray(*arguments[0].type);
             const bool right_is_array = detail::isArrayOrNullableArray(*arguments[1].type);
             if (!left_is_array || !right_is_array)
-                return executeArrayWithNumericImpl(arguments, result_type, input_rows_count);
+                return executeArrayWithNumericImpl(arguments, result_type, input_rows_count, right_nullmap);
             return executeArraysImpl(arguments, result_type, input_rows_count);
         }
 

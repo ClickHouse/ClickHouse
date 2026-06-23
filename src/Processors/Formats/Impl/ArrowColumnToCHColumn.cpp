@@ -2376,14 +2376,16 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
         checkValidityBitmap(*arrow_column->chunk(chunk_i), column_name);
 
+    bool type_hint_is_nullable = type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable());
     bool type_hint_not_nullable_capable = type_hint
+        && !type_hint_is_nullable
         && !nestedTypeAllowsNullableWrapperForArrowRead(removeNullable(type_hint), settings.format_settings);
     bool arrow_type_not_nullable_capable = !type_hint
         && arrowTypeIsListLike(*arrow_column->type())
         && !settings.format_settings.schema_inference_allow_nullable_array_type;
     bool read_as_nullable_column = (arrow_column->null_count()
         || is_nullable_column
-        || (type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable())))
+        || type_hint_is_nullable)
         && !geo_metadata
         && !type_hint_not_nullable_capable
         && !arrow_type_not_nullable_capable

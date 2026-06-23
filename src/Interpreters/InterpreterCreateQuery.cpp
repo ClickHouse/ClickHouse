@@ -28,6 +28,8 @@
 #include <Core/ServerSettings.h>
 #include <Core/UUID.h>
 
+#include <DataTypes/NullableUtils.h>
+
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 
@@ -541,17 +543,13 @@ namespace
 
 DataTypePtr normalizeInferredColumnTypeForStorage(const DataTypePtr & type, const Settings & settings)
 {
-    if (!settings[Setting::allow_experimental_nullable_array_type])
+    if (!settings[Setting::allow_experimental_nullable_array_type] && hasNullableArray(type))
     {
-        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
-        {
-            if (isArray(nullable_type->getNestedType()))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Cannot create column with type '{}' because Nullable Array type is not allowed. "
-                    "Set setting allow_experimental_nullable_array_type = 1 in order to allow it",
-                    type->getName());
-        }
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Cannot create column with type '{}' because Nullable Array type is not allowed. "
+            "Set setting allow_experimental_nullable_array_type = 1 in order to allow it",
+            type->getName());
     }
 
     return type;
