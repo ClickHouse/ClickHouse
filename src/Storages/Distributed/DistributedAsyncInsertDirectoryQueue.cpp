@@ -197,14 +197,30 @@ void DistributedAsyncInsertDirectoryQueue::shutdownWithoutFlush()
     task_handle->deactivate();
 }
 
+std::chrono::milliseconds DistributedAsyncInsertDirectoryQueue::calculateSleepTime(
+    std::chrono::milliseconds default_sleep_time,
+    std::chrono::milliseconds max_sleep_time,
+    size_t error_count)
+{
+    if (default_sleep_time.count() <= 0)
+        return std::min(default_sleep_time, max_sleep_time);
+
+    const UInt64 q = doubleToUInt64(std::exp2(error_count));
+    /// Clamp before multiplying: default_sleep_time * q can overflow for large error_count.
+    if (q > static_cast<UInt64>(max_sleep_time.count() / default_sleep_time.count()))
+        return max_sleep_time;
+
+    return std::min(std::chrono::milliseconds(default_sleep_time.count() * static_cast<Int64>(q)), max_sleep_time);
+}
+
 void DistributedAsyncInsertDirectoryQueue::updateSleepTime()
 {
-    UInt64 q = doubleToUInt64(std::exp2(status.error_count));
-    std::chrono::milliseconds new_sleep_time(default_sleep_time.count() * q);
-    if (new_sleep_time.count() < 0)
-        sleep_time = max_sleep_time;
-    else
-        sleep_time = std::min(new_sleep_time, max_sleep_time);
+    size_t error_count;
+    {
+        std::lock_guard status_lock(status_mutex);
+        error_count = status.error_count;
+    }
+    sleep_time = calculateSleepTime(default_sleep_time, max_sleep_time, error_count);
 }
 
 
@@ -238,14 +254,11 @@ void DistributedAsyncInsertDirectoryQueue::run()
 
                     status.error_count /= 2;
                     last_decrease_time = now;
-
-                    updateSleepTime();
                 }
             }
             catch (...)
             {
                 tryLogCurrentException(getLoggerName().data());
-                updateSleepTime();
                 do_sleep = true;
             }
         }
@@ -256,8 +269,12 @@ void DistributedAsyncInsertDirectoryQueue::run()
             break;
     }
 
+    /// Recompute the backoff here, the only place sleep_time is used, so it tracks error_count up and down.
     if (!pending_files.isFinished() && do_sleep)
+    {
+        updateSleepTime();
         task_handle->scheduleAfter(sleep_time.count());
+    }
 }
 
 
