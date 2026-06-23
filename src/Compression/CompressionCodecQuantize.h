@@ -27,6 +27,8 @@ struct QuantizeCodecParams
 ///
 /// Because it behaves like `NONE`, it must be used on its own: `CODEC(Quantize('rabitq', 64))`. The full-precision
 /// vectors are always stored uncompressed, which is the norm for dense embeddings (they do not compress).
+///
+/// The codec is gated behind the `allow_experimental_codecs` setting (`isExperimental() == true`).
 class CompressionCodecQuantize : public ICompressionCodec
 {
 public:
@@ -46,6 +48,8 @@ protected:
     /// At the byte level the full-precision stream is stored verbatim. The companion code stream is produced by the
     /// serialization, not by this codec.
     bool isNone() const override { return true; }
+    /// Gated behind the `allow_experimental_codecs` setting.
+    bool isExperimental() const override { return true; }
 
     String getDescription() const override
     {

@@ -1,6 +1,9 @@
 -- A vector column carrying a `Quantize(...)` codec makes the query planner automatically rewrite
 -- ORDER BY distance LIMIT into a two-stage shortlist (over the small quantized codes subcolumn) + rescore
 -- (against the full-precision vector), reading the heavy vector column lazily for the shortlisted rows only.
+-- The codec is gated behind `allow_experimental_codecs`.
+
+SET allow_experimental_codecs = 1;
 
 DROP TABLE IF EXISTS quantize_auto;
 CREATE TABLE quantize_auto
