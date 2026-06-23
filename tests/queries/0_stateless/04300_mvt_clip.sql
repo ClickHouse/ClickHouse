@@ -95,3 +95,10 @@ SELECT wkt(MVTEncodeGeom([[(10.0, 10.0), (50.0, 50.0), (10.0, 50.0), (50.0, 10.0
 
 SELECT '-- MVTEncodeGeom: a self-crossing sliver clips to a small valid polygon, not a whole-tile fill';
 SELECT wkt(MVTEncodeGeom([[(15.403, 0.667), (15.335, 0.28), (15.398, -0.186), (15.331, 0.374), (15.403, 0.667)]]::Polygon, 2, 2, 1));
+
+SELECT '-- MVTEncodeGeom: a polygon spanning far more pixels than the tile is dropped (its pre-clip span exceeds what the integer clipper can process), at high zoom';
+SELECT MVTEncodeGeom([[(-179.0, -85.0), (179.0, -85.0), (179.0, 85.0), (-179.0, 85.0), (-179.0, -85.0)]]::Polygon, 24, 8388608, 8388608) IS NULL;
+SELECT MVTEncodeGeom([[(0.0, 0.0), (170.0, 80.0), (-170.0, 80.0), (0.0, 0.0)]]::Polygon, 24, 8388608, 8388608) IS NULL;
+
+SELECT '-- MVTEncodeGeom: the same world-spanning polygon still clips normally at a low zoom where its pixel span fits';
+SELECT MVTEncodeGeom([[(-179.0, -85.0), (179.0, -85.0), (179.0, 85.0), (-179.0, 85.0), (-179.0, -85.0)]]::Polygon, 2, 2, 2) IS NOT NULL;

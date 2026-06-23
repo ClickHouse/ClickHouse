@@ -185,6 +185,11 @@ public:
     static constexpr UInt64 default_extent = 4096;
     static constexpr UInt64 default_buffer = 1;
     static constexpr Int64 max_extent_or_buffer = std::numeric_limits<Int32>::max();
+    /// wagyu removes collinear points using Int64 products of coordinate deltas (slopes_equal), which overflow
+    /// once a delta exceeds ~2^31. A polygon clipped to the tile has deltas bounded by extent + 2 * buffer, but the
+    /// pre-clip subject ring does not, so a polygon spanning a huge pixel range (a world-scale polygon at a very
+    /// high zoom) is not clipped through wagyu. 2^30 keeps the products comfortably within Int64.
+    static constexpr Int64 max_subject_span = Int64{1} << 30;
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMVTEncodeGeom>(); }
 
@@ -363,6 +368,23 @@ public:
                     return;
                 }
                 builder.addMultiPolygon(polygons);
+                return;
+            }
+
+            /// Bound the coordinates wagyu sees (see max_subject_span): a polygon whose projected envelope does not
+            /// reach the tile clips to nothing, and one spanning more pixels than wagyu's collinear-point arithmetic
+            /// can handle is dropped rather than fed in. Geometry that survives has deltas small enough to be safe.
+            if (bg::num_points(polygons) == 0)
+            {
+                builder.addNull();
+                return;
+            }
+            const BBox envelope = bg::return_envelope<BBox>(polygons);
+            const double span_x = bg::get<bg::max_corner, 0>(envelope) - bg::get<bg::min_corner, 0>(envelope);
+            const double span_y = bg::get<bg::max_corner, 1>(envelope) - bg::get<bg::min_corner, 1>(envelope);
+            if (!bg::intersects(envelope, box) || span_x > max_subject_span || span_y > max_subject_span)
+            {
+                builder.addNull();
                 return;
             }
 

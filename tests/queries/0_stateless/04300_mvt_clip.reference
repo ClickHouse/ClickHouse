@@ -47,3 +47,8 @@
 MULTIPOLYGON(((1366 2550,2276 1461,455 1461,1366 2550)),((1366 2550,455 3639,2276 3639,1366 2550)))
 -- MVTEncodeGeom: a self-crossing sliver clips to a small valid polygon, not a whole-tile fill
 MULTIPOLYGON(((698 4081,701 4066,698 4079,698 4081)))
+-- MVTEncodeGeom: a polygon spanning far more pixels than the tile is dropped (its pre-clip span exceeds what the integer clipper can process), at high zoom
+1
+1
+-- MVTEncodeGeom: the same world-spanning polygon still clips normally at a low zoom where its pixel span fits
+1
