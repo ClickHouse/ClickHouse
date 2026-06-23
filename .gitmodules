@@ -402,3 +402,7 @@
 [submodule "contrib/xsimd"]
 	path = contrib/xsimd
 	url = https://github.com/xtensor-stack/xsimd
+[submodule "contrib/simdutf"]
+	path = contrib/simdutf
+	url = https://github.com/simdutf/simdutf
+	branch = master
