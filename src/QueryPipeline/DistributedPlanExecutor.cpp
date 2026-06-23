@@ -1050,7 +1050,10 @@ public:
         for (const auto & worker : task_to_host_map->getWorkerAddresses())
             worker_hosts.push_back(worker.host);
         LOG_DEBUG(logger, "Hosts for running distributed query: [{}]", fmt::join(worker_hosts, ", "));
-        ProfileEvents::increment(ProfileEvents::DistributedPlanHostsUsed, worker_hosts.size());
+        UnorderedSetWithMemoryTracking<String> distinct_hosts;
+        for (const auto & [task_id, host] : task_to_host_map->getTaskHosts())
+            distinct_hosts.insert(host.host);
+        ProfileEvents::increment(ProfileEvents::DistributedPlanHostsUsed, distinct_hosts.size());
     }
 
     void cleanup() override
