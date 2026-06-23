@@ -25,4 +25,3 @@ services:
             interval: 10s
             retries: 10
             timeout: 2s
-        cpus: 3

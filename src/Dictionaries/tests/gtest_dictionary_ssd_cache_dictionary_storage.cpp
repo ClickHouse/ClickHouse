@@ -68,7 +68,7 @@ TEST(SSDCacheDictionaryStorage, SSDCacheBlockWithSSDCacheSimpleKey)
         ASSERT_FALSE(SSDCacheBlock::canBeWrittenInEmptyBlock(key, block_data_size));
         key.size = 4064;
 
-        size_t offset_in_block = {};
+        size_t offset_in_block;
         ASSERT_TRUE(block.enoughtPlaceToWriteKey(key));
         ASSERT_TRUE(block.writeKey(key, offset_in_block));
         ASSERT_EQ(offset_in_block, block_header_size + key_metadata_size);
@@ -100,7 +100,7 @@ TEST(SSDCacheDictionaryStorage, SSDCacheBlockWithSSDCacheSimpleKey)
 
         std::unique_ptr<char[]> data_to_insert(new char[4000]);
         memset(data_to_insert.get(), 1, 4000);
-        size_t offset_in_block = {};
+        size_t offset_in_block;
         SSDCacheSimpleKey key {0, 200, data_to_insert.get()};
         block.writeKey({1, 200, data_to_insert.get()}, offset_in_block);
         ASSERT_EQ(block.getKeysSize(), 1);
@@ -161,8 +161,8 @@ TEST(SSDCacheDictionaryStorage, SSDCacheBlockWithSSDCachComplexKey)
         ASSERT_TRUE(write_result);
         ASSERT_EQ(block.getKeysSize(), 3);
 
-        PaddedPODArray<std::string_view> expected = {"0","1","2"};
-        PaddedPODArray<std::string_view> actual;
+        PaddedPODArray<StringRef> expected = {"0","1","2"};
+        PaddedPODArray<StringRef> actual;
 
         block.readComplexKeys(actual);
         ASSERT_EQ(actual, expected);
@@ -185,7 +185,7 @@ TEST(SSDCacheDictionaryStorage, SSDCacheBlockWithSSDCachComplexKey)
         ASSERT_FALSE(SSDCacheBlock::canBeWrittenInEmptyBlock(key, block_data_size));
         key.size = 4064;
 
-        size_t offset_in_block = {};
+        size_t offset_in_block;
         ASSERT_TRUE(block.enoughtPlaceToWriteKey(key));
         ASSERT_TRUE(block.writeKey(key, offset_in_block));
         ASSERT_EQ(offset_in_block, block_header_size + key_metadata_size);
@@ -205,8 +205,8 @@ TEST(SSDCacheDictionaryStorage, SSDCacheBlockWithSSDCachComplexKey)
         SSDCacheBlock block(block_data_size);
         block.reset(block_data.get());
 
-        PaddedPODArray<std::string_view> expected = {};
-        PaddedPODArray<std::string_view> actual;
+        PaddedPODArray<StringRef> expected = {};
+        PaddedPODArray<StringRef> actual;
         block.readComplexKeys(actual);
         ASSERT_EQ(actual, expected);
     }
@@ -217,7 +217,7 @@ TEST(SSDCacheDictionaryStorage, SSDCacheBlockWithSSDCachComplexKey)
 
         std::unique_ptr<char[]> data_to_insert(new char[4000]);
         memset(data_to_insert.get(), 1, 4000);
-        size_t offset_in_block = {};
+        size_t offset_in_block;
         SSDCacheComplexKey key {"0", 200, data_to_insert.get()};
         block.writeKey({1, 200, data_to_insert.get()}, offset_in_block);
         ASSERT_EQ(block.getKeysSize(), 1);

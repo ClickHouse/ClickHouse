@@ -1,7 +1,13 @@
 #include <memory>
+#include <queue>
 #include <vector>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/ParserKQLSummarize.h>
 #include <Parsers/Kusto/Utilities.h>
 
@@ -77,7 +83,7 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             {
                 String alias;
                 String aggregate_fun = String(begin_pos->begin, begin_pos->end);
-                if (!aggregate_functions.contains(aggregate_fun))
+                if (aggregate_functions.find(aggregate_fun) == aggregate_functions.end())
                 {
                     alias = fmt::format("Columns{}", new_column_index);
                     ++new_column_index;
@@ -148,9 +154,7 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         {
             auto end_pos = pos;
             --end_pos;
-            /// Only process if there are tokens between column_begin_pos and end_pos
-            if (!(end_pos < column_begin_pos))
-                apply_aliais(column_begin_pos, end_pos, groupby);
+            apply_aliais(column_begin_pos, end_pos, groupby);
             if (String(pos->begin, pos->end) == "by")
                 groupby = true;
             column_begin_pos = pos;
@@ -178,10 +182,10 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             expr_columns = expr_columns + "," + expr_aggregation;
     }
 
-    String converted_columns = getExprFromToken(expr_columns, pos);
+    String converted_columns = getExprFromToken(expr_columns, pos.max_depth, pos.max_backtracks);
 
     Tokens token_converted_columns(converted_columns.data(), converted_columns.data() + converted_columns.size(), 0, true);
-    IParser::Pos pos_converted_columns(token_converted_columns, pos);
+    IParser::Pos pos_converted_columns(token_converted_columns, pos.max_depth, pos.max_backtracks);
 
     if (!ParserNotEmptyExpressionList(true).parse(pos_converted_columns, select_expression_list, expected))
         return false;
@@ -190,10 +194,10 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     if (groupby)
     {
-        String converted_groupby = getExprFromToken(expr_groupby, pos);
+        String converted_groupby = getExprFromToken(expr_groupby, pos.max_depth, pos.max_backtracks);
 
         Tokens token_converted_groupby(converted_groupby.data(), converted_groupby.data() + converted_groupby.size(), 0, true);
-        IParser::Pos postoken_converted_groupby(token_converted_groupby, pos);
+        IParser::Pos postoken_converted_groupby(token_converted_groupby, pos.max_depth, pos.max_backtracks);
 
         if (!ParserNotEmptyExpressionList(false).parse(postoken_converted_groupby, group_expression_list, expected))
             return false;

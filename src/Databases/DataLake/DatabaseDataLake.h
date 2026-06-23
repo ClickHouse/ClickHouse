@@ -27,8 +27,10 @@ public:
     String getEngineName() const override { return DataLake::DATABASE_ENGINE_NAME; }
     UUID getUUID() const override { return db_uuid; }
 
+    bool canContainMergeTreeTables() const override { return false; }
+    bool canContainDistributedTables() const override { return false; }
+    bool canContainRocksDBTables() const override { return false; }
     bool shouldBeEmptyOnDetach() const override { return false; }
-    bool isRemoteDatabase() const override { return true; }
 
     bool empty() const override;
 
@@ -42,16 +44,16 @@ public:
         bool skip_not_loaded) const override;
 
     /// skip_not_loaded flag ignores all non-iceberg tables
-    std::vector<LightWeightTableDetails> getLightweightTablesIterator(
+    DatabaseTablesIteratorPtr getLightweightTablesIterator(
         ContextPtr context,
         const FilterByNameFunction & filter_by_table_name,
-        bool skip_not_loaded) const override;
+        bool skip_not_loaded,
+        bool skip_data_lake_catalog) const override;
 
-    Strings getAllTableNames(ContextPtr context) const override;
-
-    void checkDatabase() const override;
 
     void shutdown() override {}
+
+    ASTPtr getCreateDatabaseQuery() const override;
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
 
@@ -66,9 +68,7 @@ public:
         const String & name,
         bool /*sync*/) override;
 
-    std::shared_ptr<DataLake::ICatalog> getCatalog() const;
 protected:
-    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
 
 private:
@@ -83,16 +83,10 @@ private:
     /// Crendetials to authenticate Iceberg Catalog.
     Poco::Net::HTTPBasicCredentials credentials;
 
-    std::shared_ptr<DataLake::ICatalog> catalog_impl;
+    mutable std::shared_ptr<DataLake::ICatalog> catalog_impl;
 
     void validateSettings();
-
-    /// Builds `catalog_impl` based on the configured catalog type.
-    /// Called only from the constructor, so no synchronization is required; `catalog_impl`
-    /// is published when the constructed `DatabaseDataLake` is handed off to other threads.
-    /// If `initialize` is called outside the constructor (e.g. on config reload),
-    /// a mutex must be added to guard `catalog_impl` against concurrent readers in `getCatalog`.
-    void initialize();
+    std::shared_ptr<DataLake::ICatalog> getCatalog() const;
 
     std::shared_ptr<StorageObjectStorageConfiguration> getConfiguration(
         DatabaseDataLakeStorageType type,

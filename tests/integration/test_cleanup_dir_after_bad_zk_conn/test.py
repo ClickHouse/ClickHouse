@@ -86,14 +86,12 @@ def test_attach_without_zk(start_cluster):
     )
     node1.query("DETACH TABLE test4_r1")
     with PartitionManager() as pm:
-        pm.add_rule(
+        pm._add_rule(
             {
-                "instance": node1,
                 "probability": 0.5,
                 "source": node1.ip_address,
                 "destination_port": 2181,
                 "action": "DROP",
-                "protocol": "tcp",
             }
         )
         try:
