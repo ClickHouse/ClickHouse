@@ -605,7 +605,14 @@ void MergeTreeDataPartWriterCompact::cancel() noexcept
 
     plain_hashing.cancel();
 
-    plain_file->cancel();
+    /// plain_file and marks_file may already be released: finishDataSerialization resets them as
+    /// soon as the data is flushed and synced, before the part is committed. cancel() can still run
+    /// afterwards (e.g. MergeTreeTemporaryPart::cancel from the sink destructor when a quorum INSERT
+    /// finishes the part but the subsequent quorum wait throws), so guard against the null streams.
+    /// The wrapper buffers above were finalized, so their cancel() is a no-op and never touches the
+    /// underlying file. This mirrors the null guards in MergeTreeDataPartWriterOnDisk::cancel.
+    if (plain_file)
+        plain_file->cancel();
 
     if (marks_source_hashing)
         marks_source_hashing->cancel();
@@ -615,7 +622,8 @@ void MergeTreeDataPartWriterCompact::cancel() noexcept
 
     marks_file_hashing->cancel();
 
-    marks_file->cancel();
+    if (marks_file)
+        marks_file->cancel();
 
     Base::cancel();
 }
