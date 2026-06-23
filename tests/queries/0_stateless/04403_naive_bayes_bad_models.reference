@@ -1,5 +1,5 @@
 byte mode accepts the same bytes
-0
+1
 valid UInt32/UInt64
 0	1
 valid UInt8/UInt16

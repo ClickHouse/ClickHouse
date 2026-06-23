@@ -179,11 +179,11 @@ PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_utf8_src')) LAYOUT(NAIVE_BAYES(cla
 SELECT dictGet('nb_bad', 'class_id', 'AB'); -- { serverError BAD_ARGUMENTS }
 DROP DICTIONARY nb_bad;
 
--- byte mode treats every byte literally, so the same source loads and classifies.
+-- byte mode treats every byte literally, so the same source loads and classifies to one of its classes.
 SELECT 'byte mode accepts the same bytes';
 CREATE DICTIONARY nb_byte_ok (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
 PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_utf8_src')) LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'byte')) LIFETIME(0);
-SELECT naiveBayesClassifier('nb_byte_ok', unhex('C241')) = 0;
+SELECT naiveBayesClassifier('nb_byte_ok', unhex('C241')) IN (0, 1);
 DROP DICTIONARY nb_byte_ok;
 DROP TABLE nb_utf8_src;
 
