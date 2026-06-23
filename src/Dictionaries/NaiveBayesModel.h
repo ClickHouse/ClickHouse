@@ -5,6 +5,7 @@
 #include <concepts>
 #include <cstring>
 #include <limits>
+#include <map>
 #include <memory>
 #include <vector>
 #include <base/StringViewHash.h>
@@ -261,7 +262,6 @@ using ClassCountMap = HashMap<UInt32, UInt64, HashCRC32<UInt32>>;
 /// integer sub-tables, which keeps the keys dense and reduces probing to integer hashing and comparison.
 using NGramIndexMap = StringHashMap<UInt32>;
 using ClassIndexMap = HashMap<UInt32, UInt32, HashCRC32<UInt32>>;
-using ProbabilityMap = HashMap<UInt32, double, HashCRC32<UInt32>>;
 using LogProbabilityMap = HashMap<UInt32, double, HashCRC32<UInt32>>;
 
 /// One observed `(n-gram, class, count)` row, packed so the whole set can be sorted and grouped cheaply during
@@ -516,7 +516,7 @@ public:
     /// Computes the class priors according to the given mode, compiles the accumulated counts into the flat CSR
     /// arrays (reusing the existing n-gram index and arena), frees the per-n-gram count maps, and returns the
     /// finished model. The explicit priors are consulted, and required, only when the mode is explicit.
-    NaiveBayesModel<Tok> finalize(PriorsMode mode, const ProbabilityMap & explicit_priors = {})
+    NaiveBayesModel<Tok> finalize(PriorsMode mode, const std::map<UInt32, double> & explicit_priors = {})
     {
         if (data->ngram_to_index.empty())
             throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "No n-grams found in the model");
@@ -617,7 +617,7 @@ private:
             log_class_priors[class_id] = std::log(static_cast<double>(count) / static_cast<double>(total));
     }
 
-    void setExplicitPriors(const ProbabilityMap & priors, LogProbabilityMap & log_class_priors) const
+    void setExplicitPriors(const std::map<UInt32, double> & priors, LogProbabilityMap & log_class_priors) const
     {
         /// Every class in the model must have exactly one prior. Together with the requirement that the
         /// number of priors equals the number of classes, this guarantees that no prior refers to a class
@@ -629,9 +629,8 @@ private:
                 priors.size(),
                 data->class_totals.size());
 
-        for (const auto & prior : priors)
+        for (const auto & [class_id, prior] : priors)
         {
-            const UInt32 class_id = prior.getKey();
             if (!data->class_totals.contains(class_id))
             {
                 VectorWithMemoryTracking<UInt32> available_classes;
@@ -645,10 +644,9 @@ private:
                     class_id,
                     fmt::join(available_classes, ", "));
             }
-        }
 
-        for (const auto & [class_id, prior] : priors)
             log_class_priors[class_id] = std::log(prior);
+        }
     }
 
     std::unique_ptr<NaiveBayesData<Tok>> data;

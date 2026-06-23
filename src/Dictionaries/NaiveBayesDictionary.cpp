@@ -198,13 +198,9 @@ void NaiveBayesDictionary::loadData()
         }
     });
 
-    ProbabilityMap explicit_priors;
-    for (const auto & [class_id, prob] : configuration.explicit_priors)
-        explicit_priors[class_id] = prob;
-
     /// Finalizing the trainer computes the priors, compiles the flat model, and yields the immutable model.
     classifier.emplace(std::visit(
-        [&](auto & t) -> Classifier { return Classifier{t.finalize(configuration.priors_mode, explicit_priors)}; },
+        [&](auto & t) -> Classifier { return Classifier{t.finalize(configuration.priors_mode, configuration.explicit_priors)}; },
         trainer));
 
     if (configuration.store_source && ngram_acc)
