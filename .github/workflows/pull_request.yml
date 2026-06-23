@@ -542,9 +542,359 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Fast test (arm_darwin) [10]' --workflow "PR" --ci --timestamp
 
+  fast_test_arm_darwin_11:
+    runs-on: [self-hosted, pr-macos_m2]
+    needs: [build_arm_darwin, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RmFzdCB0ZXN0IChhcm1fZGFyd2luKSBbMTFd') }}
+    name: "Fast test (arm_darwin) [11]"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Fast test (arm_darwin) [11]' --workflow "PR" --ci --timestamp
+
+  fast_test_arm_darwin_12:
+    runs-on: [self-hosted, pr-macos_m2]
+    needs: [build_arm_darwin, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RmFzdCB0ZXN0IChhcm1fZGFyd2luKSBbMTJd') }}
+    name: "Fast test (arm_darwin) [12]"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Fast test (arm_darwin) [12]' --workflow "PR" --ci --timestamp
+
+  fast_test_arm_darwin_13:
+    runs-on: [self-hosted, pr-macos_m2]
+    needs: [build_arm_darwin, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RmFzdCB0ZXN0IChhcm1fZGFyd2luKSBbMTNd') }}
+    name: "Fast test (arm_darwin) [13]"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Fast test (arm_darwin) [13]' --workflow "PR" --ci --timestamp
+
+  fast_test_arm_darwin_14:
+    runs-on: [self-hosted, pr-macos_m2]
+    needs: [build_arm_darwin, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RmFzdCB0ZXN0IChhcm1fZGFyd2luKSBbMTRd') }}
+    name: "Fast test (arm_darwin) [14]"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Fast test (arm_darwin) [14]' --workflow "PR" --ci --timestamp
+
+  fast_test_arm_darwin_15:
+    runs-on: [self-hosted, pr-macos_m2]
+    needs: [build_arm_darwin, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RmFzdCB0ZXN0IChhcm1fZGFyd2luKSBbMTVd') }}
+    name: "Fast test (arm_darwin) [15]"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Fast test (arm_darwin) [15]' --workflow "PR" --ci --timestamp
+
+  fast_test_arm_darwin_16:
+    runs-on: [self-hosted, pr-macos_m2]
+    needs: [build_arm_darwin, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RmFzdCB0ZXN0IChhcm1fZGFyd2luKSBbMTZd') }}
+    name: "Fast test (arm_darwin) [16]"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Fast test (arm_darwin) [16]' --workflow "PR" --ci --timestamp
+
+  fast_test_arm_darwin_17:
+    runs-on: [self-hosted, pr-macos_m2]
+    needs: [build_arm_darwin, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RmFzdCB0ZXN0IChhcm1fZGFyd2luKSBbMTdd') }}
+    name: "Fast test (arm_darwin) [17]"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Fast test (arm_darwin) [17]' --workflow "PR" --ci --timestamp
+
+  fast_test_arm_darwin_18:
+    runs-on: [self-hosted, pr-macos_m2]
+    needs: [build_arm_darwin, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RmFzdCB0ZXN0IChhcm1fZGFyd2luKSBbMThd') }}
+    name: "Fast test (arm_darwin) [18]"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Fast test (arm_darwin) [18]' --workflow "PR" --ci --timestamp
+
+  fast_test_arm_darwin_19:
+    runs-on: [self-hosted, pr-macos_m2]
+    needs: [build_arm_darwin, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RmFzdCB0ZXN0IChhcm1fZGFyd2luKSBbMTld') }}
+    name: "Fast test (arm_darwin) [19]"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Fast test (arm_darwin) [19]' --workflow "PR" --ci --timestamp
+
+  fast_test_arm_darwin_20:
+    runs-on: [self-hosted, pr-macos_m2]
+    needs: [build_arm_darwin, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RmFzdCB0ZXN0IChhcm1fZGFyd2luKSBbMjBd') }}
+    name: "Fast test (arm_darwin) [20]"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Fast test (arm_darwin) [20]' --workflow "PR" --ci --timestamp
+
   finish_workflow:
     runs-on: [self-hosted, pr-style-checker-aarch64]
-    needs: [build_arm_darwin, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test_arm_darwin_1, fast_test_arm_darwin_10, fast_test_arm_darwin_2, fast_test_arm_darwin_3, fast_test_arm_darwin_4, fast_test_arm_darwin_5, fast_test_arm_darwin_6, fast_test_arm_darwin_7, fast_test_arm_darwin_8, fast_test_arm_darwin_9]
+    needs: [build_arm_darwin, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test_arm_darwin_1, fast_test_arm_darwin_10, fast_test_arm_darwin_11, fast_test_arm_darwin_12, fast_test_arm_darwin_13, fast_test_arm_darwin_14, fast_test_arm_darwin_15, fast_test_arm_darwin_16, fast_test_arm_darwin_17, fast_test_arm_darwin_18, fast_test_arm_darwin_19, fast_test_arm_darwin_2, fast_test_arm_darwin_20, fast_test_arm_darwin_3, fast_test_arm_darwin_4, fast_test_arm_darwin_5, fast_test_arm_darwin_6, fast_test_arm_darwin_7, fast_test_arm_darwin_8, fast_test_arm_darwin_9]
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:
