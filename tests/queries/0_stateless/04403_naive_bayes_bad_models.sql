@@ -126,6 +126,18 @@ SELECT dictGet('nb_bad', 'class_id', 'zero'); -- { serverError BAD_ARGUMENTS }
 DROP DICTIONARY nb_bad;
 DROP TABLE nb_ovf_src;
 
+-- ---------- Total count across classes overflows 64 bits (proportional priors) ----------
+
+-- Each per-class total fits in 64 bits, but proportional priors sum them and that sum overflows.
+DROP TABLE IF EXISTS nb_ovf_total_src;
+CREATE TABLE nb_ovf_total_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO nb_ovf_total_src VALUES (0, 'zero', 18446744073709551615), (1, 'one', 1);
+CREATE DICTIONARY nb_bad (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_ovf_total_src')) LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'proportional')) LIFETIME(0);
+SELECT dictGet('nb_bad', 'class_id', 'zero'); -- { serverError BAD_ARGUMENTS }
+DROP DICTIONARY nb_bad;
+DROP TABLE nb_ovf_total_src;
+
 -- ---------- Configured n does not match the source n-grams ----------
 
 -- nb_bad_src holds unigrams, so loading them as bigrams is rejected.
