@@ -70,9 +70,7 @@ bool isRedirect(Poco::Net::HTTPResponse::HTTPStatus status);
 
 /// Whether an HTTP error response is worth retrying. Deterministic client errors (bad request,
 /// unauthorized, forbidden, not found, method not allowed, not implemented) are not retriable;
-/// everything else (transient/server-side errors, rate limiting, …) is. This is the policy the
-/// `url` table function applies in `ReadWriteBufferFromHTTP::doWithRetries`, shared so that other
-/// HTTP clients (e.g. the AI functions) can classify provider responses the same way.
+/// everything else (transient/server-side errors, rate limiting, …) is.
 bool isRetriableHTTPError(Poco::Net::HTTPResponse::HTTPStatus http_status) noexcept;
 
 /** Used to receive response (response headers and possibly body)

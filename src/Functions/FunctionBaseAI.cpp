@@ -125,18 +125,13 @@ UInt64 FunctionBaseAI::computeRetryBackoffMs(UInt64 initial_delay_ms, UInt64 att
 
 bool FunctionBaseAI::isRetriableProviderError(std::exception_ptr eptr)
 {
-    /// Classify the active exception by type, the same way the `url` table function does in
-    /// `ReadWriteBufferFromHTTP::doWithRetries`. Catch order matters: more derived types first.
+    /// Catch order matters: more derived exception types must come first.
     try
     {
         std::rethrow_exception(eptr);
     }
     catch (const AIProviderHTTPException & e)
     {
-        /// A non-2xx response relayed from the provider. Apply the same retriable-status policy as
-        /// the `url` table function (`isRetriableHTTPError`): deterministic client errors (bad
-        /// request, unauthorized, forbidden, not found, method not allowed, not implemented) are
-        /// surfaced immediately, while transient/server-side errors (rate limiting, 5xx, …) are retried.
         return isRetriableHTTPError(e.getHTTPStatus());
     }
     catch (const NetException &)
@@ -146,15 +141,19 @@ bool FunctionBaseAI::isRetriableProviderError(std::exception_ptr eptr)
     }
     catch (const Poco::Net::NetException &)
     {
-        /// Low-level connection failure: connection refused/reset, TLS connect failure, or a host
-        /// that advertises an unreachable address (e.g. an `AAAA` record on a network without IPv6
-        /// routing). Retrying can land on a working address or a recovered endpoint.
+        /// Connection refused/reset, TLS connect failure, or an unreachable advertised address.
         return true;
     }
     catch (const Poco::TimeoutException &)
     {
         /// Connect or receive timeout.
         return true;
+    }
+    catch (const Poco::IOException & e)
+    {
+        /// Write-side transient I/O failure, e.g. a broken pipe (`EPIPE`) when the peer resets the
+        /// connection mid-request. Out-of-file-descriptors (`EMFILE`) is not retriable.
+        return e.code() != POCO_EMFILE;
     }
     catch (...)
     {

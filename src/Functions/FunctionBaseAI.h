@@ -72,11 +72,8 @@ public:
     /// sleep or overflow `std::chrono::milliseconds`.
     static UInt64 computeRetryBackoffMs(UInt64 initial_delay_ms, UInt64 attempt);
 
-    /// Whether a failed provider request should be retried. Mirrors the retry policy of the `url`
-    /// table function (`ReadWriteBufferFromHTTP::doWithRetries`): transient network failures
-    /// (connection refused/reset, TLS connect failure, connect/receive timeout, or a host that
-    /// advertises an unreachable address — e.g. an `AAAA` record on a network without IPv6 routing)
-    /// and provider-side HTTP error responses are retriable, while argument/usage errors are not.
+    /// Whether a failed provider request should be retried: transient network failures and
+    /// transient/server-side HTTP responses are retriable, deterministic argument/usage errors are not.
     /// `eptr` must be the currently handled exception, i.e. `std::current_exception()`.
     static bool isRetriableProviderError(std::exception_ptr eptr);
 
