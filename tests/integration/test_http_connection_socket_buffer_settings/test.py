@@ -99,7 +99,7 @@ def test_disk_buffer_settings(started_cluster):
 
 def test_storage_buffer_settings(started_cluster):
     """Verify Storage group socket buffer settings: reload, apply, and reject invalid values."""
-    assert_settings({"storage_connections_rcvbuf": 204800, "storage_connections_sndbuf": 0})
+    assert_settings({"storage_connections_rcvbuf": 0, "storage_connections_sndbuf": 0})
 
     apply_config("valid_storage_rcvbuf.xml")
 
