@@ -319,6 +319,13 @@ ASTPtr parseGeneratedQuery(const String & query_text, ContextPtr context)
     if (!query->as<ASTSelectWithUnionQuery>())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function `eval` can only execute `SELECT` queries");
 
+    const auto & select_query = query->as<ASTSelectWithUnionQuery &>();
+    if (select_query.out_file || select_query.format_ast || select_query.compression || select_query.compression_level)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Table function `eval` generated query cannot contain output options such as `INTO OUTFILE`, `FORMAT`, "
+            "or output compression options");
+
     auto settings_context = Context::createCopy(context);
     InterpreterSetQuery::applySettingsFromQuery(query, settings_context);
     const auto & settings = settings_context->getSettingsRef();
