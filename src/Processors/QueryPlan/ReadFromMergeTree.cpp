@@ -3438,12 +3438,41 @@ void ReadFromMergeTree::addStartingPartOffsetAndPartOffset(bool & added_part_sta
     required_source_columns = all_column_names;
 }
 
+bool ReadFromMergeTree::supportsPruningOnDataRead() const
+{
+    const auto & settings = context->getSettingsRef();
+
+    /// Remove this after statistics based cardinality estimation is enabled.
+    if (queryHasJoinedTable(query_info.query_tree))
+        return false;
+
+    /// Settings `read_overflow_mode = 'throw'` with `max_rows_to_read` (and the symmetric
+    /// `read_overflow_mode_leaf` with `max_rows_to_read_leaf`) are evaluated early during execution,
+    /// during initialization of the pipeline based on estimated row counts. Estimation doesn't work properly
+    /// if pruning metadata is evaluated during data read (scan).
+    if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
+        return false;
+    if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf])
+        return false;
+
+    /// Pending ALTER mutations (e.g. `MODIFY COLUMN`) can change the type of a pruned column,
+    /// making existing on-disk pruning metadata incompatible with the current column type.
+    /// In the data-read phase pruning is applied after planning-time per-part compatibility
+    /// checks, so disable the feature entirely when any data/alter mutations or patches are pending.
+    if (!mutations_snapshot)
+        return false;
+    if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts())
+        return false;
+
+    return true;
+}
+
 bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
 {
     if (!indexes || !indexes->use_skip_indexes || indexes->skip_indexes.empty())
         return false;
 
-    /// When a vector similarity index is present, disable the use_skip_indexes_on_data_read path entirely and apply
+    /// When a vector similarity index is present, disable the `use_skip_indexes_on_data_read` path entirely and apply
     /// all skip indexes during index analysis instead - the vector index runs first (it is the most selective) and the
     /// remaining skip indexes run after it.
     const bool has_vector_similarity_index = std::ranges::any_of(indexes->skip_indexes.useful_indices, [](const auto & idx)
@@ -3457,36 +3486,17 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     if (!settings[Setting::use_skip_indexes_on_data_read])
         return false;
 
-    /// Remove this after statistics based cardinality estimation is enabled.
-    if (query_info.query_tree)
-    {
-        const QueryTreeNodePtr & join_tree_node = query_info.query_tree->as<QueryNode &>().getJoinTree();
-
-        if (join_tree_node && (join_tree_node->getNodeType() == QueryTreeNodeType::JOIN || join_tree_node->getNodeType() == QueryTreeNodeType::CROSS_JOIN))
-            return false;
-    }
-
     if (query_info.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode])
         return false;
 
-    /// Settings `read_overflow_mode = 'throw'` with `max_rows_to_read` (and the symmetric
-    /// `read_overflow_mode_leaf` with `max_rows_to_read_leaf`) are evaluated early during execution,
-    /// during initialization of the pipeline based on estimated row counts. Estimation doesn't work properly
-    /// if the skip index is evaluated during data read (scan).
-    if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
-        return false;
-    if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf])
-        return false;
+    return supportsPruningOnDataRead();
+}
 
-    /// Pending ALTER mutations (e.g. `MODIFY COLUMN`) can change the type of an indexed column,
-    /// making the existing on-disk index data incompatible with the current column type.
-    /// In the data-read phase the skip index is applied without the per-part `can_use_index` check
-    /// that `filterPartsByPrimaryKeyAndSkipIndexes` performs, so disable the feature entirely when
-    /// any data/alter mutations or patches are pending.
-    if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts())
-        return false;
-
-    return true;
+bool ReadFromMergeTree::supportsSparsityInfoOnDataRead() const
+{
+    const auto & settings = context->getSettingsRef();
+    return settings[Setting::use_sparsity_info_for_pruning] == SparsityPruningMode::DataRead && !query_info.isFinal()
+        && !context->getCurrentTransaction() && query_info.query_tree && supportsPruningOnDataRead();
 }
 
 
@@ -3847,39 +3857,18 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         projection_index_reader = std::make_shared<MergeTreeProjectionIndexReader>(std::move(readers));
     }
 
-    /// Lazy sparsity classification at scan time. Invariants mirror
-    /// `supportsSkipIndexesOnDataRead`: no FINAL exact mode, no JOIN dependency on
-    /// plan-time row counts, no `max_rows_to_read` with throw, no pending data,
-    /// alter, or patch mutations.
+    /// Lazy sparsity classification at scan time uses the same late-pruning
+    /// safety rules as scan-time skip indexes, plus sparsity-specific checks.
     MergeTreeSparsityReaderPtr sparsity_reader;
+    if (supportsSparsityInfoOnDataRead())
     {
-        const auto & query_settings = context->getSettingsRef();
-        const bool read_overflow_throws =
-            (query_settings[Setting::read_overflow_mode] == OverflowMode::THROW && query_settings[Setting::max_rows_to_read])
-            || (query_settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && query_settings[Setting::max_rows_to_read_leaf]);
-
-        if (query_settings[Setting::use_sparsity_info_for_pruning] == SparsityPruningMode::DataRead
-            && !query_info.isFinal()
-            && !context->getCurrentTransaction()
-            && !queryHasJoinedTable(query_info.query_tree)
-            && !read_overflow_throws
-            && !(mutations_snapshot && (mutations_snapshot->hasDataMutations()
-                                        || mutations_snapshot->hasAlterMutations()
-                                        || mutations_snapshot->hasPatchParts()))
-            && query_info.query_tree)
+        if (auto * query_node = query_info.query_tree->as<QueryNode>(); query_node && query_node->hasWhere())
         {
-            if (auto * query_node = query_info.query_tree->as<QueryNode>(); query_node && query_node->hasWhere())
+            auto conjuncts = collectSparsityConjuncts(query_node->getWhere(), query_info.table_expression);
+            if (!conjuncts.empty())
             {
-                auto conjuncts = collectSparsityConjuncts(query_node->getWhere(), query_info.table_expression);
-                if (!conjuncts.empty())
-                {
-                    sparsity_reader = std::make_shared<MergeTreeSparsityReader>(
-                        std::move(conjuncts),
-                        data,
-                        storage_snapshot,
-                        context,
-                        getLogger("MergeTreeSparsityReader"));
-                }
+                sparsity_reader = std::make_shared<MergeTreeSparsityReader>(
+                    std::move(conjuncts), data, storage_snapshot, context, getLogger("MergeTreeSparsityReader"));
             }
         }
     }

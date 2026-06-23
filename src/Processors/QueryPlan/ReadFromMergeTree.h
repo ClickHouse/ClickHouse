@@ -561,7 +561,9 @@ private:
     void updateSortDescription();
 
     bool isParallelReplicasLocalPlanForInitiator() const;
+    bool supportsPruningOnDataRead() const;
     bool supportsSkipIndexesOnDataRead() const;
+    bool supportsSparsityInfoOnDataRead() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
     VirtualFields shared_virtual_fields;
