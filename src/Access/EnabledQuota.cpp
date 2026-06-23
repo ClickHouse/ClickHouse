@@ -492,19 +492,6 @@ void EnabledQuota::reset(QuotaType quota_type) const
         Impl::resetQuotaValue(*quota->intervals, quota_type, 0, current_time);
 }
 
-std::optional<QuotaUsage> EnabledQuota::getUsage() const
-{
-    auto loaded = quotas.load();
-    auto current_time = std::chrono::system_clock::now();
-    for (const auto & quota : *loaded)
-    {
-        auto usage = quota->intervals->getUsage(current_time);
-        if (usage)
-            return usage;
-    }
-    return {};
-}
-
 std::vector<QuotaUsage> EnabledQuota::getAllUsage() const
 {
     auto loaded = quotas.load();

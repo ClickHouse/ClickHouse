@@ -55,7 +55,7 @@ bool DataPartStorageOnDiskFull::existsFile(const std::string & name) const
 {
     if (looksLikePackedSkipIndexFile(name))
     {
-        if (const auto * reader = getSkipIndicesPackedReader(); reader && reader->exists(name))
+        if (auto reader = getSkipIndicesPackedReader(); reader && reader->exists(name))
             return true;
     }
     return volume->getDisk()->existsFile(fs::path(root_path) / part_dir / name);
@@ -101,7 +101,7 @@ size_t DataPartStorageOnDiskFull::getFileSize(const String & file_name) const
 {
     if (looksLikePackedSkipIndexFile(file_name))
     {
-        if (const auto * reader = getSkipIndicesPackedReader(); reader && reader->exists(file_name))
+        if (auto reader = getSkipIndicesPackedReader(); reader && reader->exists(file_name))
             return reader->getFileSize(file_name);
     }
     return volume->getDisk()->getFileSize(fs::path(root_path) / part_dir / file_name);
@@ -143,16 +143,19 @@ void DataPartStorageOnDiskFull::prepareRead(
 {
     if (looksLikePackedSkipIndexFile(name))
     {
-        if (const auto * reader = getSkipIndicesPackedReader(); reader && reader->exists(name))
+        if (auto reader = getSkipIndicesPackedReader(); reader && reader->exists(name))
         {
             /// Packed substreams skip the disk's normal pipeline (filesystem cache,
             /// async prefetch, etc.) and read through PackedFilesReader::readFile, which
-            /// already opens the archive via the underlying disk and wraps the result with
-            /// ReadBufferFromFileView at the right offset.
+            /// opens the archive via the underlying disk and wraps the result with
+            /// ReadBufferFromFileView at the right offset. The archive's current location is
+            /// captured here and passed in, so the reader holds no path of its own.
+            auto disk = volume->getDisk();
+            String archive_path = fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME);
             ReadPipeline::BufferCreator creator =
-                [reader, name, read_hint](const StoredObject &, const ReadSettings & s, bool, bool)
+                [reader, disk, archive_path, name, read_hint](const StoredObject &, const ReadSettings & s, bool, bool)
                 {
-                    return reader->readFile(name, s, read_hint);
+                    return reader->readFile(disk, archive_path, name, s, read_hint);
                 };
             pipeline.setSource(std::move(creator), StoredObjects{StoredObject{}}, settings);
             return;
@@ -168,8 +171,11 @@ std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFileIfExi
 {
     if (looksLikePackedSkipIndexFile(name))
     {
-        if (const auto * reader = getSkipIndicesPackedReader(); reader && reader->exists(name))
-            return reader->readFile(name, settings, read_hint);
+        if (auto reader = getSkipIndicesPackedReader(); reader && reader->exists(name))
+            return reader->readFile(
+                volume->getDisk(),
+                fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME),
+                name, settings, read_hint);
     }
     return volume->getDisk()->readFileIfExists(fs::path(root_path) / part_dir / name, settings, read_hint);
 }
