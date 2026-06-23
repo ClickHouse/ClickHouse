@@ -124,6 +124,20 @@ def started_cluster():
             main_configs=["configs/use_environment_credentials.xml"],
             user_configs=["configs/sync_insert.xml", "configs/allow_server_credentials.xml"],
         )
+        # Same as above (ambient/environment credentials available, global <s3> use_environment_credentials),
+        # but WITHOUT allow_server_credentials.xml, so the default restriction applies. Used to exercise the
+        # anonymous metadata-load fallback on restart. stay_alive lets the test restart the server.
+        cluster.add_instance(
+            "s3_environment_credentials_restricted",
+            with_minio=True,
+            env_variables={
+                "AWS_ACCESS_KEY_ID": "minio",
+                "AWS_SECRET_ACCESS_KEY": "ClickHouse_Minio_P@ssw0rd",
+            },
+            main_configs=["configs/use_environment_credentials.xml"],
+            user_configs=["configs/sync_insert.xml"],
+            stay_alive=True,
+        )
         cluster.add_instance(
             "dummy2",
             with_minio=True,
@@ -2150,6 +2164,55 @@ def test_environment_credentials(started_cluster):
 
         assert ei.value.returncode == 243
         assert "HTTP response code: 403" in ei.value.stderr
+
+
+def test_s3_server_credentials_anonymous_on_reload(started_cluster):
+    # A stored `S3` table whose definition resolves the server's own (environment) credentials must, after a
+    # restart, be loaded with an anonymous client instead of silently regaining the server identity -- and
+    # the server must still start. This exercises the metadata-load fallback in `getClient`, governed by the
+    # server setting `s3_load_table_anonymously_if_credentials_restricted` (default 1), which depends on
+    # `is_loading_from_existing_metadata` being propagated through the storage constructor.
+    instance = started_cluster.instances["s3_environment_credentials_restricted"]
+    bucket = started_cluster.minio_restricted_bucket
+    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/server_credentials_reload.jsonl"
+
+    # Creating the table resolves the server credentials (the bare URL uses the global <s3>
+    # use_environment_credentials), so it requires opting in; the default is to refuse such user queries.
+    allow = {"s3_allow_server_credentials_in_user_queries": 1, "s3_truncate_on_insert": 1}
+
+    instance.query("DROP TABLE IF EXISTS t_server_credentials_reload")
+    assert "ACCESS_DENIED" in instance.query_and_get_error(
+        f"CREATE TABLE t_server_credentials_reload (number UInt64) ENGINE = S3('{url}', 'JSONEachRow')"
+    )
+    instance.query(
+        f"CREATE TABLE t_server_credentials_reload (number UInt64) ENGINE = S3('{url}', 'JSONEachRow')",
+        settings=allow,
+    )
+    instance.query(
+        "INSERT INTO t_server_credentials_reload SELECT * FROM numbers(100)",
+        settings=allow,
+    )
+    # The client built at creation uses the server credentials, so the data reads back.
+    assert (
+        instance.query("SELECT count() FROM t_server_credentials_reload").strip()
+        == "100"
+    )
+
+    # On restart the table is loaded from existing metadata under the default restriction. The server must
+    # still start (the table must not abort startup), and the client must be rebuilt anonymously.
+    instance.restart_clickhouse()
+
+    assert instance.query("SELECT 1").strip() == "1"
+    assert "t_server_credentials_reload" in instance.query("SHOW TABLES")
+
+    # The table is now anonymous and can no longer read the private bucket, even with the opt-in (the client
+    # was built anonymously at load time). It must not silently return the data through the server identity.
+    with pytest.raises(helpers.client.QueryRuntimeException):
+        instance.query(
+            "SELECT count() FROM t_server_credentials_reload", settings=allow
+        )
+
+    instance.query("DROP TABLE IF EXISTS t_server_credentials_reload")
 
 
 def test_s3_list_objects_failure(started_cluster):
