@@ -65,6 +65,42 @@ String dataTypePtrToString(const DataTypePtr & type)
         return "nullptr";
     return type->getName();
 }
+// check whether a bareword preceding the '-' symbol does not affect the judgment of negative signs
+bool tokenIsKeyWord(const String & token_name)
+{
+    String name = Poco::toLower(token_name);
+    static const std::unordered_set<String> keywords = {
+        "select", "from", "where", "and", "or", "not", "in", "like", "ilike",
+        "is", "null", "between", "case", "when", "then", "else", "end",
+        "order", "by", "group", "having", "limit", "offset", "as", "on", "join",
+        "left", "right", "inner", "outer", "full", "cross", "natural", "using",
+        "union", "intersect", "except", "all", "any", "some",
+        "with", "recursive", "array", "map", "tuple", "set", "values",
+        "insert", "update", "delete", "create", "alter", "drop", "truncate",
+        "over", "partition", "range", "rows", "groups", "unbounded", "preceding",
+        "following", "current", "row", "nulls", "first", "last",
+        "distinct", "exists", "having", "returning", "format", "type", "settings",
+        "sample", "if", "window", "frame", "exclude", "ties",
+        "grant", "revoke", "privileges", "role", "user", "show", "describe", "explain",
+        "primary", "key", "foreign", "references", "constraint", "unique", "index",
+        "default", "check", "cascade", "restrict", "no", "action",
+        "asc", "desc", "nulls", "unique", "using", "tablesample",
+        "materialized", "temporary", "temporary", "replace", "ignore", "strict",
+        "lazy", "volatile", "immutable", "stable"
+    };
+    return keywords.contains(name);
+}
+// check whether the token preceding the '-' symbol does not affect the judgment of negative signs
+bool tokenIsValue(Token token)
+{        
+    if (token.type == TokenType::Comma || token.type == TokenType::OpeningRoundBracket || token.type == TokenType::OpeningSquareBracket ||
+        token.type == TokenType::Equals || token.type == TokenType::NotEquals || token.type == TokenType::Less || token.type == TokenType::Greater || 
+        token.type == TokenType::LessOrEquals || token.type == TokenType::GreaterOrEquals || 
+        (token.type == TokenType::BareWord && tokenIsKeyWord(std::string(token.begin, token.size())))
+        )
+        return false;
+    return true;            
+}
 
 bool functionCanCache(const String & function_name)
 {
@@ -115,22 +151,25 @@ bool functionCanCache(const String & function_name)
         fun_name == "cityhash64" || 
         fun_name == "cityhash32" || 
         fun_name == "cityhash32" ||
-        fun_name == "hasAnyTokens" || 
-        fun_name == "hasAllTokens" || 
+        fun_name == "hasanytokens" || 
+        fun_name == "hasalltokens" ||
+        fun_name == "hasphrase" ||  
         fun_name == "interval" || 
         fun_name == "profileevents" || 
+        fun_name == "settings" || 
         // rand functions
         fun_name == "rand" || 
         fun_name == "rand64" || 
-        fun_name == "randCanonical" || 
-        fun_name == "randConstant" || 
-        fun_name == "randUniform" || 
-        fun_name == "randNormal" || 
-        fun_name == "randomString" || 
-        fun_name == "randomStringUTF8" || 
-        fun_name == "randomPrintableASCII" || 
-        fun_name == "randomFixedString" || 
+        fun_name == "randcanonical" || 
+        fun_name == "randconstant" || 
+        fun_name == "randuniform" || 
+        fun_name == "randnormal" || 
+        fun_name == "randomstring" || 
+        fun_name == "randomstringutf8" || 
+        fun_name == "randomprintableascii" || 
+        fun_name == "randomfixedstring" || 
         // Timezone-related functions - timezone affects query result
+        fun_name == "datetrunc" || 
         fun_name == "todate" ||
         fun_name == "todate32" ||
         fun_name == "todatetime" ||
@@ -862,8 +901,9 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
     bool is_bare_word = false;
     bool is_dot = false;
     bool is_negative = false;
-    bool is_where = false;
     bool is_from = false;
+    bool start_system_table_check = false;
+    bool previous_is_value = false;
 
     while (true)
     {
@@ -875,6 +915,17 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
             result.new_sql += std::string(token.begin, token.size());
             break;
         } 
+        if (token.type == TokenType::Whitespace)
+        {
+            hash.update(token.begin, token.size());
+            result.normalized_sql += std::string(token.begin, token.size());
+            result.new_sql += std::string(token.begin, token.size());
+            continue;
+        }
+        if (token.type == TokenType::Comment)
+        {
+            continue;
+        }
         if (token.isEnd() || token.isError())
             break;
         if (token.type == TokenType::BareWord && !tokenCanCache(token))
@@ -882,7 +933,7 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
             result.hash = 0;
             result.normalized_sql = "";
             result.params.clear();
-            LOG_DEBUG(logger, "sql({}) has not support function", std::string(begin, end));
+            LOG_DEBUG(logger, "sql({}) has some not support function", std::string(begin, end));
             return result;
         }
         if (vector_function_type && token.type == TokenType::BareWord)
@@ -939,7 +990,7 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
             continue;
         }
         /// -------- literal --------
-        if (!is_where && token.type == TokenType::OpeningSquareBracket)
+        if (token.type == TokenType::OpeningSquareBracket)
         {
             const char * array_begin = token.begin;
             const char * array_end = token.end;
@@ -1034,12 +1085,24 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
                 continue;
             }
         }
-        if (token.type == TokenType::BareWord && token.size() == 5 && tokenMatchesBareWord(token, "select"))
-            is_where = false;
-        if (token.type == TokenType::BareWord && token.size() == 5 && tokenMatchesBareWord(token, "where"))
-            is_where = true;
+        // add a check for system table queries to prevent caching
+        if (start_system_table_check)
+        {
+            start_system_table_check = false;
+            if (token.type == TokenType::BareWord && token.size() == 6 && tokenMatchesBareWord(token, "system"))
+            {
+                result.hash = 0;
+                result.normalized_sql = "";
+                result.params.clear();
+                LOG_DEBUG(logger, "not support system table, sql({})", std::string(begin, end));
+                return result;
+            }
+        }
         if (token.type == TokenType::BareWord && token.size() == 4 && tokenMatchesBareWord(token, "from"))
+        {
             is_from = true;
+            start_system_table_check = true;
+        }
         if (token.type == TokenType::Dot)
             is_dot = true;
         else if (!only_vector)
@@ -1065,6 +1128,20 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
                 in_date_part_function = true;
                 date_part_saw_first_string = false;
             }
+            // add parsing support for the negative sign '-'.
+            if (token.type == TokenType::Minus)
+            {
+                if (previous_is_value)
+                    is_negative = false;
+                else
+                    is_negative = true;
+            }
+            else if (is_negative && token.type != TokenType::Number)
+                is_negative = false;        
+            if (!is_negative && tokenIsValue(token))
+                previous_is_value = true;
+            else
+                previous_is_value = false;
             if (parse_params && !vector_function_type && !is_dot && (token.type == TokenType::Number
                     || token.type == TokenType::StringLiteral
                     || token.type == TokenType::HereDoc)
@@ -1206,7 +1283,6 @@ bool VectorQueryParameters::replaceConstantsInQueryPlan(
             DataTypePtr final_type = getType(data_type_ptr, dag_node.result_type);
             if (final_type->getTypeId() != static_cast<TypeIndex>(raw_value.getType()))
                 raw_value = convertFieldToType(raw_value, *final_type);
-
             // ActionsDAG constants are rewritten by replacing the const column payload
             // at the recorded node index with the parsed runtime Field value.
             ColumnPtr new_column = final_type->createColumnConst(1, raw_value);
@@ -1311,8 +1387,23 @@ std::vector<VectorQueryPlanCache::ASTLiteralPosition> VectorQueryParameters::col
             last_second_function_name = function_list[function_size - 2];
         if (const auto * literal_node = ast->as<ASTLiteral>())
         {
+            // add checks for the tuple function, module function
+            // (because tuple handling and replacement are not yet supported; the module function cannot be processed because '%' and '/' cannot be generalized for constant replacement due to type issues)
+            if (last_function_name == "tuple" || last_function_name == "modulo")
+            {
+                LOG_DEBUG(logger, "do not support {} Function", last_function_name);
+                can_cache = false;
+                return;
+            }
             const auto type = literal_node->value.getType();
             const auto target_type = applyVisitor(FieldToDataType(), literal_node->value);
+            // add checks for the tuple constants
+            if (static_cast<Int32>(type) == FieldRef::Types::Tuple)
+            {
+                LOG_DEBUG(logger, "do not support Tuple Literal");
+                can_cache = false;
+                return;
+            }
             std::vector<String> ident_name_list;
             VectorQueryPlanCache::ASTLiteralPosition pos;
             pos.identifier_name = "";
@@ -1667,6 +1758,11 @@ String VectorQueryParameters::rewriteVectorLiteralsToCasts(
         {
             new_sql += std::string(token.begin, token.size());
             break;
+        }
+        // add filtering for comments
+        if (token.type == TokenType::Comment)
+        {
+            continue;
         }
         if (token.isEnd() || token.isError())
             break;

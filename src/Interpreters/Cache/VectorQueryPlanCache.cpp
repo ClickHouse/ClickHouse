@@ -11,11 +11,16 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
+#include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTOptimizeQuery.h>
+#include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTRenameQuery.h>
@@ -158,6 +163,12 @@ void collectMutationTargets(
             addResolvedTableForInvalidation(table_names, seen_tables, context, StorageID(optimize_query->getDatabase(), optimize_query->getTable()));
     }
 
+    if (const auto * update_query = ast->as<ASTUpdateQuery>())
+    {
+        addResolvedTableForInvalidation(table_names, seen_tables, context, *update_query);
+        return;
+    }
+
     if (const auto * insert_query = ast->as<ASTInsertQuery>())
     {
         if (insert_query->table_id)
@@ -239,8 +250,57 @@ void collectMutationTargets(
 
     if (const auto * create_query = ast->as<ASTCreateQuery>())
     {
-        if (!create_query->getTable().empty())
+        if (create_query->is_dictionary && create_query->dictionary)
+        {
+            auto * dict_source = create_query->dictionary->source;
+            if (dict_source && dict_source->elements)
+            {
+                const auto * expr_list = dict_source->elements->as<const ASTExpressionList>();
+                if (expr_list)
+                {
+                    String table_name;
+                    String database_name;
+                    for (const auto & child : expr_list->children)
+                    {
+                        if (const auto * pair = child->as<ASTPair>())
+                        {
+                            if (pair->first == "TABLE" || pair->first == "table")
+                            {
+                                if (const auto * identifier = pair->second->as<ASTIdentifier>())
+                                    table_name = identifier->name();
+                                else if (const auto * literal = pair->second->as<ASTLiteral>())
+                                    table_name = literal->value.safeGet<String>();
+                            }
+                            else if (pair->first == "DB" || pair->first == "DATABASE" || pair->first == "db" || pair->first == "database")
+                            {
+                                if (const auto * identifier = pair->second->as<ASTIdentifier>())
+                                    database_name = identifier->name();
+                                else if (const auto * literal = pair->second->as<ASTLiteral>())
+                                    database_name = literal->value.safeGet<String>();
+                            }
+                        }
+                    }
+ 
+                    if (!table_name.empty())
+                    {
+                        if (database_name.empty())
+                            database_name = context->getCurrentDatabase();
+                        addNameIfNotEmpty(table_names, seen_tables, database_name + "." + table_name);
+                    }
+                }
+            }
+        }
+        else if (!create_query->getTable().empty())
             addResolvedTableForInvalidation(table_names, seen_tables, context, *create_query);
+    }
+
+    if (const auto * system_query = ast->as<ASTSystemQuery>())
+    {
+        if (system_query->type == ASTSystemQuery::Type::SYNC_REPLICA)
+        {
+            if (!system_query->getTable().empty())
+                addResolvedTableForInvalidation(table_names, seen_tables, context, StorageID(system_query->getDatabase(), system_query->getTable()));
+        }
     }
 }
 
@@ -760,7 +820,7 @@ void VectorQueryPlanCache::clearByTables(const std::vector<String> & table_names
         return keys_to_remove.find(key) != keys_to_remove.end();
     };
     cache->remove(predicate);
-
+    
     std::lock_guard lock(mutex);
     rebuildTableMappings();
 }

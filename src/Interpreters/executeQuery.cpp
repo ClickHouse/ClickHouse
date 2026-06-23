@@ -322,8 +322,7 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
                 end, vector_query_plan_cache_only_vector, vector_use_cast);
             if (parameterized_result.hash == 0 || parameterized_result.params.empty())
             {
-                result.vector_query_for_plan_cache.assign(begin, end);
-                LOG_DEBUG(logger, "sql={} is not select", std::string(begin, end));
+                LOG_DEBUG(logger, "sql={} is not support or select", std::string(begin, end));
             }
             else
             {
@@ -2146,7 +2145,7 @@ static BlockIO executeQueryImpl(
                     res,
                     logger);
             }
-
+            
             if (!query_result_cache_entry_exists)
             {
                 /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
