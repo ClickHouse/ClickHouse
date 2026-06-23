@@ -130,9 +130,13 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & d
     /// read passes through (optimizer estimate/read and the explicit projection table
     /// function), so fail closed here regardless of how the combination came to exist
     /// (CREATE/ALTER reject it, but SECONDARY_CREATE/ATTACH still load it).
-    if (projection && data.getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/true)->hasUniqueKey())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "UNIQUE KEY tables do not support reading via projections");
+    if (projection)
+    {
+        auto metadata_snapshot = data.getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/true);
+        if (metadata_snapshot->hasUniqueKey())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "UNIQUE KEY tables do not support reading via projections");
+    }
 }
 
 size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(

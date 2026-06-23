@@ -1978,17 +1978,18 @@ bool StorageMergeTree::optimize(
 {
     assertNotReadonly();
 
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+
     /// Merges are disabled for UNIQUE KEY tables (see selectPartsToMerge). Reject
     /// explicit OPTIMIZE up front with an actionable message rather than letting it
     /// fall through to a no-op merge.
     /// TODO(unique-key): remove when merge-side bitmap forwarding + late-kill (PR-14) lands.
-    if (getInMemoryMetadataPtr(local_context, false)->hasUniqueKey())
+    if (metadata_snapshot->hasUniqueKey())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "OPTIMIZE is not supported for UNIQUE KEY tables: merges are currently disabled "
                         "to preserve DELETE correctness. Parts will not be compacted.");
 
     const auto mode = (*getSettings())[MergeTreeSetting::deduplicate_merge_projection_mode];
-    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     if (deduplicate && metadata_snapshot->hasProjections()
         && (mode == DeduplicateMergeProjectionMode::THROW || mode == DeduplicateMergeProjectionMode::IGNORE))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
