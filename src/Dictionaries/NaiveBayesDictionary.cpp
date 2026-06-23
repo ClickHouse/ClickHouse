@@ -45,16 +45,20 @@ String trim(std::string_view s)
 /// Whitespace around tokens is ignored, and any malformed input raises a bad arguments error.
 std::map<UInt32, double> parseExplicitPriors(const String & priors_str)
 {
+    if (priors_str.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Explicit priors specification is empty");
+
     std::map<UInt32, double> priors;
     double total = 0.0;
 
+    /// Iterate over every comma-separated entry, including the one after a trailing comma (which is empty
+    /// and rejected below), so that a malformed `0=0.5,1=0.5,` is not silently accepted.
     size_t pos = 0;
-    while (pos < priors_str.size())
+    while (true)
     {
         const size_t comma = priors_str.find(',', pos);
         const size_t entry_end = (comma == String::npos) ? priors_str.size() : comma;
         const std::string_view entry(priors_str.data() + pos, entry_end - pos);
-        pos = (comma == String::npos) ? priors_str.size() : comma + 1;
 
         const size_t eq = entry.find('=');
         if (eq == std::string_view::npos)
@@ -83,10 +87,11 @@ std::map<UInt32, double> parseExplicitPriors(const String & priors_str)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate prior for class {}", class_id);
 
         total += prob;
-    }
 
-    if (priors.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Explicit priors specification is empty");
+        if (comma == String::npos)
+            break;
+        pos = comma + 1;
+    }
 
     if (std::fabs(total - 1.0) > 1e-6)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sum of prior probabilities must equal 1.0, got {}", total);
