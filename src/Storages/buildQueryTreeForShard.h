@@ -25,6 +25,15 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
 
 void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr context);
 
+/** Inline `ALIAS` columns into their defining expressions for distributed/shard transport.
+  *
+  * The defining expression keeps the column's logical name as an alias only for top-level projection items (so the
+  * mergeable-state output column keeps its name). Inside expression clauses (`WHERE`/`GROUP BY`/`ORDER BY`/`HAVING`/
+  * `JOIN ON`) and nested expressions no alias is set, so that several same-named `ALIAS` columns from different `JOIN`
+  * sources do not collide as duplicate scope aliases (`MULTIPLE_EXPRESSIONS_FOR_ALIAS`).
+  */
+void inlineAliasColumnsForDistributed(QueryTreeNodePtr & query_tree);
+
 /** When a Distributed/parallel-replicas query is executed up to `WithMergeableState`, the shard's query tree has its
   * `ALIAS` columns inlined into their defining expressions. If several projection (or sort/group/...) items expand to the
   * same expression, the shard's `ActionsDAG` deduplicates them into a single output column, so the shard header can have

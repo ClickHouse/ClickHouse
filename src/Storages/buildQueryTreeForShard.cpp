@@ -7,6 +7,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Core/Block.h>
 #include <Planner/PlannerActionsVisitor.h>
@@ -802,40 +803,95 @@ void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr c
 namespace
 {
 
-/// Replace ALIAS column nodes with their defining expression. The action name computed afterwards then matches the name
-/// the shard's ActionsDAG assigns (the shard works on the inlined query tree).
-class InlineAliasColumnsForNamingVisitor : public InDepthQueryTreeVisitor<InlineAliasColumnsForNamingVisitor>
+/// Return a clone of the defining expression of an inlineable ALIAS column node, or nullptr otherwise.
+/// The expression is cloned so each occurrence gets its own copy: this lets us alias one occurrence
+/// (a projection output) without mutating another occurrence (a reference in WHERE/GROUP BY/...).
+QueryTreeNodePtr getInlineableAliasColumnExpression(const QueryTreeNodePtr & node)
 {
-    static QueryTreeNodePtr getColumnNodeAliasExpression(const QueryTreeNodePtr & node)
+    const auto * column_node = node->as<ColumnNode>();
+    if (!column_node || !column_node->hasExpression())
+        return nullptr;
+
+    const auto & column_source = column_node->getColumnSourceOrNull();
+    if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
+                       || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
+                       || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+        return nullptr;
+
+    return column_node->getExpression()->clone();
+}
+
+void inlineAliasColumnsForDistributedImpl(QueryTreeNodePtr & node);
+
+/// Inline ALIAS columns inside an expression subtree without assigning any alias. Nested subqueries are
+/// handed back to inlineAliasColumnsForDistributedImpl so their own projection columns keep their names.
+void inlineAliasColumnsInExpression(QueryTreeNodePtr & node)
+{
+    if (node->as<QueryNode>() || node->as<UnionNode>())
     {
-        const auto * column_node = node->as<ColumnNode>();
-        if (!column_node || !column_node->hasExpression())
-            return nullptr;
-
-        const auto & column_source = column_node->getColumnSourceOrNull();
-        if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
-                           || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
-                           || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
-            return nullptr;
-
-        auto column_expression = column_node->getExpression();
-        column_expression->setAlias(column_node->getColumnName());
-        return column_expression;
+        inlineAliasColumnsForDistributedImpl(node);
+        return;
     }
 
-public:
-    void visitImpl(QueryTreeNodePtr & node)
-    {
-        if (auto column_expression = getColumnNodeAliasExpression(node))
-            node = column_expression;
-    }
-};
+    while (auto expression = getInlineableAliasColumnExpression(node))
+        node = expression;
 
+    for (auto & child : node->getChildren())
+        if (child)
+            inlineAliasColumnsInExpression(child);
+}
+
+/// Inline ALIAS columns into their defining expressions for shard transport. The defining expression keeps
+/// the column's logical name as an alias only when the ALIAS column is a top-level projection item, so the
+/// mergeable-state output column keeps its name. Inside expression clauses (WHERE/GROUP BY/ORDER BY/HAVING/
+/// JOIN ON) and nested expressions no alias is set; otherwise several same-named ALIAS columns from different
+/// JOIN sources would land in one scope and trigger MULTIPLE_EXPRESSIONS_FOR_ALIAS
+/// (https://github.com/ClickHouse/ClickHouse/issues/107990).
+void inlineAliasColumnsForDistributedImpl(QueryTreeNodePtr & node)
+{
+    if (auto * union_node = node->as<UnionNode>())
+    {
+        for (auto & query : union_node->getQueries().getNodes())
+            inlineAliasColumnsForDistributedImpl(query);
+        return;
+    }
+
+    auto * query_node = node->as<QueryNode>();
+    if (!query_node)
+    {
+        inlineAliasColumnsInExpression(node);
+        return;
+    }
+
+    for (auto & projection_item : query_node->getProjection().getNodes())
+    {
+        const auto * column_node = projection_item->as<ColumnNode>();
+        if (auto expression = getInlineableAliasColumnExpression(projection_item))
+        {
+            const String output_alias = column_node->getColumnName();
+            inlineAliasColumnsInExpression(expression);
+            expression->setAlias(output_alias);
+            projection_item = expression;
+        }
+        else
+        {
+            inlineAliasColumnsInExpression(projection_item);
+        }
+    }
+
+    for (auto & child : query_node->getChildren())
+        if (child && child != query_node->getProjectionNode())
+            inlineAliasColumnsInExpression(child);
+}
+
+/// Compute the action node name a shard would assign to this expression by replicating the shard-side
+/// transforms on a throwaway clone: ALIAS-column inlining (no aliasing needed — action names are computed
+/// from the column identifier / expression, not the SQL alias) followed by the long-constant -> __getScalar
+/// rewrite. The result matches the name the shard's ActionsDAG produces.
 String actionNameAfterAliasInlining(const QueryTreeNodePtr & node, const PlannerContext & planner_context)
 {
     auto node_clone = node->clone();
-    InlineAliasColumnsForNamingVisitor visitor;
-    visitor.visit(node_clone);
+    inlineAliasColumnsInExpression(node_clone);
 
     /// `buildQueryTreeForShard` performs one more naming-relevant rewrite after inlining ALIAS columns:
     /// `ReplaceLongConstWithScalarVisitor` turns over-threshold constants into `__getScalar('<hash>')` calls
@@ -886,6 +942,11 @@ private:
     std::unordered_map<String, String> & translation;
 };
 
+}
+
+void inlineAliasColumnsForDistributed(QueryTreeNodePtr & query_tree)
+{
+    inlineAliasColumnsForDistributedImpl(query_tree);
 }
 
 std::optional<ActionsDAG> buildShardCollapseFanOut(
