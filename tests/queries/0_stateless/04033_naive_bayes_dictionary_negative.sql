@@ -149,6 +149,38 @@ SELECT dictGet('nb_big_prior', 'class_id', 'test'); -- { serverError BAD_ARGUMEN
 
 DROP DICTIONARY IF EXISTS nb_big_prior;
 
+-- Priors with a non-finite probability (NaN or infinity)
+
+CREATE DICTIONARY nb_nan_prior
+(
+    ngram String,
+    class_id UInt32 DEFAULT 0,
+    count UInt64 DEFAULT 0
+)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'nb_err_source'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors '0=nan,1=0.5'))
+LIFETIME(0);
+
+SELECT dictGet('nb_nan_prior', 'class_id', 'test'); -- { serverError BAD_ARGUMENTS }
+
+DROP DICTIONARY IF EXISTS nb_nan_prior;
+
+CREATE DICTIONARY nb_inf_prior
+(
+    ngram String,
+    class_id UInt32 DEFAULT 0,
+    count UInt64 DEFAULT 0
+)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'nb_err_source'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors '0=inf,1=0.5'))
+LIFETIME(0);
+
+SELECT dictGet('nb_inf_prior', 'class_id', 'test'); -- { serverError BAD_ARGUMENTS }
+
+DROP DICTIONARY IF EXISTS nb_inf_prior;
+
 -- Priors with malformed format (missing '=')
 
 CREATE DICTIONARY nb_malformed_prior
