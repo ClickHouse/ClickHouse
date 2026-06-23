@@ -3,12 +3,14 @@
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
+#include <Storages/MergeTree/PostingListBlockCodec.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Common/ProfileEvents.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <IO/ReadHelpers.h>
 #include <Common/TargetSpecific.h>
+#include <config.h>
 #include <algorithm>
 #include <cstring>
 #include <numeric>
@@ -33,6 +35,7 @@ namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 /// Posting-list doc IDs are 32-bit, so `row_offset > UInt32::max` cannot legitimately
@@ -178,9 +181,18 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
     UInt64 codec_type = 0;
     readVarUInt(codec_type, *data_buffer);
 
-    if (codec_type != static_cast<UInt64>(IPostingListCodec::Type::Bitpacking))
+    if (codec_type != static_cast<UInt64>(IPostingListCodec::Type::Bitpacking)
+        && codec_type != static_cast<UInt64>(IPostingListCodec::Type::FastPFOR))
         throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupted data in lazy cursor: expected codec type Bitpacking, got {}", codec_type);
+            "Corrupted data in lazy cursor: expected codec type Bitpacking or FastPFOR, got {}", codec_type);
+
+    segment.codec_type = static_cast<IPostingListCodec::Type>(codec_type);
+
+#if !USE_FASTPFOR
+    if (segment.codec_type == IPostingListCodec::Type::FastPFOR)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "FastPFOR posting list codec is not available: ClickHouse was built without FastPFOR");
+#endif
 
     UInt64 payload_bytes = 0;
     readVarUInt(payload_bytes, *data_buffer);
@@ -210,10 +222,16 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
             segment.doc_count, range_span, segment_range.begin, segment_range.end);
     }
 
-    /// Cap `payload_bytes` before resizing so corrupted metadata can't force a huge allocation. Per-block
-    /// upper bound: `1` (bits header) + `4 * BLOCK_SIZE` (bit-pure max at `bits = 32`) + 16 (SIMD alignment).
+    /// Create the per-block codec for this segment's codec type now and reuse it for decoding (see
+    /// `decodeBlock`). It owns the codec-specific per-block worst-case size, so the cursor can bound
+    /// `payload_bytes` against corrupted metadata without naming a concrete codec.
+    if (!block_codec || block_codec->type() != segment.codec_type)
+        block_codec = createPostingListBlockCodec(segment.codec_type);
+
+    /// Cap `payload_bytes` before resizing so corrupted metadata can't force a huge allocation.
     const UInt64 max_blocks_count = (static_cast<UInt64>(segment.doc_count) + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    const UInt64 max_payload_bytes = max_blocks_count * (1 + sizeof(UInt32) * BLOCK_SIZE + 16);
+    const UInt64 per_block_cap = block_codec->maxBlockBytes();
+    const UInt64 max_payload_bytes = max_blocks_count * per_block_cap;
 
     if (payload_bytes > max_payload_bytes)
     {
@@ -337,28 +355,26 @@ void PostingListCursor::decodeBlock(size_t block_idx)
         reinterpret_cast<const std::byte *>(segment.payload_buffer.data() + payload_offset),
         block_size);
 
-    /// Decode: [1 byte bits][bitpacked payload]
     if (block_data.empty())
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: empty block at index {}", block_idx);
 
-    uint8_t bits = static_cast<uint8_t>(block_data[0]);
-    block_data = block_data.subspan(1);
-
-    if (bits > 32)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected bits <= 32, but got {}", bits);
-
-    /// Validate the budget before decode so corrupted metadata can't drive the SIMD intrinsic past the segment payload.
-    const size_t required_bytes = BitpackingBlockCodec::bitpackingCompressedBytes(count, bits);
-    if (required_bytes > block_data.size())
-    {
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupted data in lazy posting list cursor: block {} requires {} packed bytes for "
-            "count={} bits={}, but only {} bytes remain in payload",
-            block_idx, required_bytes, count, bits, block_data.size());
-    }
-
     std::span<uint32_t> out_span(decoded_values, count);
-    BitpackingBlockCodec::decode(block_data, count, bits, out_span);
+
+    /// Lazily create the per-block payload codec for this segment's codec type and reuse it across blocks.
+    /// A posting list is written with a single codec, so this is effectively created once per cursor.
+    if (!block_codec || block_codec->type() != segment.codec_type)
+        block_codec = createPostingListBlockCodec(segment.codec_type);
+
+    /// The block span comes from the Index Section offsets and must be consumed in full: a bitpacking block is
+    /// [1 byte bits][bitpacked payload]; a FastPFOR block is a self-delimited payload. Comparing consumed bytes
+    /// against the exact span guards corrupted metadata from driving a decode past the block boundary.
+    const size_t expected_bytes = block_data.size();
+    const size_t consumed_bytes = block_codec->decodeBlock(block_data, count, out_span);
+    if (consumed_bytes != expected_bytes)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in lazy posting list cursor: block {} consumed {} bytes but its "
+            "Index Section span is {} bytes",
+            block_idx, consumed_bytes, expected_bytes);
 
     /// Restore absolute row ids from deltas directly in decoded_values.
     std::inclusive_scan(decoded_values, decoded_values + count, decoded_values, std::plus<uint32_t>{}, last_decoded_doc_id);

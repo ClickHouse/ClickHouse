@@ -89,7 +89,7 @@ CREATE TABLE table
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
-                                [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, posting_list_codec = 'none' | 'bitpacking' | 'fastpfor' ]
                             )
 )
 ENGINE = MergeTree
@@ -122,7 +122,7 @@ ALTER TABLE table
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
-                                [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, posting_list_codec = 'none' | 'bitpacking' | 'fastpfor' ]
                             )
 
 ```
@@ -305,6 +305,7 @@ Optional parameter `posting_list_block_size` (default: 1048576) specifies the si
 Optional parameter `posting_list_codec` (default: `none`) specifies the codec for posting list:
 - `none` - the posting lists are stored without additional compression.
 - `bitpacking` - apply [differential (delta) coding](https://en.wikipedia.org/wiki/Delta_encoding), followed by [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (each within blocks of fixed-size). Slows down SELECT queries, not recommended at the moment.
+- `fastpfor` - apply differential (delta) coding, followed by [FastPFOR](https://github.com/fast-pack/FastPFOR) (patched frame-of-reference) coding within blocks of fixed size. Compared to `bitpacking` it compresses better when most deltas are small but a few are large (bursty or sparse posting lists), because the large outliers are coded as exceptions rather than widening every value. `fastpfor` is only available when ClickHouse is built with the FastPFOR library (`x86-64-v2` or higher, and `AArch64`); on builds without it, both creating and reading a `fastpfor` posting list fail with `SUPPORT_IS_DISABLED`. Posting lists written with `fastpfor` therefore cannot be read on a build that lacks FastPFOR.
 
 The advanced parameters above can alternatively be set at the table level through the corresponding MergeTree settings: [`text_index_dictionary_block_size`](/operations/settings/merge-tree-settings#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/operations/settings/merge-tree-settings#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/operations/settings/merge-tree-settings#text_index_posting_list_block_size), and [`text_index_posting_list_codec`](/operations/settings/merge-tree-settings#text_index_posting_list_codec).
 They apply to every text index of the table that does not specify the parameter explicitly.

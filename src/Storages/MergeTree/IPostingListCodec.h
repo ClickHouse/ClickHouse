@@ -23,6 +23,7 @@ public:
     {
         None,
         Bitpacking,
+        FastPFOR,
     };
 
     IPostingListCodec() = default;

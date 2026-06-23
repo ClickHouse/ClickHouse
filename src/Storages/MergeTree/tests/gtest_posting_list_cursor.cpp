@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <config.h>
 
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
@@ -201,10 +202,12 @@ struct MultiBlockTestData
 /// Build a multi-segment TokenPostingsInfo and data buffer for testing.
 ///
 /// @param blocks  Vector of sorted doc ID vectors, one per segment.
-///                Each segment is encoded independently using PostingListCodecBitpackingImpl.
+///                Each segment is encoded independently using SegmentedPostingListCodecImpl.
 ///
 /// Returns a MultiBlockTestData with the binary buffer, TokenPostingsInfo, and flattened doc list.
-MultiBlockTestData makeMultiBlockData(const std::vector<std::vector<uint32_t>> & blocks)
+MultiBlockTestData makeMultiBlockData(
+    const std::vector<std::vector<uint32_t>> & blocks,
+    IPostingListCodec::Type block_codec_type = IPostingListCodec::Type::Bitpacking)
 {
     MultiBlockTestData result;
     auto & info = result.info;
@@ -226,7 +229,7 @@ MultiBlockTestData makeMultiBlockData(const std::vector<std::vector<uint32_t>> &
     for (const auto & block_docs : blocks)
     {
         /// Use a segment size large enough to hold all docs in one segment.
-        PostingListCodecBitpackingImpl codec(block_docs.size() + BLOCK_SIZE);
+        SegmentedPostingListCodecImpl codec(block_docs.size() + BLOCK_SIZE, block_codec_type);
         for (auto doc : block_docs)
             codec.insert(doc);
         codec.encode(out, info);
@@ -1663,6 +1666,39 @@ TEST(PostingListCursorTest, MultiBlockSingleBlockWithTail)
     auto result = advanceAndDrainCursor(cursor, data.all_docs.front());
     EXPECT_EQ(result, docs);
 }
+
+#if USE_FASTPFOR
+TEST(PostingListCursorTest, FastPFORLazyCursorDecodesBlocksAndTail)
+{
+    /// Covers PostingListCursor over a FastPFOR segment: advance decodes a selected block lazily,
+    /// next crosses block boundaries, and linearOr decodes all overlapping blocks including the tail.
+    std::vector<uint32_t> docs = generateRange(7, 333, 3);
+    auto data = makeMultiBlockData({docs}, IPostingListCodec::Type::FastPFOR);
+
+    {
+        auto cursor = makeMultiBlockCursor(data);
+        cursor->advance(docs[150]);
+        ASSERT_TRUE(cursor->valid());
+        EXPECT_EQ(cursor->value(), docs[150]);
+
+        std::vector<uint32_t> suffix;
+        while (cursor->valid())
+        {
+            suffix.push_back(cursor->value());
+            cursor->next();
+        }
+
+        std::vector<uint32_t> expected_suffix(docs.begin() + 150, docs.end());
+        EXPECT_EQ(suffix, expected_suffix);
+    }
+
+    {
+        auto cursor = makeMultiBlockCursor(data);
+        auto result = linearOrToDocIds(cursor, 0, docs.back() + 1);
+        EXPECT_EQ(result, docs);
+    }
+}
+#endif
 
 TEST(PostingListCursorTest, MultiBlockTwoBlocks)
 {
