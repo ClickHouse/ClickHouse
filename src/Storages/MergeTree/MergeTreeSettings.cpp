@@ -2612,6 +2612,18 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         if (!(*this)[MergeTreeSetting::enable_block_offset_column])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'part_minmax_index_columns = with_block_number_offset' requires 'enable_block_offset_column' to be enabled");
     }
+
+    /// The 'initial' text index format does not persist the posting list codec type,
+    /// so it can only be written with codec 'none'. Catch the conflicting combination early, on CREATE and ALTER.
+    if ((*this)[MergeTreeSetting::text_index_version] == MergeTreeTextIndexVersion::Initial
+        && (*this)[MergeTreeSetting::text_index_posting_list_codec] != TextIndexPostingListCodec::None)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting 'text_index_version' = 'initial' is incompatible with 'text_index_posting_list_codec' = '{}'. "
+            "Set 'text_index_posting_list_codec' to 'none', or 'text_index_version' to 'with_codec'.",
+            (*this)[MergeTreeSetting::text_index_posting_list_codec].toString());
+    }
 }
 
 void MergeTreeColumnSettings::validate(const SettingsChanges & changes)

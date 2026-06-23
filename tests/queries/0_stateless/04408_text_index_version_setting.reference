@@ -12,3 +12,4 @@ with_codec
 512
 512
 -- initial version is incompatible with a posting list codec
+-- altering into the incompatible combination is also rejected

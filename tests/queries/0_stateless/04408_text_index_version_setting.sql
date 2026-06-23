@@ -60,6 +60,7 @@ SELECT count() FROM tab_with_codec WHERE hasToken(str, 'bar');
 
 SELECT '-- initial version is incompatible with a posting list codec';
 DROP TABLE IF EXISTS tab_conflict;
+-- The conflict is rejected up front while validating the table settings on CREATE.
 CREATE TABLE tab_conflict
 (
     id UInt32,
@@ -67,11 +68,20 @@ CREATE TABLE tab_conflict
     INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha')
 )
 ENGINE = MergeTree() ORDER BY id
-SETTINGS index_granularity = 1, text_index_version = 'initial', text_index_posting_list_codec = 'bitpacking';
+SETTINGS index_granularity = 1, text_index_version = 'initial', text_index_posting_list_codec = 'bitpacking'; -- { serverError BAD_ARGUMENTS }
 
--- The conflict is detected when the index part is written.
-INSERT INTO tab_conflict SELECT number, 'foo bar' FROM numbers(512); -- { serverError BAD_ARGUMENTS }
+SELECT '-- altering into the incompatible combination is also rejected';
+DROP TABLE IF EXISTS tab_alter;
+CREATE TABLE tab_alter
+(
+    id UInt32,
+    str String,
+    INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha')
+)
+ENGINE = MergeTree() ORDER BY id
+SETTINGS index_granularity = 1, text_index_posting_list_codec = 'bitpacking';
+ALTER TABLE tab_alter MODIFY SETTING text_index_version = 'initial'; -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE tab_initial;
 DROP TABLE tab_with_codec;
-DROP TABLE tab_conflict;
+DROP TABLE tab_alter;
