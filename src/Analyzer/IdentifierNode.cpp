@@ -58,19 +58,19 @@ void IdentifierNode::updateTreeHashImpl(HashState & state, CompareOptions) const
     state.update(identifier_name.size());
     state.update(identifier_name);
 
-    /// `quote_styles` participates in `isEqualImpl`, so it must also participate in the hash.
-    /// Otherwise raw-hash users (e.g. CNF ordering compares the stored hash directly without
-    /// re-checking equality) could deduplicate or reorder quoted vs unquoted identifiers as the same
-    /// expression. Only mix in when at least one part was quoted so identifiers with no quotes keep
-    /// their previous hash.
-    bool any_quoted = false;
+    /// Mirror `ASTIdentifier::updateTreeHashImpl`: only DoubleQuote is semantically observable
+    /// (case-sensitive vs case-insensitive in `standard` mode). Backticks are not preserved by the
+    /// formatter, so including them in the hash would diverge between the initiator's tree and a
+    /// reparsed copy on the remote side (e.g. distributed IN-CTE set names — `03520`). Encode only
+    /// the per-part double-quote bit; identifiers with no DoubleQuote parts keep their previous hash.
+    bool any_double_quoted = false;
     for (auto style : quote_styles)
-        if (style != IdentifierQuoteStyle::None) { any_quoted = true; break; }
-    if (any_quoted)
+        if (style == IdentifierQuoteStyle::DoubleQuote) { any_double_quoted = true; break; }
+    if (any_double_quoted)
     {
         state.update(quote_styles.size());
         for (auto style : quote_styles)
-            state.update(static_cast<uint8_t>(style));
+            state.update(static_cast<uint8_t>(style == IdentifierQuoteStyle::DoubleQuote));
     }
 
     if (table_expression_modifiers)
