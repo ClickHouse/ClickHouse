@@ -22,6 +22,10 @@ INSERT INTO nb_local VALUES (1, 50), (2, 70);
 
 SET enable_analyzer = 1, distributed_product_mode = 'local';
 
+-- JOIN ON references the same-named alias column on both sides (exercises the join-tree branch).
+SELECT 'join_on';
+SELECT l.id FROM na_dist AS l INNER JOIN nb_dist AS r ON l.id = r.id AND l.foo > 0 AND r.foo > 0 ORDER BY l.id;
+
 -- WHERE references the same-named alias column on both JOIN sides.
 SELECT 'where';
 SELECT l.id FROM na_dist AS l INNER JOIN nb_dist AS r ON l.id = r.id WHERE l.foo > 0 AND r.foo > 0 ORDER BY l.id;
