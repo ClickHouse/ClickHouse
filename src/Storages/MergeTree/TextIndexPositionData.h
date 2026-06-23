@@ -91,53 +91,6 @@ public:
     std::vector<RoaringishEntry> & getEntries() { return entries; }
     const std::vector<RoaringishEntry> & getEntries() const { return entries; }
 
-    /// Merge another builder's entries into this one.
-    /// Both must be sorted. Result is sorted with same-bucket entries merged.
-    void mergeFrom(const PositionListBuilder & other)
-    {
-        if (other.empty())
-            return;
-
-        if (entries.empty())
-        {
-            entries = other.entries;
-            return;
-        }
-
-        std::vector<RoaringishEntry> merged;
-        merged.reserve(entries.size() + other.entries.size());
-
-        size_t i = 0;
-        size_t j = 0;
-        while (i < entries.size() && j < other.entries.size())
-        {
-            if (entries[i].sameBucket(other.entries[j]))
-            {
-                auto combined = entries[i];
-                combined.mergeBitmap(other.entries[j]);
-                merged.push_back(combined);
-                ++i;
-                ++j;
-            }
-            else if (entries[i] < other.entries[j])
-            {
-                merged.push_back(entries[i++]);
-            }
-            else
-            {
-                merged.push_back(other.entries[j++]);
-            }
-        }
-
-        while (i < entries.size())
-            merged.push_back(entries[i++]);
-
-        while (j < other.entries.size())
-            merged.push_back(other.entries[j++]);
-
-        entries = std::move(merged);
-    }
-
 private:
     std::vector<RoaringishEntry> entries;
 };
