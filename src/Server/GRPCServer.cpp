@@ -20,6 +20,8 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/buildInsertReturningPipeline.h>
+#include <Core/QueryProcessingStage.h>
 #include <Interpreters/Session.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ConcatReadBuffer.h>
@@ -1079,6 +1081,10 @@ namespace
             executor.cancel();
         else
             executor.finish();
+
+        if (insert_query)
+            replacePipelineWithInsertReturningAfterPush(
+                io, *insert_query, query_context, QueryProcessingStage::Complete);
     }
 
     void Call::initializePipeline(const Block & header)
