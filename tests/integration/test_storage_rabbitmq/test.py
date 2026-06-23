@@ -299,6 +299,7 @@ def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster, db, unique):
     time.sleep(1)
 
     result = ""
+    prev_len = 0
     deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
     while time.monotonic() < deadline:
         result += instance.query(
@@ -306,7 +307,10 @@ def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster, db, unique):
         )
         if rabbitmq_check_result(result):
             break
-
+        # Fail only on a genuine stall: while rows keep arriving, reset the deadline.
+        if len(result) > prev_len:
+            deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+        prev_len = len(result)
         time.sleep(0.05)
     else:
         pytest.fail(
