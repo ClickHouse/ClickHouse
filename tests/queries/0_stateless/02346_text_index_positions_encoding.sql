@@ -9,10 +9,11 @@ SELECT 'Validation errors';
 CREATE TABLE tab_bad (
     id UInt32,
     message String,
-    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, __experimental_positions = 1, positions_encoding = 'lz4')
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, positions = 1, positions_encoding = 'lz4')
 )
 ENGINE = MergeTree
-ORDER BY id; -- { serverError BAD_ARGUMENTS }
+ORDER BY id
+SETTINGS allow_experimental_text_index_positions = 1; -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE tab_bad (
     id UInt32,
@@ -27,18 +28,20 @@ SELECT 'Results are same with both positions_encoding parameters';
 CREATE TABLE tab_none (
     id UInt32,
     message String,
-    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, __experimental_positions = 1, positions_encoding = 'none')
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, positions = 1, positions_encoding = 'none')
 )
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id
+SETTINGS allow_experimental_text_index_positions = 1;
 
 CREATE TABLE tab_pfor (
     id UInt32,
     message String,
-    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, __experimental_positions = 1, positions_encoding = 'pfor')
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, positions = 1, positions_encoding = 'pfor')
 )
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id
+SETTINGS allow_experimental_text_index_positions = 1;
 
 -- A few curated rows covering varied phrase cases (order, single token, no match) ...
 INSERT INTO tab_none(id, message) VALUES
@@ -77,18 +80,20 @@ SELECT 'No token positions limit';
 CREATE TABLE tab_none (
     id UInt32,
     message String,
-    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, __experimental_positions = 1, positions_encoding = 'none')
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, positions = 1, positions_encoding = 'none')
 )
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id
+SETTINGS allow_experimental_text_index_positions = 1;
 
 CREATE TABLE tab_pfor (
     id UInt32,
     message String,
-    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, __experimental_positions = 1, positions_encoding = 'pfor')
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, positions = 1, positions_encoding = 'pfor')
 )
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id
+SETTINGS allow_experimental_text_index_positions = 1;
 
 -- ~2M filler tokens then a planted phrase well past position 1,048,576.
 INSERT INTO tab_none(id, message) SELECT 1, concat(arrayStringConcat(arrayMap(x -> 'w', range(2000000)), ' '), ' needle haystack');

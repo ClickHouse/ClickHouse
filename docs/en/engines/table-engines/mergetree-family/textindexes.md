@@ -90,7 +90,7 @@ CREATE TABLE table
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
                                 [, posting_list_codec = 'none' | 'bitpacking' ]
-                                [, __experimental_positions = 0 | 1 ]
+                                [, positions = 0 | 1 ]
                                 [, positions_encoding = 'none' | 'pfor' ]
                             )
 )
@@ -125,7 +125,7 @@ ALTER TABLE table
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
                                 [, posting_list_codec = 'none' | 'bitpacking' ]
-                                [, __experimental_positions = 0 | 1 ]
+                                [, positions = 0 | 1 ]
                                 [, positions_encoding = 'none' | 'pfor' ]
                             )
 
@@ -293,18 +293,19 @@ SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
 
 **Other arguments (optional)**.
 
-Experimental parameter `__experimental_positions` (default: `0`) controls whether the index stores token positions.
+Experimental parameter `positions` (default: `0`) controls whether the index stores token positions.
 When set to `1`, the index additionally stores positional data (in a `.pos` file) which enables exact phrase matching via direct reads for the [`hasPhrase`](#functions-example-hasphrase) function.
 Storing positions increases the on-disk size of the index and the write cost, so it is opt-in.
 The on-disk format is not yet stable, so this parameter is experimental and may change in a future release.
-Set `__experimental_positions = 0` (the default) to keep the posting-list-only storage; text indexes created without this argument remain position-less.
+Creating an index with `positions = 1` therefore requires the MergeTree setting [`allow_experimental_text_index_positions`](/operations/settings/merge-tree-settings#allow_experimental_text_index_positions) to be enabled.
+Set `positions = 0` (the default) to keep the posting-list-only storage; text indexes created without this argument remain position-less.
 
 Experimental parameter `positions_encoding` (default: `'none'`) controls how the stored token positions are compressed.
-It only takes effect when `__experimental_positions` is enabled.
+It only takes effect when `positions` is enabled.
 - `'none'` - positions are stored uncompressed.
 - `'pfor'` - positions are compressed with a `PForDelta` integer codec (frame-of-reference bit-packing with patched exceptions plus integrated delta coding). Produces a substantially smaller `.pos` file at a modest decode cost.
 
-Like `__experimental_positions`, the on-disk positions format is not yet stable and may change in a future release.
+Like `positions`, the on-disk positions format is not yet stable and may change in a future release.
 
 <details markdown="1">
 

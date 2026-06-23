@@ -10,10 +10,11 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(`message`) TYPE text(tokenizer = splitByNonAlpha, __experimental_positions = 1),
+    INDEX idx(`message`) TYPE text(tokenizer = splitByNonAlpha, positions = 1),
 )
 ENGINE = MergeTree
-ORDER BY (id);
+ORDER BY (id)
+SETTINGS allow_experimental_text_index_positions = 1;
 
 INSERT INTO tab(id, message) VALUES
     (1, 'abc+ def- foo!'),
@@ -55,10 +56,11 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(`message`) TYPE text(tokenizer = ngrams(3), __experimental_positions = 1),
+    INDEX idx(`message`) TYPE text(tokenizer = ngrams(3), positions = 1),
 )
 ENGINE = MergeTree
-ORDER BY (id);
+ORDER BY (id)
+SETTINGS allow_experimental_text_index_positions = 1;
 
 INSERT INTO tab VALUES
     (1, 'the quick brown fox'),
@@ -87,10 +89,11 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(`message`) TYPE text(tokenizer = splitByString(['()', '\\']), __experimental_positions = 1),
+    INDEX idx(`message`) TYPE text(tokenizer = splitByString(['()', '\\']), positions = 1),
 )
 ENGINE = MergeTree
-ORDER BY (id);
+ORDER BY (id)
+SETTINGS allow_experimental_text_index_positions = 1;
 
 INSERT INTO tab VALUES
     (1, '()a()bc()d()'),
@@ -117,10 +120,11 @@ CREATE TABLE tab
 (
     id UInt32,
     text FixedString(16),
-    INDEX idx_text(text) TYPE text(tokenizer = splitByNonAlpha, __experimental_positions = 1)
+    INDEX idx_text(text) TYPE text(tokenizer = splitByNonAlpha, positions = 1)
 )
 ENGINE = MergeTree()
-ORDER BY (id);
+ORDER BY (id)
+SETTINGS allow_experimental_text_index_positions = 1;
 
 INSERT INTO tab VALUES
     (1, toFixedString('quick brown fox', 15)),
@@ -139,10 +143,11 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(`message`) TYPE text(tokenizer = asciiCJK, __experimental_positions = 1),
+    INDEX idx(`message`) TYPE text(tokenizer = asciiCJK, positions = 1),
 )
 ENGINE = MergeTree
-ORDER BY (id);
+ORDER BY (id)
+SETTINGS allow_experimental_text_index_positions = 1;
 
 INSERT INTO tab VALUES
     (1, 'hello错误502需要处理kitty'),
@@ -171,11 +176,11 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(`message`) TYPE text(tokenizer = splitByNonAlpha, __experimental_positions = 1)
+    INDEX idx(`message`) TYPE text(tokenizer = splitByNonAlpha, positions = 1)
 )
 ENGINE = MergeTree
 ORDER BY (id)
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_positions = 1;
 
 INSERT INTO tab SELECT number, 'Hello, ClickHouse' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'Hello, World' FROM numbers(1024);
@@ -240,11 +245,11 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(`message`) TYPE text(tokenizer = splitByNonAlpha, __experimental_positions = 1)
+    INDEX idx(`message`) TYPE text(tokenizer = splitByNonAlpha, positions = 1)
 )
 ENGINE = MergeTree
 ORDER BY (id)
-SETTINGS index_granularity = 1, text_index_posting_list_block_size = 1048576;
+SETTINGS index_granularity = 1, text_index_posting_list_block_size = 1048576, allow_experimental_text_index_positions = 1;
 
 INSERT INTO tab
 SELECT
@@ -307,11 +312,11 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(`message`) TYPE text(tokenizer = splitByNonAlpha, __experimental_positions = 1)
+    INDEX idx(`message`) TYPE text(tokenizer = splitByNonAlpha, positions = 1)
 )
 ENGINE = MergeTree
 ORDER BY (id)
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_positions = 1;
 
 INSERT INTO tab SELECT number, 'Hello, ClickHouse' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'Hello, World' FROM numbers(1024);
