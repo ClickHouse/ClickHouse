@@ -5,6 +5,8 @@
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/box.hpp>
 
+#include <mapbox/geometry/wagyu/wagyu.hpp>
+
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
 #include <Common/assert_cast.h>
@@ -87,6 +89,42 @@ void roundToGrid(Geometry & geometry)
         bg::set<0>(p, roundCoordinate(bg::get<0>(p)));
         bg::set<1>(p, roundCoordinate(bg::get<1>(p)));
     });
+}
+
+/// Conversions between the integer-grid Boost polygons and wagyu's integer geometry, used to clip and validate
+/// polygons (wagyu produces MVT-valid output: no self-intersections, correct ring nesting). Coordinates are already
+/// whole integers after roundToGrid, so the Float64 <-> Int64 casts are exact.
+using WagyuRing = mapbox::geometry::linear_ring<Int64>;
+
+WagyuRing toWagyuRing(const Ring<BPoint> & ring)
+{
+    WagyuRing out;
+    out.reserve(ring.size());
+    for (const auto & p : ring)
+        out.emplace_back(static_cast<Int64>(bg::get<0>(p)), static_cast<Int64>(bg::get<1>(p)));
+    return out;
+}
+
+MultiPolygon<BPoint> fromWagyu(const mapbox::geometry::multi_polygon<Int64> & solution)
+{
+    MultiPolygon<BPoint> result;
+    result.reserve(solution.size());
+    for (const auto & poly : solution)
+    {
+        if (poly.empty())
+            continue;
+        Polygon<BPoint> out;
+        for (const auto & pt : poly.front()) /// the first ring is the exterior, the rest are holes
+            out.outer().emplace_back(static_cast<Float64>(pt.x), static_cast<Float64>(pt.y));
+        for (size_t i = 1; i < poly.size(); ++i)
+        {
+            out.inners().emplace_back();
+            for (const auto & pt : poly[i])
+                out.inners().back().emplace_back(static_cast<Float64>(pt.x), static_cast<Float64>(pt.y));
+        }
+        result.push_back(std::move(out));
+    }
+    return result;
 }
 
 /// Accumulates the per-row tile-space geometries into a `Geometry` (Variant) result column.
@@ -311,24 +349,51 @@ public:
         auto process_polygons = [&](MultiPolygon<BPoint> polygons, const Projection & projection, const BBox & box, bool clip)
         {
             bg::for_each_point(polygons, projection);
-            /// Snap to the integer pixel grid before clipping (see process_point), then round again after clipping
-            /// because intersecting with the box can introduce fractional crossing points on its edges.
+            /// Snap to the integer pixel grid before clipping (clip-vs-snap ordering, matching PostGIS).
             roundToGrid(polygons);
             bg::correct(polygons);
-            MultiPolygon<BPoint> result;
-            if (clip)
-                bg::intersection(polygons, box, result);
-            else
-                result = std::move(polygons);
-            /// A single empty input is wrapped into a Multi container holding one empty element, so the
-            /// container is non-empty despite having no vertices; check the vertex count to map it to NULL.
+
+            if (!clip)
+            {
+                /// A single empty input is wrapped into a Multi container holding one empty element, so the
+                /// container is non-empty despite having no vertices; check the vertex count to map it to NULL.
+                if (bg::num_points(polygons) == 0)
+                {
+                    builder.addNull();
+                    return;
+                }
+                builder.addMultiPolygon(polygons);
+                return;
+            }
+
+            /// Clip to the tile box and validate with wagyu: unlike bg::intersection it returns polygons that are
+            /// valid under the MVT winding rules, repairing self-intersections and nested rings. The even-odd fill
+            /// rule makes the result independent of the input ring winding and resolves self-intersecting rings.
+            namespace wg = mapbox::geometry::wagyu;
+            wg::wagyu<Int64> clipper;
+            for (const auto & poly : polygons)
+            {
+                clipper.add_ring(toWagyuRing(poly.outer()), wg::polygon_type_subject);
+                for (const auto & inner : poly.inners())
+                    clipper.add_ring(toWagyuRing(inner), wg::polygon_type_subject);
+            }
+
+            const Int64 lo_x = static_cast<Int64>(bg::get<bg::min_corner, 0>(box));
+            const Int64 lo_y = static_cast<Int64>(bg::get<bg::min_corner, 1>(box));
+            const Int64 hi_x = static_cast<Int64>(bg::get<bg::max_corner, 0>(box));
+            const Int64 hi_y = static_cast<Int64>(bg::get<bg::max_corner, 1>(box));
+            clipper.add_ring(WagyuRing{{lo_x, lo_y}, {hi_x, lo_y}, {hi_x, hi_y}, {lo_x, hi_y}, {lo_x, lo_y}}, wg::polygon_type_clip);
+
+            mapbox::geometry::multi_polygon<Int64> solution;
+            clipper.execute(wg::clip_type_intersection, solution, wg::fill_type_even_odd, wg::fill_type_even_odd);
+
+            MultiPolygon<BPoint> result = fromWagyu(solution);
             if (bg::num_points(result) == 0)
             {
                 builder.addNull();
                 return;
             }
             bg::correct(result);
-            roundToGrid(result);
             builder.addMultiPolygon(result);
         };
 

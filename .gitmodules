@@ -402,3 +402,9 @@
 [submodule "contrib/xsimd"]
 	path = contrib/xsimd
 	url = https://github.com/xtensor-stack/xsimd
+[submodule "contrib/wagyu"]
+	path = contrib/wagyu
+	url = https://github.com/mapbox/wagyu
+[submodule "contrib/mapbox-geometry"]
+	path = contrib/mapbox-geometry
+	url = https://github.com/mapbox/geometry.hpp

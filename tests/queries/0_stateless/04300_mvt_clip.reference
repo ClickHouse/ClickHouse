@@ -20,7 +20,7 @@
 -- MVTEncodeGeom: buffer 0 clips a point ~5px past the edge that buffer 16 keeps
 1	1
 -- MVTEncodeGeom: a polygon covering the whole tile is clipped to the tile box (buffer 0)
-[[[(0,0),(0,4096),(4096,4096),(4096,0),(0,0)]]]
+[[[(4096,0),(0,0),(0,4096),(4096,4096),(4096,0)]]]
 -- MVTEncodeGeom: a line crossing the tile edge is clipped to the buffer boundary
 [[(1638,1850),(4096,1850)]]
 -- MVTEncodeGeom: empty geometries yield NULL rather than an empty container
@@ -43,3 +43,7 @@
 (4096,2664)
 -- MVTEncodeGeom: a sub-pixel line straddling a tile edge clips to a single edge line, not disjoint fragments
 [[(0,3639),(0,3167),(0,2664),(0,2107),(0,1461)]]
+-- MVTEncodeGeom: a self-intersecting ring inside the tile is repaired into valid polygons (it was dropped)
+MULTIPOLYGON(((1366 2550,2276 1461,455 1461,1366 2550)),((1366 2550,455 3639,2276 3639,1366 2550)))
+-- MVTEncodeGeom: a self-crossing sliver clips to a small valid polygon, not a whole-tile fill
+MULTIPOLYGON(((698 4081,701 4066,698 4079,698 4081)))

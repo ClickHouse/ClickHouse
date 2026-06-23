@@ -89,3 +89,9 @@ SELECT MVTEncodeGeom((90.005, 30.0)::Point, 2, 2, 1, 4096, 0);
 
 SELECT '-- MVTEncodeGeom: a sub-pixel line straddling a tile edge clips to a single edge line, not disjoint fragments';
 SELECT MVTEncodeGeom([(0.005, 10.0), (-0.005, 20.0), (-0.006, 30.0), (0.004, 40.0), (0.005, 50.0)]::LineString, 2, 2, 1, 4096, 0);
+
+SELECT '-- MVTEncodeGeom: a self-intersecting ring inside the tile is repaired into valid polygons (it was dropped)';
+SELECT wkt(MVTEncodeGeom([[(10.0, 10.0), (50.0, 50.0), (10.0, 50.0), (50.0, 10.0), (10.0, 10.0)]]::Polygon, 2, 2, 1));
+
+SELECT '-- MVTEncodeGeom: a self-crossing sliver clips to a small valid polygon, not a whole-tile fill';
+SELECT wkt(MVTEncodeGeom([[(15.403, 0.667), (15.335, 0.28), (15.398, -0.186), (15.331, 0.374), (15.403, 0.667)]]::Polygon, 2, 2, 1));
