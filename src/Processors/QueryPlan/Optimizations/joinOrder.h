@@ -46,11 +46,19 @@ enum class RowCountKind : UInt8
     Cached,
 };
 
-/// The row count only when it is a point estimate (exact, heuristic or measured), i.e. not a bare
-/// upper bound. This is what the heuristic `lhs < rhs` swap comparison and result reporting use.
+/// Whether `kind` is a point estimate (a single value -- exact, heuristic or measured) rather than
+/// a bare upper bound or unknown. The single source of truth for "is this a usable size value?",
+/// used by `pointEstimate` and by the row-count handlers (e.g. SortingStep) so they cannot drift.
+inline bool isPointEstimate(RowCountKind kind)
+{
+    return kind == RowCountKind::Exact || kind == RowCountKind::Estimate || kind == RowCountKind::Cached;
+}
+
+/// The row count only when it is a point estimate, i.e. not a bare upper bound. This is what the
+/// heuristic `lhs < rhs` swap comparison and result reporting use.
 inline std::optional<UInt64> pointEstimate(std::optional<UInt64> rows, RowCountKind kind)
 {
-    return (kind == RowCountKind::Exact || kind == RowCountKind::Estimate || kind == RowCountKind::Cached) ? rows : std::nullopt;
+    return isPointEstimate(kind) ? rows : std::nullopt;
 }
 
 /// Whether a right-side value may anchor an upper-bound-driven swap (`upperBound(left) < this`),

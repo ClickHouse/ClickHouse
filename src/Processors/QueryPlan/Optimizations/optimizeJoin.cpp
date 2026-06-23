@@ -523,9 +523,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         auto stats = estimateReadRowsCount(*node.children.front(), filter);
         if (auto limit = sorting_step->getLimit())
         {
-            bool child_is_point = stats.estimated_rows_kind == RowCountKind::Exact
-                || stats.estimated_rows_kind == RowCountKind::Estimate;
-            if (child_is_point)
+            if (isPointEstimate(stats.estimated_rows_kind))
             {
                 /// Point estimate: the LIMIT caps it (a capped exact stays exact).
                 if (stats.estimated_rows > limit)
@@ -755,7 +753,7 @@ static String dumpRowCountForLogs(const RelationStats & stats)
     {
         case RowCountKind::Exact:      return fmt::format("{} (exact)", stats.estimated_rows.value());
         case RowCountKind::UpperBound: return fmt::format("<= {}", stats.estimated_rows.value());
-        case RowCountKind::Estimate:   return fmt::format("{} (est)", stats.estimated_rows.value());
+        case RowCountKind::Estimate:   return fmt::format("{} (estimate)", stats.estimated_rows.value());
         case RowCountKind::Cached:     return fmt::format("{} (cached)", stats.estimated_rows.value());
         case RowCountKind::Unknown:    return "unknown";
     }
