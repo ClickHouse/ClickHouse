@@ -17,7 +17,6 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
@@ -85,7 +84,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool per_part_index_stats;
-    extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsString force_data_skipping_indices;
     extern const SettingsBool force_index_by_date;
@@ -123,7 +121,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_PARSE_TEXT;
     extern const int TOO_MANY_ROWS;
-    extern const int DUPLICATED_PART_UUIDS;
     extern const int INCORRECT_DATA;
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int ILLEGAL_STREAM;
@@ -670,32 +667,18 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
             fmt::join(partition_columns_names, ", "));
     }
 
-    auto query_context = context->hasQueryContext() ? context->getQueryContext() : context;
     QueryStatusPtr query_status = context->getProcessListElement();
 
     PartFilterCounters part_filter_counters;
-    if (query_context->getSettingsRef()[Setting::allow_experimental_query_deduplication])
-        res = selectPartsToReadWithUUIDFilter(
-            parts,
-            part_values,
-            data.getPinnedPartUUIDs(),
-            minmax_idx_condition,
-            minmax_columns_types,
-            partition_pruner,
-            max_block_numbers_to_read,
-            query_context,
-            part_filter_counters,
-            log);
-    else
-        res = selectPartsToRead(
-            parts,
-            part_values,
-            minmax_idx_condition,
-            minmax_columns_types,
-            partition_pruner,
-            max_block_numbers_to_read,
-            part_filter_counters,
-            query_status);
+    res = selectPartsToRead(
+        parts,
+        part_values,
+        minmax_idx_condition,
+        minmax_columns_types,
+        partition_pruner,
+        max_block_numbers_to_read,
+        part_filter_counters,
+        query_status);
 
     index_stats.emplace_back(ReadFromMergeTree::IndexStat{
         .type = ReadFromMergeTree::IndexType::None,
@@ -2756,116 +2739,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
         res_parts.push_back(prev_part);
     }
     return res_parts;
-}
-
-RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
-    const RangesInDataParts & parts,
-    const std::optional<std::unordered_set<String>> & part_values,
-    MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
-    const std::optional<KeyCondition> & minmax_idx_condition,
-    const DataTypes & minmax_columns_types,
-    const std::optional<PartitionPruner> & partition_pruner,
-    const PartitionIdToMaxBlock * max_block_numbers_to_read,
-    ContextPtr query_context,
-    PartFilterCounters & counters,
-    LoggerPtr log)
-{
-    /// process_parts prepare parts that have to be read for the query,
-    /// returns false if duplicated parts' UUID have been met
-    auto select_parts = [&](const RangesInDataParts & in_parts, RangesInDataParts & selected_parts) -> bool
-    {
-        auto ignored_part_uuids = query_context->getIgnoredPartUUIDs();
-        std::unordered_set<UUID> temp_part_uuids;
-
-        for (const auto & prev_part : in_parts)
-        {
-            const auto & part_or_projection = prev_part.data_part;
-            const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
-            size_t num_granules = part_or_projection->index_granularity->getMarksCountWithoutFinal();
-
-            if (part_values && !part_values->contains(part->name))
-                continue;
-
-            if (part->isEmpty())
-                continue;
-
-            if (max_block_numbers_to_read)
-            {
-                auto blocks_iterator = max_block_numbers_to_read->find(part->info.getPartitionId());
-                if (blocks_iterator == max_block_numbers_to_read->end() || part->info.max_block > blocks_iterator->second)
-                    continue;
-            }
-
-            /// Skip the part if its uuid is meant to be excluded
-            if (part->uuid != UUIDHelpers::Nil && ignored_part_uuids->has(part->uuid))
-                continue;
-
-            counters.num_initial_selected_parts += 1;
-            counters.num_initial_selected_granules += num_granules;
-
-            /// hyperrectangle must come from the part whose metadata built the condition.
-            if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
-                continue;
-
-            counters.num_parts_after_minmax += 1;
-            counters.num_granules_after_minmax += num_granules;
-
-            if (partition_pruner)
-            {
-                if (partition_pruner->canBePruned(*part))
-                    continue;
-            }
-
-            counters.num_parts_after_partition_pruner += 1;
-            counters.num_granules_after_partition_pruner += num_granules;
-
-            /// populate UUIDs and exclude ignored parts if enabled
-            if (part->uuid != UUIDHelpers::Nil && pinned_part_uuids->contains(part->uuid))
-            {
-                auto result = temp_part_uuids.insert(part->uuid);
-                if (!result.second)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Found a part with the same UUID on the same replica.");
-            }
-
-            selected_parts.push_back(prev_part);
-        }
-
-        if (!temp_part_uuids.empty())
-        {
-            auto duplicates = query_context->getPartUUIDs()->add(std::vector<UUID>{temp_part_uuids.begin(), temp_part_uuids.end()});
-            if (!duplicates.empty())
-            {
-                /// on a local replica with prefer_localhost_replica=1 if any duplicates appeared during the first pass,
-                /// adding them to the exclusion, so they will be skipped on second pass
-                query_context->getIgnoredPartUUIDs()->add(duplicates);
-                return false;
-            }
-        }
-
-        return true;
-    };
-
-    /// Process parts that have to be read for a query.
-    RangesInDataParts filtered_parts = {};
-    auto needs_retry = !select_parts(parts, filtered_parts);
-
-    /// If any duplicated part UUIDs met during the first step, try to ignore them in second pass.
-    /// This may happen when `prefer_localhost_replica` is set and "distributed" stage runs in the same process with "remote" stage.
-    if (needs_retry)
-    {
-        LOG_DEBUG(log, "Found duplicate uuids locally, will retry part selection without them");
-
-        counters = PartFilterCounters();
-
-        auto initial_filtered_parts = filtered_parts;
-        filtered_parts = {};
-
-        /// Second attempt didn't help, throw an exception
-        if (!select_parts(initial_filtered_parts, filtered_parts))
-            throw Exception(ErrorCodes::DUPLICATED_PART_UUIDS, "Found duplicate UUIDs while processing query.");
-    }
-
-    return filtered_parts;
 }
 
 /// Read and return index granules from a minmax index.
