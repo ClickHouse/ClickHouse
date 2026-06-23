@@ -685,6 +685,14 @@ namespace ErrorCodes
     Default posting list codec for text indexes.
     Can be overridden by explicit `posting_list_codec` index argument.
     )", 0) \
+    DECLARE(Bool, text_index_positions, false, R"(
+    Default positions for text indexes.
+    Can be overridden by explicit `positions` index argument.
+    )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_text_index_positions, false, R"(
+    Allow creating text indexes with the experimental `positions` argument which
+    stores token positions to support exact phrase matching.
+    )", EXPERIMENTAL) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
     Minimum time to wait before trying to select parts to merge again after no
     parts were selected. A lower setting will trigger selecting tasks in

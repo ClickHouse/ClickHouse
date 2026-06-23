@@ -70,6 +70,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool text_index_dictionary_block_frontcoding_compression;
     extern const MergeTreeSettingsNonZeroUInt64 text_index_posting_list_block_size;
     extern const MergeTreeSettingsTextIndexPostingListCodec text_index_posting_list_codec;
+    extern const MergeTreeSettingsBool text_index_positions;
+    extern const MergeTreeSettingsBool allow_experimental_text_index_positions;
 }
 
 namespace Setting
@@ -83,9 +85,6 @@ static constexpr UInt64 MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 6;
 
 static_assert(MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS must be less or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
 static_assert(PostingListBuilder::max_small_size <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "max_small_size must be less than or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
-
-/// Move to MergeTreeSettings once `__experimental_positions` is finalized.
-static constexpr bool DEFAULT_POSITIONS = false;
 
 bool DictionaryBlockBase::empty() const
 {
@@ -1764,7 +1763,7 @@ static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
 static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
 static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
 static const String ARGUMENT_POSTING_LIST_CODEC = "posting_list_codec";
-static const String ARGUMENT_POSITIONS = "__experimental_positions";
+static const String ARGUMENT_POSITIONS = "positions";
 
 namespace
 {
@@ -1868,7 +1867,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     UInt64 posting_list_block_size = extractFieldOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_block_size]);
 
-    UInt64 positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(DEFAULT_POSITIONS);
+    UInt64 positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(settings[MergeTreeSetting::text_index_positions]);
 
     MergeTreeIndexTextParams index_params{
         dictionary_block_size,
@@ -1913,9 +1912,16 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     if (posting_list_block_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be greater than 0, but got {}", ARGUMENT_POSTING_LIST_BLOCK_SIZE, posting_list_block_size);
 
-    UInt64 positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(DEFAULT_POSITIONS);
+    UInt64 positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(settings[MergeTreeSetting::text_index_positions]);
     if (positions > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 0 or 1, but got {}", ARGUMENT_POSITIONS, positions);
+
+    /// Storing positions is experimental (the on-disk format is not yet stable), so gate it behind
+    /// a MergeTree setting that can be disabled in the experimental tier.
+    if (positions && !settings[MergeTreeSetting::allow_experimental_text_index_positions])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Text index argument '{}' is experimental. Enable it with the MergeTree setting "
+            "`allow_experimental_text_index_positions = 1`.", ARGUMENT_POSITIONS);
 
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
