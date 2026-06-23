@@ -18,7 +18,9 @@
 #include <Common/quoteString.h>
 #include <Common/transformEndianness.h>
 #include <Core/Settings.h>
+#include <Interpreters/Access/getValidUntilFromAST.h>
 #include <Interpreters/executeQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ParserGrantQuery.h>
@@ -105,6 +107,11 @@ namespace
             else
                 entity.granted_roles.grant(roles_to_grant);
         }
+    }
+
+    time_t parseValidUntilFromConfig(const String & value)
+    {
+        return getValidUntilFromAST(make_intrusive<ASTLiteral>(value), {});
     }
 
     /// Throws if any user-level/flat authentication fields (password, ldap, etc.) coexist
@@ -352,6 +359,9 @@ namespace
             }
         }
 
+        if (config.has(auth_method_path + ".valid_until"))
+            auth_data.setValidUntil(parseValidUntilFromConfig(config.getString(auth_method_path + ".valid_until")));
+
         return auth_data;
     }
 
@@ -469,6 +479,13 @@ namespace
         chassert(!user->authentication_methods.empty());
 
         validateUserAuthenticationMethods(user->authentication_methods, user_name, allow_no_password, allow_plaintext_password, otp_secret);
+
+        if (config.has(user_config + ".valid_until"))
+        {
+            time_t valid_until = parseValidUntilFromConfig(config.getString(user_config + ".valid_until"));
+            for (auto & auth_method : user->authentication_methods)
+                auth_method.setValidUntil(valid_until);
+        }
 
         const auto profile_name_config = user_config + ".profile";
         if (config.has(profile_name_config))
