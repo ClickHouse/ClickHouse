@@ -29,6 +29,13 @@ public:
     /// count.
     void addNgram(UInt32 class_id, std::string_view ngram, UInt64 count)
     {
+        /// A zero-count row records no observation, so it must not enter the vocabulary: the vocabulary size is
+        /// the Laplace smoothing denominator, and counting an unobserved n-gram there would shift every class
+        /// score. Its entry would also be equivalent to an absent one (a delta of log(alpha) - log(alpha) = 0),
+        /// so dropping it changes nothing for the n-grams that do occur.
+        if (count == 0)
+            return;
+
         ArenaKeyHolder key_holder{ngram, data->pool};
         NGramIndexMap::LookupResult it = nullptr;
         bool inserted = false;
@@ -63,7 +70,9 @@ public:
     NaiveBayesModel<Tok> finalize(PriorsMode mode, const std::map<UInt32, double> & explicit_priors = {})
     {
         if (data->ngram_to_index.empty())
-            throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "No n-grams found in the model");
+            throw Exception(
+                ErrorCodes::RECEIVED_EMPTY_DATA,
+                "NaiveBayes dictionary: the model has no n-grams; the source is empty or every count is zero");
 
         LogProbabilityMap log_class_priors;
         switch (mode)
@@ -157,21 +166,17 @@ private:
 
     void computeProportionalPriors(LogProbabilityMap & log_class_priors) const
     {
+        /// Every class total is positive, because zero-count rows are dropped in addNgram, so their sum is too;
+        /// it only needs guarding against 64-bit overflow.
         UInt64 total = 0;
         for (const auto & [_, count] : data->class_totals)
         {
-            /// Each class total already fits in a 64-bit integer, but their sum can still overflow.
             if (count > std::numeric_limits<UInt64>::max() - total)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "NaiveBayes dictionary: the total n-gram count across all classes overflows a 64-bit integer");
             total += count;
         }
-
-        if (total == 0)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "NaiveBayes dictionary: proportional priors require a positive total n-gram count, but every count is zero");
 
         for (const auto & [class_id, count] : data->class_totals)
             log_class_priors[class_id] = std::log(static_cast<double>(count) / static_cast<double>(total));
