@@ -26,49 +26,80 @@ extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(template <typename ResultType, typename ArgumentType> static void NO_SANITIZE_UNDEFINED NO_INLINE),
     dotProductBatchImpl,
-    MULTITARGET_FUNCTION_BODY((const ArgumentType * __restrict data_x, const ArgumentType * __restrict data_y, const ColumnArray::Offset * __restrict offsets, ResultType * __restrict result, size_t rows) {
-        constexpr size_t unroll_count = 16;
-        ColumnArray::Offset prev = 0;
-        for (size_t row = 0; row < rows; ++row)
-        {
-            const ColumnArray::Offset off = offsets[row];
-            const size_t array_size = off - prev;
-            ResultType partial_sums[unroll_count]{};
-            size_t i = 0;
-            const size_t unrolled_end = array_size / unroll_count * unroll_count;
-            for (; i < unrolled_end; i += unroll_count)
-                for (size_t s = 0; s < unroll_count; ++s)
-                    partial_sums[s] += static_cast<ResultType>(data_x[prev + i + s]) * static_cast<ResultType>(data_y[prev + i + s]);
-            ResultType sum = 0;
-            for (auto & partial_sum : partial_sums)
-                sum += partial_sum;
-            for (; i < array_size; ++i)
-                sum += static_cast<ResultType>(data_x[prev + i]) * static_cast<ResultType>(data_y[prev + i]);
-            result[row] = sum;
-            prev = off;
-        }
-    }))
+    MULTITARGET_FUNCTION_BODY(
+        (const ArgumentType * __restrict data_x,
+         const ArgumentType * __restrict data_y,
+         const ColumnArray::Offset * __restrict offsets,
+         ResultType * __restrict result,
+         size_t rows) {
+            ColumnArray::Offset prev = 0;
+            for (size_t row = 0; row < rows; ++row)
+            {
+                /// Manual unrolling with independent accumulators to break FP dependency chains.
+                /// With FMA latency ~4 cycles and throughput 1/cycle, we need >= 4 independent
+                /// chains to saturate the pipeline. 16 accumulators is enough to do that while
+                /// keeping the per-row reduction and scalar remainder small: a wider unroll
+                /// (e.g. 128/sizeof = 32 for Float32) only pays off for very long arrays and
+                /// noticeably regresses the short (~150-element) arrays typical of vector search.
+                constexpr size_t unroll_count = 16;
+                ResultType partial_sums[unroll_count]{};
+
+                const ColumnArray::Offset off = offsets[row];
+                const size_t array_size = off - prev;
+                size_t i = 0;
+                const size_t unrolled_end = array_size / unroll_count * unroll_count;
+                /// Main unrolled loop — compiler auto-vectorizes with FMA
+                for (; i < unrolled_end; i += unroll_count)
+                    for (size_t s = 0; s < unroll_count; ++s)
+                        partial_sums[s] += static_cast<ResultType>(data_x[prev + i + s]) * static_cast<ResultType>(data_y[prev + i + s]);
+
+                /// Reduce partial sums
+                ResultType sum = 0;
+                for (auto & partial_sum : partial_sums)
+                    sum += partial_sum;
+
+                /// Tail: process remaining elements that don't fill a full unroll block
+                for (; i < array_size; ++i)
+                    sum += static_cast<ResultType>(data_x[prev + i]) * static_cast<ResultType>(data_y[prev + i]);
+
+                result[row] = sum;
+                prev = off;
+            }
+        }))
 
 /// Const-left-argument variant: the left vector `a` is fixed across rows, only the right column advances.
 MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(template <typename ResultType, typename ArgumentType> static void NO_SANITIZE_UNDEFINED NO_INLINE),
     dotProductConstBatchImpl,
     MULTITARGET_FUNCTION_BODY((const ArgumentType * __restrict a, const ArgumentType * __restrict data_y, size_t array_size, ResultType * __restrict result, size_t rows) {
-        constexpr size_t unroll_count = 16;
         for (size_t row = 0; row < rows; ++row)
         {
-            const ArgumentType * __restrict y = data_y + row * array_size;
+            /// Manual unrolling with independent accumulators to break FP dependency chains.
+            /// With FMA latency ~4 cycles and throughput 1/cycle, we need >= 4 independent
+            /// chains to saturate the pipeline. 16 accumulators is enough to do that while
+            /// keeping the per-row reduction and scalar remainder small: a wider unroll
+            /// (e.g. 128/sizeof = 32 for Float32) only pays off for very long arrays and
+            /// noticeably regresses the short (~150-element) arrays typical of vector search.
+            constexpr size_t unroll_count = 16;
             ResultType partial_sums[unroll_count]{};
+
+            const ArgumentType * __restrict y = data_y + row * array_size;
             size_t i = 0;
+            /// Main unrolled loop — compiler auto-vectorizes with FMA
             const size_t unrolled_end = array_size / unroll_count * unroll_count;
             for (; i < unrolled_end; i += unroll_count)
                 for (size_t s = 0; s < unroll_count; ++s)
                     partial_sums[s] += static_cast<ResultType>(a[i + s]) * static_cast<ResultType>(y[i + s]);
+
+            /// Reduce partial sums
             ResultType sum = 0;
             for (auto & partial_sum : partial_sums)
                 sum += partial_sum;
+
+            /// Tail: process remaining elements that don't fill a full unroll block
             for (; i < array_size; ++i)
                 sum += static_cast<ResultType>(a[i]) * static_cast<ResultType>(y[i]);
+
             result[row] = sum;
         }
     }))
