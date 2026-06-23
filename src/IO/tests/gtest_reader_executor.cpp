@@ -86,9 +86,6 @@ namespace ProfileEvents
     extern const Event ReaderExecutorIncompleteConnections;
     extern const Event ReaderExecutorMachineInterrupted;
     extern const Event ReaderExecutorPartialCollects;
-    extern const Event ReaderExecutorPutScheduled;
-    extern const Event ReaderExecutorPutPoolFull;
-    extern const Event ReaderExecutorPutAbandoned;
     extern const Event ReaderExecutorBytesPromoted;
 }
 
@@ -3970,7 +3967,6 @@ TEST(ReaderExecutor, MachineCollectFillsCacheInline)
             << "machine-collected windows fill the cache inline on the read thread";
         EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesPushedToCacheAsync), 0u)
             << "the deferred (async) fill path is retired";
-        EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorPutAbandoned), 0u);
     }
     /// Cold executor destroyed: its fills already landed inline, so the page cache
     /// now holds the whole file.

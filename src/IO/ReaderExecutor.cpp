@@ -47,17 +47,11 @@ namespace ProfileEvents
     extern const Event ReaderExecutorPrefetchDiscardedRunning;
     extern const Event ReaderExecutorPrefetchDiscardWaitMicroseconds;
     extern const Event ReaderExecutorPrefetchIssuedSourceBytes;
-    extern const Event ReaderExecutorPrefetchIssuedCacheBytes;
     extern const Event ReaderExecutorPrefetchWastedSourceBytes;
-    extern const Event ReaderExecutorPrefetchWastedCacheBytes;
     extern const Event ReaderExecutorMachineInterrupted;
     extern const Event ReaderExecutorPartialCollects;
-    extern const Event ReaderExecutorPutScheduled;
-    extern const Event ReaderExecutorPutPoolFull;
-    extern const Event ReaderExecutorPutAbandoned;
     extern const Event ReaderExecutorPutFailed;
     extern const Event ReaderExecutorPutWaitMicroseconds;
-    extern const Event ReaderExecutorPromoteSkipped;
     extern const Event LongConnectionOpened;
     extern const Event LongConnectionHits;
     extern const Event LongConnectionFallbacks;
@@ -158,21 +152,14 @@ void ReaderExecutor::Stats::add(Counter c, UInt64 value)
         case PrefetchHits:              ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchHits, value); break;
         case PrefetchCancelled:         ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchCancelled, value); break;
         case PrefetchPoolFull:          ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchPoolFull, value); break;
-        case PrefetchSkippedResident:   break;  /// report-only: no ProfileEvent
         case PrefetchDiscardedRunning:  ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchDiscardedRunning, value); break;
         case PrefetchDiscardWaitMicroseconds: ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchDiscardWaitMicroseconds, value); break;
         case PrefetchIssuedSourceBytes: ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchIssuedSourceBytes, value); break;
-        case PrefetchIssuedCacheBytes:  ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchIssuedCacheBytes, value); break;
         case PrefetchWastedSourceBytes: ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchWastedSourceBytes, value); break;
-        case PrefetchWastedCacheBytes:  ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchWastedCacheBytes, value); break;
         case MachineInterrupted:        ProfileEvents::increment(ProfileEvents::ReaderExecutorMachineInterrupted, value); break;
         case PartialCollects:           ProfileEvents::increment(ProfileEvents::ReaderExecutorPartialCollects, value); break;
-        case PutScheduled:              ProfileEvents::increment(ProfileEvents::ReaderExecutorPutScheduled, value); break;
-        case PutPoolFull:               ProfileEvents::increment(ProfileEvents::ReaderExecutorPutPoolFull, value); break;
-        case PutAbandoned:              ProfileEvents::increment(ProfileEvents::ReaderExecutorPutAbandoned, value); break;
         case PutFailed:                 ProfileEvents::increment(ProfileEvents::ReaderExecutorPutFailed, value); break;
         case PutWaitMicroseconds:       ProfileEvents::increment(ProfileEvents::ReaderExecutorPutWaitMicroseconds, value); break;
-        case PromoteSkipped:            ProfileEvents::increment(ProfileEvents::ReaderExecutorPromoteSkipped, value); break;
         case LongConnectionOpened:      ProfileEvents::increment(ProfileEvents::LongConnectionOpened, value); break;
         case LongConnectionHits:        ProfileEvents::increment(ProfileEvents::LongConnectionHits, value); break;
         case LongConnectionFallbacks:   ProfileEvents::increment(ProfileEvents::LongConnectionFallbacks, value); break;
@@ -333,8 +320,8 @@ ReaderExecutor::~ReaderExecutor()
         "prefetch_wait_us={} sync_read_us={} work_us={} "
         "prefetch_hits={} prefetch_cancelled={} prefetch_pool_full={} "
         "prefetch_discarded_running={} prefetch_discard_wait_us={} "
-        "prefetch_issued_source_bytes={} prefetch_issued_cache_bytes={} "
-        "prefetch_wasted_source_bytes={} prefetch_wasted_cache_bytes={} "
+        "prefetch_issued_source_bytes={} "
+        "prefetch_wasted_source_bytes={} "
         "incomplete_connections={} over_read_bytes={}",
         stats.get(Stats::BytesFromPageCache), stats.get(Stats::BytesFromFilesystemCache), stats.get(Stats::BytesFromSource),
         stats.get(Stats::BytesPushedToCacheSync), stats.get(Stats::BytesPushedToCacheAsync),
@@ -344,8 +331,8 @@ ReaderExecutor::~ReaderExecutor()
         stats.get(Stats::PrefetchWaitMicroseconds), stats.get(Stats::SyncReadMicroseconds), stats.get(Stats::WorkMicroseconds),
         stats.get(Stats::PrefetchHits), stats.get(Stats::PrefetchCancelled), stats.get(Stats::PrefetchPoolFull),
         stats.get(Stats::PrefetchDiscardedRunning), stats.get(Stats::PrefetchDiscardWaitMicroseconds),
-        stats.get(Stats::PrefetchIssuedSourceBytes), stats.get(Stats::PrefetchIssuedCacheBytes),
-        stats.get(Stats::PrefetchWastedSourceBytes), stats.get(Stats::PrefetchWastedCacheBytes),
+        stats.get(Stats::PrefetchIssuedSourceBytes),
+        stats.get(Stats::PrefetchWastedSourceBytes),
         stats.get(Stats::IncompleteConnections), stats.get(Stats::OverReadBytes));
 
     if (reader_executor_log)
@@ -383,9 +370,7 @@ ReaderExecutor::~ReaderExecutor()
         elem.prefetch_discarded_running = stats.get(Stats::PrefetchDiscardedRunning);
         elem.prefetch_discard_wait_us = stats.get(Stats::PrefetchDiscardWaitMicroseconds);
         elem.prefetch_issued_source_bytes = stats.get(Stats::PrefetchIssuedSourceBytes);
-        elem.prefetch_issued_cache_bytes = stats.get(Stats::PrefetchIssuedCacheBytes);
         elem.prefetch_wasted_source_bytes = stats.get(Stats::PrefetchWastedSourceBytes);
-        elem.prefetch_wasted_cache_bytes = stats.get(Stats::PrefetchWastedCacheBytes);
 
         /// `SystemLogQueue::push_back` allocates and can throw; this is a `noexcept`
         /// destructor (often unwinding from another exception), so suppress and log
@@ -2942,7 +2927,6 @@ void ReaderExecutor::drainAbandonedMachines(bool wait_finished)
                 /// its stats are zero.
                 stats += m->stats;
                 stats.add(Stats::PrefetchWastedSourceBytes, m->stats.get(Stats::PrefetchIssuedSourceBytes));
-                stats.add(Stats::PrefetchWastedCacheBytes, m->stats.get(Stats::PrefetchIssuedCacheBytes));
                 /// Account the still-incomplete long connection and destroy it HERE, on
                 /// the query-attached reaping thread, so its pool reset/expire events are
                 /// attributed to this query: left to the machine's shared_ptr, the prefetch

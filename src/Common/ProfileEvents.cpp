@@ -850,18 +850,12 @@ The server successfully detected this situation and will download merged part fr
     M(ReaderExecutorPrefetchDiscardedRunning, "Number of times ReaderExecutor's cancelMachine blocked on a running read-ahead's release because the revoke lost the race; the work the worker did is wasted.", ValueType::Number) \
     M(ReaderExecutorPrefetchDiscardWaitMicroseconds, "Time blocked in ReaderExecutor's cancelMachine waiting for a running read-ahead to finish before throwing its result away.", ValueType::Microseconds) \
     M(ReaderExecutorPrefetchIssuedSourceBytes, "Bytes ReaderExecutor prefetch reads fetched from the source (a bandwidth cost), whether or not later consumed.", ValueType::Bytes) \
-    M(ReaderExecutorPrefetchIssuedCacheBytes, "Bytes ReaderExecutor prefetch reads served from cache tiers (near-free), whether or not later consumed.", ValueType::Bytes) \
     M(ReaderExecutorMachineInterrupted, "Number of times a ReaderExecutor background machine wrapped up early at an interrupt point on request (collect takeover or cancel).", ValueType::Number) \
     M(ReaderExecutorPartialCollects, "Number of ReaderExecutor collects that served a non-empty partial prefix fetched before the machine was interrupted; the remainder is read by the normal dispatch.", ValueType::Number) \
-    M(ReaderExecutorPutScheduled, "Number of deferred cache fills (put steps) ReaderExecutor scheduled on the shared pool after serving a collected window.", ValueType::Number) \
-    M(ReaderExecutorPutPoolFull, "Number of times the shared pool's queue rejected a ReaderExecutor put step at schedule; the fill parks and is rescheduled once at the next executor touch.", ValueType::Number) \
-    M(ReaderExecutorPutAbandoned, "Number of deferred ReaderExecutor cache fills dropped without writing (parked twice, over the per-executor cap, or pending at teardown); the segments stay partial and a later read re-fetches.", ValueType::Number) \
     M(ReaderExecutorPutFailed, "Number of ReaderExecutor put steps that threw; logged and abandoned, never the query's error - a read must not fail because cache population failed.", ValueType::Number) \
     M(ReaderExecutorPutWaitMicroseconds, "Time ReaderExecutor put steps spent queued on the shared pool before running.", ValueType::Microseconds) \
-    M(ReaderExecutorPromoteSkipped, "Number of ReaderExecutor tier promotions skipped under contention (target writers on loan, pool full, or over the machine cap) - purely optional work, regenerable by any later read.", ValueType::Number) \
     M(ReaderExecutorObservations, "Number of ReaderExecutor observeAndSchedule (residency-plan rebuild) invocations. A continuous read whose plan span is capped at read-until rebuilds the plan - and recreates the held cache readers - once per mark range; a high count per query means short-lived readers that cannot amortise cache-segment acquisition.", ValueType::Number) \
     M(ReaderExecutorPrefetchWastedSourceBytes, "Source bytes a running ReaderExecutor prefetch materialised into a chain that was then discarded (consumer seeked/closed away) - real wasted bandwidth. Excludes cache puts made in the same window, which persist for later reads.", ValueType::Bytes) \
-    M(ReaderExecutorPrefetchWastedCacheBytes, "Cache-tier bytes a running ReaderExecutor prefetch materialised into a chain that was then discarded - near-free, unlike wasted source bytes.", ValueType::Bytes) \
     M(LongConnectionSlotAcquired, "Number of times ReaderExecutor acquired a LongConnectionLimit slot to open a long source connection.", ValueType::Number) \
     M(LongConnectionSlotFailed, "Number of times ReaderExecutor failed to acquire a LongConnectionLimit slot (at capacity), falling back to a one-shot read.", ValueType::Number) \
     \

@@ -219,32 +219,20 @@ private:
             PrefetchHits,
             PrefetchCancelled,
             PrefetchPoolFull,
-            /// Prefetches NOT submitted (next window fully resident);
-            /// report-only, no ProfileEvent.
-            PrefetchSkippedResident,
             PrefetchDiscardedRunning,
             PrefetchDiscardWaitMicroseconds,
             PrefetchIssuedSourceBytes,
-            PrefetchIssuedCacheBytes,
             PrefetchWastedSourceBytes,
-            PrefetchWastedCacheBytes,
             /// A machine wrapped up early at an interrupt point on request.
             MachineInterrupted,
             /// Collects that served a non-empty partial prefix of an
             /// interrupted fetch.
             PartialCollects,
-            /// Deferred cache fills: scheduled / rejected by the queue /
-            /// abandoned / failed (the step threw - logged, never the
-            /// client's error).
-            PutScheduled,
-            PutPoolFull,
-            PutAbandoned,
+            /// A deferred cache fill whose put step threw - logged, never the
+            /// client's error.
             PutFailed,
             /// Time a scheduled put step spent queued before running.
             PutWaitMicroseconds,
-            /// Deferred promotes skipped (writers on loan / pool full / over
-            /// the cap): optional work, regenerable by any later read.
-            PromoteSkipped,
             /// Long source connections: opened, windows served from an open one,
             /// fallbacks to a one-shot when no slot was free, bytes served through them.
             LongConnectionOpened,
