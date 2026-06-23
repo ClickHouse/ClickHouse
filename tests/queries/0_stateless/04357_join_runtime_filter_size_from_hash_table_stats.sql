@@ -24,7 +24,7 @@ SELECT count() FROM rf_probe INNER JOIN rf_build USING (k) SETTINGS join_runtime
 -- Stats sizing OFF: filter stays at 256 bytes, saturates and disables itself.
 SELECT count() FROM rf_probe INNER JOIN rf_build USING (k) SETTINGS join_runtime_filter_size_from_hash_table_stats = 0, log_comment = 'rf_off';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 -- ON: filter active, nothing skipped -> 0
 SELECT ProfileEvents['RuntimeFilterRowsSkipped'] > 0
