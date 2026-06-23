@@ -1,7 +1,9 @@
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersMetadataStorage.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlerFromAST.h>
 
+#include <atomic>
 #include <filesystem>
+#include <mutex>
 #include <Core/Settings.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -180,17 +182,26 @@ class SQLDefinedHandlersMetadataStorage::ZooKeeperStorage : public IStorage, pro
 {
 private:
     std::string root_path;
+    /// Guards the lazy (re)creation of `zookeeper_client` in `getClient`, which can run concurrently on
+    /// the background reload task and a foreground DDL request.
+    mutable std::mutex client_mutex;
     mutable zkutil::ZooKeeperPtr zookeeper_client{nullptr};
+    /// Created once in the constructor and never reassigned, so it can be read from any thread without
+    /// synchronization (Poco::Event's own operations are thread-safe). The same event is reused as the
+    /// data-watch on the root node across reloads.
     mutable Coordination::EventPtr wait_event;
     /// Version of the root node's data. It is bumped on every create/drop/alter (see `bumpVersionRequest`),
     /// so a single data-watch on the root notifies replicas of all kinds of changes - in particular
     /// ALTER, which only changes a child's data and would not be observed by a children-list watch.
-    mutable Int32 root_version = 0;
+    /// Atomic because `list` (background reload and foreground DDL refresh) writes it while `waitUpdate`
+    /// reads it from the background task thread.
+    mutable std::atomic<Int32> root_version = 0;
 
 public:
     ZooKeeperStorage(ContextPtr context_, const std::string & path_)
         : WithContext(context_)
         , root_path(path_)
+        , wait_event(std::make_shared<Poco::Event>())
     {
         auto component_guard = Coordination::setCurrentComponent("SQLDefinedHandlersMetadataStorage::ZooKeeperStorage");
         if (root_path.empty())
@@ -214,9 +225,6 @@ public:
     bool waitUpdate(size_t timeout) override
     {
         auto component_guard = Coordination::setCurrentComponent("SQLDefinedHandlersMetadataStorage::waitUpdate");
-        if (!wait_event)
-            return true;
-
         if (wait_event->tryWait(timeout))
             return true;
 
@@ -233,9 +241,6 @@ public:
     std::vector<std::string> list() const override
     {
         auto component_guard = Coordination::setCurrentComponent("SQLDefinedHandlersMetadataStorage::list");
-        if (!wait_event)
-            wait_event = std::make_shared<Poco::Event>();
-
         /// Set a data-watch on the root node and remember its version. Every modification bumps the
         /// root version (see `bumpVersionRequest`), so this watch fires for create, drop and alter alike.
         Coordination::Stat stat;
@@ -360,6 +365,7 @@ private:
 
     zkutil::ZooKeeperPtr getClient() const
     {
+        std::lock_guard lock(client_mutex);
         if (!zookeeper_client || zookeeper_client->expired())
         {
             zookeeper_client = getContext()->getZooKeeper();
