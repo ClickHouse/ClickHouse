@@ -113,15 +113,24 @@ def _supplement_missing_profdata(master_commits: list[str]) -> None:
     for f in missing.values():
         print(f"  {f}")
 
-    BASE_URL = "https://s3.amazonaws.com/clickhouse-test-reports/REFs/master"
+    # All profdata artifacts are stored in clickhouse-builds (the build artifact
+    # bucket), not in clickhouse-test-reports (the report/log bucket). The URL
+    # pattern is identical to where the CI framework fetches them during the job.
+    BASE_URL = "https://clickhouse-builds.s3.amazonaws.com/REFs/master"
 
     for sha in master_commits:
-        # Probe the first missing file to confirm this commit has coverage artifacts.
-        first_dir, first_file = next(iter(missing.items()))
-        probe_url = f"{BASE_URL}/{sha}/{first_dir}/{first_file}"
-        check = Shell.get_output(f"wget --spider '{probe_url}' 2>&1 || true", verbose=False)
-        if "200 OK" not in check:
-            continue  # commit has no coverage artifacts
+        # Probe ALL missing files to confirm this commit has every artifact we need.
+        # Using --spider is cheap (no download) and prevents wasting time on partial
+        # commits where some files exist but others don't.
+        all_present = True
+        for artifact_dir, filename in missing.items():
+            url = f"{BASE_URL}/{sha}/{artifact_dir}/{filename}"
+            check = Shell.get_output(f"wget --spider '{url}' 2>&1 || true", verbose=False)
+            if "200 OK" not in check:
+                all_present = False
+                break
+        if not all_present:
+            continue  # not all needed files exist for this commit
 
         # All missing files must come from this same commit.
         downloaded: list[str] = []
