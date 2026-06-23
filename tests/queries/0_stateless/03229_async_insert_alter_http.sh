@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
+# no-parallel because the test uses FLUSH ASYNC INSERT QUEUE
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,7 +20,7 @@ ${CLICKHOUSE_CURL} -sS "$url" -d "INSERT INTO t_async_insert_alter VALUES (42, 2
 $CLICKHOUSE_CLIENT -q "
     ALTER TABLE t_async_insert_alter ADD COLUMN value2 Int64;
 
-    SYSTEM FLUSH ASYNC INSERT QUEUE t_async_insert_alter;
+    SYSTEM FLUSH ASYNC INSERT QUEUE;
 
     SELECT * FROM t_async_insert_alter ORDER BY id;
 "
@@ -30,7 +32,7 @@ ${CLICKHOUSE_CURL} -sS "$url" -d "INSERT INTO t_async_insert_alter VALUES (43, 3
 $CLICKHOUSE_CLIENT -q "
     ALTER TABLE t_async_insert_alter MODIFY COLUMN value2 String;
 
-    SYSTEM FLUSH ASYNC INSERT QUEUE t_async_insert_alter;
+    SYSTEM FLUSH ASYNC INSERT QUEUE;
 
     SELECT * FROM t_async_insert_alter ORDER BY id;
 "
@@ -42,11 +44,11 @@ ${CLICKHOUSE_CURL} -sS "$url" -d "INSERT INTO t_async_insert_alter VALUES ('100'
 $CLICKHOUSE_CLIENT -q "
     ALTER TABLE t_async_insert_alter DROP COLUMN value2;
 
-    SYSTEM FLUSH ASYNC INSERT QUEUE t_async_insert_alter;
+    SYSTEM FLUSH ASYNC INSERT QUEUE;
     SYSTEM FLUSH LOGS asynchronous_insert_log;
 
     SELECT * FROM t_async_insert_alter ORDER BY id;
-    SELECT query, data_kind, status FROM system.asynchronous_insert_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_async_insert_alter' ORDER BY event_time_microseconds;
+    SELECT query, data_kind, status FROM system.asynchronous_insert_log WHERE database = currentDatabase() AND table = 't_async_insert_alter' ORDER BY event_time_microseconds;
 
     DROP TABLE t_async_insert_alter;
 "

@@ -21,20 +21,9 @@ extern const int LOGICAL_ERROR;
 }
 
 ReplicatedDatabaseQueryStatusSource::ReplicatedDatabaseQueryStatusSource(
-    const String & zookeeper_name_,
-    const String & zk_node_path,
-    const String & zk_replicas_path,
-    ContextPtr context_,
-    const Strings & hosts_to_wait,
-    DDLGuardPtr && database_guard_)
+    const String & zk_node_path, const String & zk_replicas_path, ContextPtr context_, const Strings & hosts_to_wait, DDLGuardPtr && database_guard_)
     : DistributedQueryStatusSource(
-        zookeeper_name_,
-        zk_node_path,
-        zk_replicas_path,
-        std::make_shared<const Block>(getSampleBlock()),
-        context_,
-        hosts_to_wait,
-        "ReplicatedDatabaseQueryStatusSource")
+          zk_node_path, zk_replicas_path, std::make_shared<const Block>(getSampleBlock()), context_, hosts_to_wait, "ReplicatedDatabaseQueryStatusSource")
     , database_guard(std::move(database_guard_))
 {
 }
@@ -139,7 +128,7 @@ Chunk ReplicatedDatabaseQueryStatusSource::stopWaitingOfflineHosts()
 
 void ReplicatedDatabaseQueryStatusSource::handleNonZeroStatusCode(const ExecutionStatus & status, const String & host_id)
 {
-    chassert(status.code != 0);
+    assert(status.code != 0);
 
     if (!first_exception && context->getSettingsRef()[Setting::distributed_ddl_output_mode] != DistributedDDLOutputMode::NEVER_THROW)
     {

@@ -5,16 +5,15 @@ description: 'The Kafka Table Engine can be used to publish works with Apache Ka
 sidebar_label: 'Kafka'
 sidebar_position: 110
 slug: /engines/table-engines/integrations/kafka
-title: 'Kafka table engine'
-keywords: ['Kafka', 'table engine']
-doc_type: 'guide'
+title: 'Kafka'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# Kafka table engine
+# Kafka
 
-:::tip
+:::note
 If you're on ClickHouse Cloud, we recommend using [ClickPipes](/integrations/clickpipes) instead. ClickPipes natively supports private network connections, scaling ingestion and cluster resources independently, and comprehensive monitoring for streaming Kafka data into ClickHouse.
 :::
 
@@ -40,7 +39,6 @@ SETTINGS
     [kafka_sasl_mechanism = '',]
     [kafka_sasl_username = '',]
     [kafka_sasl_password = '',]
-    [kafka_autodetect_client_rack = '',]
     [kafka_schema = '',]
     [kafka_num_consumers = N,]
     [kafka_max_block_size = 0,]
@@ -50,14 +48,10 @@ SETTINGS
     [kafka_poll_timeout_ms = 0,]
     [kafka_poll_max_batch_size = 0,]
     [kafka_flush_interval_ms = 0,]
-    [kafka_consumer_reschedule_ms = 0,]
     [kafka_thread_per_consumer = 0,]
     [kafka_handle_error_mode = 'default',]
     [kafka_commit_on_select = false,]
-    [kafka_consumer_acquire_timeout_ms = 30000,]
-    [kafka_max_rows_per_message = 1,]
-    [kafka_compression_codec = '',]
-    [kafka_compression_level = -1];
+    [kafka_max_rows_per_message = 1];
 ```
 
 Required parameters:
@@ -74,7 +68,6 @@ Optional parameters:
 - `kafka_sasl_username` - SASL username for use with the `PLAIN` and `SASL-SCRAM-..` mechanisms.
 - `kafka_sasl_password` - SASL password for use with the `PLAIN` and `SASL-SCRAM-..` mechanisms.
 - `kafka_schema` — Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
-- `kafka_schema_registry_skip_bytes` — The number of bytes to skip from the beginning of each message when using schema registry with envelope headers (e.g., AWS Glue Schema Registry which includes a 19-byte envelope). Range: `[0, 255]`. Default: `0`.
 - `kafka_num_consumers` — The number of consumers per table. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition, and must not be greater than the number of physical cores on the server where ClickHouse is deployed. Default: `1`.
 - `kafka_max_block_size` — The maximum batch size (in messages) for poll. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
 - `kafka_skip_broken_messages` — Kafka message parser tolerance to schema-incompatible messages per block. If `kafka_skip_broken_messages = N` then the engine skips *N* Kafka messages that cannot be parsed (a message equals a row of data). Default: `0`.
@@ -83,25 +76,10 @@ Optional parameters:
 - `kafka_poll_timeout_ms` — Timeout for single poll from Kafka. Default: [stream_poll_timeout_ms](../../../operations/settings/settings.md#stream_poll_timeout_ms).
 - `kafka_poll_max_batch_size` — Maximum amount of messages to be polled in a single Kafka poll. Default: [max_block_size](/operations/settings/settings#max_block_size).
 - `kafka_flush_interval_ms` — Timeout for flushing data from Kafka. Default: [stream_flush_interval_ms](/operations/settings/settings#stream_flush_interval_ms).
-- `kafka_consumer_reschedule_ms` — Reschedule interval when Kafka stream processing is stalled (e.g., when no messages are available to consume). This setting controls the delay before the consumer retries polling. Must not exceed `kafka_consumers_pool_ttl_ms`. Default: `500` milliseconds.
 - `kafka_thread_per_consumer` — Provide independent thread for each consumer. When enabled, every consumer flush the data independently, in parallel (otherwise — rows from several consumers squashed to form one block). Default: `0`.
 - `kafka_handle_error_mode` — How to handle errors for Kafka engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`), dead_letter_queue (error related data will be saved in system.dead_letter_queue).
 - `kafka_commit_on_select` —  Commit messages when select query is made. Default: `false`.
-- `kafka_consumer_acquire_timeout_ms` — Timeout in milliseconds for acquiring a Kafka consumer during direct `SELECT` queries on a `Kafka2` table (with Keeper-based offset storage). When multiple concurrent direct `SELECT` queries run on the same table, each must wait for consumers to become available. The timeout prevents deadlocks when queries hold different subsets of consumers. Default: `30000`.
 - `kafka_max_rows_per_message` — The maximum number of rows written in one kafka message for row-based formats. Default : `1`.
-- `kafka_autodetect_client_rack` — Automatically sets the `client.rack` parameter for `librdkafka` to prefer the nearest Kafka replicas.
-  Supported sources:
-  `AWS_ZONE_ID` for the AWS IMDSv2 availability zone ID, for example `euc1-az1`;
-  `AWS_ZONE_NAME` for the AWS IMDSv2 availability zone name, for example `eu-central-1a`;
-  `GCP_ZONE` for the GCP metadata service zone, for example `europe-central2-a`;
-  `CLICKHOUSE` to use ClickHouse internal detection, which may rely on cloud metadata or configuration;
-  `AWS_ZONE_NAME_THEN_GCP_ZONE` to try `AWS_ZONE_NAME` and then `GCP_ZONE`.
-  Default: empty string, disabled.
-  Tip: different environments use different availability zone formats. Amazon MSK typically uses zone IDs, so prefer `AWS_ZONE_ID`. Confluent Cloud typically uses zone names, so prefer `AWS_ZONE_NAME`. If unsure, use `AWS_ZONE_NAME_THEN_GCP_ZONE` or check the `broker.rack` value on your cluster.
-  Note: Kafka brokers must be configured with `broker.rack` and `replica.selector.class=org.apache.kafka.common.replica.RackAwareReplicaSelector`.
-- `kafka_compression_codec` — Compression codec used for producing messages. Supported: empty string, `none`, `gzip`, `snappy`, `lz4`, `zstd`. In case of empty string the compression codec is not set by the table, thus values from the config files or default value from `librdkafka` will be used. Default: empty string.
-- `kafka_compression_level` — Compression level parameter for algorithm selected by kafka_compression_codec. Higher values will result in better compression at the cost of more CPU usage. Usable range is algorithm-dependent: `[0-9]` for `gzip`; `[0-12]` for `lz4`; only `0` for `snappy`; `[0-12]` for `zstd`; `-1` = codec-dependent default compression level. Default: `-1`.
-- `kafka_map_virtual_columns_on_write` — If enabled, columns with special names `_key`, `_timestamp`, `_headers.name` and `_headers.value` in the table schema are mapped to the corresponding Kafka message metadata on `INSERT` and are excluded from the message payload. See [Mapping columns to Kafka message metadata](#mapping-columns-to-kafka-message-metadata). Default: `false`.
 
 Examples:
 
@@ -143,7 +121,7 @@ Do not use this method in new projects. If possible, switch old projects to the 
 
 ```sql
 Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
-      [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_max_block_size,  kafka_skip_broken_messages, kafka_commit_every_batch, kafka_client_id, kafka_poll_timeout_ms, kafka_poll_max_batch_size, kafka_flush_interval_ms, kafka_consumer_reschedule_ms, kafka_thread_per_consumer, kafka_handle_error_mode, kafka_commit_on_select, kafka_max_rows_per_message]);
+      [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_max_block_size,  kafka_skip_broken_messages, kafka_commit_every_batch, kafka_client_id, kafka_poll_timeout_ms, kafka_poll_max_batch_size, kafka_flush_interval_ms, kafka_thread_per_consumer, kafka_handle_error_mode, kafka_commit_on_select, kafka_max_rows_per_message]);
 ```
 
 </details>
@@ -281,43 +259,6 @@ Additional virtual columns when `kafka_handle_error_mode='stream'`:
 
 Note: `_raw_message` and `_error` virtual columns are filled only in case of exception during parsing, they are always empty when message was parsed successfully.
 
-## Mapping columns to Kafka message metadata {#mapping-columns-to-kafka-message-metadata}
-
-When producing messages with `INSERT INTO`, the Kafka engine always uses a column named `_key` (of type `String`) as the Kafka message key and a column named `_timestamp` (of type `DateTime`) as the Kafka message timestamp — if those columns exist in the table. By default, these columns also appear in the produced message payload alongside the other columns.
-
-With `kafka_map_virtual_columns_on_write = 1`, the behaviour changes:
-
-- `_key` (type `String`) — mapped to the Kafka message key.
-- `_timestamp` (type `DateTime`) — mapped to the Kafka message timestamp.
-- `_headers.name` (type `Array(String)`) and `_headers.value` (type `Array(String)`) — mapped to Kafka message headers. Each pair `(_headers.name[i], _headers.value[i])` becomes one Kafka header. Because `_headers.name` and `_headers.value` share the `_headers` Nested prefix, ClickHouse requires both arrays to have the same size for every row.
-
-Columns with these names are **excluded from the message payload** only if their types match those listed above; otherwise they stay in the payload, so schemas that happen to reuse these names for unrelated data keep working.
-
-Example:
-
-```sql
-CREATE TABLE kafka_out
-(
-    event_json String,
-    `_key` String,
-    `_timestamp` DateTime,
-    `_headers.name` Array(String),
-    `_headers.value` Array(String)
-)
-ENGINE = Kafka
-SETTINGS
-    kafka_broker_list = 'broker:9092',
-    kafka_topic_list = 'events',
-    kafka_group_name = 'events-producer',
-    kafka_format = 'JSONEachRow',
-    kafka_map_virtual_columns_on_write = 1;
-
-INSERT INTO kafka_out VALUES
-    ('{"a":1}', 'session-42', now(), ['source', 'trace_id'], ['api', 'abc-123']);
-```
-
-The produced Kafka message has payload `{"event_json":"{\"a\":1}"}`, key `session-42`, the current timestamp, and two headers `source=api` and `trace_id=abc-123`.
-
 ## Data formats support {#data-formats-support}
 
 Kafka engine supports all [formats](../../../interfaces/formats.md) supported in ClickHouse.
@@ -342,6 +283,17 @@ Example:
 CREATE TABLE experimental_kafka (key UInt64, value UInt64)
 ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
 SETTINGS
+  kafka_keeper_path = '/clickhouse/{database}/experimental_kafka',
+  kafka_replica_name = 'r1'
+SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+```
+
+Or to utilize the `uuid` and `replica` macros similarly to ReplicatedMergeTree:
+
+```sql
+CREATE TABLE experimental_kafka (key UInt64, value UInt64)
+ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
+SETTINGS
   kafka_keeper_path = '/clickhouse/{database}/{uuid}',
   kafka_replica_name = '{replica}'
 SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
@@ -350,8 +302,10 @@ SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
 ### Known limitations {#known-limitations}
 
 As the new engine is experimental, it is not production ready yet. There are few known limitations of the implementation:
+- The biggest limitation is the engine doesn't support direct reading. Reading from the engine using materialized views and writing to the engine work, but direct reading doesn't. As a result, all direct `SELECT` queries will fail.
 - Rapidly dropping and recreating the table or specifying the same ClickHouse Keeper path to different engines might cause issues. As best practice you can use the `{uuid}` in `kafka_keeper_path` to avoid clashing paths.
 - To make repeatable reads, messages cannot be consumed from multiple partitions on a single thread. On the other hand, the Kafka consumers have to be polled regularly to keep them alive. As a result of these two objectives, we decided to only allow creating multiple consumers if `kafka_thread_per_consumer` is enabled, otherwise it is too complicated to avoid issues regarding polling consumers regularly.
+- Consumers created by the new storage engine do not show up in [`system.kafka_consumers`](../../../operations/system-tables/kafka_consumers.md) table.
 
 **See Also**
 

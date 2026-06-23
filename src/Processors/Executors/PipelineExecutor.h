@@ -3,15 +3,13 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Executors/ExecutorTasks.h>
 #include <Common/EventCounter.h>
-#include <Common/Logger.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ISlotControl.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 
+#include <deque>
 #include <queue>
 #include <memory>
-
-#include <boost/container/devector.hpp>
 
 
 namespace DB
@@ -91,21 +89,6 @@ private:
     std::unique_ptr<ThreadPool> pool;
     std::mutex spawn_mutex;
 
-    /// Pipeline's max thread count (captured from execute(num_threads)).
-    size_t max_pipeline_threads = 1;
-
-    /// Current setMax target. Written by initializeExecution before any worker thread exists,
-    /// then read and updated only under `spawn_mutex` from the upscaling block. Non-atomic
-    /// because all mutations are serialized by spawn_mutex and initial write happens-before
-    /// any spawned worker via the ThreadPool barrier in initializeExecution.
-    size_t desired_threads = 1;
-
-    /// Accumulates spawn_count from pushTasks calls that couldn't acquire `spawn_mutex`
-    /// (another thread was already handling the spawn). The thread that owns the mutex
-    /// drains this counter before deciding the new setMax target, so no demand is ever
-    /// silently dropped.
-    std::atomic<size_t> pending_demand{0};
-
     /// Flag that checks that initializeExecution was called.
     bool is_execution_initialized = false;
     /// system.processors_profile_log
@@ -126,7 +109,7 @@ private:
 
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new
-    using DequeWithMemoryTracker = boost::container::devector<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
+    using DequeWithMemoryTracker = std::deque<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
     using Queue = std::queue<ExecutingGraph::Node *, DequeWithMemoryTracker>;
 
     void initializeExecution(size_t num_threads, bool concurrency_control); /// Initialize executor contexts and task_queue.
@@ -140,7 +123,7 @@ private:
     void cancel(ExecutionStatus reason);
 
     // Methods for CPU scheduling
-    SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control, bool lazy_allocation);
+    SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control);
     void spawnThreads(AcquiredSlotPtr slot) TSA_REQUIRES(spawn_mutex);
 
     /// If execution_status == from, change it to desired.

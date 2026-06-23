@@ -36,12 +36,11 @@ void ExtremesStep::serialize(Serialization & ctx) const
     (void)ctx;
 }
 
-QueryPlanStepPtr ExtremesStep::deserialize(Deserialization & ctx)
+std::unique_ptr<IQueryPlanStep> ExtremesStep::deserialize(Deserialization & ctx)
 {
     return std::make_unique<ExtremesStep>(ctx.input_headers.front());
 }
 
-void registerExtremesStep(QueryPlanStepRegistry & registry);
 void registerExtremesStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Extremes", ExtremesStep::deserialize);
