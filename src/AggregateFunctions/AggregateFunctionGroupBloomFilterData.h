@@ -96,7 +96,7 @@ struct AggregateFunctionGroupBloomFilterData
 
     bool isInitialized() const { return bloom_filter != nullptr; }
 
-    void add(const char * data, size_t len)
+    void add(const char * data, size_t len) // NOLINT(readability-make-member-function-const)
     {
         if (bloom_filter)
             bloom_filter->add(data, len);
@@ -174,7 +174,7 @@ struct AggregateFunctionGroupBloomFilterData
                 "Number of hash functions {} exceeds maximum allowed {}",
                 num_hashes, BLOOM_FILTER_MAX_HASHES);
 
-        UInt8 has_data;
+        UInt8 has_data = 0;
         readBinary(has_data, buf);
         if (has_data > 1)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid Bloom filter state data flag: {}", static_cast<UInt16>(has_data));
