@@ -108,6 +108,18 @@ RUN apt-get update \
 COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
 
+# Native debugger used by clickhouse-test's `print_c_stacktraces` to dump
+# server backtraces. lldb ships in the LLVM apt repo already configured
+# above; symlink the versioned binary into /usr/bin so callers can run
+# `lldb` directly, and grant suid so non-root tests can still attach.
+# gdb is kept above for the fuzzer, perf comparison, stress, upgrade, and
+# integration-test harnesses that still drive it directly.
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends lldb-${LLVM_VERSION} \
+    && ln -sf /usr/lib/llvm-${LLVM_VERSION}/bin/lldb /usr/bin/lldb \
+    && chmod u+s /usr/lib/llvm-${LLVM_VERSION}/bin/lldb \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
 COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
   /opt/openssl-fips/openssl.cnf \
   /opt/openssl-fips/fipsmodule.cnf \
