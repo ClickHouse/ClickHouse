@@ -176,7 +176,7 @@ def main():
                 # reprepro 5.4.4+ is required for the 'Limit' field in distributions config.
                 # Ubuntu Jammy only has 5.3.0, so build from source if needed.
                 "reprepro --version 2>&1 | grep -qE '5\\.[4-9]' || ("
-                "  sudo apt-get install -y dpkg-dev libgpgme-dev libdb-dev libbz2-dev liblzma-dev libarchive-dev shunit2 db-util debhelper &&"
+                "  sudo apt-get install -y dpkg-dev fakeroot libgpgme-dev libdb-dev libbz2-dev liblzma-dev libarchive-dev shunit2 db-util debhelper &&"
                 "  git clone https://salsa.debian.org/debian/reprepro.git /tmp/reprepro-src &&"
                 "  cd /tmp/reprepro-src &&"
                 "  dpkg-buildpackage -b --no-sign &&"
