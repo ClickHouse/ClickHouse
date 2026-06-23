@@ -226,6 +226,13 @@ void NaiveBayesDictionary::loadData()
     element_count = std::visit([](const auto & model) { return model.getElementCount(); }, *model_variant);
     bytes_allocated = std::visit([](const auto & model) { return model.getAllocatedBytes(); }, *model_variant);
 
+    /// Retaining the source rows for `store_source` costs memory too, so include it in the reported
+    /// footprint instead of reporting only the model.
+    if (configuration.store_source && source_ngram_column)
+        bytes_allocated += source_ngram_column->allocatedBytes()
+            + source_class_id_column->allocatedBytes()
+            + source_count_column->allocatedBytes();
+
     LOG_INFO(log, "Loaded NaiveBayes dictionary with {} n-grams, {} bytes allocated", element_count, bytes_allocated);
 }
 
