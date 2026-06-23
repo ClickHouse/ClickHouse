@@ -32,7 +32,11 @@ struct ColumnMapping
     std::vector<String> names_of_columns;
 
     void setupByHeader(const Block & header);
-    void setupByHeaderWithInputFields(const Names & input_column_names, const Block & header);
+    void setupByHeaderWithInputFields(
+        const Names & input_column_names,
+        const CaseAwareBlockNameMap & column_indexes_by_names,
+        const Names & known_input_column_names,
+        const FormatSettings & settings);
 
     void addColumns(
         const Names & column_names, const BlockNameMap & column_indexes_by_names, const FormatSettings & settings);

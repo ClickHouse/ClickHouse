@@ -53,10 +53,14 @@ namespace
         return true;
     }
 
-    ColumnMappingPtr createColumnMappingByHeaderWithInputFields(const Names & input_column_names, const Block & header)
+    ColumnMappingPtr createColumnMappingByHeaderWithInputFields(
+        const Names & input_column_names,
+        const CaseAwareBlockNameMap & column_indexes_by_names,
+        const Names & known_input_column_names,
+        const FormatSettings & format_settings)
     {
         auto mapping = std::make_shared<ColumnMapping>();
-        mapping->setupByHeaderWithInputFields(input_column_names, header);
+        mapping->setupByHeaderWithInputFields(input_column_names, column_indexes_by_names, known_input_column_names, format_settings);
         mapping->is_set = true;
         return mapping;
     }
@@ -122,7 +126,11 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
         if (format_settings.with_names_use_header)
         {
             if (column_mapping->is_set)
-                column_mapping = createColumnMappingByHeaderWithInputFields(column_names, getPort().getHeader());
+                column_mapping = createColumnMappingByHeaderWithInputFields(
+                    column_names,
+                    column_indexes_by_names,
+                    column_mapping->names_of_columns,
+                    format_settings);
             else
                 column_mapping->addColumns(column_names, column_indexes_by_names, format_settings);
         }

@@ -99,7 +99,7 @@ namespace DB
 
     /// Create mapping from input fields to requested columns for position-based text formats.
     /// It lets parsers skip input fields which are present in the file but not requested by the query.
-    void setupColumnMappingForInputFields(ReadFromFormatInfo & info, const NamesAndTypesList & input_columns);
+    void setupColumnMappingForInputFields(ReadFromFormatInfo & info, const NamesAndTypesList & input_columns, const FormatSettings & format_settings);
 
     ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info);
 

@@ -1,6 +1,7 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Core/CaseAwareBlockNameMap.h>
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
@@ -262,10 +263,14 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
     ///  supports_tuple_elements also support empty list of columns.)
 }
 
-void setupColumnMappingForInputFields(ReadFromFormatInfo & info, const NamesAndTypesList & input_columns)
+void setupColumnMappingForInputFields(ReadFromFormatInfo & info, const NamesAndTypesList & input_columns, const FormatSettings & format_settings)
 {
+    CaseAwareBlockNameMap column_indexes_by_names(format_settings.input_format_column_matching_case_sensitivity);
+    column_indexes_by_names.initFromBlock(info.format_header);
+
     auto mapping = std::make_shared<ColumnMapping>();
-    mapping->setupByHeaderWithInputFields(input_columns.getNames(), info.format_header);
+    const auto input_column_names = input_columns.getNames();
+    mapping->setupByHeaderWithInputFields(input_column_names, column_indexes_by_names, input_column_names, format_settings);
     mapping->is_set = true;
     info.column_mapping_for_input_format = std::move(mapping);
 }
@@ -295,7 +300,21 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
     new_info.source_header = new_info.format_header;
 
     new_info.requested_virtual_columns = info.requested_virtual_columns;
-    new_info.column_mapping_for_input_format = info.column_mapping_for_input_format;
+    if (info.column_mapping_for_input_format)
+    {
+        auto mapping = std::make_shared<ColumnMapping>();
+        CaseAwareBlockNameMap column_indexes_by_names(FormatSettings::InputFormatColumnMatchingCaseSensitivity::MATCH_CASE);
+        column_indexes_by_names.initFromBlock(new_info.format_header);
+        FormatSettings format_settings;
+        format_settings.input_format_column_matching_case_sensitivity = FormatSettings::InputFormatColumnMatchingCaseSensitivity::MATCH_CASE;
+        mapping->setupByHeaderWithInputFields(
+            info.column_mapping_for_input_format->names_of_columns,
+            column_indexes_by_names,
+            info.column_mapping_for_input_format->names_of_columns,
+            format_settings);
+        mapping->is_set = true;
+        new_info.column_mapping_for_input_format = std::move(mapping);
+    }
     for (const auto & requested_virtual_column : new_info.requested_virtual_columns)
         new_info.source_header.insert({requested_virtual_column.type->createColumn(), requested_virtual_column.type, requested_virtual_column.name});
 
@@ -356,27 +375,6 @@ void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
 
     ctx.out << "\n";
 
-    writeBinary(column_mapping_for_input_format != nullptr, ctx.out);
-    if (column_mapping_for_input_format)
-    {
-        writeBinary(column_mapping_for_input_format->is_set, ctx.out);
-        writeBinary(column_mapping_for_input_format->column_indexes_for_input_fields.size(), ctx.out);
-        for (const auto & column_index : column_mapping_for_input_format->column_indexes_for_input_fields)
-        {
-            writeBinary(column_index.has_value(), ctx.out);
-            if (column_index)
-                writeBinary(*column_index, ctx.out);
-        }
-
-        writeBinary(column_mapping_for_input_format->not_presented_columns.size(), ctx.out);
-        for (const auto column_index : column_mapping_for_input_format->not_presented_columns)
-            writeBinary(column_index, ctx.out);
-
-        writeBinary(column_mapping_for_input_format->names_of_columns.size(), ctx.out);
-        for (const auto & name : column_mapping_for_input_format->names_of_columns)
-            writeStringBinary(name, ctx.out);
-    }
-
     hive_partition_columns_to_read_from_file_path.writeTextWithNamesInStorage(ctx.out);
     writeBinary(prewhere_info != nullptr, ctx.out);
     if (prewhere_info != nullptr)
@@ -415,39 +413,6 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserializati
     result.serialization_hints = SerializationInfoByName::readJSONFromString(result.columns_description.getAll(), json);
 
     ctx.in >> "\n";
-
-    bool has_column_mapping;
-    readBinary(has_column_mapping, ctx.in);
-    if (has_column_mapping)
-    {
-        result.column_mapping_for_input_format = std::make_shared<ColumnMapping>();
-        readBinary(result.column_mapping_for_input_format->is_set, ctx.in);
-
-        size_t size;
-        readBinary(size, ctx.in);
-        result.column_mapping_for_input_format->column_indexes_for_input_fields.resize(size);
-        for (auto & column_index : result.column_mapping_for_input_format->column_indexes_for_input_fields)
-        {
-            bool has_value;
-            readBinary(has_value, ctx.in);
-            if (has_value)
-            {
-                size_t value;
-                readBinary(value, ctx.in);
-                column_index = value;
-            }
-        }
-
-        readBinary(size, ctx.in);
-        result.column_mapping_for_input_format->not_presented_columns.resize(size);
-        for (auto & column_index : result.column_mapping_for_input_format->not_presented_columns)
-            readBinary(column_index, ctx.in);
-
-        readBinary(size, ctx.in);
-        result.column_mapping_for_input_format->names_of_columns.resize(size);
-        for (auto & name : result.column_mapping_for_input_format->names_of_columns)
-            readStringBinary(name, ctx.in);
-    }
 
     result.hive_partition_columns_to_read_from_file_path.readTextWithNamesInStorage(ctx.in);
     bool has_prewhere_info = false;

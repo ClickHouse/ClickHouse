@@ -1239,7 +1239,7 @@ void IStorageURLBase::read(
             ? storage_snapshot->metadata->getColumns().getAllPhysical()
             : file_columns;
         columns_in_data_file = columns_in_data_file.eraseNames(hive_partition_columns_to_read_from_file_path.getNameSet());
-        setupColumnMappingForInputFields(read_from_format_info, columns_in_data_file);
+        setupColumnMappingForInputFields(read_from_format_info, columns_in_data_file, format_settings.value_or(getFormatSettings(local_context)));
     }
 
     if (query_info.prewhere_info || query_info.row_level_filter)
@@ -1430,7 +1430,7 @@ void StorageURLWithFailover::read(
             ? storage_snapshot->metadata->getColumns().getAllPhysical()
             : file_columns;
         columns_in_data_file = columns_in_data_file.eraseNames(hive_partition_columns_to_read_from_file_path.getNameSet());
-        setupColumnMappingForInputFields(read_from_format_info, columns_in_data_file);
+        setupColumnMappingForInputFields(read_from_format_info, columns_in_data_file, format_settings.value_or(getFormatSettings(local_context)));
     }
 
     if (query_info.prewhere_info || query_info.row_level_filter)

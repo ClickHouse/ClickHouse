@@ -638,7 +638,7 @@ void StorageObjectStorageQueue::read(
         const auto & columns_in_data_file = file_columns.empty()
             ? storage_snapshot->metadata->getColumns().getAllPhysical()
             : file_columns;
-        setupColumnMappingForInputFields(read_from_format_info, columns_in_data_file);
+        setupColumnMappingForInputFields(read_from_format_info, columns_in_data_file, format_settings.value_or(getFormatSettings(local_context)));
     }
 
     auto reading = std::make_unique<ReadFromObjectStorageQueue>(
@@ -918,7 +918,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
             const auto & columns_in_data_file = file_columns.empty()
                 ? storage_snapshot->metadata->getColumns().getAllPhysical()
                 : file_columns;
-            setupColumnMappingForInputFields(read_from_format_info, columns_in_data_file);
+            setupColumnMappingForInputFields(read_from_format_info, columns_in_data_file, format_settings.value_or(getFormatSettings(queue_context)));
         }
 
         Pipes pipes;
