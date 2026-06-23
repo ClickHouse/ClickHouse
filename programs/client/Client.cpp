@@ -697,6 +697,18 @@ void Client::connect()
         boost::replace_all(prompt, "{" + key + "}", value);
 
     prompt = appendSmileyIfNeeded(prompt);
+
+    /// Sync the current database from the server after the handshake, but only when all
+    /// three conditions hold:
+    ///  - interactive: in batch mode the prompt is never displayed, so the extra
+    ///    round-trip to the server would add latency with no visible benefit;
+    ///  - no explicit --database flag: if the user passed --database, default_database
+    ///    is already set to the correct value and must not be overridden by whatever
+    ///    the server considers the current database;
+    ///  - {database} appears in the prompt string: querying the server is pointless
+    ///    when the macro is absent and the result would never be shown.
+    if (is_interactive && default_database.empty() && prompt.find("{database}") != String::npos)
+        syncDefaultDatabase();
 }
 
 // Prints changed settings to stderr. Useful for debugging fuzzing failures.
