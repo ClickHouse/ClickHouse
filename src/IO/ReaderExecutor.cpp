@@ -872,14 +872,18 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain, bool & is_plainte
 
     const ByteRange requested_phys{m->requested_range.offset + data_start_offset, m->requested_range.size};
 
+    /// Sparse fetch: the worker led only some segments (a sibling leads the rest), so `fetched`
+    /// has holes. Its led bytes are already written to cache, so REVOKE to the synchronous path
+    /// rather than assemble a possibly non-contiguous window here. The sync read re-serves the
+    /// worker's led bytes as cache hits and elects/waits on the sibling-led ones through the
+    /// proven foreground coordination - and never trips the single-contiguous-run guard (the
+    /// sparse assembly tripped it on seek / partial / multi-tier patterns). Uncontended windows
+    /// (no sibling) keep the direct collect below.
+    if (!m->sibling_led.empty())
+        return false;
+
     if (interrupted)
     {
-        /// A cancelled worker may have skipped sibling-led segments (recorded, unread): its
-        /// led bytes are already cached inline, so revoke to the sync path (it reads the cached
-        /// led as hits and coordinates the rest) rather than serve a window with holes.
-        if (!m->sibling_led.empty())
-            return false;
-
         /// An interrupted step that produced nothing degrades to the revoke path:
         /// the connection is reclaimed (above), the caller reads synchronously.
         if (m->fetched.empty())
@@ -916,8 +920,9 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain, bool & is_plainte
     /// prefix when interrupted: a late hit BEYOND the prefix would otherwise leave a
     /// disjoint island in `result` and trip the contiguity guard; those bytes stay
     /// cached and the next window serves them from the plan.
-    /// The worker leads only some segments, so `fetched` can be sparse or even empty (every
-    /// segment sibling-led); use the window start as the frontier when it wrote nothing.
+    /// Reaching here the worker led the WHOLE window (sparse fetches revoked above), so `fetched`
+    /// is one contiguous run - possibly EOF-short, or (edge case) empty; use the window start as
+    /// the frontier when it wrote nothing.
     const size_t fetched_end = m->fetched.empty() ? m->physical_window.offset : m->fetched.range().end();
     const size_t pin_frontier = std::min(m->physical_window.end(), fetched_end);
     const ByteRange slice_window = interrupted
@@ -933,35 +938,6 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain, bool & is_plainte
         /*push_to_writers=*/false, stats);
     recreditCommittedPrefixes(m->physical_window, result, covered, stats);
     serveLateHits(m->physical_window, result, covered, stats);
-
-    /// Serve the sibling-led holes the worker skipped (it wrote only its own led segments):
-    /// wait on THIS (query) thread until the sibling commits, then read from its fill. Empty
-    /// for an interrupted collect (revoked above) and with no contention.
-    for (const auto & sl : m->sibling_led)
-        for (const auto & u : covered.subtract(sl.sub))
-        {
-            ChainedBuffers c = sl.writer->waitAndReadSiblingLed(u);
-            if (!c.covers(u))
-                continue;  /// short commit; the loser-tail below fetches the remainder
-            result.append(c.extract(u));
-            covered.add(u);
-            stats.add(Stats::BytesFromFilesystemCache, u.size);
-        }
-    /// Loser-tail: a sibling that committed short of the window leaves a hole; fetch it from
-    /// the source here (re-electing, since the leader reset the downloader on its short commit).
-    if (!m->sibling_led.empty())
-    {
-        auto tail = covered.subtract(requested_phys);
-        if (!tail.empty())
-        {
-            ChainedBuffers tail_src;
-            for (const auto & t : mergeRanges(tail, min_bytes_for_seek))
-                tail_src.append(fetchGapsFromSource(t, /*from_prefetch=*/false, reached_eof,
-                    m->geometry->pressure_level, read_extent_end, &long_conn, /*stop=*/nullptr, stats));
-            assembleAndWriteBack(m->physical_window, requested_phys, tail_src, result, covered,
-                /*push_to_writers=*/true, stats);
-        }
-    }
 
     /// Decrypt-ahead: when the worker produced a plaintext copy that fully covers the
     /// served window, assemble the SERVED chain from it so the serve boundary skips
