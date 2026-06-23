@@ -6,6 +6,7 @@
 #include <DataTypes/IDataType.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionaryPipelineExecutor.h>
+#include <Dictionaries/NaiveBayesTrainer.h>
 #include <IO/ReadHelpers.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/BlockIO.h>
