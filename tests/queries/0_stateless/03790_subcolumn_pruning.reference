@@ -1,0 +1,40 @@
+direct
+1
+cte
+1
+subquery
+1
+view
+1
+view_system_table
+0
+view_multi_column_with_subcolumn
+1	x
+view_join_using_subcolumn
+test1	1	x
+no_full_tuple_direct
+1
+no_full_tuple_cte
+1
+no_full_tuple_subquery
+1
+no_full_tuple_view
+1
+join_subquery_subcolumn
+x	1
+join_map_subcolumn
+['event1','event2']	[100,200]
+multi_subcolumn_cte_has_a
+1
+multi_subcolumn_cte_has_b
+1
+multi_subcolumn_cte_no_full_tuple
+1
+multi_subcolumn_subquery_has_a
+1
+multi_subcolumn_subquery_has_b
+1
+multi_subcolumn_subquery_no_full_tuple
+1
+multi_subcolumn_union_no_error
+2
