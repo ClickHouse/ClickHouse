@@ -134,6 +134,20 @@ PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_bad_src')) LAYOUT(NAIVE_BAYES(clas
 SELECT dictGet('nb_bad', 'class_id', 'good'); -- { serverError BAD_ARGUMENTS }
 DROP DICTIONARY nb_bad;
 
+-- A single malformed n-gram is rejected even when it appears only after the first thousand rows, because
+-- every source row is validated. It is ordered last so a check that stopped after a bounded sample would
+-- never see it.
+CREATE DICTIONARY nb_bad (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(QUERY '
+  SELECT ngram, class_id, count FROM (
+    SELECT concat(''v'', toString(number)) AS ngram, toUInt32(number % 2) AS class_id, toUInt64(1) AS count, number AS ord FROM numbers(1100)
+    UNION ALL
+    SELECT ''zz two'', toUInt32(1), toUInt64(7), toUInt64(100000)
+  ) ORDER BY ord
+')) LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token')) LIFETIME(0);
+SELECT dictGet('nb_bad', 'class_id', 'v1'); -- { serverError BAD_ARGUMENTS }
+DROP DICTIONARY nb_bad;
+
 -- ---------- n-gram size out of range (does not fit in 32 bits) ----------
 
 CREATE DICTIONARY nb_bad (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
