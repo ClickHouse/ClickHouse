@@ -55,80 +55,6 @@ def _download_extra_baselines(master_commits: list[str], first_base_commit: str)
     return found
 
 
-def _count_fnf(info_path: str) -> int:
-    """Return the total number of instrumented functions (FNF: lines) in an .info file.
-
-    FNF is written once per source file section and reflects the binary's
-    instrumentation map for that file.  When two .info files were produced from
-    the same binary, their per-file FNF values match exactly.  A mismatch means
-    the files come from different binaries and must not be unioned.
-    """
-    total = 0
-    with open(info_path, encoding="utf-8", errors="replace") as f:
-        for line in f:
-            if line.startswith("FNF:"):
-                try:
-                    total += int(line[4:].strip())
-                except ValueError:
-                    pass
-    return total
-
-
-def _build_stable_master_info() -> str:
-    """Union compatible master baseline .info files into one stable baseline.
-
-    Only files whose total instrumented-function count (FNF) matches the primary
-    baseline are included. A mismatch means the extra file was produced from a
-    different binary (different commit with source changes) and unioning it would
-    corrupt coverage statistics — e.g. function sections from one binary merged
-    with line sections from another produce nonsensical percentages.
-
-    Returns the path to the merged file, or the primary baseline path if no
-    compatible extras are available.
-    """
-    primary = Path(TEMP_DIR) / "base_llvm_coverage.info"
-    candidates = [
-        Path(TEMP_DIR) / f"base_llvm_coverage_{i}.info"
-        for i in range(2, 7)
-        if (Path(TEMP_DIR) / f"base_llvm_coverage_{i}.info").exists()
-        and (Path(TEMP_DIR) / f"base_llvm_coverage_{i}.info").stat().st_size > 0
-    ]
-    if not candidates:
-        return str(primary)
-
-    primary_fnf = _count_fnf(str(primary))
-    print(f"Primary baseline FNF (total instrumented functions): {primary_fnf:,}")
-
-    compatible = []
-    for extra in candidates:
-        fnf = _count_fnf(str(extra))
-        if fnf == primary_fnf:
-            compatible.append(extra)
-            print(f"  {extra.name}: FNF={fnf:,} — compatible, including in union")
-        else:
-            print(f"  {extra.name}: FNF={fnf:,} != {primary_fnf:,} — different binary, skipping")
-
-    if not compatible:
-        print("No compatible extra baselines found — using primary only.")
-        return str(primary)
-
-    stable = Path(TEMP_DIR) / "stable_master.info"
-    inputs = [str(primary)] + [str(e) for e in compatible]
-    a_args = " ".join(f"-a '{f}'" for f in inputs)
-    rc = Shell.run(
-        f"lcov {a_args}"
-        f" --ignore-errors inconsistent,corrupt,unsupported"
-        f" -o '{stable}'",
-        verbose=True,
-    )
-    if rc == 0 and stable.exists() and stable.stat().st_size > 0:
-        print(
-            f"Built stable master baseline from {len(inputs)} compatible runs "
-            f"(union eliminates run-to-run flicker): {stable}"
-        )
-        return str(stable)
-    print("Warning: failed to build stable master baseline — falling back to primary.")
-    return str(primary)
 
 
 def get_lcov_summary(
@@ -337,11 +263,7 @@ if __name__ == "__main__":
         b_branch_hit = b_branch_total = c_branch_hit = c_branch_total = 0
 
         if _diff_ran:
-            # Baseline coverage — use the stable baseline (union of all master runs)
-            # if it has been built; otherwise fall back to the single primary.
-            # _stable_base_info is set later once extra baselines are downloaded,
-            # so we default to the primary here and the stats are recomputed below
-            # with _stable_base_info once it is available.
+            # Baseline coverage from the primary master run.
             (b_line_cov, b_line_hit, b_line_total), \
             (b_function_cov, b_func_hit, b_func_total), \
             (b_branch_cov, b_branch_hit, b_branch_total) = get_lcov_summary(
@@ -590,14 +512,11 @@ if __name__ == "__main__":
                 _first_base = master_track_commits[0] if master_track_commits else base_commit_sha
                 _download_extra_baselines(master_track_commits, _first_base)
 
-            # Build the stable master baseline (union of all downloaded master runs).
-            # This replaces the single noisy base_llvm_coverage.info for all
-            # comparisons — global stats, LBC, and newly-covered analysis.
-            # Any line covered in *any* master run is marked covered, so
-            # scheduling/timing noise cannot show as a coverage regression.
-            _stable_base_info = _build_stable_master_info() if _global_stats_available else _base_info
-            # Expose via env so the two analysis scripts can pick it up.
-            os.environ["COVERAGE_BASE_INFO"] = _stable_base_info
+            # The stable union is now computed in Python inside
+            # print_newly_covered_code.py (accumulating sets from primary + extras).
+            # We just tell it where the primary baseline is; it loads the extras
+            # itself via EXTRA_BASELINE_PATHS.
+            os.environ["COVERAGE_BASE_INFO"] = _base_info
 
             # Newly-covered analysis: only meaningful when the production binary is
             # unchanged (so 0->nonzero transitions can be attributed to the test
@@ -657,7 +576,7 @@ if __name__ == "__main__":
                     try:
                         (b_line_cov, b_line_hit, b_line_total), \
                         (b_function_cov, b_func_hit, b_func_total), \
-                        (b_branch_cov, b_branch_hit, b_branch_total) = get_lcov_summary(_stable_base_info)
+                        (b_branch_cov, b_branch_hit, b_branch_total) = get_lcov_summary(_base_info)
                         (c_line_cov, c_line_hit, c_line_total), \
                         (c_function_cov, c_func_hit, c_func_total), \
                         (c_branch_cov, c_branch_hit, c_branch_total) = get_lcov_summary(_curr_info)

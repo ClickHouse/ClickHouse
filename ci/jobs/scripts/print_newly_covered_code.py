@@ -285,6 +285,27 @@ if __name__ == "__main__":
     curr_data = _parse_info(CURR)
     print(f"  {len(curr_data)} files in current")
 
+    # Stable union sets for computing global coverage stats.
+    # We build these in Python across all available baselines (primary + extras)
+    # instead of using `lcov -a`, which corrupts FNDA execution-count records on
+    # some lcov versions (2.1+), producing 0% function coverage in the output file
+    # even though the FNH header looks correct. Pure Python set-union on the
+    # parsed data is both correct and version-independent.
+    _stable_line_cov: set[tuple[str, int]] = set()
+    _stable_line_tot: set[tuple[str, int]] = set()
+    _stable_fn_cov: set[tuple[str, str]] = set()
+    _stable_fn_tot: set[tuple[str, str]] = set()
+
+    for _rel, _v in base_data.items():
+        for _ln, _cnt in _v["lines"].items():
+            _stable_line_tot.add((_rel, _ln))
+            if _cnt > 0:
+                _stable_line_cov.add((_rel, _ln))
+        for _fn, _cnt in _v["fns"].items():
+            _stable_fn_tot.add((_rel, _fn))
+            if _cnt > 0:
+                _stable_fn_cov.add((_rel, _fn))
+
     # Cross-validation: intersect the zero-coverage sets from all available extra
     # master baselines (N-of-N). A line passes only if it is uncovered in every
     # extra baseline. Each extra baseline was built from a different master commit
@@ -350,6 +371,17 @@ if __name__ == "__main__":
             for _fn, _cnt in _v["fns"].items():
                 if _cnt == 0:
                     this_zero_fns.add((_rel, _fn))
+
+        # Accumulate this extra baseline into the stable union stats.
+        for _rel, _v in _bx.items():
+            for _ln, _cnt in _v["lines"].items():
+                _stable_line_tot.add((_rel, _ln))
+                if _cnt > 0:
+                    _stable_line_cov.add((_rel, _ln))
+            for _fn, _cnt in _v["fns"].items():
+                _stable_fn_tot.add((_rel, _fn))
+                if _cnt > 0:
+                    _stable_fn_cov.add((_rel, _fn))
         del _bx
 
         if extra_zero_lines is None:
@@ -378,11 +410,9 @@ if __name__ == "__main__":
             "adjacent master runs)."
         )
 
-    # Overall coverage delta vs master baseline, computed from the parsed
-    # tracefiles directly. These numbers may diverge from `lcov --summary` by a
-    # rounding-level amount (lcov does some extra normalisation), but the trend
-    # — improved, unchanged, or regressed — is what tests typically move by a
-    # fraction of a percentage point, so 4 decimal places below.
+    # Overall coverage delta: stable baseline (Python union of all baselines)
+    # vs current (PR run). Using the Python union avoids `lcov -a` which
+    # corrupts FNDA records on lcov 2.1+, producing wrong function percentages.
     def _totals(data: dict) -> tuple[int, int, int, int]:
         l_tot = l_hit = f_tot = f_hit = 0
         for v in data.values():
@@ -396,7 +426,11 @@ if __name__ == "__main__":
                     f_hit += 1
         return l_tot, l_hit, f_tot, f_hit
 
-    b_lt, b_lh, b_ft, b_fh = _totals(base_data)
+    # Baseline stats come from the stable Python union (primary + all extras).
+    b_lt = len(_stable_line_tot)
+    b_lh = len(_stable_line_cov)
+    b_ft = len(_stable_fn_tot)
+    b_fh = len(_stable_fn_cov)
     c_lt, c_lh, c_ft, c_fh = _totals(curr_data)
     b_lp = (100.0 * b_lh / b_lt) if b_lt else 0.0
     c_lp = (100.0 * c_lh / c_lt) if c_lt else 0.0
