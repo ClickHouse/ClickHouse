@@ -97,13 +97,11 @@ SELECT '-- MVTEncodeGeom: a self-crossing sliver clips to a small valid polygon,
 SELECT wkt(MVTEncodeGeom([[(15.403, 0.667), (15.335, 0.28), (15.398, -0.186), (15.331, 0.374), (15.403, 0.667)]]::Polygon, 2, 2, 1));
 
 SELECT '-- MVTEncodeGeom: a self-intersecting ring crossing the tile is repaired into two valid polygons (it was emitted as one self-intersecting ring)';
--- The clipped intersection coordinates are platform-dependent at the last pixel, so assert the topology: two polygons that encode through MVTEncode.
-SELECT countSubstrings(wkt(MVTEncodeGeom([[(-10.0, -5.0), (100.0, 60.0), (-10.0, 60.0), (100.0, -5.0), (-10.0, -5.0)]]::Polygon, 2, 2, 1)), ')),((') = 1
-     AND length(MVTEncode('t')(MVTEncodeGeom([[(-10.0, -5.0), (100.0, 60.0), (-10.0, 60.0), (100.0, -5.0), (-10.0, -5.0)]]::Polygon, 2, 2, 1))) > 0;
+SELECT wkt(MVTEncodeGeom([[(-10.0, -5.0), (100.0, 60.0), (-10.0, 60.0), (100.0, -5.0), (-10.0, -5.0)]]::Polygon, 2, 2, 1));
 
 SELECT '-- MVTEncodeGeom: a polygon spanning far more pixels than the tile is dropped (its pre-clip span exceeds what the integer clipper can process), at high zoom';
-SELECT MVTEncodeGeom([[(-179.0, -85.0), (179.0, -85.0), (179.0, 85.0), (-179.0, 85.0), (-179.0, -85.0)]]::Polygon, 24, 8388608, 8388608) IS NULL;
-SELECT MVTEncodeGeom([[(0.0, 0.0), (170.0, 80.0), (-170.0, 80.0), (0.0, 0.0)]]::Polygon, 24, 8388608, 8388608) IS NULL;
+SELECT wkt(MVTEncodeGeom([[(-179.0, -85.0), (179.0, -85.0), (179.0, 85.0), (-179.0, 85.0), (-179.0, -85.0)]]::Polygon, 24, 8388608, 8388608));
+SELECT wkt(MVTEncodeGeom([[(0.0, 0.0), (170.0, 80.0), (-170.0, 80.0), (0.0, 0.0)]]::Polygon, 24, 8388608, 8388608));
 
 SELECT '-- MVTEncodeGeom: the same world-spanning polygon still clips normally at a low zoom where its pixel span fits';
-SELECT MVTEncodeGeom([[(-179.0, -85.0), (179.0, -85.0), (179.0, 85.0), (-179.0, 85.0), (-179.0, -85.0)]]::Polygon, 2, 2, 2) IS NOT NULL;
+SELECT wkt(MVTEncodeGeom([[(-179.0, -85.0), (179.0, -85.0), (179.0, 85.0), (-179.0, 85.0), (-179.0, -85.0)]]::Polygon, 2, 2, 2));
