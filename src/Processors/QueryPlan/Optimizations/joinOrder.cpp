@@ -139,6 +139,9 @@ void QueryGraph::buildColumnEquivalences()
             || (rhs_it != join_kinds.end() && !isInner(rhs_it->second.second)))
             continue;
 
+        if (outer_join_conditions.contains(edge))
+            continue;
+
         column_equivalences.add(*lhs_resolved, *rhs_resolved);
 
         LOG_TRACE(&Poco::Logger::get("JoinOrderOptimizer"),
