@@ -3,7 +3,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Access/ContextAccess.h>
-#include <Common/Clusters/ClusterFactory.h>
+#include <Common/Clusters/ClusterMetadataManager.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTDropClusterCatalogQuery.h>
 
@@ -26,9 +26,9 @@ BlockIO InterpreterDropClusterCatalogQuery::execute()
     }
 
     if (is_cluster)
-        ClusterFactory::instance().dropCluster(query.name, query.if_exists);
+        ClusterMetadataManager::instance().dropCluster(query.name, query.if_exists);
     else
-        ClusterFactory::instance().dropShard(query.name, query.if_exists);
+        ClusterMetadataManager::instance().dropShard(query.name, query.if_exists);
     return {};
 }
 

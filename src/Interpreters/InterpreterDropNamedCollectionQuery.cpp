@@ -7,7 +7,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
-#include <Common/Clusters/ClusterFactory.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 
 
@@ -33,15 +32,6 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
     const auto & query = updated_query->as<const ASTDropNamedCollectionQuery &>();
 
     current_context->checkAccess(AccessType::DROP_NAMED_COLLECTION, query.collection_name);
-
-    if (auto block_reason = ClusterFactory::instance().tryGetMessageIfNamedCollectionReferencedByClusterCatalog(query.collection_name))
-    {
-        throw Exception(
-            ErrorCodes::NAMED_COLLECTION_IS_REFERENCED,
-            "Named collection `{}` cannot be dropped: {}",
-            query.collection_name,
-            *block_reason);
-    }
 
     if (!query.cluster.empty())
     {

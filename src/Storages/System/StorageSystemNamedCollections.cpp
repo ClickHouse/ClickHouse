@@ -12,7 +12,6 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnMap.h>
-#include <Common/NamedCollections/NamedCollectionReservedKeys.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 
 
@@ -68,10 +67,6 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
         size_t size = 0;
         for (const auto & key : collection->getKeys())
         {
-            /// Reserved keys (e.g. `__type__` used internally to tag replicas) are not part of the
-            /// user-visible schema — hide them here so `system.named_collections` stays clean.
-            if (isReservedNamedCollectionKey(key))
-                continue;
             key_column.insertData(key.data(), key.size());
             if (access_secrets)
                 value_column.insert(collection->get<String>(key));
@@ -83,7 +78,7 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
         offsets.push_back(offsets.back() + size);
 
         res_columns[2]->insert(magic_enum::enum_name(collection->getSourceId()));
-        res_columns[3]->insert(collection->getCreateStatement(/*show_secrets=*/access_secrets, /*hide_reserved_keys=*/true));
+        res_columns[3]->insert(collection->getCreateStatement(/*show_secrets=*/access_secrets));
     }
 }
 

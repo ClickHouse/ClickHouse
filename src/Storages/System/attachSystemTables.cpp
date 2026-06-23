@@ -16,6 +16,7 @@
 #include <Storages/System/StorageSystemCollations.h>
 #include <Storages/System/StorageSystemClusters.h>
 #include <Storages/System/StorageSystemShards.h>
+#include <Storages/System/StorageSystemEndpoints.h>
 #include <Storages/System/StorageSystemColumns.h>
 #include <Storages/System/StorageSystemCodecs.h>
 #include <Storages/System/StorageSystemCompletions.h>
@@ -268,7 +269,12 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
         context,
         system_database,
         "shards",
-        "Contains SQL `CREATE SHARD` definitions from the local catalog on disk (`ClusterFactory`), including replica named collections and which SQL clusters reference each shard.");
+        "Contains SQL `CREATE SHARD` definitions from the cluster catalog (`ClusterFactory`), including replica named collections and which SQL clusters reference each shard.");
+    attach<StorageSystemEndpoints>(
+        context,
+        system_database,
+        "endpoints",
+        "Contains SQL `CREATE ENDPOINT` definitions from the cluster metadata catalog.");
     attach<StorageSystemGraphite>(context, system_database, "graphite_retentions", "Contains information about parameters graphite_rollup which are used in tables with *GraphiteMergeTree engines.");
     attach<StorageSystemMacros>(context, system_database, "macros", "Contains a list of all macros defined in server configuration.");
     attach<StorageSystemReplicatedFetches>(context, system_database, "replicated_fetches", "Contains information about currently running background fetches.");

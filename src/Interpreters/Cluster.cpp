@@ -73,6 +73,24 @@ void concatInsertPath(std::string & insert_path, const std::string & dir_name)
         insert_path += "," + dir_name;
 }
 
+void appendShardWeight(std::vector<UInt64> & slot_to_shard, UInt32 weight, size_t shard_index)
+{
+    if (!weight)
+        return;
+
+    if (static_cast<size_t>(weight) > Cluster::MAX_TOTAL_SHARD_WEIGHT
+        || slot_to_shard.size() > Cluster::MAX_TOTAL_SHARD_WEIGHT - static_cast<size_t>(weight))
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cluster total shard weight must not exceed {}, got at least {}",
+            Cluster::MAX_TOTAL_SHARD_WEIGHT,
+            slot_to_shard.size() + static_cast<size_t>(weight));
+    }
+
+    slot_to_shard.insert(std::end(slot_to_shard), weight, shard_index);
+}
+
 }
 
 /// Implementation of Cluster::Address class
@@ -523,8 +541,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
             info.per_replica_pools = {std::move(pool)};
             info.default_database = address.default_database;
 
-            if (weight)
-                slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
+            appendShardWeight(slot_to_shard, weight, shards_info.size());
 
             shards_info.emplace_back(std::move(info));
             addresses_with_failover.emplace_back(std::move(addresses));
@@ -726,8 +743,7 @@ void Cluster::addShard(
         settings[Setting::distributed_replica_error_half_life].totalSeconds(),
         settings[Setting::distributed_replica_error_cap]);
 
-    if (weight)
-        slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
+    appendShardWeight(slot_to_shard, weight, shards_info.size());
 
     shards_info.emplace_back(
         std::move(insert_paths),
@@ -881,7 +897,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
 
                 addresses_with_failover.emplace_back(Addresses{address});
 
-                slot_to_shard.insert(std::end(slot_to_shard), info.weight, shards_info.size());
+                appendShardWeight(slot_to_shard, info.weight, shards_info.size());
                 shards_info.emplace_back(std::move(info));
             }
         };
@@ -913,8 +929,7 @@ Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector
     {
         const auto & from_shard = from.shards_info.at(index);
 
-        if (from_shard.weight)
-            slot_to_shard.insert(std::end(slot_to_shard), from_shard.weight, shards_info.size());
+        appendShardWeight(slot_to_shard, from_shard.weight, shards_info.size());
         shards_info.emplace_back(from_shard);
 
         if (!from.addresses_with_failover.empty())

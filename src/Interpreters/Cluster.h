@@ -109,6 +109,7 @@ public:
     static Poco::Timespan saturate(Poco::Timespan v, Poco::Timespan limit);
 
     using SlotToShard = std::vector<UInt64>;
+    static constexpr size_t MAX_TOTAL_SHARD_WEIGHT = 1'000'000;
 
     struct Address
     {

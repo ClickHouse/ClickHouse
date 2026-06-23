@@ -5,7 +5,7 @@
 namespace DB
 {
 
-/// `system.shards` — SQL `CREATE SHARD` definitions from the local catalog (`ClusterFactory`).
+/// `system.shards` — SQL `CREATE SHARD` definitions from `ClusterMetadataManager`.
 class StorageSystemShards final : public IStorageSystemOneBlock
 {
 public:

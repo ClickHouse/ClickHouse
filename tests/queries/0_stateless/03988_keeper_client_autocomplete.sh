@@ -155,6 +155,14 @@ token=$($CLICKHOUSE_KEEPER_CLIENT -q "ls '$path'" | grep -oF $'\'a\tb\'')
 result=$($CLICKHOUSE_KEEPER_CLIENT -q "get $path/$token")
 if [ "$result" = "tabval" ]; then echo "OK"; else echo "FAIL (token=$token result=$result)"; fi
 
+# UUID path segments containing "901e-" look like scientific notation (901e-...)
+# and must be parsed as path components, not rejected as trailing garbage.
+echo -n "uuid_path_scientific_notation_like: "
+uuid="33f9380e-7109-43b6-901e-bc9728110b28"
+$CLICKHOUSE_KEEPER_CLIENT -q "create '$path/$uuid' 'uuidval'"
+result=$($CLICKHOUSE_KEEPER_CLIENT -q "cd $path/$uuid; get ." 2>&1)
+if [ "$result" = "uuidval" ]; then echo "OK"; else echo "FAIL ($result)"; fi
+
 python3 "$CUR_DIR"/03988_keeper_client_autocomplete.python "$path"
 
 $CLICKHOUSE_KEEPER_CLIENT -q "rmr '$path'" >& /dev/null

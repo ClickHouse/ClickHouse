@@ -37,9 +37,9 @@
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
-#include <Parsers/ASTCreateReplicaQuery.h>
-#include <Parsers/ASTAlterReplicaQuery.h>
-#include <Parsers/ASTDropReplicaQuery.h>
+#include <Parsers/ASTCreateEndpointQuery.h>
+#include <Parsers/ASTAlterEndpointQuery.h>
+#include <Parsers/ASTDropEndpointQuery.h>
 #include <Parsers/ASTCreateClusterCatalogQuery.h>
 #include <Parsers/ASTAlterShardQuery.h>
 #include <Parsers/ASTDropClusterCatalogQuery.h>
@@ -272,9 +272,9 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterAlterNamedCollectionQuery";
     }
-    else if (query->as<ASTAlterReplicaQuery>())
+    else if (query->as<ASTAlterEndpointQuery>())
     {
-        interpreter_name = "InterpreterAlterReplicaQuery";
+        interpreter_name = "InterpreterAlterEndpointQuery";
     }
     else if (query->as<ASTCheckTableQuery>() || query->as<ASTCheckAllTablesQuery>() || query->as<ASTCheckDatabaseQuery>())
     {
@@ -340,9 +340,9 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterDropNamedCollectionQuery";
     }
-    else if (query->as<ASTDropReplicaQuery>())
+    else if (query->as<ASTDropEndpointQuery>())
     {
-        interpreter_name = "InterpreterDropReplicaQuery";
+        interpreter_name = "InterpreterDropEndpointQuery";
     }
     else if (query->as<ASTGrantQuery>())
     {
@@ -404,9 +404,9 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterCreateIndexQuery";
     }
-    else if (query->as<ASTCreateReplicaQuery>())
+    else if (query->as<ASTCreateEndpointQuery>())
     {
-        interpreter_name = "InterpreterCreateReplicaQuery";
+        interpreter_name = "InterpreterCreateEndpointQuery";
     }
     else if (query->as<ASTCreateClusterCatalogQuery>())
     {

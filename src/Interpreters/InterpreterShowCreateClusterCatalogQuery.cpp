@@ -3,7 +3,7 @@
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
-#include <Common/Clusters/ClusterFactory.h>
+#include <Common/Clusters/ClusterMetadataManager.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTShowCreateClusterCatalogQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -20,8 +20,8 @@ BlockIO InterpreterShowCreateClusterCatalogQuery::execute()
     getContext()->checkAccess(is_cluster ? AccessType::SHOW_CREATE_CLUSTER : AccessType::SHOW_CREATE_SHARD);
 
     String stmt = is_cluster
-        ? ClusterFactory::instance().getShowCreateCluster(query.name)
-        : ClusterFactory::instance().getShowCreateShard(query.name);
+        ? ClusterMetadataManager::instance().getShowCreateCluster(query.name)
+        : ClusterMetadataManager::instance().getShowCreateShard(query.name);
 
     MutableColumnPtr column = ColumnString::create();
     column->insert(std::move(stmt));

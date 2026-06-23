@@ -1,8 +1,10 @@
 """
-SQL catalog (`shards_catalog_storage` / `clusters_catalog_storage`) integration tests.
+SQL catalog (`clusters_catalog_storage`) integration tests.
 
-The lifecycle test is parametrized over all supported metadata backends so each path is exercised:
-`keeper`, `keeper_encrypted`, `local`, `local_encrypted` (see `ClusterCatalogMetadataBackend.cpp`).
+The lifecycle test is parametrized over each supported Keeper-backed metadata backend so
+each path is exercised: `keeper`, `keeper_encrypted` (see `ClusterCatalogMetadataBackend.cpp`).
+Cluster-catalog metadata lives on a consensus store only; there is no local backend, so a
+`CREATE CLUSTER` / `CREATE SHARD` executed on any one node is immediately visible elsewhere.
 """
 
 import pytest
@@ -10,21 +12,15 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
 
-DDL_CLUSTER = "integration_ddl_all"
-
 # One full run per backend; configs under `configs/config.d/sql_catalog_cluster_metadata_*.xml`.
 CATALOG_STORAGE_BACKENDS = (
     "keeper",
     "keeper_encrypted",
-    "local",
-    "local_encrypted",
 )
 
 METADATA_MAIN_CONFIGS = {
     "keeper": "configs/config.d/sql_catalog_cluster_metadata_keeper.xml",
     "keeper_encrypted": "configs/config.d/sql_catalog_cluster_metadata_keeper_encrypted.xml",
-    "local": "configs/config.d/sql_catalog_cluster_metadata_local.xml",
-    "local_encrypted": "configs/config.d/sql_catalog_cluster_metadata_local_encrypted.xml",
 }
 
 
@@ -34,25 +30,7 @@ def assert_query_error_contains(node, sql, *needles):
         assert n in err, (n, err)
 
 
-def broadcast_catalog_ddl(initiator, broadcast, sql, *, with_sync=True):
-    """
-    Shard and cluster catalog rows are stored either in Keeper (replicated to peers) or on local disk.
-    For local backends, the same DDL must run on every node via distributed DDL.
-
-    Match `tmp/intg_manual_local_127_19000_19002.sql` and parsers in `ParserCreateShardQuery.cpp` /
-    `ParserDropShardQuery.cpp`: for local broadcast, only `CREATE SHARD` / `CREATE CLUSTER` accept
-    trailing `SYNC` after `ON CLUSTER`. `DROP SHARD` / `DROP CLUSTER` and all `ALTER SHARD` /
-    `ALTER CLUSTER` must use `ON CLUSTER ...` without `SYNC`.
-    """
-    s = sql.strip().rstrip(";")
-    if broadcast:
-        suffix = f" ON CLUSTER {DDL_CLUSTER} SYNC" if with_sync else f" ON CLUSTER {DDL_CLUSTER}"
-        initiator.query(f"{s}{suffix}")
-    else:
-        initiator.query(sql)
-
-
-def drop_sql_catalog_topology(initiator, broadcast, names):
+def drop_sql_catalog_topology(initiator, names):
     """Best-effort teardown."""
     initiator.query(
         f"DROP TABLE IF EXISTS default.{names['workload_distr']} ON CLUSTER {names['cluster']} SYNC",
@@ -62,24 +40,9 @@ def drop_sql_catalog_topology(initiator, broadcast, names):
         f"DROP TABLE IF EXISTS default.{names['workload_local']} ON CLUSTER {names['cluster']} SYNC",
         ignore_error=True,
     )
-    broadcast_catalog_ddl(
-        initiator,
-        broadcast,
-        f"DROP CLUSTER IF EXISTS {names['cluster']}",
-        with_sync=False,
-    )
-    broadcast_catalog_ddl(
-        initiator,
-        broadcast,
-        f"DROP SHARD IF EXISTS {names['shard_extra']}",
-        with_sync=False,
-    )
-    broadcast_catalog_ddl(
-        initiator,
-        broadcast,
-        f"DROP SHARD IF EXISTS {names['shard_ha']}",
-        with_sync=False,
-    )
+    initiator.query(f"DROP CLUSTER IF EXISTS {names['cluster']}", ignore_error=True)
+    initiator.query(f"DROP SHARD IF EXISTS {names['shard_extra']}", ignore_error=True)
+    initiator.query(f"DROP SHARD IF EXISTS {names['shard_ha']}", ignore_error=True)
     initiator.query(f"DROP NAMED COLLECTION IF EXISTS {names['rep_extra']}", ignore_error=True)
     initiator.query(f"DROP NAMED COLLECTION IF EXISTS {names['rep3']}", ignore_error=True)
     initiator.query(f"DROP NAMED COLLECTION IF EXISTS {names['rep2']}", ignore_error=True)
@@ -148,7 +111,7 @@ def assert_workload_tables_on_nodes(nodes, workload_local, workload_distr):
 )
 def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
     """
-    For each shards/clusters catalog storage backend (`keeper`, `keeper_encrypted`, `local`, `local_encrypted`):
+    For each shards/clusters catalog storage backend (`keeper`, `keeper_encrypted`):
 
     1) `CREATE NAMED COLLECTION` (ZK-backed), `CREATE SHARD`, `CREATE CLUSTER`, then `Distributed` inserts and reads.
        (`CREATE REPLICA` is covered in a follow-up commit once the surface is complete.)
@@ -158,7 +121,6 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
     3) `ALTER SHARD` shard-level `MODIFY PROPERTIES` and replica endpoint change via `ALTER NAMED COLLECTION`
        (`ALTER SHARD ... MODIFY REPLICA` is not implemented yet), then verify `system.shards` / `system.clusters`.
     """
-    broadcast = catalog_storage in ("local", "local_encrypted")
     names = {
         "rep1": f"intg_{catalog_storage}_r1",
         "rep2": f"intg_{catalog_storage}_r2",
@@ -221,16 +183,13 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
             f"CREATE NAMED COLLECTION {names['rep3']} AS host = '{h3}', port = {port}, user = 'default'"
         )
 
-        broadcast_catalog_ddl(
-            ch1,
-            broadcast,
+        ch1.query(
             f"CREATE SHARD {names['shard_ha']} REPLICA {names['rep1']}, {names['rep2']} "
-            f"PROPERTIES weight = 2, internal_replication = false",
+            f"PROPERTIES weight = 2, internal_replication = false"
         )
-        broadcast_catalog_ddl(
-            ch1,
-            broadcast,
-            f"CREATE CLUSTER {names['cluster']} ({names['shard_ha']}) PROPERTIES allow_distributed_ddl_queries = true",
+        ch1.query(
+            f"CREATE CLUSTER {names['cluster']} ({names['shard_ha']}) "
+            f"PROPERTIES allow_distributed_ddl_queries = true"
         )
         # Shape: 1 shard total -> `shard_ha` with replicas [rep1(ch1), rep2(ch2)].
 
@@ -256,22 +215,16 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
         ch1.query(
             f"CREATE NAMED COLLECTION {names['rep_extra']} AS host = '{h3}', port = {port}, user = 'default'"
         )
-        broadcast_catalog_ddl(
-            ch1,
-            broadcast,
-            f"ALTER SHARD {names['shard_ha']} ADD REPLICA {names['rep_extra']}",
-            with_sync=False,
-        )
+        ch1.query(f"ALTER SHARD {names['shard_ha']} ADD REPLICA {names['rep_extra']}")
         # Shape: still 1 shard -> `shard_ha` now has 3 replicas [rep1(ch1), rep2(ch2), rep_extra(ch3)].
         rep_row = ch1.query(
             f"SELECT toString(replica_collections) FROM system.shards WHERE name = '{names['shard_ha']}' "
             f"FORMAT TabSeparated"
         ).strip()
         assert names["rep_extra"] in rep_row
-        # `ON CLUSTER` is dispatched to every host in `integration_ddl_all` (ch1–ch3). On each node,
-        # `DDLTask::tryFindHostInCluster` needs an exact `host_name` + port match for the local host in
-        # `tryGetCluster({cluster})` (see `DDLTask.cpp`). Wait until the SQL catalog is replicated everywhere;
-        # row count alone can race ahead of the host row `ch3` needs for matching.
+        # Each host watches the shared Keeper path; wait for the replicated catalog to propagate
+        # to every node before asserting `system.clusters`. Row count alone can race ahead of
+        # the host row `ch3` needs for `DDLTask::tryFindHostInCluster`.
         for node in (ch1, ch2, ch3):
             assert_eq_with_retry(
                 node,
@@ -295,12 +248,7 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
         ch1.query(f"INSERT INTO default.{names['workload_distr']} SELECT number + 1000 FROM numbers(23)")
         assert_distr_rowcount_all_nodes(nodes_all, names["workload_distr"], "23\n")
 
-        broadcast_catalog_ddl(
-            ch1,
-            broadcast,
-            f"ALTER SHARD {names['shard_ha']} DROP REPLICA {names['rep_extra']}",
-            with_sync=False,
-        )
+        ch1.query(f"ALTER SHARD {names['shard_ha']} DROP REPLICA {names['rep_extra']}")
         # Shape: still 1 shard -> back to 2 replicas [rep1(ch1), rep2(ch2)].
         rep_row = ch1.query(
             f"SELECT toString(replica_collections) FROM system.shards WHERE name = '{names['shard_ha']}' "
@@ -320,18 +268,11 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
             "46\n",
         )
 
-        broadcast_catalog_ddl(
-            ch1,
-            broadcast,
-            f"CREATE SHARD {names['shard_extra']} ({names['rep3']}) PROPERTIES weight = 1, internal_replication = false",
+        ch1.query(
+            f"CREATE SHARD {names['shard_extra']} ({names['rep3']}) PROPERTIES weight = 1, internal_replication = false"
         )
         # Shape after CREATE SHARD only: catalog has 2 shards, but cluster still references only `shard_ha`.
-        broadcast_catalog_ddl(
-            ch1,
-            broadcast,
-            f"ALTER CLUSTER {names['cluster']} ADD SHARD {names['shard_extra']}",
-            with_sync=False,
-        )
+        ch1.query(f"ALTER CLUSTER {names['cluster']} ADD SHARD {names['shard_extra']}")
         # Shape: 2 shards in cluster -> `shard_ha` (rep1, rep2) + `shard_extra` (rep3/ch3).
         assert_eq_with_retry(
             ch3,
@@ -349,12 +290,7 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
             f"SELECT count() FROM default.{names['workload_local']} FORMAT TabSeparated"
         )
 
-        broadcast_catalog_ddl(
-            ch1,
-            broadcast,
-            f"ALTER CLUSTER {names['cluster']} DROP SHARD {names['shard_extra']}",
-            with_sync=False,
-        )
+        ch1.query(f"ALTER CLUSTER {names['cluster']} DROP SHARD {names['shard_extra']}")
         # Shape: `shard_extra` removed from cluster, back to 1 shard -> `shard_ha` with replicas [rep1, rep2].
         assert_eq_with_retry(
             ch3,
@@ -381,24 +317,13 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
 
         # --- (3) Shard-level and replica-level (named collection) property changes. ---
         # Set HA shard weight to 1 so both shards can be compared under equal weights.
-        broadcast_catalog_ddl(
-            ch1,
-            broadcast,
-            f"ALTER SHARD {names['shard_ha']} MODIFY PROPERTIES (weight = 1, internal_replication = false)",
-            with_sync=False,
+        ch1.query(
+            f"ALTER SHARD {names['shard_ha']} MODIFY PROPERTIES (weight = 1, internal_replication = false)"
         )
         # Add the extra shard back to the cluster, then set its weight to 1 as well.
-        broadcast_catalog_ddl(
-            ch1,
-            broadcast,
-            f"ALTER CLUSTER {names['cluster']} ADD SHARD {names['shard_extra']}",
-            with_sync=False,
-        )
-        broadcast_catalog_ddl(
-            ch1,
-            broadcast,
-            f"ALTER SHARD {names['shard_extra']} MODIFY PROPERTIES (weight = 1, internal_replication = false)",
-            with_sync=False,
+        ch1.query(f"ALTER CLUSTER {names['cluster']} ADD SHARD {names['shard_extra']}")
+        ch1.query(
+            f"ALTER SHARD {names['shard_extra']} MODIFY PROPERTIES (weight = 1, internal_replication = false)"
         )
         assert_eq_with_retry(
             ch2,
@@ -449,11 +374,8 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
 
         # Validate `internal_replication = true` behavior on a single-shard cluster:
         # after dropping `shard_extra`, a Distributed insert should target only one replica of `shard_ha`.
-        broadcast_catalog_ddl(
-            ch1,
-            broadcast,
-            f"ALTER SHARD {names['shard_ha']} MODIFY PROPERTIES (internal_replication = true)",
-            with_sync=False,
+        ch1.query(
+            f"ALTER SHARD {names['shard_ha']} MODIFY PROPERTIES (internal_replication = true)"
         )
         assert_eq_with_retry(
             ch2,
@@ -464,12 +386,7 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
             ch1, names["cluster"], names["workload_local"], names["workload_distr"]
         )
         assert_workload_tables_on_nodes(nodes_all, names["workload_local"], names["workload_distr"])
-        broadcast_catalog_ddl(
-            ch1,
-            broadcast,
-            f"ALTER CLUSTER {names['cluster']} DROP SHARD {names['shard_extra']}",
-            with_sync=False,
-        )
+        ch1.query(f"ALTER CLUSTER {names['cluster']} DROP SHARD {names['shard_extra']}")
         assert_eq_with_retry(
             ch3,
             f"SELECT count() FROM system.clusters WHERE cluster = '{names['cluster']}' FORMAT TabSeparated",
@@ -489,11 +406,8 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
         # 1) bind cluster to `shard_ha` and write 10 rows;
         # 2) switch cluster to `shard_extra` and write 20 rows there;
         # 3) replace `shard_extra` with `shard_ha` and check reads return the original 10 rows.
-        broadcast_catalog_ddl(
-            ch1,
-            broadcast,
-            f"ALTER SHARD {names['shard_ha']} MODIFY PROPERTIES (internal_replication = false)",
-            with_sync=False,
+        ch1.query(
+            f"ALTER SHARD {names['shard_ha']} MODIFY PROPERTIES (internal_replication = false)"
         )
         recreate_workload_tables(
             ch1, names["cluster"], names["workload_local"], names["workload_distr"]
@@ -503,18 +417,8 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
         # Cluster is still `shard_ha` only here; `ADD SHARD` is below. Same as the first `17` row check.
         assert_distr_rowcount_all_nodes(nodes_ha_two, names["workload_distr"], "10\n")
 
-        broadcast_catalog_ddl(
-            ch1,
-            broadcast,
-            f"ALTER CLUSTER {names['cluster']} ADD SHARD {names['shard_extra']}",
-            with_sync=False,
-        )
-        broadcast_catalog_ddl(
-            ch1,
-            broadcast,
-            f"ALTER CLUSTER {names['cluster']} DROP SHARD {names['shard_ha']}",
-            with_sync=False,
-        )
+        ch1.query(f"ALTER CLUSTER {names['cluster']} ADD SHARD {names['shard_extra']}")
+        ch1.query(f"ALTER CLUSTER {names['cluster']} DROP SHARD {names['shard_ha']}")
         assert_eq_with_retry(
             ch3,
             f"SELECT count() FROM system.clusters WHERE cluster = '{names['cluster']}' FORMAT TabSeparated",
@@ -532,11 +436,8 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
             "20\n",
         )
 
-        broadcast_catalog_ddl(
-            ch1,
-            broadcast,
-            f"ALTER CLUSTER {names['cluster']} REPLACE {names['shard_extra']} TO {names['shard_ha']}",
-            with_sync=False,
+        ch1.query(
+            f"ALTER CLUSTER {names['cluster']} REPLACE {names['shard_extra']} TO {names['shard_ha']}"
         )
         assert_eq_with_retry(
             ch3,
@@ -556,5 +457,5 @@ def test_sql_catalog_cluster_metadata_storage_lifecycle(catalog_storage):
             "SHARD_IS_REFERENCED",
         )
     finally:
-        drop_sql_catalog_topology(ch1, broadcast, names)
+        drop_sql_catalog_topology(ch1, names)
         cluster.shutdown()

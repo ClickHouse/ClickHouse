@@ -107,6 +107,7 @@
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/Cluster.h>
 #include <Common/Clusters/ClusterFactory.h>
+#include <Common/Clusters/ClusterMetadataManager.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
@@ -991,6 +992,7 @@ struct ContextSharedPart : boost::noncopyable
             }
         }
 
+        ClusterMetadataManager::instance().shutdown();
         ClusterFactory::instance().shutdown();
 
         delete_async_insert_queue.reset();
@@ -5916,23 +5918,9 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
         }
     }
 
-<<<<<<< feature-sql-cluster-interface
     /// Actual cluster bookkeeping lives in `ClusterFactory` — it owns `clusters` / `clusters_config` /
     /// `clusters_version`. `Context` only coordinates the discovery lifecycle above and DDL-worker notification below.
     ClusterFactory::instance().applyClustersConfig(config, *settings, getMacros(), config_name, getGlobalContext());
-=======
-        /// Do not update clusters if this part of config wasn't changed.
-        /// Note: clusters_config must be checked for null separately from clusters, because
-        /// reloadClusterConfig() (called e.g. from DNSCacheUpdater on startup) can populate
-        /// shared->clusters using the fallback getConfigRef() without setting shared->clusters_config.
-        /// If setClustersConfig() then runs before the config reloader stores its ConfigurationPtr,
-        /// dereferencing shared->clusters_config would throw Poco::NullPointerException.
-        if (shared->clusters && shared->clusters_config && isSameConfiguration(*config, *shared->clusters_config, config_name))
-            return;
-
-        auto old_clusters_config = shared->clusters_config;
-        shared->clusters_config = config;
->>>>>>> master
 
     {
         SharedLockGuard lock(shared->mutex);

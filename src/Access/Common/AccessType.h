@@ -232,6 +232,7 @@ enum class AccessType : uint8_t
     M(ALTER_VIEW, "", GROUP, ALTER) /* allows to execute ALTER VIEW REFRESH, ALTER VIEW MODIFY QUERY, ALTER VIEW MODIFY REFRESH;
                                        implicitly enabled by the grant ALTER_TABLE */\
     \
+    M(ALTER_ENDPOINT, "ALTER ENDPOINT", GLOBAL, ALTER) /* allows to execute ALTER ENDPOINT */ \
     M(ALTER, "", GROUP, ALL) /* allows to execute ALTER TABLE */\
     \
     M(CREATE_DATABASE, "", DATABASE, CREATE) /* allows to execute {CREATE|ATTACH} DATABASE */\
@@ -250,6 +251,7 @@ enum class AccessType : uint8_t
     M(CREATE_RESOURCE, "", GLOBAL, CREATE) /* allows to execute CREATE RESOURCE */ \
     M(CREATE_SHARD, "CREATE SHARD", GLOBAL, CREATE) /* allows to execute CREATE SHARD */ \
     M(CREATE_CLUSTER, "CREATE CLUSTER", GLOBAL, CREATE) /* allows to execute CREATE CLUSTER */ \
+    M(CREATE_ENDPOINT, "CREATE ENDPOINT", GLOBAL, CREATE) /* allows to execute CREATE ENDPOINT */ \
     M(CREATE_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute CREATE NAMED COLLECTION */ \
     M(CREATE, "", GROUP, ALL) /* allows to execute {CREATE|ATTACH} */ \
     \
@@ -263,6 +265,7 @@ enum class AccessType : uint8_t
     M(DROP_RESOURCE, "", GLOBAL, DROP) /* allows to execute DROP RESOURCE */\
     M(DROP_SHARD, "DROP SHARD", GLOBAL, DROP) /* allows to execute DROP SHARD */\
     M(DROP_CLUSTER, "DROP CLUSTER", GLOBAL, DROP) /* allows to execute DROP CLUSTER */\
+    M(DROP_ENDPOINT, "DROP ENDPOINT", GLOBAL, DROP) /* allows to execute DROP ENDPOINT */\
     M(DROP_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute DROP NAMED COLLECTION */\
     M(DROP, "", GROUP, ALL) /* allows to execute {DROP|DETACH} */\
     \

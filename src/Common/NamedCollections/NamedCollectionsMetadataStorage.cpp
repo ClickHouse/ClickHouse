@@ -505,8 +505,7 @@ NamedCollectionsMap NamedCollectionsMetadataStorage::getAll() const
 MutableNamedCollectionPtr NamedCollectionsMetadataStorage::create(const ASTCreateNamedCollectionQuery & create_query)
 {
     auto collection_ptr = NamedCollectionFromSQL::create(create_query);
-    /// Persistence MUST round-trip reserved keys (e.g. `__type__`) — pass `hide_reserved_keys=false`.
-    writeCreateQuery(create_query.collection_name, collection_ptr->getCreateStatement(/*show_secrets=*/true, /*hide_reserved_keys=*/false));
+    writeCreateQuery(create_query.collection_name, collection_ptr->getCreateStatement(/*show_secrets=*/true));
     return collection_ptr;
 }
 
@@ -525,7 +524,7 @@ MutableNamedCollectionPtr NamedCollectionsMetadataStorage::update(const ASTAlter
     auto create_query = readCreateQuery(query.collection_name);
     auto collection_ptr = NamedCollectionFromSQL::create(create_query);
     collection_ptr->update(query);
-    writeCreateQuery(query.collection_name, collection_ptr->getCreateStatement(/*show_secrets=*/true, /*hide_reserved_keys=*/false), true);
+    writeCreateQuery(query.collection_name, collection_ptr->getCreateStatement(/*show_secrets=*/true), true);
 
     return collection_ptr;
 }

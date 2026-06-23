@@ -154,7 +154,7 @@ bool ParserAlterShardQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         query->command = AlterShardCommand::AddReplica;
         tryGetIdentifierNameInto(rep_ast, query->replica_name);
         /// `ADD REPLICA` only attaches an existing replica named collection (one created via `CREATE REPLICA`)
-        /// to the shard — it does NOT mutate the collection's own properties. Use `ALTER REPLICA name
+        /// to the shard — it does NOT mutate the endpoint's own properties. Use `ALTER ENDPOINT name
         /// PROPERTIES (...)` for that.
         String cluster_str;
         if (s_on.ignore(pos, expected))

@@ -16,7 +16,7 @@ namespace DB
 /// - Recognize the `PROPERTIES` keyword and parse a list of `name = value` pairs (optional surrounding `(...)`, commas between pairs).
 /// - That is **syntax only**: valid assignments as for `ParserSetQuery::parseNameValuePair`, no notion of “allowed keys” per replica/shard/cluster.
 ///
-/// **Not done here** (see `Common/Clusters/SQLClusterCatalogPropertyValidation.h` + interpreters)
+/// **Not done here** (see `Common/Clusters/PropertyValidation.h` + interpreters)
 /// - Which names are legal for **replica** vs **shard** vs **cluster** context.
 /// - Defaults, ranges, required fields (e.g. replica `host` / `port`), duplicates.
 ///
@@ -29,7 +29,7 @@ namespace DB
 /// *Shard* — replica lists use `REPLICA id1, id2` / `REPLICA (id1, id2)` / `shard_name(id1, id2)` after `CREATE SHARD`; per-shard options in `PROPERTIES`:
 /// `weight` (default 1), `internal_replication` (default false).
 ///
-/// *Cluster* — `CREATE CLUSTER ... PROPERTIES` (see `SQLClusterCatalogPropertyValidation.h`):
+/// *Cluster* — `CREATE CLUSTER ... PROPERTIES` (see `PropertyValidation.h`):
 /// `secret` (optional string), `allow_distributed_ddl_queries` (default true). Membership is the `(shard, ...)` list, not replica keys.
 
 /// Parse comma-separated `name = value` after `PROPERTIES`, with optional wrapping `(...)`. Syntax only.
