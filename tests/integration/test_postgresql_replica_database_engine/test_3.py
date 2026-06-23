@@ -1007,6 +1007,68 @@ def test_two_schemas_same_table_name_single_storage(started_cluster):
     instance.query("DROP TABLE ct_cs2 SYNC")
 
 
+def test_default_schema_preserves_legacy_identity(started_cluster):
+    # A standalone MaterializedPostgreSQL table that targets PostgreSQL's default schema must keep the
+    # legacy, schema-unaware publication and default replication-slot names `<postgres_database>_<table>_*`,
+    # even when the schema is given explicitly as `materialized_postgresql_schema = 'public'`. Otherwise
+    # the generated default object names would change for tables created before the identity became
+    # schema-aware, so their `ATTACH` would look for a slot/publication that does not exist, run an
+    # initial sync, and reload a snapshot into the already-existing nested table (duplicating data).
+    cursor = pg_manager.get_db_cursor()
+    table = "ds_table"
+    clickhouse_postgres_db = "postgres_database_default_schema_table"
+
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=clickhouse_postgres_db,
+        postgres_database="postgres_database",
+    )
+    create_postgres_table(cursor, table)
+
+    instance.query(
+        f"INSERT INTO {clickhouse_postgres_db}.{table} SELECT number, number from numbers(0, 50)"
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = 'public'
+        """
+    )
+
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=clickhouse_postgres_db,
+        materialized_database="default",
+    )
+    assert 50 == int(instance.query(f"SELECT count() FROM {table}"))
+
+    # The explicit-default `public` schema must NOT change the generated default object names: the
+    # publication and replication slot must be the legacy schema-unaware `postgres_database_<table>_*`,
+    # not the schema-aware `postgres_database_public_<table>_*`.
+    legacy_slot = f"postgres_database_{table}_ch_replication_slot"
+    schema_aware_slot = f"postgres_database_public_{table}_ch_replication_slot"
+    cursor.execute("SELECT slot_name FROM pg_replication_slots")
+    slots = {row[0] for row in cursor.fetchall()}
+    assert legacy_slot in slots, f"expected legacy slot {legacy_slot}, got {slots}"
+    assert schema_aware_slot not in slots
+
+    legacy_publication = f"postgres_database_{table}_ch_publication"
+    schema_aware_publication = f"postgres_database_public_{table}_ch_publication"
+    cursor.execute("SELECT pubname FROM pg_publication")
+    publications = {row[0] for row in cursor.fetchall()}
+    assert legacy_publication in publications, (
+        f"expected legacy publication {legacy_publication}, got {publications}"
+    )
+    assert schema_aware_publication not in publications
+
+    instance.query(f"DROP TABLE {table} SYNC")
+
+
 def test_numeric_to_int256(started_cluster):
     # https://github.com/ClickHouse/ClickHouse/issues/59224
     # PostgreSQL numeric with precision wider than Decimal256 can hold (76 digits) and scale 0

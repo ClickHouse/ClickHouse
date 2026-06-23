@@ -95,6 +95,19 @@ namespace
     /// There can be several replication slots per publication, but one publication per table/database replication.
     /// Replication slot might be unique (contain uuid) to allow have multiple replicas for the same PostgreSQL table/database.
 
+    /// A standalone MaterializedPostgreSQL table that targets PostgreSQL's default schema — either
+    /// implicitly (the `materialized_postgresql_schema` setting is left empty) or explicitly (set to
+    /// `public`) — must keep the legacy, schema-unaware publication and default replication-slot names,
+    /// derived from the database and the bare table name only. Only a genuinely non-default schema is
+    /// included in the generated name. Otherwise the generated default object names would change for
+    /// tables created before the identity became schema-aware, and their `ATTACH` would look for a
+    /// slot/publication that does not exist, run an initial sync, and reload a snapshot into the
+    /// already-existing nested table (duplicating data).
+    bool isDefaultPostgreSQLSchema(const String & postgres_schema)
+    {
+        return postgres_schema.empty() || postgres_schema == "public";
+    }
+
     String getPublicationName(const String & postgres_database, const String & postgres_schema, const String & postgres_table)
     {
         /// The publication name preserves the case of the database/table name. It is created via
@@ -108,7 +121,7 @@ namespace
         if (postgres_table.empty())
             /// MaterializedPostgreSQL database engine: one publication per database.
             name = postgres_database;
-        else if (postgres_schema.empty())
+        else if (isDefaultPostgreSQLSchema(postgres_schema))
             name = fmt::format("{}_{}", postgres_database, postgres_table);
         else
             /// Single-table MaterializedPostgreSQL engine with a non-default schema: include the schema
@@ -161,7 +174,7 @@ namespace
             else if (postgres_table.empty())
                 /// MaterializedPostgreSQL database engine.
                 slot_name = postgres_database;
-            else if (postgres_schema.empty())
+            else if (isDefaultPostgreSQLSchema(postgres_schema))
                 slot_name = fmt::format("{}_{}_ch_replication_slot", postgres_database, postgres_table);
             else
                 /// Include the schema for the same reason as in getPublicationName(): otherwise two
