@@ -20,6 +20,8 @@ namespace DB
 class Context;
 class ASTSelectWithUnionQuery;
 
+bool hasShardSideResolvedTableFunctionArguments(const ASTPtr & table_function_ast, ContextPtr context);
+
 /** Interface for table functions.
   *
   * Table functions are not relevant to other functions.

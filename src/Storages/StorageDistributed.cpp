@@ -85,6 +85,7 @@
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 
+#include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <Storages/buildQueryTreeForShard.h>
@@ -891,7 +892,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
         const auto table_function = TableFunctionFactory::instance().tryGet(table_function_node->getTableFunctionName(), query_context);
 
-        if (table_function && table_function->hasShardSideResolvedQueryArguments())
+        if (hasShardSideResolvedTableFunctionArguments(remote_table_function, query_context))
         {
             auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
             auto column_names_and_types = distributed_storage_snapshot->getColumns(get_column_options);
@@ -1103,7 +1104,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
         if (table_function_ast)
             src_table_function = TableFunctionFactory::instance().tryGet(table_function_ast->name, local_context);
 
-        if (src_table_function && src_table_function->supportsInitiatorSideDistributedRewrite())
+        if (src_table_function && src_table_function->supportsInitiatorSideDistributedRewrite()
+            && !hasShardSideResolvedTableFunctionArguments(src_distributed.remote_table_function_ptr, local_context))
         {
             src_table_function->parseArguments(src_distributed.remote_table_function_ptr, local_context);
             select_query = src_table_function->getSelectQueryForDistributedRewrite();

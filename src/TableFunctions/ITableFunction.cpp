@@ -6,6 +6,7 @@
 #include <Common/ProfileEvents.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTFunction.h>
 
 
 namespace ProfileEvents
@@ -20,6 +21,48 @@ namespace ErrorCodes
 
 namespace DB
 {
+namespace
+{
+
+bool containsArgumentIndex(const VectorWithMemoryTracking<size_t> & argument_indexes, size_t argument_index)
+{
+    for (const auto index : argument_indexes)
+    {
+        if (index == argument_index)
+            return true;
+    }
+
+    return false;
+}
+
+}
+
+bool hasShardSideResolvedTableFunctionArguments(const ASTPtr & table_function_ast, ContextPtr context)
+{
+    const auto * function = table_function_ast ? table_function_ast->as<ASTFunction>() : nullptr;
+    if (!function)
+        return false;
+
+    auto table_function = TableFunctionFactory::instance().tryGet(function->name, context);
+    if (!table_function)
+        return false;
+
+    if (table_function->hasShardSideResolvedQueryArguments())
+        return true;
+
+    if (!function->arguments)
+        return false;
+
+    auto table_expression_argument_indexes = table_function->getTableExpressionArgumentIndexes(table_function_ast, context);
+    for (size_t argument_index = 0; argument_index != function->arguments->children.size(); ++argument_index)
+    {
+        if (containsArgumentIndex(table_expression_argument_indexes, argument_index)
+            && hasShardSideResolvedTableFunctionArguments(function->arguments->children[argument_index], context))
+            return true;
+    }
+
+    return false;
+}
 
 const char * ITableFunction::getNonClusteredStorageEngineName() const
 {

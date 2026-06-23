@@ -52,6 +52,36 @@ def test_remote_eval_resolves_constant_query_on_remote_with_serialized_plan():
     )
 
 
+def test_remote_loop_eval_resolves_constant_query_on_remote():
+    assert (
+        initiator.query(
+            """
+            SELECT *
+            FROM remote('remote', loop(eval('SELECT x FROM remote_only_eval_table')))
+            LIMIT 1
+            SETTINGS allow_experimental_eval_table_function = 1, enable_analyzer = 1
+            """
+        )
+        == "42\n"
+    )
+
+
+def test_remote_loop_eval_resolves_constant_query_on_remote_with_serialized_plan():
+    assert (
+        initiator.query(
+            """
+            SELECT *
+            FROM remote('remote', loop(eval('SELECT x FROM remote_only_eval_table')))
+            LIMIT 1
+            SETTINGS allow_experimental_eval_table_function = 1,
+                enable_analyzer = 1,
+                serialize_query_plan = 1
+            """
+        )
+        == "42\n"
+    )
+
+
 def test_remote_view_resolves_query_on_remote_with_serialized_plan():
     assert (
         initiator.query(

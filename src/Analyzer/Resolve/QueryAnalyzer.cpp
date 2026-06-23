@@ -58,6 +58,7 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/convertFieldToType.h>
+#include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageView.h>
@@ -4520,7 +4521,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 auto table_function_node_to_resolve_typed = std::make_shared<TableFunctionNode>(table_function_argument_function_name);
                 table_function_node_to_resolve_typed->getArgumentsNode() = table_function_argument_function->getArgumentsNode();
 
-                QueryTreeNodePtr table_function_node_to_resolve = std::move(table_function_node_to_resolve_typed);
+                QueryTreeNodePtr table_function_node_to_resolve = table_function_node_to_resolve_typed;
                 if (table_function_argument_function_name == "eval")
                 {
                     auto & eval_arguments = table_function_node_to_resolve->as<TableFunctionNode &>().getArguments().getNodes();
@@ -4544,7 +4545,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     /// before the query is sent to the remote server.
                     skip_analysis_arguments_indexes.push_back(table_function_argument_index);
                 }
-                else if (nested_table_function_ptr->hasShardSideResolvedQueryArguments()
+                else if (hasShardSideResolvedTableFunctionArguments(table_function_node_to_resolve_typed->toAST(), scope_context)
                     || (table_function_argument_function_name == "merge"
                         && (table_function_name == "remote" || table_function_name == "remoteSecure"
                             || table_function_name == "cluster" || table_function_name == "clusterAllReplicas")))

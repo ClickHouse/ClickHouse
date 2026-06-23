@@ -15,6 +15,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
+#include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <Common/Exception.h>
@@ -64,8 +65,7 @@ static bool shouldSendASTForTableFunctionSource(const ASTPtr & table_func_ptr, C
     if (!function)
         return false;
 
-    const auto table_function = TableFunctionFactory::instance().tryGet(function->name, context);
-    return table_function && table_function->hasShardSideResolvedQueryArguments();
+    return hasShardSideResolvedTableFunctionArguments(table_func_ptr, context);
 }
 
 /// select query has database, table and table function names as AST pointers
