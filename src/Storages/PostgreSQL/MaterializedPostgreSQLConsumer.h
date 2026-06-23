@@ -7,6 +7,7 @@
 #include <Storages/IStorage.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 
 namespace DB
@@ -40,6 +41,7 @@ private:
         using ArrayInfo = std::unordered_map<size_t, PostgreSQLArrayInfo>;
 
         const StoragePtr storage;
+        const StorageMetadataHandle metadata_snapshot;
         const ExternalResultDescription table_description;
         const PostgreSQLTableStructure::Attributes columns_attributes;
         const Names column_names;
