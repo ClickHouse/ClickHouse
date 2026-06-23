@@ -10,6 +10,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitors.h>
 #include <Common/MemoryTrackerUtils.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
@@ -97,6 +98,7 @@ namespace ProfileEvents
 {
     extern const Event SelectQueriesWithSubqueries;
     extern const Event QueriesWithSubqueries;
+    extern const Event QueryPlanBuildMicroseconds;
 }
 
 namespace DB
@@ -1925,6 +1927,8 @@ void Planner::buildQueryPlanIfNeeded()
 {
     if (query_plan.isInitialized())
         return;
+
+    ProfileEventTimeIncrement<Microseconds> plan_build_time_watch(ProfileEvents::QueryPlanBuildMicroseconds);
 
     LOG_TRACE(
         log,

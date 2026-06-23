@@ -1,4 +1,6 @@
 #include <Columns/ColumnConst.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/ProfileEvents.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -36,6 +38,13 @@
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
+
+namespace ProfileEvents
+{
+    extern const Event QueryAnalysisMicroseconds;
+    extern const Event QueryPlanBuildMicroseconds;
+    extern const Event QueryPipelineBuildMicroseconds;
+}
 
 namespace DB
 {
@@ -241,6 +250,8 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     const ContextPtr & context,
     const StoragePtr & storage)
 {
+    ProfileEventTimeIncrement<Microseconds> analysis_time_watch(ProfileEvents::QueryAnalysisMicroseconds);
+
     auto query_tree = buildQueryTree(query, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
@@ -396,6 +407,7 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 
     query_plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
+    ProfileEventTimeIncrement<Microseconds> pipeline_build_time_watch(ProfileEvents::QueryPipelineBuildMicroseconds);
     return std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings));
 }
 
