@@ -231,7 +231,10 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         sample_size_ratio = table_expression_modifiers.getSampleSizeRatio();
         sample_offset_ratio = table_expression_modifiers.getSampleOffsetRatio();
     }
-    else
+    /// On the analyzer path SAMPLE is carried by `table_expression_modifiers`; their absence means no
+    /// SAMPLE. Read it from the AST only on the legacy path (no `query_tree`) to avoid materializing the
+    /// lazy AST; on the analyzer path the sample ratios stay unset (no sampling).
+    else if (!select_query_info.query_tree)
     {
         auto & select = select_query_info.getQuery()->as<ASTSelectQuery &>();
 

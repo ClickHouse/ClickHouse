@@ -3129,6 +3129,11 @@ bool ReadFromMergeTree::isQueryWithSampling() const
     if (query_info.table_expression_modifiers)
         return query_info.table_expression_modifiers->getSampleSizeRatio() != std::nullopt;
 
+    /// On the analyzer path SAMPLE is carried by table_expression_modifiers; absence means no sampling.
+    /// Avoid materializing the lazy AST; only the legacy path (no query_tree) encodes SAMPLE in the AST.
+    if (query_info.query_tree)
+        return false;
+
     const auto & select = query_info.getQuery()->as<ASTSelectQuery &>();
     return select.sampleSize() != nullptr;
 }
