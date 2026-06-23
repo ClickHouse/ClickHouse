@@ -104,9 +104,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
     switch (type)
     {
         case HashJoin::Type::EMPTY:
-            [[fallthrough]];
-        case HashJoin::Type::CROSS:
-            /// Do nothing. We will only save block, and it is enough
+            /// Do nothing.
             is_inserted = true;
             break;
 
@@ -361,8 +359,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::switchJoinRightColumns(
             APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
 
-        default:
-            throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys (type: {})", type);
     }
 }
 

@@ -22,6 +22,7 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ConcurrentHashJoin.h>
+#include <Interpreters/CrossJoin.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionActions.h>
@@ -1016,6 +1017,9 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 {
     if (analyzed_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(analyzed_join, right_sample_block);
+
+    if (isCrossOrComma(analyzed_join->kind()))
+        return std::make_shared<CrossJoin>(analyzed_join, right_sample_block);
 
     if (algorithm == JoinAlgorithm::DIRECT || algorithm == JoinAlgorithm::DEFAULT)
     {
