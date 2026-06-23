@@ -21,6 +21,20 @@
                 <table>default.prometheus_http</table>
             </handler>
         </rule>
+        <!-- Deferred-table handlers: no <table> element, so the target TimeSeries table is taken
+             from the X-ClickHouse-Database / X-ClickHouse-Table headers (or ?database=&table=). -->
+        <rule>
+            <url>/prometheus_deferred/api/v1/write</url>
+            <handler>
+                <type>prometheus_write</type>
+            </handler>
+        </rule>
+        <rule>
+            <url>/prometheus_deferred/api/v1/read</url>
+            <handler>
+                <type>prometheus_read</type>
+            </handler>
+        </rule>
         <defaults/>
     </http_handlers>
 </clickhouse>
