@@ -164,23 +164,33 @@ For each version flagged `MISSING` in step 3, dispatch `CreateRelease` with
 `Use workflow from branch: master`, `type: patch`.
 
 ⚠️ **Use a CI-green commit SHA, not the bare branch name.** `AutoReleaseInfo` does not
-release branch head — it walks back from head (up to
-`MAX_NUMBER_OF_COMMITS_TO_CONSIDER_FOR_RELEASE = 8` commits) and picks the most recent
-commit whose CI **completed with no failed statuses**, then passes that SHA to
-`create_release.yml`. Passing the branch name tags head, which may be a commit the
-automatic pipeline would have skipped (head green-built but later checks failed).
-So pick the same green commit and pass its SHA as `ref`:
+release branch head — it derives candidates as `git rev-list --first-parent <latest-tag>..origin/<branch>`,
+drops the oldest (version-bump) commit, and among the newest
+`MAX_NUMBER_OF_COMMITS_TO_CONSIDER_FOR_RELEASE = 8` picks the most recent whose CI
+**completed with no failed statuses**, then passes that SHA to `create_release.yml`.
+Reproduce that exactly — and use **first-parent** `git rev-list`, *not* the GitHub
+`commits?sha=` API: that API returns every reachable commit (side commits off the
+first-parent chain), so it can pick a SHA `AutoReleaseInfo` would never consider and
+release from a tree missing other already-merged backports. Run this from a checkout
+whose `origin` is `ClickHouse/ClickHouse`:
 
 ```bash
 BR=<release-branch>   # e.g. 25.8
-# Walk the last 8 first-parent commits; the first all-green one is the release candidate.
-for sha in $(command gh api "repos/ClickHouse/ClickHouse/commits?sha=$BR&per_page=8" --jq '.[].sha'); do
-  state="$(command gh api "repos/ClickHouse/ClickHouse/commits/$sha/status" --jq '.state')"   # success|failure|pending
-  echo "$sha $state"
-  [[ "$state" == "success" ]] && { CANDIDATE="$sha"; break; }
+git fetch -q origin "$BR" --tags                         # need branch + tags locally
+TAG=$(git tag --list "v$BR.*" --sort=-v:refname | head -1)
+CANDIDATE=""
+# first-parent since the tag, drop the oldest (version-bump) commit, newest 8 only.
+for sha in $(git rev-list --first-parent "$TAG..FETCH_HEAD" | sed '$d' | head -8); do
+  state=$(command gh api "repos/ClickHouse/ClickHouse/commits/$sha/status" --jq '.state')  # success|failure|pending
+  echo "${sha:0:12} $state"
+  [ "$state" = success ] && { CANDIDATE=$sha; break; }
 done
-echo "release candidate: ${CANDIDATE:?no green commit in last 8 — investigate, do not release head}"
+echo "release candidate: ${CANDIDATE:?no CI-green commit in the first 8 first-parent commits — investigate; do not release branch head}"
 ```
+
+(The combined `status.state` is a quick proxy; before dispatching, confirm the commit
+is genuinely all-green — workflows completed, no failed checks — as `AutoReleaseInfo`
+requires.)
 
 After explicit confirmation, dispatch with that SHA (the official runbook also accepts
 a commit SHA in the `Git reference` field, e.g. when a prior run failed with a missing
