@@ -85,6 +85,14 @@ SELECT dictGet('nb_bad', 'class_id', 'good'); -- { serverError RECEIVED_EMPTY_DA
 DROP DICTIONARY nb_bad;
 DROP TABLE nb_empty_src;
 
+-- ---------- Configured n does not match the source n-grams ----------
+
+-- nb_bad_src holds unigrams, so loading them as bigrams is rejected.
+CREATE DICTIONARY nb_bad (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_bad_src')) LAYOUT(NAIVE_BAYES(n 2 mode 'token')) LIFETIME(0);
+SELECT dictGet('nb_bad', 'class_id', 'good'); -- { serverError BAD_ARGUMENTS }
+DROP DICTIONARY nb_bad;
+
 -- ---------- Valid models (baseline + alternative unsigned types) ----------
 
 SELECT 'valid UInt32/UInt64';
@@ -104,5 +112,16 @@ CREATE DICTIONARY nb_ok (ngram String, class_id UInt64 DEFAULT 0, count UInt64 D
 PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_bad_src')) LAYOUT(NAIVE_BAYES(n 1 mode 'token')) LIFETIME(0);
 SELECT naiveBayesClassifier('nb_ok', 'good great'), naiveBayesClassifier('nb_ok', 'bad awful');
 DROP DICTIONARY nb_ok;
+
+-- A model whose source n-grams are bigrams loads and classifies under n 2.
+SELECT 'valid n=2 bigram model';
+DROP TABLE IF EXISTS nb_bigram_src;
+CREATE TABLE nb_bigram_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO nb_bigram_src VALUES (0, 'very good', 10), (0, 'really great', 8), (1, 'very bad', 10), (1, 'really awful', 6);
+CREATE DICTIONARY nb_ok (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_bigram_src')) LAYOUT(NAIVE_BAYES(n 2 mode 'token')) LIFETIME(0);
+SELECT naiveBayesClassifier('nb_ok', 'very good really great'), naiveBayesClassifier('nb_ok', 'very bad really awful');
+DROP DICTIONARY nb_ok;
+DROP TABLE nb_bigram_src;
 
 DROP TABLE nb_bad_src;
