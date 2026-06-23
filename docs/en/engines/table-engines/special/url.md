@@ -12,7 +12,7 @@ Queries data to/from a remote HTTP/HTTPS server. This engine is similar to the [
 
 Syntax: `URL(URL [,Format] [,CompressionMethod])`
 
-- The `URL` parameter must conform to the structure of a Uniform Resource Locator. The specified URL must point to a server that uses HTTP or HTTPS. This does not require any additional headers for getting a response from the server.
+- The `URL` parameter must conform to the structure of a Uniform Resource Locator. For an `http`/`https` URL (the default backend), it must point to a server that uses HTTP or HTTPS, and getting a response from the server does not require any additional headers. A URL with a recognized non-HTTP scheme (`file://`, `s3://`, `az://`, `hdfs://`, …) is instead delegated to the matching engine — see [Dispatching by URL scheme](#scheme-dispatch) below.
 
 - The `Format` must be one that ClickHouse can use in `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see [Formats](/interfaces/formats#formats-overview).
 
