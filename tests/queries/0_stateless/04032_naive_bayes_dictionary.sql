@@ -311,6 +311,30 @@ SELECT naiveBayesClassifier('nb_stored_model', 'alpha beta');
 DROP DICTIONARY IF EXISTS nb_stored_model;
 DROP TABLE IF EXISTS nb_stored_source;
 
+-- store_source reads columns back correctly when class_attribute names a non-first attribute.
+DROP DICTIONARY IF EXISTS nb_stored_reordered;
+DROP TABLE IF EXISTS nb_stored_reordered_source;
+
+CREATE TABLE nb_stored_reordered_source (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO nb_stored_reordered_source VALUES (0, 'alpha', 3), (1, 'gamma', 4);
+
+CREATE DICTIONARY nb_stored_reordered
+(
+    ngram String,
+    count UInt64 DEFAULT 0,
+    class_id UInt32 DEFAULT 0
+)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'nb_stored_reordered_source'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' store_source 1))
+LIFETIME(0);
+
+SELECT 'Read training rows with class_id as the second attribute';
+SELECT ngram, count, class_id FROM nb_stored_reordered ORDER BY ngram;
+
+DROP DICTIONARY IF EXISTS nb_stored_reordered;
+DROP TABLE IF EXISTS nb_stored_reordered_source;
+
 
 DROP DICTIONARY IF EXISTS nb_token_model;
 DROP DICTIONARY IF EXISTS nb_byte_model;

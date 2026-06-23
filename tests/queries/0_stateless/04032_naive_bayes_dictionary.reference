@@ -99,3 +99,6 @@ beta	0	2
 gamma	1	4
 Still classifies
 0
+Read training rows with class_id as the second attribute
+alpha	3	0
+gamma	4	1
