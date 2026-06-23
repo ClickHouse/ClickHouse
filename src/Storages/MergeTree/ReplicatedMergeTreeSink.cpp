@@ -659,8 +659,10 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     }
     catch (...)
     {
-        auto counters_snapshot = thread_group->getProfileCountersSnapshot();
         try_rollback_part_rename();
+        /// Snapshot the counters after the rollback, so the elapsed time and the profile counters
+        /// cover the same operation window (the success path above also snapshots after its work).
+        auto counters_snapshot = thread_group->getProfileCountersSnapshot();
         PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, thread_group->getGroupElapsedNs(), counters_snapshot), deduplication_ids, ExecutionStatus::fromCurrentException("", true));
         throw;
     }
