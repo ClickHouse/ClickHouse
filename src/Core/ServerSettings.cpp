@@ -2172,8 +2172,8 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
     /// These are user-defined section names that must not be rejected by this check:
     ///   (a) handler section names referenced by `<protocols><X><handlers>NAME</handlers></X></protocols>`
     ///       (see `handlers_config_key` in `Server.cpp`);
-    ///   (b) sections referenced via `config://<key>` in handler `response_content` / `response_expression`
-    ///       (see `StaticRequestHandler`).
+    ///   (b) the top-level key referenced via `config://<key>` in a static handler's
+    ///       `response_content` (see `StaticRequestHandler`).
     std::unordered_set<String> referenced_keys;
 
     /// (a) Handler sections referenced by `<protocols>...<handlers>NAME</handlers>...</protocols>`.
@@ -2201,6 +2201,13 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
     /// (b) Top-level keys referenced by `config://` inside HTTP handler sections.
     /// Scan both the legacy `http_handlers*` sections and any custom handler section
     /// referenced via `<protocols>...<handlers>NAME</handlers>...</protocols>`.
+    /// Only a handler of `type == "static"` consumes a `config://` reference, and it reads
+    /// it exclusively from `handler.response_content` (see `createStaticHandlerFactory` and
+    /// `StaticRequestHandler`). Exempting any other field, or `response_content` on a
+    /// non-static handler (e.g. `redirect`, which ignores it), would whitelist a top-level
+    /// key that no server code reads — a false negative that lets a genuinely unknown
+    /// section pass validation. So gate the scan on the handler type and the single
+    /// consumed field.
     {
         static const String config_prefix = "config://";
         Poco::Util::AbstractConfiguration::Keys handler_groups;
@@ -2213,24 +2220,24 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
             config.keys(group, rules);
             for (const auto & rule : rules)
             {
-                for (const auto & field : {"handler.response_content", "handler.response_expression"})
+                String type_path = group + "." + rule + ".handler.type";
+                if (!config.has(type_path) || config.getString(type_path) != "static")
+                    continue;
+                String path = group + "." + rule + ".handler.response_content";
+                if (!config.has(path))
+                    continue;
+                String value = config.getString(path);
+                if (value.starts_with(config_prefix))
                 {
-                    String path = group + "." + rule + "." + field;
-                    if (!config.has(path))
-                        continue;
-                    String value = config.getString(path);
-                    if (value.starts_with(config_prefix))
-                    {
-                        String ref = value.substr(config_prefix.size());
-                        /// Normalize by stripping at the first `.` or `[` so the inserted
-                        /// key matches the normalization applied to `top_level_keys` below
-                        /// (e.g. `config://my_payload[1].field` -> `my_payload`).
-                        auto sep_pos = ref.find_first_of(".[");
-                        if (sep_pos != String::npos)
-                            ref.resize(sep_pos);
-                        if (!ref.empty())
-                            referenced_keys.insert(ref);
-                    }
+                    String ref = value.substr(config_prefix.size());
+                    /// Normalize by stripping at the first `.` or `[` so the inserted
+                    /// key matches the normalization applied to `top_level_keys` below
+                    /// (e.g. `config://my_payload[1].field` -> `my_payload`).
+                    auto sep_pos = ref.find_first_of(".[");
+                    if (sep_pos != String::npos)
+                        ref.resize(sep_pos);
+                    if (!ref.empty())
+                        referenced_keys.insert(ref);
                 }
             }
         }
