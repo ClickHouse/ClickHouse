@@ -627,9 +627,10 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
             __msan_unpoison(op, 16);
             match += boot_masks<copy_amount>.shift[idx];
         }
-        else
-#endif
+        else if (offset < copy_amount)
+#else
         if (offset < copy_amount)
+#endif
         {
             /// output: Hello
             ///              ^-op
