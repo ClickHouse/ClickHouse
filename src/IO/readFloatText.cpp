@@ -466,33 +466,36 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
 template <size_t N, typename T>
 inline void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
 {
-    size_t digits = 0;
-
-    /// Accumulate 8 significant digits at a time with SWAR while a full 8-digit run is in the buffer
-    /// and within the significant-digit budget. Bit-identical to the digit-by-digit loop, much faster
-    /// for long mantissas (fractional parts, big integers). parse_eight_digits_unrolled expects the
-    /// digits in little-endian byte order, so byteswap the read on big-endian targets.
-    while (digits + 8 <= N && buf.position() + 8 <= buf.buffer().end() && is_made_of_eight_digits_fast(buf.position()))
+    /// In optimistic case we can skip bound checking for first loop.
+    if (buf.position() + N <= buf.buffer().end())
     {
-        uint64_t val = 0;
-        ::memcpy(&val, buf.position(), 8);
-        if constexpr (std::endian::native == std::endian::big)
-            val = std::byteswap(val);
-        x = x * 100000000ULL + parse_eight_digits_unrolled(val);
-        buf.position() += 8;
-        digits += 8;
+        for (size_t i = 0; i < N; ++i)
+        {
+            if (isNumericASCII(*buf.position()))
+            {
+                x *= 10;
+                x += *buf.position() & 0x0F;
+                ++buf.position();
+            }
+            else
+                return;
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < N; ++i)
+        {
+            if (!buf.eof() && isNumericASCII(*buf.position()))
+            {
+                x *= 10;
+                x += *buf.position() & 0x0F;
+                ++buf.position();
+            }
+            else
+                return;
+        }
     }
 
-    /// Remaining significant digits, one at a time.
-    while (digits < N && !buf.eof() && isNumericASCII(*buf.position()))
-    {
-        x *= 10;
-        x += *buf.position() & 0x0F;
-        ++buf.position();
-        ++digits;
-    }
-
-    /// Skip any extra digits beyond the significant-digit budget (8 at a time, then one by one).
     while (!buf.eof() && (buf.position() + 8 <= buf.buffer().end()) && is_made_of_eight_digits_fast(buf.position()))
         buf.position() += 8;
 
