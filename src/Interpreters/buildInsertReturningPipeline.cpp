@@ -55,6 +55,9 @@ namespace
         static const std::unordered_set<std::string_view> unsupported_settings = {
             "max_memory_usage",
             "max_memory_usage_for_user",
+            "memory_overcommit_ratio_denominator",
+            "memory_overcommit_ratio_denominator_for_user",
+            "memory_usage_overcommit_max_wait_microseconds",
             "max_execution_time",
             "timeout_overflow_mode",
             "max_temporary_data_on_disk_size_for_query",
@@ -72,6 +75,7 @@ namespace
             "replace_running_query_max_wait_ms",
             "priority",
             "low_priority_query_wait_time_ms",
+            "workload",
         };
 
         const auto * select_with_union = returning_select->as<ASTSelectWithUnionQuery>();

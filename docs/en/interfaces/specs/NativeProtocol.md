@@ -449,11 +449,11 @@ Steps 1–5 are identical to the plain INSERT phase. After the end-of-input term
 
 | Category | Rejected settings |
 |---|---|
-| Memory | `max_memory_usage`, `max_memory_usage_for_user` |
+| Memory | `max_memory_usage`, `max_memory_usage_for_user`, `memory_overcommit_ratio_denominator`, `memory_overcommit_ratio_denominator_for_user`, `memory_usage_overcommit_max_wait_microseconds` |
 | Execution time | `max_execution_time`, `timeout_overflow_mode` |
 | Temporary data on disk | `max_temporary_data_on_disk_size_for_query`, `max_temporary_data_on_disk_size_for_user` |
 | Network bandwidth | `max_network_bandwidth_for_user`, `max_network_bandwidth_for_all_users`, `max_remote_read_network_bandwidth`, `max_remote_write_network_bandwidth`, `max_local_read_bandwidth`, `max_local_write_bandwidth` |
-| Concurrency / admission | `max_concurrent_queries_for_user`, `max_concurrent_queries_for_all_users`, `queue_max_wait_ms`, `replace_running_query`, `replace_running_query_max_wait_ms`, `priority`, `low_priority_query_wait_time_ms` |
+| Concurrency / admission | `max_concurrent_queries_for_user`, `max_concurrent_queries_for_all_users`, `queue_max_wait_ms`, `replace_running_query`, `replace_running_query_max_wait_ms`, `priority`, `low_priority_query_wait_time_ms`, `workload` |
 
 Result-shaping limits (`max_result_rows`, `max_result_bytes`, `result_overflow_mode`) are fully supported, as they operate only on the result pipeline.
 
