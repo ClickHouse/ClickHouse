@@ -401,6 +401,78 @@ TEST_F(ResolvePoolTest, SelectBestSurvivesTransientZeroTotalWeight)
     ASSERT_EQ(*reentered_address, "127.0.0.1");
 }
 
+TEST_F(ResolvePoolTest, SuccessThroughZeroWeightBranchUnbansAddress)
+{
+    /// Regression: `selectBest`'s zero-total-weight branch can hand out a still-failed
+    /// address during the transient window when every address is banned (see
+    /// `SelectBestSurvivesTransientZeroTotalWeight`). If the connection to that address then
+    /// succeeds, the address is reachable and must be un-banned. Otherwise `Record::setSuccess`
+    /// only resets `consecutive_fail_count` (which also disables the backoff un-ban path), so
+    /// the address would stay pessimized with zero weight while another address keeps the total
+    /// weight positive - the "all addresses banned" fallback never fires and the healthy address
+    /// is excluded from selection indefinitely.
+    ///
+    /// Reproduce deterministically without threads, like the test above: pre-fail one address so
+    /// it stays banned, then fail the second one. Inside the second `setFail`'s refresh both
+    /// addresses are banned (zero total weight), so the re-entrant `resolve` hits the zero-weight
+    /// branch; letting its `Entry` succeed (no `setUnused`) records a success on a failed address.
+    std::vector<Poco::Net::IPAddress> current{Poco::Net::IPAddress("127.0.0.1"), Poco::Net::IPAddress("127.0.0.2")};
+    DB::HostResolver * resolver_raw = nullptr;
+    bool reenter = false;
+    std::optional<String> succeeded_address;
+
+    auto resolve_func = [&] (const String &)
+    {
+        if (reenter)
+        {
+            reenter = false;
+            /// The nested resolve reaches `selectBest` with zero total weight and is handed a
+            /// failed address. Let the `Entry` destruct normally so the success is recorded.
+            auto nested = resolver_raw->resolve();
+            succeeded_address = *nested;
+        }
+        return current;
+    };
+
+    /// Large history so the ban does not expire and no background refresh fires during the loop.
+    auto resolver = std::make_shared<ResolvePoolMock>("some_host", Poco::Timespan(10 * 1000 * 1000), resolve_func);
+    resolver_raw = resolver.get();
+
+    /// Persistently ban the first address: with the second one still healthy the total weight
+    /// stays positive, so the refresh inside `setFail` does not un-ban it.
+    {
+        auto first = resolver->resolve();
+        first.setFail();
+    }
+    ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
+
+    /// Failing the (only) remaining healthy address drives the total weight to zero and triggers
+    /// the re-entrant resolve + success through the zero-weight branch.
+    reenter = true;
+    {
+        auto second = resolver->resolve();
+        second.setFail();
+    }
+
+    ASSERT_TRUE(succeeded_address.has_value());
+
+    /// Exactly one address stays banned: the one that did not get a success recorded. The
+    /// succeeded address was un-banned. Without the fix the all-banned fallback would have
+    /// un-banned both (banned_count == 0).
+    ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
+
+    /// Only the succeeded address is selectable; the other stays pessimized.
+    std::set<String> handed_out;
+    for (size_t i = 0; i < 1000; ++i)
+    {
+        auto next_addr = resolver->resolve();
+        handed_out.insert(*next_addr);
+        next_addr.setUnused();
+    }
+    ASSERT_EQ(1u, handed_out.size());
+    ASSERT_EQ(*succeeded_address, *handed_out.begin());
+}
+
 TEST_F(ResolvePoolTest, SetUnusedHasNoSideEffects)
 {
     auto resolver = make_resolver();

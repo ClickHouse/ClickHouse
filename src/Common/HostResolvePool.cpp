@@ -157,7 +157,8 @@ void HostResolver::setSuccess(const Poco::Net::IPAddress & address)
         return;
 
     auto old_weight = it->getWeight();
-    it->setSuccess();
+    if (it->setSuccess())
+        CurrentMetrics::sub(metrics.banned_count);
     auto new_weight = it->getWeight();
 
     if (old_weight != new_weight)

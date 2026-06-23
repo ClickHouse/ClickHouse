@@ -199,10 +199,19 @@ protected:
             return was_ok;
         }
 
-        void setSuccess()
+        /// Returns true if the address was failed and is now cleared, so the caller can
+        /// adjust the banned-count metric. A successful connection proves the address is
+        /// reachable, so it must be un-banned even if it was handed out while failed (the
+        /// all-banned zero-weight branch in `selectBest` can do that under a transient race).
+        bool setSuccess()
         {
+            bool was_failed = failed;
+
+            failed = false;
             consecutive_fail_count = 0;
             ++usage;
+
+            return was_failed;
         }
     };
 
