@@ -61,7 +61,7 @@ LIMIT 2
 ### Inserting data {#inserting-data}
 
 Consider a table in S3 storage at `s3://ch-docs-s3-bucket/people_10k/`.
-Delta Lake writes are enabled by default. If they were explicitly turned off, re-enable them with:
+Delta Lake writes are enabled by default. If they were explicitly turned off, re-enable them with the following (`allow_delta_lake_writes` is available from version 26.6; on earlier versions use `allow_experimental_delta_lake_writes`):
 
 ```sql title="Query"
 SET allow_delta_lake_writes=1
