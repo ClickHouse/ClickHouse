@@ -5090,18 +5090,23 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
 
             /// These commands rebuild whole parts (the full read+rewrite mutation path) and
             /// drop the delete_bitmap_*.rbm sidecars, silently resurrecting deleted rows once
-            /// DELETE lands. Reject the destructive-rewrite family.
-            /// TODO(unique-key): the other full-rewrite commands on this path
-            /// (MATERIALIZE INDEX / STATISTICS / PROJECTION) need the same bitmap preservation
-            /// or rejection — settle it in the read+delete work where the .rbm machinery lives.
+            /// DELETE lands. MATERIALIZE INDEX/STATISTICS/PROJECTION reach the same path via
+            /// MutateAllPartColumnsTask for compact or non-full parts (which only hardlinks
+            /// checksummed entries, not the sidecars). Reject the whole destructive-rewrite family.
             if (command.type == MutationCommand::REWRITE_PARTS
                 || command.type == MutationCommand::APPLY_DELETED_MASK
-                || command.type == MutationCommand::APPLY_PATCHES)
+                || command.type == MutationCommand::APPLY_PATCHES
+                || command.type == MutationCommand::MATERIALIZE_INDEX
+                || command.type == MutationCommand::MATERIALIZE_STATISTICS
+                || command.type == MutationCommand::MATERIALIZE_PROJECTION)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "ALTER TABLE ... {} is not supported on tables with UNIQUE KEY",
                     command.type == MutationCommand::REWRITE_PARTS ? "REWRITE PARTS"
                         : command.type == MutationCommand::APPLY_DELETED_MASK ? "APPLY DELETED MASK"
-                        : "APPLY PATCHES");
+                        : command.type == MutationCommand::APPLY_PATCHES ? "APPLY PATCHES"
+                        : command.type == MutationCommand::MATERIALIZE_INDEX ? "MATERIALIZE INDEX"
+                        : command.type == MutationCommand::MATERIALIZE_STATISTICS ? "MATERIALIZE STATISTICS"
+                        : "MATERIALIZE PROJECTION");
         }
     }
 

@@ -170,12 +170,17 @@ ALTER TABLE uk_t MODIFY ORDER BY (id); -- { serverError SUPPORT_IS_DISABLED }
 ALTER TABLE uk_t DELETE WHERE id = 1; -- { serverError SUPPORT_IS_DISABLED }
 ALTER TABLE uk_t UPDATE v = 'x' WHERE id = 1; -- { serverError SUPPORT_IS_DISABLED }
 
--- 13a. Full-part rewrite mutations (REWRITE PARTS, APPLY DELETED MASK, APPLY
--- PATCHES) rebuild parts without preserving the delete-bitmap sidecars, so the
--- whole family must be rejected on a unique-key table.
+-- 13a. Full-part rewrite mutations rebuild parts without preserving the
+-- delete-bitmap sidecars, so the whole family must be rejected on a unique-key
+-- table. MATERIALIZE INDEX/STATISTICS/PROJECTION reach the same rewrite path via
+-- MutateAllPartColumnsTask for compact or non-full parts (the guard in
+-- checkMutationIsPossible fires before name resolution, so the names need not exist).
 ALTER TABLE uk_t REWRITE PARTS; -- { serverError SUPPORT_IS_DISABLED }
 ALTER TABLE uk_t APPLY DELETED MASK; -- { serverError SUPPORT_IS_DISABLED }
 ALTER TABLE uk_t APPLY PATCHES; -- { serverError SUPPORT_IS_DISABLED }
+ALTER TABLE uk_t MATERIALIZE INDEX idx; -- { serverError SUPPORT_IS_DISABLED }
+ALTER TABLE uk_t MATERIALIZE STATISTICS v; -- { serverError SUPPORT_IS_DISABLED }
+ALTER TABLE uk_t MATERIALIZE PROJECTION proj; -- { serverError SUPPORT_IS_DISABLED }
 
 -- 14. All ALTER ... PARTITION operations are blocked on UK tables.
 CREATE TABLE uk_t_src (id UInt64, user_id UInt32, v String)
