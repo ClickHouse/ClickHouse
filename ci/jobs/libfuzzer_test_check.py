@@ -335,7 +335,7 @@ def process_results(result_path: Path):
             oks += 1
         elif status[0] == "ERROR":
             errors += 1
-            raw_logs.append(f"Fuzzing FAILED.")
+            raw_logs.append("Fuzzing FAILED.")
             if file_path_out.exists():
                 log_files.append(str(file_path_out))
             if file_path_stdout.exists():
