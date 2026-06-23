@@ -68,6 +68,19 @@ fetch_failed_log() {  # fetch_failed_log <run-id>  -> prints complete log, rc 0;
 if ! command -v gh >/dev/null 2>&1; then
     echo "ERROR: gh CLI not found on PATH." >&2; exit 2
 fi
+# gh writes a cache (default ~/.cache); some sandboxes mount a read-only HOME, where
+# `gh run view --log-failed` fails at `mkdir ~/.cache` BEFORE reaching GitHub — which
+# would silently turn every failed run into UNKNOWN. Point gh at a writable cache:
+# respect an existing writable XDG_CACHE_HOME, else fall back to a repo-local dir.
+_cache="${XDG_CACHE_HOME:-$HOME/.cache}"
+if ! ( mkdir -p "$_cache" && [ -w "$_cache" ] ) 2>/dev/null; then
+    _cache="$PWD/tmp/gh-cache"
+    if ! mkdir -p "$_cache" 2>/dev/null; then
+        echo "ERROR: no writable gh cache dir (tried \$XDG_CACHE_HOME/~/.cache and $_cache)." >&2
+        exit 2
+    fi
+fi
+export XDG_CACHE_HOME="$_cache"
 if ! GH auth status >/dev/null 2>&1; then
     echo "ERROR: gh is not authenticated (run: command gh auth login)." >&2; exit 2
 fi

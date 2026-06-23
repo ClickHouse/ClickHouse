@@ -30,7 +30,10 @@ modes, and they need different fixes:
 - **Investigation is read-only.** Steps 1–4 never change anything.
 - **Always use `command gh`.** In some interactive shells `gh` is aliased (e.g. to
   `history | fzf`); `command gh` reaches the real GitHub CLI.
-- **Working files go in `tmp/`**, never `/tmp`.
+- **Working files go in `tmp/`**, never `/tmp`. (The script also points
+  `XDG_CACHE_HOME` at a repo-local `tmp/gh-cache` when the default `~/.cache` is not
+  writable — some sandboxes mount a read-only HOME, which would otherwise make
+  `gh run view --log-failed` fail before reaching GitHub.)
 - **Never close a PR or dispatch a release without explicit per-action confirmation**
   (use AskUserQuestion). Steps 5–6 are gated.
 - **Only ever close a `robot-clickhouse` PR whose head branch is `auto/v*` AND whose
