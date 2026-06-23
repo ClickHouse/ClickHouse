@@ -114,12 +114,15 @@ void PNGWriter::writeDataCallback(png_struct_def * png_ptr_, unsigned char * dat
     try
     {
         writer->out.write(reinterpret_cast<const char *>(data), length);
+        return;
     }
     catch (...) /// Ok: a C++ exception must not propagate through libpng's C frames; save it and longjmp instead.
     {
         writer->saved_exception = std::current_exception();
-        png_longjmp(png_ptr_, 1);
     }
+    /// `png_longjmp` must run after leaving the `catch` block: jumping out of an active handler skips the
+    /// runtime's end-of-catch cleanup, leaving the in-flight exception object permanently referenced and leaked.
+    png_longjmp(png_ptr_, 1);
 }
 
 void PNGWriter::flushDataCallback(png_struct_def * png_ptr_)
@@ -128,12 +131,14 @@ void PNGWriter::flushDataCallback(png_struct_def * png_ptr_)
     try
     {
         writer->out.next();
+        return;
     }
     catch (...) /// Ok: a C++ exception must not propagate through libpng's C frames; save it and longjmp instead.
     {
         writer->saved_exception = std::current_exception();
-        png_longjmp(png_ptr_, 1);
     }
+    /// See `writeDataCallback`: `png_longjmp` only after leaving the `catch` block to avoid leaking the exception.
+    png_longjmp(png_ptr_, 1);
 }
 
 void PNGWriter::saveMessage(png_const_charp message)
