@@ -1,0 +1,3 @@
+Array(Tuple(\n    name LowCardinality(String)))
+Array(Tuple(\n    k LowCardinality(String),\n    v UInt64))
+Array(LowCardinality(String))
