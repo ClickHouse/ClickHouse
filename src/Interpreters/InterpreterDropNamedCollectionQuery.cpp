@@ -20,7 +20,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int NAMED_COLLECTION_IS_REFERENCED;
     extern const int NAMED_COLLECTION_IS_USED;
 }
 
