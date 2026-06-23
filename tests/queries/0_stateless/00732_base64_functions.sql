@@ -28,6 +28,16 @@ SELECT tryBase64Decode('foo');
 SELECT base64Decode('aoeo054640eu='); -- { serverError INCORRECT_DATA }
 SELECT tryBase64Decode('aoeo054640eu=');
 
+-- ASCII whitespace in the input is ignored (RFC 2045 / MIME compatible), but other garbage is still rejected
+
+SELECT base64Decode('Zm9v YmF y');
+SELECT base64Decode('Zm9vYmFy ');
+SELECT base64Decode('Zm9v\tYmFy');
+SELECT base64Decode('Zm9v\nYmFy');
+SELECT tryBase64Decode('Zm9vYmFy ');
+SELECT base64Decode('Zm9v!YmFy'); -- { serverError INCORRECT_DATA }
+SELECT tryBase64Decode('Zm9v!YmFy');
+
 -- test FixedString arguments
 
 select base64Encode(toFixedString('foo', 3));
