@@ -228,15 +228,15 @@ struct TokenPolicy
 using ClassCountMap = HashMap<UInt32, UInt64, HashCRC32<UInt32>>;
 
 /// Maps an n-gram to its dense index. StringHashMap packs short keys (the common byte/codepoint n-grams) into
-/// integer sub-tables, which is denser and faster to probe than a string_view-keyed HashMap.
+/// integer sub-tables, which keeps the keys dense and reduces probing to integer hashing and comparison.
 using NGramIndexMap = StringHashMap<UInt32>;
 using ClassIndexMap = HashMap<UInt32, UInt32, HashCRC32<UInt32>>;
 using ProbabilityMap = HashMap<UInt32, double, HashCRC32<UInt32>>;
 using LogProbabilityMap = HashMap<UInt32, double, HashCRC32<UInt32>>;
 
 /// One observed `(n-gram, class, count)` row, packed so the whole set can be sorted and grouped cheaply during
-/// finalize: `key = (n-gram index << 32) | class id`. This flat list replaces a per-n-gram count map, which is
-/// what made loading allocate gigabytes (one hash table per distinct n-gram).
+/// finalize: `key = (n-gram index << 32) | class id`. Keeping every observation in one flat array makes the
+/// memory used while loading proportional to the number of source rows.
 struct NaiveBayesEntry
 {
     UInt64 key;
@@ -258,8 +258,8 @@ enum class PriorsMode : uint8_t
 ///
 /// After compilation, the present `(class, delta)` pairs of the n-gram whose index is `i` occupy
 /// `slice_class_index[slice_offsets[i] .. slice_offsets[i + 1])` and the matching `slice_delta` range, where
-/// the index is the value stored for the n-gram in `ngram_to_index`. The bulky per-n-gram count maps used
-/// during accumulation are freed once the CSR arrays are built.
+/// the index is the value stored for the n-gram in `ngram_to_index`. The accumulation buffers (`entries` and
+/// `class_totals`) are freed once the CSR arrays are built.
 template <Tokenizer Tok>
 struct NaiveBayesData
 {
@@ -533,8 +533,7 @@ public:
         /// arrays in a single linear pass. Because the sort orders by n-gram index first, the rows of each
         /// n-gram are contiguous and appear in ascending index order, so `slice_offsets` is filled directly;
         /// equal `(n-gram, class)` rows are adjacent and their counts are summed, which folds duplicate source
-        /// rows. The n-gram keys and the arena are left untouched. This replaces a per-n-gram count map and so
-        /// avoids allocating one hash table per distinct n-gram during load.
+        /// rows. The n-gram keys and the arena are left untouched.
         auto & entries = data->entries;
         ::sort(entries.begin(), entries.end(), [](const NaiveBayesEntry & a, const NaiveBayesEntry & b) { return a.key < b.key; });
 
