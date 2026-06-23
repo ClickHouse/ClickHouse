@@ -216,6 +216,13 @@ struct ReplaceRegexpImpl
         const std::string short_pattern = short_re->ToString();
         short_re->Decref();
 
+        /// re2::Regexp::ToString() is not lossless for very large trees: it stops after a fixed number
+        /// of steps and appends " [truncated]". Such a string would recompile into a different,
+        /// incomplete pattern (and may still be a valid regexp, so RE2::ok() would not catch it), so
+        /// bail out on truncation and let the caller fall back to the full regexp.
+        if (short_pattern.ends_with(" [truncated]"))
+            return {};
+
         /// re2::Regexp::ToString renders a dotall '.' (kRegexpAnyChar) as a bare '.', while a non-dotall
         /// '.' is rendered as an explicit '[^\n]' character class and case-insensitive literals as explicit
         /// '[Aa]' classes. Hence every bare '.' produced by ToString originates from kRegexpAnyChar, so the
