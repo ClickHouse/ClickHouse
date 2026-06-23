@@ -1823,8 +1823,10 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
 
     if (is_qualified_matcher)
     {
-        /// Without joins no column type can be changed by a join, so `t.*` keeps the table types.
-        if (scope.joins_count == 0)
+        /// Only a JOIN USING key can change a matched column's type here; `join_use_nulls`
+        /// nullability for the matcher is applied later in resolveMatcher. With no USING join in
+        /// scope there is nothing to correct, so skip the per-column identifier resolution.
+        if (scope.using_joins_count == 0)
             return;
 
         for (auto & [matched_column_node, _] : result_matched_column_nodes_with_names)
@@ -4178,6 +4180,8 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                 join_tree_node_ptrs_to_process_queue.push_back(&join.getRightTableExpression());
                 scope.table_expressions_in_resolve_process.insert(current_join_tree_node.get());
                 ++scope.joins_count;
+                if (join.isUsingJoinExpression())
+                    ++scope.using_joins_count;
                 break;
             }
             default:
