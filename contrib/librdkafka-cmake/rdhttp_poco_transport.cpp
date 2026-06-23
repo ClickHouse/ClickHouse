@@ -63,12 +63,19 @@ std::unique_ptr<Poco::Net::HTTPClientSession> makeSession(
     if (ca == "probe")
         ca.clear();
 
+    /// When an explicit CA file (`https.ca.location`) or an inline PEM bundle
+    /// (`https.ca.pem`) is configured, trust only those roots and do not also
+    /// load the system trust store. This matches the libcurl-based transport,
+    /// where these options replace the default trust roots rather than
+    /// extending them, preserving custom-CA/pinning semantics.
+    const bool have_ca_pem = ca_pem && *ca_pem;
+
     Poco::Net::Context::Ptr context(new Poco::Net::Context(
         Poco::Net::Context::TLSV1_2_CLIENT_USE, /*privateKeyFile=*/"",
         /*certificateFile=*/"", ca, Poco::Net::Context::VERIFY_STRICT,
-        /*verificationDepth=*/9, /*loadDefaultCAs=*/ca.empty()));
+        /*verificationDepth=*/9, /*loadDefaultCAs=*/ca.empty() && !have_ca_pem));
 
-    if (ca.empty() && ca_pem && *ca_pem)
+    if (ca.empty() && have_ca_pem)
         addCertificatesFromPEM(*context, ca_pem);
 
     return std::make_unique<Poco::Net::HTTPSClientSession>(uri.getHost(), uri.getPort(), context);
