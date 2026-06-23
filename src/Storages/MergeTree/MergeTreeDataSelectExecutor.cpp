@@ -2187,7 +2187,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
             {
                 if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 {
-                    reader.read(index_mark, condition.get(), granule, /*readable_ranges=*/ nullptr);
+                    reader.read(index_mark, condition.get(), granule, /*original_ranges=*/ nullptr);
                 }
 
                 if (index_helper->isVectorSimilarityIndex())

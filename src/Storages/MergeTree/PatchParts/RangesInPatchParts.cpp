@@ -52,7 +52,7 @@ MarkRanges optimizeRanges(const MarkRanges & ranges)
     return result_ranges;
 }
 
-MarkRanges getRangesInPatchPartMerge(const DataPartPtr & original_part, const PatchPartInfoForReader & patch, const MarkRanges & readable_ranges)
+MarkRanges getRangesInPatchPartMerge(const DataPartPtr & original_part, const PatchPartInfoForReader & patch, const MarkRanges & original_ranges)
 {
     chassert(patch.mode == PatchMode::Merge);
     if (patch.source_parts.size() != 1)
@@ -75,7 +75,7 @@ MarkRanges getRangesInPatchPartMerge(const DataPartPtr & original_part, const Pa
     const auto & patch_name_column = assert_cast<const ColumnLowCardinality &>(*patch_index->at(0));
     const auto & patch_offset_data = assert_cast<const ColumnUInt64 &>(*patch_index->at(1)).getData();
 
-    for (const auto & range : readable_ranges)
+    for (const auto & range : original_ranges)
     {
         size_t begin_row = index_granularity->getMarkStartingRow(range.begin);
         size_t end_row = index_granularity->getMarkStartingRow(range.end);
@@ -160,13 +160,13 @@ std::vector<MarkRanges> getRangesInPatchParts(const DataPartPtr & original_part,
 
 }
 
-void RangesInPatchParts::addPart(const DataPartPtr & original_part, const PatchPartsForReader & patch_parts, const MarkRanges & readable_ranges)
+void RangesInPatchParts::addPart(const DataPartPtr & original_part, const PatchPartsForReader & patch_parts, const MarkRanges & original_ranges)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AnalyzePatchRangesMicroseconds);
 
     for (const auto & patch_part : patch_parts)
     {
-        auto patch_ranges = getRangesInPatchPart(original_part, patch_part, readable_ranges);
+        auto patch_ranges = getRangesInPatchPart(original_part, patch_part, original_ranges);
 
         if (!patch_ranges.empty())
         {
@@ -300,12 +300,12 @@ MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkR
         if (ranges[i].begin == last_mark)
             continue;
 
-        reader.read(ranges[i].begin, nullptr, granule, /*readable_ranges=*/ nullptr);
+        reader.read(ranges[i].begin, nullptr, granule, /*original_ranges=*/ nullptr);
         std::tie(stats.min, stats.max) = getMinMaxValues(*granule);
 
         for (size_t j = ranges[i].begin + 1; j < last_mark; ++j)
         {
-            reader.read(j, nullptr, granule, /*readable_ranges=*/ nullptr);
+            reader.read(j, nullptr, granule, /*original_ranges=*/ nullptr);
             auto [min, max] = getMinMaxValues(*granule);
 
             stats.min = std::min(stats.min, min);

@@ -399,13 +399,13 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     analyzer = std::make_unique<TextIndexAnalyzer>(condition_text);
 
     /// Push the row ranges still readable after the analysis of the primary key and prior skip indexes into the analyzer.
-    if (state.readable_ranges)
+    if (state.original_ranges)
     {
         const auto & index_granularity = *state.part.index_granularity;
         std::vector<RowsRange> readable_row_ranges;
-        readable_row_ranges.reserve(state.readable_ranges->size());
+        readable_row_ranges.reserve(state.original_ranges->size());
 
-        for (const auto & range : *state.readable_ranges)
+        for (const auto & range : *state.original_ranges)
         {
             size_t row_begin = index_granularity.getMarkStartingRow(range.begin);
             size_t row_end = index_granularity.getMarkStartingRow(range.end);
