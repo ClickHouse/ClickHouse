@@ -1,3 +1,4 @@
+#include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
@@ -6,6 +7,27 @@
 
 namespace DB::QueryPlanOptimizations
 {
+
+/// True when `dag` emits `name` as an unchanged pass-through of its same-named
+/// input (an `INPUT` node, possibly behind `ALIAS` renames that preserve the
+/// name).  The heap ranks by the GROUP BY key column directly, so it is only
+/// sound to match an `ORDER BY` key against a GROUP BY key by name if the
+/// optional `ExpressionStep` between the sort and the aggregation does not
+/// rewrite that column: otherwise the sort could order by `f(key)` while the
+/// heap ranks by `key` (e.g. a `-k AS k` projection), keeping the wrong rows.
+static bool isSortKeyPassThrough(const ActionsDAG & dag, const std::string & name)
+{
+    const auto & outputs = dag.getOutputs();
+    auto it = std::find_if(
+        outputs.begin(), outputs.end(), [&](const auto * node) { return node->result_name == name; });
+    if (it == outputs.end())
+        return false;
+
+    const ActionsDAG::Node * node = *it;
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+    return node->type == ActionsDAG::ActionType::INPUT && node->result_name == name;
+}
 
 /// Returns the AggregatingStep if it is eligible for the top-K heap optimization.
 static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node)
@@ -105,7 +127,8 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
     }
 
     /// Allow an optional ExpressionStep ("Before ORDER BY" / projection).
-    if (typeid_cast<ExpressionStep *>(next_node->step.get()))
+    const ExpressionStep * expression_step = typeid_cast<const ExpressionStep *>(next_node->step.get());
+    if (expression_step)
     {
         if (next_node->children.size() != 1)
             return 0;
@@ -135,6 +158,14 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
         for (size_t i = 0; i < sort_description.size(); ++i)
         {
             if (sort_description[i].column_name != params.keys[i])
+                return 0;
+
+            /// The name match above is only sound if an intervening projection
+            /// did not rewrite the key under the same name (see
+            /// `isSortKeyPassThrough`).  Without an `ExpressionStep` the sort
+            /// reads the aggregation output directly, so a name match already
+            /// means the same column.
+            if (expression_step && !isSortKeyPassThrough(expression_step->getExpression(), params.keys[i]))
                 return 0;
 
             /// Collated ORDER BY is not supported by the top-K heap: the heap

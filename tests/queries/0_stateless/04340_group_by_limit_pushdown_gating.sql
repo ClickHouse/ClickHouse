@@ -71,3 +71,36 @@ INNER JOIN (
     SELECT a, b FROM (SELECT number % 10 AS a, number % 7 AS b FROM numbers(20000)) GROUP BY a, b ORDER BY b, a LIMIT 5
     SETTINGS enable_group_by_top_k_optimization = 0
 ) AS r USING (a, b);
+
+-- A projection between the sort and the aggregation may reuse a GROUP BY key's
+-- name for a different expression (e.g. `-k AS k` with `prefer_column_name_to_alias`).
+-- The heap ranks by the actual GROUP BY key, so the optimizer only matches an
+-- ORDER BY key against a GROUP BY key when that key passes through the projection
+-- unchanged.  A plain `ORDER BY <key>` still passes through (the user rename lives
+-- in the final projection after LIMIT), so it must keep optimizing; a non-pass-through
+-- must never produce a wrong top-N.
+SELECT 'aliased key passes through: still optimized';
+SELECT count() FROM (EXPLAIN actions = 1
+    SELECT -k AS k, count() FROM (SELECT number % 1000 AS k FROM numbers(1000)) GROUP BY k ORDER BY k ASC LIMIT 5
+    SETTINGS prefer_column_name_to_alias = 1
+) WHERE explain LIKE '%Top-K%';
+
+SELECT 'aliased key, prefer_column_name_to_alias = 1: result matches optimization off';
+SELECT count() FROM (
+    SELECT -k AS k, count() AS c FROM (SELECT number % 1000 AS k FROM numbers(20000)) GROUP BY k ORDER BY k ASC LIMIT 5
+    SETTINGS prefer_column_name_to_alias = 1, enable_group_by_top_k_optimization = 1
+) AS l
+INNER JOIN (
+    SELECT -k AS k, count() AS c FROM (SELECT number % 1000 AS k FROM numbers(20000)) GROUP BY k ORDER BY k ASC LIMIT 5
+    SETTINGS prefer_column_name_to_alias = 1, enable_group_by_top_k_optimization = 0
+) AS r USING (k, c);
+
+SELECT 'aliased key, ORDER BY position: result matches optimization off';
+SELECT count() FROM (
+    SELECT -k AS k, count() AS c FROM (SELECT number % 1000 AS k FROM numbers(20000)) GROUP BY k ORDER BY 1 ASC LIMIT 5
+    SETTINGS prefer_column_name_to_alias = 1, enable_group_by_top_k_optimization = 1
+) AS l
+INNER JOIN (
+    SELECT -k AS k, count() AS c FROM (SELECT number % 1000 AS k FROM numbers(20000)) GROUP BY k ORDER BY 1 ASC LIMIT 5
+    SETTINGS prefer_column_name_to_alias = 1, enable_group_by_top_k_optimization = 0
+) AS r USING (k, c);
