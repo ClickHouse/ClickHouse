@@ -1,5 +1,4 @@
 #include <Common/Scheduler/createResourceManager.h>
-#include <Common/Scheduler/CustomResourceManager.h>
 #include <Common/Scheduler/WorkloadResourceManager.h>
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -76,12 +75,6 @@ public:
         managers.push_back(manager);
     }
 
-    void updateConfiguration(const Poco::Util::AbstractConfiguration & config) override
-    {
-        for (auto & manager : managers)
-            manager->updateConfiguration(config);
-    }
-
     bool hasResource(const String & resource_name) const override
     {
         for (const auto & manager : managers)
@@ -114,8 +107,6 @@ ResourceManagerPtr createResourceManager(const ContextMutablePtr & global_contex
 {
     auto dispatcher = std::make_shared<ResourceManagerDispatcher>();
 
-    // NOTE: if the same resource is described by both managers, then manager added earlier will be used.
-    dispatcher->addManager(std::make_shared<CustomResourceManager>());
     dispatcher->addManager(std::make_shared<WorkloadResourceManager>(global_context->getWorkloadEntityStoragePtr()));
 
     return dispatcher;

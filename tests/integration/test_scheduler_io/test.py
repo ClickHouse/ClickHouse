@@ -19,8 +19,6 @@ node = cluster.add_instance(
     stay_alive=True,
     main_configs=[
         "configs/storage_configuration.xml",
-        "configs/resources.xml",
-        "configs/resources.xml.default",
         "configs/workloads.xml",
         "configs/workloads.xml.default",
     ],
@@ -33,8 +31,6 @@ node2 = cluster.add_instance(
     stay_alive=True,
     main_configs=[
         "configs/storage_configuration.xml",
-        "configs/resources.xml",
-        "configs/resources.xml.default",
         "configs/workloads.xml",
         "configs/workloads.xml.default",
     ],
@@ -59,13 +55,6 @@ def set_default_configs():
             [
                 "bash",
                 "-c",
-                "cp /etc/clickhouse-server/config.d/resources.xml.default /etc/clickhouse-server/config.d/resources.xml",
-            ]
-        )
-        n.exec_in_container(
-            [
-                "bash",
-                "-c",
                 "cp /etc/clickhouse-server/config.d/workloads.xml.default /etc/clickhouse-server/config.d/workloads.xml",
             ]
         )
@@ -80,6 +69,12 @@ def clear_workloads_and_resources(set_default_configs):
         drop workload if exists production;
         drop workload if exists development;
         drop workload if exists admin;
+        drop workload if exists prod_merges;
+        drop workload if exists dev_merges;
+        drop workload if exists sys_merges;
+        drop workload if exists prod_mutations;
+        drop workload if exists dev_mutations;
+        drop workload if exists sys_mutations;
         drop workload if exists all;
         drop resource if exists io_write;
         drop resource if exists io_read;
@@ -126,8 +121,16 @@ def check_profile_event_for_query(workload, profile_event, amount=1):
 def test_s3_resource_request_granularity():
     node.query(
         """
+        create resource io_write (write disk s3_no_resource);
+        create resource io_read (read disk s3_no_resource);
+        create workload all settings max_bytes_inflight = 1000000;
+        create workload admin in all settings priority = 0;
+    """
+    )
+    node.query(
+        """
         drop table if exists data;
-        create table data (key UInt64 CODEC(NONE), value String CODEC(NONE)) engine=MergeTree() order by key settings min_bytes_for_wide_part=1e9, storage_policy='s3';
+        create table data (key UInt64 CODEC(NONE), value String CODEC(NONE)) engine=MergeTree() order by key settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_resource';
     """
     )
 
@@ -137,17 +140,17 @@ def test_s3_resource_request_granularity():
 
     writes_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/admin'"
+            "select dequeued_requests from system.scheduler where resource='io_write' and path ilike '%/admin/%' and type='fifo'"
         ).strip()
     )
     write_bytes_before = int(
         node.query(
-            "select dequeued_cost from system.scheduler where resource='network_write' and path='/prio/admin'"
+            "select dequeued_cost from system.scheduler where resource='io_write' and path ilike '%/admin/%' and type='fifo'"
         ).strip()
     )
     write_budget_before = int(
         node.query(
-            "select budget from system.scheduler where resource='network_write' and path='/prio/admin'"
+            "select budget from system.scheduler where resource='io_write' and path ilike '%/admin/%' and type='fifo'"
         ).strip()
     )
     node.query(
@@ -155,17 +158,17 @@ def test_s3_resource_request_granularity():
     )
     writes_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/admin'"
+            "select dequeued_requests from system.scheduler where resource='io_write' and path ilike '%/admin/%' and type='fifo'"
         ).strip()
     )
     write_bytes_after = int(
         node.query(
-            "select dequeued_cost from system.scheduler where resource='network_write' and path='/prio/admin'"
+            "select dequeued_cost from system.scheduler where resource='io_write' and path ilike '%/admin/%' and type='fifo'"
         ).strip()
     )
     write_budget_after = int(
         node.query(
-            "select budget from system.scheduler where resource='network_write' and path='/prio/admin'"
+            "select budget from system.scheduler where resource='io_write' and path ilike '%/admin/%' and type='fifo'"
         ).strip()
     )
 
@@ -184,17 +187,17 @@ def test_s3_resource_request_granularity():
 
     reads_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/admin'"
+            "select dequeued_requests from system.scheduler where resource='io_read' and path ilike '%/admin/%' and type='fifo'"
         ).strip()
     )
     read_bytes_before = int(
         node.query(
-            "select dequeued_cost from system.scheduler where resource='network_read' and path='/prio/admin'"
+            "select dequeued_cost from system.scheduler where resource='io_read' and path ilike '%/admin/%' and type='fifo'"
         ).strip()
     )
     read_budget_before = int(
         node.query(
-            "select budget from system.scheduler where resource='network_read' and path='/prio/admin'"
+            "select budget from system.scheduler where resource='io_read' and path ilike '%/admin/%' and type='fifo'"
         ).strip()
     )
     node.query(
@@ -202,17 +205,17 @@ def test_s3_resource_request_granularity():
     )
     reads_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/admin'"
+            "select dequeued_requests from system.scheduler where resource='io_read' and path ilike '%/admin/%' and type='fifo'"
         ).strip()
     )
     read_bytes_after = int(
         node.query(
-            "select dequeued_cost from system.scheduler where resource='network_read' and path='/prio/admin'"
+            "select dequeued_cost from system.scheduler where resource='io_read' and path ilike '%/admin/%' and type='fifo'"
         ).strip()
     )
     read_budget_after = int(
         node.query(
-            "select budget from system.scheduler where resource='network_read' and path='/prio/admin'"
+            "select budget from system.scheduler where resource='io_read' and path ilike '%/admin/%' and type='fifo'"
         ).strip()
     )
 
@@ -247,10 +250,19 @@ def test_s3_disk_transaction_path_resource_scheduling():
 
     node.query(
         """
+        create resource io_write (write disk s3_no_resource_no_fake_tx);
+        create resource io_read (read disk s3_no_resource_no_fake_tx);
+        create workload all settings max_bytes_inflight = 1000000;
+        create workload admin in all settings priority = 0;
+    """
+    )
+
+    node.query(
+        """
         drop table if exists data;
         create table data (key UInt64 CODEC(NONE), value String CODEC(NONE))
             engine=MergeTree() order by key
-            settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_fake_tx';
+            settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_resource_no_fake_tx';
         """
     )
 
@@ -297,10 +309,19 @@ def test_s3_disk_move_partition_resource_scheduling():
 
     node.query(
         """
+        create resource io_write (write disk s3_no_resource_no_fake_tx, write disk s3_no_resource_no_fake_tx_2);
+        create resource io_read (read disk s3_no_resource_no_fake_tx, read disk s3_no_resource_no_fake_tx_2);
+        create workload all settings max_bytes_inflight = 1000000;
+        create workload admin in all settings priority = 0;
+    """
+    )
+
+    node.query(
+        """
         drop table if exists data_move;
         create table data_move (key UInt64 CODEC(NONE), value String CODEC(NONE))
             engine=MergeTree() order by key partition by key
-            settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_fake_tx_move';
+            settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_resource_no_fake_tx_move';
         """
     )
 
@@ -311,7 +332,7 @@ def test_s3_disk_move_partition_resource_scheduling():
 
     query_id = str(uuid.uuid4())
     node.query(
-        "alter table data_move move partition 0 to disk 's3_no_fake_tx_2'"
+        "alter table data_move move partition 0 to disk 's3_no_resource_no_fake_tx_2'"
         " SETTINGS workload='admin'",
         query_id=query_id,
     )
@@ -350,107 +371,30 @@ def test_s3_disk_move_partition_resource_scheduling():
     node.query("drop table data_move")
 
 
-def test_s3_disk():
-    node.query(
-        """
-        drop table if exists data;
-        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3';
-    """
-    )
-
-    def write_query(workload):
-        try:
-            node.query(
-                f"insert into data select * from numbers(1e5) settings workload='{workload}'"
-            )
-        except QueryRuntimeException:
-            pass
-
-    thread1 = threading.Thread(target=write_query, args=["development"])
-    thread2 = threading.Thread(target=write_query, args=["production"])
-    thread3 = threading.Thread(target=write_query, args=["admin"])
-
-    thread1.start()
-    thread2.start()
-    thread3.start()
-
-    thread3.join()
-    thread2.join()
-    thread1.join()
-
-    assert (
-        node.query(
-            "select dequeued_requests>0 from system.scheduler where resource='network_write' and path='/prio/admin'"
-        )
-        == "1\n"
-    )
-    assert (
-        node.query(
-            "select dequeued_requests>0 from system.scheduler where resource='network_write' and path='/prio/fair/dev'"
-        )
-        == "1\n"
-    )
-    assert (
-        node.query(
-            "select dequeued_requests>0 from system.scheduler where resource='network_write' and path='/prio/fair/prod'"
-        )
-        == "1\n"
-    )
-
-    def read_query(workload):
-        try:
-            node.query(f"select sum(key*key) from data settings workload='{workload}'")
-        except QueryRuntimeException:
-            pass
-
-    thread1 = threading.Thread(target=read_query, args=["development"])
-    thread2 = threading.Thread(target=read_query, args=["production"])
-    thread3 = threading.Thread(target=read_query, args=["admin"])
-
-    thread1.start()
-    thread2.start()
-    thread3.start()
-
-    thread3.join()
-    thread2.join()
-    thread1.join()
-
-    assert (
-        node.query(
-            "select dequeued_requests>0 from system.scheduler where resource='network_read' and path='/prio/admin'"
-        )
-        == "1\n"
-    )
-    assert (
-        node.query(
-            "select dequeued_requests>0 from system.scheduler where resource='network_read' and path='/prio/fair/dev'"
-        )
-        == "1\n"
-    )
-    assert (
-        node.query(
-            "select dequeued_requests>0 from system.scheduler where resource='network_read' and path='/prio/fair/prod'"
-        )
-        == "1\n"
-    )
-
-
 def test_merge_workload():
     node.query(
         """
+        create resource io_write (write disk s3_no_resource);
+        create resource io_read (read disk s3_no_resource);
+        create workload all settings max_bytes_inflight = 1000000;
+        create workload sys_merges in all;
+    """
+    )
+    node.query(
+        """
         drop table if exists data;
-        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3';
+        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_resource';
     """
     )
 
     reads_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/sys/merges'"
+            "select dequeued_requests from system.scheduler where resource='io_read' and path ilike '%/sys_merges/%' and type='fifo'"
         ).strip()
     )
     writes_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/sys/merges'"
+            "select dequeued_requests from system.scheduler where resource='io_write' and path ilike '%/sys_merges/%' and type='fifo'"
         ).strip()
     )
 
@@ -461,12 +405,12 @@ def test_merge_workload():
 
     reads_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/sys/merges'"
+            "select dequeued_requests from system.scheduler where resource='io_read' and path ilike '%/sys_merges/%' and type='fifo'"
         ).strip()
     )
     writes_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/sys/merges'"
+            "select dequeued_requests from system.scheduler where resource='io_write' and path ilike '%/sys_merges/%' and type='fifo'"
         ).strip()
     )
 
@@ -477,31 +421,40 @@ def test_merge_workload():
 def test_merge_workload_override():
     node.query(
         """
+        create resource io_write (write disk s3_no_resource);
+        create resource io_read (read disk s3_no_resource);
+        create workload all settings max_bytes_inflight = 1000000;
+        create workload prod_merges in all;
+        create workload dev_merges in all;
+    """
+    )
+    node.query(
+        """
         drop table if exists prod_data;
         drop table if exists dev_data;
-        create table prod_data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3', merge_workload='prod_merges';
-        create table dev_data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3', merge_workload='dev_merges';
+        create table prod_data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_resource', merge_workload='prod_merges';
+        create table dev_data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_resource', merge_workload='dev_merges';
     """
     )
 
     prod_reads_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/prod_merges'"
+            "select dequeued_requests from system.scheduler where resource='io_read' and path ilike '%/prod_merges/%' and type='fifo'"
         ).strip()
     )
     prod_writes_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/prod_merges'"
+            "select dequeued_requests from system.scheduler where resource='io_write' and path ilike '%/prod_merges/%' and type='fifo'"
         ).strip()
     )
     dev_reads_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/dev_merges'"
+            "select dequeued_requests from system.scheduler where resource='io_read' and path ilike '%/dev_merges/%' and type='fifo'"
         ).strip()
     )
     dev_writes_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/dev_merges'"
+            "select dequeued_requests from system.scheduler where resource='io_write' and path ilike '%/dev_merges/%' and type='fifo'"
         ).strip()
     )
 
@@ -516,22 +469,22 @@ def test_merge_workload_override():
 
     prod_reads_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/prod_merges'"
+            "select dequeued_requests from system.scheduler where resource='io_read' and path ilike '%/prod_merges/%' and type='fifo'"
         ).strip()
     )
     prod_writes_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/prod_merges'"
+            "select dequeued_requests from system.scheduler where resource='io_write' and path ilike '%/prod_merges/%' and type='fifo'"
         ).strip()
     )
     dev_reads_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/dev_merges'"
+            "select dequeued_requests from system.scheduler where resource='io_read' and path ilike '%/dev_merges/%' and type='fifo'"
         ).strip()
     )
     dev_writes_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/dev_merges'"
+            "select dequeued_requests from system.scheduler where resource='io_write' and path ilike '%/dev_merges/%' and type='fifo'"
         ).strip()
     )
 
@@ -544,8 +497,16 @@ def test_merge_workload_override():
 def test_mutate_workload():
     node.query(
         """
+        create resource io_write (write disk s3_no_resource);
+        create resource io_read (read disk s3_no_resource);
+        create workload all settings max_bytes_inflight = 1000000;
+        create workload sys_mutations in all;
+    """
+    )
+    node.query(
+        """
         drop table if exists data;
-        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3';
+        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_resource';
     """
     )
 
@@ -554,12 +515,12 @@ def test_mutate_workload():
 
     reads_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/sys/mutations'"
+            "select dequeued_requests from system.scheduler where resource='io_read' and path ilike '%/sys_mutations/%' and type='fifo'"
         ).strip()
     )
     writes_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/sys/mutations'"
+            "select dequeued_requests from system.scheduler where resource='io_write' and path ilike '%/sys_mutations/%' and type='fifo'"
         ).strip()
     )
 
@@ -568,12 +529,12 @@ def test_mutate_workload():
 
     reads_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/sys/mutations'"
+            "select dequeued_requests from system.scheduler where resource='io_read' and path ilike '%/sys_mutations/%' and type='fifo'"
         ).strip()
     )
     writes_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/sys/mutations'"
+            "select dequeued_requests from system.scheduler where resource='io_write' and path ilike '%/sys_mutations/%' and type='fifo'"
         ).strip()
     )
 
@@ -584,10 +545,19 @@ def test_mutate_workload():
 def test_mutation_workload_override():
     node.query(
         """
+        create resource io_write (write disk s3_no_resource);
+        create resource io_read (read disk s3_no_resource);
+        create workload all settings max_bytes_inflight = 1000000;
+        create workload prod_mutations in all;
+        create workload dev_mutations in all;
+    """
+    )
+    node.query(
+        """
         drop table if exists prod_data;
         drop table if exists dev_data;
-        create table prod_data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3', mutation_workload='prod_mutations';
-        create table dev_data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3', mutation_workload='dev_mutations';
+        create table prod_data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_resource', mutation_workload='prod_mutations';
+        create table dev_data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_resource', mutation_workload='dev_mutations';
     """
     )
 
@@ -598,22 +568,22 @@ def test_mutation_workload_override():
 
     prod_reads_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/prod_mutations'"
+            "select dequeued_requests from system.scheduler where resource='io_read' and path ilike '%/prod_mutations/%' and type='fifo'"
         ).strip()
     )
     prod_writes_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/prod_mutations'"
+            "select dequeued_requests from system.scheduler where resource='io_write' and path ilike '%/prod_mutations/%' and type='fifo'"
         ).strip()
     )
     dev_reads_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/dev_mutations'"
+            "select dequeued_requests from system.scheduler where resource='io_read' and path ilike '%/dev_mutations/%' and type='fifo'"
         ).strip()
     )
     dev_writes_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/dev_mutations'"
+            "select dequeued_requests from system.scheduler where resource='io_write' and path ilike '%/dev_mutations/%' and type='fifo'"
         ).strip()
     )
 
@@ -624,22 +594,22 @@ def test_mutation_workload_override():
 
     prod_reads_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/prod_mutations'"
+            "select dequeued_requests from system.scheduler where resource='io_read' and path ilike '%/prod_mutations/%' and type='fifo'"
         ).strip()
     )
     prod_writes_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/prod_mutations'"
+            "select dequeued_requests from system.scheduler where resource='io_write' and path ilike '%/prod_mutations/%' and type='fifo'"
         ).strip()
     )
     dev_reads_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/dev_mutations'"
+            "select dequeued_requests from system.scheduler where resource='io_read' and path ilike '%/dev_mutations/%' and type='fifo'"
         ).strip()
     )
     dev_writes_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/dev_mutations'"
+            "select dequeued_requests from system.scheduler where resource='io_write' and path ilike '%/dev_mutations/%' and type='fifo'"
         ).strip()
     )
 
@@ -652,8 +622,17 @@ def test_mutation_workload_override():
 def test_merge_workload_change():
     node.query(
         """
+        create resource io_write (write disk s3_no_resource);
+        create resource io_read (read disk s3_no_resource);
+        create workload all settings max_bytes_inflight = 1000000;
+        create workload prod_merges in all;
+        create workload dev_merges in all;
+    """
+    )
+    node.query(
+        """
         drop table if exists data;
-        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3';
+        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_resource';
     """
     )
 
@@ -662,12 +641,12 @@ def test_merge_workload_change():
 
         reads_before = int(
             node.query(
-                f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/{env}_merges'"
+                f"select dequeued_requests from system.scheduler where resource='io_read' and path ilike '%/{env}_merges' and type='fifo'"
             ).strip()
         )
         writes_before = int(
             node.query(
-                f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/{env}_merges'"
+                f"select dequeued_requests from system.scheduler where resource='io_write' and path ilike '%/{env}_merges' and type='fifo'"
             ).strip()
         )
 
@@ -678,12 +657,12 @@ def test_merge_workload_change():
 
         reads_after = int(
             node.query(
-                f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/{env}_merges'"
+                f"select dequeued_requests from system.scheduler where resource='io_read' and path ilike '%/{env}_merges' and type='fifo'"
             ).strip()
         )
         writes_after = int(
             node.query(
-                f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/{env}_merges'"
+                f"select dequeued_requests from system.scheduler where resource='io_write' and path ilike '%/{env}_merges' and type='fifo'"
             ).strip()
         )
 
@@ -694,8 +673,17 @@ def test_merge_workload_change():
 def test_mutation_workload_change():
     node.query(
         """
+        create resource io_write (write disk s3_no_resource);
+        create resource io_read (read disk s3_no_resource);
+        create workload all settings max_bytes_inflight = 1000000;
+        create workload prod_mutations in all;
+        create workload dev_mutations in all;
+    """
+    )
+    node.query(
+        """
         drop table if exists data;
-        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3';
+        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_resource';
     """
     )
 
@@ -707,12 +695,12 @@ def test_mutation_workload_change():
 
         reads_before = int(
             node.query(
-                f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/{env}_mutations'"
+                f"select dequeued_requests from system.scheduler where resource='io_read' and path ilike '%/{env}_mutations' and type='fifo'"
             ).strip()
         )
         writes_before = int(
             node.query(
-                f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/{env}_mutations'"
+                f"select dequeued_requests from system.scheduler where resource='io_write' and path ilike '%/{env}_mutations' and type='fifo'"
             ).strip()
         )
 
@@ -721,12 +709,12 @@ def test_mutation_workload_change():
 
         reads_after = int(
             node.query(
-                f"select dequeued_requests from system.scheduler where resource='network_read' and path='/prio/fair/{env}_mutations'"
+                f"select dequeued_requests from system.scheduler where resource='io_read' and path ilike '%/{env}_mutations' and type='fifo'"
             ).strip()
         )
         writes_after = int(
             node.query(
-                f"select dequeued_requests from system.scheduler where resource='network_write' and path='/prio/fair/{env}_mutations'"
+                f"select dequeued_requests from system.scheduler where resource='io_write' and path ilike '%/{env}_mutations' and type='fifo'"
             ).strip()
         )
 

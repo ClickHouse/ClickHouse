@@ -5,17 +5,13 @@
 #include <Common/Scheduler/WorkloadSettings.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/ResourceGuard.h>
-#include <Common/Scheduler/Nodes/SchedulerNodeFactory.h>
 #include <Common/Scheduler/Nodes/TimeShared/PriorityPolicy.h>
 #include <Common/Scheduler/Nodes/TimeShared/FifoQueue.h>
 #include <Common/Scheduler/Nodes/TimeShared/SemaphoreConstraint.h>
 #include <Common/Scheduler/Nodes/TimeShared/ThrottlerConstraint.h>
 #include <Common/Scheduler/Nodes/WorkloadNode.h>
-#include <Common/Scheduler/Nodes/registerSchedulerNodes.h>
 
 #include <Common/ThreadPool.h>
-
-#include <Poco/Util/XMLConfiguration.h>
 
 #include <atomic>
 #include <barrier>
@@ -37,22 +33,6 @@ namespace ErrorCodes
 
 struct ResourceTestBase
 {
-    ResourceTestBase()
-    {
-        [[maybe_unused]] static bool typesRegistered = [] { registerSchedulerNodes(); return true; }();
-    }
-
-    template <class TClass>
-    static TClass * add(EventQueue & event_queue, SchedulerNodePtr & root_node, const String & path, const String & xml = {})
-    {
-        std::stringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        stream << "<resource><node path=\"" << path << "\">" << xml << "</node></resource>";
-        Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration(stream)};
-        String config_prefix = "node";
-
-        return add<TClass>(event_queue, root_node, path, std::ref(*config), config_prefix);
-    }
-
     template <class TClass, class... Args>
     static TClass * add(EventQueue & event_queue, SchedulerNodePtr & root_node, const String & path, Args... args)
     {
@@ -133,10 +113,10 @@ public:
         return event_queue;
     }
 
-    template <class TClass>
-    void add(const String & path, const String & xml = {})
+    template <class TClass, class... Args>
+    void add(const String & path, Args... args)
     {
-        ResourceTestBase::add<TClass>(event_queue, root_node, path, xml);
+        ResourceTestBase::add<TClass>(event_queue, root_node, path, std::forward<Args>(args)...);
     }
 
     template <class TClass, class... Args>
@@ -411,13 +391,6 @@ struct ResourceTestManager : public ResourceTestBase
             }
             // we have to repeat because threads we have just joined could have created new threads in the meantime
         }
-    }
-
-    void update(const String & xml)
-    {
-        std::istringstream stream(xml); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration(stream)};
-        manager->updateConfiguration(*config);
     }
 
     auto & getLinkData(ResourceLink link)
