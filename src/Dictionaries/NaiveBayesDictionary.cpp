@@ -220,7 +220,7 @@ void NaiveBayesDictionary::loadData()
 
 ColumnPtr NaiveBayesDictionary::getColumn(
     const std::string & attribute_name,
-    const DataTypePtr & /* attribute_type */,
+    const DataTypePtr & attribute_type,
     const Columns & key_columns,
     const DataTypes & /* key_types */,
     DefaultOrFilter /* default_or_filter */) const
@@ -240,15 +240,32 @@ ColumnPtr NaiveBayesDictionary::getColumn(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary key must be a String column");
 
     const size_t rows = string_col->size();
-    auto result = ColumnUInt32::create(rows);
-    auto & result_data = result->getData();
 
-    visitModel([&](const auto & model)
+    /// dictGet must return the declared class-attribute type. The predicted class ids are the original source
+    /// values, so they fit whichever unsigned width was declared; build the result column in that type.
+    auto classify_as = [&]<typename T>() -> ColumnPtr
     {
-        NaiveBayesScratch scratch;
-        for (size_t i = 0; i < rows; ++i)
-            result_data[i] = model.classify(string_col->getDataAt(i), scratch);
-    });
+        auto column = ColumnVector<T>::create(rows);
+        auto & data = column->getData();
+        visitModel([&](const auto & model)
+        {
+            NaiveBayesScratch scratch;
+            for (size_t i = 0; i < rows; ++i)
+                data[i] = static_cast<T>(model.classify(string_col->getDataAt(i), scratch));
+        });
+        return column;
+    };
+
+    const WhichDataType which(attribute_type);
+    ColumnPtr result;
+    if (which.isUInt8())
+        result = classify_as.operator()<UInt8>();
+    else if (which.isUInt16())
+        result = classify_as.operator()<UInt16>();
+    else if (which.isUInt32())
+        result = classify_as.operator()<UInt32>();
+    else
+        result = classify_as.operator()<UInt64>();
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
 
