@@ -1,3 +1,4 @@
+#include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
@@ -753,6 +754,133 @@ TEST(RemoveSettingsFromQuery, StripsRepeatedOverrides)
         EXPECT_FALSE(hasEmptySettingsNode(ast)) << "empty SETTINGS left for: " << query;
 
         /// The serialized query still re-parses and carries no residual override.
+        const String formatted = ast->formatWithSecretsOneLine();
+        EXPECT_EQ(String::npos, formatted.find("max_rows_to_read")) << "kept a safety setting: " << formatted;
+        ParserQuery reparser(formatted.data() + formatted.size());
+        ASTPtr reparsed = parseQuery(reparser, formatted, "", 0, 0, 0);
+        EXPECT_NE(nullptr, reparsed) << "did not re-parse: " << formatted;
+    }
+}
+
+/// Not every SETTINGS carrier the fuzzer can use lives where a plain `children` walk reaches it, and
+/// some carriers were stripped but never pruned. Two carriers that InterpreterSetQuery::
+/// applySettingsFromQuery reads back onto the query context were missed:
+///   - `ASTBackupQuery::settings` is held outside `children` (and outside `settings_ast`), so a
+///     `BACKUP ... SETTINGS max_execution_time = 0` survived the strip and re-applied the override
+///     (a strip miss, only reachable with `ast_fuzzer_any_query = 1`).
+///   - `ASTStorage::settings` is in `children` and was stripped, but had no prune branch, so a
+///     `CREATE ... SETTINGS <only safety setting>` left an empty node that ASTStorage::formatImpl
+///     serialized to a bare `SETTINGS`, making the re-parse throw and the query be skipped (a prune
+///     miss, same class as the original empty-node bug but for a different owner).
+/// The serialized-query checks here use the actual format+reparse roundtrip, which exercises every
+/// carrier regardless of whether it is in `children`.
+TEST(RemoveSettingsFromQuery, StripsSettingsCarriersOutsideChildrenWalk)
+{
+    static constexpr std::string_view safety_settings[] = {
+        "max_rows_to_read",
+        "read_overflow_mode",
+        "max_execution_time",
+        "max_memory_usage",
+        "max_result_rows",
+        "max_result_bytes",
+    };
+
+    /// BACKUP carrier (strip miss): the cap lives in ASTBackupQuery::settings, outside `children`.
+    {
+        const String query = "BACKUP TABLE t TO Null SETTINGS max_execution_time = 0";
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        auto * backup_query = ast->as<ASTBackupQuery>();
+        ASSERT_NE(nullptr, backup_query) << "expected a BACKUP query";
+        /// Sanity: the cap really is parked in the out-of-children `settings` slot before the strip.
+        ASSERT_NE(nullptr, backup_query->settings);
+        ASSERT_NE(nullptr, backup_query->settings->as<ASTSetQuery>()->changes.tryGet("max_execution_time"));
+
+        removeSettingsFromQuery(ast, safety_settings);
+
+        /// The whole clause held only the cap, so it must be pruned (no bare `SETTINGS`).
+        EXPECT_EQ(nullptr, backup_query->settings) << "empty BACKUP SETTINGS node not pruned";
+        const String formatted = ast->formatWithSecretsOneLine();
+        EXPECT_EQ(String::npos, formatted.find("max_execution_time")) << "kept a safety setting: " << formatted;
+        ParserQuery reparser(formatted.data() + formatted.size());
+        ASTPtr reparsed = parseQuery(reparser, formatted, "", 0, 0, 0);
+        EXPECT_NE(nullptr, reparsed) << "did not re-parse: " << formatted;
+    }
+
+    /// BACKUP carrier with a surviving non-safety setting: the cap is stripped, the clause stays.
+    {
+        const String query = "BACKUP TABLE t TO Null SETTINGS max_execution_time = 0, async = true";
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        removeSettingsFromQuery(ast, safety_settings);
+
+        auto * backup_query = ast->as<ASTBackupQuery>();
+        ASSERT_NE(nullptr, backup_query);
+        ASSERT_NE(nullptr, backup_query->settings) << "dropped a non-safety BACKUP setting";
+        EXPECT_EQ(nullptr, backup_query->settings->as<ASTSetQuery>()->changes.tryGet("max_execution_time"))
+            << "kept a safety setting in the BACKUP clause";
+        EXPECT_NE(nullptr, backup_query->settings->as<ASTSetQuery>()->changes.tryGet("async"))
+            << "dropped the non-safety `async` setting";
+        const String formatted = ast->formatWithSecretsOneLine();
+        ParserQuery reparser(formatted.data() + formatted.size());
+        ASTPtr reparsed = parseQuery(reparser, formatted, "", 0, 0, 0);
+        EXPECT_NE(nullptr, reparsed) << "did not re-parse: " << formatted;
+    }
+
+    /// CREATE storage carrier (prune miss): the only setting is a safety cap, so after stripping the
+    /// ASTStorage SETTINGS node is empty and must be pruned, or formatImpl emits a bare `SETTINGS`.
+    {
+        const String query = "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS max_rows_to_read = 0";
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        removeSettingsFromQuery(ast, safety_settings);
+
+        EXPECT_FALSE(hasEmptySettingsNode(ast)) << "empty CREATE storage SETTINGS not pruned";
+        const String formatted = ast->formatWithSecretsOneLine();
+        EXPECT_EQ(String::npos, formatted.find("max_rows_to_read")) << "kept a safety setting: " << formatted;
+        ParserQuery reparser(formatted.data() + formatted.size());
+        ASTPtr reparsed = parseQuery(reparser, formatted, "", 0, 0, 0);
+        EXPECT_NE(nullptr, reparsed) << "did not re-parse (bare SETTINGS): " << formatted;
+    }
+
+    /// CREATE storage carrier with a real engine setting: the cap is stripped, the engine setting and
+    /// the SETTINGS clause stay.
+    {
+        const String query
+            = "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS max_rows_to_read = 0, index_granularity = 1024";
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        removeSettingsFromQuery(ast, safety_settings);
+
+        EXPECT_FALSE(hasEmptySettingsNode(ast)) << "query: " << query;
+        const String formatted = ast->formatWithSecretsOneLine();
+        EXPECT_NE(String::npos, formatted.find("index_granularity")) << "dropped the engine setting: " << formatted;
+        EXPECT_EQ(String::npos, formatted.find("max_rows_to_read")) << "kept a safety setting: " << formatted;
+        ParserQuery reparser(formatted.data() + formatted.size());
+        ASTPtr reparsed = parseQuery(reparser, formatted, "", 0, 0, 0);
+        EXPECT_NE(nullptr, reparsed) << "did not re-parse: " << formatted;
+    }
+
+    /// `CREATE ... AS SELECT ... SETTINGS <only safety>` parks the cap in the inherited
+    /// ASTQueryWithOutput::settings_ast (the query-level SETTINGS), which must also be pruned.
+    {
+        const String query = "CREATE TABLE t ENGINE = MergeTree ORDER BY a AS SELECT number AS a FROM numbers(100) "
+                             "SETTINGS max_rows_to_read = 0";
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        removeSettingsFromQuery(ast, safety_settings);
+
+        EXPECT_FALSE(hasEmptySettingsNode(ast)) << "empty CREATE AS SELECT SETTINGS not pruned";
         const String formatted = ast->formatWithSecretsOneLine();
         EXPECT_EQ(String::npos, formatted.find("max_rows_to_read")) << "kept a safety setting: " << formatted;
         ParserQuery reparser(formatted.data() + formatted.size());

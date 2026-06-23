@@ -1039,16 +1039,18 @@ static void validateAnalyzerSettings(ASTPtr ast, bool context_value)
     }
 }
 
-/// Remove the resource-limit settings that executeASTFuzzerQueries pins on the fuzz context from
-/// every SETTINGS clause embedded in the fuzzed AST. These caps (row/time/memory/result limits)
-/// keep a single fuzzed query from running away. They are applied to the fuzz context up front,
-/// but executeQueryImpl re-applies the query's own SETTINGS on top of the context, so a seed or
-/// fuzzed `SETTINGS max_rows_to_read = 0` (or `= DEFAULT`, which resets the cap back to its unbounded
-/// default) would otherwise silently lift the guard. Stripping them from the AST before formatting
-/// makes the fuzz-context values authoritative.
-/// removeSettingsFromQuery also prunes any SETTINGS clause that becomes empty, so a clause holding
-/// only these caps does not re-serialize to a bare `SETTINGS` keyword (which would throw on re-parse
-/// and make the fuzzer silently skip the query instead of running it under the caps).
+/// Remove the resource-limit settings that executeASTFuzzerQueries pins on the fuzz context from the
+/// query-level SETTINGS carriers of the fuzzed AST. These caps (row/time/memory/result limits) keep a
+/// single fuzzed query from running away. They are applied to the fuzz context up front, but
+/// executeQueryImpl re-applies the query's own SETTINGS on top of the context
+/// (InterpreterSetQuery::applySettingsFromQuery), so a seed or fuzzed `SETTINGS max_rows_to_read = 0`
+/// (or `= DEFAULT`, which resets the cap back to its unbounded default), including from a BACKUP or
+/// CREATE clause, would otherwise silently lift the guard. Stripping them from the AST before
+/// formatting makes the fuzz-context values authoritative.
+/// removeSettingsFromQuery covers exactly the carriers applySettingsFromQuery reads, and also prunes
+/// any SETTINGS clause that becomes empty, so a clause holding only these caps does not re-serialize
+/// to a bare `SETTINGS` keyword (which would throw on re-parse and make the fuzzer silently skip the
+/// query instead of running it under the caps).
 static void stripFuzzerSafetyLimitSettings(const ASTPtr & ast)
 {
     static constexpr std::string_view limit_settings[] = {

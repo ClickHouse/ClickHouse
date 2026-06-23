@@ -29,6 +29,17 @@ CREATE TABLE t_04344 (a UInt64, b String, c Array(UInt64)) ENGINE = MergeTree OR
 INSERT INTO t_04344 SELECT number, toString(number), range(number % 8) FROM numbers(100)
 SETTINGS max_rows_to_read = 0, read_overflow_mode = 'throw';
 
+-- CREATE storage-settings carrier: the cap is parked in ASTStorage::settings. After stripping the
+-- only setting the node is empty; without pruning it ASTStorage::formatImpl emits a bare `SETTINGS`
+-- and the fuzzed CREATE is skipped on re-parse.
+DROP TABLE IF EXISTS t_04344_storage;
+CREATE TABLE t_04344_storage (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS max_rows_to_read = 0;
+DROP TABLE t_04344_storage;
+
+-- BACKUP carrier: the cap lives in ASTBackupQuery::settings, outside the AST `children`, so a
+-- `children`-only strip walk would miss it and the override would survive on re-parse.
+BACKUP TABLE t_04344 TO Null SETTINGS max_execution_time = 0 FORMAT Null;
+
 SELECT 1;
 
 DROP TABLE t_04344;
