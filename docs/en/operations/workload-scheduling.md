@@ -241,6 +241,10 @@ If you want to maximize CPU utilization on your ClickHouse server, avoid using `
 
 ## Memory reservations {#memory-reservations}
 
+:::note
+Memory reservation scheduling is experimental. It takes effect only when a `MEMORY RESERVATION` resource exists, and its SQL surface and behavior may change in future releases. It is not yet supported for merges and mutations, and eviction of a running query is best-effort: it takes effect at the query's next memory sync point rather than instantly.
+:::
+
 To enable memory reservations for workloads create MEMORY RESERVATION resource and set at least one limit for the total memory reserved using workload settings:
 
 ```sql

@@ -3735,7 +3735,7 @@ Used in workload scheduling. The minimum amount of RAM reserved to be used for r
 If not enough memory is available to the workload, a query is prevented from starting and waits in pending state until the reservation can be fulfilled.
 A value of `0` means no reservation.
 This setting takes effect only if MEMORY RESERVATION resource is created.
-)", 0) \
+)", EXPERIMENTAL) \
     DECLARE(UInt64, max_network_bandwidth, 0, R"(
 Limits the speed of the data exchange over the network in bytes per second. This setting applies to every query.
 
