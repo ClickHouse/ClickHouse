@@ -8,9 +8,11 @@
      Pattern 3: GROUP BY col LIMIT N (no ORDER BY).
      Pattern 4: Composite keys with mixed ASC/DESC directions. -->
 
-<settings>
-    <enable_group_by_top_k_optimization>1</enable_group_by_top_k_optimization>
-</settings>
+<!-- Disabled until new setting lands in master.
+
+    <settings>
+        <enable_group_by_top_k_optimization>1</enable_group_by_top_k_optimization>
+    </settings> -->
 
 <!-- High cardinality: WatchID (~100M unique values out of 100M rows) -->
 <query>SELECT WatchID, count() FROM hits_100m_single GROUP BY WatchID ORDER BY WatchID ASC LIMIT 10 FORMAT Null</query>
