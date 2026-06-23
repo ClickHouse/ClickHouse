@@ -213,7 +213,8 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
         if (use_streaming_compression)
         {
             PODArray<MarkInCompressedFile> read_buf(MarksInCompressedFile::MARKS_PER_BLOCK);
-            for (size_t marks_read = 0; marks_read < total_marks; )
+            size_t marks_read = 0;
+            while (marks_read < total_marks)
             {
                 size_t count = std::min(MarksInCompressedFile::MARKS_PER_BLOCK, total_marks - marks_read);
                 reader->readStrict(reinterpret_cast<char *>(read_buf.data()), count * sizeof(MarkInCompressedFile));
