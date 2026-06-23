@@ -321,6 +321,17 @@ KeeperStateManager::KeeperStateManager(
           {
               .max_flush_batch_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::max_flush_batch_size],
           },
+          ReadAheadSettings
+          {
+              .enabled = keeper_context_->getCoordinationSettings()[CoordinationSetting::keeper_log_readahead_enabled],
+              .window_bytes = keeper_context_->getCoordinationSettings()[CoordinationSetting::keeper_log_readahead_window_bytes],
+              .max_peer_readers = keeper_context_->getCoordinationSettings()[CoordinationSetting::keeper_log_readahead_max_peer_readers],
+              .eviction_timeout_ms = keeper_context_->getCoordinationSettings()[CoordinationSetting::keeper_log_readahead_eviction_timeout_ms],
+              .pool_threads = keeper_context_->getCoordinationSettings()[CoordinationSetting::keeper_log_readahead_pool_threads],
+              .serve_wait_timeout_ms = keeper_context_->getCoordinationSettings()[CoordinationSetting::keeper_log_readahead_serve_wait_timeout_ms],
+              .fill_timeout_ms = keeper_context_->getCoordinationSettings()[CoordinationSetting::keeper_log_readahead_fill_timeout_ms],
+              .chunk_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::keeper_log_readahead_chunk_size],
+          },
           keeper_context_))
     , server_state_file_name(server_state_file_name_)
     , keeper_context(keeper_context_)

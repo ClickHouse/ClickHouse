@@ -42,6 +42,13 @@ namespace ProfileEvents
     extern const Event KeeperChangelogFileSyncMicroseconds;
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric KeeperChangelogReadAheadThreads;
+    extern const Metric KeeperChangelogReadAheadThreadsActive;
+    extern const Metric KeeperChangelogReadAheadThreadsScheduled;
+}
+
 namespace DB
 {
 
@@ -198,7 +205,7 @@ public:
                 // if we wrote at least 1 log in the log file we can rename the file to reflect correctly the
                 // contained logs
                 // file can be deleted from disk earlier by compaction
-                if (current_file_description->deleted)
+                if (current_file_description->marked_as_deleted)
                 {
                     LOG_WARNING(log, "Log {} is already deleted", current_file_description->path);
                     prealloc_done = false;
@@ -225,13 +232,10 @@ public:
                     if (move_changelog_cb)
                         move_changelog_cb(current_file_description, std::move(new_path), disk);
 
-                    /// L2: publish the sealed flag AFTER the to_log_index correction and move callback.
-                    /// A FILL's acquire-load of sealed==true happens-after the final to_log_index write,
-                    /// so the later plain to_log_index read is both the corrected value AND race-free.
-                    /// NOT set in finalizeCurrentFile() (which runs before the correction).
-                    /// NOT set for deleted files (compaction-deleted; they are never read-ahead targets).
+                    /// Set after to_log_index correction and move callback so read-ahead sees the final value.
+                    /// Not set for broken or compaction-deleted files.
                     if (!current_file_description->broken_at_end)
-                        current_file_description->sealed.store(true, std::memory_order_release);
+                        current_file_description->complete.store(true, std::memory_order_release);
                 }
             }
             else
@@ -251,7 +255,8 @@ public:
                     std::move(file_buf),
                     /* compressi)on level = */ 3,
                     /* append_to_existing_file_ = */ mode == WriteMode::Append,
-                    [latest_log_disk, path = current_file_description->path, read_settings = getReadSettings()] { return latest_log_disk->readFile(path, read_settings); });
+                    [latest_log_disk, path = current_file_description->path, read_settings = getReadSettings()]
+                    { return latest_log_disk->readFile(path, read_settings); });
 
             prealloc_done = false;
         }
@@ -409,7 +414,7 @@ private:
 
         chassert(current_file_description);
         // compact can delete the file and we don't need to do anything
-        chassert(!current_file_description->deleted);
+        chassert(!current_file_description->marked_as_deleted);
 
         if (compressed_buffer)
             compressed_buffer->finalize();
@@ -751,12 +756,13 @@ void PrefetchedCacheEntry::resolve(LogEntryPtr log_entry_)
     log_entry_resolver.set_value(std::move(log_entry_));
 }
 
-LogEntryStorage::LogEntryStorage(const LogFileSettings & log_settings, KeeperContextPtr keeper_context_)
+LogEntryStorage::LogEntryStorage(const LogFileSettings & log_settings, ReadAheadSettings readahead_settings_, KeeperContextPtr keeper_context_)
     : latest_logs_cache(log_settings.latest_logs_cache_size_threshold, log_settings.latest_logs_cache_entry_count_threshold)
     , commit_logs_cache(log_settings.commit_logs_cache_size_threshold, log_settings.commit_logs_cache_entry_count_threshold)
     , prefetch_queue(std::numeric_limits<uint64_t>::max())
     , keeper_context(std::move(keeper_context_))
     , log(getLogger("Changelog"))
+    , readahead_settings(readahead_settings_)
 {
     commit_logs_prefetcher = std::make_unique<ThreadFromGlobalPool>([this] { prefetchCommitLogs(); });
 }
@@ -1646,10 +1652,10 @@ LogReadPlan LogEntryStorage::getReadPlan(uint64_t start, uint64_t end, int64_t m
     LogReadPlan plan;
     /// Special case: negative byte limit means return empty (backpressure signal)
     if (max_size_bytes == -1)
-        return plan;    /// plan.ok==true, plan.items empty -> EXECUTE returns empty non-null vector
+        return plan;
 
-    plan.reserve_hint = end - start;
-    plan.items.reserve(end - start);
+    plan.expected_entry_count = end - start;
+    plan.items.reserve(plan.expected_entry_count);
 
     int64_t total_size = 0;
     const auto size_limit_reached = [&](int64_t entry_size)
@@ -1687,7 +1693,6 @@ LogReadPlan LogEntryStorage::getReadPlan(uint64_t start, uint64_t end, int64_t m
     SharedLockGuard commit_logs_lock(commit_logs_cache_mutex);
     for (size_t i = start; i < end; ++i)
     {
-        /// Non-blocking cache peek: only copy a resolved LogEntryPtr; treat unresolved placeholder as miss.
         LogEntryPtr cached;
         if (const CacheEntry * ce = commit_logs_cache.getCacheEntry(i))
         {
@@ -1717,8 +1722,8 @@ LogReadPlan LogEntryStorage::getReadPlan(uint64_t start, uint64_t end, int64_t m
         {
             if (i < retained_start)
             {
-                /// Entry is below retained start — compacted away => return nullptr via EXECUTE
-                plan.ok = false;
+                /// Entry is below retained start - compacted away
+                plan.logs_compacted = true;
                 return plan;
             }
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Location of log entry with index {} is missing", i);
@@ -1750,17 +1755,14 @@ LogReadPlan LogEntryStorage::getReadPlan(uint64_t start, uint64_t end, int64_t m
 
 LogEntriesPtr LogEntryStorage::executeReadPlan(const LogReadPlan & plan, uint64_t read_deadline_ms) const
 {
-    if (!plan.ok)
-        return nullptr;     /// compacted below start -> snapshot fallback
+    if (plan.logs_compacted)
+        return nullptr;
 
     auto ret = nuraft::cs_new<std::vector<nuraft::ptr<nuraft::log_entry>>>();
-    ret->reserve(plan.reserve_hint);
+    ret->reserve(plan.expected_entry_count);
 
-    Stopwatch watch;    /// DD12 wall-clock deadline
-    const auto deadline_hit = [&]()
-    {
-        return read_deadline_ms != 0 && watch.elapsedMilliseconds() > read_deadline_ms;
-    };
+    Stopwatch watch;
+    const auto deadline_hit = [&]() { return read_deadline_ms != 0 && watch.elapsedMilliseconds() > read_deadline_ms; };
 
     for (const auto & item : plan.items)
     {
@@ -1786,49 +1788,10 @@ LogEntriesPtr LogEntryStorage::executeReadPlan(const LogReadPlan & plan, uint64_
                 const auto & path = file_run.file_description->path;
                 LOG_TRACE(log, "Reading from path {} {} entries", path, file_run.count);
 
-                const CompressionMethod compression = chooseCompressionMethod(path, "");
-                const bool is_compressed = compression != CompressionMethod::None;
-
-                /// For compressed files: positions in logs_location are decompressed-stream offsets
-                /// (recorded by ChangelogReader which reads through a decompression wrapper).
-                /// We cannot seek to them in the raw compressed byte stream, so we open with
-                /// a decompression wrapper and skip records sequentially until we reach the
-                /// target decompressed-stream position.
-                ///
-                /// For uncompressed files: positions are raw byte offsets — seek directly.
-                std::unique_ptr<ReadBuffer> decompressed_buf;   /// non-null only for compressed files
-                ReadBuffer * buf = nullptr;
-
                 auto raw_file = file_run.file_description->disk->readFile(path, getReadSettings());
-                if (is_compressed)
-                {
-                    decompressed_buf = wrapReadBufferWithCompressionMethod(std::move(raw_file), compression);
-                    buf = decompressed_buf.get();
-                }
-                else
-                {
-                    raw_file->seek(file_run.position, SEEK_SET);
-                    buf = raw_file.get();
-                }
+                raw_file->seek(file_run.position, SEEK_SET);
 
                 uint64_t expected = file_run.first_index;
-
-                if (is_compressed)
-                {
-                    /// Skip records until the decompressed stream reaches file_run.position.
-                    while (buf->count() < file_run.position && !buf->eof())
-                    {
-                        [[maybe_unused]] auto skipped = readChangelogRecord(*buf, path);
-                    }
-
-                    if (buf->count() != file_run.position)
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Failed to seek to decompressed position {} in compressed file {} (reached {})",
-                            file_run.position,
-                            path,
-                            buf->count());
-                }
 
                 for (size_t k = 0; k < file_run.count; ++k)
                 {
@@ -1837,14 +1800,10 @@ LogEntriesPtr LogEntryStorage::executeReadPlan(const LogReadPlan & plan, uint64_
                         deadline = true;
                         return;
                     }
-                    auto record = readChangelogRecord(*buf, path);
+                    auto record = readChangelogRecord(*raw_file, path);
                     if (record.header.index != expected)
                         throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Read log index {} but expected {} from {}",
-                            record.header.index,
-                            expected,
-                            path);
+                            ErrorCodes::LOGICAL_ERROR, "Read log index {} but expected {} from {}", record.header.index, expected, path);
                     ret->push_back(logEntryFromRecord(record));
                     ProfileEvents::increment(ProfileEvents::KeeperLogsEntryReadFromFile);
                     ++expected;
@@ -1852,103 +1811,69 @@ LogEntriesPtr LogEntryStorage::executeReadPlan(const LogReadPlan & plan, uint64_
             });
 
         if (compacted)
-            return nullptr;     /// removed_from_disk -> snapshot fallback
+            return nullptr;
         if (deadline)
-            return ret;         /// DD12: return contiguous prefix decoded so far (DD18-valid)
+            return ret; /// return the prefix decoded so far
     }
 
     return ret;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Layer 2 — per-peer decoded read-ahead
+// Per-peer decoded read-ahead
 // ─────────────────────────────────────────────────────────────────────────────
 
-void LogEntryStorage::setReadAheadSettings(ReadAheadSettings settings)
-{
-    std::lock_guard lock(per_peer_readers_mutex);
-    readahead_settings = settings;
-}
-
-/// NON-BLOCKING terminal retire (loop-4 F2). Mark closed, bump generation,
-/// clear fallback_waiting, notify, erase from the map. NO fill_done.wait().
-/// The fill task holds a shared_ptr<PerPeerReader>, observes `closed` at its
-/// next deque_mutex touch, self-exits and drops its ref (no UAF, no join under
-/// lock_). Idempotent. PRECONDITION: called while the caller holds per_peer_readers_mutex.
+/// Mark a reader closed and erase it from the map. Fill task observes `closed` and self-exits.
 void LogEntryStorage::retireReaderLocked(int32_t peer_id, std::shared_ptr<PerPeerReader> & reader)
 {
     {
         std::lock_guard dq_lock(reader->deque_mutex);
         reader->closed = true;
         ++reader->generation;
-        reader->fallback_waiting = false;
         reader->cv.notify_all();
     }
     per_peer_readers.erase(peer_id);
 }
 
-/// Build a read-ahead plan (FILL cursors + bounded items for [start,end)).
+/// Build a read-ahead plan (fill cursors + bounded items for [start,end)).
 /// PRECONDITION: caller holds changelog_lock (shared).
-/// Returns a plan with readahead_engaged=true iff read-ahead should be used.
-LogReadPlan LogEntryStorage::getReadAheadPlan(
-    uint64_t start, uint64_t end, int64_t max_size_bytes, uint64_t retained_start) const
+/// Returns a plan with readahead_engaged=true only if read-ahead should be used.
+LogReadPlan LogEntryStorage::getReadAheadPlan(uint64_t start, uint64_t end, int64_t max_size_bytes, uint64_t retained_start) const
 {
-    // First build the standard L1 plan for [start,end) — this covers bounded runs
-    // and cache items for the ACTUAL request. This is what we will serve in the
-    // PLAN's items vector.
+    // Build the base plan for [start,end) — bounded runs and cache items that will be served.
     LogReadPlan plan = getReadPlan(start, end, max_size_bytes, retained_start);
-    if (!plan.ok)
-        return plan;  /// compacted — keep readahead_engaged=false
+    if (plan.logs_compacted)
+        return plan;
 
-    // DD13 byte gate: if window_bytes < max_append_size_bytes bypass read-ahead.
-    // (This will be wired with the coordination settings later; for now just skip
-    // if the setting is not yet populated).
-    // No additional gate needed at plan level — caller already checked enabled etc.
-
-    // Walk [start, start+window_budget) to build FILL cursors for sealed files.
-    // We need the located domain tail to cap the window walk.
+    // Walk [start, start+window_budget) to build fill cursors for complete files.
     const uint64_t window_budget = readahead_settings.window_bytes;
 
-    // Speculative window walk for sealed files: from 'start' (or expected_next).
-    // We walk the logs_location from 'start' forward, emitting one FillCursor per
-    // contiguous sealed-file run. We stop at: byte budget / located tail / non-sealed file.
+    // Walk logs_location forward, emitting one FillCursor per complete-file run.
+    // Stop at: byte budget exceeded / non-complete file / .zstd file.
     uint64_t window_bytes_so_far = 0;
     ChangelogFileDescriptionPtr prev_file;
 
-    // The window starts at 'start' but we only emit FILL cursors, not bounded runs.
-    // We use a simple forward walk.
     for (uint64_t idx = start; idx <= max_index_with_location; ++idx)
     {
         auto it = logs_location.find(idx);
         if (it == logs_location.end())
-            break;  /// gap in location map — stop window
+            break; /// gap in location map — stop window
 
         const auto & loc = it->second;
         const auto & fd = loc.file_description;
 
-        // Stop speculative window at non-sealed files (but still emit for earlier range).
-        if (!fd->sealed.load(std::memory_order_acquire))
-        {
-            // Non-sealed file (active or broken): emit only a bounded run already in plan.items
-            // — already done by getReadPlan above. Stop window here.
-            break;
-        }
+        if (!fd->complete.load(std::memory_order_acquire))
+            break; // active/incomplete file — stop the speculative window
 
-        // Check .zstd extension (bypasses FILL).
-        bool is_zstd = (fd->extension.ends_with("zstd"));
-        if (is_zstd)
-            break;  /// speculative window stops before .zstd file
-
-        // Byte budget: always admit at least 1 entry (V3 guarantee).
+        // Always admit at least 1 entry.
         if (window_bytes_so_far > 0 && window_bytes_so_far + loc.entry_size > window_budget)
-            break;  /// window filled
+            break; // window filled
 
         window_bytes_so_far += loc.entry_size;
 
-        // Build or extend a FillCursor for this file.
         if (!prev_file || prev_file != fd)
         {
-            // New file — emit a new FillCursor starting at this entry's position.
+            // New file — start a new FillCursor at this entry's position.
             LogReadPlan::FillCursor cursor;
             cursor.file_description = fd;
             cursor.start_position = loc.position;
@@ -1956,312 +1881,217 @@ LogReadPlan LogEntryStorage::getReadAheadPlan(
             plan.fill_cursors.push_back(std::move(cursor));
             prev_file = fd;
         }
-        // else: same sealed file — the cursor already covers it (open-ended, reads to EOF).
+        // else: same file — existing cursor reads to EOF.
     }
 
     plan.readahead_engaged = true;
     return plan;
 }
 
-/// FILL task — one long-lived task per PerPeerReader.
-/// Runs on readahead_pool. Parks at the high watermark, wakes on low-watermark
-/// notify. Fulfils fill_done_promise EXACTLY ONCE at terminal exit.
-/// Open-reader model (D3/Direction A): holds held_buf open across parks.
-void LogEntryStorage::fillTask(std::shared_ptr<PerPeerReader> reader)
+/// Long-lived fill task per PerPeerReader, running on readahead_pool.
+/// Parks when the deque reaches the byte budget; wakes when the serve side consumes entries.
+/// Sets fill_done on exit. Keeps held_buf open across parks to avoid redundant re-opens.
+void LogEntryStorage::fillTask(std::shared_ptr<PerPeerReader> reader) const
 {
     const uint64_t window_budget = readahead_settings.window_bytes;
-    /// Low watermark = half the window (wake the fill when deque drops below this).
-    const uint64_t low_watermark = window_budget / 2;
+
+    const auto mark_compacted = [&]()
+    {
+        std::lock_guard dq_lock(reader->deque_mutex);
+        reader->compacted = true;
+        reader->cv.notify_all();
+        reader->fill_done.store(true, std::memory_order_release);
+        reader->fill_done.notify_all();
+    };
+
 
     while (true)
     {
-        // ── Step 1: Under deque_mutex, pop pending_cursors / check state ──
-        LogReadPlan::FillCursor current_cursor;
-        bool have_cursor = false;
+        std::optional<LogReadPlan::FillCursor> current_cursor;
         uint64_t local_generation = 0;
         {
             std::lock_guard dq_lock(reader->deque_mutex);
             if (reader->closed)
             {
-                // Terminal: closed → fulfil fill_done and exit.
-                reader->fill_done_promise.set_value();
+                reader->fill_done.store(true, std::memory_order_release);
+                reader->fill_done.notify_all();
                 return;
             }
             local_generation = reader->generation;
-            // Check if we have pending cursors to work on.
             if (!reader->pending_cursors.empty())
             {
-                current_cursor = reader->pending_cursors.front();
-                reader->pending_cursors.erase(reader->pending_cursors.begin());
-                have_cursor = true;
+                current_cursor.emplace(std::move(reader->pending_cursors.front()));
+                reader->pending_cursors.pop_front();
             }
             else if (reader->resume_file)
             {
-                // Resume from a previous park position.
-                current_cursor.file_description = reader->resume_file;
-                current_cursor.start_position = reader->resume_position;
-                current_cursor.first_index = reader->resume_index;
-                have_cursor = true;
+                current_cursor.emplace();
+                current_cursor->file_description = reader->resume_file;
+                current_cursor->start_position = reader->resume_position;
+                current_cursor->first_index = reader->resume_index;
             }
         }
 
-        if (!have_cursor)
+        if (!current_cursor.has_value())
         {
-            // Park waiting for pending_cursors or closed.
             std::unique_lock dq_lock(reader->deque_mutex);
-            reader->cv.wait(dq_lock, [&]
-            {
-                return reader->closed || reader->generation != local_generation
-                    || !reader->pending_cursors.empty() || reader->resume_file != nullptr;
-            });
-            // Loop back to step 1.
+            reader->cv.wait(
+                dq_lock,
+                [&]
+                {
+                    return reader->closed || reader->generation != local_generation || !reader->pending_cursors.empty()
+                        || reader->resume_file != nullptr;
+                });
             continue;
         }
 
-        // ── Step 2: Under withLock, check removed_from_disk + open-reader resume ──
-        bool compacted_signal = false;
+        // Check removed_from_disk and decide whether to reuse or reopen held_buf.
         bool need_reopen = false;
-        bool need_seek = false;
 
-        current_cursor.file_description->withLock(
+        current_cursor->file_description->withLock(
             [&]
             {
-                if (current_cursor.file_description->removed_from_disk)
+                if (current_cursor->file_description->removed_from_disk)
                 {
-                    compacted_signal = true;
+                    mark_compacted();
                     return;
                 }
 
-                // D3/Direction A: if held_buf is open, check identity.
-                if (reader->held_buf && reader->resume_file == current_cursor.file_description)
+                // If held_buf is open for this file, check disk/path identity.
+                if (reader->held_buf && reader->resume_file == current_cursor->file_description)
                 {
-                    const DiskPtr cur_disk = current_cursor.file_description->disk;
-                    const std::string & cur_path = current_cursor.file_description->path;
-                    if (reader->opened_disk == cur_disk && reader->opened_path == cur_path)
+                    const DiskPtr cur_disk = current_cursor->file_description->disk;
+                    const std::string & cur_path = current_cursor->file_description->path;
+                    if (reader->opened_disk != cur_disk || reader->opened_path != cur_path)
                     {
-                        // Same disk/path — reuse held_buf (no re-GET).
-                        need_reopen = false;
-                        need_seek = false;
-                    }
-                    else
-                    {
-                        // Cross-disk move detected — drop held_buf and re-open.
+                        // File moved to a different disk — reopen.
                         reader->held_buf.reset();
                         need_reopen = true;
-                        need_seek = true;
                     }
                 }
                 else
                 {
-                    // Fresh cursor or different file — need to open.
                     reader->held_buf.reset();
                     need_reopen = true;
-                    need_seek = true;
                 }
             });
 
-        if (compacted_signal)
-        {
-            std::lock_guard dq_lock(reader->deque_mutex);
-            reader->compacted = true;
-            reader->cv.notify_all();
-            reader->fill_done_promise.set_value();
+        if (reader->compacted)
             return;
-        }
 
-        // ── Steps 3–4: Open / re-open + seek (if needed) ──
-        if (need_reopen)
+        const auto open_file = [&]()
         {
-            current_cursor.file_description->withLock(
+            current_cursor->file_description->withLock(
                 [&]
                 {
-                    if (current_cursor.file_description->removed_from_disk)
+                    if (current_cursor->file_description->removed_from_disk)
                     {
-                        compacted_signal = true;
+                        mark_compacted();
                         return;
                     }
-                    const DiskPtr & disk = current_cursor.file_description->disk;
-                    const std::string & path = current_cursor.file_description->path;
-
-                    // .zstd files are never given FILL cursors (excluded in getReadAheadPlan).
-                    // Open raw seekable buffer directly.
+                    const DiskPtr & disk = current_cursor->file_description->disk;
+                    const std::string & path = current_cursor->file_description->path;
                     reader->held_buf = disk->readFile(path, getReadSettings());
-
                     reader->opened_disk = disk;
                     reader->opened_path = path;
-                    reader->resume_file = current_cursor.file_description;
+                    reader->resume_file = current_cursor->file_description;
                 });
+        };
 
-            if (compacted_signal)
+        if (need_reopen)
+        {
+            open_file();
+            if (reader->compacted)
+                return;
+        }
+
+        if (need_reopen && reader->held_buf)
+        {
+            try
             {
+                reader->held_buf->seek(static_cast<off_t>(current_cursor->start_position), SEEK_SET);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "While seeking to a file for filling entries");
                 std::lock_guard dq_lock(reader->deque_mutex);
-                reader->compacted = true;
+                reader->reader_error = true;
                 reader->cv.notify_all();
-                reader->fill_done_promise.set_value();
+                reader->fill_done.store(true, std::memory_order_release);
+                reader->fill_done.notify_all();
                 return;
             }
         }
 
-        if (need_seek && reader->held_buf)
-        {
-            try
-            {
-                reader->held_buf->seek(static_cast<off_t>(current_cursor.start_position), SEEK_SET);
-            }
-            catch (...)
-            {
-                // Seek failed — try once to re-open.
-                reader->held_buf.reset();
-                current_cursor.file_description->withLock(
-                    [&]
-                    {
-                        if (current_cursor.file_description->removed_from_disk)
-                        {
-                            compacted_signal = true;
-                            return;
-                        }
-                        reader->held_buf = current_cursor.file_description->disk->readFile(
-                            current_cursor.file_description->path, getReadSettings());
-                        reader->opened_disk = current_cursor.file_description->disk;
-                        reader->opened_path = current_cursor.file_description->path;
-                        reader->held_buf->seek(static_cast<off_t>(current_cursor.start_position), SEEK_SET);
-                    });
-
-                if (compacted_signal)
-                {
-                    std::lock_guard dq_lock(reader->deque_mutex);
-                    reader->compacted = true;
-                    reader->cv.notify_all();
-                    reader->fill_done_promise.set_value();
-                    return;
-                }
-            }
-        }
-
-        if (!reader->held_buf)
-        {
-            // Should not happen but defend: no buffer → exit terminally.
-            std::lock_guard dq_lock(reader->deque_mutex);
-            reader->reader_error = true;
-            reader->cv.notify_all();
-            reader->fill_done_promise.set_value();
-            return;
-        }
-
-        // ── Step 5–7: Decode loop (holding file_mutex via withLock per chunk) ──
-        const std::string file_path = current_cursor.file_description->path;
-        const uint64_t file_to_index = current_cursor.file_description->to_log_index;
+        // Decode loop: process entries in small chunks, checking state between chunks.
+        const uint64_t file_to_index = current_cursor->file_description->to_log_index;
 
         Stopwatch deadline_watch;
-        uint64_t deadline_ms = readahead_settings.read_request_timeout_ms;
-        uint64_t expected_idx = current_cursor.first_index;
+        uint64_t deadline_ms = readahead_settings.fill_timeout_ms;
+        uint64_t expected_idx = current_cursor->first_index;
 
-        bool terminal_on_decode_error = false;
         bool file_eof_reached = false;
 
-        // We decode in small chunks, checking state after each chunk.
-        static constexpr size_t CHUNK_SIZE = 16;
+        const size_t chunk_size = readahead_settings.chunk_size;
+
+        std::vector<LogEntryPtr> chunk;
+        chunk.reserve(chunk_size);
 
         while (true)
         {
-            // Check deadline (DD12) before each chunk.
             if (deadline_ms > 0 && static_cast<uint64_t>(deadline_watch.elapsedMilliseconds()) > deadline_ms)
             {
-                // Deadline hit — park.
+                // Deadline exceeded — park and resume later.
                 std::lock_guard dq_lock(reader->deque_mutex);
-                reader->resume_file = current_cursor.file_description;
-                reader->resume_position = static_cast<uint64_t>(reader->held_buf->count());
+                reader->resume_file = current_cursor->file_description;
+                reader->resume_position = static_cast<uint64_t>(reader->held_buf->getPosition());
                 reader->resume_index = expected_idx;
-                // Keep held_buf open (Direction A).
                 break;
             }
 
             // Failpoint: wedge the fill for testing.
             FailPointInjection::pauseFailPoint(FailPoints::keeper_changelog_readahead_fill_wedge);
 
-            // Check if at high watermark (park).
+            // park when the limit is hit
             {
                 std::lock_guard dq_lock(reader->deque_mutex);
                 if (reader->deque_bytes >= window_budget)
                 {
-                    // Record resume state and park.
-                    reader->resume_file = current_cursor.file_description;
-                    reader->resume_position = static_cast<uint64_t>(reader->held_buf->count());
+                    reader->resume_file = current_cursor->file_description;
+                    reader->resume_position = static_cast<uint64_t>(reader->held_buf->getPosition());
                     reader->resume_index = expected_idx;
-                    // Failpoint: signal that the fill is parked with held_buf open.
                     FailPointInjection::pauseFailPoint(FailPoints::keeper_changelog_readahead_park_armed);
-                    // Keep held_buf open (Direction A: file_mutex NOT held here).
                     break;
                 }
             }
 
-            // Decode one chunk under file_mutex.
-            std::vector<LogEntryPtr> chunk;
-            chunk.reserve(CHUNK_SIZE);
-            bool decoded_eof = false;
-
             bool chunk_compacted = false;
             bool chunk_error = false;
 
-            current_cursor.file_description->withLock(
+            current_cursor->file_description->withLock(
                 [&]
                 {
-                    if (current_cursor.file_description->removed_from_disk)
+                    if (current_cursor->file_description->removed_from_disk)
                     {
                         chunk_compacted = true;
                         return;
                     }
 
-                    // Re-check identity inside withLock.
-                    const DiskPtr cur_disk = current_cursor.file_description->disk;
-                    const std::string & cur_path = current_cursor.file_description->path;
+                    const DiskPtr cur_disk = current_cursor->file_description->disk;
+                    const std::string & cur_path = current_cursor->file_description->path;
                     if (reader->opened_disk != cur_disk || reader->opened_path != cur_path)
                     {
-                        // Cross-disk move happened while we tried to decode — re-open next iteration.
+                        // File moved to a different disk — reopen on the next iteration.
                         reader->held_buf.reset();
                         return;
                     }
 
-                    for (size_t k = 0; k < CHUNK_SIZE; ++k)
+                    for (size_t k = 0; k < chunk_size; ++k)
                     {
-                        // Check for true EOF: expected_idx > file_to_index.
                         if (expected_idx > file_to_index)
                         {
-                            decoded_eof = true;
+                            file_eof_reached = true;
                             break;
-                        }
-
-                        if (reader->held_buf->eof())
-                        {
-                            // Ambiguous: could be true EOF or dead socket.
-                            // Disambiguate via resume_index vs to_log_index.
-                            if (expected_idx > file_to_index)
-                            {
-                                decoded_eof = true;
-                            }
-                            else
-                            {
-                                // Dead idle stream — attempt re-GET once.
-                                reader->held_buf.reset();
-                                try
-                                {
-                                    reader->held_buf = cur_disk->readFile(cur_path, getReadSettings());
-                                    reader->held_buf->seek(static_cast<off_t>(reader->resume_position), SEEK_SET);
-                                    if (reader->held_buf->eof())
-                                    {
-                                        // Still EOF after re-open — real error.
-                                        chunk_error = true;
-                                        break;
-                                    }
-                                }
-                                catch (...)
-                                {
-                                    chunk_error = true;
-                                    break;
-                                }
-                            }
-                            if (decoded_eof)
-                                break;
                         }
 
                         try
@@ -2269,32 +2099,32 @@ void LogEntryStorage::fillTask(std::shared_ptr<PerPeerReader> reader)
                             auto record = readChangelogRecord(*reader->held_buf, cur_path);
                             if (record.header.index != expected_idx)
                             {
+                                LOG_ERROR(
+                                    log,
+                                    "Read unexpected log entry from {} with index {} while expected index was {}",
+                                    cur_path,
+                                    record.header.index,
+                                    expected_idx);
                                 chunk_error = true;
                                 break;
                             }
                             chunk.push_back(logEntryFromRecord(record));
                             ProfileEvents::increment(ProfileEvents::KeeperLogsEntryReadFromFile);
-                            reader->resume_position = static_cast<uint64_t>(reader->held_buf->count());
+                            reader->resume_position = static_cast<uint64_t>(reader->held_buf->getPosition());
                             ++expected_idx;
                         }
                         catch (...)
                         {
+                            tryLogCurrentException(log, fmt::format("While reading log entry at index {} from {}", expected_idx, cur_path));
                             chunk_error = true;
                             break;
                         }
                     }
-
-                    // Check fallback_waiting: if set, yield file_mutex now (Direction A).
-                    // The held_buf stays open; the fallback can acquire file_mutex.
-                    // We'll break out of the outer while and loop back.
                 });
 
             if (chunk_compacted)
             {
-                std::lock_guard dq_lock(reader->deque_mutex);
-                reader->compacted = true;
-                reader->cv.notify_all();
-                reader->fill_done_promise.set_value();
+                mark_compacted();
                 return;
             }
 
@@ -2303,186 +2133,120 @@ void LogEntryStorage::fillTask(std::shared_ptr<PerPeerReader> reader)
                 std::lock_guard dq_lock(reader->deque_mutex);
                 reader->reader_error = true;
                 reader->cv.notify_all();
-                terminal_on_decode_error = true;
-                break;
+                reader->fill_done.store(true, std::memory_order_release);
+                reader->fill_done.notify_all();
+                return;
             }
 
             if (!reader->held_buf)
             {
-                // held_buf was reset (cross-disk move detected inside withLock) — loop back to step 2.
-                reader->resume_file = current_cursor.file_description;
+                // held_buf was reset (cross-disk move detected inside withLock)
+                reader->resume_file = current_cursor->file_description;
                 reader->resume_index = expected_idx;
                 break;
             }
 
             // Push the decoded chunk under deque_mutex.
-            bool generation_mismatch = false;
-            bool fallback_yield = false;
             {
                 std::lock_guard dq_lock(reader->deque_mutex);
                 if (reader->closed)
                 {
-                    reader->fill_done_promise.set_value();
+                    reader->fill_done.store(true, std::memory_order_release);
+                    reader->fill_done.notify_all();
                     return;
                 }
                 if (reader->generation != local_generation)
                 {
-                    generation_mismatch = true;
+                    // Rewind detected — discard stale cursor and restart.
+                    reader->held_buf.reset();
+                    reader->resume_file.reset();
+                    reader->resume_position = 0;
+                    reader->resume_index = 0;
+                    local_generation = reader->generation;
+                    break;
                 }
-                else if (reader->fallback_waiting)
+                for (auto & entry : chunk)
                 {
-                    fallback_yield = true;
+                    reader->deque.push_back(std::move(entry));
+                    reader->deque_bytes += entry ? entry->get_buf().size() : 0;
                 }
-                else
-                {
-                    // Normal push.
-                    for (auto & entry : chunk)
-                    {
-                        reader->deque.push_back(std::move(entry));
-                        reader->deque_bytes += entry ? entry->get_buf().size() : 0;
-                    }
-                    reader->cv.notify_all();
-                }
+                reader->cv.notify_all();
             }
 
-            if (generation_mismatch)
-            {
-                // Stale cursor — discard chunk, invalidate resume, loop back to step 1.
-                reader->held_buf.reset();
-                reader->resume_file.reset();
-                reader->resume_position = 0;
-                reader->resume_index = 0;
-                local_generation = reader->generation;
-                break;  /// break inner while, loop outer while → step 1
-            }
+            if (file_eof_reached)
+                break;
 
-            if (fallback_yield)
-            {
-                // Yield file_mutex to the fallback reader (Direction A: keep held_buf).
-                // Record resume cursor and break to allow the fallback to take file_mutex.
-                reader->resume_file = current_cursor.file_description;
-                reader->resume_position = static_cast<uint64_t>(reader->held_buf ? reader->held_buf->count() : 0);
-                reader->resume_index = expected_idx;
-                break;  /// break inner while (outer while loops back to step 1)
-            }
-
-            if (decoded_eof)
-            {
-                // True EOF of the sealed file.
-                file_eof_reached = true;
-                break;  /// break inner while
-            }
-
-            // Update resume cursor (for watermark park, etc.)
-            reader->resume_file = current_cursor.file_description;
+            reader->resume_file = current_cursor->file_description;
             reader->resume_index = expected_idx;
-        }  /// inner while
-
-        if (terminal_on_decode_error)
-        {
-            reader->fill_done_promise.set_value();
-            return;
-        }
+        } // inner while
 
         if (file_eof_reached)
         {
-            // Move on to the next pending cursor (if any), or check cache transition.
             reader->held_buf.reset();
             reader->resume_file.reset();
             reader->resume_position = 0;
 
-            // Check if expected_next has crossed into cache (cache transition → terminal close).
-            bool cache_transition = false;
+            // If no more cursors, the fill has reached the cache boundary — close terminally.
             {
                 std::lock_guard dq_lock(reader->deque_mutex);
                 if (reader->closed)
                 {
-                    reader->fill_done_promise.set_value();
+                    reader->fill_done.store(true, std::memory_order_release);
+                    reader->fill_done.notify_all();
                     return;
                 }
-                // If there are still pending cursors, we have more work to do.
-                if (!reader->pending_cursors.empty())
+                if (reader->pending_cursors.empty())
                 {
-                    // Continue to the next cursor on next outer loop iteration.
-                }
-                else
-                {
-                    // No more cursors — the reader is at the cache boundary.
-                    // This is a terminal close (cache transition).
-                    cache_transition = true;
+                    reader->closed = true;
+                    reader->cv.notify_all();
+                    reader->fill_done.store(true, std::memory_order_release);
+                    reader->fill_done.notify_all();
+                    return;
                 }
             }
-
-            if (cache_transition)
-            {
-                // Terminal: the reader has served all sealed files.
-                // Serve will admit a fresh reader for future requests.
-                std::lock_guard dq_lock(reader->deque_mutex);
-                reader->closed = true;
-                reader->cv.notify_all();
-                reader->fill_done_promise.set_value();
-                return;
-            }
-            // else: loop back and process next pending cursor.
         }
 
-        // Park via cv.wait if at high watermark (already done inside inner while).
-        // Otherwise loop back to step 1 to consume more pending_cursors.
-        {
-            std::unique_lock dq_lock(reader->deque_mutex);
-            if (!reader->closed && reader->pending_cursors.empty() && !reader->resume_file
-                && reader->deque_bytes < low_watermark)
-            {
-                // Nothing to do right now — park waiting for new cursors / wakeup.
-                reader->cv.wait(dq_lock, [&]
-                {
-                    return reader->closed || reader->generation != local_generation
-                        || !reader->pending_cursors.empty() || reader->resume_file != nullptr
-                        || reader->deque_bytes >= window_budget;
-                });
-            }
-        }
-    }  /// outer while
+    } // outer while
 }
 
-/// Serve a request using the per-peer read-ahead path (Option 2).
-/// PRECONDITION: called WITHOUT changelog_lock (released by the caller before this call).
-LogEntriesPtr LogEntryStorage::serveReadAhead(
-    int32_t peer_id, const LogReadPlan & plan, uint64_t retained_start) TSA_NO_THREAD_SAFETY_ANALYSIS
+/// Serve a read request using the per-peer read-ahead deque.
+/// PRECONDITION: called WITHOUT changelog_lock.
+LogEntriesPtr
+LogEntryStorage::serveReadAhead(int32_t peer_id, const LogReadPlan & plan) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    (void)retained_start;  /// used by L1 path if we fall back
 
-    if (!plan.readahead_engaged || !plan.ok)
-        return executeReadPlan(plan, readahead_settings.read_request_timeout_ms);
+    if (!plan.readahead_engaged || plan.logs_compacted)
+        return executeReadPlan(plan, readahead_settings.fill_timeout_ms);
 
-    // ── Admission: get-or-create live PerPeerReader ──
     std::shared_ptr<PerPeerReader> reader;
     {
         std::lock_guard map_lock(per_peer_readers_mutex);
 
-        // Lazy pool creation.
         if (!readahead_pool)
         {
             size_t threads = readahead_settings.pool_threads;
             if (threads == 0)
                 threads = readahead_settings.max_peer_readers;
             readahead_pool = std::make_unique<ThreadPool>(
-                CurrentMetrics::end(), CurrentMetrics::end(), CurrentMetrics::end(),
-                static_cast<int>(threads), static_cast<int>(threads),
-                static_cast<int>(threads));
+                CurrentMetrics::KeeperChangelogReadAheadThreads,
+                CurrentMetrics::KeeperChangelogReadAheadThreadsActive,
+                CurrentMetrics::KeeperChangelogReadAheadThreadsScheduled,
+                threads,
+                threads,
+                threads);
         }
 
-        // Lazy eviction: evict idle readers under the map mutex.
+        // Evict idle readers before admission.
         const auto now = std::chrono::steady_clock::now();
         const auto eviction_timeout = std::chrono::milliseconds(readahead_settings.eviction_timeout_ms);
-        for (auto it = per_peer_readers.begin(); it != per_peer_readers.end(); )
+        for (auto it = per_peer_readers.begin(); it != per_peer_readers.end();)
         {
             auto & r = it->second;
             if (now - r->last_access > eviction_timeout)
             {
                 LOG_DEBUG(log, "Evicting idle read-ahead reader for peer {}", it->first);
                 retireReaderLocked(it->first, r);
-                it = per_peer_readers.begin();  // retireReaderLocked erased, restart
+                it = per_peer_readers.begin(); // iterator invalidated by erase — restart
                 continue;
             }
             ++it;
@@ -2499,13 +2263,11 @@ LogEntriesPtr LogEntryStorage::serveReadAhead(
             }
             if (!terminal)
             {
-                // Check if fill_done is ready (task exited).
-                if (existing->fill_done.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready)
+                if (existing->fill_done.load(std::memory_order_acquire))
                     terminal = true;
             }
             if (terminal)
             {
-                // Reap the dead reader (non-blocking).
                 retireReaderLocked(peer_id, existing);
                 it = per_peer_readers.end();
             }
@@ -2513,20 +2275,21 @@ LogEntriesPtr LogEntryStorage::serveReadAhead(
 
         if (it == per_peer_readers.end())
         {
-            // Admit a fresh reader.
             if (per_peer_readers.size() >= readahead_settings.max_peer_readers)
             {
-                // Over limit: fail-close to L1 path.
-                LOG_DEBUG(log, "Read-ahead max_peer_readers ({}) reached, falling back to L1 for peer {}",
-                    readahead_settings.max_peer_readers, peer_id);
-                return executeReadPlan(plan, readahead_settings.read_request_timeout_ms);
+                // Peer reader limit reached — fall back to synchronous read.
+                LOG_DEBUG(
+                    log,
+                    "Read-ahead max_peer_readers ({}) reached, falling back for peer {}",
+                    readahead_settings.max_peer_readers,
+                    peer_id);
+                return executeReadPlan(plan, readahead_settings.fill_timeout_ms);
             }
 
             auto new_reader = std::make_shared<PerPeerReader>();
             new_reader->last_access = now;
             per_peer_readers[peer_id] = new_reader;
 
-            // Schedule the long-lived fill task.
             readahead_pool->scheduleOrThrowOnError([this, new_reader]() mutable { fillTask(new_reader); });
 
             reader = new_reader;
@@ -2538,55 +2301,23 @@ LogEntriesPtr LogEntryStorage::serveReadAhead(
         }
     }
 
-    // ── Rewind detection ──
     uint64_t plan_start = 0;
-    // Determine the first index in plan.items.
-    for (const auto & item : plan.items)
+    if (!plan.items.empty())
     {
-        if (const auto * e = std::get_if<LogEntryPtr>(&item))
-        {
-            (void)e;
-            // Cache entry — we need its index but plan doesn't carry it directly.
-            // We'll use the start implicitly from the request.
-            break;
-        }
-        if (const auto * run = std::get_if<LogReadPlan::FileRun>(&item))
-        {
+        if (const auto * run = std::get_if<LogReadPlan::FileRun>(&plan.items.front()))
             plan_start = run->first_index;
-            break;
-        }
     }
 
     {
         std::lock_guard dq_lock(reader->deque_mutex);
 
-        // Determine expected_next from current reader state.
         if (reader->expected_next == 0)
         {
-            // Fresh reader — set expected_next to beginning of request.
-            // Find first disk index.
-            for (const auto & item : plan.items)
-            {
-                if (const auto * run = std::get_if<LogReadPlan::FileRun>(&item))
-                {
-                    reader->expected_next = run->first_index;
-                    reader->deque_front_index = run->first_index;
-                    break;
-                }
-            }
+            reader->expected_next = plan_start;
+            reader->deque_front_index = plan_start;
         }
 
-        // Rewind check: if the request starts before or at a different position.
-        bool is_rewind = false;
-        for (const auto & item : plan.items)
-        {
-            if (const auto * run = std::get_if<LogReadPlan::FileRun>(&item))
-            {
-                is_rewind = (run->first_index != reader->expected_next);
-                plan_start = run->first_index;
-                break;
-            }
-        }
+        const bool is_rewind = (plan_start != 0 && plan_start != reader->expected_next);
 
         if (is_rewind)
         {
@@ -2598,7 +2329,6 @@ LogEntriesPtr LogEntryStorage::serveReadAhead(
             reader->deque_front_index = plan_start;
         }
 
-        // (Re-)arm the fill window with new FILL cursors.
         if (!plan.fill_cursors.empty())
         {
             reader->pending_cursors = plan.fill_cursors;
@@ -2606,262 +2336,76 @@ LogEntriesPtr LogEntryStorage::serveReadAhead(
         }
     }
 
-    // ── Option 2: bounded cv.wait ──
-    const auto serve_deadline = std::chrono::steady_clock::now()
-        + std::chrono::milliseconds(readahead_settings.serve_wait_timeout_ms);
+    const auto serve_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(readahead_settings.serve_wait_timeout_ms);
 
     // Failpoint: wedge the serve wait for testing.
     FailPointInjection::pauseFailPoint(FailPoints::keeper_changelog_readahead_serve_wait);
 
-    // Collect disk indices needed from plan.items.
-    std::vector<uint64_t> disk_indices;
-    for (const auto & item : plan.items)
-    {
-        if (const auto * run = std::get_if<LogReadPlan::FileRun>(&item))
-        {
-            for (size_t k = 0; k < run->count; ++k)
-                disk_indices.push_back(run->first_index + k);
-        }
-    }
-
-    // Wait until the deque covers all disk_indices OR timeout OR error.
-    {
-        std::unique_lock dq_lock(reader->deque_mutex);
-        reader->cv.wait_until(dq_lock, serve_deadline,
-            [&]
-            {
-                if (reader->reader_error || reader->compacted)
-                    return true;
-                // Check if deque covers all disk indices.
-                for (uint64_t idx : disk_indices)
-                {
-                    if (idx < reader->deque_front_index)
-                        continue;  // already popped (should not happen in a fresh serve)
-                    const size_t deque_offset = idx - reader->deque_front_index;
-                    if (deque_offset >= reader->deque.size())
-                        return false;  // not yet decoded
-                }
-                return true;
-            });
-    }
-
-    // ── Assemble result ──
     LogEntriesPtr result = nuraft::cs_new<std::vector<nuraft::ptr<nuraft::log_entry>>>();
     result->reserve(plan.items.size());
 
-    uint64_t first_gap = 0;
-    bool hit_gap = false;
-
+    for (size_t item_idx = 0; item_idx < plan.items.size(); ++item_idx)
     {
-        std::lock_guard dq_lock(reader->deque_mutex);
+        const auto & item = plan.items[item_idx];
 
-        if (reader->compacted)
+        if (const auto * e = std::get_if<LogEntryPtr>(&item))
         {
-            // Terminal: snapshot fallback.
-            retireReaderLocked(peer_id, reader);
-            return nullptr;
+            result->push_back(*e);
+            continue;
         }
 
-        bool task_error = reader->reader_error;
-
-        for (const auto & item : plan.items)
+        // For disk entries, pop the required count from the deque in batches.
+        const size_t total = std::get<LogReadPlan::FileRun>(item).count;
+        size_t remaining = total;
+        while (remaining > 0)
         {
-            if (const auto * e = std::get_if<LogEntryPtr>(&item))
-            {
-                result->push_back(*e);
-                continue;
-            }
-            const auto & run = std::get<LogReadPlan::FileRun>(item);
-            for (size_t k = 0; k < run.count; ++k)
-            {
-                const uint64_t idx = run.first_index + k;
-                if (idx < reader->deque_front_index)
-                {
-                    // Already popped — should not happen.
-                    first_gap = idx;
-                    hit_gap = true;
-                    break;
-                }
-                const size_t deque_offset = idx - reader->deque_front_index;
-                if (deque_offset >= reader->deque.size())
-                {
-                    first_gap = idx;
-                    hit_gap = true;
-                    break;
-                }
-                result->push_back(reader->deque[deque_offset]);
-            }
-            if (hit_gap)
-                break;
-        }
+            std::unique_lock dq_lock(reader->deque_mutex);
 
-        if (!hit_gap)
-        {
-            // Full coverage — pop the consumed entries from the deque.
-            size_t consumed = 0;
-            for (const auto & item : plan.items)
-            {
-                if (std::get_if<LogReadPlan::FileRun>(&item))
-                {
-                    const auto & run = std::get<LogReadPlan::FileRun>(item);
-                    consumed += run.count;
-                }
-            }
-            if (consumed > 0 && consumed <= reader->deque.size())
-            {
-                for (size_t k = 0; k < consumed; ++k)
-                {
-                    if (!reader->deque.empty())
-                    {
-                        reader->deque_bytes -= reader->deque.front()
-                            ? reader->deque.front()->get_buf().size() : 0;
-                        reader->deque.pop_front();
-                        ++reader->deque_front_index;
-                    }
-                }
-                reader->expected_next = reader->deque_front_index;
-            }
+            const bool ready = reader->cv.wait_until(
+                dq_lock, serve_deadline, [&] { return !reader->deque.empty() || reader->reader_error || reader->compacted; });
 
-            // If below low watermark, wake the fill.
-            if (reader->deque_bytes < readahead_settings.window_bytes / 2)
-                reader->cv.notify_all();
-
-            if (task_error)
+            if (reader->compacted)
             {
-                // Terminal after serving the covered prefix.
                 retireReaderLocked(peer_id, reader);
+                return nullptr;
             }
 
-            return result;
-        }
+            if (reader->reader_error)
+            {
+                // Fill task hit a decode/IO error — retire and fall back to synchronous read for remaining items.
+                // Include the current item fully; skip already-consumed entries from the tail.
+                const size_t consumed = total - remaining;
+                retireReaderLocked(peer_id, reader);
+                dq_lock.unlock();
 
-        // Cold miss for tail [first_gap, plan_end).
-        bool terminal = task_error;
-        reader->fallback_waiting = true;  /// signal fill to yield file_mutex within one chunk
-        ++reader->generation;
-        reader->deque.clear();
-        reader->pending_cursors.clear();
-        reader->deque_bytes = 0;
-        reader->deque_front_index = first_gap;
+                LogReadPlan fallback_plan;
+                fallback_plan.items.insert(
+                    fallback_plan.items.end(), plan.items.begin() + static_cast<ssize_t>(item_idx), plan.items.end());
+                auto tail = executeReadPlan(fallback_plan, readahead_settings.fill_timeout_ms);
+                if (!tail)
+                    return nullptr;
+                for (size_t i = consumed; i < tail->size(); ++i)
+                    result->push_back(std::move((*tail)[i]));
+                return result;
+            }
 
-        if (terminal)
-        {
-            // Retire first; no re-arm needed.
-            retireReaderLocked(peer_id, reader);
-        }
-    }  // deque_mutex released
+            if (!ready || reader->deque.empty())
+                return result; // timeout — return prefix, NuRaft will re-request
 
-    // ── Foreground fallback (if enabled) ──
-    if (!readahead_settings.foreground_fallback)
-    {
-        // Hard posture (ii-hard): return the prefix [start, first_gap) WITHOUT a read under lock_.
-        // Re-arm the fill from first_gap.
-        {
-            std::lock_guard dq_lock(reader->deque_mutex);
-            reader->fallback_waiting = false;
-            // Re-arm fill from first_gap using fill cursors from plan.
-            reader->pending_cursors = plan.fill_cursors;
-            reader->expected_next = first_gap;
-            reader->deque_front_index = first_gap;
+            while (!reader->deque.empty() && remaining > 0)
+            {
+                result->push_back(reader->deque.front());
+                reader->deque_bytes -= reader->deque.front() ? reader->deque.front()->get_buf().size() : 0;
+                reader->deque.pop_front();
+                ++reader->deque_front_index;
+                --remaining;
+            }
+            reader->expected_next = reader->deque_front_index;
             reader->cv.notify_all();
         }
-        return result;  // contiguous prefix [start, first_gap), DD18-valid
     }
 
-    // Build a tail plan for [first_gap, plan_end).
-    LogReadPlan tail_plan;
-    tail_plan.ok = true;
-    tail_plan.reserve_hint = plan.items.size();
-    for (const auto & item : plan.items)
-    {
-        if (const auto * run = std::get_if<LogReadPlan::FileRun>(&item))
-        {
-            if (run->first_index + run->count > first_gap)
-            {
-                // Include partial or full run.
-                if (run->first_index >= first_gap)
-                {
-                    tail_plan.items.emplace_back(*run);
-                }
-                else
-                {
-                    // Partial run: skip the already-served prefix.
-                    LogReadPlan::FileRun partial_run = *run;
-                    size_t skip = static_cast<size_t>(first_gap - run->first_index);
-                    partial_run.first_index = first_gap;
-                    partial_run.count -= skip;
-                    partial_run.position += skip * (run->count > 0
-                        ? (tail_plan.items.empty() ? 0 : 0) : 0);  // position is approximate; EXECUTE will seek
-                    /// Note: we can't easily recompute the byte offset of first_gap in the file here.
-                    /// Instead, fall back to the full run and let EXECUTE seek to position.
-                    tail_plan.items.emplace_back(*run);  // EXECUTE handles seek
-                }
-            }
-        }
-        else if (const auto * e = std::get_if<LogEntryPtr>(&item))
-        {
-            // Cache entries past first_gap.
-            (void)e;
-            // We already included cache entries up to first_gap in result.
-            // Include remaining cache entries in tail_plan.
-            tail_plan.items.emplace_back(*e);
-        }
-    }
-
-    // Direct EXECUTE fallback with DD12 deadline.
-    LogEntriesPtr tail;
-    try
-    {
-        tail = executeReadPlan(tail_plan, readahead_settings.read_request_timeout_ms);
-    }
-    catch (...)
-    {
-        // Fallback read threw — retire reader, rethrow (DD18 corruption propagates).
-        {
-            std::lock_guard map_lock(per_peer_readers_mutex);
-            auto it = per_peer_readers.find(peer_id);
-            if (it != per_peer_readers.end())
-                retireReaderLocked(peer_id, it->second);
-        }
-        throw;
-    }
-
-    if (tail == nullptr)
-    {
-        // Compaction seen in fallback — retire and return nullptr (snapshot).
-        {
-            std::lock_guard map_lock(per_peer_readers_mutex);
-            auto it = per_peer_readers.find(peer_id);
-            if (it != per_peer_readers.end())
-                retireReaderLocked(peer_id, it->second);
-        }
-        return nullptr;
-    }
-
-    // Compute actual_end (loop-4 F3: deadline may have returned a short tail).
-    const uint64_t actual_end = first_gap + tail->size();
-
-    // Re-arm the fill from actual_end (not plan_end).
-    {
-        std::lock_guard dq_lock(reader->deque_mutex);
-        reader->fallback_waiting = false;
-        reader->expected_next = actual_end;
-        reader->deque_front_index = actual_end;
-        // Re-arm fill cursors from actual_end onwards.
-        reader->pending_cursors.clear();
-        for (const auto & fc : plan.fill_cursors)
-        {
-            if (fc.first_index + 1 >= actual_end)
-                reader->pending_cursors.push_back(fc);
-        }
-        reader->cv.notify_all();
-    }
-
-    // Append tail to result.
-    for (auto & entry : *tail)
-        result->push_back(std::move(entry));
-
-    return result;  // contiguous prefix [start, actual_end), DD18-valid
+    return result;
 }
 
 void LogEntryStorage::getKeeperLogInfo(KeeperLogInfo & log_info) const
@@ -2934,11 +2478,8 @@ void LogEntryStorage::shutdown()
     if (commit_logs_prefetcher->joinable())
         commit_logs_prefetcher->join();
 
-    // ── L2 read-ahead reader shutdown ──
-    // 1. Under per_peer_readers_mutex: mark all readers closed + notify.
-    //    Do NOT join fill tasks under this mutex (L2 rule: no join while holding
-    //    per_peer_readers_mutex or changelog_lock).
-    std::vector<std::shared_future<void>> fill_futures;
+    // Mark all readers closed, then wait for fill tasks outside the lock.
+    std::vector<std::shared_ptr<PerPeerReader>> readers_to_drain;
     {
         std::lock_guard map_lock(per_peer_readers_mutex);
         for (auto & [pid, reader] : per_peer_readers)
@@ -2946,27 +2487,21 @@ void LogEntryStorage::shutdown()
             std::lock_guard dq_lock(reader->deque_mutex);
             reader->closed = true;
             reader->cv.notify_all();
-            fill_futures.push_back(reader->fill_done);  /// shared_future: copy, not move
+            readers_to_drain.push_back(reader);
         }
         per_peer_readers.clear();
     }
-    // 2. Outside all locks: wait for each fill task to finish.
-    for (auto & fut : fill_futures)
-    {
-        try
-        {
-            fut.wait();
-        }
-        catch (...) {}
-    }
-    // 3. Shut down the thread pool.
+    for (auto & reader : readers_to_drain)
+        reader->fill_done.wait(false, std::memory_order_acquire);
     if (readahead_pool)
     {
         try
         {
             readahead_pool->wait();
         }
-        catch (...) {}
+        catch (...)
+        {
+        }
         readahead_pool.reset();
     }
 }
@@ -3011,7 +2546,7 @@ void Changelog::spliceChangelog(ChangelogFileDescriptionPtr source_changelog, Ch
     {
         .compress_logs = chooseCompressionMethod(destination_changelog->path, "auto") != CompressionMethod::None
     };
-    LogEntryStorage entry_storage{log_file_settings, keeper_context};
+    LogEntryStorage entry_storage{log_file_settings, ReadAheadSettings{}, keeper_context};
     readChangelog(source_changelog, entry_storage);
 
     std::map<uint64_t, ChangelogFileDescriptionPtr> existing_changelogs;
@@ -3029,12 +2564,12 @@ void Changelog::spliceChangelog(ChangelogFileDescriptionPtr source_changelog, Ch
 
 
 Changelog::Changelog(
-    LoggerPtr log_, LogFileSettings log_file_settings, FlushSettings flush_settings_, KeeperContextPtr keeper_context_)
+    LoggerPtr log_, LogFileSettings log_file_settings, FlushSettings flush_settings_, ReadAheadSettings readahead_settings_, KeeperContextPtr keeper_context_)
     : changelogs_detached_dir("detached")
     , rotate_interval(log_file_settings.rotate_interval)
     , compress_logs(log_file_settings.compress_logs)
     , log(log_)
-    , entry_storage(log_file_settings, keeper_context_)
+    , entry_storage(log_file_settings, readahead_settings_, keeper_context_)
     , write_operations(std::numeric_limits<size_t>::max())
     , append_completion_queue(std::numeric_limits<size_t>::max())
     , keeper_context(std::move(keeper_context_))
@@ -3373,12 +2908,10 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
         if (description->disk != disk)
             moveChangelogBetweenDisks(description->disk, description, disk, description->path, keeper_context);
 
-        /// L2 (D3b): seal historical complete non-broken files after recovery so read-ahead works for them.
-        /// The active file (start_index == latest_start_index) is NOT sealed (skipped above via continue).
-        /// broken_at_end files are NOT sealed — their physical tail past the last valid record is corrupt.
-        /// Explicit release store: matches the acquire-load in getReadAheadPlan and the FILL EOF rule.
+        /// Mark historical complete files so read-ahead can use them. broken_at_end files are excluded
+        /// because their physical tail past the last valid record is corrupt.
         if (!description->broken_at_end)
-            description->sealed.store(true, std::memory_order_release);
+            description->complete.store(true, std::memory_order_release);
     }
 
     initialized = true;
@@ -3768,7 +3301,7 @@ void Changelog::compact(uint64_t up_to_log_index)
 
             LOG_INFO(log, "Removing changelog {} because of compaction", path);
             removeChangelogAsync(itr->second);
-            changelog_description.deleted = true;
+            changelog_description.marked_as_deleted = true;
 
             itr = existing_changelogs.erase(itr);
         }
@@ -3827,14 +3360,9 @@ LogReadPlan Changelog::getReadAheadPlan(uint64_t start, uint64_t end, int64_t ma
     return entry_storage.getReadAheadPlan(start, end, max_size_bytes, retained_start);
 }
 
-LogEntriesPtr Changelog::serveReadAhead(int32_t peer_id, const LogReadPlan & plan, uint64_t retained_start)
+LogEntriesPtr Changelog::serveReadAhead(int32_t peer_id, const LogReadPlan & plan)
 {
-    return entry_storage.serveReadAhead(peer_id, plan, retained_start);
-}
-
-void Changelog::setReadAheadSettings(ReadAheadSettings settings)
-{
-    entry_storage.setReadAheadSettings(settings);
+    return entry_storage.serveReadAhead(peer_id, plan);
 }
 
 bool Changelog::isReadAheadEnabled() const
@@ -4012,11 +3540,11 @@ void Changelog::backgroundChangelogOperationsThread()
         if (std::holds_alternative<RemoveChangelog>(changelog_operation->operation))
         {
             chassert(changelog_operation->changelog);
-            auto & changelog = *changelog_operation->changelog;   /// mutable: we set removed_from_disk
+            auto & changelog = *changelog_operation->changelog; /// mutable: we set removed_from_disk
             changelog.withLock(
                 [&]
                 {
-                    changelog.removed_from_disk = true;   /// set BEFORE removeFile (L1 fence for EXECUTE readers)
+                    changelog.removed_from_disk = true; /// set BEFORE removeFile
                     FailPointInjection::pauseFailPoint(FailPoints::keeper_changelog_removed_from_disk_set);
                     try
                     {

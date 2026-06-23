@@ -99,20 +99,14 @@ struct ChangelogFileDescription
 
     std::mutex file_mutex;
 
-    bool deleted = false;
+    bool marked_as_deleted = false;
 
-    /// Set under file_mutex (withLock) by the background RemoveChangelog operation IMMEDIATELY before
-    /// disk->removeFile(). A reader that resolved a file location outside changelog_lock re-checks this
-    /// under the same withLock; if set, it treats the file as compacted-away => the read returns nullptr
-    /// (NuRaft snapshot fallback). DISTINCT from `deleted` (above), which is set under writer_mutex/
-    /// changelog_lock and read by ChangelogWriter::setFile OUTSIDE file_mutex. Reusing `deleted`
-    /// would be a multi-domain data race; this flag lives entirely in the file_mutex domain.
+    /// Set under file_mutex just before disk->removeFile(). Unlike `marked_as_deleted` (scheduled but
+    /// may still be on disk), this means the file is actually gone. Readers re-check this and return nullptr.
     bool removed_from_disk = false;
 
-    /// Set true (release) after the file is finalized and sealed (complete + !broken_at_end + not the
-    /// active writer file). Monotonic false->true. Used by Layer 2 read-ahead to determine whether it is
-    /// safe to read a file to physical EOF.
-    std::atomic<bool> sealed{false};
+    /// Set once the file is finalized and will no longer be written to.
+    std::atomic<bool> complete{false};
 
     std::deque<std::weak_ptr<ChangelogFileOperation>> file_operations;
 
@@ -177,23 +171,20 @@ struct LogLocation
     size_t size_in_file;
 };
 
-/// Transient plan produced by PLAN (under changelog_lock) and consumed by EXECUTE (lock-free).
+/// Read plan built under changelog_lock and executed without it.
 /// Holds shared_ptr refs to keep file descriptors alive across the lock release.
 struct LogReadPlan
 {
-    /// A coalesced contiguous run of records in ONE file. first_index lets EXECUTE validate against a
-    /// torn/overwritten read. FileRuns may target the active writer file too; the append-only invariant
-    /// makes that safe — exactly as today's getLogEntriesBetween already does.
+    /// Contiguous run of records in one file. first_index is used to validate the read.
     struct FileRun
     {
-        ChangelogFileDescriptionPtr file_description;   /// keeps the descriptor object alive across lock release
+        ChangelogFileDescriptionPtr file_description;
         size_t position = 0;
         size_t count = 0;
         uint64_t first_index = 0;
     };
 
-    /// L2: open-ended fill cursor for read-ahead (sealed files only, read to EOF).
-    /// Not used by Layer 1 EXECUTE; reserved for Layer 2 FILL.
+    /// Open-ended cursor for read-ahead into a complete file (reads to EOF).
     struct FillCursor
     {
         ChangelogFileDescriptionPtr file_description;
@@ -201,12 +192,12 @@ struct LogReadPlan
         uint64_t first_index = 0;
     };
 
-    using Item = std::variant<LogEntryPtr, FileRun>;    /// LogEntryPtr = already-resolved cache entry
+    using Item = std::variant<LogEntryPtr, FileRun>;    /// LogEntryPtr = already in cache
     std::vector<Item> items;
-    std::vector<FillCursor> fill_cursors;   /// L2: sealed-file cursors for the forward window (Layer 2 only)
-    size_t reserve_hint = 0;
-    bool ok = true;     /// false => a needed location was missing below retained start => EXECUTE returns nullptr
-    bool readahead_engaged = false;  /// L2: false => caller uses items via L1 executeReadPlan
+    std::deque<FillCursor> fill_cursors;
+    size_t expected_entry_count = 0;
+    bool logs_compacted = false;     /// true => log compacted below requested start; caller gets nullptr
+    bool readahead_engaged = false;  /// true => use serveReadAhead instead of executeReadPlan
 };
 
 struct PrefetchedCacheEntry
@@ -255,59 +246,53 @@ using IndexToCacheEntryNode = typename IndexToCacheEntry::node_type;
   * latest logs cache.
   */
 
-/// Settings snapshot for the Layer-2 read-ahead subsystem.
-/// All values are immutable after snapshot; updated on settings reload.
+/// Read-ahead settings snapshot; replaced atomically on settings reload.
 struct ReadAheadSettings
 {
     bool enabled = false;
     uint64_t window_bytes = 64 * 1024 * 1024;
     uint64_t max_peer_readers = 8;
     uint64_t eviction_timeout_ms = 30000;
-    uint64_t pool_threads = 0;             /// 0 = derive from max_peer_readers
+    uint64_t pool_threads = 0; /// 0 = derived from max_peer_readers
     uint64_t serve_wait_timeout_ms = 50;
-    bool foreground_fallback = true;
-    uint64_t read_request_timeout_ms = 0;  /// 0 = no deadline
+    uint64_t fill_timeout_ms = 0; /// 0 = no deadline
+    uint64_t chunk_size = 16;
 };
 
-/// Per-peer read-ahead state. One instance per active follower peer.
-/// The single long-lived fill task holds a shared_ptr to this struct so the
-/// struct outlives its admission; destroyed when the last shared_ptr drops.
+/// Read-ahead state for one follower peer. Shared between the serve path and the fill task.
 struct PerPeerReader
 {
-    std::mutex deque_mutex;                         /// leaf; released by cv.wait on park
-    std::condition_variable cv;                     /// notify_all only (DD17)
-    std::deque<LogEntryPtr> deque;                  /// decoded entries, index-contiguous from deque_front_index
-    uint64_t deque_front_index = 0;                 /// index of deque.front()
-    uint64_t expected_next = 0;                     /// next index the deque should serve
-    size_t deque_bytes = 0;                         /// summed entry buffer sizes; high/low watermark axis
-    uint64_t generation = 0;                        /// bumped on rewind/clear; per-chunk fill check
-    bool closed = false;                            /// set by retireReader; the fill observes and self-exits
-    bool reader_error = false;                      /// terminal decode/IO error → wake consumer, fall back
-    bool compacted = false;                         /// removed_from_disk seen → nullptr → snapshot
-    bool fallback_waiting = false;                  /// serve sets before taking file_mutex; fill yields within one chunk
+    std::mutex deque_mutex;
+    std::condition_variable cv;
+    std::deque<LogEntryPtr> deque; /// decoded entries, contiguous from deque_front_index
+    uint64_t deque_front_index = 0;
+    uint64_t expected_next = 0; /// next index the deque should serve
+    size_t deque_bytes = 0; /// total size of buffered entries
+    uint64_t generation = 0; /// bumped on rewind; fill checks this per chunk
+    bool closed = false; /// set by retireReader; fill self-exits when observed
+    bool reader_error = false; /// decode/IO error; consumer falls back
+    bool compacted = false; /// file removed from disk; consumer returns nullptr
 
-    std::vector<LogReadPlan::FillCursor> pending_cursors;  /// handed by serve under deque_mutex
+    std::deque<LogReadPlan::FillCursor> pending_cursors; /// new cursors passed from serve under deque_mutex
 
-    /// Open-reader model (D3/Direction A): keep the decode stream open across parks.
-    /// held_buf is touched ONLY by this reader's single fill task.
-    std::unique_ptr<ReadBufferFromFileBase> held_buf;  /// open seekable decode stream kept across parks; nullptr if not open
-    DiskPtr opened_disk;                            /// disk held_buf was opened against (identity re-check on resume)
-    std::string opened_path;                        /// path held_buf was opened against (identity re-check on resume)
-    ChangelogFileDescriptionPtr resume_file;        /// descriptor backing held_buf / to re-open on resume
-    uint64_t resume_position = 0;                  /// byte offset of the held stream / to re-seek on re-open
-    uint64_t resume_index = 0;                     /// expected first index at resume_position (per-record check)
+    /// Decode stream kept open across fill parks to avoid re-seeking.
+    /// Touched only by the fill task.
+    std::unique_ptr<ReadBufferFromFileBase> held_buf;
+    DiskPtr opened_disk;
+    std::string opened_path;
+    ChangelogFileDescriptionPtr resume_file;
+    uint64_t resume_position = 0;
+    uint64_t resume_index = 0; /// expected index at resume_position
 
-    /// One-shot fill_done: fulfilled exactly once at terminal exit (closed/removal/decode-error/cache-transition).
-    /// Eviction/shutdown wait fill_done OUTSIDE all locks.
-    std::promise<void> fill_done_promise;
-    std::shared_future<void> fill_done = fill_done_promise.get_future().share();
+    /// Set to true when the fill task exits (any reason). Eviction waits on this outside all locks.
+    std::atomic<bool> fill_done{false};
 
-    std::chrono::steady_clock::time_point last_access;  /// LRU/idle eviction
+    std::chrono::steady_clock::time_point last_access;
 };
 
 struct LogEntryStorage
 {
-    LogEntryStorage(const LogFileSettings & log_settings, KeeperContextPtr keeper_context_);
+    LogEntryStorage(const LogFileSettings & log_settings, ReadAheadSettings readahead_settings_, KeeperContextPtr keeper_context_);
 
     ~LogEntryStorage();
 
@@ -329,40 +314,25 @@ struct LogEntryStorage
 
     void refreshCache();
 
-    /// PLAN: resolve [start,end) into a LogReadPlan. PRECONDITION: caller holds changelog_lock (shared)
-    /// so latest_logs_cache and logs_location are stable; takes commit_logs_cache_mutex (shared) internally
-    /// for non-blocking cache PEEKs only. Does NO disk I/O, never resolves a prefetch future, never reads
-    /// current_writer, mutates NO shared state. retained_start is the log's first retained index passed
-    /// in by the Changelog forwarder (= Changelog::getStartIndex(), which is max_log_id+1 for an EMPTY
-    /// store — NOT getFirstIndex(), which returns 0 when empty).
+    /// Build a read plan for [start, end). Must be called under changelog_lock (shared). No disk I/O.
+    /// retained_start is the first retained index (= Changelog::getStartIndex()).
     LogReadPlan getReadPlan(uint64_t start, uint64_t end, int64_t max_size_bytes, uint64_t retained_start) const;
 
-    /// EXECUTE: run the plan's file reads under per-file withLock. Holds NEITHER changelog_lock NOR
-    /// commit_logs_cache_mutex. Returns nullptr ONLY when !ok (compacted below start) or a file's
-    /// removed_from_disk is set; corruption / index mismatch propagate as exceptions (as today).
-    /// NO byte logic here: the byte budget is applied at PLAN time from size_in_file metadata,
-    /// so EXECUTE never reads a record merely to learn its size. It reads exactly the planned count records.
-    /// read_deadline_ms (DD12): 0 = no deadline; >0 = wall-clock budget checked at each record boundary
-    /// via a Stopwatch — on exceed, return the contiguous prefix decoded so far (DD18-valid).
-    /// Intentionally called WITHOUT changelog_lock held; see LogReadPlan/PLAN-EXECUTE split.
+    /// Execute a read plan without holding changelog_lock. Returns nullptr if the log was compacted
+    /// below start or a file was removed from disk. read_deadline_ms=0 means no deadline; if exceeded,
+    /// returns the prefix decoded so far.
     LogEntriesPtr executeReadPlan(const LogReadPlan & plan, uint64_t read_deadline_ms = 0) const TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     LogEntriesPtr getLogEntriesBetween(uint64_t start, uint64_t end, int64_t max_size_bytes = 0) const;
 
-    /// L2: Build a read-ahead plan (fill cursors + bounded items). PRECONDITION: caller holds changelog_lock (shared).
-    /// Returns a plan with readahead_engaged=true if read-ahead should be used, false if bypassed to L1.
+    /// Build a read-ahead plan. Must be called under changelog_lock (shared).
+    /// Returns a plan with readahead_engaged=true if read-ahead is active, false to fall back to executeReadPlan.
     LogReadPlan getReadAheadPlan(uint64_t start, uint64_t end, int64_t max_size_bytes, uint64_t retained_start) const;
 
-    /// L2: Serve a request using the per-peer read-ahead path.
-    /// PRECONDITION: called WITHOUT changelog_lock (released by the caller before this call).
-    /// peer_id identifies the follower peer; plan must have readahead_engaged=true.
-    /// Returns the result (possibly nullptr for compaction/snapshot fallback).
-    LogEntriesPtr serveReadAhead(int32_t peer_id, const LogReadPlan & plan, uint64_t retained_start) TSA_NO_THREAD_SAFETY_ANALYSIS;
+    /// Serve a read-ahead request for peer_id. Must be called without changelog_lock.
+    /// Returns nullptr on compaction or snapshot fallback.
+    LogEntriesPtr serveReadAhead(int32_t peer_id, const LogReadPlan & plan) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
-    /// L2: Update the read-ahead settings snapshot. Called when coordination settings are (re)loaded.
-    void setReadAheadSettings(ReadAheadSettings settings);
-
-    /// L2: Returns true if read-ahead is currently enabled (lock-free snapshot read).
     bool isReadAheadEnabled() const { return readahead_settings.enabled; }
 
     void getKeeperLogInfo(KeeperLogInfo & log_info) const;
@@ -485,20 +455,16 @@ private:
     KeeperContextPtr keeper_context;
     LoggerPtr log;
 
-    /// L2 read-ahead subsystem --------------------------------------------------------
+    /// Mark a reader closed and remove it from the map. Fill task self-exits asynchronously.
+    void retireReaderLocked(int32_t peer_id, std::shared_ptr<PerPeerReader> & reader) TSA_REQUIRES(per_peer_readers_mutex);
 
-    /// Retire (non-blocking terminal retire): mark closed, bump generation, clear fallback_waiting,
-    /// notify_all, erase from the map. NO fill_done.wait() — the fill self-exits asynchronously.
-    /// Idempotent. Must be called under per_peer_readers_mutex held externally (for the map erase).
-    void retireReaderLocked(int32_t peer_id, std::shared_ptr<PerPeerReader> & reader);
+    /// Background fill task for one peer reader.
+    void fillTask(std::shared_ptr<PerPeerReader> reader) const;
 
-    /// One long-lived fill task per reader; runs on readahead_pool.
-    void fillTask(std::shared_ptr<PerPeerReader> reader);
-
-    ReadAheadSettings readahead_settings;               /// snapshot of coordination settings
-    mutable std::mutex per_peer_readers_mutex;          /// guards the map; NEVER held across a fill join
-    std::unordered_map<int32_t, std::shared_ptr<PerPeerReader>> per_peer_readers;
-    std::unique_ptr<ThreadPool> readahead_pool;         /// dedicated; built lazily on first engage
+    ReadAheadSettings readahead_settings;
+    mutable std::mutex per_peer_readers_mutex;
+    std::unordered_map<int32_t, std::shared_ptr<PerPeerReader>> per_peer_readers TSA_GUARDED_BY(per_peer_readers_mutex);
+    std::unique_ptr<ThreadPool> readahead_pool TSA_GUARDED_BY(per_peer_readers_mutex);
 };
 
 /// Simplest changelog with files rotation.
@@ -511,6 +477,7 @@ public:
         LoggerPtr log_,
         LogFileSettings log_file_settings,
         FlushSettings flush_settings,
+        ReadAheadSettings readahead_settings,
         KeeperContextPtr keeper_context_);
 
     Changelog(Changelog &&) = delete;
@@ -541,19 +508,15 @@ public:
     /// Return log entries between [start, end) with optional byte size limit
     LogEntriesPtr getLogEntriesBetween(uint64_t start_index, uint64_t end_index, int64_t max_size_bytes = 0);
 
-    /// Layer 1 forwarders: PLAN under changelog_lock, EXECUTE outside.
+    /// Must be called under changelog_lock.
     LogReadPlan getReadPlan(uint64_t start, uint64_t end, int64_t max_size_bytes = 0);
-    /// Intentionally called WITHOUT changelog_lock held; see LogReadPlan/PLAN-EXECUTE split.
+    /// Must be called without changelog_lock.
     LogEntriesPtr executeReadPlan(const LogReadPlan & plan, uint64_t read_deadline_ms = 0) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
-    /// Layer 2 forwarders: read-ahead plan and serve paths.
-    /// getReadAheadPlan must be called under changelog_lock (shared).
+    /// Must be called under changelog_lock.
     LogReadPlan getReadAheadPlan(uint64_t start, uint64_t end, int64_t max_size_bytes, uint64_t retained_start) const;
-    /// serveReadAhead must be called WITHOUT changelog_lock held.
-    LogEntriesPtr serveReadAhead(int32_t peer_id, const LogReadPlan & plan, uint64_t retained_start) TSA_NO_THREAD_SAFETY_ANALYSIS;
-    /// Thread-safe settings update.
-    void setReadAheadSettings(ReadAheadSettings settings);
-    /// Returns true if read-ahead is currently enabled.
+    /// Must be called without changelog_lock.
+    LogEntriesPtr serveReadAhead(int32_t peer_id, const LogReadPlan & plan) TSA_NO_THREAD_SAFETY_ANALYSIS;
     bool isReadAheadEnabled() const;
 
     /// Return entry at position index

@@ -26,8 +26,8 @@ namespace FailPoints
 namespace DB
 {
 
-KeeperLogStore::KeeperLogStore(LogFileSettings log_file_settings, FlushSettings flush_settings, KeeperContextPtr keeper_context)
-    : log(getLogger("KeeperLogStore")), changelog(log, log_file_settings, flush_settings, keeper_context)
+KeeperLogStore::KeeperLogStore(LogFileSettings log_file_settings, FlushSettings flush_settings, ReadAheadSettings readahead_settings, KeeperContextPtr keeper_context)
+    : log(getLogger("KeeperLogStore")), changelog(log, log_file_settings, flush_settings, readahead_settings, keeper_context)
 {
     if (log_file_settings.force_sync)
         LOG_INFO(log, "force_sync enabled");
@@ -77,33 +77,13 @@ void KeeperLogStore::write_at(uint64_t index, nuraft::ptr<nuraft::log_entry> & e
 
 nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> KeeperLogStore::log_entries(uint64_t start, uint64_t end)
 {
-    LogReadPlan plan;
-    {
-        ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
-        plan = changelog.getReadPlan(start, end, /*max_size_bytes=*/0);
-    }    /// changelog_lock released here
-
-    FailPointInjection::pauseFailPoint(FailPoints::keeper_changelog_read_plan_resolved);
-
-    auto res = changelog.executeReadPlan(plan);
-    if (!res)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Log entries [{}, {}) are no longer available (compacted/removed)",
-            start,
-            end);
-    return res;
+    return log_entries_ext(start, end, /*batch_size_hint_in_bytes=*/0, NO_PEER_ID);
 }
 
 nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>
 KeeperLogStore::log_entries_ext(uint64_t start, uint64_t end, int64_t batch_size_hint_in_bytes, int32_t peer_id)
 {
-    // Detect whether the read-ahead path should be used for this request.
-    // L2 path: peer_id is a real peer (not NO_PEER_ID) and read-ahead is enabled.
-    const bool use_readahead = (peer_id != NO_PEER_ID)
-        && changelog.isReadAheadEnabled();
-
-    if (use_readahead)
+    if (peer_id != NO_PEER_ID && changelog.isReadAheadEnabled())
     {
         LogReadPlan plan;
         uint64_t retained_start = 0;
@@ -111,28 +91,18 @@ KeeperLogStore::log_entries_ext(uint64_t start, uint64_t end, int64_t batch_size
             ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
             retained_start = changelog.getStartIndex();
             plan = changelog.getReadAheadPlan(start, end, batch_size_hint_in_bytes, retained_start);
-        }  /// changelog_lock released here
-
+        }
         FailPointInjection::pauseFailPoint(FailPoints::keeper_changelog_read_plan_resolved);
-
-        return changelog.serveReadAhead(peer_id, plan, retained_start);
+        return changelog.serveReadAhead(peer_id, plan);
     }
 
-    // L1 path (default): PLAN under changelog_lock, EXECUTE outside.
     LogReadPlan plan;
     {
         ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
         plan = changelog.getReadPlan(start, end, batch_size_hint_in_bytes);
-    }  /// changelog_lock released here
-
+    }
     FailPointInjection::pauseFailPoint(FailPoints::keeper_changelog_read_plan_resolved);
-
-    return changelog.executeReadPlan(plan);   /// nullptr -> NuRaft snapshot fallback
-}
-
-void KeeperLogStore::setReadAheadSettings(ReadAheadSettings settings) TSA_NO_THREAD_SAFETY_ANALYSIS
-{
-    changelog.setReadAheadSettings(settings);
+    return changelog.executeReadPlan(plan);
 }
 
 nuraft::ptr<nuraft::log_entry> KeeperLogStore::entry_at(uint64_t index)
