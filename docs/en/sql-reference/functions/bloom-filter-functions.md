@@ -1,16 +1,17 @@
 ---
 description: 'Documentation for Bloom Filter Functions'
 sidebar_label: 'Bloom filter'
+sidebar_position: 70
 slug: /sql-reference/functions/bloom-filter-functions
 title: 'Bloom Filter Functions'
 doc_type: 'reference'
 ---
 
-# Bloom Filter Functions
+# Bloom Filter Functions {#bloom-filter-functions}
 
 Functions for working with Bloom filter states produced by the [`groupBloomFilter`](/sql-reference/aggregate-functions/reference/groupbloomfilter) aggregate function.
 
-## bloomFilterContains
+## bloomFilterContains {#bloomfiltercontains}
 
 Checks whether a value is probably present in a Bloom filter built by [`groupBloomFilter`](/sql-reference/aggregate-functions/reference/groupbloomfilter).
 
@@ -18,29 +19,30 @@ Returns `1` if the value is probably in the filter (may have false positives), o
 
 The false positive rate is controlled by the `false_positive_rate` parameter of `groupBloomFilter`.
 
-**Syntax**
+### Syntax {#syntax}
 
 ```sql
 bloomFilterContains(bloom_filter, value)
 ```
 
-**Arguments**
+### Arguments {#arguments}
 
 | Argument | Description | Type |
 |----------|-------------|------|
 | `bloom_filter` | Bloom filter state produced by `groupBloomFilterState`. | [`AggregateFunction(groupBloomFilter, T)`](/sql-reference/data-types/aggregatefunction) |
-| `value` | Value to check for membership. Must be the same type `T` as was used to build the filter. | `T` |
+| `value` | Value to check for membership. For numeric filters, it may be any compatible numeric type and is converted to the filter value type `T` with an accurate cast. Values that cannot be represented in `T` are treated as definitely absent and return `0`. Incompatible types cause an exception. | `T` or a compatible numeric type |
 
-**Returned value**
+### Returned value {#returned-value}
 
 - `1` — the value is probably present in the filter.
-- `0` — the value is definitely absent from the filter.
+- `0` — the value is definitely absent from the filter, including numeric probe values that cannot be represented in the filter value type.
+- `NULL` — the probe value is `NULL` for a `Nullable` argument.
 
-Type: [UInt8](/sql-reference/data-types/int-uint).
+Type: [UInt8](/sql-reference/data-types/int-uint). For a `Nullable` probe argument, the result is wrapped as `Nullable(UInt8)` by the default nullable handling.
 
-**Examples**
+### Examples {#examples}
 
-**Basic usage**
+#### Basic usage {#basic-usage}
 
 Check whether a number is present in a Bloom filter built from `numbers(100)`:
 
@@ -55,7 +57,7 @@ FROM numbers(100)
 └────────┘
 ```
 
-**Check a value absent from the filter**
+#### Check a value absent from the filter {#check-a-value-absent-from-the-filter}
 
 A value outside the range used to build the filter returns `0` (definitely absent):
 
@@ -70,7 +72,22 @@ FROM numbers(100)
 └────────┘
 ```
 
-**Find new values using WITH clause**
+#### Check a non-representable numeric value {#check-a-non-representable-numeric-value}
+
+A numeric probe value that cannot be represented in the filter value type is treated as definitely absent. For example, `300` cannot be represented in a `UInt8` filter:
+
+```sql
+SELECT bloomFilterContains(groupBloomFilterState(1000)(toUInt8(number)), toUInt16(300)) AS result
+FROM numbers(100)
+```
+
+```text
+┌─result─┐
+│      0 │
+└────────┘
+```
+
+#### Find new values using WITH clause {#find-new-values-using-with-clause}
 
 Count values in `100..199` that are absent from a filter built on `0..99`:
 
@@ -91,7 +108,7 @@ WHERE number >= 100
 └──────────────────┘
 ```
 
-**See Also**
+## See Also {#see-also}
 
 - [groupBloomFilter](/sql-reference/aggregate-functions/reference/groupbloomfilter) — aggregate function that builds a Bloom filter state
 - [AggregateFunction data type](/sql-reference/data-types/aggregatefunction)

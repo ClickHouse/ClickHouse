@@ -45,7 +45,8 @@ namespace ErrorCodes
   * bloomFilterContains(bloom_filter_state, value) -> UInt8
   *
   * The first argument must be of type AggregateFunction(groupBloomFilter, T).
-  * The second argument must be of the same type T as was used to build the filter.
+  * For numeric filters, the second argument may be any compatible numeric type and is accurately
+  * cast to T. Non-representable probe values are treated as definitely absent.
   *
   * Returns 1 if the value is probably in the filter, 0 if it is definitely not.
   * Note: false positives are possible (controlled by false_positive_rate parameter),

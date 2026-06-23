@@ -15,14 +15,15 @@ Returns `1` if the value is probably in the filter (may have false positives),
 or `0` if the value is definitely not in the filter (no false negatives).
 
 The false positive rate is controlled by the `false_positive_rate` parameter of `groupBloomFilter`.
+Numeric probe values may use a different numeric type than the filter value type. They are converted with an accurate cast: non-representable values are reported as definitely absent, and `NULL` probe values are propagated to the result by the default nullable handling.
     )";
     FunctionDocumentation::Syntax syntax_bloomFilterContains = "bloomFilterContains(bloom_filter, value)";
     FunctionDocumentation::Arguments arguments_bloomFilterContains = {
         {"bloom_filter", "Bloom filter state. [`AggregateFunction(groupBloomFilter, T)`](/sql-reference/data-types/aggregatefunction)."},
-        {"value", "Value to check for. Must be the same type as was used to build the filter."}
+        {"value", "Value to check for. It may be any compatible numeric type for numeric filters; the value is converted to the filter value type with an accurate cast."}
     };
     FunctionDocumentation::ReturnedValue returned_value_bloomFilterContains = {
-        "Returns `1` if the value is probably present in the filter, `0` if it is definitely absent.",
+        "Returns `1` if the value is probably present in the filter, `0` if it is definitely absent. Non-representable numeric probe values are reported as `0`. If the probe value is `NULL`, the result is `NULL` by the default nullable handling.",
         {"UInt8"}
     };
     FunctionDocumentation::Examples examples_bloomFilterContains = {
