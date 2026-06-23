@@ -160,13 +160,35 @@ or scoping the guard query (see Known issue).
 
 ### 6. (gated) Make the missing release(s) manually
 
-For each version flagged `MISSING` in step 3, per the runbook: open the `CreateRelease`
-workflow with `Use workflow from branch: master`, `Git reference` = the release branch
-(e.g. `25.8`), `type` = `patch`. After explicit confirmation:
+For each version flagged `MISSING` in step 3, dispatch `CreateRelease` with
+`Use workflow from branch: master`, `type: patch`.
+
+⚠️ **Use a CI-green commit SHA, not the bare branch name.** `AutoReleaseInfo` does not
+release branch head — it walks back from head (up to
+`MAX_NUMBER_OF_COMMITS_TO_CONSIDER_FOR_RELEASE = 8` commits) and picks the most recent
+commit whose CI **completed with no failed statuses**, then passes that SHA to
+`create_release.yml`. Passing the branch name tags head, which may be a commit the
+automatic pipeline would have skipped (head green-built but later checks failed).
+So pick the same green commit and pass its SHA as `ref`:
+
+```bash
+BR=<release-branch>   # e.g. 25.8
+# Walk the last 8 first-parent commits; the first all-green one is the release candidate.
+for sha in $(command gh api "repos/ClickHouse/ClickHouse/commits?sha=$BR&per_page=8" --jq '.[].sha'); do
+  state="$(command gh api "repos/ClickHouse/ClickHouse/commits/$sha/status" --jq '.state')"   # success|failure|pending
+  echo "$sha $state"
+  [[ "$state" == "success" ]] && { CANDIDATE="$sha"; break; }
+done
+echo "release candidate: ${CANDIDATE:?no green commit in last 8 — investigate, do not release head}"
+```
+
+After explicit confirmation, dispatch with that SHA (the official runbook also accepts
+a commit SHA in the `Git reference` field, e.g. when a prior run failed with a missing
+artifacts error):
 
 ```bash
 command gh workflow run create_release.yml --repo ClickHouse/ClickHouse \
-  --ref master -f ref=<release-branch> -f type=patch
+  --ref master -f ref="$CANDIDATE" -f type=patch
 ```
 
 Then watch the run to completion (**do not cancel it**) and review + merge the

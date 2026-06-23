@@ -32,7 +32,11 @@ STALE_DAYS="${STALE_DAYS:-18}"   # a targeted version older than this with new c
 # excluded so an overdue version is never hidden behind a green "all healthy".
 EXCLUDE_VERSIONS="${EXCLUDE_VERSIONS-25.8}"
 
-GH() { command gh "$@"; }
+# `command gh` bypasses the `gh -> history|fzf` shell alias. We also drop
+# GH_CONFIG_DIR: some agent/runner checkouts point it at a config whose token
+# passes `gh auth status` but 403s on real API calls — unsetting it falls back to
+# the default config / GH_TOKEN that actually works. No-op when it is already unset.
+GH() { env -u GH_CONFIG_DIR command gh "$@"; }
 
 # Fail-close validator for a required read: the payload must parse as JSON, else
 # abort. An empty JSON array ([]) is a legitimate result (no runs / no PRs) and
