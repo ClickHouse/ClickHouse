@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
+#include <algorithm>
 
 
 namespace DB
@@ -52,7 +53,7 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
                 filter_column_target_type,
                 pass_ratio_threshold_for_disabling_,
                 blocks_to_skip_before_reenabling_,
-                bytes_limit_,
+                std::max(bytes_limit_, bloom_filter_bytes_),
                 exact_values_limit_,
                 bloom_filter_bytes_,
                 bloom_filter_hash_functions_,

@@ -132,7 +132,6 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
         return;
 
     const UInt64 bloom_filter_bytes = computeBloomFilterBytes(distinct_keys_hint, bloom_filter_hash_functions, default_bloom_filter_bytes);
-    const UInt64 bytes_limit = std::max(default_bloom_filter_bytes, bloom_filter_bytes);
 
     auto streams = pipeline.getNumStreams();
     auto query_context = CurrentThread::get().tryGetQueryContext();
@@ -150,7 +149,7 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
             filter_key,
             /*filters_to_merge_=*/streams - 1,
             exact_values_limit,
-            bytes_limit,
+            default_bloom_filter_bytes,
             bloom_filter_bytes,
             bloom_filter_hash_functions,
             pass_ratio_threshold_for_disabling,
