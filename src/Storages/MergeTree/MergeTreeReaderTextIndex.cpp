@@ -18,6 +18,8 @@
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Core/Settings.h>
 
+#include <algorithm>
+
 namespace ProfileEvents
 {
     extern const Event TextIndexReaderTotalMicroseconds;
@@ -909,13 +911,12 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(
     }
 
     const auto & matching_doc_ids = *doc_ids_it->second;
-
-    for (UInt32 doc_id : matching_doc_ids)
+    const size_t window_end = row_offset + num_rows;
+    for (auto it = std::ranges::lower_bound(matching_doc_ids, row_offset);
+         it != matching_doc_ids.end() && *it < window_end;
+         ++it)
     {
-        if (doc_id < row_offset || doc_id >= row_offset + num_rows)
-            continue;
-
-        size_t relative_row_number = doc_id - row_offset;
+        size_t relative_row_number = *it - row_offset;
         column_data[column_offset + relative_row_number] = 1;
     }
 }
