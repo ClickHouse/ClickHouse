@@ -329,8 +329,10 @@ void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPt
             if (readers.main)
                 readers.main->setSparseOffsetsShare(share);
             for (auto & reader : readers.prewhere)
+            {
                 if (reader)
                     reader->setSparseOffsetsShare(share);
+            }
         }
     }
 

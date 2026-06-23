@@ -182,8 +182,10 @@ void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & ta
         if (readers.main)
             readers.main->setSparseOffsetsShare(sparse_offsets_share);
         for (auto & reader : readers.prewhere)
+        {
             if (reader)
                 reader->setSparseOffsetsShare(sparse_offsets_share);
+        }
     }
 
     task.readers_future = std::make_unique<PrefetchedReaders>(prefetch_threadpool, std::move(readers), task.priority, *this);

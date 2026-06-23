@@ -257,8 +257,10 @@ std::vector<MarkRange> buildChunks(const MarkRanges & ranges, size_t target_chun
 {
     size_t total_marks_in_ranges = 0;
     for (const auto & range : ranges)
+    {
         if (range.begin < range.end)
             total_marks_in_ranges += range.end - range.begin;
+    }
 
     if (total_marks_in_ranges == 0)
         return {};
@@ -361,8 +363,10 @@ std::optional<SparseGranuleAnalysis>
 finalizeAnalysis(const AnalysisPlan & plan, const std::vector<ChunkResult> & chunk_results)
 {
     for (const auto & r : chunk_results)
+    {
         if (!r.ok)
             return std::nullopt;
+    }
 
     /// Store each chunk as its own entry in the share. Scan `readRows` calls are
     /// `max_block_size` rows wide (typically a small multiple of one mark) while
@@ -418,8 +422,10 @@ finalizeAnalysis(const AnalysisPlan & plan, const std::vector<ChunkResult> & chu
     /// pruning for them.
     size_t analyzed_marks = 0;
     for (const auto & range : plan.ranges)
+    {
         if (range.begin < range.end)
             analyzed_marks += range.end - range.begin;
+    }
 
     if (plan.cache && plan.table_uuid != UUIDHelpers::Nil && analyzed_marks == plan.total_marks)
     {

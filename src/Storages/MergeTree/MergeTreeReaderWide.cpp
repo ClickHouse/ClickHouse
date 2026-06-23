@@ -597,8 +597,10 @@ void MergeTreeReaderWide::prefetchForColumn(
         if (only_read_sparse_offsets)
         {
             for (const auto & elem : substream_path)
+            {
                 if (elem.type == ISerialization::Substream::SparseElements)
                     return;
+            }
         }
 
         /// `SparseOffsets` already cached by the planning-mode analyzer; the scan will

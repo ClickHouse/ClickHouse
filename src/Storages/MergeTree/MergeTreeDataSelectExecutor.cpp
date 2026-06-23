@@ -970,8 +970,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
     {
         std::unordered_set<String> seen;
         for (const auto & pred : conjuncts)
+        {
             if (seen.insert(pred.column_name).second)
                 unique_columns.push_back(pred.column_name);
+        }
     }
     std::unordered_map<String, size_t> column_to_idx;
     column_to_idx.reserve(unique_columns.size());
@@ -991,10 +993,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
             per_part.assign(unique_columns.size(), std::nullopt);
 
         for (size_t p = 0; p < parts.size(); ++p)
+        {
             for (size_t c = 0; c < unique_columns.size(); ++c)
+            {
                 analyses[p][c] = analyzeSparseColumnGranules(
                     parts[p].data_part, unique_columns[c], parts[p].ranges,
                     data, storage_snapshot, context, offsets_share, log);
+            }
+        }
     }
     else
     {
@@ -1037,9 +1043,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
                 used_columns.push_back(pred.column_name);
 
             for (const auto & range : part.ranges)
+            {
                 for (size_t mark = range.begin; mark < range.end; ++mark)
+                {
                     if (granule_is_prunable_by(pred, *analysis, mark))
                         dropped[mark] = true;
+                }
+            }
         }
 
         if (!any_conjunct_used)
