@@ -255,7 +255,7 @@ SELECT
     if(has(used_executable_user_defined_functions, 'test_udf_drv_qlog'), 'executable', 'NOT_executable'),
     if(has(used_sql_user_defined_functions, 'test_udf_drv_qlog'), 'ALSO_sql_BUG', 'sql_clean')
 FROM system.query_log
-WHERE query LIKE '%test_udf_drv_qlog(123, 45)%' AND type = 'QueryFinish'
+WHERE current_database = currentDatabase() AND query LIKE '%test_udf_drv_qlog(123, 45)%' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 " 2>&1
