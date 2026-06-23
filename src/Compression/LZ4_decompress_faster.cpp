@@ -618,13 +618,27 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
                 _mm_shuffle_epi8(
                     _mm_loadu_si128(reinterpret_cast<const __m128i *>(match)),
                     _mm_load_si128(reinterpret_cast<const __m128i *>(boot_masks<copy_amount>.boot[idx]))));
-#else
-            vst1q_u8(reinterpret_cast<uint8_t *>(op),
-                vqtbl1q_u8(
-                    vld1q_u8(reinterpret_cast<const uint8_t *>(match)),
-                    vld1q_u8(boot_masks<copy_amount>.boot[idx])));
-#endif
             __msan_unpoison(op, 16);
+#else
+            if constexpr (copy_amount == 8)
+            {
+                /// 8-byte D-register `vtbl1_u8`: a native 8-byte op on AArch64, avoiding the
+                /// wasted half of a 16-byte Q-register shuffle (the better branchless width on ARM).
+                vst1_u8(reinterpret_cast<uint8_t *>(op),
+                    vtbl1_u8(
+                        vld1_u8(reinterpret_cast<const uint8_t *>(match)),
+                        vld1_u8(boot_masks<copy_amount>.boot[idx])));
+                __msan_unpoison(op, 8);
+            }
+            else
+            {
+                vst1q_u8(reinterpret_cast<uint8_t *>(op),
+                    vqtbl1q_u8(
+                        vld1q_u8(reinterpret_cast<const uint8_t *>(match)),
+                        vld1q_u8(boot_masks<copy_amount>.boot[idx])));
+                __msan_unpoison(op, 16);
+            }
+#endif
             match += boot_masks<copy_amount>.shift[idx];
         }
         else if (offset < copy_amount)
@@ -700,33 +714,26 @@ bool decompress(
     /// where timing very small blocks would add too much noise.
     if (statistics.choose_method >= 0 || dest_size >= 32768)
     {
-        /// The branchless small-offset variant (the last one) only helps blocks that contain
-        /// many small-offset matches, which is strongly correlated with a higher compression
-        /// ratio. For near-incompressible blocks it cannot help, so drop it from the candidate
-        /// set — the bandit keeps exploring forever (to adapt to shifting data), so leaving an
-        /// option that can never win for this block just wastes that exploration. The
-        /// compression ratio is free: both sizes are already in the block header.
-        size_t variant_size = (dest_size >= source_size * 2)
-            ? PerformanceStatistics::NUM_ELEMENTS
-            : PerformanceStatistics::NUM_ELEMENTS - 1;
+        size_t variant_size = PerformanceStatistics::NUM_ELEMENTS;
         size_t best_variant = statistics.select(variant_size);
 
         Stopwatch watch;
         bool success = false;
-        /// Variant 3 is the branchless small-offset match copy (16-byte). It is added as an
-        /// extra bandit option rather than replacing a variant: on low-cardinality
-        /// (small-offset) columns it is ~+20-25% faster on x86 and a win on ARM, while on
-        /// large-offset / incompressible columns the bandit keeps selecting the branched
-        /// variants. Adding (not replacing) guarantees no regression on any architecture —
-        /// the bandit can always fall back to the original best variant.
+        /// Variants 0 and 1 use the branchless small-offset match copy (8- and 16-byte). It
+        /// removes the `offset < copy_amount` branch, which is highly mispredicted on
+        /// low-cardinality (small-offset) columns. The best branchless width is architecture
+        /// dependent — 16-byte (`pshufb`) tends to win on x86, 8-byte (NEON D-register
+        /// `vtbl1_u8`) on AArch64 — so both are offered and the bandit picks per column
+        /// (e.g. small-offset integers -> branchless 8/16, large-offset/string -> 32). The
+        /// branchless variants only change the match-copy step, so on near-incompressible
+        /// blocks (almost no matches) they behave like the branched ones — no regression and
+        /// no need to special-case them.
         if (best_variant == 0)
-            success = decompressImpl<8>(source, dest, source_size, dest_size);
+            success = decompressImpl<8, true>(source, dest, source_size, dest_size);
         else if (best_variant == 1)
-            success = decompressImpl<16>(source, dest, source_size, dest_size);
-        else if (best_variant == 2)
-            success = decompressImpl<32>(source, dest, source_size, dest_size);
-        else
             success = decompressImpl<16, true>(source, dest, source_size, dest_size);
+        else
+            success = decompressImpl<32>(source, dest, source_size, dest_size);
 
         watch.stop();
         statistics.data[best_variant].update(watch.elapsedSeconds(), static_cast<double>(dest_size));  // NOLINT(clang-analyzer-security.ArrayBound)
@@ -742,7 +749,7 @@ bool decompress(
     /// (AMD 7950X3D), sweeping it from 0 to 32K changes the oracle total by only 0.003%,
     /// because variant 0 is available in the bandit anyway and would be selected for
     /// the same files. The threshold is purely a noise-reduction measure.
-    return decompressImpl<8>(source, dest, source_size, dest_size);
+    return decompressImpl<8, true>(source, dest, source_size, dest_size);
 }
 
 }
