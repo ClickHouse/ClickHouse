@@ -50,7 +50,7 @@ MULTIPOLYGON(((698 4081,701 4066,698 4079,698 4081)))
 -- MVTEncodeGeom: a self-intersecting ring crossing the tile is repaired into two valid polygons (it was emitted as one self-intersecting ring)
 MULTIPOLYGON(((2048 2493,4097 994,4097 662,-1 662,-1 994,2048 2493)),((2048 2493,-1 3992,-1 4097,4097 4097,4097 3992,2048 2493)))
 -- MVTEncodeGeom: a polygon spanning far more pixels than the tile is dropped (its pre-clip span exceeds what the integer clipper can process), at high zoom
-\N
-\N
+1
+1
 -- MVTEncodeGeom: the same world-spanning polygon still clips normally at a low zoom where its pixel span fits
 MULTIPOLYGON(((4097 -1,-1 -1,-1 4097,4097 4097,4097 -1)))
