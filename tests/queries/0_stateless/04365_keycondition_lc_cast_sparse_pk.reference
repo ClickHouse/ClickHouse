@@ -1,0 +1,10 @@
+-- fuzzer crash shape (lightweight PK analysis)
+0
+-- CAST chain pruning matches full scan (lightweight vs regular)
+35	35	35
+-- another comparison shape
+38	38	38
+-- nested CAST chain crash shape (lightweight PK analysis)
+35
+-- nested CAST chain pruning matches full scan (lightweight vs regular)
+35	35	35
