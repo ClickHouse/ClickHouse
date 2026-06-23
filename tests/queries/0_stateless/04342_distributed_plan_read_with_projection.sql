@@ -15,21 +15,26 @@ CREATE TABLE t1 (id UInt32, s String) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t2 (id1 UInt32, id2 UInt32) ENGINE = MergeTree ORDER BY id1 SETTINGS index_granularity = 1;
 
 -- Two inserts so some parts are served by the projection and some by the surviving parts; the
--- projection ADD between them leaves the first batch's parts without the projection.
-INSERT INTO t2 SELECT number, number % 10 FROM numbers(1000000);
+-- projection ADD between them leaves the first batch's parts without the projection. This mix of
+-- projection / non-projection parts is what reproduces the shard-list mismatch, so keep it.
+INSERT INTO t2 SELECT number, number % 10 FROM numbers(100000);
 ALTER TABLE t2 ADD PROJECTION proj (SELECT id2 ORDER BY id2);
-INSERT INTO t2 SELECT number, number % 10 FROM numbers(1000000);
+INSERT INTO t2 SELECT number, number % 10 FROM numbers(100000);
 
 INSERT INTO t1 SELECT number, toString(number) FROM numbers(100);
 
--- distributed aggregation rejects a nonzero max_rows_to_group_by; some configs (e.g. the Fast test
--- profile) set it nonzero by default, which would make the count() below throw before the read path.
+-- Pin max_rows_to_group_by = 0: the outer count() is an AggregatingStep and a nonzero limit (which
+-- randomized settings can set) makes make_distributed_plan reject the query before it reaches the
+-- projection regression this test targets.
 SET max_rows_to_group_by = 0;
-
+-- Pin distributed_plan_max_rows_to_broadcast low so t2's read is sharded (the bug path) without a
+-- huge fixture; t1 stays under the threshold and is broadcast, as in the original bug. Otherwise
+-- randomized settings could raise it above the selected row count and skip the sharded read.
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
-    distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3;
+    distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3,
+    distributed_plan_max_rows_to_broadcast = 1000;
 
--- The big read of t2 is turned into a sharded read; the projection match would split it into a Union.
+-- t2's read is sharded; the projection match would split it into a Union. t1 is broadcast.
 SELECT '-- distributed read over a projected table does not abort';
 SELECT count() FROM (
     SELECT s FROM t1 AS lhs LEFT JOIN (SELECT * FROM t2 PREWHERE id2 = 2 WHERE id2 = 2) AS rhs ON lhs.id = rhs.id2
