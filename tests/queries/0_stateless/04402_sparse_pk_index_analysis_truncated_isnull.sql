@@ -43,6 +43,11 @@ SELECT count() FROM t_sparse_pk_trunc_isnull
 WHERE b IS NULL
 SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0;
 
+EXPLAIN indexes = 1
+SELECT count() FROM t_sparse_pk_trunc_isnull
+WHERE b IS NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0;
+
 SELECT count() FROM t_sparse_pk_trunc_isnull
 WHERE b IS NULL
 SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0;
@@ -51,6 +56,11 @@ EXPLAIN indexes = 1
 SELECT count() FROM t_sparse_pk_trunc_isnull
 WHERE b IS NOT NULL
 SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0;
+
+EXPLAIN indexes = 1
+SELECT count() FROM t_sparse_pk_trunc_isnull
+WHERE b IS NOT NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0;
 
 SELECT count() FROM t_sparse_pk_trunc_isnull
 WHERE b IS NOT NULL
