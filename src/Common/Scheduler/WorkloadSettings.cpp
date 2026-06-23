@@ -1,5 +1,6 @@
 #include <limits>
 #include <base/getMemoryAmount.h>
+#include <Common/MemoryTracker.h>
 #include <Common/Scheduler/CostUnit.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/Scheduler/WorkloadSettings.h>
@@ -19,7 +20,8 @@ namespace ErrorCodes
 
 bool WorkloadSettings::hasThrottler(CostUnit unit) const
 {
-    switch (unit) {
+    switch (unit)
+    {
         case CostUnit::IOByte: return max_bytes_per_second != 0;
         case CostUnit::CPUNanosecond: return max_cpus != 0;
         case CostUnit::QuerySlot: return max_queries_per_second != 0;
@@ -29,7 +31,8 @@ bool WorkloadSettings::hasThrottler(CostUnit unit) const
 
 Float64 WorkloadSettings::getThrottlerMaxSpeed(CostUnit unit) const
 {
-    switch (unit) {
+    switch (unit)
+    {
         case CostUnit::IOByte: return max_bytes_per_second;
         case CostUnit::CPUNanosecond: return max_cpus * 1'000'000'000; // Convert CPU count to CPU * nanoseconds / sec
         case CostUnit::QuerySlot: return max_queries_per_second;
@@ -39,7 +42,8 @@ Float64 WorkloadSettings::getThrottlerMaxSpeed(CostUnit unit) const
 
 Float64 WorkloadSettings::getThrottlerMaxBurst(CostUnit unit) const
 {
-    switch (unit) {
+    switch (unit)
+    {
         case CostUnit::IOByte: return max_burst_bytes;
         case CostUnit::CPUNanosecond: return max_burst_cpu_seconds * 1'000'000'000; // Convert seconds to nanoseconds
         case CostUnit::QuerySlot: return max_burst_queries;
@@ -49,7 +53,8 @@ Float64 WorkloadSettings::getThrottlerMaxBurst(CostUnit unit) const
 
 bool WorkloadSettings::hasSemaphore(CostUnit unit) const
 {
-    switch (unit) {
+    switch (unit)
+    {
         case CostUnit::IOByte: return max_io_requests != unlimited || max_bytes_inflight != unlimited;
         case CostUnit::CPUNanosecond: return max_concurrent_threads != unlimited;
         case CostUnit::QuerySlot: return max_concurrent_queries != unlimited;
@@ -59,7 +64,8 @@ bool WorkloadSettings::hasSemaphore(CostUnit unit) const
 
 Int64 WorkloadSettings::getSemaphoreMaxRequests(CostUnit unit) const
 {
-    switch (unit) {
+    switch (unit)
+    {
         case CostUnit::IOByte: return max_io_requests;
         case CostUnit::CPUNanosecond: return max_concurrent_threads;
         case CostUnit::QuerySlot: return max_concurrent_queries;
@@ -69,7 +75,8 @@ Int64 WorkloadSettings::getSemaphoreMaxRequests(CostUnit unit) const
 
 Int64 WorkloadSettings::getSemaphoreMaxCost(CostUnit unit) const
 {
-    switch (unit) {
+    switch (unit)
+    {
         case CostUnit::IOByte: return max_bytes_inflight;
         case CostUnit::CPUNanosecond: return unlimited;
         case CostUnit::QuerySlot: return unlimited;
@@ -79,7 +86,8 @@ Int64 WorkloadSettings::getSemaphoreMaxCost(CostUnit unit) const
 
 bool WorkloadSettings::hasQueueLimit(CostUnit unit) const
 {
-    switch (unit) {
+    switch (unit)
+    {
         // These requests are executed in the middle of query processing - queue is unlimited
         case CostUnit::IOByte:
         case CostUnit::CPUNanosecond:
@@ -91,7 +99,8 @@ bool WorkloadSettings::hasQueueLimit(CostUnit unit) const
 
 Int64 WorkloadSettings::getQueueLimit(CostUnit unit) const
 {
-    switch (unit) {
+    switch (unit)
+    {
         // These requests are executed in the middle of query processing - queue is unlimited
         case CostUnit::IOByte:
         case CostUnit::CPUNanosecond:
@@ -128,7 +137,8 @@ Int64 WorkloadSettings::getAllocationLimit(CostUnit unit) const
 
 void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name, bool throw_on_unknown_setting)
 {
-    struct {
+    struct
+    {
         std::optional<Float64> weight;
         std::optional<Priority> priority;
         std::optional<Priority> precedence;
@@ -367,7 +377,7 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
     max_waiting_queries = get_value(specific.max_waiting_queries, regular.max_waiting_queries, max_waiting_queries, unlimited);
 
     // Compute total memory reservation limit as the minimum of two possible values:
-    // (1) exact limit `max_memory` and (2) ratio of total host RAM `max_memory_ratio * getMemoryAmount()`.
+    // (1) exact limit `max_memory` and (2) ratio of server memory `max_memory_ratio * server_memory`.
     // Zero setting value means unlimited.
     {
         Int64 limit = unlimited;
@@ -377,11 +387,17 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
             limit = exact_number;
         if (ratio > 0)
         {
-            // `getMemoryAmountOrZero` already accounts for cgroups, so a container-level limit is respected.
-            // On platforms where physical memory cannot be determined the ratio is ignored.
+            // Base the ratio on the server memory hard limit so that `max_server_memory_usage`
+            // (and its derived RAM ratio) is respected. When no hard limit is configured (e.g.
+            // outside the server) fall back to physical memory; `getMemoryAmountOrZero` accounts
+            // for cgroups, so a container-level limit is respected, and on platforms where it
+            // cannot be determined the ratio is ignored.
+            Int64 server_memory = total_memory_tracker.getHardLimit();
+            if (server_memory <= 0)
+                server_memory = static_cast<Int64>(getMemoryAmountOrZero());
             // Clamp before casting to `Int64`: a large ratio (e.g. `1e100`) would otherwise produce a
             // float outside `Int64` range and trigger undefined-behaviour on conversion.
-            Float64 raw = ratio * static_cast<Float64>(getMemoryAmountOrZero());
+            Float64 raw = ratio * static_cast<Float64>(server_memory);
             Int64 value = (raw >= static_cast<Float64>(unlimited)) ? unlimited : static_cast<Int64>(raw);
             if (value > 0 && value < limit)
                 limit = value;
