@@ -1378,6 +1378,7 @@ DictionarySparseIndex serializeTokensAndPostings(
             if (positions_stream)
             {
                 chassert(entry.positions);
+                entry.positions->finalizeOrdering();
                 const auto & position_entries = entry.positions->getEntries();
 
                 token_info.header |= PostingsSerialization::Flags::HasPositions;

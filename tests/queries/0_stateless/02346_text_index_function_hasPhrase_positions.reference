@@ -107,3 +107,5 @@ AND NOT hasPhrase should reduce to parts containing the positive phrase
 Description: text GRANULARITY 100000000
 Parts: 1/4
 Granules: 1024/4096
+Map support
+1
