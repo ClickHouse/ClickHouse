@@ -709,7 +709,7 @@ Do not calculate a checksum when sending a file to S3. This speeds up writes by 
     DECLARE(String, s3_upload_checksum_algorithm, "", R"(
 The checksum algorithm used for `S3` upload requests. `CRC32` and `SHA256` are sent as flexible `x-amz-checksum-*` headers, while `MD5` is sent as a `Content-MD5` header. `CRC32` and `SHA256` take precedence over `s3_disable_checksum`.
 
-By default the value is empty and ClickHouse lets the AWS SDK compute `Content-MD5`. In FIPS mode `MD5` is unavailable, so an empty value uses `SHA256` instead and an explicit `MD5` is rejected.
+By default the value is empty and ClickHouse lets the AWS SDK compute `Content-MD5`. In FIPS mode `MD5` is unavailable, so an empty value uses `SHA256` instead and an explicit `MD5` is rejected. To send no checksum for the empty value, set `s3_disable_checksum`.
 
 `S3Express` buckets require a flexible checksum and do not accept `Content-MD5`: an explicit `CRC32` or `SHA256` is honored, an empty value uses `CRC32`, and an explicit `MD5` is rejected.
 

@@ -207,7 +207,7 @@ public:
         /// via `setUploadChecksumAlgorithm`; otherwise default to `CRC32`. This runs when the request is sent,
         /// after the upload algorithm has been chosen, so it must not clobber that choice.
         if (!RequestChecksum::usesFlexibleChecksumHeader(upload_checksum_algorithm))
-            RequestChecksum::setChecksumAlgorithm(*this, RequestChecksum::Algorithm::CRC32);
+            setUploadChecksumAlgorithm(RequestChecksum::Algorithm::CRC32);
     }
 
     void setUploadChecksumAlgorithm(RequestChecksum::Algorithm algorithm)
@@ -221,7 +221,7 @@ public:
 
     bool hasRequestChecksum() const
     {
-        return is_s3express_bucket || RequestChecksum::usesFlexibleChecksumHeader(upload_checksum_algorithm);
+        return RequestChecksum::usesFlexibleChecksumHeader(upload_checksum_algorithm);
     }
 
 protected:
