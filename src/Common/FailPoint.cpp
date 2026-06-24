@@ -211,7 +211,8 @@ static struct InitFiu
     REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
     REGULAR(tcp_handler_fail_connection_setup) \
     REGULAR(distributed_plan_status_check_reenqueue_fault) \
-    PAUSEABLE_ONCE(limit_by_sorted_stream_transform_pause)
+    PAUSEABLE_ONCE(limit_by_sorted_stream_transform_pause) \
+    PAUSEABLE_ONCE(limit_by_transform_pause)
 
 namespace FailPoints
 {
