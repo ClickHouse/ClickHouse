@@ -51,7 +51,8 @@ SpillingHashJoin::SpillingHashJoin(
     size_t initial_num_buckets_,
     size_t max_num_buckets_,
     size_t concurrent_slots_,
-    const StatsCollectingParams & stats_collecting_params_)
+    const StatsCollectingParams & stats_collecting_params_,
+    std::optional<size_t> plan_key_ndv_)
     : log(getLogger("SpillingHashJoin"))
     , table_join(std::move(table_join_))
     , left_sample_block(std::move(left_sample_block_))
@@ -67,7 +68,8 @@ SpillingHashJoin::SpillingHashJoin(
         right_sample_block_,
         stats_collecting_params_,
         /*any_take_last_row_=*/false,
-        max_bytes_before_external_join);
+        max_bytes_before_external_join,
+        plan_key_ndv_);
     supports_parallel_non_joined_blocks_processing = concurrent_join->supportParallelNonJoinedBlocksProcessing();
 }
 

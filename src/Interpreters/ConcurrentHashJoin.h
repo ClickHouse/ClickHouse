@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
@@ -46,13 +47,18 @@ public:
     /// reserve cannot blow past the wrapper's spill threshold. Pass 0 for standalone use
     /// (`join_algorithm = 'parallel_hash'`); the user-visible `max_bytes_before_external_join`
     /// setting deliberately does NOT apply to standalone instances.
+    /// `plan_key_ndv_` is the planner's trustworthy (`uniq`-backed) distinct-key estimate of the right
+    /// join key, when available. When present (and there is no cross-run statistics size hint), the
+    /// deferred build is skipped and the streaming build preallocates the maps to this distinct-key
+    /// count - exactly like the warm `ht_size` path - so the buffering of the deferred build is avoided.
     explicit ConcurrentHashJoin(
         std::shared_ptr<TableJoin> table_join_,
         size_t slots_,
         SharedHeader right_sample_block,
         const StatsCollectingParams & stats_collecting_params_,
         bool any_take_last_row_ = false,
-        size_t external_join_threshold_ = 0);
+        size_t external_join_threshold_ = 0,
+        std::optional<size_t> plan_key_ndv_ = std::nullopt);
 
     ~ConcurrentHashJoin() override;
 
@@ -103,7 +109,7 @@ public:
     std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_, SharedHeader, SharedHeader right_sample_block_) const override
     {
         return std::make_shared<ConcurrentHashJoin>(
-            table_join_, slots, right_sample_block_, stats_collecting_params, any_take_last_row, external_join_threshold);
+            table_join_, slots, right_sample_block_, stats_collecting_params, any_take_last_row, external_join_threshold, plan_key_ndv);
     }
 
     std::shared_ptr<IJoin> cloneNoParallel(const std::shared_ptr<TableJoin> & table_join_, SharedHeader, SharedHeader right_sample_block_) const override
@@ -161,6 +167,10 @@ private:
 
     StatsCollectingParams stats_collecting_params;
     const size_t external_join_threshold;
+
+    /// Trustworthy (`uniq`-backed) distinct-key estimate of the right join key (see the constructor);
+    /// `nullopt` when unavailable. Drives streaming-path preallocation and skips the deferred build.
+    const std::optional<size_t> plan_key_ndv;
 
     /// When true, slots buffer their right blocks during the build phase and the hash maps are filled
     /// at `onBuildPhaseFinish` after being reserved to the estimated distinct-key count (few or no

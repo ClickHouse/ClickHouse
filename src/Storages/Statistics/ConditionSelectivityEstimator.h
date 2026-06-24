@@ -16,6 +16,13 @@ struct ColumnStats
     /// TODO: Support min max
     /// Field min_value, max_value;
     UInt64 num_distinct_values = 0;
+
+    /// True only when `num_distinct_values` is backed by a real `uniq` statistic, as opposed to the
+    /// `default_cardinality_ratio` (0.1 * rows) mock used when no `uniq` statistic exists. Consumers
+    /// that must not act on a guessed cardinality (e.g. preallocating a hash-join build map) check
+    /// this flag. It is set only at the leaf (where the `uniq` statistic is known to exist) and is
+    /// ANDed when distinct counts are combined, so a value derived from any mock is never trusted.
+    bool num_distinct_values_from_uniq = false;
 };
 
 struct RelationProfile
@@ -109,6 +116,8 @@ private:
 
         Selectivity estimateRanges(const PlainRanges & ranges) const;
         UInt64 estimateCardinality() const;
+        /// True when `estimateCardinality` returns a real `uniq`-backed estimate (not the mock).
+        bool hasUniqStatistic() const;
     };
 
     RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const;

@@ -174,15 +174,28 @@ void reserveSpaceInHashMaps(
     size_t ind,
     const StatsCollectingParams & stats_collecting_params,
     size_t slots,
-    size_t external_join_threshold)
+    size_t external_join_threshold,
+    std::optional<size_t> plan_key_ndv)
 {
-    /// Hash map is shared between all `HashJoin` instances, so the hinted `ht_size` is the total size
-    /// we need to preallocate across all buckets of all hash maps.
+    /// Hash map is shared between all `HashJoin` instances, so the hinted size is the total size we
+    /// need to preallocate across all buckets of all hash maps. The cross-run statistics `ht_size`
+    /// hint takes precedence; otherwise a trustworthy plan distinct-key estimate is used. Both reserve
+    /// the same way (capped to the spill threshold, since more rows stream in after the reserve) and
+    /// report under the same profile event - this is the warm preallocation path.
     if (auto hint = getSizeHint(stats_collecting_params))
         reserveBucketsBySize(
             hash_join,
             ind,
             hint->ht_size,
+            slots,
+            external_join_threshold,
+            /*cap_to_external_threshold=*/true,
+            ProfileEvents::HashJoinPreallocatedElementsInHashTables);
+    else if (plan_key_ndv)
+        reserveBucketsBySize(
+            hash_join,
+            ind,
+            *plan_key_ndv,
             slots,
             external_join_threshold,
             /*cap_to_external_threshold=*/true,
@@ -267,7 +280,8 @@ ConcurrentHashJoin::ConcurrentHashJoin(
     SharedHeader right_sample_block,
     const StatsCollectingParams & stats_collecting_params_,
     bool any_take_last_row_,
-    size_t external_join_threshold_)
+    size_t external_join_threshold_,
+    std::optional<size_t> plan_key_ndv_)
     : table_join(table_join_)
     , slots(toPowerOfTwo(std::min<UInt32>(static_cast<UInt32>(slots_), 256)))
     , any_take_last_row(any_take_last_row_)
@@ -280,6 +294,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
           /*queue_size_*/ slots))
     , stats_collecting_params(stats_collecting_params_)
     , external_join_threshold(external_join_threshold_)
+    , plan_key_ndv(plan_key_ndv_)
 {
     hash_joins.resize(slots);
 
@@ -330,11 +345,19 @@ ConcurrentHashJoin::ConcurrentHashJoin(
         /// replay would build), so the wrapper switches to `GraceHashJoin` before a replay that
         /// would overshoot the cap, and on a spill the buffers are handed over (see
         /// `releaseSlotBlocks`) without building the in-memory map.
+        /// A trustworthy (`uniq`-backed) distinct-key estimate lets the streaming build preallocate the
+        /// maps exactly (see `reserveSpaceInHashMaps`), so there is no reason to defer: skip the
+        /// buffering. The cross-run statistics hint takes precedence (it disables the deferral via the
+        /// `getSizeHint` check below and reserves from `ht_size`), so only consult the plan NDV when no
+        /// such hint exists.
+        const bool has_plan_key_ndv = plan_key_ndv.has_value() && *plan_key_ndv > 0;
+
         const auto & size_limits = table_join->sizeLimits();
         deferred_build = !any_take_last_row
             && hash_joins[0]->data->twoLevelMapIsUsed()
             && !getSizeHint(stats_collecting_params).has_value()
-            && !(size_limits.hasLimits() && size_limits.overflow_mode == OverflowMode::BREAK);
+            && !(size_limits.hasLimits() && size_limits.overflow_mode == OverflowMode::BREAK)
+            && !has_plan_key_ndv;
 
         /// String-key maps copy every key into the arena at insert time; for the spill projection
         /// those bytes are tracked at buffering time (other key types live in the cells, whose size
@@ -513,7 +536,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
 
                 if (!hash_join->space_was_preallocated && hash_join->data->twoLevelMapIsUsed())
                 {
-                    reserveSpaceInHashMaps(*hash_join->data, i, stats_collecting_params, slots, external_join_threshold);
+                    reserveSpaceInHashMaps(*hash_join->data, i, stats_collecting_params, slots, external_join_threshold, plan_key_ndv);
                     hash_join->space_was_preallocated = true;
                 }
 

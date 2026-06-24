@@ -86,6 +86,12 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
             UInt64 min_ndv = std::min(left_it->second.num_distinct_values, right_it->second.num_distinct_values);
             left_it->second.num_distinct_values = min_ndv;
             right_it->second.num_distinct_values = min_ndv;
+            /// The combined distinct count is trustworthy only if both sides were uniq-backed: a min
+            /// against a mock-derived count is itself a guess. Keep the flag conservative.
+            const bool both_from_uniq
+                = left_it->second.num_distinct_values_from_uniq && right_it->second.num_distinct_values_from_uniq;
+            left_it->second.num_distinct_values_from_uniq = both_from_uniq;
+            right_it->second.num_distinct_values_from_uniq = both_from_uniq;
         }
     }
 

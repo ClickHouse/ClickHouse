@@ -162,7 +162,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
             continue;
 
         UInt64 cardinality = std::min(result.rows, estimator.estimateCardinality());
-        result.column_stats.emplace(column_name, cardinality);
+        result.column_stats.emplace(column_name, ColumnStats{.num_distinct_values = cardinality, .num_distinct_values_from_uniq = estimator.hasUniqStatistic()});
     }
     return result;
 }
@@ -173,7 +173,9 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
     result.rows = total_rows;
     for (const auto & [column_name, estimator] : column_estimators)
     {
-        result.column_stats.emplace(column_name, estimator.estimateCardinality());
+        result.column_stats.emplace(
+            column_name,
+            ColumnStats{.num_distinct_values = estimator.estimateCardinality(), .num_distinct_values_from_uniq = estimator.hasUniqStatistic()});
     }
     return result;
 }
@@ -540,6 +542,11 @@ ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Column
 UInt64 ConditionSelectivityEstimator::ColumnEstimator::estimateCardinality() const
 {
     return stats->estimateCardinality();
+}
+
+bool ConditionSelectivityEstimator::ColumnEstimator::hasUniqStatistic() const
+{
+    return stats && stats->hasUniqStatistic();
 }
 
 const ConditionSelectivityEstimator::AtomMap ConditionSelectivityEstimator::atom_map

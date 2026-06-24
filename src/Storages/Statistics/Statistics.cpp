@@ -307,6 +307,11 @@ UInt64 ColumnStatistics::estimateCardinality() const
     return UInt64(static_cast<Float64>(rows) * ConditionSelectivityEstimator::default_cardinality_ratio);
 }
 
+bool ColumnStatistics::hasUniqStatistic() const
+{
+    return stats.contains(StatisticsType::Uniq);
+}
+
 bool ColumnStatistics::hasNullCount() const
 {
     if (auto it = stats.find(StatisticsType::Basic); it != stats.end())

@@ -1404,6 +1404,51 @@ static QueryPlanNode buildPhysicalJoinImpl(
     return node;
 }
 
+/// Distinct-key count of the right join key from the planner's column statistics, but only when it is
+/// trustworthy enough to size the build hash map: a single plain-column equi key whose right side is an
+/// INPUT column from one relation, and whose distinct count is backed by a real `uniq` statistic (not
+/// the `default_cardinality_ratio` mock). Returns nullopt for composite/expression keys, sources
+/// without `uniq` statistics, and anything the optimizer did not produce reliable column stats for.
+static std::optional<UInt64> extractTrustworthyRightKeyNdv(const JoinStepLogical & join_step)
+{
+    const auto & column_stats = join_step.getResultColumnStats();
+    if (column_stats.empty())
+        return std::nullopt;
+
+    std::optional<String> right_key_name;
+    size_t equi_predicates = 0;
+    for (const auto & predicate : join_step.getJoinOperator().expression)
+    {
+        auto [op, lhs, rhs] = predicate.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals)
+            continue;
+
+        ++equi_predicates;
+        if (equi_predicates > 1)
+            return std::nullopt; /// composite key
+
+        if (lhs.fromRight() && rhs.fromLeft())
+            std::swap(lhs, rhs);
+        if (!lhs.fromLeft() || !rhs.fromRight())
+            return std::nullopt;
+
+        auto resolved = rhs.resolveAliases();
+        if (resolved.getNode()->type != ActionsDAG::ActionType::INPUT || !resolved.getSourceRelations().getSingleBit())
+            return std::nullopt; /// expression key
+
+        right_key_name = resolved.getColumnName();
+    }
+
+    if (equi_predicates != 1 || !right_key_name)
+        return std::nullopt;
+
+    auto it = column_stats.find(*right_key_name);
+    if (it == column_stats.end() || !it->second.num_distinct_values_from_uniq || it->second.num_distinct_values == 0)
+        return std::nullopt;
+
+    return it->second.num_distinct_values;
+}
+
 void JoinStepLogical::buildPhysicalJoin(
     QueryPlanNode & node,
     const QueryPlanOptimizationSettings & optimization_settings,
@@ -1435,6 +1480,8 @@ void JoinStepLogical::buildPhysicalJoin(
 
         if (join_step->right_rows_estimation)
             join_step->join_algorithm_params->rhs_size_estimation = join_step->right_rows_estimation;
+
+        join_step->join_algorithm_params->trustworthy_rhs_key_ndv = extractTrustworthyRightKeyNdv(*join_step);
 
         if (hash_table_key_hash)
         {
