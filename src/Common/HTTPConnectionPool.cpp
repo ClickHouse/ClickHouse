@@ -1050,18 +1050,17 @@ private:
             }
             catch (const Poco::TimeoutException &)
             {
-                /// `Poco::HTTPClientSession::reconnect` re-throws `Poco::TimeoutException`
-                /// on connect timeout, and `Poco::TimeoutException` derives from
-                /// `Poco::RuntimeException`, not `Poco::Net::NetException`. Without this
-                /// catch, a timed-out first address falls into `catch (...)` and is
-                /// re-thrown immediately, defeating the whole point of this retry loop on
-                /// dual-stack hosts whose first resolved address is blackholed. Treat it
-                /// as a per-address routing failure with the same `setFail` policy as the
-                /// `NetException` path above. A connect timeout is always the TCP connect itself
-                /// (the post-connect `setsockopt` calls do not block), so unlike `NetException`
-                /// no post-connect-setup discrimination is needed here.
+                /// `Poco::TimeoutException` (derives from `Poco::RuntimeException`, not
+                /// `Poco::Net::NetException`) is caught separately so a connect timeout retries
+                /// the next address instead of falling into `catch (...)` and propagating at once.
+                /// But for HTTPS the TLS handshake runs after the TCP connect and can also time
+                /// out, so discriminate as in the `NetException` handler: a timeout once the
+                /// socket has a peer is post-connect - propagate without `setFail`.
                 ProfileEvents::increment(getMetrics().errors);
+                const bool tcp_connected = connection->isConnectedToPeer();
                 (*connection).reset();
+                if (tcp_connected)
+                    throw;
                 last_net_error = std::current_exception();
                 try
                 {
