@@ -1,6 +1,7 @@
 #include <Common/VectorQuantization.h>
 
 #include <Common/Exception.h>
+#include <Common/HadamardTransform.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/LloydMaxQuantizer.h>
 
@@ -58,7 +59,7 @@ constexpr UInt64 RANDOM_PROJECTION_SEED = 0x9E3779B97F4A7C15ULL;
 /// MSE-quantization residual. Must differ from RANDOM_PROJECTION_SEED so the two projections are independent.
 constexpr UInt64 RANDOM_PROJECTION_SEED_QJL = 0xD1B54A32D192ED03ULL;
 
-/// Number of (sign-flip + Walsh-Hadamard) rounds. Three rounds of HD approximate a random rotation well, so the
+/// Number of (sign-flip + Hadamard) rounds. Three rounds of HD approximate a random rotation well, so the
 /// resulting sign bits behave as random-hyperplane hashes (angular LSH).
 constexpr int PROJECTION_ROUNDS = 3;
 
@@ -71,27 +72,21 @@ inline size_t projectionPaddedSize(size_t n)
     return p;
 }
 
-/// In-place Walsh-Hadamard transform (n must be a power of two), O(n log n), add/sub only.
-inline void walshHadamardTransform(float * a, size_t n)
+/// Working dimension of the structured transform: the input dimension itself when it admits an exact Hadamard matrix
+/// (`dimensions = 2^k * m`, m in {12, 20} - e.g. 384/768/1536/3072/2560), otherwise the input zero-padded to the next
+/// power of two. Using the exact dimension avoids both the padding work and the geometry distortion of padding.
+inline size_t projectionWorkingDim(size_t dimensions)
 {
-    for (size_t len = 1; len < n; len <<= 1)
-        for (size_t i = 0; i < n; i += (len << 1))
-            for (size_t j = i; j < i + len; ++j)
-            {
-                const float u = a[j];
-                const float v = a[j + len];
-                a[j] = u + v;
-                a[j + len] = u - v;
-            }
+    return HadamardTransform::hadamardOrderFor(dimensions).m ? dimensions : projectionPaddedSize(dimensions);
 }
 
-/// A fast structured random projection: PROJECTION_ROUNDS blocks of (random ±1 diagonal) * Walsh-Hadamard, replacing
-/// a dense d*d Gaussian matrix (O(d*d) per vector) with an O(d log d) transform. Returns the concatenated sign-flip
-/// diagonals (PROJECTION_ROUNDS * padded entries, each +-1), generated deterministically from the fixed seed.
+/// A fast structured random projection: PROJECTION_ROUNDS blocks of (random ±1 diagonal) * Hadamard transform,
+/// replacing a dense d*d Gaussian matrix (O(d*d) per vector) with an O(d log d) transform. Returns the concatenated
+/// sign-flip diagonals (PROJECTION_ROUNDS * working_dim entries, each +-1), generated deterministically from the seed.
 std::vector<float> generateRandomProjection(size_t dimensions, UInt64 seed = RANDOM_PROJECTION_SEED)
 {
-    const size_t padded = projectionPaddedSize(dimensions);
-    std::vector<float> sign_flips(static_cast<size_t>(PROJECTION_ROUNDS) * padded);
+    const size_t working_dim = projectionWorkingDim(dimensions);
+    std::vector<float> sign_flips(static_cast<size_t>(PROJECTION_ROUNDS) * working_dim);
 
     /// splitmix64 bit stream -> +-1
     UInt64 state = seed;
@@ -106,30 +101,61 @@ std::vector<float> generateRandomProjection(size_t dimensions, UInt64 seed = RAN
     return sign_flips;
 }
 
-/// Projects `x` (dimensions elements) using the structured transform into `work` (size = padded). The first
-/// `dimensions` entries of `work` are the projected coordinates whose signs form the code. `work` must have at least
-/// `padded` (= sign_flips.size() / PROJECTION_ROUNDS) elements.
+/// Projects `x` (dimensions elements) using the structured transform into `work`. The first `dimensions` entries of
+/// `work` are the projected coordinates whose signs form the code. `work` must have at least `working_dim`
+/// (= sign_flips.size() / PROJECTION_ROUNDS) elements. The Hadamard step is the exact Kronecker transform when
+/// `dimensions` factors as 2^k * m (m in {12, 20}), otherwise an FWHT over the zero-padded power-of-two working size.
 template <typename T>
 void applyRandomProjection(const std::vector<float> & sign_flips, const T * x, size_t dimensions, float * work)
 {
-    const size_t padded = sign_flips.size() / PROJECTION_ROUNDS;
+    const size_t working_dim = sign_flips.size() / PROJECTION_ROUNDS;
     for (size_t i = 0; i < dimensions; ++i)
         work[i] = static_cast<float>(x[i]);
-    for (size_t i = dimensions; i < padded; ++i)
+    for (size_t i = dimensions; i < working_dim; ++i)
         work[i] = 0.0f;
+
+    const auto [kron_m, kron_blocks] = HadamardTransform::hadamardOrderFor(dimensions);
+    HadamardTransform::HmMasks<float> hm;
+    if (kron_m)
+        HadamardTransform::buildHmMasks<float>(hm, kron_m);
+#if defined(__aarch64__)
+    const bool neon = HadamardTransform::selectKernel() == HadamardTransform::FwhtKernel::Neon;
+#endif
 
     for (int round = 0; round < PROJECTION_ROUNDS; ++round)
     {
-        const float * flip = sign_flips.data() + static_cast<size_t>(round) * padded;
-        for (size_t i = 0; i < padded; ++i)
+        const float * flip = sign_flips.data() + static_cast<size_t>(round) * working_dim;
+        for (size_t i = 0; i < working_dim; ++i)
             work[i] *= flip[i];
-        walshHadamardTransform(work, padded);
+
+        if (kron_m)
+        {
+#if defined(__aarch64__)
+            if (neon)
+                HadamardTransform::kroneckerNeon(work, kron_blocks, kron_m, hm);
+            else
+                HadamardTransform::kroneckerScalar<float>(work, kron_blocks, kron_m, hm);
+#else
+            HadamardTransform::kroneckerScalar<float>(work, kron_blocks, kron_m, hm);
+#endif
+        }
+        else
+        {
+#if defined(__aarch64__)
+            if (neon)
+                HadamardTransform::fwhtNeon(work, working_dim);
+            else
+                HadamardTransform::fwhtScalar(work, working_dim);
+#else
+            HadamardTransform::fwhtScalar(work, working_dim);
+#endif
+        }
     }
 
-    /// The Walsh-Hadamard rounds are unnormalized, so a finite (but large) Float32 input can overflow to Inf/NaN here.
-    /// The downstream encoders/scans feed `work` into norms, `std::lround`, and integer casts, so a non-finite value
-    /// would be undefined behaviour or a garbage code. Fail loud instead. This is a single linear pass over the used
-    /// coordinates, cheap relative to the O(padded log padded) transform above, and only fires for extreme inputs.
+    /// The Hadamard rounds are unnormalized, so a finite (but large) Float32 input can overflow to Inf/NaN here. The
+    /// downstream encoders/scans feed `work` into norms, `std::lround`, and integer casts, so a non-finite value would
+    /// be undefined behaviour or a garbage code. Fail loud instead. This is a single linear pass over the used
+    /// coordinates, cheap relative to the O(working_dim log working_dim) transform above, and only fires for extreme inputs.
     for (size_t i = 0; i < dimensions; ++i)
         if (!std::isfinite(work[i]))
             throw Exception(ErrorCodes::INCORRECT_DATA,
