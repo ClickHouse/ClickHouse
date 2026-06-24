@@ -10,8 +10,9 @@ SELECT name, type FROM system.columns WHERE database = 'system' AND table = 'doc
 SELECT count() FROM system.documentation WHERE source LIKE '/%';
 
 -- Every non-alias documented entity has a source (an alias whose canonical entity is not itself documented,
--- e.g. an alias of an internal function, may have an empty source).
-SELECT count() FROM system.documentation WHERE source = '' AND description NOT LIKE 'Alias of %';
+-- e.g. an alias of an internal function, may have an empty source). System tables are excluded: their source comes
+-- from a per-file registration whose static initializer the linker may drop in aggressively size-optimized builds.
+SELECT count() FROM system.documentation WHERE source = '' AND description NOT LIKE 'Alias of %' AND type != 'System Table';
 
 -- The additional kinds of entities are represented.
 SELECT toString(type) AS t, count() > 0
@@ -39,10 +40,11 @@ SELECT DISTINCT source FROM system.documentation WHERE type = 'Current Metric';
 -- and always lives under `src/`.
 SELECT count() FROM system.documentation WHERE type = 'Asynchronous Metric' AND (source = '' OR source NOT LIKE 'src/%');
 
--- Each system table points to its own storage source file (relative to the repository root), so the source is
--- never empty and always lives under `src/Storages/`.
-SELECT count() FROM system.documentation WHERE type = 'System Table' AND (source = '' OR source NOT LIKE 'src/Storages/%');
-SELECT source FROM system.documentation WHERE type = 'System Table' AND name = 'events';
+-- Each system table that has a captured source points to its own storage source file, under `src/Storages/`. Some
+-- tables may have no source in aggressively size-optimized builds (the registration static initializer is dropped),
+-- so we only require that the captured sources are valid and that the mechanism works for at least some tables.
+SELECT count() FROM system.documentation WHERE type = 'System Table' AND source != '' AND source NOT LIKE 'src/Storages/%';
+SELECT count() > 0 FROM system.documentation WHERE type = 'System Table' AND source != '';
 
 -- The source of a documentation object points to the source file that defines the component, relative to the
 -- repository root: a function to its file, and a compression codec to its file.

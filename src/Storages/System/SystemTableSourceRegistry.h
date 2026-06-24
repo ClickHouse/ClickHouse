@@ -26,9 +26,11 @@ const char * getSystemTableSource(const std::type_info & type);
 /// including a template instantiation, e.g. `REGISTER_SYSTEM_TABLE_SOURCE(::DB::SystemMergeTreeSettings<false>)`.
 #define REGISTER_SYSTEM_TABLE_SOURCE_CONCAT_IMPL(a, b) a##b
 #define REGISTER_SYSTEM_TABLE_SOURCE_CONCAT(a, b) REGISTER_SYSTEM_TABLE_SOURCE_CONCAT_IMPL(a, b)
+/// `gnu::used` + `gnu::retain` keep the registration's static initializer from being discarded by the compiler or by
+/// the linker's `--gc-sections`/`--icf` (the variable has internal linkage and is otherwise never referenced).
 #define REGISTER_SYSTEM_TABLE_SOURCE(...) \
     namespace \
     { \
-        [[maybe_unused]] const bool REGISTER_SYSTEM_TABLE_SOURCE_CONCAT(registered_system_table_source_, __LINE__) \
+        [[maybe_unused, gnu::used, gnu::retain]] const bool REGISTER_SYSTEM_TABLE_SOURCE_CONCAT(registered_system_table_source_, __LINE__) \
             = (::DB::registerSystemTableSource(typeid(__VA_ARGS__), __builtin_FILE()), true); \
     }

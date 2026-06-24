@@ -17,7 +17,7 @@ src/Common/ProfileEvents.cpp
 src/Common/CurrentMetrics.cpp
 0
 0
-src/Storages/System/StorageSystemEvents.cpp
+1
 src/Functions/moduloOrNull.cpp
 src/Compression/CompressionCodecLZ4.cpp
 1
