@@ -26,6 +26,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int UNSUPPORTED_METHOD;
+extern const int TYPE_MISMATCH;
 }
 
 namespace
@@ -241,7 +242,7 @@ ColumnPtr NaiveBayesDictionary::getColumn(
     const std::string & attribute_name,
     const DataTypePtr & attribute_type,
     const Columns & key_columns,
-    const DataTypes & /* key_types */,
+    const DataTypes & key_types,
     DefaultOrFilter /* default_or_filter */) const
 {
     /// Only the class attribute is computable (it is the predicted class). The count attribute describes the
@@ -254,9 +255,11 @@ ColumnPtr NaiveBayesDictionary::getColumn(
             class_attribute_name,
             attribute_name);
 
+    dict_struct.validateKeyTypes(key_types);
+
     const auto * string_col = typeid_cast<const ColumnString *>(key_columns.front().get());
     if (!string_col)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary key must be a String column");
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "NaiveBayes dictionary key must be a String column");
 
     const size_t rows = string_col->size();
 
@@ -292,10 +295,10 @@ ColumnPtr NaiveBayesDictionary::getColumn(
 }
 
 
-ColumnUInt8::Ptr NaiveBayesDictionary::hasKeys(
-    const Columns & key_columns,
-    const DataTypes & /* key_types */) const
+ColumnUInt8::Ptr NaiveBayesDictionary::hasKeys(const Columns & key_columns, const DataTypes & key_types) const
 {
+    dict_struct.validateKeyTypes(key_types);
+
     /// Any text input can be classified, so every key is considered present.
     const size_t rows = key_columns.front()->size();
     auto result = ColumnUInt8::create(rows);
