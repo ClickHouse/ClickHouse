@@ -234,10 +234,11 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
 
     UInt64 current_run_start_row = 0;
     size_t current_run_group_idx = 0;
+
+    FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_pause);
+
     for (UInt64 row_idx = 0; row_idx < row_count; ++row_idx)
     {
-        FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_pause);
-
         if (isCancelled())
         {
             LOG_TEST(getLogger("LimitByTransform"), "Cancelled during row processing");
@@ -442,10 +443,11 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
         current_group_rows_seen = 0;
 
     UInt64 current_run_start_row = 0;
+
+    FailPointInjection::pauseFailPoint(FailPoints::limit_by_sorted_stream_transform_pause);
+
     for (UInt64 row_idx = 1; row_idx < row_count; ++row_idx)
     {
-        FailPointInjection::pauseFailPoint(FailPoints::limit_by_sorted_stream_transform_pause);
-
         if (isCancelled())
         {
             LOG_TEST(getLogger("LimitBySortedStreamTransform"), "Cancelled during row processing");
