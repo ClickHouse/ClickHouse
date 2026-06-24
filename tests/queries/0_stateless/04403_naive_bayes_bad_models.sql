@@ -51,6 +51,16 @@ PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_bad_src')) LAYOUT(NAIVE_BAYES(clas
 SELECT dictGet('nb_bad', 'class_id', 'good'); -- { serverError BAD_ARGUMENTS }
 DROP DICTIONARY nb_bad;
 
+-- ---------- Wrong number of key columns (must be exactly one) ----------
+
+DROP TABLE IF EXISTS nb_two_key_src;
+CREATE TABLE nb_two_key_src (a String, b String, class_id UInt32, count UInt64) ENGINE = MergeTree ORDER BY (a, b);
+CREATE DICTIONARY nb_bad (a String, b String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY a, b SOURCE(CLICKHOUSE(TABLE 'nb_two_key_src')) LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token')) LIFETIME(0);
+SELECT dictGet('nb_bad', 'class_id', 'x'); -- { serverError BAD_ARGUMENTS }
+DROP DICTIONARY nb_bad;
+DROP TABLE nb_two_key_src;
+
 -- ---------- Unknown / misused layout parameters ----------
 
 CREATE DICTIONARY nb_bad (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
