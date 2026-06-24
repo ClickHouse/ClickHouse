@@ -27,6 +27,10 @@ SELECT name FROM system.tables WHERE database = currentDatabase() AND name = 'rm
 CREATE MATERIALIZED VIEW rmv_plain REFRESH EVERY 1 HOUR TO tgt AS SELECT x FROM src; -- { serverError BAD_ARGUMENTS }
 CREATE OR REPLACE MATERIALIZED VIEW rmv_other REFRESH EVERY 1 HOUR TO tgt AS SELECT x FROM src; -- { serverError BAD_ARGUMENTS }
 
+-- A plain CREATE whose name happens to look like a temporary replacement name still owns its
+-- target exclusively, so it must not bypass the check either.
+CREATE MATERIALIZED VIEW `_tmp_replace_a_b` REFRESH EVERY 1 HOUR TO tgt AS SELECT x FROM src; -- { serverError BAD_ARGUMENTS }
+
 DROP TABLE IF EXISTS rmv SYNC;
 DROP TABLE IF EXISTS tgt SYNC;
 DROP TABLE IF EXISTS src SYNC;

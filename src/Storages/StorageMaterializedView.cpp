@@ -224,7 +224,9 @@ StorageMaterializedView::StorageMaterializedView(
             {
                 /// During CREATE OR REPLACE the view is built under a temporary name while the replaced
                 /// view still owns the target. The precise ownership check runs in doCreateOrReplaceTable.
-                bool is_create_or_replace_temp = TemporaryReplaceTableName::fromString(table_id_.table_name).has_value();
+                /// A plain CREATE never goes through that path, so require an actual replacement query too.
+                bool is_create_or_replace_temp = (query.create_or_replace || query.replace_view)
+                    && TemporaryReplaceTableName::fromString(table_id_.table_name).has_value();
                 if (!is_create_or_replace_temp)
                     if (auto task = getContext()->getRefreshSet().tryGetTaskForInnerTable(to_table_id))
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is already a target of another refreshable materialized view: {}", to_table_id.getFullTableName(), task->getInfo().view_id.getFullTableName());
