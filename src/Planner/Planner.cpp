@@ -2312,7 +2312,8 @@ void Planner::buildPlanForQueryNode()
     auto expression_analysis_result = buildExpressionAnalysisResult(query_tree,
         query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
         planner_context,
-        query_processing_info);
+        query_processing_info,
+        join_tree_query_plan.source_constants);
 
     auto useful_sets = std::move(join_tree_query_plan.useful_sets);
 
