@@ -70,11 +70,13 @@ public:
     /// amortising cache discovery across many windows. Planning is disabled
     /// when this is below `window_size`.
     static constexpr size_t DEFAULT_PLAN_LOOK_AHEAD = 64 * 1024 * 1024; /// 64 MiB
-    /// Hard upper bound on the whole plan span once it is extended rightward to
-    /// fold in all affected cache segments (generalized plan window). Bounds the
-    /// pinned cache footprint per executor; applied snapped DOWN to a cache-cell
-    /// boundary so no cell is truncated mid-way.
-    static constexpr size_t DEFAULT_PLAN_CAP = 32 * 1024 * 1024; /// 32 MiB
+    /// Single size ceiling for the generalized plan window. The base request span
+    /// (`window_size` on a random/first read, the continuity `predictedReach` once
+    /// sequential) is clamped to it, segment folding extends within it, and it caps
+    /// the result. Pressure-scaled (x1, x1, x0.25, x0.25 over Normal/Elevated/High/
+    /// Critical). Replaces the legacy `lookahead_window`/`plan_look_ahead_window`
+    /// pair on the generalized path; `read_extent_end` does not size the plan.
+    static constexpr size_t DEFAULT_PLAN_LOOK_AHEAD_MAX_WINDOW = 32 * 1024 * 1024; /// 32 MiB
 
     /// Everything configurable beyond the data path itself: the executor is
     /// fully wired at construction, there are no post-construction setters.
@@ -96,8 +98,9 @@ public:
         /// while the cursor stays inside the pinned span. OFF preserves the legacy
         /// miss-only widening (every query stays bounded by `plan_end`).
         bool generalized_plan_window = false;
-        /// Hard cap on the generalized plan span (see `DEFAULT_PLAN_CAP`).
-        size_t plan_cap = DEFAULT_PLAN_CAP;
+        /// Single size ceiling for the generalized plan window, pressure-scaled at
+        /// use (see `DEFAULT_PLAN_LOOK_AHEAD_MAX_WINDOW`).
+        size_t plan_look_ahead_max_window = DEFAULT_PLAN_LOOK_AHEAD_MAX_WINDOW;
         /// Decrypt prefetched bytes on the read-ahead worker instead of at the serve
         /// boundary (encrypted sources, prefetch path only). See `decryptFetchedAhead`.
         bool decrypt_ahead = false;
@@ -851,6 +854,10 @@ private:
     /// place the plan is bounded.
     ByteRange boundedPlanSpan(size_t physical_start, MemoryPressureLevel level) const;
 
+    /// The generalized plan ceiling for a pressure level: `plan_look_ahead_max_window`
+    /// scaled x1, x1, x0.25, x0.25 over Normal/Elevated/High/Critical.
+    size_t effectivePlanCeiling(MemoryPressureLevel level) const;
+
     /// Whether the current plan already extends to the source end (known size). A
     /// margin-driven replan then only rebuilds the identical plan (and recreates the
     /// held cache readers), so the serve path suppresses it and streams within the
@@ -864,7 +871,7 @@ private:
     /// its cache-aligned misses and opens the write buffers (populatable
     /// tiers only), PRUNING any miss cell fully covered by `upper_hits` (the
     /// union of faster tiers' hits) - that range already lives upstream.
-    static void extractResidentRuns(const CacheView & view, ByteRange plan_range, GeometryEntry & geom_entry);
+    static void extractResidentRuns(const CacheView & view, ByteRange plan_range, size_t resident_clip_end, GeometryEntry & geom_entry);
     static void extractMissesAndOpenWriters(
         ICacheProvider & cache, const CacheView & view,
         const StoredObject & object, size_t object_file_offset,
@@ -936,8 +943,11 @@ private:
     /// Look-ahead span for plan-then-stream; raised to at least `window_size`.
     size_t plan_look_ahead_window;
     /// Flat continuity look-ahead for the residency lookup span (`boundedPlanSpan`),
-    /// from `reader_executor_lookahead_window`.
+    /// from `reader_executor_lookahead_window`. Legacy path only.
     size_t lookahead_window;
+    /// Generalized plan window: gate + single pressure-scaled size ceiling (Options).
+    bool generalized_plan_window;
+    size_t plan_look_ahead_max_window;
 
     /// Cursor state.
     size_t position = 0;

@@ -23,6 +23,7 @@
 #include <IO/ReadSettings.h>
 #include <IO/ChainedBuffers.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/tests/ReaderExecutorInspector.h>
 #include <Common/PageCache.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
@@ -415,6 +416,79 @@ TEST_F(ReaderExecutorCacheChain, ColdPopulatesAllLayers)
     }
     EXPECT_EQ(sourceRequestsSoFar(), src_before_warm)
         << "warm chain must serve everything without touching the source";
+}
+
+/// Stage 1 of the generalized plan window: with the flag ON, a cache segment that
+/// STRADDLES the base-request edge folds WHOLE into the plan's serve/pin horizon
+/// (`plan_end`/`pinned_end`) instead of being clipped at the probe end as the legacy
+/// path does. The base request itself stays `window_size` (predictedReach is ~0 on the
+/// first plan), proving it is not sized by `read_extent_end`.
+TEST_F(ReaderExecutorCacheChain, GeneralizedPlanFoldsStraddlingHit)
+{
+    constexpr size_t block_size = 16;
+    constexpr size_t file_size = 20 * block_size; /// 320
+    constexpr size_t unaligned_window = 70;       /// lands mid page-block [64, 80)
+
+    const String content = makePattern(file_size);
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_size);
+
+    /// Single page-cache tier so the fold boundary is exactly the 16-byte block grid.
+    auto page_cache = makePageCache();
+    auto page_provider = makePageProvider(page_cache, "obj", block_size, file_size);
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(page_provider);
+
+    /// Warm the page cache over the whole file.
+    {
+        ReaderExecutor::Options o;
+        o.window_size = block_size;
+        o.min_bytes_for_seek = 0;
+        o.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+        ReaderExecutor warm(source, objects, caches, o);
+        EXPECT_EQ(drainAll(warm), content);
+    }
+
+    auto make_opts = [&](bool generalized)
+    {
+        ReaderExecutor::Options o;
+        o.window_size = unaligned_window;
+        o.min_bytes_for_seek = 0;
+        o.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+        o.generalized_plan_window = generalized;
+        o.plan_look_ahead_max_window = file_size; /// ceiling well above the window
+        return o;
+    };
+
+    /// Legacy: with no extent the plan span is the whole look-ahead, clamped to the
+    /// file end -- here the entire 320-byte file -- and pinned_end mirrors plan_end.
+    {
+        ReaderExecutor ex(source, objects, caches, make_opts(false));
+        ex.readNextWindow(); /// builds the plan at pos 0
+        EXPECT_EQ(inspect(ex).planEnd(), file_size)
+            << "legacy plans the whole look-ahead window (clamped to the file)";
+        EXPECT_EQ(inspect(ex).pinnedEnd(), inspect(ex).planEnd())
+            << "legacy keeps pinned_end == plan_end";
+    }
+
+    /// Generalized: the base request is `window_size` (predictedReach ~0 on the first
+    /// plan -- NOT the whole-file look-ahead, NOT the file end), and the page block
+    /// straddling the 70-byte probe edge folds whole, so the plan reaches the next
+    /// 16-byte block boundary past the window and stays well under the file end.
+    {
+        ReaderExecutor ex(source, objects, caches, make_opts(true));
+        ex.readNextWindow();
+        const size_t plan_end = inspect(ex).planEnd();
+        EXPECT_GT(plan_end, unaligned_window)
+            << "generalized folds the straddling hit segment past the probe edge";
+        EXPECT_LT(plan_end, file_size)
+            << "the base request is window_size, not the whole-file look-ahead";
+        EXPECT_EQ(plan_end % block_size, 0u)
+            << "the fold stops on a cache-cell boundary, never mid-cell";
+        EXPECT_GE(inspect(ex).pinnedEnd(), plan_end);
+    }
 }
 
 /// With a prefetch pool the gap fills and promotes run INLINE on the read thread (the put

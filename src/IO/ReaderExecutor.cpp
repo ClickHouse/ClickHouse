@@ -252,6 +252,8 @@ ReaderExecutor::ReaderExecutor(
     , decrypt_ahead(options.decrypt_ahead)
     , plan_look_ahead_window(std::max(options.plan_look_ahead_window, options.window_size))
     , lookahead_window(options.lookahead_window)
+    , generalized_plan_window(options.generalized_plan_window)
+    , plan_look_ahead_max_window(std::max(options.plan_look_ahead_max_window, options.window_size))
     , prefetch_pool(std::move(options.prefetch_pool))
     , runner(prefetch_pool ? std::make_unique<FetchMachineRunner>(prefetch_pool) : nullptr)
     , long_connection_limit(std::move(options.long_connection_limit))
@@ -2647,6 +2649,13 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// `upper_hits` (the running union of already-processed, faster tiers' hits) lets a
     /// slower tier PRUNE the miss cells a faster tier already holds. The streaming `covered`
     /// guard in `readPhysicalWindow` re-establishes the same priority when serving.
+    /// On the generalized path the right clip for hits is the (pressure-scaled)
+    /// ceiling, so a hit segment straddling the probe edge folds whole into the plan;
+    /// the legacy path clips at the probe end.
+    const size_t resident_clip_end = generalized_plan_window
+        ? plan_range.offset + effectivePlanCeiling(geom->pressure_level)
+        : plan_range.end();
+
     IntervalSet upper_hits;
     for (auto & cache : caches)
     {
@@ -2669,7 +2678,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
             buf_entry.object = pr.object;
             buf_entry.object_file_offset = object_file_offset;
 
-            extractResidentRuns(*view, plan_range, geom_entry);
+            extractResidentRuns(*view, plan_range, resident_clip_end, geom_entry);
             extractMissesAndOpenWriters(*cache, *view, pr.object, object_file_offset, upper_hits, geom_entry, buf_entry);
 
             /// Fold this tier's hits into `upper_hits` so the next (slower) tier prunes
@@ -2693,6 +2702,27 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     }
 
     chassert(geom->entries.size() == plan.bufs.size());
+
+    /// Generalized plan window: fold whole hit segments (extracted up to the ceiling)
+    /// into the serve horizon `plan_end`, and extend the pin horizon `pinned_end` over
+    /// the miss write cells too (already unclamped past the probe). The fetch is bounded
+    /// by the base request passed to `buildSchedule` below, NOT by `plan_end`, so folding
+    /// hits never widens the fetch -- it only makes the cached tail serveable and lets the
+    /// plan be reused across `read_until` advances while the cursor stays under `pinned_end`.
+    if (generalized_plan_window)
+    {
+        size_t hit_end = geom->plan_end;
+        size_t pin_end = geom->plan_end;
+        for (const auto & e : geom->entries)
+        {
+            for (const auto & r : e.resident)
+                hit_end = std::max(hit_end, r.end());
+            for (const auto & m : e.aligned_miss)
+                pin_end = std::max(pin_end, m.end());
+        }
+        geom->plan_end = hit_end;
+        geom->pinned_end = std::max(hit_end, pin_end);
+    }
 
     /// Publish atomically: `geometry()` and `bufs` are one object (`read_plan`), so a
     /// reader can never see new geometry against a stale buffer vector. Assigning
@@ -2760,8 +2790,39 @@ bool ReaderExecutor::planReachesEnd() const
         && read_plan.geometry()->plan_end >= offset_map.totalSize();
 }
 
+size_t ReaderExecutor::effectivePlanCeiling(MemoryPressureLevel level) const
+{
+    /// x1, x1, x0.25, x0.25 over Normal/Elevated/High/Critical -- shift by 0 at the two
+    /// lower levels, by 2 (quarter) at High/Critical. The quarter floor lands on
+    /// `window_size` for the 32 MiB default, so the base request is never starved.
+    const unsigned shift = static_cast<unsigned>(level) < 2 ? 0u : 2u;
+    return std::max(window_size, plan_look_ahead_max_window >> shift);
+}
+
 ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start, MemoryPressureLevel level) const
 {
+    if (generalized_plan_window)
+    {
+        /// Unified sizing: a single pressure-scaled ceiling, no extent term. The base
+        /// request is the forward-serve continuity prediction clamped to
+        /// `[window_size, ceiling]` -- `window_size` on a fresh/random read (prediction
+        /// ~0), the prediction itself once a sequential run is established. The plan is
+        /// thus independent of `read_extent_end` (which only clamps the serve), so it
+        /// survives mark-range advances and is reused. Segment folding then extends it
+        /// and the same ceiling caps the result (in `observeAndSchedule`); the file end
+        /// is the only natural bound below the ceiling.
+        const size_t ceiling = effectivePlanCeiling(level);
+        size_t want = std::min(std::max(lookup_continuity.predictedReach(), window_size), ceiling);
+        if (!offset_map.hasUnknownSize())
+        {
+            const size_t physical_end = offset_map.totalSize();
+            if (physical_start >= physical_end)
+                return ByteRange{physical_start, 0};
+            want = std::min(want, physical_end - physical_start);
+        }
+        return ByteRange{physical_start, want};
+    }
+
     size_t want = plan_look_ahead_window;
 
     /// Clamp to the physical file end when the size is known. An unknown-size source
@@ -2815,14 +2876,17 @@ ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start, MemoryPressureL
     return ByteRange{physical_start, want};
 }
 
-void ReaderExecutor::extractResidentRuns(const CacheView & view, ByteRange plan_range, GeometryEntry & geom_entry)
+void ReaderExecutor::extractResidentRuns(const CacheView & view, ByteRange plan_range, size_t resident_clip_end, GeometryEntry & geom_entry)
 {
     for (const auto & hit : view.hits())
     {
-        /// Hits are segment-aligned and may extend past the plan span; clamp so
-        /// streaming never reads outside `[plan_start, plan_end)`.
+        /// Hits are segment-aligned and may extend past the plan span. Clamp the left
+        /// at `plan_start` so streaming never reads behind the cursor; the right bound
+        /// is `plan_end` on the legacy path and the (pressure-scaled) generalized
+        /// ceiling on the generalized path, which folds a whole hit segment straddling
+        /// the probe edge into the plan instead of clipping it.
         const size_t lo = std::max(hit.range.offset, plan_range.offset);
-        const size_t hi = std::min(hit.range.end(), plan_range.end());
+        const size_t hi = std::min(hit.range.end(), resident_clip_end);
         if (lo < hi)
             geom_entry.resident.push_back(ByteRange{lo, hi - lo});
     }
