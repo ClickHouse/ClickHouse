@@ -50,7 +50,6 @@ import argparse
 import logging
 import re
 import threading
-from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import Dict, Iterable, List, NamedTuple, Optional, Set, Tuple
@@ -256,34 +255,48 @@ def scan_backport_versions(
     release_branches: List[str],
     version_history: VersionHistory,
     threads: int,
-) -> Dict[int, List[str]]:
+) -> Tuple[Dict[int, List[str]], Set[int]]:
     """Resolve, for each original PR number, the versions its merged backports
     shipped in by scanning every active release branch.
 
-    Each ``(number, release)`` pair is an independent REST lookup, so they run
-    concurrently. Returns ``{number: [versions, newest first]}``.
+    Each original is scanned by its own worker, so the scans run concurrently
+    while keeping failures isolated per original: if any release-branch lookup
+    for an original fails, that original is reported in the returned ``failed``
+    set and left out of the versions map. The caller must skip those originals
+    rather than write a partial `Backported to` list (fail closed). Returns
+    ``({number: [versions, newest first]}, failed_numbers)``.
     """
-    tasks = [(number, release) for number in numbers for release in release_branches]
-    by_number: Dict[int, List[str]] = defaultdict(list)
-    if not tasks:
-        return {}
+    by_number: Dict[int, List[str]] = {}
+    failed: Set[int] = set()
+    if not numbers:
+        return by_number, failed
 
-    def work(task: Tuple[int, str]) -> Tuple[int, Optional[str]]:
-        number, release = task
-        backport_pr = get_backport_pr(repo, owner, release, number)
-        if backport_pr is None or backport_pr.merged_at is None:
-            return number, None
-        return number, version_history.version_for_commit(backport_pr.merge_commit_sha)
+    def scan_one(number: int) -> List[str]:
+        versions: List[str] = []
+        for release in release_branches:
+            backport_pr = get_backport_pr(repo, owner, release, number)
+            if backport_pr is None or backport_pr.merged_at is None:
+                continue
+            version = version_history.version_for_commit(backport_pr.merge_commit_sha)
+            if version:
+                versions.append(version)
+        return sorted(set(versions), key=version_key, reverse=True)
+
+    def work(number: int) -> Tuple[int, Optional[List[str]], Optional[Exception]]:
+        try:
+            return number, scan_one(number), None
+        except Exception as ex:  # pylint: disable=broad-except
+            return number, None, ex
 
     with ThreadPoolExecutor(max_workers=max(1, threads)) as executor:
-        for number, version in executor.map(work, tasks):
-            if version:
-                by_number[number].append(version)
+        for number, versions, error in executor.map(work, numbers):
+            if error is not None:
+                logging.error("Failed to scan backports for PR #%s: %s", number, error)
+                failed.add(number)
+            else:
+                by_number[number] = versions
 
-    return {
-        number: sorted(set(versions), key=version_key, reverse=True)
-        for number, versions in by_number.items()
-    }
+    return by_number, failed
 
 
 def update_original_pr(
@@ -372,14 +385,26 @@ def main() -> int:
 
     # Originals referenced only by a backport (merged later, after the original
     # left the lookback window) are not in the window result; fetch them in one
-    # batched GraphQL request.
+    # batched GraphQL request. A failure here must not abort the run -- any
+    # original we could not fetch simply stays absent and is skipped below.
     missing = [n for n in original_numbers if n not in infos_by_number]
     if missing:
-        infos_by_number.update(gh.get_pulls_lightweight_by_numbers(args.repo, missing))
+        try:
+            infos_by_number.update(
+                gh.get_pulls_lightweight_by_numbers(args.repo, missing)
+            )
+        except Exception as ex:  # pylint: disable=broad-except
+            logging.error(
+                "Failed to fetch %s referenced original PR(s); they will be "
+                "skipped and reconciled next run: %s",
+                len(missing),
+                ex,
+            )
 
     # Resolve every scanned original's backports up front, in parallel -- the
-    # only remaining per-PR REST traffic.
-    backported_by_number = scan_backport_versions(
+    # only remaining per-PR REST traffic. `scan_failed` holds originals whose
+    # scan errored; they are skipped below so we never write a partial list.
+    backported_by_number, scan_failed = scan_backport_versions(
         repo, owner, sorted(need_scan), release_branches, version_history, args.threads
     )
 
@@ -395,6 +420,9 @@ def main() -> int:
         info = infos_by_number.get(number)
         if info is None:
             logging.error("Could not fetch PR #%s, skipping", number)
+            continue
+        if number in scan_failed:
+            logging.error("Skipping PR #%s: backport scan incomplete", number)
             continue
         try:
             updated += update_original_pr(
