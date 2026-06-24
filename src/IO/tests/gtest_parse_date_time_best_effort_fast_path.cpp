@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <string_view>
+#include <vector>
 
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -83,6 +84,24 @@ TryResult tryParseBestEffortSplit(std::string_view s, size_t split, const DateLU
     /// the boundary at all. A real streaming buffer is likewise already filled when parsing starts.
     char probe = 0;
     in.peek(probe);
+    time_t res = 0;
+    bool ok = tryParseDateTimeBestEffort(res, in, tz, DateLUT::instance("UTC"));
+    return {ok, res};
+}
+
+/// Parse `s` from a ReadBufferFromMemory whose working buffer is exactly `s.size()` bytes - no trailing
+/// slack. The buffer is primed by construction (ReadBufferFromMemory fills its working buffer in the
+/// constructor). When `s.size()` is shorter than the canonical prefix, the fast path must compute the
+/// available byte count before forming `s + date_length` / `s + date_time_length`: forming a pointer
+/// more than one past the end of the working buffer is undefined behavior even if it is never
+/// dereferenced. This mimics the hot path, where a short value like '1' is read from a tightly-sized
+/// ReadBufferFromMemory over a ColumnString slice (no trailing zero).
+TryResult tryParseBestEffortExactBuffer(std::string_view s, const DateLUTImpl & tz)
+{
+    /// Copy into a heap buffer sized to exactly s.size() so the working buffer end is the true end of
+    /// the allocation (a string literal would carry a trailing '\0' and mask an over-read by one byte).
+    std::vector<char> bytes(s.begin(), s.end());
+    ReadBufferFromMemory in(bytes.data(), bytes.size());
     time_t res = 0;
     bool ok = tryParseDateTimeBestEffort(res, in, tz, DateLUT::instance("UTC"));
     return {ok, res};
@@ -244,4 +263,31 @@ TEST(ParseDateTimeBestEffortFastPath, UnprimedSplitBufferMatchesSingleBuffer)
             EXPECT_EQ(tryParseBestEffortSplitUnprimed(s, split, utc), whole)
                 << "input: " << s << " split at: " << split;
     }
+}
+
+/// Regression test for the short-input bug: on a primed buffer that is shorter than the canonical
+/// prefix (e.g. the one-byte value '1'), the fast path must compute the available byte count before
+/// forming `s + date_length` / `s + date_time_length`. Forming a pointer more than one past the end of
+/// the working buffer is undefined behavior even though it is never dereferenced. The result must still
+/// match the general parser. (Under UBSan, the unfixed code traps here on the pointer arithmetic.)
+TEST(ParseDateTimeBestEffortFastPath, ShortInputDoesNotFormOutOfRangePointer)
+{
+    const auto & utc = DateLUT::instance("UTC");
+
+    /// Inputs shorter than the 10-byte date prefix and the 19-byte date-time prefix. Each is parsed
+    /// from a buffer sized exactly to its length, so there is no slack past the working-buffer end.
+    const std::string_view inputs[] = {
+        "1",                    /// 1 byte: shorter than the date prefix
+        "20",
+        "2019",
+        "2019-08",
+        "2019-08-2",            /// 9 bytes: one short of the date prefix
+        "2019-08-20",           /// exactly the date prefix
+        "2019-08-20 ",          /// date prefix + space, shorter than the date-time prefix
+        "2019-08-20 10:18:5",   /// 18 bytes: one short of the date-time prefix
+    };
+
+    for (const auto & s : inputs)
+        EXPECT_EQ(tryParseBestEffortExactBuffer(s, utc), tryParseBestEffort(s, utc))
+            << "input: " << s;
 }

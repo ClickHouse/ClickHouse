@@ -190,10 +190,16 @@ ReturnType parseDateTimeBestEffortImpl(
         static constexpr size_t date_length = 10;       /// YYYY-MM-DD
         static constexpr size_t date_time_length = 19;  /// YYYY-MM-DD hh:mm:ss
 
+        /// Gate every fixed-offset access on the available byte count. `s + date_length` would form an
+        /// out-of-range pointer (undefined behavior) when the working buffer holds fewer than date_length
+        /// bytes, e.g. a one-byte value like '1'. `buffer_end - s` is an in-bounds subtraction (both point
+        /// into the primed working buffer) and is non-negative since position() never passes buffer().end().
+        const size_t available = static_cast<size_t>(buffer_end - s);
+
         auto is_two_digits = [](const char * p) { return isNumericASCII(p[0]) && isNumericASCII(p[1]); };
 
         const bool date_matches =
-            s + date_length <= buffer_end
+            available >= date_length
             && isNumericASCII(s[0]) && isNumericASCII(s[1]) && isNumericASCII(s[2]) && isNumericASCII(s[3])
             && s[4] == '-' && is_two_digits(s + 5)
             && s[7] == '-' && is_two_digits(s + 8)
@@ -202,7 +208,7 @@ ReturnType parseDateTimeBestEffortImpl(
         if (date_matches)
         {
             const bool time_matches =
-                s + date_time_length <= buffer_end
+                available >= date_time_length
                 && (s[10] == ' ' || s[10] == 'T')
                 && is_two_digits(s + 11) && s[13] == ':'
                 && is_two_digits(s + 14) && s[16] == ':'
