@@ -90,6 +90,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             ("seed", po::value<std::string>(), "seed (arbitrary string) that determines the result of obfuscation")
             ("show_secrets", po::bool_switch()->default_value(false), "show secret values like passwords, API keys, etc.")
             ("semicolons_inline", "In multiquery mode put semicolon on last line of query instead of a new line")
+            ("align_column_types", "align type declarations in CREATE TABLE column lists")
         ;
 
         Settings cmd_settings;
@@ -118,6 +119,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         bool allow_settings_after_format_in_insert = options.contains("allow_settings_after_format_in_insert");
         bool show_secrets = options["show_secrets"].as<bool>();
         bool semicolon_inline = options.contains("semicolons_inline");
+        bool align_column_types = options.contains("align_column_types");
 
         std::function<void(std::string_view)> comments_callback;
         if (options.contains("comments"))
@@ -300,6 +302,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         IAST::FormatSettings settings(oneline_current_query);
                         settings.show_secrets = show_secrets;
                         settings.print_pretty_type_names = !oneline_current_query;
+                        settings.align_column_types = align_column_types && !oneline_current_query;
                         res->format(query_buf, settings);
                         String formatted_query = query_buf.str();
 #if USE_REPLXX
@@ -353,6 +356,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         IAST::FormatSettings settings(oneline_current_query);
                         settings.show_secrets = show_secrets;
                         settings.print_pretty_type_names = !oneline_current_query;
+                        settings.align_column_types = align_column_types && !oneline_current_query;
                         res->format(str_buf, settings);
 
                         if (insert_query_payload)

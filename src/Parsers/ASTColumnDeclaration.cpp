@@ -104,7 +104,15 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
 
     if (auto type = getType())
     {
-        ostr << ' ';
+        if (frame.column_name_max_width > 0)
+        {
+            /// Quoted length of this column name = raw length + 2 backticks (see ASTColumns::formatImpl).
+            size_t quoted_len = name.size() + 2;
+            size_t pad = (frame.column_name_max_width >= quoted_len) ? frame.column_name_max_width - quoted_len + 1 : 1;
+            ostr << std::string(pad, ' ');
+        }
+        else
+            ostr << ' ';
         type->format(ostr, format_settings, state, frame);
     }
 
