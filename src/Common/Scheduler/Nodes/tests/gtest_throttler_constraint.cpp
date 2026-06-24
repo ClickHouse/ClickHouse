@@ -3,8 +3,8 @@
 
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 
-#include <Common/Scheduler/Nodes/FairPolicy.h>
-#include <Common/Scheduler/Nodes/ThrottlerConstraint.h>
+#include <Common/Scheduler/Nodes/TimeShared/FairPolicy.h>
+#include <Common/Scheduler/Nodes/TimeShared/ThrottlerConstraint.h>
 
 using namespace DB;
 

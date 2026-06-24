@@ -161,6 +161,24 @@ To exit the client, press `Ctrl+D`, or enter one of the following instead of a q
 - `q`, `Q` or `:q`
 - `logout` or `logout;`
 
+### Getting help {#getting-help}
+
+You can look up the documentation of any function, table engine, data type, format, setting and other component of the system without leaving the client. Enter `help` followed by a name (the equivalent forms `/help`, `man` and `/man` also work):
+
+```text
+help domainWithoutWWW
+```
+
+The lookup is case-insensitive and queries the [`system.documentation`](../operations/system-tables/documentation.md) table. The matching documentation is rendered from Markdown in the terminal, with bold/italic text, tables, and syntax-highlighted code blocks. When a name is shared by several components (for example `file`, which is both a function and a table engine), all of them are shown.
+
+When nothing matches exactly, the client lists similar names (allowing for typos) and the components whose documentation mentions the word:
+
+```text
+help maxx_threads
+```
+
+Entering `help` on its own prints a short usage summary.
+
 ### Query processing information {#processing-info}
 
 When processing a query, the client shows:
