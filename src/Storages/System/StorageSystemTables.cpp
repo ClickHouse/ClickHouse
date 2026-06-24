@@ -2,6 +2,7 @@
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Access/ContextAccess.h>
+#include <Common/Exception.h>
 #include <Core/UUID.h>
 #if CLICKHOUSE_CLOUD
 #include <Backups/BackupsHelper.h>
@@ -43,6 +44,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
@@ -114,7 +120,17 @@ ColumnPtr getFilteredTables(
 
         if (is_detached)
         {
-            auto table_it = database->getDetachedTablesIterator(context, {}, false);
+            DatabaseDetachedTablesSnapshotIteratorPtr table_it;
+            try
+            {
+                table_it = database->getDetachedTablesIterator(context, {}, false);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::NOT_IMPLEMENTED)
+                    continue;
+                throw;
+            }
             for (; table_it->isValid(); table_it->next())
             {
                 table_column->insert(table_it->table());
