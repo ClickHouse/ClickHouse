@@ -193,6 +193,8 @@ target_compile_definitions(_jemalloc INTERFACE -DJEMALLOC_NO_RENAME)
 
 # Because our coverage callbacks call malloc, and recursive call of malloc could not work.
 target_compile_options(_jemalloc PRIVATE ${WITHOUT_COVERAGE_FLAGS_LIST})
+# Due to LTO there are some UB in tcache
+target_compile_options(_jemalloc PRIVATE -fno-lto -fno-whole-program-vtables)
 
 target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_PROF=1)
 

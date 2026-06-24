@@ -112,8 +112,7 @@ public:
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
         MergeTreeIndexBuildContextPtr merge_tree_index_build_context_ = {},
-        LazyMaterializingRowsPtr lazy_materializing_rows_ = {},
-        const ColumnsDescription * columns_ = nullptr);
+        LazyMaterializingRowsPtr lazy_materializing_rows_ = {});
 
     String getName() const;
 
@@ -142,8 +141,7 @@ public:
         const IndexReadTasks & index_read_tasks,
         const ExpressionActionsSettings & actions_settings,
         bool enable_multiple_prewhere_read_steps,
-        bool force_short_circuit_execution,
-        const ColumnsDescription * columns = nullptr);
+        bool force_short_circuit_execution);
 
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
 

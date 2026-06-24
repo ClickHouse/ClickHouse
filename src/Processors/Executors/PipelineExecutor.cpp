@@ -1,6 +1,5 @@
 #include <memory>
 #include <IO/WriteBufferFromString.h>
-#include <Common/Scheduler/MemoryReservation.h>
 #include <Common/ISlotControl.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentThread.h>
@@ -49,66 +48,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
-
-
-// Class helping a thread to deal with acquired workload resources
-struct WorkloadResources
-{
-    // CPU slots lease
-    ISlotLease * lease;
-    UInt64 last_renew_ns = 0;
-
-    // Memory reservation
-    MemoryReservation * reservation;
-    MemoryTracker * tracker;
-
-    WorkloadResources(IAcquiredSlot * cpu_slot, const QueryStatusPtr & status)
-        : lease(dynamic_cast<ISlotLease*>(cpu_slot))
-        , reservation(status ? status->getMemoryReservation() : nullptr)
-        , tracker(status ? status->getMemoryTracker() : nullptr)
-    {
-        if (lease)
-        {
-            lease->startConsumption();
-            last_renew_ns = clock_gettime_ns();
-        }
-    }
-
-    WorkloadResources(WorkloadResources && other) = default;
-
-    bool isCPULeaseRenewNeeded()
-    {
-        if (!lease)
-            return false;
-        UInt64 now_ns = clock_gettime_ns();
-        if (now_ns - last_renew_ns < 1000000) // 1 ms: do not renew too often
-            return false;
-        last_renew_ns = now_ns;
-        return true;
-    }
-
-    bool renewCPULease() const
-    {
-        chassert(lease);
-        return lease->renew();
-    }
-
-    size_t getCPULeaseSlotId() const
-    {
-        chassert(lease);
-        return lease->slot_id;
-    }
-
-    bool isMemorySyncNeeded() const
-    {
-        return reservation && tracker;
-    }
-
-    void syncMemory() const
-    {
-        reservation->syncWithMemoryTracker(tracker);
-    }
-};
 
 
 PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem)
@@ -249,7 +188,7 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
             return true;
     }
 
-    executeStepImpl(0, WorkloadResources(single_thread_cpu_slot.get(), process_list_element), yield_flag);
+    executeStepImpl(0, single_thread_cpu_slot.get(), yield_flag);
 
     if (!tasks.isFinished())
         return true;
@@ -347,9 +286,9 @@ void PipelineExecutor::finalizeExecution()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}\n{}", dumpPipeline(), tasks.dump());
 }
 
-void PipelineExecutor::executeSingleThread(size_t thread_num, WorkloadResources && resources)
+void PipelineExecutor::executeSingleThread(size_t thread_num, IAcquiredSlot * cpu_slot)
 {
-    executeStepImpl(thread_num, std::move(resources));
+    executeStepImpl(thread_num, cpu_slot);
 
 #ifndef NDEBUG
     auto & context = tasks.getThreadContext(thread_num);
@@ -362,13 +301,53 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, WorkloadResources 
 #endif
 }
 
-void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && resources_, std::atomic_bool * yield_flag)
+// Class helping a thread to deal with CPU lease
+struct CPUHelper
+{
+    ISlotLease * lease;
+    UInt64 last_renew_ns = 0;
+
+    explicit CPUHelper(IAcquiredSlot * cpu_slot)
+        : lease(dynamic_cast<ISlotLease*>(cpu_slot))
+    {
+        if (lease)
+        {
+            lease->startConsumption();
+            last_renew_ns = clock_gettime_ns();
+        }
+    }
+
+    bool isRenewNeeded()
+    {
+        if (!lease)
+            return false;
+        UInt64 now_ns = clock_gettime_ns();
+        if (now_ns - last_renew_ns < 1000000) // 1 ms: do not renew too often
+            return false;
+        last_renew_ns = now_ns;
+        return true;
+    }
+
+    bool renew() const
+    {
+        chassert(lease);
+        return lease->renew();
+    }
+
+    size_t id() const
+    {
+        chassert(lease);
+        return lease->slot_id;
+    }
+};
+
+void PipelineExecutor::executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_slot, std::atomic_bool * yield_flag)
 {
 #ifndef NDEBUG
     Stopwatch total_time_watch;
 #endif
 
-    WorkloadResources resources(std::move(resources_));
+    CPUHelper cpu_helper(cpu_slot);
 
     auto & context = tasks.getThreadContext(thread_num);
     bool yield = false;
@@ -462,38 +441,22 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
             }
 
             /// Preemption and downscaling.
-            if (resources.isCPULeaseRenewNeeded()) // Check if preemption is enabled (see `cpu_slot_preemption` server setting)
+            if (cpu_helper.isRenewNeeded()) // Check if preemption is enabled (see `cpu_slot_preemption` server setting)
             {
                 try
                 {
                     // Preemption point. Renewal could block execution due to CPU overload.
                     // It may trigger callbacks to tasks.preempt() and tasks.resume()
-                    if (!resources.renewCPULease())
+                    if (!cpu_helper.renew())
                     {
-                        tasks.downscale(resources.getCPULeaseSlotId());
+                        tasks.downscale(cpu_helper.id());
                         yield = true;
                         break; // Downscaling. Unable to renew the lease - thread should stop (but could be rerun later).
                     }
                 }
                 catch (...)
                 {
-                    /// renewCPULease() can throw an exception, for example RESOURCE_ACCESS_DENIED.
-                    /// We should cancel execution properly before rethrow.
-                    cancel(ExecutionStatus::Exception);
-                    throw;
-                }
-            }
-
-            /// Memory reservation management
-            if (resources.isMemorySyncNeeded())
-            {
-                try
-                {
-                    resources.syncMemory();
-                }
-                catch (...)
-                {
-                    /// syncMemory() can throw an exception, for example MEMORY_RESERVATION_KILLED.
+                    /// renew() can throw an exception, for example RESOURCE_ACCESS_DENIED.
                     /// We should cancel execution properly before rethrow.
                     cancel(ExecutionStatus::Exception);
                     throw;
@@ -686,7 +649,7 @@ void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
 
             try
             {
-                executeSingleThread(thread_num, WorkloadResources(my_slot.get(), process_list_element));
+                executeSingleThread(thread_num, my_slot.get());
             }
             catch (...)
             {
@@ -723,7 +686,7 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
         {
             auto slot = cpu_slots->acquire();
             tasks.upscale(slot->slot_id);
-            executeSingleThread(slot->slot_id, WorkloadResources(slot.get(), process_list_element));
+            executeSingleThread(slot->slot_id, slot.get());
         }
     }
     catch (...)
