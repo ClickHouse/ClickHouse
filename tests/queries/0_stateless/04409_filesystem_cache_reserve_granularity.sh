@@ -50,7 +50,7 @@ function run() {
     $CLICKHOUSE_CLIENT --query_id "$qid" --enable_filesystem_cache_on_write_operations=1 -q "
         INSERT INTO $table SELECT number, repeat('x', 1000) FROM numbers(20000)"
 
-    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
     $CLICKHOUSE_CLIENT -q "
         SELECT ProfileEvents['FilesystemCacheReserveAttempts']
