@@ -401,5 +401,5 @@
 	url = https://github.com/xtensor-stack/xsimd
 [submodule "contrib/simdutf"]
 	path = contrib/simdutf
-	url = https://github.com/simdutf/simdutf
+	url = https://github.com/ClickHouse/simdutf
 	branch = master
