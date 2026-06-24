@@ -224,7 +224,7 @@ void KeeperMemNodesStorage::visitCommittedChildren(std::string_view path, const 
     }
 }
 
-bool KeeperMemNodesStorage::addSystemNodeIfNotExists(std::string_view path, const KeeperNodeStats & stats, std::string_view data, bool update_parent_num_children, uint64_t * out_digest)
+bool KeeperMemNodesStorage::addCommittedNodeIfNotExists(std::string_view path, const KeeperNodeStats & stats, std::string_view data, bool update_parent_num_children, uint64_t * out_digest)
 {
     auto it = container.find(path);
     if (it != container.end())
@@ -264,6 +264,26 @@ bool KeeperMemNodesStorage::addSystemNodeIfNotExists(std::string_view path, cons
     }
 
     return true;
+}
+
+void KeeperMemNodesStorage::updateCommittedNode(std::string_view path, std::optional<const KeeperNodeStats *> new_stats, std::optional<std::string_view> new_data, uint64_t * out_digest)
+{
+    container.updateValue(
+        path,
+        [&](Node & node)
+        {
+            if (out_digest)
+                *out_digest -= node.getDigest(path);
+
+            if (new_stats)
+                node.stats = **new_stats;
+            if (new_data)
+                node.setData(*new_data);
+            node.invalidateDigestCache();
+
+            if (out_digest)
+                *out_digest += node.getDigest(path);
+        });
 }
 
 void KeeperMemNodesStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader, KeeperStorage * storage, uint64_t * out_digest)

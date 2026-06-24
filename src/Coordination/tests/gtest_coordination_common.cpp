@@ -48,7 +48,7 @@ void addNode(DB::KeeperStorage & storage, const std::string & path, const std::s
     if (ephemeral_owner)
         stats.setEphemeralOwner(ephemeral_owner);
     stats.acl_id = acl_id;
-    storage.nodes_storage->addSystemNodeIfNotExists(path, stats, data, /*update_parent_num_children=*/true, /*out_digest=*/nullptr);
+    storage.nodes_storage->addCommittedNodeIfNotExists(path, stats, data, /*update_parent_num_children=*/true, /*out_digest=*/nullptr);
 }
 
 Coordination::ACLs getUncommittedACLs(DB::KeeperStorage & storage, std::string_view path)

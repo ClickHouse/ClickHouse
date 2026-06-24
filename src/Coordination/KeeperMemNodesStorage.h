@@ -88,7 +88,8 @@ struct KeeperMemNodesStorage final : public KeeperNodesStorage
 
     std::vector<std::string> listCommittedChildrenNames(std::string_view path) const override;
 
-    bool addSystemNodeIfNotExists(std::string_view path, const KeeperNodeStats & stats, std::string_view data, bool update_parent_num_children, uint64_t * out_digest) override;
+    bool addCommittedNodeIfNotExists(std::string_view path, const KeeperNodeStats & stats, std::string_view data, bool update_parent_num_children, uint64_t * out_digest) override;
+    void updateCommittedNode(std::string_view path, std::optional<const KeeperNodeStats *> new_stats, std::optional<std::string_view> new_data, uint64_t * out_digest) override;
 
     void loadNodesFromSnapshot(KeeperSnapshotReader & reader, KeeperStorage * storage, uint64_t * out_digest) override;
 

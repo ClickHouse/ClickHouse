@@ -290,9 +290,9 @@ void KeeperStorage::initializeSystemNodes()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes initialized twice");
 
     // insert root system path if it isn't already inserted
-    nodes_storage->addSystemNodeIfNotExists(
+    nodes_storage->addCommittedNodeIfNotExists(
         "/", /*stats=*/{}, /*data=*/ "", /*update_parent_num_children=*/ false, &nodes_digest);
-    nodes_storage->addSystemNodeIfNotExists(
+    nodes_storage->addCommittedNodeIfNotExists(
         keeper_system_path, /*stats=*/{}, /*data=*/ "", /*update_parent_num_children=*/ true, &nodes_digest);
 
     // insert child system nodes
@@ -302,7 +302,7 @@ void KeeperStorage::initializeSystemNodes()
 
         /// Don't update digest and parent num_children (keep it at 0) to keep digest constant,
         /// independent of server version and configuration.
-        nodes_storage->addSystemNodeIfNotExists(
+        nodes_storage->addCommittedNodeIfNotExists(
             path, /*stats=*/{}, data, /*update_parent_num_children=*/ false, /*out_digest=*/ nullptr);
     }
 
