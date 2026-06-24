@@ -344,13 +344,13 @@ def get_table_uuid(database, name):
 
 @pytest.fixture(scope="module", name="attachable_part")
 def fixture_attachable_part(started_cluster):
-    main_node.query(f"CREATE DATABASE testdb_attach_atomic ENGINE = Atomic")
+    main_node.query("CREATE DATABASE testdb_attach_atomic ENGINE = Atomic")
     main_node.query(
-        f"CREATE TABLE testdb_attach_atomic.test (CounterID UInt32) ENGINE = MergeTree ORDER BY (CounterID)"
+        "CREATE TABLE testdb_attach_atomic.test (CounterID UInt32) ENGINE = MergeTree ORDER BY (CounterID)"
     )
-    main_node.query(f"INSERT INTO testdb_attach_atomic.test VALUES (123)")
+    main_node.query("INSERT INTO testdb_attach_atomic.test VALUES (123)")
     main_node.query(
-        f"ALTER TABLE testdb_attach_atomic.test FREEZE WITH NAME 'test_attach'"
+        "ALTER TABLE testdb_attach_atomic.test FREEZE WITH NAME 'test_attach'"
     )
     table_uuid = get_table_uuid("testdb_attach_atomic", "test")
     return os.path.join(
@@ -1219,13 +1219,14 @@ def test_sync_replica(started_cluster):
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(dummy_node)
 
-        for i in range(number_of_tables):
-            main_node.query(
-                "CREATE TABLE test_sync_database.table_{} (n int) ENGINE=MergeTree order by n".format(
-                    i
-                ),
-                settings=settings,
+        # Single client invocation: one process spawn instead of N.
+        create_queries = "\n".join(
+            "CREATE TABLE test_sync_database.table_{} (n int) ENGINE=MergeTree order by n;".format(
+                i
             )
+            for i in range(number_of_tables)
+        )
+        main_node.query(create_queries, settings=settings)
 
     # wait for host to reconnect
     dummy_node.query_with_retry("SELECT * FROM system.zookeeper WHERE path='/'")
@@ -1389,7 +1390,7 @@ def test_replicated_table_structure_alter(started_cluster):
     main_node.query("INSERT INTO table_structure.rmt VALUES (1, 2, 3)")
 
     metadata_path = competing_node.query(
-        f"SELECT metadata_path FROM system.tables WHERE database='table_structure' AND name='mem'"
+        "SELECT metadata_path FROM system.tables WHERE database='table_structure' AND name='mem'"
     ).strip()
     db_disk_name = get_database_disk_name(competing_node)
     competing_node.exec_in_container(
@@ -1490,7 +1491,7 @@ def test_table_metadata_corruption(started_cluster):
     dummy_node.query("SYSTEM SYNC DATABASE REPLICA table_metadata_corruption")
 
     metadata_path = dummy_node.query(
-        f"SELECT metadata_path FROM system.tables WHERE database='table_metadata_corruption' AND name='rmt1'"
+        "SELECT metadata_path FROM system.tables WHERE database='table_metadata_corruption' AND name='rmt1'"
     ).strip()
     # Server should handle this by throwing an exception during table loading, which should lead to server shutdown
 
@@ -1520,7 +1521,7 @@ def test_table_metadata_corruption(started_cluster):
             # Server did not shut down as expected, kill it so we can fix metadata
             dummy_node.stop_clickhouse(kill=True)
 
-        print(f"Fix corrupted metadata")
+        print("Fix corrupted metadata")
         replace_text_in_metadata(
             dummy_node, metadata_path, "CorruptedMergeTree", "ReplicatedMergeTree"
         )
