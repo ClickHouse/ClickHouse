@@ -719,17 +719,18 @@ bool decompress(
 
         Stopwatch watch;
         bool success = false;
-        /// Variants 0 and 1 use the branchless small-offset match copy (8- and 16-byte). It
-        /// removes the `offset < copy_amount` branch, which is highly mispredicted on
-        /// low-cardinality (small-offset) columns. The best branchless width is architecture
-        /// dependent — 16-byte (`pshufb`) tends to win on x86, 8-byte (NEON D-register
-        /// `vtbl1_u8`) on AArch64 — so both are offered and the bandit picks per column
-        /// (e.g. small-offset integers -> branchless 8/16, large-offset/string -> 32). The
-        /// branchless variants only change the match-copy step, so on near-incompressible
-        /// blocks (almost no matches) they behave like the branched ones — no regression and
-        /// no need to special-case them.
+        /// Variant 1 (16-byte) uses the branchless small-offset match copy: it removes the
+        /// `offset < copy_amount` branch via one unconditional `pshufb` (x86) / `vqtbl1q_u8`
+        /// (NEON), which is highly mispredicted on low-cardinality (small-offset) columns where
+        /// 16-byte copies are optimal (e.g. RegionID). Only the 16-byte variant is made
+        /// branchless: at 8 bytes the unconditional shuffle is pure overhead on the many
+        /// columns whose offsets are regular and well-predicted (RLE / structured states), so
+        /// variant 0 stays branched; columns that want the 8-byte copy keep it branch-free of
+        /// extra work. The bandit routes each column to its best variant; the branchless step
+        /// only changes the match copy, so near-incompressible blocks behave like the branched
+        /// variants — no regression, no special-casing.
         if (best_variant == 0)
-            success = decompressImpl<8, true>(source, dest, source_size, dest_size);
+            success = decompressImpl<8>(source, dest, source_size, dest_size);
         else if (best_variant == 1)
             success = decompressImpl<16, true>(source, dest, source_size, dest_size);
         else
@@ -749,7 +750,7 @@ bool decompress(
     /// (AMD 7950X3D), sweeping it from 0 to 32K changes the oracle total by only 0.003%,
     /// because variant 0 is available in the bandit anyway and would be selected for
     /// the same files. The threshold is purely a noise-reduction measure.
-    return decompressImpl<8, true>(source, dest, source_size, dest_size);
+    return decompressImpl<8>(source, dest, source_size, dest_size);
 }
 
 }
