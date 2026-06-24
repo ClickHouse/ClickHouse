@@ -31,6 +31,11 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool use_streaming_marks_compression;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -185,7 +190,8 @@ private:
             /*save_marks_in_cache=*/ false,
             local_context->getReadSettings(),
             /*load_marks_threadpool=*/ nullptr,
-            num_columns);
+            num_columns,
+            local_context->getSettingsRef()[Setting::use_streaming_marks_compression]);
     }
 
     ColumnPtr fillMarks(

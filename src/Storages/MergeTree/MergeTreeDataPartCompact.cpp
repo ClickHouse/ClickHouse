@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool use_streaming_marks_compression;
+}
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -203,7 +208,8 @@ void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, Mark
         /*save_marks_in_cache=*/ true,
         context->getReadSettings(),
         /*load_marks_threadpool_=*/ nullptr,
-        index_granularity_info.mark_type.with_substreams ? columns_substreams.getTotalSubstreams() : columns.size());
+        index_granularity_info.mark_type.with_substreams ? columns_substreams.getTotalSubstreams() : columns.size(),
+        context->getSettingsRef()[Setting::use_streaming_marks_compression]);
 
     loader.loadMarks();
 }

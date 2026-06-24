@@ -16,6 +16,11 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool use_streaming_marks_compression;
+}
+
 namespace ErrorCodes
 {
     extern const int NO_FILE_IN_DATA_PART;
@@ -308,7 +313,8 @@ void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCac
                 /*save_marks_in_cache=*/ true,
                 read_settings,
                 /*load_marks_threadpool=*/ nullptr,
-                /*num_columns_in_mark=*/ 1));
+                /*num_columns_in_mark=*/ 1,
+                context->getSettingsRef()[Setting::use_streaming_marks_compression]));
 
             loaders.back()->startAsyncLoad();
         });

@@ -49,7 +49,7 @@ public:
         const ReadSettings & read_settings_,
         ThreadPool * load_marks_threadpool_,
         size_t num_columns_in_mark_,
-        bool use_streaming_compression_ = false);
+        bool use_streaming_compression_);
 
     ~MergeTreeMarksLoader();
 
