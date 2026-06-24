@@ -194,7 +194,10 @@ void RoleCache::collectEnabledRoles(EnabledRoles & enabled_roles, scope_guard * 
 
     /// Remember which roles take part in this enabled set, so that a later change to one of them triggers
     /// a recalculation (and a change to a role nobody uses does not).
+    /// We need to remember `skip_ids` too in order to trigger a recalculation if they appear later
+    /// (for example if a role with a granted role is replicated before that granted role);
     referenced_roles.insert(new_info->enabled_roles.begin(), new_info->enabled_roles.end());
+    referenced_roles.insert(skip_ids.begin(), skip_ids.end());
 
     /// Collect data from the collected roles.
     enabled_roles.setRolesInfo(new_info, notifications);

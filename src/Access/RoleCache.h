@@ -46,7 +46,7 @@ private:
 
     std::map<EnabledRoles::Params, std::weak_ptr<EnabledRoles>> TSA_GUARDED_BY(mutex) enabled_roles_by_params;
 
-    /// Roles that take part in some live enabled set: a change to a role outside this set needs no recalculation.
+    /// Roles that take part in some enabled set: a change to a role outside this set needs no recalculation.
     std::unordered_set<UUID> TSA_GUARDED_BY(mutex) referenced_roles;
 
     mutable std::mutex mutex;
