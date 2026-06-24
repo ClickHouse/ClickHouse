@@ -77,8 +77,9 @@ CIDB_DATABASE = "default"
 DEFAULT_LOOKBACK_DAYS = 30
 
 # Backport branches are named `backport/<release>/<original_pr_number>`; this
-# mirrors cherry_pick.py:ReleaseBranch.bp_branch.
-BACKPORT_BRANCH_RE = re.compile(r"^backport/.+/(\d+)$")
+# mirrors cherry_pick.py:ReleaseBranch.bp_branch. Group 1 is the release (which
+# may itself contain slashes, e.g. `release/26.5`), group 2 the original number.
+BACKPORT_BRANCH_RE = re.compile(r"^backport/(.+)/(\d+)$")
 
 # Mirrors tests/ci/pr_info.py:Labels -- a PR carrying any of these has (or is
 # meant to have) backports, so it is worth scanning release branches for them.
@@ -139,7 +140,13 @@ def upsert_section(body: Optional[str], section_body: str) -> str:
 def original_pr_number_from_backport_ref(head_ref: str) -> Optional[int]:
     """Extract the original PR number from a `backport/<release>/<number>` ref."""
     match = BACKPORT_BRANCH_RE.match(head_ref)
-    return int(match.group(1)) if match else None
+    return int(match.group(2)) if match else None
+
+
+def release_from_backport_ref(head_ref: str) -> Optional[str]:
+    """Extract the release branch from a `backport/<release>/<number>` ref."""
+    match = BACKPORT_BRANCH_RE.match(head_ref)
+    return match.group(1) if match else None
 
 
 def has_backport_label(label_names: List[str]) -> bool:
@@ -424,11 +431,27 @@ def main() -> int:
                 ex,
             )
 
+    # Release branches to scan = the currently-open releases plus any release a
+    # backport merged into this window. The latter catches releases whose
+    # `release` PR is already closed (so they are not in `release_branches`) but
+    # that still receive backports -- otherwise the original's `Backported to`
+    # would miss those versions.
+    scan_release_branches = set(release_branches)
+    for number in backport_numbers:
+        release = release_from_backport_ref(infos_by_number[number].head_ref)
+        if release:
+            scan_release_branches.add(release)
+
     # Resolve every scanned original's backports up front, in parallel -- the
     # only remaining per-PR REST traffic. `scan_failed` holds originals whose
     # scan errored; they are skipped below so we never write a partial list.
     backported_by_number, scan_failed = scan_backport_versions(
-        repo, owner, sorted(need_scan), release_branches, version_history, args.threads
+        repo,
+        owner,
+        sorted(need_scan),
+        sorted(scan_release_branches),
+        version_history,
+        args.threads,
     )
 
     updated = 0

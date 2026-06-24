@@ -18,6 +18,7 @@ from pr_version_info import (
     has_ignore_label,
     original_pr_number_from_backport_ref,
     partition_merged_prs,
+    release_from_backport_ref,
     render_section,
     upsert_section,
     version_key,
@@ -112,6 +113,13 @@ class TestBackportRefParsing(unittest.TestCase):
     def test_non_backport_ref(self):
         self.assertIsNone(original_pr_number_from_backport_ref("my-feature-branch"))
         self.assertIsNone(original_pr_number_from_backport_ref("cherrypick/25.12/1"))
+
+    def test_release_extraction(self):
+        self.assertEqual(release_from_backport_ref("backport/25.12/92538"), "25.12")
+        self.assertEqual(
+            release_from_backport_ref("backport/release/26.5/58548"), "release/26.5"
+        )
+        self.assertIsNone(release_from_backport_ref("my-feature-branch"))
 
 
 class TestHasBackportLabel(unittest.TestCase):
