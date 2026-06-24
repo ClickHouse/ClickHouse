@@ -277,7 +277,17 @@ MergeTreeBitmapStore::resolvePart(const UniqueKeyTxn::PartName & part_name) cons
             "MergeTreeBitmapStore: PartName-keyed bitmap access requires a resolution "
             "context (data + partition_id); this store was built cache-only");
 
-    auto handle_part = [](const MergeTreeData::DataPartPtr & p) -> ResolvedPart
+    /// Single indexed lookup (`data_parts_by_info.find`, O(log P)). Part names are
+    /// globally unique and encode the partition, so the global index needs no
+    /// partition scoping. Active resolves to the live part; Outdated is also
+    /// accepted because the sink can stage supersession bitmaps for parts that a
+    /// merge Outdated between probe and commit — the old part's storage is still
+    /// on disk until the cleaner runs, and writing the bitmap there is a harmless
+    /// no-op (no reader observes an Outdated part). Returning a null target would
+    /// crash via `installBitmap`'s LOGICAL_ERROR.
+    if (auto p = resolution_data->getPartIfExists(
+            part_name,
+            {MergeTreeData::DataPartState::Active, MergeTreeData::DataPartState::Outdated}))
     {
         ResolvedPart resolved;
         /// `IDataPartStorage` is logically const on the part; the bitmap
@@ -288,31 +298,7 @@ MergeTreeBitmapStore::resolvePart(const UniqueKeyTxn::PartName & part_name) cons
         /// other reader of this part's bitmaps.
         resolved.cache_identity = p->getDeleteBitmapCacheIdentity();
         return resolved;
-    };
-
-    /// Fast path: the cached Active-parts snapshot.
-    /// TODO(unique-key): this linear-scans the partition's active-part vector per
-    /// PartName, so a SELECT/count resolving P parts is O(P^2); acceptable for the
-    /// experimental slice — build a per-snapshot name→part map when large-partition
-    /// UK reads matter.
-    auto shared = resolution_data->getActivePartsInPartitionShared(resolution_partition_id);
-    if (shared)
-    {
-        for (const auto & p : *shared)
-            if (p && p->name == part_name)
-                return handle_part(p);
     }
-
-    /// Outdated fall-through. The sink can stage supersession bitmaps for
-    /// parts that were Outdated by a merge between probe and commit — the old
-    /// part's storage is still on disk until the cleaner runs, and writing the
-    /// bitmap there is a harmless no-op (no reader observes an Outdated part).
-    /// Returning a null target here would crash via `installBitmap`'s
-    /// LOGICAL_ERROR.
-    if (auto outdated = resolution_data->getPartIfExists(
-            part_name,
-            {MergeTreeData::DataPartState::Active, MergeTreeData::DataPartState::Outdated}))
-        return handle_part(outdated);
 
     /// Truly absent (deleting or never existed) — empty handle. `installBitmap`
     /// raises `LOGICAL_ERROR` on null storage; `removeBitmap` / `readBitmap`
