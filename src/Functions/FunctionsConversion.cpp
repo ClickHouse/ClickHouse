@@ -1799,11 +1799,14 @@ ColumnPtr convertTypedColumnToDynamic(
 /// Convert a ColumnDynamic to a typed column.
 /// Uses the JSON parser + typed node path (via buildJSONExtractTree) to ensure
 /// value extraction matches the standard Object deserialization pipeline.
+/// When skip_on_failure is true, rows that fail parsing or type coercion get a default
+/// value instead of raising an exception (matches `type_json_skip_invalid_typed_paths` behavior).
 ColumnPtr convertDynamicColumnToTyped(
     const ColumnPtr & src_column,
     const DataTypePtr & dest_type,
     size_t rows,
-    const FormatSettings & format_settings)
+    const FormatSettings & format_settings,
+    bool skip_on_failure = false)
 {
     auto dynamic_type = std::make_shared<DataTypeDynamic>();
     auto dest_column = dest_type->createColumn();
@@ -1829,14 +1832,69 @@ ColumnPtr convertDynamicColumnToTyped(
 
         JSONParserForConversion::Element element;
         if (!parser.parse(write_buf.str(), element))
+        {
+            if (skip_on_failure)
+            {
+                dest_column->insertDefault();
+                continue;
+            }
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Cannot parse JSON value during type conversion: {}",
                 write_buf.str().substr(0, 100));
+        }
 
         String error;
         if (!typed_node->insertResultToColumn(*dest_column, element, insert_settings, json_format_settings, error))
+        {
+            if (skip_on_failure)
+            {
+                dest_column->insertDefault();
+                continue;
+            }
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot insert value into typed column during type conversion: {}", error);
+        }
+    }
+
+    return dest_column;
+}
+
+/// Convert a typed column from one type to another using format+parse.
+/// On each row, serializes the source value to JSON text, parses it, and inserts via
+/// the JSONExtractTree node for the destination type. Rows that fail parsing or type
+/// coercion get a default value (matches `type_json_skip_invalid_typed_paths` behavior).
+ColumnPtr convertTypedColumnToTypedSafe(
+    const ColumnPtr & src_column,
+    const DataTypePtr & src_type,
+    const DataTypePtr & dest_type,
+    size_t rows,
+    const FormatSettings & format_settings)
+{
+    auto dest_column = dest_type->createColumn();
+    auto src_serialization = src_type->getDefaultSerialization();
+    auto typed_node = buildJSONExtractTree<JSONParserForConversion>(dest_type, "JSON type conversion");
+    JSONParserForConversion parser;
+    JSONExtractInsertSettings insert_settings;
+
+    FormatSettings json_format_settings = format_settings;
+    json_format_settings.json.quote_64bit_integers = false;
+
+    WriteBufferFromOwnString write_buf;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        write_buf.restart();
+        src_serialization->serializeTextJSON(*src_column, i, write_buf, json_format_settings);
+
+        JSONParserForConversion::Element element;
+        if (!parser.parse(write_buf.str(), element))
+        {
+            dest_column->insertDefault();
+            continue;
+        }
+
+        String error;
+        if (!typed_node->insertResultToColumn(*dest_column, element, insert_settings, json_format_settings, error))
+            dest_column->insertDefault();
     }
 
     return dest_column;
@@ -1939,6 +1997,7 @@ ColumnPtr convertObjectColumns(
     }
 
     /// Changed typed paths: CAST (unless a new skip rule matches).
+    const bool skip_invalid = format_settings.json.type_json_skip_invalid_typed_paths;
     for (const auto & [path, type_pair] : plan.changed_typed_paths)
     {
         const auto & [from_tp, to_tp] = type_pair;
@@ -1951,7 +2010,10 @@ ColumnPtr convertObjectColumns(
         else
         {
             auto it = src_typed_paths.find(path);
-            dst_typed_columns[path] = castColumn({it->second, from_tp, ""}, to_tp);
+            if (skip_invalid)
+                dst_typed_columns[path] = convertTypedColumnToTypedSafe(it->second, from_tp, to_tp, rows, format_settings);
+            else
+                dst_typed_columns[path] = castColumn({it->second, from_tp, ""}, to_tp);
         }
     }
 
@@ -1962,7 +2024,14 @@ ColumnPtr convertObjectColumns(
         auto it_col = src_dynamic_paths.find(path);
         const auto & dynamic_col = assert_cast<const ColumnDynamic &>(*it_col->second);
 
-        if (canCastDynamicToTyped(dynamic_col, it_type->second))
+        if (skip_invalid)
+        {
+            /// When type_json_skip_invalid_typed_paths is enabled, always use format+parse
+            /// with per-row failure handling to match the JSON parser contract.
+            dst_typed_columns[path] = convertDynamicColumnToTyped(
+                it_col->second, it_type->second, rows, format_settings, /*skip_on_failure=*/true);
+        }
+        else if (canCastDynamicToTyped(dynamic_col, it_type->second))
         {
             auto dynamic_type = std::make_shared<DataTypeDynamic>(dst_max_dynamic_types);
             dst_typed_columns[path] = castColumnAccurate({it_col->second, dynamic_type, ""}, it_type->second);
@@ -2151,14 +2220,22 @@ ColumnPtr convertObjectColumns(
 
                     JSONParserForConversion::Element element;
                     if (!shared_data_parser.parse(write_buf.str(), element))
+                    {
+                        if (skip_invalid)
+                            return; /// Leave unpopulated — default will be inserted at the end of the row.
                         throw Exception(
                             ErrorCodes::INCORRECT_DATA,
                             "Cannot parse JSON value during type conversion: {}",
                             write_buf.str().substr(0, 100));
+                    }
 
                     String error;
                     if (!new_typed_path_nodes.at(String(path))->insertResultToColumn(*it->second, element, shared_data_insert_settings, json_format_settings, error))
+                    {
+                        if (skip_invalid)
+                            return; /// Leave unpopulated — default will be inserted at the end of the row.
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot insert value into typed column during type conversion: {}", error);
+                    }
 
                     populated_in_row.insert(String(path));
                     return;
