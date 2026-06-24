@@ -31,6 +31,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <source_location>
@@ -109,8 +110,6 @@ constexpr std::string_view PROFILE_EVENTS_SOURCE = "src/Common/ProfileEvents.cpp
 constexpr std::string_view CURRENT_METRICS_SOURCE = "src/Common/CurrentMetrics.cpp";
 /// The base implementation; some asynchronous metrics are also defined in `ServerAsynchronousMetrics.cpp`.
 constexpr std::string_view ASYNCHRONOUS_METRICS_SOURCE = "src/Common/AsynchronousMetrics.cpp";
-/// The comments (descriptions) of all system tables are authored together at their attachment site.
-constexpr std::string_view SYSTEM_TABLES_SOURCE = "src/Storages/System/attachSystemTables.cpp";
 
 /// The source paths captured by `std::source_location` (in `Documentation`/`FunctionDocumentation`) are produced by
 /// the compiler: relative to the repository root when the build remaps source paths (`ENABLE_BUILD_PATH_MAPPING`,
@@ -514,11 +513,20 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
             {
                 const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
                 if (metadata_snapshot)
+                {
+                    /// Bind to a reference first: `typeid(*table)` would warn about evaluating an expression with
+                    /// side effects (the smart pointer dereference) as the operand of a polymorphic `typeid`.
+                    const IStorage & storage = *table;
                     addRow(res_columns, EntityType::SystemTable, iterator->name(),
-                        renderSystemTableDoc(metadata_snapshot->comment, metadata_snapshot->getColumns()), SYSTEM_TABLES_SOURCE);
+                        renderSystemTableDoc(metadata_snapshot->comment, metadata_snapshot->getColumns()),
+                        makeRepoRelative(getSystemTableSource(typeid(storage))));
+                }
             }
         }
     }
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDocumentation) }

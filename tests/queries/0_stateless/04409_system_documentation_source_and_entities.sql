@@ -35,7 +35,11 @@ SELECT DISTINCT source FROM system.documentation WHERE type = 'Server Setting';
 SELECT DISTINCT source FROM system.documentation WHERE type = 'Profile Event';
 SELECT DISTINCT source FROM system.documentation WHERE type = 'Current Metric';
 SELECT DISTINCT source FROM system.documentation WHERE type = 'Asynchronous Metric';
-SELECT DISTINCT source FROM system.documentation WHERE type = 'System Table';
+
+-- Each system table points to its own storage source file (relative to the repository root), so the source is
+-- never empty and always lives under `src/Storages/`.
+SELECT count() FROM system.documentation WHERE type = 'System Table' AND (source = '' OR source NOT LIKE 'src/Storages/%');
+SELECT source FROM system.documentation WHERE type = 'System Table' AND name = 'events';
 
 -- The source of a documentation object points to the source file that defines the component, relative to the
 -- repository root: a function to its file, and a compression codec to its file.

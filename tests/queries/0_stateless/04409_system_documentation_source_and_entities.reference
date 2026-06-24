@@ -16,7 +16,8 @@ src/Core/ServerSettings.cpp
 src/Common/ProfileEvents.cpp
 src/Common/CurrentMetrics.cpp
 src/Common/AsynchronousMetrics.cpp
-src/Storages/System/attachSystemTables.cpp
+0
+src/Storages/System/StorageSystemEvents.cpp
 src/Functions/moduloOrNull.cpp
 src/Compression/CompressionCodecLZ4.cpp
 1
