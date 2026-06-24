@@ -27,9 +27,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-
 /// HDFS has no native ETag, so we synthesise a version identifier from the
 /// attributes available in `hdfsFileInfo`: the last modification time and the size.
 ///
@@ -45,11 +42,21 @@ namespace
 /// it keyed the Parquet metadata / filesystem / page caches it could serve stale
 /// data. To use these caches with HDFS, libhdfs3 must be extended to expose the
 /// millisecond modification time (or a real version token).
-std::string getHDFSETag(tTime last_modified, tOffset size)
+std::string HDFSObjectStorage::makeETag(Int64 last_modified, Int64 size)
 {
-    return fmt::format("{}_{}", static_cast<Int64>(last_modified), static_cast<Int64>(size));
+    return fmt::format("{}_{}", last_modified, size);
 }
 
+ObjectMetadata HDFSObjectStorage::makeObjectMetadata(Int64 last_modified, Int64 size)
+{
+    ObjectMetadata metadata;
+    metadata.size_bytes = static_cast<uint64_t>(size);
+    metadata.last_modified = Poco::Timestamp::fromEpochTime(last_modified);
+    metadata.etag = makeETag(last_modified, size);
+    /// The HDFS etag is only a second-precision (mtime, size) token, so it must not key
+    /// a content cache. See `makeETag` for the precision caveat.
+    metadata.etag_is_strong = false;
+    return metadata;
 }
 
 void HDFSObjectStorage::initializeHDFSFS() const
@@ -242,15 +249,11 @@ std::optional<ObjectMetadata> HDFSObjectStorage::tryGetObjectMetadata(const std:
         throw Exception(ErrorCodes::HDFS_ERROR,
                         "Cannot get file info for: {}. Error: {}", path, hdfsGetLastError());
     }
+    /// Tells `~HDFSFileInfo` how many records to free; the default 0 would free the array
+    /// but leak the inner `mName` / `mOwner` / `mGroup` strings of this single record.
     file_info.length = 1;
 
-    ObjectMetadata metadata;
-    metadata.size_bytes = static_cast<size_t>(file_info.file_info->mSize);
-    metadata.last_modified = Poco::Timestamp::fromEpochTime(file_info.file_info->mLastMod);
-    metadata.etag = getHDFSETag(file_info.file_info->mLastMod, file_info.file_info->mSize);
-    metadata.etag_is_strong = false;
-
-    return metadata;
+    return makeObjectMetadata(file_info.file_info->mLastMod, file_info.file_info->mSize);
 }
 
 void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
@@ -291,14 +294,7 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
         {
             children.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 String(file_path),
-                ObjectMetadata{
-                    .size_bytes = static_cast<uint64_t>(ls.file_info[i].mSize),
-                    .last_modified = Poco::Timestamp::fromEpochTime(ls.file_info[i].mLastMod),
-                    .etag = getHDFSETag(ls.file_info[i].mLastMod, ls.file_info[i].mSize),
-                    .etag_is_strong = false,
-                    .tags = {},
-                    .attributes = {},
-                }));
+                makeObjectMetadata(ls.file_info[i].mLastMod, ls.file_info[i].mSize)));
         }
 
         if (max_keys && children.size() >= max_keys)

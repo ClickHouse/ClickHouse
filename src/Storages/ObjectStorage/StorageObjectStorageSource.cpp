@@ -902,8 +902,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         InputFormatPtr input_format;
         if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache]
             && (Poco::toLower(format_name) == "parquet")
-            && !object_info->getObjectMetadata()->etag.empty()
-            && object_info->getObjectMetadata()->etag_is_strong)
+            && object_info->getObjectMetadata()->isEtagUsableAsCacheKey())
         {
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             if (object_info->isArchive())
@@ -1138,14 +1137,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (!object_info.metadata)
         object_info.metadata = object_storage->getObjectMetadata(object_info.getPath(), /*with_tags=*/ false);
 
-    if (use_page_cache && object_info.metadata->etag.empty())
+    if (use_page_cache && !object_info.metadata->isEtagUsableAsCacheKey())
     {
-        LOG_WARNING(log, "Cannot use page cache, no etag specified");
-        use_page_cache = false;
-    }
-    else if (use_page_cache && !object_info.metadata->etag_is_strong)
-    {
-        LOG_WARNING(log, "Cannot use page cache, etag is not a strong content identifier");
+        LOG_WARNING(log, "Cannot use page cache, etag is missing or not a strong content identifier");
         use_page_cache = false;
     }
 
@@ -1212,13 +1206,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (use_filesystem_cache)
     {
         chassert(object_info.metadata.has_value());
-        if (object_info.metadata->etag.empty())
+        if (!object_info.metadata->isEtagUsableAsCacheKey())
         {
-            LOG_WARNING(log, "Cannot use filesystem cache, no etag specified");
-        }
-        else if (!object_info.metadata->etag_is_strong)
-        {
-            LOG_WARNING(log, "Cannot use filesystem cache, etag is not a strong content identifier");
+            LOG_WARNING(log, "Cannot use filesystem cache, etag is missing or not a strong content identifier");
         }
         else
         {
