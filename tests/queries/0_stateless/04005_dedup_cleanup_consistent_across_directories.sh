@@ -4,14 +4,11 @@
 # no-shared-merge-tree: relies on zookeeper structure of rmt
 # Tag no-async-insert: relies on synchronous inserts
 
-# Regression test for inconsistent deduplication block cleanup across
-# blocks/ and deduplication_hashes/ ZooKeeper directories.
-#
-# With COMPATIBLE_DOUBLE_HASHES (default), each insert creates entries in both
-# directories with different node names (SYNC hash vs UNIFIED hash). If cleanup
-# removes different logical inserts from each directory, the union of remaining
-# entries can cover all original hashes, causing re-inserts to be incorrectly
-# deduplicated.
+# Deduplication-window cleanup and re-insert behavior with the default
+# new_unified_hash, where deduplication entries are written only to the
+# deduplication_hashes/ ZooKeeper directory. After the window evicts an entry,
+# re-inserting that row is not deduplicated; a re-insert whose entry is still in
+# the window is.
 
 set -e
 
@@ -62,7 +59,6 @@ wait_for_cleanup() {
 }
 
 # Wait for BOTH directories to be cleaned up to window size
-wait_for_cleanup "blocks" 2
 wait_for_cleanup "deduplication_hashes" 2
 
 # Re-insert the first row. Since its entry was cleaned up from both directories,
@@ -72,7 +68,6 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO dedup_cleanup VALUES (toDate('2024-01-01
 $CLICKHOUSE_CLIENT --query="SELECT count(*) from dedup_cleanup" # 4
 
 # Wait for cleanup again
-wait_for_cleanup "blocks" 2
 wait_for_cleanup "deduplication_hashes" 2
 
 # Re-insert the second row
@@ -81,7 +76,6 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO dedup_cleanup VALUES (toDate('2024-01-01
 $CLICKHOUSE_CLIENT --query="SELECT count(*) from dedup_cleanup" # 5
 
 # Wait for cleanup again
-wait_for_cleanup "blocks" 2
 wait_for_cleanup "deduplication_hashes" 2
 
 # Re-insert the same row again without waiting for cleanup - this SHOULD be deduplicated

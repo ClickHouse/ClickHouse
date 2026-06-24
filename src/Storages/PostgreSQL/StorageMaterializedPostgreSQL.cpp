@@ -52,6 +52,7 @@ namespace Setting
 namespace MaterializedPostgreSQLSetting
 {
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
+    extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_extended_date_and_time_types;
 }
 
 namespace ErrorCodes
@@ -139,7 +140,8 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
     , nested_table_id(nested_storage_->getStorageID())
 {
-    setInMemoryMetadata(*nested_storage_->getInMemoryMetadataPtr(context_, false));
+    auto nested_metadata = nested_storage_->getInMemoryMetadataPtr(context_, false);
+    setInMemoryMetadata(*nested_metadata);
 }
 
 VirtualColumnsDescription StorageMaterializedPostgreSQL::createVirtuals()
@@ -243,7 +245,8 @@ std::shared_ptr<Context> StorageMaterializedPostgreSQL::makeNestedTableContext(C
 void StorageMaterializedPostgreSQL::set(StoragePtr nested_storage)
 {
     nested_table_id = nested_storage->getStorageID();
-    setInMemoryMetadata(*nested_storage->getInMemoryMetadataPtr(getContext(), false));
+    auto nested_metadata = nested_storage->getInMemoryMetadataPtr(getContext(), false);
+    setInMemoryMetadata(*nested_metadata);
     has_nested.store(true);
 }
 
@@ -562,6 +565,17 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
 
         if (has_settings)
             postgresql_replication_settings->loadFromQuery(*args.storage_def);
+
+        /// For the table engine the user declares the column types explicitly, so this setting cannot
+        /// affect anything (it would be a silent no-op). It is only meaningful for the database engine,
+        /// where the nested table structure is derived from PostgreSQL.
+        if (args.mode <= LoadingStrictnessLevel::CREATE
+            && (*postgresql_replication_settings)[MaterializedPostgreSQLSetting::materialized_postgresql_use_extended_date_and_time_types].isChanged())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Setting `materialized_postgresql_use_extended_date_and_time_types` is not applicable to the "
+                            "MaterializedPostgreSQL table engine, where column types are declared explicitly. "
+                            "It only affects the MaterializedPostgreSQL database engine. "
+                            "Declare the desired `Date`/`DateTime` or `Date32`/`DateTime64` types directly in the table definition.");
 
         return std::make_shared<StorageMaterializedPostgreSQL>(
                 args.table_id, args.mode, configuration.database, configuration.table, connection_info,
