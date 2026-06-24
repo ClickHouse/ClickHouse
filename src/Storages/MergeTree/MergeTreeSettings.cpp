@@ -1166,7 +1166,8 @@ namespace ErrorCodes
     unified hash governed by `replicated_deduplication_window`; this setting now only bounds how many
     legacy async-insert hashes are kept in the `async_blocks` directory in ClickHouse Keeper, which is
     still written by older replicas during a rolling upgrade and cleaned up by the current leader.
-    A value of `0` disables that cleanup.
+    A value of `0` retains none of them — the next cleanup pass removes every entry — so keep the
+    default (or a larger value) to preserve the legacy async deduplication window during the upgrade.
     )", 0) \
     DECLARE(UInt64, replicated_deduplication_window_seconds_for_async_inserts, 7 * 24 * 60 * 60 /* one week */, R"(
     Legacy setting retained for mixed-version rolling upgrades. Together with
