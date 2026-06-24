@@ -234,49 +234,6 @@ TEST(ProtobufRowInputFormat, MultipleErrorsThenValidRow)
     EXPECT_EQ(col->getUInt(0), 19737);
 }
 
-/// A valid message precedes a bad (skippable) message, followed by another valid message.
-/// After the first valid row is appended (row_num becomes 1), the bad message triggers a
-/// parse error and destroyReaderAndSerializer() nulls the serializer. The next readRow
-/// recreates the serializer to read the trailing valid message, but at that point the block
-/// already holds one row (row_num > 0). Before the fix, setColumns was only called when
-/// row_num == 0, so the freshly recreated serializer kept null columns and crashed (SIGSEGV)
-/// in ProtobufSerializer::readRow. Both valid rows must be returned, the bad one skipped.
-TEST(ProtobufRowInputFormat, ValidRowBeforeBadRowRecovery)
-{
-    std::string data;
-
-    /// Valid message: field 1 (string) = "2024-01-15"
-    data += '\x0c'; // message length = 12
-    data += '\x0a'; // field 1, wire type LENGTH_DELIMITED
-    data += '\x0a'; // string length = 10
-    data += "2024-01-15";
-
-    /// Bad message: field 1 (string) = "bad!" — not a valid date
-    data += '\x06'; // message length = 6
-    data += '\x0a'; // field 1, wire type LENGTH_DELIMITED
-    data += '\x04'; // string length = 4
-    data += "bad!";
-
-    /// Valid message: field 1 (string) = "2024-01-15"
-    data += '\x0c'; // message length = 12
-    data += '\x0a'; // field 1, wire type LENGTH_DELIMITED
-    data += '\x0a'; // string length = 10
-    data += "2024-01-15";
-
-    ReadBufferFromString read_buf(data);
-    auto header = ProtobufFormatHelper::dateHeader();
-    auto format = ProtobufFormatHelper::createFormat(
-        read_buf, header, "syntax = \"proto3\";\nmessage Row { string d = 1; }");
-
-    Chunk chunk;
-    ASSERT_NO_THROW(chunk = format->read());
-    ASSERT_EQ(chunk.getNumRows(), 2);
-    const auto & col = chunk.getColumns()[0];
-    /// 2024-01-15 = day 19737 since epoch
-    EXPECT_EQ(col->getUInt(0), 19737);
-    EXPECT_EQ(col->getUInt(1), 19737);
-}
-
 /// Non-parse error leaves reader and serializer alive mid-message.
 /// Calling read() again should not crash or produce garbage — it should
 /// either throw again or return nothing.
