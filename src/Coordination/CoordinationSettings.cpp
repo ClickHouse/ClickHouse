@@ -70,8 +70,8 @@ namespace ErrorCodes
     DECLARE(UInt64, raft_limits_reconnect_limit, 50, "If connection to a peer is silent longer than this limit * (multiplied by heartbeat interval), we re-establish the connection.", 0) \
     DECLARE(UInt64, raft_limits_response_limit, 20, "Total wait time for a response is calculated by multiplying response_limit with heart_beat_interval_ms", 0) \
     DECLARE(Bool, async_replication, true, "Enable async replication. All write and read guarantees are preserved while better performance is achieved.", 0) \
-    DECLARE(Bool, use_new_storage, false, "[Not implemented yet] Use LSM tree storage for nodes. Has about the same performance but lower memory usage.", 0) \
-    DECLARE(Bool, storage_memory_only, false, "LSMT: keep all data in memory, don't write to files", 0) \
+    DECLARE(Bool, use_new_storage, true, "Use LSM tree storage for nodes. Has about the same performance but lower memory usage.", 0) \
+    DECLARE(Bool, storage_memory_only, true, "LSMT: keep all data in memory, don't write to files", 0) \
     DECLARE(UInt64, block_cache_size, 2ul * 1024 * 1024 * 1024, "LSMT: size of the in-memory cache of blocks read from files, in bytes.", 0) \
     DECLARE(UInt64, committed_memtable_size, 64 * 1024 * 1024, "LSMT: rotate the memtable when it exceeds this many bytes.", HOT_RELOAD) \
     DECLARE(UInt64, uncommitted_memtable_size, 16 * 1024 * 1024, "LSMT: rotate the uncommitted-state memtable when it exceeds this many bytes.", HOT_RELOAD) \

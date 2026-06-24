@@ -5,12 +5,16 @@
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Coordination/KeeperStateMachine.h>
 
-DB::KeeperContextPtr makeKeeperContext(bool /*use_lsmt_storage*/, std::shared_ptr<DB::CoordinationSettings> settings)
+namespace DB::CoordinationSetting
+{
+    extern const CoordinationSettingsBool use_new_storage;
+}
+
+DB::KeeperContextPtr makeKeeperContext(bool use_lsmt_storage, std::shared_ptr<DB::CoordinationSettings> settings)
 {
     if (!settings)
         settings = std::make_shared<DB::CoordinationSettings>();
-    /// TODO: translate use_lsmt_storage into a CoordinationSettings option here so
-    ///       KeeperStorage::create picks the right implementation.
+    (*settings)[DB::CoordinationSetting::use_new_storage] = use_lsmt_storage;
     /// Intentionally minimal: callers add setLocalLogsPreprocessed/disks/digest as they need them.
     return std::make_shared<DB::KeeperContext>(true, settings);
 }
@@ -18,10 +22,8 @@ DB::KeeperContextPtr makeKeeperContext(bool /*use_lsmt_storage*/, std::shared_pt
 INSTANTIATE_TEST_SUITE_P(
     Storage,
     CoordinationTest,
-    ::testing::Values(
-        /*use_lsmt_storage*/ false
-        /// TODO: Add `true` when LSMT storage is integrated.
-    ),
+    /// use_lsmt_storage
+    ::testing::Values(false, true),
     [](const ::testing::TestParamInfo<bool> & param_info) { return param_info.param ? "LSMT" : "Mem"; });
 
 INSTANTIATE_TEST_SUITE_P(
@@ -29,8 +31,8 @@ INSTANTIATE_TEST_SUITE_P(
     CoordinationTestWithCompression,
     ::testing::Values(
         StorageTypeAndCompression{.use_lsmt_storage = false, .enable_compression = false},
-        StorageTypeAndCompression{.use_lsmt_storage = false, .enable_compression = true}
-        /// TODO: StorageTypeAndCompression{.use_lsmt_storage = true, .enable_compression = true}
+        StorageTypeAndCompression{.use_lsmt_storage = false, .enable_compression = true},
+        StorageTypeAndCompression{.use_lsmt_storage = true, .enable_compression = true}
     ),
     [](const ::testing::TestParamInfo<StorageTypeAndCompression> & param_info) { return std::string(param_info.param.use_lsmt_storage ? "LSMT" : "Mem") + (param_info.param.enable_compression ? "Compressed" : "Uncompressed"); });
 

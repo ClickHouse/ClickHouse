@@ -16,6 +16,11 @@
 #include <string_view>
 #include <utility>
 
+namespace DB
+{
+    class Arena;
+}
+
 namespace Coordination::Storage
 {
 
@@ -129,8 +134,10 @@ struct NodePath
     NodePath parentPath() const;
 
     /// Path to child znode: "/foo/bar" + "baz" = "/foo/bar/baz".
-    /// Puts the path string into `path_buf`, returns a reference into it.
+    size_t childPathLen(size_t child_name_len) const;
+    NodePath makeChildPath(std::string_view child_name, std::span<char> out) const;
     NodePath childPath(std::string_view child_name, std::string & path_buf) const;
+    NodePath childPath(std::string_view child_name, DB::Arena & arena) const;
 
     /// The last component of the path: "b" for "/a/b". Must not be called on the root path.
     std::string_view baseName() const;
