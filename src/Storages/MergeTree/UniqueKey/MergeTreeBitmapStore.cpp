@@ -244,6 +244,9 @@ void MergeTreeBitmapStore::removeBitmap(
     /// Invalidate the cache entry so a later reader does not serve a removed version.
     if (cache)
         cache->remove(DeleteBitmapCache::makeKey(part_id, csn));
+
+    LOG_TRACE(getLogger("MergeTreeBitmapStore"),
+              "UNIQUE KEY: removed delete bitmap sidecar delete_bitmap_{}.rbm for part '{}'", csn, part_id);
 }
 
 void MergeTreeBitmapStore::dropPart(const std::string & part_id)

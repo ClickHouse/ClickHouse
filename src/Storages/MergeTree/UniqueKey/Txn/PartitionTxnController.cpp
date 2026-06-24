@@ -280,6 +280,7 @@ void PartitionTxnController::recover(
         try
         {
             tmp_storage->removeRecursive();
+            LOG_DEBUG(logger, "UNIQUE KEY recovery: removed tmp dir '{}'", tmp_storage->getFullPath());
         }
         catch (...)
         {

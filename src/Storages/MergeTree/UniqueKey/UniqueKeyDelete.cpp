@@ -32,6 +32,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
+
 namespace
 {
 
@@ -219,6 +224,12 @@ void executeUniqueKeyDelete(
     /// filtered out by the read path). The statement is also not isolated from
     /// concurrent merges (see the outdated-part skip in
     /// `commitDeleteForPartition`).
+
+    /// MVCC: marker parts + bitmaps are published with `txn = nullptr`, so a
+    /// ROLLBACK cannot undo them. Reject DELETE inside an open transaction.
+    if (query_context->getCurrentTransaction())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "DELETE on UNIQUE KEY tables is not supported inside a transaction");
 
     const auto & storage_id = storage.getStorageID();
     auto log = getLogger(storage_id.getNameForLogs());

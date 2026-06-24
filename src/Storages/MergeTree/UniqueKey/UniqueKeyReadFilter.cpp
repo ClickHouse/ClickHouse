@@ -125,13 +125,14 @@ std::shared_ptr<std::vector<QuerySnapshot>> applyUniqueKeyDeleteBitmaps(
         /// parts with `creation_csn ≤ C` (and, per kept part, the bitmap with
         /// max csn ≤ C). A part newer than C must not have C-era bitmaps
         /// applied to it, so drop it from this read.
-        /// TODO(unique-key): two deferred refinements, both tied to features
-        /// not in this PR: (a) the snapshot is pinned here, after the part list
-        /// was captured upstream — once UPSERT lands, an upsert committed in
-        /// that gap could pair an old part's kills with a not-yet-visible
-        /// replacement part (row vanishing); the pin must move to part-list
-        /// capture time. (b) merge↔bitmap reconciliation (see the DELETE-vs-
-        /// merge TODO in `UniqueKeyDelete.cpp`).
+        /// TODO(unique-key) — KNOWN GAP, fix next batch: the CSN is pinned HERE,
+        /// after the part list was already captured upstream. A DELETE that
+        /// commits in that window is applied to an already-started SELECT/count
+        /// (snapshot-isolation weakening — the query sees a newer bitmap than its
+        /// part list). Fix: pin the per-partition CSN at the part-selection
+        /// boundary and reuse that one pin in both the read and the count paths.
+        /// (Related, also deferred: merge↔bitmap reconciliation — see the
+        /// DELETE-vs-merge TODO in `UniqueKeyDelete.cpp`.)
         if (!isPartVisibleAtSnapshotCsn(data_part->getUniqueKeyMeta(), pinned_csn))
         {
             ++parts_filtered_by_csn;

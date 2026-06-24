@@ -4891,6 +4891,15 @@ Strings ReadFromMergeTree::getShardsForDistributedRead() const
 
 void ReadFromMergeTree::serialize(Serialization & ctx) const
 {
+    /// UNIQUE KEY: a distributed query plan serializes part names/flags but NOT the
+    /// per-partition CSN pins / delete-bitmap snapshot, so a worker rebuilds the read
+    /// and could apply a later DELETE. `serialize` is only reached on the
+    /// distributed-plan path (a local read never calls it), so this rejects only the
+    /// distributed case. Drop once the snapshot is serialized into the plan.
+    if (getStorageMetadata()->hasUniqueKey())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "distributed query plan is not supported on UNIQUE KEY tables");
+
     /// Serializing the STREAM modifier is not implemented yet, so reject it instead of silently
     /// reading a plain snapshot. (Pinned block boundaries and part-order virtual columns are rejected
     /// earlier in checkDistributedReadSupported.)

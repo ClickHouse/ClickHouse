@@ -86,6 +86,14 @@ BlockIO InterpreterDeleteQuery::execute()
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
+        /// UNIQUE KEY is a local-only (per-node) marker/bitmap layer, so routing a
+        /// UK DELETE through replicated DDL would replay it on every replica
+        /// independently and diverge their state. Reject before the enqueue.
+        auto uk_metadata = table->getInMemoryMetadataPtr(getContext(), false);
+        if (uk_metadata->hasUniqueKey())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "DELETE on UNIQUE KEY tables is not supported inside a Replicated database");
+
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));

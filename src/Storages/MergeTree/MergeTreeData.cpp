@@ -2729,8 +2729,16 @@ void MergeTreeData::runUniqueKeyTxnRecovery()
 
     for (const auto & disk : getDisks())
     {
-        if (disk->isBroken() || disk->isReadOnly())
-            continue;
+        /// Fail closed on a broken disk: it may hold a UK `tmp_<op>/` manifest +
+        /// orphaned sidecars that csn-seed will still observe, so silently skipping
+        /// it would weaken the fail-closed recovery contract. A read-only disk is
+        /// still SCANNED (it can hold tmp state, and reads succeed); if such state
+        /// needs a write to reconcile, the per-tmp recover() below fails closed.
+        if (disk->isBroken())
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "UNIQUE KEY txn-state recovery: disk '{}' is broken and may hold unrecovered "
+                "tmp marker/bitmap state; aborting startup to stay fail-closed.",
+                disk->getName());
         if (!disk->existsDirectory(relative_data_path))
             continue;
 
@@ -4556,6 +4564,18 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "Column TTL is not supported on tables with UNIQUE KEY");
 
+            /// CLEAR COLUMN (parsed as DROP_COLUMN with `clear`) rewrites the part
+            /// via the full mutation path, dropping the delete-bitmap sidecars and
+            /// resurrecting deleted rows. Reject for ANY column, key or not (the
+            /// UK-column DROP/RENAME/MODIFY reject below is column-specific; this
+            /// covers non-key CLEAR too).
+            if (command.type == AlterCommand::DROP_COLUMN && command.clear)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ALTER TABLE ... CLEAR COLUMN `{}` is not supported on tables with UNIQUE KEY: "
+                    "it rewrites the part via the full mutation path, dropping the delete-bitmap "
+                    "sidecars and resurrecting deleted rows.",
+                    command.column_name);
+
             const bool affects_column =
                 command.type == AlterCommand::DROP_COLUMN
                 || command.type == AlterCommand::RENAME_COLUMN
@@ -5155,15 +5175,12 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
 
     /// Reject mutations that bypass UK dedup: DELETE/UPDATE rewrite rows;
     /// MATERIALIZE COLUMN / CLEAR COLUMN (the latter serialized as
-    /// `DROP_COLUMN` with `clear=true`) rewrite stored bytes.
+    /// `DROP_COLUMN` with `clear=true`) rewrite stored bytes via the full
+    /// read+rewrite mutation path, which publishes a replacement part WITHOUT the
+    /// `delete_bitmap_<csn>.rbm` sidecars — resurrecting deleted rows. This holds
+    /// for ANY column, key or not, so reject regardless of `is_uk_column`.
     if (auto uk_metadata = getInMemoryMetadataPtr(getContext(), false); uk_metadata->hasUniqueKey())
     {
-        const auto & uk_column_names = uk_metadata->getUniqueKeyColumns();
-        auto is_uk_column = [&](const String & column)
-        {
-            return std::find(uk_column_names.begin(), uk_column_names.end(), column) != uk_column_names.end();
-        };
-
         for (const auto & command : commands)
         {
             if (command.type == MutationCommand::DELETE || command.type == MutationCommand::UPDATE)
@@ -5178,19 +5195,19 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "ALTER TABLE ... MATERIALIZE TTL is not supported on tables with UNIQUE KEY");
 
-            if (command.type == MutationCommand::MATERIALIZE_COLUMN && is_uk_column(command.column_name))
+            if (command.type == MutationCommand::MATERIALIZE_COLUMN)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "ALTER TABLE ... MATERIALIZE COLUMN `{}` is not supported: the column is part of the UNIQUE KEY, "
-                    "and MATERIALIZE would rewrite stored values without going through UNIQUE KEY dedup, "
-                    "producing duplicate live keys. UNIQUE KEY columns: ({}).",
-                    command.column_name, fmt::join(uk_column_names, ", "));
+                    "ALTER TABLE ... MATERIALIZE COLUMN `{}` is not supported on tables with UNIQUE KEY: "
+                    "it rewrites the part via the full mutation path, dropping the delete-bitmap sidecars "
+                    "and resurrecting deleted rows.",
+                    command.column_name);
 
-            if (command.type == MutationCommand::DROP_COLUMN && command.clear && is_uk_column(command.column_name))
+            if (command.type == MutationCommand::DROP_COLUMN && command.clear)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "ALTER TABLE ... CLEAR COLUMN `{}` is not supported: the column is part of the UNIQUE KEY, "
-                    "and CLEAR would rewrite stored values without going through UNIQUE KEY dedup, "
-                    "producing duplicate live keys. UNIQUE KEY columns: ({}).",
-                    command.column_name, fmt::join(uk_column_names, ", "));
+                    "ALTER TABLE ... CLEAR COLUMN `{}` is not supported on tables with UNIQUE KEY: "
+                    "it rewrites the part via the full mutation path, dropping the delete-bitmap sidecars "
+                    "and resurrecting deleted rows.",
+                    command.column_name);
 
             /// These commands rebuild whole parts (the full read+rewrite mutation path) and
             /// drop the delete_bitmap_*.rbm sidecars, silently resurrecting deleted rows once

@@ -346,6 +346,13 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     if (!reading_step->isQueryWithFinal())
         return;
 
+    /// UNIQUE KEY: lazy-final builds extra ReadFromMergeTree reads, each pinning
+    /// its own (possibly later) CSN, so it could mix delete-bitmap snapshots /
+    /// apply a concurrent DELETE within one FINAL. Skip the rewrite so the normal
+    /// single-snapshot read path is used (the FINAL query itself is unaffected).
+    if (reading_step->getStorageMetadata()->hasUniqueKey())
+        return;
+
     /// Only ReplacingMergeTree is supported.
     const auto & data = reading_step->getMergeTreeData();
     if (data.merging_params.mode != MergeTreeData::MergingParams::Replacing)
