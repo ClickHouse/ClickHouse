@@ -8899,12 +8899,6 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
     const size_t total_removed = delete_requests.size();
 
     /// Send removals in batches to avoid exceeding ZooKeeper's maximum message size.
-    /// Without batching, tables with large deduplication windows can produce multi-requests
-    /// exceeding 1MB (the default jute.maxbuffer), causing the operation to fail.
-    ///
-    /// Keep several batches in flight at once instead of waiting for each one to complete
-    /// before sending the next, so that partitions with many deduplication blocks are cleared
-    /// without a long sequence of round-trips to ZooKeeper.
     static constexpr size_t max_batches_in_flight = 16;
 
     struct BatchInFlight
@@ -8921,17 +8915,14 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
         auto response = batch.future.get();
         if (response.error != Coordination::Error::ZOK)
         {
-            /// Preserve the failure contract of the original tryMulti-based implementation:
-            /// non-user (hardware) errors such as ZCONNECTIONLOSS, ZSESSIONEXPIRED or ZOPERATIONTIMEOUT
-            /// must propagate so the caller does not proceed as if the blocks were removed. Only expected
-            /// per-op user errors (e.g. ZNONODE for an already-removed block) are logged and ignored.
             if (!Coordination::isUserError(response.error))
                 throw zkutil::KeeperException(response.error);
 
-            for (size_t i = 0; i < response.responses.size(); ++i)
-                if (response.responses[i]->error != Coordination::Error::ZOK)
-                    LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.",
-                                delete_requests[batch.batch_start + i]->getPath(), response.responses[i]->error);
+            /// Only the first failed operation in a multi-request carries a valid error code,
+            /// so log just that one (e.g. ZNONODE for an already-removed block) and ignore it.
+            size_t failed_op_index = zkutil::getFailedOpIndex(response.error, response.responses);
+            LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.",
+                        delete_requests[batch.batch_start + failed_op_index]->getPath(), response.error);
         }
         in_flight.pop_front();
     };
