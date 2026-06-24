@@ -989,9 +989,27 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->merging_columns = global_ctx->storage_columns;
         global_ctx->merging_columns_expired_by_ttl = global_ctx->storage_columns_expired_by_ttl;
         global_ctx->gathering_columns.clear();
+
+        /// Reinitialize skip indexes to match the Horizontal branch setup.
+        /// We must NOT simply clear them: MergedBlockOutputStream writes empty
+        /// skip-index files (with checksums) even for 0-row parts. Clearing
+        /// would produce different checksums than the normal TTLDrop path,
+        /// causing divergence during rolling upgrades on replicated tables.
         global_ctx->merging_skip_indexes.clear();
         global_ctx->skip_indexes_by_column.clear();
         global_ctx->text_indexes_to_merge.clear();
+
+        auto all_skip_indexes = global_ctx->metadata_snapshot->getSecondaryIndices();
+        for (const auto & index : all_skip_indexes)
+        {
+            if (!exclude_index_names.contains(index.name))
+            {
+                if (index.type == "text")
+                    global_ctx->text_indexes_to_merge.push_back(index);
+                else
+                    global_ctx->merging_skip_indexes.push_back(index);
+            }
+        }
     }
     else
     {

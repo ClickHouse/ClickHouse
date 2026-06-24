@@ -347,6 +347,10 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_col;"
 # -------------------------------------------------------------------
 # Case 7: Rows TTL + GROUP BY TTL — not short-circuited
 # hasOnlyRowsTTL is false when GROUP BY TTL is present, so data IS read.
+# After the first merge, surviving rows still have expired TTL, so
+# TTLPartDropMergeSelector may re-select the single merged part for
+# another TTLDrop merge. Filter by length(merged_from) > 1 to only
+# look at the merge that actually combined two source parts.
 # -------------------------------------------------------------------
 echo "-- Case 7: Rows TTL + GROUP BY TTL is not short-circuited"
 
@@ -385,6 +389,7 @@ ${CLICKHOUSE_CLIENT} -q "
         database = currentDatabase()
         AND table = 't_ttl_groupby'
         AND event_type = 'MergeParts'
+        AND length(merged_from) > 1
     ORDER BY event_time DESC
     LIMIT 1;
 "
