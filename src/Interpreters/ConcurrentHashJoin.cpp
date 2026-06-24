@@ -182,20 +182,17 @@ void reserveSpaceInHashMaps(
     /// hint takes precedence; otherwise a trustworthy plan distinct-key estimate is used. Both reserve
     /// the same way (capped to the spill threshold, since more rows stream in after the reserve) and
     /// report under the same profile event - this is the warm preallocation path.
+    std::optional<size_t> reserve_size;
     if (auto hint = getSizeHint(stats_collecting_params))
-        reserveBucketsBySize(
-            hash_join,
-            ind,
-            hint->ht_size,
-            slots,
-            external_join_threshold,
-            /*cap_to_external_threshold=*/true,
-            ProfileEvents::HashJoinPreallocatedElementsInHashTables);
+        reserve_size = hint->ht_size;
     else if (plan_key_ndv)
+        reserve_size = plan_key_ndv;
+
+    if (reserve_size)
         reserveBucketsBySize(
             hash_join,
             ind,
-            *plan_key_ndv,
+            *reserve_size,
             slots,
             external_join_threshold,
             /*cap_to_external_threshold=*/true,
@@ -237,8 +234,8 @@ size_t projectedTwoLevelMapBytes(const HashJoin & hash_join, size_t num_entries)
     return projected_bytes;
 }
 
-/// The per-slot HyperLogLog has a ~1.6% standard error. We bias the distinct-key estimate by
-/// 1/16 (~6.25%, ~3.8 standard deviations) in the direction that keeps each use conservative.
+/// The distinct-key HyperLogLog (precision 12) has a ~1.6% standard error. We bias the distinct-key
+/// estimate by 1/16 (~6.25%, ~3.8 standard deviations) in the direction that keeps each use conservative.
 constexpr size_t NDV_ESTIMATE_MARGIN_DIVISOR = 16;
 
 /// Upper-biased distinct-key estimate, clamped to the source-row count. Used to size the reserve
@@ -326,8 +323,8 @@ ConcurrentHashJoin::ConcurrentHashJoin(
         pool->wait();
 
         /// Exact-size deferred build: when there is no statistics hint to preallocate from, buffer the
-        /// right blocks and size each two-level map to the estimated distinct-key count (per-slot HLLs
-        /// over the scatter hashes) at build finish, avoiding rehashes during the build. Sizing by
+        /// right blocks and size each two-level map to the estimated distinct-key count (merged HLL
+        /// shards over the scatter hashes) at build finish, avoiding rehashes during the build. Sizing by
         /// distinct keys rather than source rows avoids over-allocating for duplicate-heavy build sides.
         /// Skipped when statistics already provide a good hint (then the
         /// streaming build + `reserveSpaceInHashMaps` is used), for `any_take_last_row`, and for
@@ -350,7 +347,10 @@ ConcurrentHashJoin::ConcurrentHashJoin(
         /// buffering. The cross-run statistics hint takes precedence (it disables the deferral via the
         /// `getSizeHint` check below and reserves from `ht_size`), so only consult the plan NDV when no
         /// such hint exists.
-        const bool has_plan_key_ndv = plan_key_ndv.has_value() && *plan_key_ndv > 0;
+        /// The optional already encodes trustworthiness: `extractTrustworthyRightKeyNdv` only sets it
+        /// from a real `uniq`-backed, non-zero distinct count (see `reserveSpaceInHashMaps`, which
+        /// keys off presence too), so presence alone is the condition.
+        const bool has_plan_key_ndv = plan_key_ndv.has_value();
 
         const auto & size_limits = table_join->sizeLimits();
         deferred_build = !any_take_last_row
@@ -746,12 +746,10 @@ size_t ConcurrentHashJoin::estimateBufferedDistinctKeys() const
 
 size_t ConcurrentHashJoin::getProjectedTotalByteCount() const
 {
-    size_t res = 0;
-    for (const auto & hash_join : hash_joins)
-    {
-        std::lock_guard lock(hash_join->mutex);
-        res += hash_join->data->getTotalByteCount() + hash_join->buffered_bytes;
-    }
+    /// The buffered bytes and the live maps are already summed by `getTotalByteCount`; on the
+    /// non-deferred path nothing is buffered, so this is the whole answer and the projection below
+    /// adds nothing.
+    size_t res = getTotalByteCount();
 
     /// Merged distinct-key estimate over the shards (and the buffered source-row count). Zero rows are
     /// buffered on the non-deferred path, so this then degenerates to `getTotalByteCount` exactly.
@@ -936,8 +934,8 @@ static DispatchKeyShape getDispatchKeyShape(const HashJoin & join, size_t total_
 }
 
 /// The per-row scatter selector (which slot each row goes to) plus the raw scatter hashes it was
-/// derived from. The hashes are returned so the deferred build can feed them into the per-slot HLL
-/// without recomputing them.
+/// derived from. The hashes are returned so the deferred build can feed them into the distinct-key
+/// HLL shards without recomputing them.
 struct DispatchSelectorAndHashes
 {
     IColumn::Selector selector;
@@ -1110,7 +1108,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
         /// The reserve is sized by distinct keys, not source rows: the map holds one cell per key, so
         /// reserving by source rows would over-allocate (by the duplication factor) for duplicate-heavy
         /// builds and could overshoot the `SpillingHashJoin` memory cap. The distinct-key count comes
-        /// from the per-slot HLLs filled while buffering. It MUST be the same number that
+        /// from the merged HLL shards filled while buffering. It MUST be the same number that
         /// `getProjectedTotalByteCount` uses for the spill decision, hence the shared
         /// `estimateBufferedDistinctKeys`.
         const size_t global_reserve_size = estimateBufferedDistinctKeys();
