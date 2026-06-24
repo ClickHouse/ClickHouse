@@ -28,8 +28,8 @@ class ReadBuffer;
 
 struct AsynchronousMetricValue
 {
-    double value;
-    const char * documentation;
+    double value = 0;
+    const char * documentation = nullptr;
     /// The source file where this metric and its documentation are produced. Asynchronous metrics are defined across
     /// several files (`AsynchronousMetrics.cpp`, `ServerAsynchronousMetrics.cpp`, `KeeperAsynchronousMetrics.cpp`, ...),
     /// so it is captured per metric at the construction site via the constructor's default argument. Used by
