@@ -72,6 +72,7 @@ void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
     writeVarUInt(version, out);
 
     SerializationFlags flags;
+    flags.version = version;
     serialize(out, flags);
 }
 
@@ -129,6 +130,7 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         settings.writeChangedBinary(out);
 
         IQueryPlanStep::Serialization ctx{out, registry};
+        ctx.version = flags.version;
         node->step->serialize(ctx);
     }
 

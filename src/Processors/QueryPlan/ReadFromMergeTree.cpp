@@ -5004,6 +5004,14 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
     if (query_info.prewhere_info)
         query_info.prewhere_info->serialize(ctx);
 
+    /// Bucketed reads exist only since query-plan serialization version 2. If the peer only understands
+    /// version 1, throw a clear error rather than write bytes it would misread (the deserialize side checks
+    /// the same).
+    if (distributed_read_bucket_count > 0 && ctx.version < 2)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan: a bucketed ReadFromMergeTree read requires query plan serialization "
+            "version >= 2; all nodes must run the same version");
+
     /// Every distributed bucket's marks travel in its own `read_bucket` task parameter (set during
     /// fan-out), so the shared step carries only the bucket count.
     writeVarUInt(distributed_read_bucket_count, ctx.out);
