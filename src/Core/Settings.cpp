@@ -6186,6 +6186,11 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, query_plan_lift_predicate_across_join, true, R"(
+Toggles a query-plan-level optimization which copies filter conjuncts from one side of an
+equi-join onto the other side via equi-key substitution, so that primary-key/index pruning
+on the other side can use them. Only takes effect if `query_plan_enable_optimizations` is 1.
+)", 0) \
     DECLARE(Bool, query_plan_convert_outer_join_to_inner_join, true, R"(
 Allow to convert `OUTER JOIN` to `INNER JOIN` if filter after `JOIN` always filters default values
 )", 0) \

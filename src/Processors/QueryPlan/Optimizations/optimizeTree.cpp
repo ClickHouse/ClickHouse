@@ -266,6 +266,8 @@ void optimizeTreeSecondPass(
         {
             if (optimization_settings.enable_join_runtime_filters)
                 join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
+            if (optimization_settings.lift_predicate_across_join)
+                join_runtime_filters_were_added |= (tryLiftPredicateAcrossEquiJoin(&frame_node, nodes, extra_settings) > 0);
             convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
         });
 
@@ -298,6 +300,10 @@ void optimizeTreeSecondPass(
             {
                 optimizeJoinLazyIndexing(frame_node, nodes, optimization_settings);
             });
+
+        /// Re-run PK condition analysis so the lifted/runtime filter reaches MergeTree
+        if (optimization_settings.query_plan_optimize_primary_key)
+            traverseQueryPlan(stack, root, [&](auto &) { optimizePrimaryKeyConditionAndLimit(stack); });
     }
 
     /// Do PREWHERE optimization after all possible filters including JOIN runtime filters were pushed down

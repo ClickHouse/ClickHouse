@@ -1,0 +1,43 @@
+<test>
+    <settings>
+        <enable_analyzer>1</enable_analyzer>
+        <enable_join_runtime_filters>0</enable_join_runtime_filters>
+    </settings>
+
+    <create_query>CREATE TABLE lift_perf_orders   (k UInt64, payload String) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE lift_perf_lineitem (k UInt64, payload String) ENGINE = MergeTree ORDER BY k</create_query>
+
+    <fill_query>INSERT INTO lift_perf_orders   SELECT number, toString(number) FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO lift_perf_lineitem SELECT number, toString(number) FROM numbers(10000000)</fill_query>
+
+    <query short="1">
+        SELECT count()
+        FROM (SELECT * FROM lift_perf_orders WHERE k = 1234567) AS o
+        INNER JOIN lift_perf_lineitem AS l ON o.k = l.k
+        SETTINGS query_plan_lift_predicate_across_join = 1
+    </query>
+
+    <query short="1">
+        SELECT count()
+        FROM (SELECT * FROM lift_perf_orders WHERE k = 1234567) AS o
+        INNER JOIN lift_perf_lineitem AS l ON o.k = l.k
+        SETTINGS query_plan_lift_predicate_across_join = 0
+    </query>
+
+    <query>
+        SELECT sum(l.k)
+        FROM (SELECT * FROM lift_perf_orders WHERE k BETWEEN 100000 AND 100100) AS o
+        LEFT JOIN lift_perf_lineitem AS l ON o.k = l.k
+        SETTINGS query_plan_lift_predicate_across_join = 1
+    </query>
+
+    <query>
+        SELECT sum(l.k)
+        FROM (SELECT * FROM lift_perf_orders WHERE k BETWEEN 100000 AND 100100) AS o
+        LEFT JOIN lift_perf_lineitem AS l ON o.k = l.k
+        SETTINGS query_plan_lift_predicate_across_join = 0
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS lift_perf_orders</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lift_perf_lineitem</drop_query>
+</test>
