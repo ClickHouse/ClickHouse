@@ -1071,6 +1071,17 @@ create table stacks engine File(TSV, 'report/stacks.$version.tsv') as
 done
 wait
 
+# Allocation profiles (MemorySample/JemallocSample) fold byte totals rather
+# than sample counts, so flamegraph.pl must label and color them as memory.
+function flamegraph_opts # trace_type
+{
+    case "$1" in
+        MemorySample | JemallocSample)
+            echo "--countname=bytes --color=mem"
+            ;;
+    esac
+}
+
 # Create per-query flamegraphs
 touch report/query-files.txt
 IFS=$'\n'
@@ -1079,7 +1090,8 @@ do
     for query in $(cut -d'	' -f1-4 "report/stacks.$version.tsv" | sort | uniq)
     do
         query_file=$(echo "$query" | cut -c-120 | sed 's/[/	]/_/g')
-        echo "$query_file" >> report/query-files.txt
+        trace_type=$(echo "$query" | cut -d'	' -f3)
+        printf '%s\t%s\n' "$query_file" "$trace_type" >> report/query-files.txt
 
         # Build separate .svg flamegraph for each query.
         # -F is somewhat unsafe because it might match not the beginning of the
@@ -1088,19 +1100,19 @@ do
             | cut -f 5- \
             | sed 's/\t/ /g' \
             | tee "report/tmp/$query_file.stacks.$version.tsv" \
-            | flamegraph.pl --hash > "$query_file.$version.svg" &
+            | flamegraph.pl --hash $(flamegraph_opts "$trace_type") > "$query_file.$version.svg" &
     done
 done
 wait
 unset IFS
 
 # Create differential flamegraphs.
-while IFS= read -r query_file
+while IFS=$'\t' read -r query_file trace_type
 do
     difffolded.pl "report/tmp/$query_file.stacks.left.tsv" \
             "report/tmp/$query_file.stacks.right.tsv" \
         | tee "report/tmp/$query_file.stacks.diff.tsv" \
-        | flamegraph.pl > "$query_file.diff.svg" &
+        | flamegraph.pl $(flamegraph_opts "$trace_type") > "$query_file.diff.svg" &
 done < report/query-files.txt
 wait
 
