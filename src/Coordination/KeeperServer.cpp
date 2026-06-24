@@ -1554,4 +1554,9 @@ void KeeperServer::recalculateStorageStats()
     state_machine->recalculateStorageStats();
 }
 
+std::vector<std::pair<std::string, Int32>> KeeperServer::getExpiredTTLPathsForGarbageCollector(size_t batch_size) const
+{
+    return state_machine->getExpiredTTLPathsForGarbageCollector(batch_size);
+}
+
 }
