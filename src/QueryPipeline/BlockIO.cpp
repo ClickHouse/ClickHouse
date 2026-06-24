@@ -60,7 +60,6 @@ BlockIO::~BlockIO()
 
 void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
 {
-    releaseWorkloadResources();
     if (finalize_query_pipeline)
     {
         /// Keep the same teardown order as in resetPipeline:
@@ -71,6 +70,10 @@ void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
     }
     else
         resetPipeline(/*cancel=*/false);
+
+    /// Release workload resources AFTER the pipeline is down
+    /// Pipeline threads hold raw pointers to `MemoryReservation`.
+    releaseWorkloadResources();
 }
 
 void BlockIO::onException(bool log_as_error)
