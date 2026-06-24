@@ -3,6 +3,7 @@
 #if USE_AWS_S3
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <Common/Throttler.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
 #include <IO/SharedThreadPools.h>
@@ -217,8 +218,9 @@ private:
 
     /// Serializes the S3 request settings effectively used by the backup. The HTTP-client-level values
     /// that makeS3Client overrides (retries, redirects, timeout, slow-thread/logging behavior) are
-    /// replaced with the authoritative values from the client configuration, and the seek threshold with
-    /// the read setting (remote_read_min_bytes_for_seek) actually used by ReadBufferFromS3.
+    /// replaced with the authoritative values from the client configuration; the throttle fields with the
+    /// resolved client throttlers (S3RequestSettings::finishInit derives bursts from rps); and the seek
+    /// threshold with the read setting (remote_read_min_bytes_for_seek) actually used by ReadBufferFromS3.
     std::map<String, String> serializeBackupS3RequestSettings(
         const S3::S3RequestSettings & request_settings, const S3::PocoHTTPClientConfiguration & client_config,
         const ReadSettings & read_settings)
@@ -234,6 +236,13 @@ private:
         res["slow_all_threads_after_retryable_error"] = client_config.s3_slow_all_threads_after_retryable_error ? "1" : "0";
         res["enable_request_logging"] = client_config.enable_s3_requests_logging ? "1" : "0";
         res["min_bytes_for_seek"] = std::to_string(read_settings.remote_fs_settings.min_bytes_for_seek);
+
+        const auto & get_throttler = client_config.request_throttler.get_throttler;
+        const auto & put_throttler = client_config.request_throttler.put_throttler;
+        res["max_get_rps"] = std::to_string(get_throttler ? get_throttler->getMaxSpeed() : 0UL);
+        res["max_get_burst"] = std::to_string(get_throttler ? get_throttler->getMaxBurst() : 0UL);
+        res["max_put_rps"] = std::to_string(put_throttler ? put_throttler->getMaxSpeed() : 0UL);
+        res["max_put_burst"] = std::to_string(put_throttler ? put_throttler->getMaxBurst() : 0UL);
 
         return res;
     }
