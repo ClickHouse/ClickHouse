@@ -1094,6 +1094,11 @@ do
         trace_type=$(echo "$query" | cut -d'	' -f3)
         printf '%s\t%s\n' "$query_file" "$trace_type" >> report/query-files.txt
 
+        # Allocation traces (MemorySample/JemallocSample) are sparse, so a query
+        # may have samples on only one side. difffolded.pl below still needs both
+        # inputs, so make the missing side an empty folded file.
+        touch "report/tmp/$query_file.stacks.left.tsv" "report/tmp/$query_file.stacks.right.tsv"
+
         # Build separate .svg flamegraph for each query.
         # -F is somewhat unsafe because it might match not the beginning of the
         # string, but this is unlikely and escaping the query for grep is a pain.
