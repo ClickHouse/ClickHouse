@@ -1037,6 +1037,19 @@ void TCPHandler::runImpl()
                 return;
             }
 
+            /// On a socket timeout or a network error the connection is effectively
+            /// dead, so graceful termination (send logs/exception, skip the rest)
+            /// must be skipped: writing to the same socket would block until another
+            /// timeout, and flushing bytes after a partially-written Data packet makes
+            /// the receiver read them as its continuation (CHECKSUM_DOESNT_MATCH).
+            /// cancelOut (not finalizeOut) so the buffered output is discarded, not flushed.
+            if (exception->code() == ErrorCodes::SOCKET_TIMEOUT || exception->code() == ErrorCodes::NETWORK_ERROR)
+            {
+                LOG_DEBUG(log, "Going to close connection without graceful termination due to exception: {}", exception->message());
+                query_state->cancelOut(out);
+                return;
+            }
+
             try
             {
                 std::lock_guard lock(*callback_mutex);
