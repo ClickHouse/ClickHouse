@@ -532,6 +532,24 @@ def main():
         )
 
         step(
+            name="Set up Docker buildx (multi-arch)",
+            command=[
+                # The legacy `release-maker` runner had QEMU/binfmt and a
+                # `docker-container` builder pre-provisioned out-of-band; the
+                # ephemeral `release-maker-asg` runners do not. Without an
+                # up-to-date QEMU the cross-built linux/amd64 layer cannot run
+                # the ClickHouse binary (it aborts on the missing SSSE3
+                # instruction set), so the package postinst and the build fail.
+                "docker run --privileged --rm tonistiigi/binfmt --install all",
+                "docker buildx inspect mybuilder >/dev/null 2>&1"
+                " || docker buildx create --name mybuilder --driver docker-container",
+                "docker buildx use mybuilder",
+                "docker buildx inspect --bootstrap",
+            ],
+            workdir=REPO_PATH,
+        )
+
+        step(
             name="Docker clickhouse/clickhouse-server Building",
             command=_make_docker_build(
                 image="clickhouse/clickhouse-server",
