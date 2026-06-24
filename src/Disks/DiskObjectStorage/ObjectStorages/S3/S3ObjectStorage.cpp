@@ -29,6 +29,7 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/diskSettings.h>
 
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
@@ -50,6 +51,11 @@ namespace CurrentMetrics
     extern const Metric ObjectStorageS3Threads;
     extern const Metric ObjectStorageS3ThreadsActive;
     extern const Metric ObjectStorageS3ThreadsScheduled;
+}
+
+namespace DB::FailPoints
+{
+    extern const char object_storage_force_refresh_callback_success[];
 }
 
 
@@ -719,6 +725,19 @@ std::shared_ptr<const S3::Client> S3ObjectStorage::getS3StorageClient()
 std::shared_ptr<const S3::Client> S3ObjectStorage::tryGetS3StorageClient()
 {
     return client.get();
+}
+
+bool S3ObjectStorage::tryRefreshCredentialsViaCallback()
+{
+    fiu_do_on(FailPoints::object_storage_force_refresh_callback_success, { return true; });
+
+    if (!credentials_refresh_callback)
+        return false;
+    auto new_client = credentials_refresh_callback();
+    if (!new_client)
+        return false;
+    client.set(std::move(new_client));
+    return true;
 }
 }
 

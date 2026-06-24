@@ -39,6 +39,8 @@
 
 #include <Common/JSONBuilder.h>
 #include <Core/Settings.h>
+#include <Interpreters/HypotheticalIndexStore.h>
+#include <Storages/MergeTree/WhatIfIndexEstimator.h>
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -875,7 +877,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "EXPLAIN TABLE OVERRIDE is not supported for the {}() table function", table_function->name);
             }
             auto storage = query_context->getQueryContext()->executeTableFunction(ast.getTableFunction());
-            StorageInMemoryMetadata metadata_snapshot = *storage->getInMemoryMetadataPtr(query_context, false);
+            auto metadata = storage->getInMemoryMetadataPtr(query_context, false);
+            const StorageInMemoryMetadata & metadata_snapshot = *metadata;
             TableOverrideAnalyzer::Result override_info;
             TableOverrideAnalyzer override_analyzer(ast.getTableOverride());
             override_analyzer.analyze(metadata_snapshot, override_info);
@@ -897,6 +900,16 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 writeCString("<no current transaction>", buf);
             }
 
+            break;
+        }
+        case ASTExplainQuery::WhatIf:
+        {
+            const auto & query_ast = ast.getExplainedQuery();
+            if (!dynamic_cast<const ASTSelectWithUnionQuery *>(query_ast.get()))
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN WHATIF query");
+
+            auto whatif_result = WhatIfIndexEstimator::run(query_ast, query_context, ast.getSettings());
+            whatif_result.format(buf);
             break;
         }
     }

@@ -290,6 +290,19 @@ def check_pylint():
     return out
 
 
+def check_ruff():
+    # Configuration lives under [tool.ruff] in pyproject.toml.
+    # --quiet suppresses the "All checks passed!" success message so the result
+    # framework (which treats a truthy return value as failure) sees an empty
+    # string on success.
+    res, out, err = Shell.get_res_stdout_stderr(
+        "ruff check --output-format=concise --quiet"
+    )
+    if err:
+        out += err
+    return out
+
+
 def _find_enclosing_function_lines(lines, catch_line_idx):
     """Return signature lines of the function enclosing the catch at *catch_line_idx*.
 
@@ -626,6 +639,15 @@ if __name__ == "__main__":
                 command=check_other,
             )
         )
+    testname = "ruff"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            Result.from_commands_run(
+                name=testname,
+                command=check_ruff,
+            )
+        )
+
     # testname = "mypy"
     # if testpattern.lower() in testname.lower():
     #     results.append(
