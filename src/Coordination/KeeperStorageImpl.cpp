@@ -1,6 +1,7 @@
 #include <Coordination/KeeperStorage.h>
 #include <Coordination/KeeperStorageImpl.h>
 #include <Coordination/KeeperMemNodesStorage.h>
+#include <Coordination/KeeperLSMTNodesStorage.h>
 #include <Coordination/KeeperStorage_fwd.h>
 
 #include <algorithm>
@@ -185,6 +186,14 @@ auto callOnConcreteRequestType(Coordination::ZooKeeperRequest & zk_request, F fu
     }
 }
 
+bool isRemoveNodeDelta(const KeeperDelta & delta)
+{
+    if (const auto * op = std::get_if<LSMTDelta>(&delta.operation))
+        return op->new_node.action == Coordination::Storage::NodeAction::Remove;
+    else
+        return std::holds_alternative<RemoveNodeDelta>(delta.operation);
+}
+
 bool takeNodeStatsFromUpdateDelta(std::string_view path, const KeeperStorage::DeltaRange & deltas, Coordination::Stat & out_stat)
 {
     for (auto it = deltas.end(); it != deltas.begin();)
@@ -196,6 +205,14 @@ bool takeNodeStatsFromUpdateDelta(std::string_view path, const KeeperStorage::De
         {
             update_delta->new_stats.setResponseStat(out_stat);
             return true;
+        }
+        if (const auto * lsmt_delta = std::get_if<LSMTDelta>(&it->operation))
+        {
+            if (lsmt_delta->new_node.action == Coordination::Storage::NodeAction::Update)
+            {
+                lsmt_delta->new_node.stats.setResponseStat(out_stat);
+                return true;
+            }
         }
     }
     return false;
@@ -398,26 +415,45 @@ static Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperC
         return response;
     }
 
+    /// Extract information from the Delta that creates the node.
+    bool found_delta = false;
     std::string created_path;
-    auto create_delta_it = std::find_if(
-        deltas.begin(),
-        deltas.end(),
-        [](const auto & delta)
-        { return std::holds_alternative<CreateNodeDelta>(delta.operation); });
-
-    if (create_delta_it != deltas.end())
+    Coordination::Stat * response_stat = nullptr;
+    if (response->getOpNum() == Coordination::OpNum::Create2 ||
+        response->getOpNum() == Coordination::OpNum::CreateTTL ||
+        response->getOpNum() == Coordination::OpNum::CreateContainer)
+        response_stat = &static_cast<Coordination::ZooKeeperCreate2Response &>(*response).zstat;
+    for (const KeeperDelta & delta : deltas)
     {
-        created_path = create_delta_it->path;
-        if (response->getOpNum() == Coordination::OpNum::Create2 ||
-            response->getOpNum() == Coordination::OpNum::CreateTTL ||
-            response->getOpNum() == Coordination::OpNum::CreateContainer)
-            std::get<CreateNodeDelta>(create_delta_it->operation).stat.setResponseStat(static_cast<Coordination::ZooKeeperCreate2Response &>(*response).zstat);
+        if (const auto * lsmt_op = std::get_if<LSMTDelta>(&delta.operation))
+        {
+            if (lsmt_op->new_node.action == Coordination::Storage::NodeAction::Create)
+            {
+                found_delta = true;
+                if (response_stat)
+                    lsmt_op->new_node.stats.setResponseStat(*response_stat);
+            }
+        }
+        else if (const auto * create_op = std::get_if<CreateNodeDelta>(&delta.operation))
+        {
+            found_delta = true;
+            if (response_stat)
+                create_op->stat.setResponseStat(*response_stat);
+        }
+        if (found_delta)
+        {
+            created_path = delta.path;
+            break;
+        }
     }
+
     if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
     {
         response->error = result;
         return response;
     }
+    if (!found_delta)
+        onStorageInconsistency("Unexpected deltas for Create request");
 
     response->path_created = std::move(created_path);
     response->error = Coordination::Error::ZOK;
@@ -481,7 +517,7 @@ static std::pair<KeeperResponsesForSessions, Int64> processWatches(
 {
     for (const auto & delta : deltas)
     {
-        if (std::holds_alternative<RemoveNodeDelta>(delta.operation))
+        if (isRemoveNodeDelta(delta))
             return storage.processWatchesImpl(zk_request.getPath(), Coordination::Event::DELETED);
     }
     return {};
@@ -626,7 +662,7 @@ static std::pair<KeeperResponsesForSessions, Int64> processWatches(
     Int64 total_removed_watches = 0;
     for (const auto & delta : deltas)
     {
-        if (std::holds_alternative<RemoveNodeDelta>(delta.operation))
+        if (isRemoveNodeDelta(delta))
         {
             auto [new_responses, removed_watches] = storage.processWatchesImpl(delta.path, Coordination::Event::DELETED);
             responses.insert(responses.end(), std::make_move_iterator(new_responses.begin()), std::make_move_iterator(new_responses.end()));
@@ -674,6 +710,11 @@ static Coordination::Error preprocess(
     bool visited_all = storage.nodes.visitUncommittedRecursive(zk_request.path, zk_request.remove_nodes_limit,
             [&](std::string_view path, typename Storage::UncommittedNodeRef && uncommitted_ref)
             {
+                /// Note: this might be called with storage_mutex locked, make sure to not try to
+                /// lock it again or we'll deadlock.
+                /// (If needed, we could change KeeperLSMTNodesStorage::visitUncommittedRecursive
+                ///  to defer these calls until after unlocking the mutex.)
+
                 if (check_acl && !storage.checkACL(uncommitted_ref.get()->stats.acl_id, Coordination::ACL::Delete, session_id, /*committed=*/false))
                 {
                     error = Coordination::Error::ZNOAUTH;
@@ -1885,7 +1926,7 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processRequest(
     {
         for (const auto & delta : deltas)
         {
-            if (std::holds_alternative<RemoveNodeDelta>(delta.operation))
+            if (isRemoveNodeDelta(delta))
             {
                 auto [responses, cnt_removed_watches] = processWatchesImpl(delta.path, Coordination::Event::DELETED);
                 total_watches_count -= cnt_removed_watches;
@@ -2302,5 +2343,6 @@ KeeperStorageImpl<NS>::~KeeperStorageImpl()
 }
 
 template class KeeperStorageImpl<KeeperMemNodesStorage>;
+template class KeeperStorageImpl<KeeperLSMTNodesStorage>;
 
 }
