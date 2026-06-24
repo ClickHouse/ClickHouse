@@ -13,6 +13,7 @@
 #include <IO/S3/deleteFileFromS3.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/Credentials.h>
+#include <IO/S3/getObjectInfo.h>
 #include <Disks/IDisk.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
@@ -58,6 +59,7 @@ namespace S3AuthSetting
 
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
+    extern const S3AuthSettingsString external_id;
     extern const S3AuthSettingsString http_client;
     extern const S3AuthSettingsString service_account;
     extern const S3AuthSettingsString metadata_service;
@@ -75,7 +77,6 @@ namespace S3RequestSetting
 
 namespace ErrorCodes
 {
-    extern const int S3_ERROR;
     extern const int LOGICAL_ERROR;
 }
 
@@ -117,6 +118,7 @@ private:
         const String & secret_access_key,
         String role_arn,
         String role_session_name,
+        String external_id,
         const S3Settings & settings,
         const ContextPtr & context)
     {
@@ -137,6 +139,7 @@ private:
         {
             role_arn = settings.auth_settings[S3AuthSetting::role_arn];
             role_session_name = settings.auth_settings[S3AuthSetting::role_session_name];
+            external_id = settings.auth_settings[S3AuthSetting::external_id];
         }
 
 
@@ -182,6 +185,8 @@ private:
             .is_s3express_bucket = S3::isS3ExpressEndpoint(s3_uri.endpoint),
         };
 
+        auto shared_cache = S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(s3_uri.endpoint, s3_uri.bucket);
+
         return S3::ClientFactory::instance().create(
             client_configuration,
             client_settings,
@@ -198,20 +203,16 @@ private:
                 settings.auth_settings[S3AuthSetting::no_sign_request],
                 std::move(role_arn),
                 std::move(role_session_name),
+                std::move(external_id),
                 /*sts_endpoint_override=*/""
-            });
+            },
+            /*session_token=*/"",
+            shared_cache);
     }
 
-    Aws::Vector<Aws::S3::Model::Object> listObjects(S3::Client & client, const S3::URI & s3_uri, const String & file_name)
+    String getS3BackupObjectKey(const S3::URI & s3_uri, const String & file_name)
     {
-        S3::ListObjectsRequest request;
-        request.SetBucket(s3_uri.bucket);
-        request.SetPrefix(fs::path{s3_uri.key} / file_name);
-        request.SetMaxKeys(1);
-        auto outcome = client.ListObjects(request);
-        if (!outcome.IsSuccess())
-            throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
-        return outcome.GetResult().GetContents();
+        return fs::path{s3_uri.key} / file_name;
     }
 }
 
@@ -247,6 +248,7 @@ BackupReaderS3::BackupReaderS3(
     const String & secret_access_key_,
     const String & role_arn,
     const String & role_session_name,
+    const String & external_id,
     bool allow_s3_native_copy,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
@@ -267,7 +269,7 @@ BackupReaderS3::BackupReaderS3(
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
 
-    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, s3_settings, context_);
+    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, s3_settings, context_);
 
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
         blob_storage_log = std::make_shared<BlobStorageLogWriter>(blob_storage_system_log);
@@ -277,15 +279,12 @@ BackupReaderS3::~BackupReaderS3() = default;
 
 bool BackupReaderS3::fileExists(const String & file_name)
 {
-    return !listObjects(*client, s3_uri, file_name).empty();
+    return S3::objectExists(*client, s3_uri.bucket, getS3BackupObjectKey(s3_uri, file_name), s3_uri.version_id);
 }
 
 UInt64 BackupReaderS3::getFileSize(const String & file_name)
 {
-    auto objects = listObjects(*client, s3_uri, file_name);
-    if (objects.empty())
-        throw Exception(ErrorCodes::S3_ERROR, "Object {} must exist", file_name);
-    return objects[0].GetSize();
+    return S3::getObjectSize(*client, s3_uri.bucket, getS3BackupObjectKey(s3_uri, file_name), s3_uri.version_id);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFile(const String & file_name)
@@ -345,6 +344,7 @@ BackupWriterS3::BackupWriterS3(
     const String & secret_access_key_,
     const String & role_arn,
     const String & role_session_name,
+    const String & external_id,
     bool allow_s3_native_copy,
     const String & storage_class_name,
     const ReadSettings & read_settings_,
@@ -369,7 +369,7 @@ BackupWriterS3::BackupWriterS3(
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
     s3_settings.request_settings[S3RequestSetting::storage_class_name] = storage_class_name;
 
-    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, s3_settings, context_);
+    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, s3_settings, context_);
 
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
     {
@@ -459,15 +459,12 @@ BackupWriterS3::~BackupWriterS3() = default;
 
 bool BackupWriterS3::fileExists(const String & file_name)
 {
-    return !listObjects(*client, s3_uri, file_name).empty();
+    return S3::objectExists(*client, s3_uri.bucket, getS3BackupObjectKey(s3_uri, file_name), s3_uri.version_id);
 }
 
 UInt64 BackupWriterS3::getFileSize(const String & file_name)
 {
-    auto objects = listObjects(*client, s3_uri, file_name);
-    if (objects.empty())
-        throw Exception(ErrorCodes::S3_ERROR, "Object {} must exist", file_name);
-    return objects[0].GetSize();
+    return S3::getObjectSize(*client, s3_uri.bucket, getS3BackupObjectKey(s3_uri, file_name), s3_uri.version_id);
 }
 
 std::unique_ptr<ReadBuffer> BackupWriterS3::readFile(const String & file_name, size_t expected_file_size)
