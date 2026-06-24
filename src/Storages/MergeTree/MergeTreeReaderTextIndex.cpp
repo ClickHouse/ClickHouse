@@ -766,8 +766,10 @@ void MergeTreeReaderTextIndex::fillColumnFallback(
     /// After execution the block contains both the physical columns and the computed virtual column.
     it->second->execute(slice);
 
+    /// The predicate result can be sparse/const (inputs may be sparse), so make it full before the dense cast.
     const auto & result_col = slice.getByName(column_name);
-    const auto & result_data = assert_cast<const ColumnUInt8 &>(*result_col.column).getData();
+    auto result_full = result_col.column->convertToFullIfNeeded();
+    const auto & result_data = assert_cast<const ColumnUInt8 &>(*result_full).getData();
     chassert(result_data.size() == num_rows);
 
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
