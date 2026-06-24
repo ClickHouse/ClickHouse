@@ -1826,7 +1826,10 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
         /// Only a JOIN USING key can change a matched column's type here; `join_use_nulls`
         /// nullability for the matcher is applied later in resolveMatcher. With no USING join in
         /// scope there is nothing to correct, so skip the per-column identifier resolution.
-        if (scope.using_joins_count == 0)
+        /// The count lives on the query scope whose join tree is inspected above, not on the
+        /// current scope: a matcher in a lambda body (`arrayMap(x -> t.*, ...)`) resolves through
+        /// a fresh child scope whose counter is zero, but still expands `t.*` from the parent query.
+        if (nearest_query_scope->using_joins_count == 0)
             return;
 
         for (auto & [matched_column_node, _] : result_matched_column_nodes_with_names)

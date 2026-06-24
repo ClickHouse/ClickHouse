@@ -219,6 +219,37 @@ SETTINGS join_use_nulls = 0;
 DROP TABLE nt1;
 DROP TABLE nt2;
 
+-- A qualified matcher inside a lambda body (`arrayMap(x -> t.*, ...)`) resolves through a fresh
+-- child scope, but still expands `t.*` from the parent query's join tree. The USING-join presence
+-- check must look at that parent query scope, not the lambda's (whose counter is zero); otherwise
+-- the matcher keeps the table (non-Nullable) type while the explicit reference is Nullable, and an
+-- aggregate over it aborts with the same Bad cast.
+DROP TABLE IF EXISTS lt2;
+DROP TABLE IF EXISTS lt1_nullable;
+DROP TABLE IF EXISTS lt3_nullable;
+CREATE TABLE lt2 (id UInt64, value String) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE lt1_nullable (id Nullable(UInt64), value String) ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_nullable_key = 1;
+CREATE TABLE lt3_nullable (id Nullable(UInt64), value String) ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_nullable_key = 1;
+INSERT INTO lt2 VALUES (0, 'd'), (1, 'e'), (3, 'f');
+INSERT INTO lt1_nullable VALUES (0, 'a'), (1, 'b'), (2, 'c');
+INSERT INTO lt3_nullable VALUES (0, 'g'), (2, 'h'), (4, 'i');
+
+SELECT toTypeName(arrayMap(x -> sipHash64(t2.*), [1])) = toTypeName(arrayMap(x -> sipHash64(t2.id, t2.value), [1]))
+FROM lt1_nullable LEFT JOIN lt2 AS t2 USING (id) RIGHT JOIN lt3_nullable USING (id)
+LIMIT 1
+SETTINGS join_use_nulls = 0;
+
+SELECT count() FROM
+(
+    SELECT anyHeavyOrNull(arrayMap(x -> sipHash64(t2.*), [1]))
+    FROM lt1_nullable LEFT JOIN lt2 AS t2 USING (id) GLOBAL RIGHT JOIN lt3_nullable USING (id)
+)
+SETTINGS join_use_nulls = 0;
+
+DROP TABLE lt2;
+DROP TABLE lt1_nullable;
+DROP TABLE lt3_nullable;
+
 DROP TABLE t_jn1;
 DROP TABLE t_jn2;
 DROP TABLE t_jn3;
