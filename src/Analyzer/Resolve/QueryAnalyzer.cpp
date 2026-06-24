@@ -1859,9 +1859,22 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
 /// But in planner we do not distinguish such cases.
 void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
     QueryTreeNodesWithNames & result_matched_column_nodes_with_names,
-    IdentifierResolveScope & scope,
-    bool qualifier_pins_case_sensitive)
+    bool is_qualified_matcher,
+    const Identifier & matched_qualified_identifier,
+    const std::vector<IdentifierQuoteStyle> & qualifier_quote_styles,
+    IdentifierResolveScope & scope)
 {
+    /// A double-quoted qualifier (e.g. `"T".*`) pins the matched columns to their canonical case
+    /// in `standard` mode, so the USING-side comparison must stay exact; otherwise we would
+    /// re-resolve the matcher against a differently-cased USING key.
+    bool qualifier_pins_case_sensitive = false;
+    for (auto style : qualifier_quote_styles)
+        if (style == IdentifierQuoteStyle::DoubleQuote)
+        {
+            qualifier_pins_case_sensitive = true;
+            break;
+        }
+
     auto * nearest_query_scope = scope.getNearestQueryScope();
     auto * nearest_query_scope_query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
 
@@ -1921,12 +1934,40 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
                     }
                 }
 
+                auto using_column_type = join_using_column_node.getResultType();
+
+                /// Qualified matcher: the matched column is `t.col`, NOT the merged USING key.
+                /// Resolve the explicit identifier `t.col` and adopt its type, exactly matching
+                /// how an explicit reference is typed. The merged key's type is wrong here: in a
+                /// nested JOIN it reflects the OUTER join's siblings, while `t.col` only follows
+                /// the joins `t` participates in. Without this, an aggregate over the qualified
+                /// matcher can segfault (Bad cast Nullable mismatch) — see 04329.
+                if (is_qualified_matcher)
+                {
+                    Identifier explicit_identifier = matched_qualified_identifier;
+                    explicit_identifier.push_back(matched_column_name);
+                    auto explicit_lookup = IdentifierLookup{explicit_identifier, IdentifierLookupContext::EXPRESSION};
+                    /// Propagate per-part quote info from the matcher's qualifier (and append a
+                    /// trailing `false` for the matched column suffix — that part wasn't user-typed,
+                    /// so it carries no quote).
+                    explicit_lookup.is_part_double_quoted.reserve(qualifier_quote_styles.size() + 1);
+                    for (auto style : qualifier_quote_styles)
+                        explicit_lookup.is_part_double_quoted.push_back(style == IdentifierQuoteStyle::DoubleQuote);
+                    explicit_lookup.is_part_double_quoted.push_back(false);
+                    IdentifierResolveContext explicit_resolve_settings;
+                    explicit_resolve_settings.allow_to_check_cte = false;
+                    explicit_resolve_settings.allow_to_check_database_catalog = false;
+                    auto explicit_resolve_result = tryResolveIdentifier(explicit_lookup, scope, explicit_resolve_settings);
+                    if (explicit_resolve_result.resolved_identifier)
+                        using_column_type = explicit_resolve_result.resolved_identifier->getResultType();
+                }
+
                 auto it = node_to_projection_name.find(matched_column_node);
                 matched_column_node = matched_column_node->clone();
                 if (it != node_to_projection_name.end())
                     node_to_projection_name.emplace(matched_column_node, it->second);
 
-                matched_column_node->as<ColumnNode &>().setColumnType(join_using_column_node.getResultType());
+                matched_column_node->as<ColumnNode &>().setColumnType(using_column_type);
                 correctColumnExpressionType(matched_column_node->as<ColumnNode &>(), scope.context);
                 if (!matched_column_node->isEqual(*join_using_column_nodes.at(0)))
                     scope.join_columns_with_changed_types[matched_column_node] = join_using_column_nodes.at(0);
@@ -2102,17 +2143,14 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
         matched_columns,
         scope);
 
-    /// A double-quoted qualifier part (`"T".*`) pins the matched columns to their canonical case so
-    /// the USING-side type adjustment can't re-resolve them case-insensitively. Backticks behave
-    /// like unquoted here (not preserved by the formatter, so semantically case-insensitive).
-    bool matcher_qualifier_pins_case_sensitive = false;
-    for (auto style : qualifier_quote_styles)
-        if (style == IdentifierQuoteStyle::DoubleQuote)
-        {
-            matcher_qualifier_pins_case_sensitive = true;
-            break;
-        }
-    updateMatchedColumnsFromJoinUsing(result_matched_column_nodes_with_names, scope, matcher_qualifier_pins_case_sensitive);
+    /// Pass the qualified matcher info so the helper can resolve `t.col` for type adjustment, and
+    /// propagate the per-part quote info so `"T".*` stays case-sensitive in `standard` mode.
+    updateMatchedColumnsFromJoinUsing(
+        result_matched_column_nodes_with_names,
+        /*is_qualified_matcher=*/ true,
+        matcher_node_typed.getQualifiedIdentifier(),
+        qualifier_quote_styles,
+        scope);
 
     return result_matched_column_nodes_with_names;
 }
@@ -2380,7 +2418,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             table_expression_columns,
             scope);
 
-        updateMatchedColumnsFromJoinUsing(matched_column_nodes_with_names, scope);
+        updateMatchedColumnsFromJoinUsing(matched_column_nodes_with_names, /*is_qualified_matcher=*/ false, {}, {}, scope);
 
         table_expressions_column_nodes_with_names_stack.push_back(std::move(matched_column_nodes_with_names));
     }

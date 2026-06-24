@@ -231,13 +231,18 @@ private:
         const NamesAndTypes & matched_columns,
         IdentifierResolveScope & scope);
 
-    /// `qualifier_pins_case_sensitive` is true when the matcher carries a double-quoted qualifier
-    /// part (e.g. `"T".*`) in `standard` mode — under that case the matcher-side column name must
-    /// stay exact and the case-insensitive comparison with USING keys is disabled.
+    /// For a qualified matcher `t.*`, the matched column is `t.col` — its type must equal what the
+    /// explicit reference `t.col` resolves to, not the merged USING-key type (in a nested JOIN the
+    /// merged type can reflect the outer JOIN's other side, while `t.col` only follows the joins
+    /// `t` participates in). `matched_qualified_identifier`/`qualifier_quote_styles` describe the
+    /// matcher's qualifier so the synthetic `explicit_identifier` lookup keeps the user's
+    /// case-sensitivity (`"T".*` stays exact even in `standard` mode).
     void updateMatchedColumnsFromJoinUsing(
         QueryTreeNodesWithNames & result_matched_column_nodes_with_names,
-        IdentifierResolveScope & scope,
-        bool qualifier_pins_case_sensitive = false);
+        bool is_qualified_matcher,
+        const Identifier & matched_qualified_identifier,
+        const std::vector<IdentifierQuoteStyle> & qualifier_quote_styles,
+        IdentifierResolveScope & scope);
 
     QueryTreeNodesWithNames resolveQualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 
