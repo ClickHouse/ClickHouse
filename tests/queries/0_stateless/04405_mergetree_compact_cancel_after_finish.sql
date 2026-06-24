@@ -18,12 +18,12 @@ DROP TABLE IF EXISTS t_compact_cancel_r1 SYNC;
 DROP TABLE IF EXISTS t_compact_cancel_r2 SYNC;
 
 CREATE TABLE t_compact_cancel_r1 (a UInt64, b String)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/05020_cancel_after_finish', 'r1')
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04405_cancel_after_finish', 'r1')
 ORDER BY a
 SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;  -- force a compact part
 
 CREATE TABLE t_compact_cancel_r2 (a UInt64, b String)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/05020_cancel_after_finish', 'r2')
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04405_cancel_after_finish', 'r2')
 ORDER BY a
 SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
 
