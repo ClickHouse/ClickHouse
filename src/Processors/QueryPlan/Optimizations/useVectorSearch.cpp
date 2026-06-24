@@ -362,6 +362,16 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
     bool apply_row_filter_for_rescoring = settings.vector_search_with_rescoring;
     if (optimize_plan)
     {
+        /// If `_distance` is already requested explicitly, do not rewrite the
+        /// read step by adding `_distance` again. Keep the original distance
+        /// expression and let the reader populate the explicitly requested
+        /// virtual column from vector-search hints.
+        if (read_from_mergetree_step->isVectorColumnReplaced())
+            optimize_plan = false;
+    }
+
+    if (optimize_plan)
+    {
         auto search_column = vector_search_parameters.value().column;
         for (const auto & output : expression.getOutputs())
         {

@@ -7714,6 +7714,7 @@ If ClickHouse performs rescoring for queries that use the vector similarity inde
 Without rescoring, the vector similarity index returns the rows containing the best matches directly.
 With rescoring, the vector similarity index fetches candidate rows and ClickHouse computes the exact distance
 for these rows from the original full-precision vectors in the regular SQL pipeline.
+When possible, ClickHouse applies an exact row-position filter before the final distance computation.
 Increase `vector_search_index_fetch_multiplier` if more candidate rows are needed for better recall, especially
 with additional filters or quantized vector indexes.
 Note: A query run without rescoring and with parallel replicas enabled may fall back to rescoring.
