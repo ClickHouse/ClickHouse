@@ -38,21 +38,52 @@ ExpressionTransform × 16
                                                                     FillingRightJoinSide
                                                                       SimpleSquashingTransform
                                                                         Resize 1 → 16
-                                                                          JoiningTransform × 16 2 → 1
-                                                                            Resize 1 → 16
-                                                                              (Expression)
-                                                                              ExpressionTransform
-                                                                                (Expression)
-                                                                                ExpressionTransform
-                                                                                  (Limit)
-                                                                                  Limit
-                                                                                    (ReadFromSystemNumbers)
-                                                                                    NumbersRange 0 → 1
-                                                                              (Expression)
-                                                                              ExpressionTransform
-                                                                                (Expression)
-                                                                                ExpressionTransform
-                                                                                  (Limit)
-                                                                                  Limit
-                                                                                    (ReadFromSystemNumbers)
-                                                                                    NumbersRange 0 → 1
+                                                                          JoiningTransform 2 → 1
+                                                                            SimpleSquashingTransform
+                                                                              JoiningTransform 2 → 1
+                                                                                SimpleSquashingTransform
+                                                                                  JoiningTransform 2 → 1
+                                                                                    SimpleSquashingTransform
+                                                                                      JoiningTransform 2 → 1
+                                                                                        SimpleSquashingTransform
+                                                                                          JoiningTransform 2 → 1
+                                                                                            SimpleSquashingTransform
+                                                                                              JoiningTransform 2 → 1
+                                                                                                SimpleSquashingTransform
+                                                                                                  JoiningTransform 2 → 1
+                                                                                                    SimpleSquashingTransform
+                                                                                                      JoiningTransform 2 → 1
+                                                                                                        SimpleSquashingTransform
+                                                                                                          JoiningTransform 2 → 1
+                                                                                                            SimpleSquashingTransform
+                                                                                                              JoiningTransform 2 → 1
+                                                                                                                SimpleSquashingTransform
+                                                                                                                  JoiningTransform 2 → 1
+                                                                                                                    SimpleSquashingTransform
+                                                                                                                      JoiningTransform 2 → 1
+                                                                                                                        SimpleSquashingTransform
+                                                                                                                          JoiningTransform 2 → 1
+                                                                                                                            SimpleSquashingTransform
+                                                                                                                              JoiningTransform 2 → 1
+                                                                                                                                SimpleSquashingTransform
+                                                                                                                                  JoiningTransform 2 → 1
+                                                                                                                                    SimpleSquashingTransform
+                                                                                                                                      JoiningTransform 2 → 1
+                                                                                                                                        SimpleSquashingTransform
+                                                                                                                                          Resize 1 → 16
+                                                                                                                                            (Expression)
+                                                                                                                                            ExpressionTransform
+                                                                                                                                              (Expression)
+                                                                                                                                              ExpressionTransform
+                                                                                                                                                (Limit)
+                                                                                                                                                Limit
+                                                                                                                                                  (ReadFromSystemNumbers)
+                                                                                                                                                  NumbersRange 0 → 1
+                                                                                                                                            (Expression)
+                                                                                                                                            ExpressionTransform
+                                                                                                                                              (Expression)
+                                                                                                                                              ExpressionTransform
+                                                                                                                                                (Limit)
+                                                                                                                                                Limit
+                                                                                                                                                  (ReadFromSystemNumbers)
+                                                                                                                                                  NumbersRange 0 → 1
