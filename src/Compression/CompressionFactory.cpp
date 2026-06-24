@@ -138,9 +138,9 @@ void CompressionCodecFactory::fillCodecDescriptions(MutableColumns & res_columns
     );
 }
 
-std::vector<std::pair<String, Documentation>> CompressionCodecFactory::getCodecDocumentations() const
+VectorWithMemoryTracking<std::pair<String, Documentation>> CompressionCodecFactory::getCodecDocumentations() const
 {
-    std::vector<std::pair<String, Documentation>> result;
+    VectorWithMemoryTracking<std::pair<String, Documentation>> result;
     result.reserve(family_name_with_codec.size());
     for (const auto & [name, creator] : family_name_with_codec)
     {
