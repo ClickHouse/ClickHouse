@@ -53,13 +53,29 @@ public:
     void requestRefreshOnce() { refresh_epoch.fetch_add(1); }
 
     /// Run a cycle now? True if not blocked, or a REFRESH is pending. Consumes exactly one pending REFRESH
-    /// per call (per-worker `last_seen_refresh_epoch`).
+    /// per call (per-worker `last_seen_refresh_epoch`). This overload assumes `last_seen_refresh_epoch` is
+    /// owned by a single worker thread.
     bool claimCycle(UInt64 & last_seen_refresh_epoch)
     {
         if (last_seen_refresh_epoch != refresh_epoch.load())
         {
             ++last_seen_refresh_epoch;
             return true;
+        }
+        return !isBlocked();
+    }
+
+    /// Run a cycle now? True if not blocked, or a REFRESH is pending. Consumes exactly one pending REFRESH
+    /// per call (per-worker `last_seen_refresh_epoch`). This overload assumes `last_seen_refresh_epoch` is
+    /// shared by tasks that may call this concurrently.
+    bool claimCycle(std::atomic<UInt64> & last_seen_refresh_epoch)
+    {
+        UInt64 seen = last_seen_refresh_epoch.load();
+        while (seen != refresh_epoch.load())
+        {
+            if (last_seen_refresh_epoch.compare_exchange_weak(seen, seen + 1))
+                return true;
+            /// CAS failed: another caller advanced the counter and `seen` now holds its value; re-check.
         }
         return !isBlocked();
     }
