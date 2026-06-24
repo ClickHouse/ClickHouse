@@ -150,6 +150,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
     std::unordered_set<Type> queries_with_on_cluster_at_end = {
         Type::CLEAR_FILESYSTEM_CACHE,
+        Type::CLEAR_DISTRIBUTED_CACHE,
         Type::SYNC_FILESYSTEM_CACHE,
         Type::CLEAR_QUERY_CACHE,
     };
@@ -361,7 +362,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             if (distributed_cache_drop_connections)
                 print_keyword(" CONNECTIONS");
             else if (!distributed_cache_server_id.empty())
-                ostr << " " << distributed_cache_server_id;
+                ostr << " " << quoteString(distributed_cache_server_id);
             break;
         }
         case Type::CLEAR_QUERY_CACHE:
@@ -549,13 +550,8 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                     break;
             }
 
-            bool whitespace = false;
-            for (const auto & param : instrumentation_parameters)
+            for (const auto & arg : instrumentation_arguments)
             {
-                if (!whitespace)
-                    ostr << ' ';
-                else
-                    whitespace = true;
                 std::visit([&](const auto & value)
                 {
                     using T = std::decay_t<decltype(value)>;
@@ -563,7 +559,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                         ostr << ' ' << quoteString(value);
                     else
                         ostr << ' ' << value;
-                }, param);
+                }, arg);
             }
             break;
         }
@@ -616,7 +612,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::JEMALLOC_DISABLE_PROFILE:
         case Type::SYNC_TRANSACTION_LOG:
         case Type::SYNC_FILE_CACHE:
-        case Type::SYNC_FILESYSTEM_CACHE:
         case Type::REPLICA_READY:   /// Obsolete
         case Type::REPLICA_UNREADY: /// Obsolete
         case Type::RELOAD_DICTIONARIES:
@@ -638,6 +633,12 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::FREE_MEMORY:
         case Type::RESET_DDL_WORKER:
             break;
+        case Type::SYNC_FILESYSTEM_CACHE:
+        {
+            if (!filesystem_cache_name.empty())
+                ostr << ' ' << quoteString(filesystem_cache_name);
+            break;
+        }
         case Type::UNKNOWN:
         case Type::END:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown SYSTEM command");

@@ -49,6 +49,7 @@ workflow = Workflow.Config(
         JobConfigs.style_check,
         JobConfigs.code_review,
         JobConfigs.docs_job,
+        JobConfigs.docs_job_mintlify,
         JobConfigs.fast_test,
         JobConfigs.ci_tests,
         *JobConfigs.darwin_fast_test_jobs,
@@ -71,7 +72,6 @@ workflow = Workflow.Config(
             for job in JobConfigs.special_build_jobs
         ],
         *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_llvm_coverage_job],
-        JobConfigs.smoke_tests_macos,
         # TODO: stabilize new jobs and remove set_allow_failure
         JobConfigs.lightweight_functional_tests_job,
         *[j.set_allow_failure() for j in JobConfigs.stateless_tests_targeted_pr_jobs],
@@ -138,15 +138,15 @@ workflow = Workflow.Config(
             job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.buzz_fuzzer_jobs
         ],
-        JobConfigs.libfuzzer_job.set_run_after(
-            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
-        ).set_allow_failure(),
         *[
             job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.performance_comparison_with_master_head_jobs
         ],
         JobConfigs.llvm_coverage_job,
         JobConfigs.sqllogic_test_master_job.set_run_after(
+            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+        ),
+        JobConfigs.sqlstorm_test_job.set_run_after(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
         # Keeper stress (PR): 3 no-fault scenarios (prod-mix, read-multi, write-multi),
@@ -205,6 +205,7 @@ workflow = Workflow.Config(
         "build_debug": "Build (amd_debug)",
         "build": "Build (amd_binary)",
     },
+    runs_on_label_prefix="pr-",
 )
 
 WORKFLOWS = [

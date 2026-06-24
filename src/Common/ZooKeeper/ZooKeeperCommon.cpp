@@ -215,6 +215,17 @@ std::string ZooKeeperAuthRequest::toStringImpl(bool /*short_format*/) const
         scheme);
 }
 
+enum class CreateMode
+{
+    PERSISTENT = 0,
+    EPHEMERAL = 1,
+    PERSISTENT_SEQUENTIAL = 2,
+    EPHEMERAL_SEQUENTIAL = 3,
+    CONTAINER = 4,
+    PERSISTENT_WITH_TTL = 5,
+    PERSISTENT_SEQUENTIAL_WITH_TTL = 6
+};
+
 void ZooKeeperCreateRequest::writeImpl(WriteBuffer & out) const
 {
     /// See https://github.com/ClickHouse/clickhouse-private/issues/3029
@@ -227,20 +238,34 @@ void ZooKeeperCreateRequest::writeImpl(WriteBuffer & out) const
     Coordination::write(data, out);
     Coordination::write(acls, out);
 
-    int32_t flags = 0;
+    CreateMode flags = CreateMode::PERSISTENT;
+    if (include_ttl)
+    {
+        chassert(!is_ephemeral);
+        flags = is_sequential ? CreateMode::PERSISTENT_SEQUENTIAL_WITH_TTL : CreateMode::PERSISTENT_WITH_TTL;
+    }
+    else if (is_ephemeral && is_sequential)
+        flags = CreateMode::EPHEMERAL_SEQUENTIAL;
+    else if (is_ephemeral)
+        flags = CreateMode::EPHEMERAL;
+    else if (is_sequential)
+        flags = CreateMode::PERSISTENT_SEQUENTIAL;
+    else
+        flags = CreateMode::PERSISTENT;
 
-    if (is_ephemeral)
-        flags |= 1;
-    if (is_sequential)
-        flags |= 2;
+    Coordination::write(static_cast<Int32>(flags), out);
 
-    Coordination::write(flags, out);
+    if (include_ttl)
+        Coordination::write(ttl, out);
 }
 
 size_t ZooKeeperCreateRequest::sizeImpl() const
 {
     int32_t flags = 0;
-    return Coordination::size(path) + Coordination::size(data) + Coordination::size(acls) + Coordination::size(flags);
+    auto size = Coordination::size(path) + Coordination::size(data) + Coordination::size(acls) + Coordination::size(flags);
+    if (include_ttl)
+        size += Coordination::size(ttl);
+    return size;
 }
 
 void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
@@ -249,13 +274,64 @@ void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
     Coordination::read(data, in);
     Coordination::read(acls, in);
 
-    int32_t flags = 0;
-    Coordination::read(flags, in);
+    int32_t flags_read = 0;
+    Coordination::read(flags_read, in);
 
-    if (flags & 1)
-        is_ephemeral = true;
-    if (flags & 2)
-        is_sequential = true;
+    /// include_stats / include_ttl may already be set from the opnum (Create2 / CreateTTL).
+    /// We must not lose include_stats when reclassifying, and we must reject combinations
+    /// that disagree with the wire create-mode (e.g. Create2 carrying a TTL flag would
+    /// otherwise pass feature-gating as Create2 yet create a TTL node here).
+    const bool from_create_ttl_opnum = include_ttl;
+    is_ephemeral = false;
+    is_sequential = false;
+    include_ttl = false;
+
+    /// org.apache.zookeeper.CreateMode.fromFlag — reject unknown flags rather than
+    /// silently treating them as PERSISTENT.
+    if (flags_read < static_cast<int32_t>(CreateMode::PERSISTENT)
+        || flags_read > static_cast<int32_t>(CreateMode::PERSISTENT_SEQUENTIAL_WITH_TTL))
+        throw Coordination::Exception(Coordination::Error::ZBADARGUMENTS,
+            "Unknown create mode flag {}", flags_read);
+
+    auto flags = static_cast<CreateMode>(flags_read);
+    switch (flags)
+    {
+        case CreateMode::PERSISTENT:
+            break;
+        case CreateMode::EPHEMERAL:
+            is_ephemeral = true;
+            break;
+        case CreateMode::PERSISTENT_SEQUENTIAL:
+            is_sequential = true;
+            break;
+        case CreateMode::EPHEMERAL_SEQUENTIAL:
+            is_ephemeral = true;
+            is_sequential = true;
+            break;
+        case CreateMode::CONTAINER:
+            throw Coordination::Exception(Coordination::Error::ZBADARGUMENTS,
+                "Container nodes are not supported");
+        case CreateMode::PERSISTENT_WITH_TTL:
+            include_ttl = true;
+            break;
+        case CreateMode::PERSISTENT_SEQUENTIAL_WITH_TTL:
+            include_ttl = true;
+            is_sequential = true;
+            break;
+    }
+
+    /// Opnum says TTL but create-mode flag says otherwise, or vice versa. Refuse both.
+    if (from_create_ttl_opnum != include_ttl)
+        throw Coordination::Exception(Coordination::Error::ZBADARGUMENTS,
+            "CreateTTL opnum and create-mode flag disagree on TTL");
+
+    /// Create2 sets include_stats; that must not coexist with a TTL create mode.
+    if (include_stats && include_ttl)
+        throw Coordination::Exception(Coordination::Error::ZBADARGUMENTS,
+            "Create2 must not carry a TTL create-mode flag");
+
+    if (include_ttl)
+        Coordination::read(ttl, in);
 }
 
 std::string ZooKeeperCreateRequest::toStringImpl(bool /*short_format*/) const
@@ -696,7 +772,7 @@ void ZooKeeperCheckWatchRequest::readImpl(ReadBuffer & in)
 {
     Coordination::read(path, in);
 
-    int32_t type_representation;
+    int32_t type_representation = 0;
     Coordination::read(type_representation, in);
     type = static_cast<CheckWatchType>(type_representation);
 }
@@ -740,7 +816,7 @@ size_t ZooKeeperCheckWatchResponse::sizeImpl() const
 void ZooKeeperRemoveWatchRequest::readImpl(ReadBuffer & in)
 {
     Coordination::read(path, in);
-    int32_t type_representation;
+    int32_t type_representation = 0;
     Coordination::read(type_representation, in);
     type = static_cast<WatchType>(type_representation);
 }
@@ -784,7 +860,7 @@ size_t ZooKeeperRemoveWatchResponse::sizeImpl() const
 void ZooKeeperAddWatchRequest::readImpl(ReadBuffer & in)
 {
     Coordination::read(path, in);
-    int32_t mode_representation;
+    int32_t mode_representation = 0;
     Coordination::read(mode_representation, in);
     mode = static_cast<AddWatchMode>(mode_representation);
 }
@@ -814,7 +890,7 @@ ZooKeeperResponsePtr ZooKeeperAddWatchRequest::makeResponse() const
 
 void ZooKeeperAddWatchResponse::readImpl(ReadBuffer & in)
 {
-    int32_t err;
+    int32_t err = 0;
     Coordination::read(err, in);
 }
 
@@ -1000,7 +1076,7 @@ std::string ZooKeeperCheckRequest::toStringImpl(bool /*short_format*/) const
 
 void ZooKeeperErrorResponse::readImpl(ReadBuffer & in)
 {
-    Coordination::Error read_error;
+    Coordination::Error read_error = {};
     Coordination::read(read_error, in);
 
     if (read_error != error)
@@ -1155,9 +1231,9 @@ void ZooKeeperMultiRequest::readImpl(ReadBuffer & in, RequestValidator request_v
 {
     while (true)
     {
-        OpNum op_num;
-        bool done;
-        int32_t error;
+        OpNum op_num = {};
+        bool done = false;
+        int32_t error = 0;
         Coordination::read(op_num, in);
         Coordination::read(done, in);
         Coordination::read(error, in);
@@ -1210,9 +1286,9 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
 {
     for (auto & response : responses)
     {
-        OpNum op_num;
-        bool done;
-        Error op_error;
+        OpNum op_num = {};
+        bool done = false;
+        Error op_error = {};
 
         Coordination::read(op_num, in);
         Coordination::read(done, in);
@@ -1246,9 +1322,9 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
 
     /// Footer.
     {
-        OpNum op_num;
-        bool done;
-        int32_t error_read;
+        OpNum op_num = {};
+        bool done = false;
+        int32_t error_read = 0;
 
         Coordination::read(op_num, in);
         Coordination::read(done, in);
@@ -1351,6 +1427,8 @@ ZooKeeperResponsePtr ZooKeeperRemoveRequest::makeResponse() const
 
 ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const
 {
+    if (include_ttl)
+        return std::make_shared<ZooKeeperCreateTTLResponse>();
     if (include_stats)
         return std::make_shared<ZooKeeperCreate2Response>();
     if (not_exists)
@@ -1481,7 +1559,7 @@ void ZooKeeperMultiRequest::createLogElements(LogElements & elems) const
     for (const auto & request : requests)
     {
         auto & req = dynamic_cast<ZooKeeperRequest &>(*request);
-        assert(!req.xid || req.xid == xid);
+        chassert(!req.xid || req.xid == xid);
         req.createLogElements(elems);
     }
 }
@@ -1490,7 +1568,7 @@ void ZooKeeperMultiRequest::createLogElements(LogElements & elems) const
 void ZooKeeperResponse::fillLogElements(LogElements & elems, size_t idx) const
 {
     auto & elem =  elems[idx];
-    assert(!elem.xid || elem.xid == xid);
+    chassert(!elem.xid || elem.xid == xid);
     elem.xid = xid;
     int32_t response_op = tryGetOpNum();
 
@@ -1498,7 +1576,7 @@ void ZooKeeperResponse::fillLogElements(LogElements & elems, size_t idx) const
         && response_op == static_cast<int32_t>(Coordination::OpNum::List))
         || (elem.op_num == static_cast<int32_t>(Coordination::OpNum::FilteredListWithStatsAndData)
         && response_op == static_cast<int32_t>(Coordination::OpNum::FilteredListWithStatsAndData));
-    assert(!elem.op_num || elem.op_num == response_op || is_filtered_list || response_op < 0);
+    chassert(!elem.op_num || elem.op_num == response_op || is_filtered_list || response_op < 0);
     elem.op_num = response_op;
 
     elem.zxid = zxid;
@@ -1606,14 +1684,14 @@ ZooKeeperResponsePtr ZooKeeperListRecursiveRequest::makeResponse() const
 
 void ZooKeeperMultiResponse::fillLogElements(LogElements & elems, size_t idx) const
 {
-    assert(idx == 0);
-    assert(elems.size() == responses.size() + 1);
+    chassert(idx == 0);
+    chassert(elems.size() == responses.size() + 1);
     ZooKeeperResponse::fillLogElements(elems, idx);
     for (const auto & response : responses)
     {
         auto & resp = dynamic_cast<ZooKeeperResponse &>(*response);
-        assert(!resp.xid || resp.xid == xid);
-        assert(!resp.zxid || resp.zxid == zxid);
+        chassert(!resp.xid || resp.xid == xid);
+        chassert(!resp.zxid || resp.zxid == zxid);
         resp.xid = xid;
         resp.zxid = zxid;
         resp.fillLogElements(elems, ++idx);
@@ -1630,8 +1708,8 @@ void ZooKeeperRequestFactory::registerRequest(OpNum op_num, Creator creator)
 
 std::shared_ptr<ZooKeeperRequest> ZooKeeperRequest::read(ReadBuffer & in)
 {
-    XID xid;
-    OpNum op_num;
+    XID xid = 0;
+    OpNum op_num = {};
 
     Coordination::read(xid, in);
     Coordination::read(op_num, in);
@@ -1674,6 +1752,8 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
             res->not_exists = true;
         else if constexpr (num == OpNum::Create2)
             res->include_stats = true;
+        else if constexpr (num == OpNum::CreateTTL)
+            res->include_ttl = true;
         else if constexpr (num == OpNum::CheckStat)
             res->stat_to_check.emplace();
         else if constexpr (num == OpNum::TryRemove)
@@ -1691,6 +1771,7 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::Close, ZooKeeperCloseRequest>(*this);
     registerZooKeeperRequest<OpNum::Create, ZooKeeperCreateRequest>(*this);
     registerZooKeeperRequest<OpNum::Create2, ZooKeeperCreateRequest>(*this);
+    registerZooKeeperRequest<OpNum::CreateTTL, ZooKeeperCreateRequest>(*this);
     registerZooKeeperRequest<OpNum::Remove, ZooKeeperRemoveRequest>(*this);
     registerZooKeeperRequest<OpNum::TryRemove, ZooKeeperRemoveRequest>(*this);
     registerZooKeeperRequest<OpNum::Exists, ZooKeeperExistsRequest>(*this);

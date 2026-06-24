@@ -112,7 +112,7 @@ public:
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
 
     void updateHashFast(SipHash & hash) const override;
 
@@ -230,7 +230,7 @@ public:
 
     Field operator[](size_t n) const override
     {
-        assert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
+        chassert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
         return data[n];
     }
 
