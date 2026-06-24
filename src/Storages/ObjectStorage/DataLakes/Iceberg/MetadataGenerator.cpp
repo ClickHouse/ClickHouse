@@ -148,10 +148,24 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
 
     const auto snapshot_summary = [&]() -> Iceberg::SnapshotSummary
     {
-        Iceberg::SnapshotSummaryTotals previous_totals;
+        /// `nullopt` means "no parent" (the first commit). Carrying a concrete zero here instead would
+        /// tell `SnapshotSummary` a parent total exists, so an `APPEND` would reset `total-*` and a
+        /// `DELETE`/`OVERWRITE` would subtract from zero and underflow the unsigned totals.
+        std::optional<Iceberg::SnapshotSummaryTotals> previous_totals;
 
-        if (auto parent_snapshot = getParentSnapshot(parent_snapshot_id))
+        /// `parent_snapshot_id <= 0` is the "no parent" sentinel (-1 for the first INSERT, 0 for the root
+        /// of a rebuilt history). A positive id must resolve to a real snapshot; if it does not (snapshot
+        /// expiration / catalog pruning), fail close rather than silently committing wrong totals.
+        if (parent_snapshot_id > 0)
         {
+            auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
+            if (!parent_snapshot)
+                throw Exception(
+                    DB::ErrorCodes::BAD_ARGUMENTS,
+                    "Iceberg metadata {} does not contain parent snapshot {} referenced by the new snapshot",
+                    metadata_file_path,
+                    parent_snapshot_id);
+
             auto parent_summary = parent_snapshot->getObject(Iceberg::f_summary);
             if (!parent_summary)
                 throw Exception(
