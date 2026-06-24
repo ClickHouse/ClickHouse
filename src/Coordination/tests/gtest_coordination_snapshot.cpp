@@ -22,6 +22,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDecorator.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 #include <Poco/Util/MapConfiguration.h>
 
@@ -1816,6 +1817,56 @@ TYPED_TEST(CoordinationTest, TestReadSnapshotParallelMultiChunk)
     EXPECT_EQ(obj_storage->read_count.load() - reads_after_init, 1);
 
     snap_disk->shutdown();
+}
+
+TYPED_TEST(CoordinationTest, TestStorageSnapshotTTLRoundTrip)
+{
+    using namespace Coordination;
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest test("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    DB::KeeperSnapshotManager<Storage> manager(3, this->keeper_context, this->enable_compression);
+    Storage storage(500, "", this->keeper_context);
+
+    const int64_t session_id = 1;
+    const int64_t ttl_ms = 5000;
+    int64_t zxid = 0;
+
+    auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+    create_request->path = "/ttl_node";
+    create_request->include_ttl = true;
+    create_request->ttl = ttl_ms;
+
+    storage.preprocessRequest(create_request, session_id, /*time=*/0, ++zxid);
+    auto responses = storage.processRequest(create_request, session_id, zxid);
+    ASSERT_EQ(responses[0].response->error, Error::ZOK);
+
+    ASSERT_TRUE(storage.containsTTLPath("/ttl_node"));
+
+    DB::KeeperStorageSnapshot<Storage> snapshot(&storage, zxid, nullptr, DB::SnapshotVersion::V8);
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    manager.serializeSnapshotBufferToDisk(*buf, zxid);
+
+    auto debuf = manager.deserializeSnapshotBufferFromDisk(zxid);
+    auto deser_result = manager.deserializeSnapshotFromBuffer(debuf);
+    const auto & restored = deser_result.storage;
+
+    EXPECT_TRUE(restored->containsTTLPath("/ttl_node"));
+
+    auto node_it = restored->container.find("/ttl_node");
+    ASSERT_NE(node_it, restored->container.end());
+    ASSERT_TRUE(node_it->value.stats.isTTL());
+    EXPECT_EQ(node_it->value.stats.destroyTime(), ttl_ms);
+
+    EXPECT_TRUE(restored->collectExpiredTTLPaths(/*now_ms=*/0, 1000000).empty());
+    auto expired = restored->collectExpiredTTLPaths(/*now_ms=*/ttl_ms + 1, 1000000);
+    ASSERT_EQ(expired.size(), 1u);
+    EXPECT_EQ(expired[0].first, "/ttl_node");
 }
 
 TYPED_TEST(CoordinationTest, SerializeSnapshotToDiskCleansPartialFilesOnOpenException)

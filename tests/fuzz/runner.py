@@ -443,7 +443,7 @@ def main():
         for future in as_completed(futures):
             fuzzer = futures[future]
             try:
-                result = future.result()
+                future.result()
                 logging.info("Thread for %s finished", fuzzer)
             except Exception as exc:
                 logging.info("Thread for %s generated an exception: %s", fuzzer, exc)
