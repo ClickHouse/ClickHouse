@@ -37,4 +37,15 @@ FROM remote('127.0.0.{1,2}', system.one);
 SELECT DISTINCT materialize(toDateTime64('2023-10-17 12:51:26.123456789', 9, 'UTC')) AS ts
 FROM remote('127.0.0.{1,2}', system.one);
 
+-- Decimals nested in Array/Tuple/Map must be exact too. Without an exact serialization the remote
+-- shard rounds the value and the differing column name makes the query fail with NOT_FOUND_COLUMN_IN_BLOCK.
+SELECT DISTINCT materialize([toDecimal64('123456789012.34567', 5)]) AS c
+FROM remote('127.0.0.{1,2}', system.one);
+
+SELECT DISTINCT materialize((toDecimal64('123456789012.34567', 5), 'x')) AS c
+FROM remote('127.0.0.{1,2}', system.one);
+
+SELECT DISTINCT materialize(map('k', toDecimal64('123456789012.34567', 5))) AS c
+FROM remote('127.0.0.{1,2}', system.one);
+
 DROP TABLE ts_data_94612;

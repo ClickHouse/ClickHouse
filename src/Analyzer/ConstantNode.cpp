@@ -16,10 +16,10 @@
 #include <IO/Operators.h>
 
 #include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeNullable.h>
 
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTExpressionList.h>
 
 #include <Interpreters/convertFieldToType.h>
 
@@ -168,20 +168,6 @@ boost::intrusive_ptr<ASTLiteral> ConstantNode::getCachedAST(const F &ast_generat
 namespace
 {
 
-bool isDecimalField(const Field & field)
-{
-    switch (field.getType())
-    {
-        case Field::Types::Decimal32:
-        case Field::Types::Decimal64:
-        case Field::Types::Decimal128:
-        case Field::Types::Decimal256:
-            return true;
-        default:
-            return false;
-    }
-}
-
 UInt32 getDecimalFieldScale(const Field & field)
 {
     switch (field.getType())
@@ -195,19 +181,15 @@ UInt32 getDecimalFieldScale(const Field & field)
         case Field::Types::Decimal256:
             return field.safeGet<DecimalField<Decimal256>>().getScale();
         default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a decimal field in makeExactDecimalConstantAST");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a decimal field");
     }
 }
 
-/// Decimal constants have no exact literal syntax in SQL: a bare numeric literal is re-parsed on
-/// the receiving side as Float64 and loses precision for high-scale values.
-/// We serialize the value as its exact textual form cast from a String to a Decimal type with
-/// enough precision, then cast that to the final type. The String -> Decimal conversion parses
-/// the digits exactly, so the constant round-trips without loss.
-/// (DateTime64/Time64 are already serialized exactly as date-time text by
-/// getFieldFromColumnForASTLiteral, see https://github.com/ClickHouse/ClickHouse/issues/94612,
-/// and complex types such as Variant rely on that path, so this is limited to Decimal results.)
-ASTPtr makeExactDecimalConstantAST(const Field & field, const String & result_type_name)
+/// A decimal value has no exact literal syntax in SQL: a bare numeric literal is re-parsed on the
+/// receiving side as Float64 and loses precision for high-scale values. Serialize it as its exact
+/// textual form cast from a String to a Decimal type wide enough to hold every digit. The
+/// String -> Decimal conversion parses the digits exactly, so the value round-trips without loss.
+ASTPtr makeExactDecimalLeafAST(const Field & field)
 {
     const String text = applyVisitor(FieldVisitorToString(), field);
     const UInt32 scale = getDecimalFieldScale(field);
@@ -217,8 +199,7 @@ ASTPtr makeExactDecimalConstantAST(const Field & field, const String & result_ty
         if (c >= '0' && c <= '9')
             ++digits;
 
-    /// The carrier Decimal type must be wide enough to hold every significant digit; e.g. a
-    /// DateTime64(9) value near the present has 19 digits and would overflow Decimal64(18).
+    /// The carrier Decimal type must be wide enough to hold every significant digit.
     const size_t needed_precision = digits > scale ? digits : scale;
     const char * decimal_type_name = "Decimal256";
     if (needed_precision <= 9)
@@ -229,15 +210,75 @@ ASTPtr makeExactDecimalConstantAST(const Field & field, const String & result_ty
         decimal_type_name = "Decimal128";
 
     const String carrier_type_name = String(decimal_type_name) + "(" + std::to_string(scale) + ")";
+    return makeASTFunction("_CAST", make_intrusive<ASTLiteral>(text), make_intrusive<ASTLiteral>(carrier_type_name));
+}
 
-    auto carrier = makeASTFunction(
-        "_CAST", make_intrusive<ASTLiteral>(text), make_intrusive<ASTLiteral>(carrier_type_name));
+ASTPtr makeASTFunctionFromList(std::string_view name, ASTs children)
+{
+    auto function = make_intrusive<ASTFunction>();
+    function->name = name;
+    function->arguments = make_intrusive<ASTExpressionList>();
+    function->children.push_back(function->arguments);
+    function->arguments->children = std::move(children);
+    return function;
+}
 
-    /// If the value's own decimal type is exactly the result type, the single cast is enough.
-    if (carrier_type_name == result_type_name)
-        return carrier;
+bool fieldContainsDecimal(const Field & field)
+{
+    switch (field.getType())
+    {
+        case Field::Types::Decimal32:
+        case Field::Types::Decimal64:
+        case Field::Types::Decimal128:
+        case Field::Types::Decimal256:
+            return true;
+        case Field::Types::Array:
+        {
+            for (const auto & element : field.safeGet<Array>())
+                if (fieldContainsDecimal(element))
+                    return true;
+            return false;
+        }
+        case Field::Types::Tuple:
+        {
+            for (const auto & element : field.safeGet<Tuple>())
+                if (fieldContainsDecimal(element))
+                    return true;
+            return false;
+        }
+        default:
+            return false;
+    }
+}
 
-    return makeASTFunction("_CAST", std::move(carrier), make_intrusive<ASTLiteral>(result_type_name));
+/// Rebuild a literal AST from a field, replacing decimal leaves with exact casts and keeping the
+/// structure of arrays and tuples, so decimals nested in Array/Tuple/Map round-trip without loss.
+ASTPtr fieldToExactLiteralAST(const Field & field)
+{
+    switch (field.getType())
+    {
+        case Field::Types::Decimal32:
+        case Field::Types::Decimal64:
+        case Field::Types::Decimal128:
+        case Field::Types::Decimal256:
+            return makeExactDecimalLeafAST(field);
+        case Field::Types::Array:
+        {
+            ASTs elements;
+            for (const auto & element : field.safeGet<Array>())
+                elements.push_back(fieldToExactLiteralAST(element));
+            return makeASTFunctionFromList("array", std::move(elements));
+        }
+        case Field::Types::Tuple:
+        {
+            ASTs elements;
+            for (const auto & element : field.safeGet<Tuple>())
+                elements.push_back(fieldToExactLiteralAST(element));
+            return makeASTFunctionFromList("tuple", std::move(elements));
+        }
+        default:
+            return make_intrusive<ASTLiteral>(field);
+    }
 }
 
 }
@@ -255,13 +296,16 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 
     const auto & constant_value_type = constant_value.getType();
 
-    /// Decimal constants need an exact, precision-safe serialization so they round-trip without
-    /// going through Float64 (which silently rounds high-scale values). This is limited to results
-    /// that are themselves Decimal: DateTime64/Time64 are already serialized exactly as date-time
-    /// text, and wrapper types such as Variant must keep using that representation.
-    if (const auto field = getValue();
-        isDecimalField(field) && WhichDataType(removeNullable(constant_value_type)).isDecimal())
-        return makeExactDecimalConstantAST(field, constant_value_type->getName());
+    /// Decimal constants (including decimals nested in Array/Tuple/Map) have no exact literal syntax:
+    /// a bare numeric literal is re-parsed as Float64 on the receiving side and rounds. We rebuild
+    /// the literal from the same field used by the cast path below, upgrading every decimal leaf to
+    /// an exact String -> Decimal cast, then cast the whole value to the final type. The field is
+    /// produced by getFieldFromColumnForASTLiteral, which already renders DateTime64 and Variant
+    /// values in their own exact representation, so only the lossy decimal leaves are changed.
+    if (const auto literal_field = getFieldFromColumnForASTLiteral(constant_value.getColumn(), 0, constant_value_type);
+        fieldContainsDecimal(literal_field))
+        return makeASTFunction(
+            "_CAST", fieldToExactLiteralAST(literal_field), make_intrusive<ASTLiteral>(constant_value_type->getName()));
 
     // Add cast if constant was created as a result of constant folding.
     // Constant folding may lead to type transformation and literal on shard
