@@ -144,6 +144,10 @@ void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescr
 
 void checkMetadataDoesNotExceedMaxQuerySize(const StorageID & table_id, const StorageInMemoryMetadata & metadata, ContextPtr context)
 {
+    /// Temporary tables have no on-disk metadata, so the max_query_size check does not apply.
+    if (table_id.database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+        return;
+
     size_t max_query_size = context->getSettingsRef()[Setting::max_query_size];
     if (!max_query_size)
         return;
