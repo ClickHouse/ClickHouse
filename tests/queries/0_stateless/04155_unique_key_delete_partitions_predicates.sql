@@ -8,8 +8,11 @@
 
 SET allow_experimental_unique_key = 1;
 SET async_insert = 0;
--- count() must consult the delete bitmap, not the rows_count shortcut or an
--- implicit projection (both ignore the per-part delete bitmap).
+-- count() goes through the bitmap-corrected trivial-count path
+-- (StorageMergeTree::totalRows / totalRowsByPartitionPredicate) by default;
+-- disable it for most cases here to also exercise the full-read aggregation,
+-- and re-enable it below to assert both paths agree. Implicit projections are
+-- NOT bitmap-aware yet, so keep them off.
 SET optimize_trivial_count_query = 0;
 SET optimize_use_implicit_projections = 0;
 
@@ -43,6 +46,17 @@ SELECT 'part_p10' AS step, count() FROM uk_part_del WHERE p = 10;  -- 1,3 -> 2
 SELECT 'part_p20' AS step, count() FROM uk_part_del WHERE p = 20;  -- 5 -> 1
 SELECT 'part_p30' AS step, count() FROM uk_part_del WHERE p = 30;  -- 7,9 -> 2
 SELECT 'part_survivors' AS step, id, p FROM uk_part_del ORDER BY id;  -- 1,3,5,7,9
+
+-- DELETE ... IN PARTITION is not yet supported on UNIQUE KEY tables (deferred to a
+-- later PR); it must fail clearly rather than silently mis-parse an internal SELECT.
+DELETE FROM uk_part_del IN PARTITION 10 WHERE id = 2; -- { serverError NOT_IMPLEMENTED }
+
+-- Same post-delete counts with the trivial-count optimization ON: the bitmap-corrected
+-- totalRows / totalRowsByPartitionPredicate must agree with the full-read counts above.
+SET optimize_trivial_count_query = 1;
+SELECT 'part_after_delete_trivial' AS step, count() FROM uk_part_del;  -- 5
+SELECT 'part_p10_trivial' AS step, count() FROM uk_part_del WHERE p = 10;  -- 2
+SET optimize_trivial_count_query = 0;
 
 DROP TABLE uk_part_del;
 

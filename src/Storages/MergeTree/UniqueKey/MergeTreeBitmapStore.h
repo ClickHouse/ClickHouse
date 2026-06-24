@@ -6,7 +6,6 @@
 #include <Common/SharedMutex.h>
 
 #include <memory>
-#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -16,7 +15,6 @@ namespace DB
 {
 
 class IDataPartStorage;
-class IMergeTreeDataPart;
 class MergeTreeData;
 
 /// UNIQUE KEY — MergeTree-backed bitmap store. Bitmap files are named
@@ -48,26 +46,16 @@ public:
     /// `(storage, cache_identity)` over the resolution context, then forward
     /// to the storage-level methods. Throw `LOGICAL_ERROR` if the store was
     /// built with the cache-only ctor (no resolution context).
-    std::pair<std::shared_ptr<const DeleteBitmap>, UniqueKeyTxn::CSN>
+    std::pair<UniqueKeyTxn::ConstDeleteBitmapPtr, UniqueKeyTxn::CSN>
         readBitmap(const UniqueKeyTxn::PartName & part, UniqueKeyTxn::CSN snapshot_csn) override;
     void installBitmap(const UniqueKeyTxn::PartName & target, UniqueKeyTxn::CSN csn, const DeleteBitmap & bitmap) override;
     void removeBitmap(const UniqueKeyTxn::PartName & target, UniqueKeyTxn::CSN csn) override;
 
-    /// Install `bitmap` for `part` at `csn`. Atomic. Caller has already
-    /// computed the cumulative `prev_bitmap ∪ new_kills`. Caller MUST
-    /// hold the per-partition UK mutex and has fsync'd the per-part
-    /// manifest before this call. Throws `LOGICAL_ERROR` if `csn` is
-    /// not strictly greater than every previously installed version
-    /// for this part (monotonicity).
-    void installBitmap(
-        const IMergeTreeDataPart & part,
-        BitmapVersion csn,
-        const DeleteBitmap & bitmap);
-
-    /// Storage-level overload. The `IMergeTreeDataPart` version forwards to
-    /// this one after unpacking `part_id` and `part_name`. Exposed so unit
-    /// tests can exercise the install path without constructing a real
-    /// part. Same contract.
+    /// Install `bitmap` for `(storage, part_id)` at `csn`. Atomic. Caller has
+    /// already computed the cumulative `prev_bitmap ∪ new_kills`, MUST hold the
+    /// per-partition UK mutex, and has fsync'd the per-part manifest before this
+    /// call. Throws `LOGICAL_ERROR` if `csn` is not strictly greater than every
+    /// previously installed version for this part (monotonicity).
     void installBitmap(
         IDataPartStorage & storage,
         const std::string & part_id,
@@ -82,7 +70,7 @@ public:
     /// Returned pointer is `const`: cached bitmaps are shared across
     /// readers. Writers that need to build a new version copy first
     /// and mutate the copy.
-    std::pair<std::shared_ptr<const DeleteBitmap>, BitmapVersion> readBitmap(
+    std::pair<UniqueKeyTxn::ConstDeleteBitmapPtr, BitmapVersion> readBitmap(
         const IDataPartStorage & storage,
         BitmapVersion snapshot_csn,
         const std::string & part_id);

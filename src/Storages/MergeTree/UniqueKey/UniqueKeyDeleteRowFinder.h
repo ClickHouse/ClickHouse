@@ -25,7 +25,7 @@ namespace DB::UniqueKeyTxn
 struct UniqueKeyDeleteRowsForPart
 {
     PartName         part_name;
-    RoaringBitmapPtr rows;   /// row numbers within `part_name`'s row-id space
+    DeleteBitmapPtr rows;   /// row numbers within `part_name`'s row-id space
 };
 
 /// Map: partition_id -> ordered list of (part, rows) hits. The map keeps

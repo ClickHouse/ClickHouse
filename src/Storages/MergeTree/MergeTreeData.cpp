@@ -2760,29 +2760,8 @@ void MergeTreeData::runUniqueKeyTxnRecovery()
     if (tmp_storages_by_partition.empty())
         return;
 
-    /// Active parts per partition_id; recovery resolves the manifest's
-    /// `bitmaps_created` target paths against them.
-    std::unordered_map<String, std::vector<MergeTreeDataPartPtr>> active_by_partition;
-    {
-        /// Brief shared lock for the parts snapshot only — released before the
-        /// per-partition loop so `getOrCreateTxnController`'s csn-seed path (which
-        /// takes its own `readLockParts` via `getActivePartsInPartitionShared`)
-        /// does not nest a shared lock.
-        auto parts_lock = readLockParts();
-        for (const auto & p : data_parts_by_info)
-        {
-            if (p->getState() == DataPartState::Active)
-                active_by_partition[p->info.getPartitionId()].push_back(p);
-        }
-    }
-
     for (auto & [partition_id, tmp_storages] : tmp_storages_by_partition)
     {
-        auto active_it = active_by_partition.find(partition_id);
-        const std::vector<MergeTreeDataPartPtr> active_parts = active_it != active_by_partition.end()
-            ? active_it->second
-            : std::vector<MergeTreeDataPartPtr>{};
-
         /// Recover each tmp dir in isolation so one bad dir doesn't
         /// short-circuit the rest. A manifest-less tmp dir is benign under the
         /// manifest-precedes-bitmap durability invariant (a normal
@@ -2794,7 +2773,7 @@ void MergeTreeData::runUniqueKeyTxnRecovery()
                 continue;
             try
             {
-                getOrCreateTxnController(partition_id).recover(active_parts, {tmp_storage});
+                getOrCreateTxnController(partition_id).recover({tmp_storage});
             }
             catch (...)
             {
@@ -6647,7 +6626,7 @@ UniqueKeyTxn::PartitionTxnController & MergeTreeData::getOrCreateTxnController(c
     if (supportsReplication())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "SharedMergeTree UNIQUE KEY transaction strategies are not implemented");
-    auto state = UniqueKeyTxn::MakeLocalStrategies(this, partition_id);
+    auto state = UniqueKeyTxn::MakeLocalStrategies(*this, partition_id);
     auto [inserted_it, _] = unique_key_txn_controllers.emplace(partition_id, std::move(state));
     return *inserted_it->second;
 }

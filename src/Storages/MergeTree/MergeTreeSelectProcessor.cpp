@@ -270,9 +270,9 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
             if (offsets && offsets->size() == res.row_count)
             {
                 const auto & offset_data = offsets->getData();
-                IColumn::Filter filter;
-                const size_t kept = UniqueKeyTxn::buildDeleteBitmapFilter(
-                    offset_data.data(), res.row_count, *delete_bitmap, filter);
+                IColumn::Filter filter(res.row_count);
+                const size_t kept = delete_bitmap->buildKeepFilter(
+                    offset_data.data(), res.row_count, filter.data());
 
                 if (kept != res.row_count)
                 {

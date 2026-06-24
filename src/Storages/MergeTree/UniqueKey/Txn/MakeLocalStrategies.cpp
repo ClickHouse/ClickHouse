@@ -12,8 +12,6 @@
 
 #include <Interpreters/Context.h>
 
-#include <base/defines.h>
-
 #include <algorithm>
 #include <memory>
 
@@ -48,29 +46,27 @@ namespace
 }
 
 std::unique_ptr<PartitionTxnController> MakeLocalStrategies(
-    const MergeTreeData * data,
+    const MergeTreeData & data,
     const String &  partition_id)
 {
-    chassert(data, "MakeLocalStrategies called with null MergeTreeData");
-
     /// Coordinator — owns the publish lock + in-memory csn.
     auto coordinator = std::make_unique<LocalCommitCoordinator>();
 
     /// Seed `partition.csn` from existing partition state so the first commit's
     /// csn exceeds every prior on-disk version.
-    coordinator->seedCsn(computeCsnSeed(*data, partition_id));
+    coordinator->seedCsn(computeCsnSeed(data, partition_id));
 
     /// Shared handle to the (process-wide) Context cache; null when the
     /// delete-bitmap cache is unregistered, which the store tolerates
     /// (read-through). Co-owned with the Context, which outlives the table.
     DeleteBitmapCachePtr bitmap_cache;
-    if (auto context = data->getContext())
+    if (auto context = data.getContext())
         bitmap_cache = context->getDeleteBitmapCache();
 
     /// `MergeTreeBitmapStore` doubles as the Local `IBitmapStore`: the
     /// resolution-context ctor lets its `PartName`-keyed overrides resolve
-    /// over `*data` + `partition_id`.
-    auto bitmap_store = std::make_unique<MergeTreeBitmapStore>(*data, partition_id, bitmap_cache);
+    /// over `data` + `partition_id`.
+    auto bitmap_store = std::make_unique<MergeTreeBitmapStore>(data, partition_id, bitmap_cache);
     auto pin_registry = std::make_unique<LocalPinRegistry>();
 
     return std::make_unique<PartitionTxnController>(

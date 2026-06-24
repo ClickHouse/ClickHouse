@@ -20,7 +20,7 @@ namespace
 class EmptyBitmapStore : public IBitmapStore
 {
 public:
-    std::pair<std::shared_ptr<const DeleteBitmap>, CSN>
+    std::pair<ConstDeleteBitmapPtr, CSN>
     readBitmap(const PartName &, CSN) override { return {std::make_shared<DeleteBitmap>(), 0}; }
     void installBitmap(const PartName &, CSN, const DeleteBitmap &) override {}
     void removeBitmap(const PartName &, CSN) override {}

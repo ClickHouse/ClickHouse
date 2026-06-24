@@ -16,98 +16,28 @@
 /// respective path.
 #include <gtest/gtest.h>
 
-#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <IO/SharedThreadPools.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyMarkerPart.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyReadFilter.h>
 #include <Storages/MergeTree/UniqueKey/Txn/UniqueKeyManifest.h>
 #include <Storages/MergeTree/UniqueKey/Txn/UniqueKeyTxnTypes.h>
+#include <Storages/MergeTree/UniqueKey/Txn/tests/gtest_uk_storage_harness.h>
 #include <Storages/StorageMergeTree.h>
 
-#include <Common/CurrentThread.h>
 #include <Common/Logger.h>
-#include <Common/ThreadStatus.h>
-#include <Common/tests/gtest_global_context.h>
-#include <Common/tests/gtest_global_register.h>
 
 using namespace DB;
 using namespace DB::UniqueKeyTxn;
+using namespace DB::UniqueKeyTxn::tests;
 
 namespace
 {
-
-/// `StorageMergeTree` harness with a UNIQUE KEY defined (so
-/// `getDeadRowsForUniqueKey` does not early-bail), mirroring
-/// `gtest_create_marker_part.cpp`'s harness.
-struct UKStorageHarness
-{
-    ContextMutablePtr context;
-    std::shared_ptr<StorageMergeTree> storage;
-    StorageInMemoryMetadata metadata;
-
-    UKStorageHarness()
-    {
-        MainThreadStatus::getInstance();
-        tryRegisterFunctions();
-        tryRegisterAggregateFunctions();
-
-        getActivePartsLoadingThreadPool().initializeWithDefaultSettingsIfNotInitialized();
-        getOutdatedPartsLoadingThreadPool().initializeWithDefaultSettingsIfNotInitialized();
-        getUnexpectedPartsLoadingThreadPool().initializeWithDefaultSettingsIfNotInitialized();
-        getPartsCleaningThreadPool().initializeWithDefaultSettingsIfNotInitialized();
-
-        const auto & context_holder = getContext();
-        context = Context::createCopy(context_holder.context);
-
-        ColumnsDescription columns;
-        columns.add(ColumnDescription("a", std::make_shared<DataTypeUInt64>()));
-        metadata.setColumns(columns);
-
-        auto order_by_ast = makeASTFunction("tuple", make_intrusive<ASTIdentifier>("a"));
-        metadata.sorting_key = KeyDescription::getKeyFromAST(order_by_ast, metadata.columns, {}, context);
-        metadata.primary_key = KeyDescription::getKeyFromAST(order_by_ast, metadata.columns, {}, context);
-        metadata.partition_key = KeyDescription::getKeyFromAST(nullptr, metadata.columns, {}, context);
-
-        /// Define a UNIQUE KEY over `a` so `hasUniqueKey()` is true.
-        metadata.unique_key = KeyDescription::getKeyFromAST(
-            make_intrusive<ASTIdentifier>("a"), metadata.columns, {}, context);
-
-        auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
-        auto partition_key = metadata.partition_key.expression_list_ast->clone();
-        metadata.minmax_count_projection.emplace(
-            ProjectionDescription::getMinMaxCountProjection(
-                columns, partition_key, minmax_columns, metadata.primary_key, &metadata.partition_key, context));
-
-        auto storage_settings = std::make_unique<MergeTreeSettings>(context->getMergeTreeSettings());
-
-        storage = std::make_shared<StorageMergeTree>(
-            StorageID("test_db", "test_read_csn_filter"),
-            "store/test_read_csn_filter/",
-            metadata,
-            LoadingStrictnessLevel::ATTACH,
-            context,
-            /*date_column_name=*/"",
-            MergeTreeData::MergingParams{},
-            std::move(storage_settings));
-    }
-
-    ~UKStorageHarness()
-    {
-        if (storage)
-            storage->flushAndShutdown();
-    }
-};
 
 /// Build a real (in-memory) data part in partition "all" with a known
 /// `rows_count` and `creation_csn`. Reuses `createMarkerPart` for the part
@@ -141,7 +71,7 @@ MergeTreeData::DataPartPtr makePartWithCsn(
 /// `creation_csn=5` is newer than every snapshot it can pin → excluded.
 TEST(ReadSnapshotCsnFilter, PartNewerThanSnapshotIsExcludedFromDeadCount)
 {
-    UKStorageHarness h;
+    UKStorageHarness h({.with_unique_key = true, .table_name = "test_read_csn_filter", .relative_path = "store/test_read_csn_filter/"});
 
     /// rows=10, creation_csn=5; the partition has no active parts, so the txn
     /// controller seeds csn=0 and `takeQuerySnapshot` pins at 0 < 5.
@@ -159,7 +89,7 @@ TEST(ReadSnapshotCsnFilter, PartNewerThanSnapshotIsExcludedFromDeadCount)
 /// dead count is 0 (all rows live). Guards against the filter over-excluding.
 TEST(ReadSnapshotCsnFilter, PartAtOrBelowSnapshotStaysVisible)
 {
-    UKStorageHarness h;
+    UKStorageHarness h({.with_unique_key = true, .table_name = "test_read_csn_filter", .relative_path = "store/test_read_csn_filter/"});
 
     /// creation_csn=0 (≤ the pinned csn=0) → visible; no bitmap → 0 dead.
     auto visible_part = makePartWithCsn(h, /*block_number=*/1, /*rows=*/10, /*creation_csn=*/0);
@@ -174,7 +104,7 @@ TEST(ReadSnapshotCsnFilter, PartAtOrBelowSnapshotStaysVisible)
 /// the boundary (kept). Pre-fix BOTH parts survive (no SELECT-side filter).
 TEST(ReadSnapshotCsnFilter, ApplyDeleteBitmapsDropsPartNewerThanSnapshot)
 {
-    UKStorageHarness h;
+    UKStorageHarness h({.with_unique_key = true, .table_name = "test_read_csn_filter", .relative_path = "store/test_read_csn_filter/"});
 
     /// Boundary part (kept) and too-new part (dropped), one mark range each.
     auto boundary_part = makePartWithCsn(h, /*block_number=*/1, /*rows=*/10, /*creation_csn=*/0);

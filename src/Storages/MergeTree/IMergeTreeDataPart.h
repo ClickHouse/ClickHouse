@@ -186,19 +186,8 @@ public:
     Estimates getEstimates() const;
     void setEstimates(const Estimates & new_estimates);
 
-    /// UNIQUE KEY — lightweight per-part transaction metadata (`creation_csn`,
-    /// `is_marker`), lazily read from `unique_key.txt` on first access and
-    /// cached. Returns `nullopt` for legacy parts that carry no manifest. The
-    /// full `bitmaps_created` / `forwarded` lists are parsed transiently and
-    /// discarded — they are not retained on active parts. Throws
-    /// `CORRUPTED_DATA` on an unparseable manifest (fail-closed: a broken
-    /// manifest must not yield a bogus `creation_csn`).
     std::optional<UniqueKeyTxn::UniqueKeyPartMeta> getUniqueKeyMeta() const;
 
-    /// Populate the lightweight cache directly, bypassing the disk read. Used
-    /// by the DELETE commit driver to mirror a freshly-published marker's
-    /// `creation_csn` / `is_marker` into the in-process part so a same-process
-    /// csn-seed sees it without waiting for an ATTACH reload.
     void setUniqueKeyMeta(const UniqueKeyTxn::UniqueKeyPartMeta & meta);
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).

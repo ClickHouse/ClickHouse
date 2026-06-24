@@ -19,10 +19,9 @@ namespace DB::UniqueKeyTxn
 /// controller reads the partition's live state from `data` + `partition_id`
 /// directly. Caller owns the returned controller and ties it to the partition's
 /// lifetime (storage map `unique_key_txn_controllers`); `data` must outlive
-/// the controller. Pointer parameter (non-null required) mirrors
-/// `MakeSharedStrategies` so the dispatch site passes `this` uniformly.
+/// the controller.
 std::unique_ptr<PartitionTxnController> MakeLocalStrategies(
-    const MergeTreeData * data,
+    const MergeTreeData & data,
     const String &  partition_id);
 
 }

@@ -18,11 +18,6 @@ namespace DB::UniqueKeyTxn
 /// the bitmap visible at that snapshot; it hands `(part, csn, bitmap)` and
 /// the bitmap is made durable. The Local implementation is
 /// `MergeTreeBitmapStore`; a Shared (S3-backed) one is planned.
-///
-/// Required ProfileEvents (registered by the consumer that increments them):
-///   UniqueKeyBitmapGetHit, UniqueKeyBitmapGetMiss, UniqueKeyBitmapGetBytes
-///   UniqueKeyBitmapPutBytes
-///   UniqueKeyBitmapUnlinks
 class IBitmapStore
 {
 public:
@@ -33,7 +28,7 @@ public:
     /// Returned csn is the chosen bitmap's csn. Bitmap is `const` (shared
     /// across readers; writers copy-mutate). Throws on storage failure.
     /// Thread safety: concurrent calls safe.
-    virtual std::pair<std::shared_ptr<const DeleteBitmap>, CSN>
+    virtual std::pair<ConstDeleteBitmapPtr, CSN>
         readBitmap(const PartName & part, CSN snapshot_csn) = 0;
 
     /// Install the cumulative bitmap (`prev ∪ new_kills`) for `target` at

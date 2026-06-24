@@ -21,9 +21,6 @@ namespace DB::UniqueKeyTxn
 /// read→prepare→retry loop in `PartitionTxnController::commit`. None of that is
 /// needed today: the Local coordinator holds `commit_lock` across the publish
 /// and never loses, so the interface is single-attempt and infallible-or-throw.
-///
-/// Required ProfileEvents:
-///   UniqueKeyCommitLinearizeMicros — wall-time spent in `attemptCommit`.
 class ICommitCoordinator
 {
 public:

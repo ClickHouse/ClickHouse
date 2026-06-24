@@ -21,8 +21,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
-#include <filesystem>
-
 
 namespace ProfileEvents
 {
@@ -58,7 +56,7 @@ size_t commitDeleteForPartition(
     struct ResolvedTarget
     {
         MergeTreeData::DataPartPtr part;
-        UniqueKeyTxn::RoaringBitmapPtr rows;
+        UniqueKeyTxn::DeleteBitmapPtr rows;
     };
     std::vector<ResolvedTarget> targets;
     targets.reserve(parts_in_partition.size());
@@ -80,24 +78,15 @@ size_t commitDeleteForPartition(
                 continue;
             }
             /// DELETE-vs-merge retargeting: `getActiveContainingPart` returns
-            /// the COVERING part. If a merge committed between our SELECT and
-            /// this critical section, `part->name` is the merged-output
-            /// part's name and our `_part_offset` values would target wrong
-            /// rows. Require exact match; best-effort skip otherwise.
+            /// the COVERING part, so a merge committed between our SELECT and
+            /// this critical section would leave `_part_offset` targeting wrong
+            /// rows. Require an exact `part->name == entry.part_name` match;
+            /// best-effort skip otherwise.
             ///
-            /// This catches only a merge that committed BEFORE this
-            /// resolution. A merge that outdates a target AFTER it — between
-            /// here and the bitmap install — is NOT caught: merges don't take
-            /// the UK mutex, so `MergeTreeBitmapStore::resolvePart` falls back
-            /// to the now-outdated part (`getPartIfExists`), the marker commit
-            /// succeeds, and the matched rows survive live in the merged active
-            /// part with NO `skipped_outdated_parts` increment — a silent
-            /// under-delete (no warning fires for this window).
-            /// TODO(unique-key): both windows (pre- and post-resolution) need
-            /// full DELETE-vs-merge reconciliation, which lands with merge
-            /// support (late-kill on merge commit). Until then the
-            /// post-resolution race is silent; re-running the DELETE removes
-            /// the survivors.
+            /// TODO(unique-key): this catches only a pre-resolution merge. A
+            /// post-resolution merge (merges don't take the UK mutex) is a
+            /// silent under-delete until merge-side late-kill lands; re-running
+            /// the DELETE clears the survivors.
             if (part->name != entry.part_name)
             {
                 LOG_DEBUG(log,
@@ -141,7 +130,6 @@ size_t commitDeleteForPartition(
     /// `touched` is the per-target DELTA; the commit cumulates
     /// `prev_bitmap ∪ new_kills` internally and PUTs the cumulative bytes.
     UniqueKeyTxn::CommitRequest req;
-    req.is_marker = true;
     req.touched.reserve(targets.size());
     for (auto & t : targets)
     {
@@ -205,10 +193,6 @@ size_t commitDeleteForPartition(
     for (const auto & t : targets)
         if (t.rows)
             committed_rows += t.rows->cardinality();
-
-    /// Drops after the commit; the part is already renamed into the active
-    /// set above, so releasing the block number here is safe.
-    (void)marker_block_holder;
 
     return committed_rows;
 }

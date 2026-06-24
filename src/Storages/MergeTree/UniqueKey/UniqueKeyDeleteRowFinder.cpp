@@ -3,7 +3,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
-#include <Parsers/ASTPartition.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
@@ -23,6 +22,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 }
@@ -77,6 +77,14 @@ UniqueKeyDeleteRowFinder::Result UniqueKeyDeleteRowFinder::find(
     ContextPtr query_context)
 {
     const auto & delete_query = query_ptr->as<ASTDeleteQuery &>();
+
+    /// TODO(unique-key): translate the partition AST to a `_partition_id` filter
+    /// (see MutationsInterpreter.cpp ~line 320) and AND it into the WHERE, then drop this guard.
+    if (delete_query.partition)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "DELETE ... IN PARTITION is not yet supported for UNIQUE KEY tables; "
+            "use a partition-key predicate in the WHERE clause instead");
+
     const auto & storage_id = storage.getStorageID();
 
     /// Build a self-contained SELECT that pulls `(_part, _part_offset)` for
@@ -85,10 +93,9 @@ UniqueKeyDeleteRowFinder::Result UniqueKeyDeleteRowFinder::find(
     /// skipping, PREWHERE, skip indexes, bitmap row-level filtering so
     /// already-dead rows aren't re-added).
     String select_query = fmt::format(
-        "SELECT _part, _part_offset FROM {}.{}{} WHERE {}",
+        "SELECT _part, _part_offset FROM {}.{} WHERE {}",
         backQuoteIfNeed(storage_id.database_name),
         backQuoteIfNeed(storage_id.table_name),
-        delete_query.partition ? " IN PARTITION " + delete_query.partition->formatWithSecretsOneLine() : String{},
         delete_query.predicate->formatWithSecretsOneLine());
 
     /// Internal cloned context so we don't pollute the caller's query id / logs.

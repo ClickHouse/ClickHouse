@@ -27,15 +27,15 @@ namespace
 
 /// The cumulative-publish tests assert the per-part bitmap chain stays
 /// monotone, so the shared recording store runs with monotonicity enforcement on.
-std::unique_ptr<PartitionTxnController> makeFixture(RecordingBitmapStore *& out_store)
+std::unique_ptr<PartitionTxnController> makeMonotoneFixture(RecordingBitmapStore *& out_store)
 {
-    FakeCoordinator * coord_unused = nullptr;
-    auto fixture = makeRecordingFixture(out_store, coord_unused);
+    auto fx = tests::makeFixture();
+    out_store = fx.store;
     out_store->enforce_monotonicity = true;
-    return fixture;
+    return std::move(fx.state);
 }
 
-CommitRequest oneTouchedCommit(const PartName & target, std::shared_ptr<DeleteBitmap> delta)
+CommitRequest oneTouchedCommit(const PartName & target, DeleteBitmapPtr delta)
 {
     CommitRequest req;
     TouchedPartKills tk;
@@ -72,7 +72,7 @@ TEST(PartitionTxnControllerCommitCumulative, CumulativePutShapeMatrix)
     for (const auto & c : cases)
     {
         RecordingBitmapStore * store = nullptr;
-        auto state = makeFixture(store);
+        auto state = makeMonotoneFixture(store);
 
         if (!c.prev.empty())
         {
@@ -104,7 +104,7 @@ TEST(PartitionTxnControllerCommitCumulative, CumulativePutShapeMatrix)
 TEST(PartitionTxnControllerCommitCumulative, NonEmptyPrevNonEmptyDeltaPublishesUnion)
 {
     RecordingBitmapStore * store = nullptr;
-    auto state = makeFixture(store);
+    auto state = makeMonotoneFixture(store);
 
     /// Seed prev bitmap at csn=0 (the initial snap.csn). getAt(part, 0)
     /// will pick this up because 0 ≤ 0.
@@ -128,7 +128,7 @@ TEST(PartitionTxnControllerCommitCumulative, NonEmptyPrevNonEmptyDeltaPublishesU
 TEST(PartitionTxnControllerCommitCumulative, MultipleTouchedPartsCumulateIndependently)
 {
     RecordingBitmapStore * store = nullptr;
-    auto state = makeFixture(store);
+    auto state = makeMonotoneFixture(store);
 
     store->seed("partA", 0, makeBitmap({1}));
     store->seed("partB", 0, makeBitmap({100, 200}));
@@ -175,7 +175,7 @@ TEST(PartitionTxnControllerCommitCumulative, RollbackFailureLatchesPartitionFail
     auto controller = std::make_unique<PartitionTxnController>(
         std::make_unique<FakeCoordinator>(),
         std::make_unique<ThrowOnRemoveBitmapStore>(),
-        std::make_unique<FakePinRegistry>());
+        std::make_unique<CountingPinRegistry>());
 
     CommitRequest req = oneTouchedCommit("partA", makeBitmap({1, 2, 3}));
     /// Install succeeds, then publish throws → rollback hits the throwing removeBitmap.
@@ -192,7 +192,7 @@ TEST(PartitionTxnControllerCommitCumulative, RollbackFailureLatchesPartitionFail
 TEST(PartitionTxnControllerCommitCumulative, SuccessfulRollbackDoesNotLatch)
 {
     RecordingBitmapStore * store = nullptr;
-    auto controller = makeFixture(store);
+    auto controller = makeMonotoneFixture(store);
 
     CommitRequest req = oneTouchedCommit("partA", makeBitmap({1, 2, 3}));
     req.staged.publish = [](CSN) { throw DB::Exception(DB::ErrorCodes::CANNOT_OPEN_FILE, "injected publish failure"); };
@@ -214,7 +214,7 @@ TEST(PartitionTxnControllerCommitCumulative, InstallThrowAfterDurableWriteIsRoll
     auto controller = std::make_unique<PartitionTxnController>(
         std::make_unique<FakeCoordinator>(),
         std::move(store_owned),
-        std::make_unique<FakePinRegistry>());
+        std::make_unique<CountingPinRegistry>());
 
     EXPECT_THROW(controller->commit(oneTouchedCommit("partA", makeBitmap({1, 2, 3}))), DB::Exception);
 

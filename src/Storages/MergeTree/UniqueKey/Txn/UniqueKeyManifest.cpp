@@ -39,11 +39,6 @@ bool UniqueKeyManifest::exists(const IDataPartStorage & storage)
 
 namespace
 {
-    /// On-disk format version. Bump when the schema or field semantics change;
-    /// `read()` rejects anything else so an older binary fail-closes on a
-    /// newer manifest rather than misreading it.
-    constexpr UInt64 FORMAT_VERSION = 1;
-
     /// Strict unsigned-integer extraction. Rejects a missing key and any
     /// non-integer JSON type so a corrupted manifest fail-closes: `Poco`'s
     /// `getValue<UInt64>` is coercive (`true`→1, `1.5`→1, `"7"`→7), which would

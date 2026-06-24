@@ -49,20 +49,18 @@ struct TempPartHandle
 struct TouchedPartKills
 {
     PartName          target;
-    RoaringBitmapPtr  new_kills;
+    DeleteBitmapPtr  new_kills;
 };
 
 struct CommitRequest
 {
     TempPartHandle                                       staged;
     std::vector<TouchedPartKills>                        touched;
-    bool                                                 is_marker = false;
 };
 
 struct CommitResult
 {
-    CSN                  csn = INVALID_CSN;
-    MergeTreeDataPartPtr new_part;
+    CSN csn = INVALID_CSN;
 };
 
 /// Reader view returned by `takeQuerySnapshot`.
@@ -130,10 +128,9 @@ public:
 
     /// Recovery (Local): tmp-only scan; for each tmp dir's part storage, read
     /// its manifest, `removeBitmap` the listed (target, csn) pairs, then remove
-    /// the tmp dir. `active_parts` lets Local compute `partition.csn`;
-    /// `tmp_storages` is the set of tmp-dir part storages that existed at startup.
-    void recover(std::vector<MergeTreeDataPartPtr> active_parts,
-                 std::vector<MutableDataPartStoragePtr> tmp_storages);
+    /// the tmp dir. `tmp_storages` is the set of tmp-dir part storages that
+    /// existed at startup.
+    void recover(std::vector<MutableDataPartStoragePtr> tmp_storages);
 
     /// Accessor used by the GC round driver (and tests). Returns the
     /// current cluster floor without taking the GC round lock.
@@ -145,7 +142,7 @@ private:
     struct CumulativeDelete
     {
         PartName part;
-        ConstRoaringBitmapPtr bitmap;
+        ConstDeleteBitmapPtr bitmap;
     };
 
     /// Pre-publish (lock-free): per-target `prev_bitmap(at snapshot_csn) ∪

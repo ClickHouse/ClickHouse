@@ -1,102 +1,24 @@
 #include <gtest/gtest.h>
 
-#include <Core/Settings.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <IO/SharedThreadPools.h>
-#include <Interpreters/Context.h>
-#include <Parsers/ASTFunction.h>
-#include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyMarkerPart.h>
 #include <Storages/MergeTree/UniqueKey/Txn/UniqueKeyManifest.h>
 #include <Storages/MergeTree/UniqueKey/Txn/UniqueKeyTxnTypes.h>
+#include <Storages/MergeTree/UniqueKey/Txn/tests/gtest_uk_storage_harness.h>
 #include <Storages/StorageMergeTree.h>
-
-#include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
-#include <Common/tests/gtest_global_context.h>
-#include <Common/tests/gtest_global_register.h>
 
 using namespace DB;
 using namespace DB::UniqueKeyTxn;
-
-namespace
-{
-
-/// Minimal `StorageMergeTree` harness. Same shape as
-/// `gtest_storage_merge_tree_committing_blocks.cpp::StorageHarness` —
-/// `LoadingStrictnessLevel::ATTACH` skips sanity / DDL checks the marker-part
-/// primitive doesn't exercise. The harness is enough to drive
-/// `MergeTreeData::createEmptyPart`, which is what `createMarkerPart`
-/// delegates to.
-struct StorageHarness
-{
-    ContextMutablePtr context;
-    std::shared_ptr<StorageMergeTree> storage;
-    StorageInMemoryMetadata metadata;
-
-    StorageHarness()
-    {
-        MainThreadStatus::getInstance();
-        tryRegisterFunctions();
-        tryRegisterAggregateFunctions();
-
-        getActivePartsLoadingThreadPool().initializeWithDefaultSettingsIfNotInitialized();
-        getOutdatedPartsLoadingThreadPool().initializeWithDefaultSettingsIfNotInitialized();
-        getUnexpectedPartsLoadingThreadPool().initializeWithDefaultSettingsIfNotInitialized();
-        getPartsCleaningThreadPool().initializeWithDefaultSettingsIfNotInitialized();
-
-        const auto & context_holder = getContext();
-        context = Context::createCopy(context_holder.context);
-
-        ColumnsDescription columns;
-        columns.add(ColumnDescription("a", std::make_shared<DataTypeUInt64>()));
-        metadata.setColumns(columns);
-
-        auto order_by_ast = makeASTFunction("tuple");
-        metadata.sorting_key = KeyDescription::getKeyFromAST(order_by_ast, metadata.columns, {}, context);
-        metadata.primary_key = KeyDescription::getKeyFromAST(order_by_ast, metadata.columns, {}, context);
-        metadata.primary_key.definition_ast = nullptr;
-        metadata.partition_key = KeyDescription::getKeyFromAST(nullptr, metadata.columns, {}, context);
-
-        auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
-        auto partition_key = metadata.partition_key.expression_list_ast->clone();
-        metadata.minmax_count_projection.emplace(
-            ProjectionDescription::getMinMaxCountProjection(
-                columns, partition_key, minmax_columns, metadata.primary_key, &metadata.partition_key, context));
-
-        auto storage_settings = std::make_unique<MergeTreeSettings>(context->getMergeTreeSettings());
-
-        storage = std::make_shared<StorageMergeTree>(
-            StorageID("test_db", "test_marker_part"),
-            "store/test_marker_part/",
-            metadata,
-            LoadingStrictnessLevel::ATTACH,
-            context,
-            /*date_column_name=*/"",
-            MergeTreeData::MergingParams{},
-            std::move(storage_settings));
-    }
-
-    ~StorageHarness()
-    {
-        if (storage)
-            storage->flushAndShutdown();
-    }
-};
-
-}
+using namespace DB::UniqueKeyTxn::tests;
 
 /// Smoke gate: a marker part is named `all_<bn>_<bn>_0` and carries a
 /// `unique_key.txt` manifest with `is_marker = true` and the supplied
 /// `creation_csn` + `bitmaps_created`.
 TEST(CreateMarkerPart, ZeroRowPartWithMarkerManifest)
 {
-    StorageHarness h;
+    UKStorageHarness h({.with_unique_key = false, .table_name = "test_marker_part", .relative_path = "store/test_marker_part/"});
     constexpr Int64 bn = 7;
 
     UniqueKeyManifest meta;

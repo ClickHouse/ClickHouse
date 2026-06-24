@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/UniqueKey/Txn/UniqueKeyTxnTypes.h>
 #include <Storages/StorageSnapshot.h>
 #include <boost/core/noncopyable.hpp>
 
@@ -132,7 +133,7 @@ struct MergeTreeReadTaskInfo
     /// `RangesInDataPart`. `MergeTreeSelectProcessor::readCurrentTask` applies
     /// row-level filtering when this is non-null and non-empty; nullptr /
     /// empty bitmaps are the zero-overhead fast path.
-    ConstDeleteBitmapPtr delete_bitmap;
+    UniqueKeyTxn::ConstDeleteBitmapPtr delete_bitmap;
 };
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;

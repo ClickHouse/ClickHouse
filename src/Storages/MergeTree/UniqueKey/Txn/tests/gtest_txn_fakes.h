@@ -1,27 +1,23 @@
 #pragma once
 
-/// Shared test doubles for the txn gtests.
+/// Shared test doubles for the txn gtests. One coordinator/store/registry
+/// family drives both the read-path (snapshot) and commit-driver tests:
 ///
-/// Two coordinator/store shapes live here:
+///   * `FakeCoordinator` — bump-on-commit semantics (`attemptCommit` assigns
+///     `csn + 1`); `csn` is a public field, so read-path tests set the
+///     snapshot point directly. An optional `drift_sampler` lets the assigned
+///     csn exceed `snap.csn + 1`. `withinSnapshotRegion` invokes `fn(csn)`
+///     directly (no real lock — tests are single-threaded around capture).
+///   * `RecordingBitmapStore` — serves the max version ≤ snapshot_csn and
+///     records every `installBitmap`/`removeBitmap` (and, optionally, enforces
+///     the disk-derived monotonicity invariant).
+///   * `CountingPinRegistry` — tracks live pins per csn for pin-RAII / `total()`
+///     assertions; `clusterFloor()` is the real min-pinned-csn (MAX_CSN when
+///     none).
 ///
-///   * Snapshot/read-path shape — a `StepCoordinator` whose csn is advanced
-///     manually (`setCurrent`), a `CountingPinRegistry` that tracks live pins
-///     per csn, and a `FakeBitmapStore` that serves the max version ≤
-///     snapshot_csn. `makeFixture()` wires them into a real
-///     `PartitionTxnController` (null data → the snapshot capture sees an
-///     empty parts list).
-///
-///   * Commit-driver shape — a `FakeCoordinator` with bump-on-commit semantics
-///     (optional `drift_sampler` to let the assigned csn exceed `snap.csn +
-///     1`), a `RecordingBitmapStore` that records every
-///     `installBitmap`/`removeBitmap` call (and, optionally, enforces the
-///     disk-derived monotonicity invariant), plus a `FakePinRegistry`.
-///     `makeRecordingFixture()` wires them up and hands back raw pointers to
-///     the store + coordinator.
-///
-/// Both coordinators implement `withinSnapshotRegion` by invoking `fn(csn)`
-/// directly (no real lock — tests are single-threaded around capture), which is
-/// what `PartitionTxnController::takeQuerySnapshot` drives.
+/// `makeFixture()` wires them into a real `PartitionTxnController` (null data →
+/// the snapshot capture sees an empty parts list) and returns raw pointers to
+/// all three plus the controller.
 
 #include <Storages/MergeTree/UniqueKey/IBitmapStore.h>
 #include <Storages/MergeTree/UniqueKey/Txn/ICommitCoordinator.h>
@@ -31,6 +27,7 @@
 
 #include <Common/Exception.h>
 
+#include <algorithm>
 #include <functional>
 #include <initializer_list>
 #include <map>
@@ -48,65 +45,6 @@ namespace DB::ErrorCodes
 
 namespace DB::UniqueKeyTxn::tests
 {
-
-class FakeBitmapStore : public IBitmapStore
-{
-public:
-    std::map<std::pair<PartName, CSN>, std::shared_ptr<DeleteBitmap>> store;
-
-    void seed(const PartName & part, CSN csn, std::shared_ptr<DeleteBitmap> bm) { store[{part, csn}] = std::move(bm); }
-
-    std::pair<std::shared_ptr<const DeleteBitmap>, CSN> readBitmap(const PartName & part, CSN snapshot_csn) override
-    {
-        std::optional<std::pair<CSN, std::shared_ptr<DeleteBitmap>>> chosen;
-        for (auto & [k, v] : store)
-        {
-            if (k.first != part || k.second > snapshot_csn)
-                continue;
-            if (!chosen || k.second > chosen->first)
-                chosen = {k.second, v};
-        }
-        if (!chosen)
-            return {std::make_shared<DeleteBitmap>(), 0};  /// empty non-null on miss
-        return {chosen->second, chosen->first};
-    }
-
-    void installBitmap(const PartName & target, CSN csn, const DeleteBitmap & bitmap) override
-    {
-        auto owned = std::make_shared<DeleteBitmap>();
-        owned->addMany(bitmap.toVector());
-        store[{target, csn}] = std::move(owned);
-    }
-
-    void removeBitmap(const PartName & target, CSN csn) override { store.erase({target, csn}); }
-};
-
-/// Coordinator that advances csn manually so tests can control the
-/// snapshot_csn that `takeQuerySnapshot` observes.
-class StepCoordinator : public ICommitCoordinator
-{
-public:
-    CSN csn = INVALID_CSN;
-    void setCurrent(CSN v) { csn = v; }
-
-    PreparedCommitSnapshot readSnapshot() override
-    {
-        PreparedCommitSnapshot s;
-        s.csn = csn;
-        return s;
-    }
-
-    CSN attemptCommit(PublishAction staging) override
-    {
-        const CSN tentative = csn + 1;
-        if (staging)
-            staging(tentative);
-        csn = tentative;
-        return tentative;
-    }
-
-    void withinSnapshotRegion(std::function<void(CSN)> fn) override { fn(csn); }
-};
 
 /// Counting pin registry: tracks live pin handles per csn so tests can assert
 /// pin RAII behaviour without depending on `LocalPinRegistry`'s internals.
@@ -133,47 +71,19 @@ public:
     UInt64 total() const
     {
         UInt64 t = 0;
-        for (auto & p : pins_by_csn)
+        for (const auto & p : pins_by_csn)
             t += p.second;
         return t;
     }
 };
 
-inline std::shared_ptr<DeleteBitmap> makeBitmap(std::initializer_list<UInt64> values)
+inline DeleteBitmapPtr makeBitmap(std::initializer_list<UInt64> values)
 {
     auto bm = std::make_shared<DeleteBitmap>();
     for (auto v : values)
         bm->add(v);
     return bm;
 }
-
-struct Fixture
-{
-    FakeBitmapStore * store = nullptr;
-    StepCoordinator * coord = nullptr;
-    CountingPinRegistry * pins = nullptr;
-    std::unique_ptr<PartitionTxnController> state;
-};
-
-inline Fixture makeFixture()
-{
-    auto store_owned = std::make_unique<FakeBitmapStore>();
-    auto coord_owned = std::make_unique<StepCoordinator>();
-    auto pin_owned = std::make_unique<CountingPinRegistry>();
-    Fixture fx;
-    fx.store = store_owned.get();
-    fx.coord = coord_owned.get();
-    fx.pins = pin_owned.get();
-    fx.state = std::make_unique<PartitionTxnController>(
-        std::move(coord_owned),
-        std::move(store_owned),
-        std::move(pin_owned));
-    return fx;
-}
-
-/// ---- Commit-driver shape ----------------------------------------------
-/// Recording store + bump-on-commit coordinator used by the commit-driver
-/// gtests (DELETE / INSERT round-trip, cumulative-publish, rollback).
 
 /// Sink-the-calls bitmap store. Records every `installBitmap(target, csn,
 /// bytes)` and `removeBitmap(target, csn)` so a test can assert exactly which
@@ -198,7 +108,7 @@ public:
     {
         PartName target;
         CSN csn = INVALID_CSN;
-        std::shared_ptr<DeleteBitmap> bytes;
+        DeleteBitmapPtr bytes;
     };
     std::vector<PutCall> puts;
 
@@ -209,22 +119,21 @@ public:
     };
     std::vector<UnlinkCall> unlinks;
 
-    std::map<std::pair<PartName, CSN>, std::shared_ptr<DeleteBitmap>> store;
+    std::map<std::pair<PartName, CSN>, DeleteBitmapPtr> store;
     std::map<PartName, UInt64> cached_version;
 
     bool enforce_monotonicity = false;
 
-    void seed(const PartName & target, CSN csn, std::shared_ptr<DeleteBitmap> bytes)
+    void seed(const PartName & target, CSN csn, DeleteBitmapPtr bytes)
     {
         store[{target, csn}] = std::move(bytes);
-        if (csn > cached_version[target])
-            cached_version[target] = csn;
+        cached_version[target] = std::max(csn, cached_version[target]);
     }
 
-    std::pair<std::shared_ptr<const DeleteBitmap>, CSN>
+    std::pair<ConstDeleteBitmapPtr, CSN>
     readBitmap(const PartName & part, CSN snapshot_csn) override
     {
-        std::optional<std::pair<CSN, std::shared_ptr<DeleteBitmap>>> chosen;
+        std::optional<std::pair<CSN, DeleteBitmapPtr>> chosen;
         for (auto & [k, v] : store)
         {
             if (k.first != part || k.second > snapshot_csn)
@@ -250,8 +159,7 @@ public:
         owned->addMany(bitmap.toVector());
         puts.push_back({target, csn, owned});
         store[{target, csn}] = std::move(owned);
-        if (csn > cached_version[target])
-            cached_version[target] = csn;
+        cached_version[target] = std::max(csn, cached_version[target]);
     }
 
     void removeBitmap(const PartName & target, CSN csn) override
@@ -318,8 +226,7 @@ public:
         if (drift_sampler)
         {
             const CSN sampled = drift_sampler();
-            if (sampled > csn)
-                csn = sampled;
+            csn = std::max(sampled, csn);
         }
         const CSN tentative = csn + 1;
         if (staging)
@@ -331,29 +238,28 @@ public:
     void withinSnapshotRegion(std::function<void(CSN)> fn) override { fn(csn); }
 };
 
-class FakePinRegistry : public IPinRegistry
+struct Fixture
 {
-public:
-    std::shared_ptr<PinHandle> acquire(CSN csn) override { return makeHandle(csn, [] {}); }
-    CSN clusterFloor() override { return MAX_CSN; }
+    RecordingBitmapStore * store = nullptr;
+    FakeCoordinator * coord = nullptr;
+    CountingPinRegistry * pins = nullptr;
+    std::unique_ptr<PartitionTxnController> state;
 };
 
-inline std::shared_ptr<DeleteBitmap> bitmapOf(std::initializer_list<UInt64> values)
-{
-    return makeBitmap(values);
-}
-
-inline std::unique_ptr<PartitionTxnController> makeRecordingFixture(
-    RecordingBitmapStore *& out_store, FakeCoordinator *& out_coord)
+inline Fixture makeFixture()
 {
     auto store_owned = std::make_unique<RecordingBitmapStore>();
     auto coord_owned = std::make_unique<FakeCoordinator>();
-    out_store = store_owned.get();
-    out_coord = coord_owned.get();
-    return std::make_unique<PartitionTxnController>(
+    auto pin_owned = std::make_unique<CountingPinRegistry>();
+    Fixture fx;
+    fx.store = store_owned.get();
+    fx.coord = coord_owned.get();
+    fx.pins = pin_owned.get();
+    fx.state = std::make_unique<PartitionTxnController>(
         std::move(coord_owned),
         std::move(store_owned),
-        std::make_unique<FakePinRegistry>());
+        std::move(pin_owned));
+    return fx;
 }
 
 }

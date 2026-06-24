@@ -71,7 +71,7 @@ void writeBitmapToStorage(
     storage.replaceFile(tmp_name, final_name);
 }
 
-std::shared_ptr<DeleteBitmap> readBitmapFromStorage(
+UniqueKeyTxn::DeleteBitmapPtr readBitmapFromStorage(
     const IDataPartStorage & storage,
     BitmapVersion version,
     const String & diag_part_name)
@@ -85,7 +85,7 @@ std::shared_ptr<DeleteBitmap> readBitmapFromStorage(
     ReadSettings read_settings;
     auto buf = storage.readFile(file_name, read_settings, /*read_hint=*/{});
     auto deserialized = DeleteBitmap::deserialize(*buf);
-    return std::shared_ptr<DeleteBitmap>(deserialized.release());
+    return UniqueKeyTxn::DeleteBitmapPtr(deserialized.release());
 }
 
 BitmapVersion getLastVersionFromStorage(const IDataPartStorage & storage)

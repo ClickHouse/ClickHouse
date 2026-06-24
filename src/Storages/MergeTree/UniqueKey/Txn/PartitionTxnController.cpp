@@ -51,7 +51,7 @@ PartitionTxnController::prepareCumulativePayloads(const CommitRequest & req, CSN
         if (prev->empty() && !has_delta)
             continue;
 
-        ConstRoaringBitmapPtr bitmap;
+        ConstDeleteBitmapPtr bitmap;
         if (!has_delta)
             /// Re-publish the prior cumulative (already const, read-only here).
             bitmap = std::move(prev);
@@ -162,8 +162,6 @@ CommitResult PartitionTxnController::commit(CommitRequest req)
 
     CommitResult result;
     result.csn = csn;
-    /// `new_part` is filled in by the caller (which holds the MergeTreeData
-    /// hook); this layer returns only the csn.
     return result;
 }
 
@@ -199,7 +197,7 @@ QuerySnapshotResult PartitionTxnController::takeQuerySnapshot()
     /// is owned by `*this`, which outlives every snapshot it issues.
     IBitmapStore * const store = bitmap_store.get();
     const CSN snap_csn = view->csn;
-    view->bitmap_at = [store, snap_csn](const PartName & part) -> ConstRoaringBitmapPtr
+    view->bitmap_at = [store, snap_csn](const PartName & part) -> ConstDeleteBitmapPtr
     {
         /// Never null: readBitmap returns an empty sentinel on miss; consumers read it read-only.
         auto [bitmap, chosen_csn] = store->readBitmap(part, snap_csn);
@@ -219,7 +217,6 @@ void PartitionTxnController::runGcRound()
 }
 
 void PartitionTxnController::recover(
-    std::vector<MergeTreeDataPartPtr> /*active_parts*/,
     std::vector<MutableDataPartStoragePtr> tmp_storages)
 {
     /// Recovery sweep:

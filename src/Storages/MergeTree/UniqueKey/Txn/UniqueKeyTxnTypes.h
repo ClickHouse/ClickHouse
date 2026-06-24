@@ -12,15 +12,10 @@ namespace DB
 namespace DB::UniqueKeyTxn
 {
 
-/// Owned, mutable per-part delete bitmap. WRITER-side shape: the delta a
-/// commit contributes (`TouchedPartKills::new_kills`) and the bitmaps the
-/// DELETE row finder produces.
-using RoaringBitmapPtr = std::shared_ptr<DeleteBitmap>;
-
-/// READER-side shape — `IBitmapStore::readBitmap`'s chosen bitmap and the
-/// cumulative payload `commit` publishes (read-only once built; shared across
-/// readers, copy-mutated by writers). See `IBitmapStore.h`.
-using ConstRoaringBitmapPtr = std::shared_ptr<const DeleteBitmap>;
+/// Owned, mutable per-part delete bitmap (writer side).
+using DeleteBitmapPtr = std::shared_ptr<DeleteBitmap>;
+/// Shared read-only bitmap (reader side; copy-mutated by writers).
+using ConstDeleteBitmapPtr = std::shared_ptr<const DeleteBitmap>;
 
 /// Commit Sequence Number. Per-partition monotone identifier; 0 means "no
 /// commit yet on this partition" (recovery starts from this floor).

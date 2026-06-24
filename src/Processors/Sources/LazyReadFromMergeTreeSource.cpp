@@ -81,6 +81,10 @@ RangesInDataParts LazyReadFromMergeTreeSource::splitRanges(RangesInDataParts par
                     part.part_starting_offset_in_query,
                     std::move(part.ranges),
                     part.read_hints);
+                /// UNIQUE KEY — the 6-arg ctor doesn't carry the pinned
+                /// delete bitmap; propagate it onto the rebuilt range.
+                split_parts_and_ranges.back().delete_bitmap = part.delete_bitmap;
+                split_parts_and_ranges.back().pinned_bitmap_csn = part.pinned_bitmap_csn;
 
                 break;
             }
@@ -126,6 +130,10 @@ RangesInDataParts LazyReadFromMergeTreeSource::splitRanges(RangesInDataParts par
                 part.part_starting_offset_in_query,
                 std::move(ranges),
                 part.read_hints);
+            /// UNIQUE KEY — the 6-arg ctor doesn't carry the pinned
+            /// delete bitmap; propagate it onto the rebuilt range.
+            split_parts_and_ranges.back().delete_bitmap = part.delete_bitmap;
+            split_parts_and_ranges.back().pinned_bitmap_csn = part.pinned_bitmap_csn;
         }
     }
 

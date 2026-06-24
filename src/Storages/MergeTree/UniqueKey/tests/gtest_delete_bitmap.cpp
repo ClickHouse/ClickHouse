@@ -4,6 +4,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
+#include <Storages/MergeTree/UniqueKey/Txn/UniqueKeyTxnTypes.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 
@@ -493,7 +494,7 @@ TEST(DeleteBitmapCacheTest, GetOrSetLoadsOnceAndIsKeyDeterministic)
 
     size_t load_calls = 0;
     auto key = DeleteBitmapCache::makeKey("part-b", 7);
-    auto load = [&]() -> std::shared_ptr<DeleteBitmap>
+    auto load = [&]() -> UniqueKeyTxn::DeleteBitmapPtr
     {
         ++load_calls;
         auto bm = std::make_shared<DeleteBitmap>();

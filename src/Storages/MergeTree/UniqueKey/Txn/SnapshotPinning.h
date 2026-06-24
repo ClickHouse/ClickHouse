@@ -15,9 +15,6 @@ namespace DB::UniqueKeyTxn
 /// oldest pin so the bitmap-GC rule (`V_next ≤ floor`) is safe.
 ///
 /// Local: in-memory map keyed by csn under `pins_mutex`.
-///
-/// Required ProfileEvents:
-///   UniqueKeyPinAcquireMicros — `acquire()` wall-time.
 class IPinRegistry
 {
 public:
@@ -87,7 +84,7 @@ struct PartitionView
     /// `QuerySnapshot`) outlives the closure. Returns a NON-NULL bitmap
     /// always — empty (not null) on miss. The returned `readBitmap` bitmap
     /// is shared const; read-side consumers treat it read-only.
-    std::function<ConstRoaringBitmapPtr(const PartName & part)> bitmap_at;
+    std::function<ConstDeleteBitmapPtr(const PartName & part)> bitmap_at;
 };
 
 /// Cross-thread / cross-pipeline-fragment safe handle to an immutable

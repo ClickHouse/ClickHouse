@@ -6,7 +6,6 @@
 #include <Storages/MergeTree/UniqueKey/Txn/UniqueKeyManifest.h>
 #include <Storages/MergeTree/UniqueKey/Txn/UniqueKeyTxnTypes.h>
 #include <Common/Logger.h>
-#include <Common/PODArray.h>
 
 #include <cstddef>
 #include <memory>
@@ -15,7 +14,6 @@
 
 namespace DB
 {
-class MergeTreeIndexGranularity;
 class MergeTreeData;
 struct RangesInDataParts;
 }
@@ -35,36 +33,6 @@ inline bool isPartVisibleAtSnapshotCsn(const std::optional<UniqueKeyPartMeta> & 
 {
     return !uk_meta || uk_meta->creation_csn <= pinned_csn;
 }
-
-/// Surviving mark ranges after granule-skip, plus how many granules were
-/// dropped (for the ProfileEvent / debug log at the call site).
-struct LiveMarkRanges
-{
-    MarkRanges kept;
-    size_t     skipped = 0;
-};
-
-/// Granule-skip for a UNIQUE KEY read: drop every mark whose rows are all in
-/// `bitmap` (`rangeCardinality(row_begin, row_end) == granule_rows`), splitting
-/// a run when a middle granule is excised. Pure — the production read-path
-/// granule analysis (`ReadFromMergeTree::selectRangesToRead`) and the unit
-/// tests both call this, so the half-open-range / last-mark arithmetic cannot
-/// drift between them.
-LiveMarkRanges selectLiveMarkRanges(
-    const MarkRanges & ranges,
-    const MergeTreeIndexGranularity & granularity,
-    const DeleteBitmap & bitmap);
-
-/// Row-level filter: `out_filter[i] = 0` for every `offsets[i]` present in
-/// `bitmap`, 1 otherwise. `offsets` is the full UInt64 `_part_offset` — no
-/// narrowing above UInt32. `out_filter` is resized to `count`. Returns the
-/// number of surviving (kept) rows. Pure — shared by the production row filter
-/// (`MergeTreeSelectProcessor`) and the unit tests.
-size_t buildDeleteBitmapFilter(
-    const UInt64 * offsets,
-    size_t count,
-    const DeleteBitmap & bitmap,
-    PaddedPODArray<UInt8> & out_filter);
 
 /// Read-path orchestration for the UNIQUE KEY delete bitmap. For each touched
 /// partition, capture one snapshot pin at its current csn; per part, pick the

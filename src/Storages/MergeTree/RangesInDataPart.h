@@ -5,7 +5,7 @@
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
-#include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
+#include <Storages/MergeTree/UniqueKey/Txn/UniqueKeyTxnTypes.h>
 #include <Storages/MergeTree/VectorSearchUtils.h>
 
 #include <deque>
@@ -129,7 +129,7 @@ struct RangesInDataPart
     /// `pinned_bitmap_csn` carries the snapshot's csn (an upper bound on the
     /// chosen bitmap's csn). Informational only — no read-path branch inspects
     /// its exact value.
-    ConstDeleteBitmapPtr delete_bitmap;
+    UniqueKeyTxn::ConstDeleteBitmapPtr delete_bitmap;
     UInt64 pinned_bitmap_csn = 0;
 
     RangesInDataPart(

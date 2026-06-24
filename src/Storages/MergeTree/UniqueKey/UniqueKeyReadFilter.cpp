@@ -17,6 +17,22 @@ extern const Event UniqueKeyBitmapGranulesSkipped;
 namespace DB::UniqueKeyTxn
 {
 
+namespace
+{
+
+/// Surviving mark ranges after granule-skip, plus how many granules were
+/// dropped (for the ProfileEvent / debug log at the call site).
+struct LiveMarkRanges
+{
+    MarkRanges kept;
+    size_t     skipped = 0;
+};
+
+/// Granule-skip for a UNIQUE KEY read: drop every mark whose rows are all in
+/// `bitmap` (`rangeCardinality(row_begin, row_end) == granule_rows`), splitting
+/// a run when a middle granule is excised. Mirrors the production read-path
+/// granule analysis (`ReadFromMergeTree::selectRangesToRead`); covered
+/// end-to-end by the stateless test `04155_unique_key_delete_partitions_predicates.sql`.
 LiveMarkRanges selectLiveMarkRanges(
     const MarkRanges & ranges,
     const MergeTreeIndexGranularity & granularity,
@@ -62,27 +78,6 @@ LiveMarkRanges selectLiveMarkRanges(
     return out;
 }
 
-size_t buildDeleteBitmapFilter(
-    const UInt64 * offsets,
-    size_t count,
-    const DeleteBitmap & bitmap,
-    PaddedPODArray<UInt8> & out_filter)
-{
-    out_filter.resize(count);
-    size_t kept = count;
-    for (size_t i = 0; i < count; ++i)
-    {
-        if (bitmap.contains(offsets[i]))
-        {
-            out_filter[i] = 0;
-            --kept;
-        }
-        else
-        {
-            out_filter[i] = 1;
-        }
-    }
-    return kept;
 }
 
 std::shared_ptr<std::vector<QuerySnapshot>> applyUniqueKeyDeleteBitmaps(
@@ -109,7 +104,7 @@ std::shared_ptr<std::vector<QuerySnapshot>> applyUniqueKeyDeleteBitmaps(
         const auto & data_part = part_with_ranges.data_part;
         const String & partition_id = data_part->info.getPartitionId();
 
-        size_t pin_idx;
+        size_t pin_idx = 0;
         auto it = partition_id_to_pin.find(partition_id);
         if (it == partition_id_to_pin.end())
         {

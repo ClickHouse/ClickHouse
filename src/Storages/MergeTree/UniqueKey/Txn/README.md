@@ -1,9 +1,13 @@
 # UNIQUE KEY transaction layer
 
-Per-partition snapshot-isolated reads and synchronous writes (`INSERT` and `DELETE`) for UNIQUE KEY
-`MergeTree`, over versioned per-part delete bitmaps. One non-replicated ("Local") implementation
-today, behind strategy interfaces so a shared/replicated backend can replace it without touching the
-protocol.
+Per-partition snapshot-isolated reads and synchronous writes for UNIQUE KEY `MergeTree`, over
+versioned per-part delete bitmaps. One non-replicated ("Local") implementation today, behind strategy
+interfaces so a shared/replicated backend can replace it without touching the protocol.
+
+In this slice only `DELETE` drives a write commit (`PartitionTxnController::commit` is wired from
+`executeUniqueKeyDelete`); the `INSERT`-upsert commit is a later PR. The commit protocol below is
+written to drive both, so it describes the `INSERT` path as the intended design — but no `INSERT`
+caller exists yet.
 
 ## Core idea
 

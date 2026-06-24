@@ -6,7 +6,6 @@
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapFileOps.h>
-#include <IO/ReadSettings.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
@@ -43,19 +42,6 @@ MergeTreeBitmapStore::MergeTreeBitmapStore(
 {
 }
 
-namespace
-{
-    std::shared_ptr<DeleteBitmap> readFromStorage(
-        const IDataPartStorage & storage,
-        const std::string & file_name)
-    {
-        ReadSettings read_settings;
-        auto buf = storage.readFile(file_name, read_settings, /*read_hint=*/{});
-        auto deserialized = DeleteBitmap::deserialize(*buf);
-        return std::shared_ptr<DeleteBitmap>(deserialized.release());
-    }
-}
-
 std::vector<BitmapVersion> MergeTreeBitmapStore::getSnapshotCSNs(
     const IDataPartStorage & storage,
     const std::string & part_id)
@@ -79,19 +65,6 @@ std::vector<BitmapVersion> MergeTreeBitmapStore::getSnapshotCSNs(
     std::unique_lock lock(csns_mutex);
     auto [it, _inserted] = csns_per_part.try_emplace(part_id, std::move(csns));
     return it->second;
-}
-
-void MergeTreeBitmapStore::installBitmap(
-    const IMergeTreeDataPart & part,
-    BitmapVersion csn,
-    const DeleteBitmap & bitmap)
-{
-    installBitmap(
-        const_cast<IDataPartStorage &>(part.getDataPartStorage()),
-        part.getDeleteBitmapCacheIdentity(),
-        part.name,
-        csn,
-        bitmap);
 }
 
 void MergeTreeBitmapStore::installBitmap(
@@ -150,7 +123,7 @@ void MergeTreeBitmapStore::installBitmap(
     csns.push_back(csn); /// csn > csns.back() (checked above) keeps the list sorted ascending
 }
 
-std::pair<std::shared_ptr<const DeleteBitmap>, BitmapVersion> MergeTreeBitmapStore::readBitmap(
+std::pair<UniqueKeyTxn::ConstDeleteBitmapPtr, BitmapVersion> MergeTreeBitmapStore::readBitmap(
     const IDataPartStorage & storage,
     BitmapVersion snapshot_csn,
     const std::string & part_id)
@@ -162,10 +135,9 @@ std::pair<std::shared_ptr<const DeleteBitmap>, BitmapVersion> MergeTreeBitmapSto
         return {std::make_shared<DeleteBitmap>(), 0};
     const BitmapVersion chosen_csn = *(--it);
 
-    const String file_name = DeleteBitmap::fileNameForCSN(chosen_csn);
     if (!cache)
     {
-        std::shared_ptr<const DeleteBitmap> bm = readFromStorage(storage, file_name);
+        UniqueKeyTxn::ConstDeleteBitmapPtr bm = DeleteBitmapFileOps::readBitmapFromStorage(storage, chosen_csn, part_id);
         return {std::move(bm), chosen_csn};
     }
 
@@ -174,11 +146,11 @@ std::pair<std::shared_ptr<const DeleteBitmap>, BitmapVersion> MergeTreeBitmapSto
     auto [ptr, _loaded] = cache->getOrSet(key, [&]()
     {
         Stopwatch load_watch;
-        auto bm = readFromStorage(storage, file_name);
+        auto bm = DeleteBitmapFileOps::readBitmapFromStorage(storage, chosen_csn, part_id);
         ProfileEvents::increment(ProfileEvents::UniqueKeyBitmapLoadMicroseconds, load_watch.elapsedMicroseconds());
         return bm;
     });
-    std::shared_ptr<const DeleteBitmap> immutable = std::move(ptr);
+    UniqueKeyTxn::ConstDeleteBitmapPtr immutable = std::move(ptr);
     return {std::move(immutable), chosen_csn};
 }
 
@@ -319,6 +291,10 @@ MergeTreeBitmapStore::resolvePart(const UniqueKeyTxn::PartName & part_name) cons
     };
 
     /// Fast path: the cached Active-parts snapshot.
+    /// TODO(unique-key): this linear-scans the partition's active-part vector per
+    /// PartName, so a SELECT/count resolving P parts is O(P^2); acceptable for the
+    /// experimental slice — build a per-snapshot name→part map when large-partition
+    /// UK reads matter.
     auto shared = resolution_data->getActivePartsInPartitionShared(resolution_partition_id);
     if (shared)
     {
@@ -349,14 +325,14 @@ namespace
     /// Cache identity for the storage-level forward: the part's
     /// `getDeleteBitmapCacheIdentity` when resolution supplied one, else the
     /// `PartName` (single-part contexts that don't track a UUID).
-    const std::string & cacheIdentityOf(
+    std::string cacheIdentityOf(
         const std::string & resolved_identity, const UniqueKeyTxn::PartName & part)
     {
         return resolved_identity.empty() ? part : resolved_identity;
     }
 }
 
-std::pair<std::shared_ptr<const DeleteBitmap>, UniqueKeyTxn::CSN>
+std::pair<UniqueKeyTxn::ConstDeleteBitmapPtr, UniqueKeyTxn::CSN>
 MergeTreeBitmapStore::readBitmap(const UniqueKeyTxn::PartName & part, UniqueKeyTxn::CSN snapshot_csn)
 {
     auto resolved = resolvePart(part);

@@ -49,7 +49,7 @@ class RecordingBitmapStore : public IBitmapStore
 public:
     std::vector<std::pair<PartName, CSN>> unlinks;
 
-    std::pair<std::shared_ptr<const DeleteBitmap>, CSN>
+    std::pair<ConstDeleteBitmapPtr, CSN>
     readBitmap(const PartName & /*part*/, CSN /*csn*/) override { return {std::make_shared<DeleteBitmap>(), 0}; }
     void installBitmap(const PartName & /*target*/, CSN /*csn*/, const DeleteBitmap & /*bitmap*/) override {}
     void removeBitmap(const PartName & target, CSN csn) override { unlinks.emplace_back(target, csn); }
@@ -150,7 +150,7 @@ TEST(RecoveryTmpScan, ThirdPartyEntryUnlinksAndRemovesTmpDir)
 
     ASSERT_TRUE(std::filesystem::exists(tmp_path));
 
-    fx.state->recover({}, {tmp_dir});
+    fx.state->recover({tmp_dir});
 
     ASSERT_EQ(fx.store->unlinks.size(), 1u);
     EXPECT_EQ(fx.store->unlinks[0].first, "all_1_1_0");
@@ -177,7 +177,7 @@ TEST(RecoveryTmpScan, SelfTargetingEntryResolvesToTmpDirBasename)
     UniqueKeyManifest::write(*tmp_dir, meta);
     plantBitmapStub(*tmp_dir, 7);
 
-    fx.state->recover({}, {tmp_dir});
+    fx.state->recover({tmp_dir});
 
     ASSERT_EQ(fx.store->unlinks.size(), 2u);
     /// Order matches the manifest's `bitmaps_created` order.
@@ -198,7 +198,7 @@ TEST(RecoveryTmpScan, MissingManifestThrowsFailClosed)
     const std::filesystem::path tmp_path{tmp_dir->getFullPath()};
     /// Deliberately do NOT write unique_key.txt.
 
-    EXPECT_THROW(fx.state->recover({}, {tmp_dir}), DB::Exception);
+    EXPECT_THROW(fx.state->recover({tmp_dir}), DB::Exception);
     /// Tmp dir remains on disk — operator inspects.
     EXPECT_TRUE(std::filesystem::exists(tmp_path));
     EXPECT_TRUE(fx.store->unlinks.empty());
@@ -226,7 +226,7 @@ TEST(RecoveryTmpScan, MultipleTmpDirsDrainInOneCall)
     meta_b.bitmaps_created.emplace_back("all_0_0_0", 11);
     UniqueKeyManifest::write(*tmp_b, meta_b);
 
-    fx.state->recover({}, {tmp_a, tmp_b});
+    fx.state->recover({tmp_a, tmp_b});
 
     EXPECT_EQ(fx.store->unlinks.size(), 2u);
     EXPECT_FALSE(std::filesystem::exists(tmp_a_path));
@@ -255,7 +255,7 @@ TEST(RecoveryTmpScan, ForwardedEntriesAreNotUnlinked)
     UniqueKeyManifest::write(*tmp_dir, meta);
     plantBitmapStub(*tmp_dir, 50);
 
-    fx.state->recover({}, {tmp_dir});
+    fx.state->recover({tmp_dir});
 
     /// Only the self-bitmap was unlinked (resolved to the tmp dir basename);
     /// neither forwarded ref was touched.

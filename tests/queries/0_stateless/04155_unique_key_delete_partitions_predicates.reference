@@ -8,6 +8,8 @@ part_survivors	3	10
 part_survivors	5	20
 part_survivors	7	30
 part_survivors	9	30
+part_after_delete_trivial	5
+part_p10_trivial	2
 gran_after_insert	8
 gran_after_delete	4
 gran_survivors	5	e

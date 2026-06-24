@@ -165,19 +165,11 @@ public:
         bool has_exact_ranges = false;
         std::atomic<bool> exceeded_row_limits = false;
 
-        /// UNIQUE KEY — per-partition snapshot pins captured at
-        /// `selectRangesToRead` time. Each entry carries `(parts, csn,
-        /// bitmap_at)` plus the `IPinRegistry::PinHandle` that prevents GC
-        /// from unlinking a bitmap the reader still needs. Held by `shared_ptr`
-        /// to a (move-only) vector so the `AnalysisResult` stays copyable and
-        /// pin ref-counts survive query-plan cloning (e.g. parallel-replicas).
-        /// Empty / nullptr when the table has no unique key.
-        ///
-        /// LIFETIME: this `AnalysisResult` dies with the `QueryPlan` right
-        /// after the pipeline is built, BEFORE it runs. `initializePipeline`
-        /// therefore moves these pins onto the pipeline's resources so they
-        /// outlive the last read task; they must not be relied on past plan
-        /// teardown while still held here.
+        /// UNIQUE KEY per-partition snapshot pins (csn + bitmap_at + a GC-blocking
+        /// PinHandle), captured at `selectRangesToRead`; nullptr without a unique
+        /// key. shared_ptr-to-(move-only-)vector keeps `AnalysisResult` copyable for
+        /// plan cloning; `initializePipeline` moves them onto the pipeline so they
+        /// outlive plan teardown.
         std::shared_ptr<std::vector<UniqueKeyTxn::QuerySnapshot>> uk_partition_pins;
 
         AnalysisResult() = default;
@@ -429,10 +421,11 @@ public:
     /// UNIQUE KEY. Force `_part_offset` into the read columns
     /// WITHOUT altering the public `output_header` — the extra column is
     /// stripped by the final `makeConvertingActions` step in
-    /// `initializePipeline`. Sets `added` iff the column was not already
-    /// present. Used so the delete-bitmap row filter can key on absolute
-    /// part-local row offsets even under PREWHERE / skip-indexes.
-    void addPartOffsetForDeleteBitmap(bool & added);
+    /// `initializePipeline`. Returns whether it added the column (false if
+    /// `_part_offset` was already present). Used so the delete-bitmap row
+    /// filter can key on absolute part-local row offsets even under PREWHERE /
+    /// skip-indexes.
+    bool addPartOffsetForDeleteBitmap();
 
     void setLazyMaterializingRows(LazyMaterializingRowsPtr lazy_materializing_rows_) { lazy_materializing_rows = std::move(lazy_materializing_rows_); }
 

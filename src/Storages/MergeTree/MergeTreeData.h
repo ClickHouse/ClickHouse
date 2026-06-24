@@ -791,12 +791,8 @@ public:
     /// Keeper and has no process-local equivalent.
     std::shared_ptr<std::mutex> getOrCreatePartitionMutex(const String & partition_id) const;
 
-    /// UNIQUE KEY — lazily instantiate and return the partition's
-    /// transaction state. Engine factory picks the strategy bundle:
-    /// `MakeLocalStrategies` for plain MergeTree (Shared bundle for
-    /// replicated engines is not yet implemented). The returned pointer is
-    /// owned by `MergeTreeData::unique_key_txn_controllers` and stays valid for
-    /// the table's lifetime (no eviction).
+    /// UNIQUE KEY — lazily return the partition's transaction controller. Owned
+    /// by `unique_key_txn_controllers`, valid for the table's lifetime (no eviction).
     UniqueKeyTxn::PartitionTxnController & getOrCreateTxnController(const String & partition_id) const;
 
     /// Return the number of marks in all parts
@@ -823,13 +819,9 @@ public:
     size_t getTotalActiveSizeInRows() const;
     size_t getTotalUncompressedBytesInPatches() const;
 
-    /// UNIQUE KEY — sum of delete-bitmap cardinalities across the given parts,
-    /// each read at its partition snapshot. Used by `totalRows` /
-    /// `totalRowsByPartitionPredicate` to correct the trivial-count shortcut
-    /// (which ignores the bitmap). Uses the same `(parts, csn, bitmap_at)`
-    /// source the read path uses, so `count()` and `SELECT` agree; non-UK /
-    /// legacy parts contribute 0. Bitmap read errors propagate rather than
-    /// silently over-counting on corrupt bitmaps.
+    /// UNIQUE KEY — sum of delete-bitmap dead rows across `parts`, each at its
+    /// partition snapshot. Corrects the trivial-count shortcut so `count()` agrees
+    /// with `SELECT`; non-UK / legacy parts contribute 0. Read errors propagate.
     size_t getDeadRowsForUniqueKey(const DataPartsVector & parts, ContextPtr query_context) const;
 
     size_t getAllPartsCount() const;
@@ -1659,12 +1651,9 @@ protected:
     /// coordination primitive, not mutating table data).
     mutable UniqueKeyPartitionMutex unique_key_partition_mutex;
 
-    /// UNIQUE KEY — per-partition transaction state map. Lazily populated
-    /// by `getOrCreateTxnController(partition_id)`. Each entry owns a
-    /// `PartitionTxnController` wired with the engine-appropriate strategy
-    /// bundle. `mutable` for the same reason as `unique_key_partition_mutex`:
-    /// the accessor is logically const (installing ephemeral coordination
-    /// state, not mutating table data).
+    /// UNIQUE KEY — per-partition transaction controllers, lazily populated by
+    /// `getOrCreateTxnController`. `mutable` for the same reason as
+    /// `unique_key_partition_mutex`.
     mutable std::mutex unique_key_txn_controllers_mutex;
     mutable std::unordered_map<String, std::unique_ptr<UniqueKeyTxn::PartitionTxnController>> unique_key_txn_controllers;
 
@@ -1877,17 +1866,12 @@ protected:
 
     void resetSerializationHints(const DataPartsLock & lock);
 
-    /// UNIQUE KEY — per-partition txn-state recovery.
-    /// Enumerates `tmp_<op>_<part>/` dirs at the table's data root across all
-    /// disks, groups them by partition_id, gathers each partition's active
-    /// parts, and drives `PartitionTxnController::recover`, which sweeps the
-    /// `(target, csn)` sidecars listed in each tmp's `unique_key.txt`
-    /// manifest, then removes the tmp dir. SMT is a no-op (Keeper
-    /// authoritative). Errors are logged per tmp dir and recovery continues.
-    /// Must run WITHOUT `data_parts_mutex` held — the csn-seed path takes its
-    /// own shared parts lock, so it would self-deadlock under the exclusive
-    /// `lockParts`; called from the StorageMergeTree ctor after loadDataParts
-    /// releases that lock.
+    /// UNIQUE KEY — per-partition txn-state recovery: sweep each `tmp_<op>_<part>/`
+    /// manifest's orphaned sidecars, then drop the tmp dir (SMT is a no-op).
+    /// Fail-closed — an unrecoverable manifest/bitmap state throws CORRUPTED_DATA,
+    /// halting startup. Must run WITHOUT `data_parts_mutex` held (the csn-seed path
+    /// takes its own shared parts lock), so the StorageMergeTree ctor calls it after
+    /// loadDataParts releases that lock.
     void runUniqueKeyTxnRecovery();
 
     template <typename AddedParts, typename RemovedParts>

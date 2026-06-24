@@ -3478,20 +3478,15 @@ void ReadFromMergeTree::addStartingPartOffsetAndPartOffset(bool & added_part_sta
     required_source_columns = all_column_names;
 }
 
-void ReadFromMergeTree::addPartOffsetForDeleteBitmap(bool & added)
+bool ReadFromMergeTree::addPartOffsetForDeleteBitmap()
 {
     /// UNIQUE KEY — force `_part_offset` into the read columns but leave the
     /// public output header untouched; the final `makeConvertingActions`
-    /// strips it when `output_header` lacks it. Idempotent.
-    added = true;
+    /// strips it when `output_header` lacks it. Idempotent: returns whether it
+    /// added the column (false if `_part_offset` was already present).
     for (const auto & col_name : all_column_names)
-    {
         if (col_name == "_part_offset")
-        {
-            added = false;
-            return;
-        }
-    }
+            return false;
 
     /// Prepend to preserve the existing column order at the end.
     Names new_column_names;
@@ -3507,6 +3502,8 @@ void ReadFromMergeTree::addPartOffsetForDeleteBitmap(bool & added)
     /// Keep the analysis result's column list in sync for pool construction.
     if (analyzed_result_ptr)
         analyzed_result_ptr->column_names_to_read = all_column_names;
+
+    return true;
 }
 
 bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
@@ -3700,8 +3697,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         [](const RangesInDataPart & p) { return p.delete_bitmap && !p.delete_bitmap->empty(); });
     if (need_part_offset_for_bitmap)
     {
-        bool added_part_offset = false;
-        addPartOffsetForDeleteBitmap(added_part_offset);
+        const bool added_part_offset = addPartOffsetForDeleteBitmap();
         /// Keep `result.column_names_to_read` in sync — the pool reads from it.
         if (added_part_offset
             && std::find(result.column_names_to_read.begin(), result.column_names_to_read.end(), "_part_offset")

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
+#include <Storages/MergeTree/UniqueKey/Txn/UniqueKeyTxnTypes.h>
 #include <base/types.h>
 
 #include <memory>
@@ -42,7 +43,7 @@ namespace DeleteBitmapFileOps
         const String & diag_part_name = "");
 
     /// Read `delete_bitmap_{version}.rbm`. Throws `FILE_DOESNT_EXIST` if missing.
-    std::shared_ptr<DeleteBitmap> readBitmapFromStorage(
+    UniqueKeyTxn::DeleteBitmapPtr readBitmapFromStorage(
         const IDataPartStorage & storage,
         BitmapVersion version,
         const String & diag_part_name = "");

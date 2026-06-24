@@ -55,6 +55,11 @@ struct UniqueKeyManifest
     /// Canonical file name inside a part directory.
     static const char * FILE_NAME;
 
+    /// On-disk format version. Bump when the schema or field semantics change;
+    /// `read()` rejects anything else so an older binary fail-closes on a newer
+    /// manifest rather than misreading it.
+    static constexpr UInt64 FORMAT_VERSION = 1;
+
     /// Read and parse `unique_key.txt` from the part storage. Throws
     /// `CORRUPTED_DATA` on parse failure or missing file (caller is expected
     /// to check existence first if the part may legitimately carry no
