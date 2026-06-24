@@ -659,4 +659,18 @@ def test_oid_columns_named_argument(started_cluster):
     )
     assert node.query(f"SELECT count() FROM {plain_form} WHERE data = 'not-oid'") == "0\n"
 
+    # A named `options` combined with a positional `oid_columns` must keep both values in their
+    # canonical slots. The positional `oid_columns` used to overwrite the `options` slot, so the
+    # connection `options` were lost and `oid_columns` was never set. With a valid `options` and
+    # the positional `'data'` bound to `oid_columns`, a plain count must still succeed (proving the
+    # connection `options` survived) and filtering `data` by a non-oid string must raise (proving
+    # the positional `oid_columns` took effect).
+    mixed_form = (
+        "mongodb('mongo1:27017', 'test_oid_columns_named_argument', 'oid_table', 'root', "
+        f"'{mongo_pass}', structure='key UInt64, data String', options='connectTimeoutMS=20000', 'data')"
+    )
+    assert node.query(f"SELECT count() FROM {mixed_form}") == "100\n"
+    with pytest.raises(QueryRuntimeException):
+        node.query(f"SELECT * FROM {mixed_form} WHERE data = 'not-oid'")
+
     oid_table.drop()

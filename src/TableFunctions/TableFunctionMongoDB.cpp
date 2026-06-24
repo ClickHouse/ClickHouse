@@ -99,16 +99,18 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
 
     /// `getConfiguration` reads its arguments positionally, with `options` preceding `oid_columns`
     /// in the `host:port` form. Named arguments may be given in any order and `options` may be
-    /// omitted, so collect `options` and `oid_columns` separately and place them into their
-    /// canonical positions afterwards instead of pushing them in the order encountered. Otherwise
-    /// a named `oid_columns` without `options` would be misread as `options` and silently ignored.
+    /// omitted, so collect the named `options`/`oid_columns` and the positional optional arguments
+    /// separately, then place everything into the canonical positions afterwards instead of pushing
+    /// them in the order encountered. Otherwise a named `oid_columns` without `options` would be
+    /// misread as `options` and silently ignored, and a named `options` followed by a positional
+    /// `oid_columns` would overwrite the `options` slot and drop both values.
     ASTs main_arguments;
     main_arguments.reserve(args.size() - 1);
     const bool is_uri_form = args.size() <= 4;
     const size_t structure_position = is_uri_form ? 2 : 5;
     ASTPtr options_argument;
     ASTPtr oid_columns_argument;
-    size_t positional_optional_count = 0;
+    ASTs positional_optionals;
     for (size_t i = 0; i < args.size(); ++i)
     {
         if (const auto * ast_func = typeid_cast<const ASTFunction *>(args[i].get()))
@@ -125,24 +127,43 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
             structure = checkAndGetLiteralArgument<String>(args[i], "structure");
         else if (i < structure_position)
             main_arguments.push_back(args[i]);
-        else if (is_uri_form)
-            oid_columns_argument = args[i];
-        else if (positional_optional_count++ == 0)
-            options_argument = args[i];
         else
-            oid_columns_argument = args[i];
+            positional_optionals.push_back(args[i]);
     }
+
+    /// Bind the positional optional arguments to the canonical slots that named arguments did not
+    /// already fill, in declaration order. The URI form has a single optional slot (`oid_columns`);
+    /// the `host:port` form has `options` followed by `oid_columns`.
+    size_t next_positional = 0;
+    auto take_positional = [&]() -> ASTPtr
+    {
+        return next_positional < positional_optionals.size() ? positional_optionals[next_positional++] : nullptr;
+    };
+    if (is_uri_form)
+    {
+        if (!oid_columns_argument)
+            oid_columns_argument = take_positional();
+    }
+    else
+    {
+        if (!options_argument)
+            options_argument = take_positional();
+        if (!oid_columns_argument)
+            oid_columns_argument = take_positional();
+    }
+    if (next_positional < positional_optionals.size())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Too many arguments for table function '{}': a positional optional argument was given "
+            "together with named 'options'/'oid_columns' that already occupy the optional slots.",
+            getName());
 
     /// `oid_columns` occupies the slot after `options` in the `host:port` form, so insert an empty
     /// `options` placeholder when `oid_columns` is given without `options`. An empty `options`
     /// string is equivalent to omitting it.
-    if (!is_uri_form)
-    {
-        if (oid_columns_argument && !options_argument)
-            options_argument = make_intrusive<ASTLiteral>(Field(String()));
-        if (options_argument)
-            main_arguments.push_back(options_argument);
-    }
+    if (!is_uri_form && oid_columns_argument && !options_argument)
+        options_argument = make_intrusive<ASTLiteral>(Field(String()));
+    if (options_argument)
+        main_arguments.push_back(options_argument);
     if (oid_columns_argument)
         main_arguments.push_back(oid_columns_argument);
 
