@@ -11,6 +11,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/Pipe.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 
 #include <cmath>
@@ -34,9 +35,9 @@ String trim(std::string_view s)
 {
     size_t begin = 0;
     size_t end = s.size();
-    while (begin < end && isAsciiWhitespace(s[begin]))
+    while (begin < end && isWhitespaceASCII(s[begin]))
         ++begin;
-    while (end > begin && isAsciiWhitespace(s[end - 1]))
+    while (end > begin && isWhitespaceASCII(s[end - 1]))
         --end;
     return String(s.substr(begin, end - begin));
 }

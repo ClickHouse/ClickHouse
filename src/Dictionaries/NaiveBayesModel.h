@@ -12,19 +12,13 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/PODArray.h>
+#include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/isValidUTF8.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
-
-/// Tests whether a character is ASCII whitespace. This deliberately avoids `std::isspace`, whose behaviour
-/// is locale-dependent and undefined for argument values that are not representable as `unsigned char`.
-inline bool isAsciiWhitespace(char c)
-{
-    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f';
-}
 
 /// Per-call working buffers for classification, created once per query and reused across every row so that
 /// the hot path performs no per-row heap allocation. An instance is owned by the caller and is therefore
@@ -187,14 +181,14 @@ struct TokenPolicy
         while (pos < size)
         {
             // Skip any leading ASCII whitespace
-            while (pos < size && isAsciiWhitespace(data[pos]))
+            while (pos < size && isWhitespaceASCII(data[pos]))
                 ++pos;
             if (pos == size)
                 break;
 
             // Find the next whitespace
             size_t start = pos;
-            while (pos < size && !isAsciiWhitespace(data[pos]))
+            while (pos < size && !isWhitespaceASCII(data[pos]))
                 ++pos;
 
             tokens.emplace_back(data + start, pos - start);
@@ -260,13 +254,13 @@ struct TokenPolicy
         size_t pos = 0;
         while (pos < size)
         {
-            if (isAsciiWhitespace(s[pos]))
+            if (isWhitespaceASCII(s[pos]))
             {
                 /// A separator is canonical only as a single ' ' between two tokens, never leading the string.
                 if (count == 0 || s[pos] != ' ')
                     canonical = false;
                 const size_t ws_start = pos;
-                while (pos < size && isAsciiWhitespace(s[pos]))
+                while (pos < size && isWhitespaceASCII(s[pos]))
                     ++pos;
                 if (pos - ws_start > 1 || pos == size)
                     canonical = false;
@@ -274,7 +268,7 @@ struct TokenPolicy
             else
             {
                 ++count;
-                while (pos < size && !isAsciiWhitespace(s[pos]))
+                while (pos < size && !isWhitespaceASCII(s[pos]))
                     ++pos;
             }
         }
