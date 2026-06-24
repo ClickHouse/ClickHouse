@@ -128,7 +128,8 @@ TEST(AIClientFactory, MalformedConfigurationValues)
     config->setDouble("ai.temperature", 2.5); // This is accepted without validation
     
     AIConfiguration ai_config = AIClientFactory::loadConfiguration(*config);
-    EXPECT_EQ(2.5, ai_config.temperature); // It's loaded as-is
+    ASSERT_TRUE(ai_config.temperature.has_value());
+    EXPECT_EQ(2.5, *ai_config.temperature); // It's loaded as-is
     
     // Test negative max_tokens - Poco throws exception on negative integer for unsigned type
     config->setDouble("ai.temperature", 0.5);
@@ -149,6 +150,23 @@ TEST(AIClientFactory, MalformedConfigurationValues)
         ai_config = AIClientFactory::loadConfiguration(*config);
     });
     EXPECT_EQ(0, ai_config.timeout_seconds);
+}
+
+/// Temperature must be left unset unless explicitly configured, so that it is
+/// not sent to models that reject the `temperature` parameter.
+TEST(AIClientFactory, TemperatureUnsetByDefault)
+{
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration();
+    config->setString("ai.provider", "openai");
+    config->setString("ai.api_key", "test_key");
+
+    AIConfiguration without_temperature = AIClientFactory::loadConfiguration(*config);
+    EXPECT_FALSE(without_temperature.temperature.has_value());
+
+    config->setDouble("ai.temperature", 0.0);
+    AIConfiguration with_temperature = AIClientFactory::loadConfiguration(*config);
+    ASSERT_TRUE(with_temperature.temperature.has_value());
+    EXPECT_EQ(0.0, *with_temperature.temperature);
 }
 
 /// Test handling of special characters in API keys
