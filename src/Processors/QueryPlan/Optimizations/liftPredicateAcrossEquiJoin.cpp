@@ -212,9 +212,11 @@ size_t tryLiftPredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryPlan::
     SubstitutionMap r_to_l;
     for (const auto & [lhs, rhs] : equi_pairs)
     {
-        if (!changes_right)
+        const bool lhs_is_input = lhs.getNode() && lhs.getNode()->type == ActionsDAG::ActionType::INPUT;
+        const bool rhs_is_input = rhs.getNode() && rhs.getNode()->type == ActionsDAG::ActionType::INPUT;
+        if (!changes_right && rhs_is_input)
             l_to_r[lhs.getColumnName()] = rhs.getColumn();
-        if (!changes_left)
+        if (!changes_left && lhs_is_input)
             r_to_l[rhs.getColumnName()] = lhs.getColumn();
     }
 
