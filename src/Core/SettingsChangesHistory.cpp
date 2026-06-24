@@ -43,10 +43,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"optimize_trivial_count_with_sparsity_filter", false, false, "New (experimental) setting to serve `SELECT count() FROM t WHERE <pred>` from per-column `num_defaults` / `num_rows` recorded in `serialization.json` when `<pred>` partitions rows into defaults vs non-defaults."},
             {"use_sparsity_info_for_pruning", "off", "off", "New (experimental) setting controlling sparsity-based pruning of parts (always at plan time) and granules (at plan or scan time)."},
-        });
-
-        addSettingsChanges(settings_changes_history, "26.6",
-        {
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
         });
 
@@ -1267,7 +1263,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
             {"compute_exact_num_defaults_for_sparse_columns", false, false, "New setting gating exact per-column num_defaults computation for sparsity-based pruning and trivial-count rewrite"},
-
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",
