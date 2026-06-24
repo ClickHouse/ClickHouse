@@ -29,6 +29,13 @@ namespace DB::UniqueKeyTxn
 /// predicate, never a `snapshot->parts` set-intersect (which would drop a part
 /// a concurrent merge retired by C that an in-flight SELECT still legitimately
 /// reads — data loss).
+/// TODO(unique-key): ordinary INSERT parts are written via the plain
+/// `MergeTreeSink` and carry no `unique_key.txt` / `creation_csn`, so they reach
+/// this predicate as `uk_meta == nullopt` and are always visible — an INSERT
+/// committed after a reader's pin is therefore visible to that reader (standard
+/// MergeTree snapshot-at-query-start semantics; such a part also isn't in the
+/// query-start part list under normal timing). Full INSERT snapshot-isolation
+/// arrives when INSERT publishes through the txn layer (the UPSERT/txn-write PR).
 inline bool isPartVisibleAtSnapshotCsn(const std::optional<UniqueKeyPartMeta> & uk_meta, CSN pinned_csn)
 {
     return !uk_meta || uk_meta->creation_csn <= pinned_csn;
