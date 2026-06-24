@@ -2,5 +2,8 @@
     <merge_tree>
         <!-- 10 seconds (default is 1 minute) -->
         <zookeeper_session_expiration_check_period>10</zookeeper_session_expiration_check_period>
+        <!-- TEMPORARY EXPERIMENT (revert before merge): force adaptive codec selection on for every
+             MergeTree table so the whole CI suite exercises it. Pairs with the 03413 whitelist below. -->
+        <allow_experimental_adaptive_codec_selection>1</allow_experimental_adaptive_codec_selection>
     </merge_tree>
 </clickhouse>
