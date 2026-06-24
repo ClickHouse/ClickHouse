@@ -604,6 +604,30 @@ bool FileSegment::reserve(
 
     size_to_reserve = size_to_reserve - already_reserved_size;
 
+    /// Reserve space ahead in coarser granules to reduce the rate of cache state lock
+    /// acquisitions on the hot reservation path: subsequent `reserve` calls for this segment
+    /// are then served by the `already_reserved_size >= size_to_reserve` short-circuit above
+    /// without taking the state lock. The extra reserved-but-not-yet-downloaded space is
+    /// reclaimed on file segment completion (see shrinkFileSegmentToDownloadedSize).
+    {
+        const size_t granule = cache->getReserveGranularity();
+        if (granule > size_to_reserve)
+        {
+            if (is_unbound)
+            {
+                /// Unbound (resizable) segments have no fixed range: reserve a full granule
+                /// ahead and let the range grow with it below (the unused tail is returned on completion).
+                size_to_reserve = granule;
+            }
+            else
+            {
+                /// Bounded segments: never reserve past the segment range.
+                chassert(range().size() >= reserved_size);
+                size_to_reserve = std::min(granule, range().size() - reserved_size);
+            }
+        }
+    }
+
     /// This (resizable file segments) is allowed only for single threaded use of file segment.
     /// Currently it is used only for temporary files through cache.
     if (is_unbound && is_file_segment_size_exceeded)
