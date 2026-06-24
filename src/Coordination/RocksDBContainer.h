@@ -127,7 +127,15 @@ public:
             {
                 auto new_pair = std::make_shared<KVPair>();
                 new_pair->key = iter->key().ToStringView();
-                new_pair->value.decodeFromString(iter->value().ToString());
+                ReadBufferFromOwnString buffer(iter->value().ToStringView());
+                typename Node::Meta & meta = new_pair->value;
+                readPODBinary(meta, buffer);
+                readVarUInt(new_pair->value.stats.data_size, buffer);
+                if (new_pair->value.stats.data_size)
+                {
+                    new_pair->value.data = std::unique_ptr<char[]>(new char[new_pair->value.stats.data_size]);
+                    buffer.readStrict(new_pair->value.data.get(), new_pair->value.stats.data_size);
+                }
                 pair = new_pair;
             }
             else
@@ -153,7 +161,7 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get rocksdb options");
         }
         rocksdb_dir = disk->getPath();
-        rocksdb::DB * db = nullptr;
+        rocksdb::DB * db;
         auto status = rocksdb::DB::Open(*options, rocksdb_dir, &db);
         if (!status.ok())
         {
@@ -214,18 +222,21 @@ public:
             if (!is_direct_child(iter->key(), rocksdb::Slice(key_prefix)))
                 continue;
             Node node;
-            if (read_meta && read_data)
-            {
-                /// Full decode (data and the TTL fields), matching find() and the iterator.
-                /// A manual partial decode here would drop destroy_time/ttl and silently
-                /// hand back non-TTL nodes (e.g. to recursive remove).
-                node.decodeFromString(iter->value().ToString());
-            }
-            else if (read_meta)
+            if (read_meta)
             {
                 ReadBufferFromOwnString buffer(iter->value().ToStringView());
                 typename Node::Meta & meta = node;
+                /// We do not read data here
                 readPODBinary(meta, buffer);
+                if (read_data)
+                {
+                    readVarUInt(meta.stats.data_size, buffer);
+                    if (meta.stats.data_size)
+                    {
+                        node.data = std::unique_ptr<char[]>(new char[meta.stats.data_size]);
+                        buffer.readStrict(node.data.get(), meta.stats.data_size);
+                    }
+                }
             }
             std::string real_key(iter->key().data() + len, iter->key().size() - len);
             result.emplace_back(std::move(real_key), std::move(node));
@@ -245,17 +256,27 @@ public:
         return true;
     }
 
-    const_iterator find(std::string_view key) const
+    const_iterator find(std::string_view key)
     {
+        /// rocksdb::PinnableSlice slice;
         std::string buffer_str;
         rocksdb::Status status = rocksdb_ptr->Get(rocksdb::ReadOptions(), key, &buffer_str);
         if (status.IsNotFound())
             return end();
         if (!status.ok())
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during executing find. The error message is {}.", status.ToString());
+        ReadBufferFromOwnString buffer(buffer_str);
         auto kv = std::make_shared<KVPair>();
         kv->key = key;
-        kv->value.decodeFromString(buffer_str);
+        typename Node::Meta & meta = kv->value;
+        readPODBinary(meta, buffer);
+        /// TODO: Sometimes we don't need to load data.
+        readVarUInt(kv->value.stats.data_size, buffer);
+        if (kv->value.stats.data_size)
+        {
+            kv->value.data = std::unique_ptr<char[]>(new char[kv->value.stats.data_size]);
+            buffer.readStrict(kv->value.data.get(), kv->value.stats.data_size);
+        }
         return const_iterator(kv);
     }
 
@@ -263,7 +284,7 @@ public:
     {
         auto it = find(key);
         chassert(it != end());
-        return MockNode(it->value.numChildren(), it->value.getData(), it->value.acl_id);
+        return MockNode(it->value.stats.numChildren(), it->value.getData(), it->value.acl_id);
     }
 
     const_iterator updateValue(std::string_view key, ValueUpdater updater)
@@ -308,7 +329,7 @@ public:
         load_options.target_file_size_base = 256 * 1024 * 1024;
 
         rocksdb_dir = disk->getPath();
-        rocksdb::DB * db = nullptr;
+        rocksdb::DB * db;
         auto status = rocksdb::DB::Open(load_options, rocksdb_dir, &db);
         if (!status.ok())
         {
@@ -331,7 +352,7 @@ public:
 
         auto load_options = *options;
         rocksdb_dir = disk->getPath();
-        rocksdb::DB * db = nullptr;
+        rocksdb::DB * db;
         auto status = rocksdb::DB::Open(*options, rocksdb_dir, &db);
         if (!status.ok())
         {
@@ -491,7 +512,7 @@ private:
     DiskPtr disk;
     std::shared_ptr<rocksdb::Options> options;
 
-    const rocksdb::Snapshot * snapshot{};
+    const rocksdb::Snapshot * snapshot;
 
     bool snapshot_mode{false};
     size_t current_version{0};

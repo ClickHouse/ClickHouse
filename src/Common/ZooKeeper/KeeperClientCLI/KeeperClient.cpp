@@ -172,7 +172,6 @@ KeeperClientBase::KeeperClientBase(std::ostream & cout_, std::ostream & cerr_)
 {
     loadCommands({
         std::make_shared<LSCommand>(),
-        std::make_shared<LSRCommand>(),
         std::make_shared<CDCommand>(),
         std::make_shared<SetCommand>(),
         std::make_shared<CreateCommand>(),
@@ -196,7 +195,6 @@ KeeperClientBase::KeeperClientBase(std::ostream & cout_, std::ostream & cerr_)
         std::make_shared<MVCommand>(),
         std::make_shared<MVRCommand>(),
         std::make_shared<GetAclCommand>(),
-        std::make_shared<WaitWatchCommand>(),
     });
 }
 
