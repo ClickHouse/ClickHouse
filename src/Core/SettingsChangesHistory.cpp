@@ -39,10 +39,14 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-        addSettingsChanges(settings_changes_history, "26.6",
+        addSettingsChanges(settings_changes_history, "26.7",
         {
             {"optimize_trivial_count_with_sparsity_filter", false, false, "New (experimental) setting to serve `SELECT count() FROM t WHERE <pred>` from per-column `num_defaults` / `num_rows` recorded in `serialization.json` when `<pred>` partitions rows into defaults vs non-defaults."},
             {"use_sparsity_info_for_pruning", "off", "off", "New (experimental) setting controlling sparsity-based pruning of parts (always at plan time) and granules (at plan or scan time)."},
+        });
+
+        addSettingsChanges(settings_changes_history, "26.6",
+        {
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
             {"output_format_image_width", 1024, 1024, "New setting controlling the width of the output image for image output formats such as PNG."},
             {"output_format_image_height", 1024, 1024, "New setting controlling the height of the output image for image output formats such as PNG."},
@@ -1256,6 +1260,11 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.7",
+        {
+            {"compute_exact_num_defaults_for_sparse_columns", false, false, "New setting gating exact per-column num_defaults computation for sparsity-based pruning and trivial-count rewrite"},
+        });
+
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",
         {
             {"packed_skip_index_max_bytes", 0, 0, "New setting. Pack any skip-index substream whose serialized on-disk size is at most this many bytes into a single skp_idx.packed archive per part; larger substreams stay in the standalone skp_idx_<name>.idx2 / .mrk2 layout. Decision is made per substream at write time."},
@@ -1263,7 +1272,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_enable_keeper_parts_extra_data", false, true, "Enable coordinated merges by default"},
             {"shared_merge_tree_enable_coordinated_merges", false, true, "Enable coordinated merges by default"},
             {"shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup", false, false, "New setting which allows SMT download parts data from replicas instead of S3 on startup"},
-            {"compute_exact_num_defaults_for_sparse_columns", false, false, "New setting gating exact per-column num_defaults computation for sparsity-based pruning and trivial-count rewrite"},
             {"text_index_dictionary_block_size", 512, 512, "New setting"},
             {"text_index_dictionary_block_frontcoding_compression", true, true, "New setting"},
             {"text_index_posting_list_block_size", 1048576, 1048576, "New setting"},
