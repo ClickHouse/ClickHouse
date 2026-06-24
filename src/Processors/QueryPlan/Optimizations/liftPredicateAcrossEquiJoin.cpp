@@ -120,18 +120,15 @@ std::string resolveToFilterInput(const QueryPlan::Node * node, std::string name)
 
 size_t tryLiftSide(
     QueryPlan::Node * join_node,
-    size_t source_idx,
     size_t target_idx,
+    QueryPlan::Node * source_root,
+    const FilterStep * source_filter,
     const SubstitutionMap & substitution,
     QueryPlan::Nodes & nodes)
 {
-    auto * source_root = join_node->children[source_idx];
     auto * target_root = join_node->children[target_idx];
-
     if (!targetReachesIndexedSource(target_root))
         return 0;
-
-    const auto * source_filter = findFilterBelow(source_root);
     if (!source_filter)
         return 0;
 
@@ -212,11 +209,9 @@ size_t tryLiftPredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryPlan::
     SubstitutionMap r_to_l;
     for (const auto & [lhs, rhs] : equi_pairs)
     {
-        const bool lhs_is_input = lhs.getNode() && lhs.getNode()->type == ActionsDAG::ActionType::INPUT;
-        const bool rhs_is_input = rhs.getNode() && rhs.getNode()->type == ActionsDAG::ActionType::INPUT;
-        if (!changes_right && rhs_is_input)
+        if (!changes_right)
             l_to_r[lhs.getColumnName()] = rhs.getColumn();
-        if (!changes_left && lhs_is_input)
+        if (!changes_left)
             r_to_l[rhs.getColumnName()] = lhs.getColumn();
     }
 
@@ -224,11 +219,17 @@ size_t tryLiftPredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryPlan::
     const bool can_l_to_r = (op.kind == JoinKind::Inner || op.kind == JoinKind::Left)  && !l_to_r.empty();
     const bool can_r_to_l = (op.kind == JoinKind::Inner || op.kind == JoinKind::Right) && !r_to_l.empty();
 
+    /// Snapshot source-side roots and filters before any lift mutates the tree
+    QueryPlan::Node * left_root = parent_node->children[0];
+    QueryPlan::Node * right_root = parent_node->children[1];
+    const FilterStep * left_filter  = findFilterBelow(left_root);
+    const FilterStep * right_filter = findFilterBelow(right_root);
+
     size_t lifts = 0;
     if (can_l_to_r)
-        lifts += tryLiftSide(parent_node, 0, 1, l_to_r, nodes);
+        lifts += tryLiftSide(parent_node, 1, left_root,  left_filter,  l_to_r, nodes);
     if (can_r_to_l)
-        lifts += tryLiftSide(parent_node, 1, 0, r_to_l, nodes);
+        lifts += tryLiftSide(parent_node, 0, right_root, right_filter, r_to_l, nodes);
     return lifts;
 }
 
