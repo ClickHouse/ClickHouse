@@ -143,12 +143,12 @@ bool ExceptColumnTransformerNode::isColumnMatching(const std::string & column_na
         return re2::RE2::PartialMatch(column_name, *column_matcher);
 
     /// First pass: exact match wins regardless of `standard_mode` (mirrors column/alias lookup).
-    for (size_t i = 0, n = except_column_names.size(); i < n; ++i)
+    for (const auto & name : except_column_names)
     {
-        if (column_name == except_column_names[i])
+        if (column_name == name)
         {
             if (matched_target)
-                *matched_target = except_column_names[i];
+                *matched_target = name;
             return true;
         }
     }
