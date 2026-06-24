@@ -2065,7 +2065,7 @@ private:
             }
             else
             {
-                auto prefix = getIndexFileName(idx.name, idx.escape_filenames);
+                auto prefix = getIndexFileName(idx.name, idx.escape_filenames) + ".";
                 auto it = ctx->source_part->checksums.files.upper_bound(prefix);
                 while (it != ctx->source_part->checksums.files.end())
                 {
