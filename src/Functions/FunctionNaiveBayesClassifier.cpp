@@ -1,11 +1,12 @@
 #include <atomic>
 #include <string_view>
 
+#include <Access/Common/AccessFlags.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -17,7 +18,6 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Access/Common/AccessFlags.h>
 #include <Common/Exception.h>
 
 
@@ -31,9 +31,6 @@ extern const int BAD_ARGUMENTS;
 namespace
 {
 
-/// The dictionary name must be a constant String so the dictionary can be resolved once per block;
-/// the input text is any String column. `validateFunctionArguments` rejects a non-constant name with
-/// ILLEGAL_COLUMN and a wrong type with ILLEGAL_TYPE_OF_ARGUMENT.
 void validateArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
 {
     validateFunctionArguments(
@@ -45,11 +42,6 @@ void validateArguments(const IFunction & func, const ColumnsWithTypeAndName & ar
         });
 }
 
-/// Drives the per-row work shared by the three Naive Bayes functions. The dictionary name (argument 0) is
-/// validated as a constant in getReturnTypeImpl, so the dictionary is resolved and the dictGet access right
-/// is checked once for the whole block. The tokenizer-policy variant is then resolved once and a single
-/// scratch is reused across rows; the callback is invoked with the concrete model, that scratch, the input
-/// text, and the row index for every row.
 template <typename ClassifyRow>
 void executeNaiveBayes(
     const ContextPtr & context,
@@ -67,28 +59,26 @@ void executeNaiveBayes(
 
     if (!access_checked.load(std::memory_order_relaxed))
     {
-        context->checkAccess(
-            AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
+        context->checkAccess(AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
         access_checked.store(true, std::memory_order_relaxed);
     }
 
     const auto * nb_dict = typeid_cast<const NaiveBayesDictionary *>(dictionary.get());
     if (!nb_dict)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary '{}' is not a NaiveBayes dictionary", dictionary_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary '{}' is not a Naive Bayes dictionary", dictionary_name);
 
-    /// The text is always a full column here: when every argument is constant, useDefaultImplementationForConstants()
-    /// passes each non-always-constant argument as its data column; otherwise the text is non-constant to begin with.
     const ColumnPtr & text_column = arguments[1].column;
 
-    nb_dict->visitModel([&](const auto & model)
-    {
-        NaiveBayesScratch scratch;
-        for (size_t i = 0; i < input_rows_count; ++i)
+    nb_dict->visitModel(
+        [&](const auto & model)
         {
-            const std::string_view text = text_column->getDataAt(i);
-            classify_row(model, scratch, text, i);
-        }
-    });
+            NaiveBayesScratch scratch;
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                const std::string_view text = text_column->getDataAt(i);
+                classify_row(model, scratch, text, i);
+            }
+        });
 
     /// These functions bypass `getColumn`, so record the classified rows here to keep the dictionary query
     /// statistics consistent with the equivalent `dictGet` path.
@@ -102,9 +92,7 @@ DataTypePtr makeClassProbTuple()
 }
 
 
-/// Common state and traits shared by the three naiveBayesClassifier* functions. Each derived function
-/// supplies only its name, return type, and per-row work; the dictionary resolution, access check, and
-/// tokenizer-variant dispatch all live in the shared `executeNaiveBayes` driver above.
+/// Common state and traits shared by the three naiveBayesClassifier* functions.
 class FunctionNaiveBayesBase : public IFunction
 {
 protected:
@@ -112,7 +100,10 @@ protected:
     mutable std::atomic<bool> access_checked{false};
 
 public:
-    explicit FunctionNaiveBayesBase(ContextPtr context_) : context(context_) {}
+    explicit FunctionNaiveBayesBase(ContextPtr context_)
+        : context(context_)
+    {
+    }
 
     bool isVariadic() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -144,7 +135,11 @@ public:
         auto result_column = ColumnUInt32::create(input_rows_count);
         auto & data = result_column->getData();
 
-        executeNaiveBayes(context, access_checked, arguments, input_rows_count,
+        executeNaiveBayes(
+            context,
+            access_checked,
+            arguments,
+            input_rows_count,
             [&](const auto & model, NaiveBayesScratch & scratch, std::string_view text, size_t i)
             { data[i] = model.classify(text, scratch); });
 
@@ -171,14 +166,19 @@ public:
         return makeClassProbTuple();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    ColumnPtr
+    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         auto class_col = ColumnUInt32::create(input_rows_count);
         auto prob_col = ColumnFloat64::create(input_rows_count);
         auto & class_data = class_col->getData();
         auto & prob_data = prob_col->getData();
 
-        executeNaiveBayes(context, access_checked, arguments, input_rows_count,
+        executeNaiveBayes(
+            context,
+            access_checked,
+            arguments,
+            input_rows_count,
             [&](const auto & model, NaiveBayesScratch & scratch, std::string_view text, size_t i)
             {
                 auto [best_class, best_prob] = model.classifyWithProb(text, scratch);
@@ -212,7 +212,8 @@ public:
         return std::make_shared<DataTypeArray>(makeClassProbTuple());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    ColumnPtr
+    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         auto class_col = ColumnUInt32::create();
         auto prob_col = ColumnFloat64::create();
@@ -221,7 +222,11 @@ public:
         auto offsets_col = ColumnArray::ColumnOffsets::create(input_rows_count);
         auto & offsets = offsets_col->getData();
 
-        executeNaiveBayes(context, access_checked, arguments, input_rows_count,
+        executeNaiveBayes(
+            context,
+            access_checked,
+            arguments,
+            input_rows_count,
             [&](const auto & model, NaiveBayesScratch & scratch, std::string_view text, size_t i)
             {
                 const auto & probabilities = model.classifyWithAllProbs(text, scratch);
@@ -246,12 +251,12 @@ public:
 REGISTER_FUNCTION(NaiveBayesClassifier)
 {
     factory.registerFunction<FunctionNaiveBayesClassifier>(FunctionDocumentation{
-        .description = "Classifies input text using a Naive Bayes dictionary (NAIVE_BAYES layout). "
+        .description = "Classifies input text using a Naive Bayes dictionary. "
                        "Equivalent to dictGet(dictionary_name, 'class_id', input_text).",
         .syntax = "naiveBayesClassifier(dictionary_name, input_text)",
-        .arguments = {
-            {"dictionary_name", "Name of a dictionary with the NAIVE_BAYES layout.", {"String"}},
-            {"input_text", "Text to classify.", {"String"}}},
+        .arguments
+        = {{"dictionary_name", "Name of a dictionary with the NAIVE_BAYES layout.", {"String"}},
+           {"input_text", "Text to classify.", {"String"}}},
         .returned_value = {"Predicted class ID.", {"UInt32"}},
         .examples = {{"Classify text", "SELECT naiveBayesClassifier('model', 'some text');", "0"}},
         .introduced_in = {25, 11},
@@ -260,9 +265,9 @@ REGISTER_FUNCTION(NaiveBayesClassifier)
     factory.registerFunction<FunctionNaiveBayesClassifierWithProb>(FunctionDocumentation{
         .description = "Classifies input text using a Naive Bayes dictionary and returns the predicted class with its probability.",
         .syntax = "naiveBayesClassifierWithProb(dictionary_name, input_text)",
-        .arguments = {
-            {"dictionary_name", "Name of a dictionary with the NAIVE_BAYES layout.", {"String"}},
-            {"input_text", "Text to classify.", {"String"}}},
+        .arguments
+        = {{"dictionary_name", "Name of a dictionary with the NAIVE_BAYES layout.", {"String"}},
+           {"input_text", "Text to classify.", {"String"}}},
         .returned_value = {"Tuple of (class_id, probability).", {"Tuple(UInt32, Float64)"}},
         .examples = {{"Classify with probability", "SELECT naiveBayesClassifierWithProb('model', 'some text');", "(0,0.85)"}},
         .introduced_in = {26, 7},
