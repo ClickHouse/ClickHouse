@@ -2236,7 +2236,7 @@ static Coordination::Error preprocess(
     int64_t time,
     const KeeperContext & keeper_context)
 {
-    if (Coordination::matchPath(zk_request.path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
+    if (zk_request.path == "/" || Coordination::matchPath(zk_request.path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
     {
         auto error_msg = fmt::format("Trying to update an internal Keeper path ({}) which is not allowed", zk_request.path);
 
@@ -2468,75 +2468,87 @@ processLocal(const Coordination::ZooKeeperListRequest & zk_request, KeeperStorag
         }
     }
 
-    bool check_child_acl = check_acl && (with_stat || with_data);
+    bool is_system_node = zk_request.path.starts_with(keeper_system_path);
 
-    const auto get_children = [&]()
+    if (!is_system_node && node_it->value.numChildren() == 0)
     {
-        return &node_it->value.getChildren();
-    };
+        /// (Save the trouble of looking for children if we know there are none.)
+    }
+    else if (!with_stat && !with_data && Coordination::ListRequestType::ALL == list_request_type)
+    {
+        /// Only need children names, no stats or data.
+        /// We don't check children ACLs here because existence of znodes is not secret in zookeeper.
+        const auto & children = node_it->value.getChildren();
+        response->names.reserve(children.size());
+        for (const auto & child : children)
+            response->names.emplace_back(child);
+    }
+    else
+    {
+        const auto & children = node_it->value.getChildren();
+        response->names.reserve(children.size());
+        if (with_stat)
+            response->stats.reserve(children.size());
+        if (with_data)
+            response->data.reserve(children.size());
 
-    const auto * const children = get_children();
-    response->names.reserve(children->size());
+        bool auth_failed = false;
+        for (const auto & child : children)
+        {
+            using enum Coordination::ListRequestType;
 
-    /// Reserve space for optional fields if requested
-    if (with_stat)
-        response->stats.reserve(children->size());
-    if (with_data)
-        response->data.reserve(children->size());
+            auto child_path = (std::filesystem::path(zk_request.path) / child).generic_string();
+            auto child_it = container.find(child_path);
+            if (child_it == container.end())
+                onStorageInconsistency("Failed to find a child");
+            const auto & child_node = child_it->value;
+
+            if (Coordination::ListRequestType::ALL != list_request_type)
+            {
+                bool is_ephemeral = child_node.stats.isEphemeral();
+                if ((is_ephemeral && list_request_type == PERSISTENT_ONLY) ||
+                    (!is_ephemeral && list_request_type == EPHEMERAL_ONLY))
+                    continue;
+            }
+
+            /// Check child's ACLs because we're going to report its data or stats - this
+            /// information should not be accessible without Read permission.
+            /// (Even if only list_request_type filtering is enabled, we'll expose the
+            ///  is_ephemeral flag, which is also secret.)
+            if (check_acl && !storage.checkACL(child_node.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
+            {
+                auth_failed = true;
+                break;
+            }
+
+            response->names.emplace_back(child);
+
+            if (with_stat)
+            {
+                Coordination::Stat child_stat;
+                child_node.setResponseStat(child_stat);
+                response->stats.emplace_back(child_stat);
+            }
+            if (with_data)
+                response->data.emplace_back(child_node.getData());
+        }
+        if (auth_failed)
+            return auth_error();
+    }
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
-    if (!zk_request.path.starts_with(keeper_system_path) && static_cast<size_t>(node_it->value.numChildren()) != children->size())
+    if (!is_system_node &&
+        Coordination::ListRequestType::ALL == list_request_type &&
+        static_cast<size_t>(node_it->value.numChildren()) != response->names.size())
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Difference between numChildren ({}) and actual children size ({}) for '{}'",
             node_it->value.numChildren(),
-            children->size(),
+            response->names.size(),
             zk_request.path);
     }
 #endif
-
-    const auto add_child = [&](const auto & child)
-    {
-        using enum Coordination::ListRequestType;
-
-        auto child_path = (std::filesystem::path(zk_request.path) / child).generic_string();
-        auto child_it = container.find(child_path);
-        if (child_it == container.end())
-            onStorageInconsistency("Failed to find a child");
-        bool is_ephemeral = child_it->value.stats.isEphemeral();
-
-        return (is_ephemeral && list_request_type == EPHEMERAL_ONLY) || (!is_ephemeral && list_request_type == PERSISTENT_ONLY);
-    };
-
-    for (const auto & child : *children)
-    {
-        if (Coordination::ListRequestType::ALL == list_request_type || add_child(child))
-        {
-            response->names.push_back(std::string{child});
-
-            /// Populate optional fields if requested
-            if (with_stat || with_data || check_child_acl)
-            {
-                auto child_path = (std::filesystem::path(zk_request.path) / child).generic_string();
-                auto child_it = container.find(child_path);
-                if (child_it == container.end())
-                    onStorageInconsistency("Failed to find a child for stats/data");
-
-                if (check_child_acl && !storage.checkACL(child_it->value.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
-                    return auth_error();
-
-                if (with_stat)
-                {
-                    Coordination::Stat child_stat;
-                    child_it->value.setResponseStat(child_stat);
-                    response->stats.emplace_back(child_stat);
-                }
-                if (with_data)
-                    response->data.emplace_back(child_it->value.getData());
-            }
-        }
-    }
 
     node_it->value.setResponseStat(response->stat);
     response->error = Coordination::Error::ZOK;
@@ -2596,6 +2608,12 @@ Coordination::Error preprocess(
     int64_t /*time*/,
     const KeeperContext & /*keeper_context*/)
 {
+    if (Coordination::matchPath(zk_request.path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
+    {
+        LOG_ERROR(getLogger("KeeperStorage"), "Trying to Check a node inside the internal Keeper path ({}) which is not allowed (because Check is allowed inside Multi requests, which must be deterministic; but internal nodes may depend on Keeper version and configuration). Path: {}", keeper_system_path, zk_request.path);
+        return Coordination::Error::ZBADARGUMENTS;
+    }
+
     auto node_ref = storage.uncommitted_state.getNode(zk_request.path);
     const auto * node = node_ref.get();
 
