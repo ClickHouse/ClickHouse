@@ -626,12 +626,11 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
     {
         /// A function folded to a constant still keeps its argument subtree, which may
         /// reference columns absent from this index's granule block. Re-add it as a leaf
-        /// constant so cloneSubDAG does not pull those foreign inputs into `actions`.
+        /// constant so cloneSubDAG does not pull those foreign inputs into `actions`. Reuse the
+        /// node's existing constant column (a COW pointer) instead of rebuilding one; addColumn
+        /// normalizes its row count.
         if (node_to_check->type == ActionsDAG::ActionType::FUNCTION)
-        {
-            auto column = node_to_check->result_type->createColumnConst(1, (*node_to_check->column)[0]);
-            return &result_dag.addColumn(std::move(column), node_to_check->result_type, node_to_check->result_name);
-        }
+            return &result_dag.addColumn(node_to_check->column, node_to_check->result_type, node_to_check->result_name);
         return &node;
     }
 
