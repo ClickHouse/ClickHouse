@@ -11,8 +11,6 @@
 #include <fmt/format.h>
 
 class EventCounter;
-class StepWallClock;
-
 
 namespace DB
 {
@@ -33,6 +31,9 @@ using RowsBeforeStepCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::list<ProcessorPtr>;
+
+class StepWallClock;
+
 
 using StepWallClockPtr = std::shared_ptr<StepWallClock>;
 
@@ -128,6 +129,9 @@ protected:
     OutputPorts outputs;
 
 public:
+
+    static constexpr size_t MAX_STEP_GROUPS = 8;
+
     IProcessor();
 
     IProcessor(InputPorts inputs_, OutputPorts outputs_);
@@ -302,20 +306,26 @@ public:
     constexpr static size_t NO_STREAM = std::numeric_limits<size_t>::max();
 
     /// Step of QueryPlan from which processor was created
-    void setQueryPlanStep(IQueryPlanStep * step, size_t group = 0);
+    void setQueryPlanStep(const IQueryPlanStep * step, size_t group = 0);
+
+    void setQueryPlanStepGroup(size_t group) { query_plan_step_group = group; }
 
     /// Copy the query step fields from parent processor to child processor
     /// The group can be adjusted manually, since even though the processors can be
     /// coming from the same step, they can belong to different groups (stages)
     void inheritQueryPlanStepFromParent(const IProcessor & parent, size_t group);
 
-    IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
+    const IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
     const String & getStepUniqID() const { return step_uniq_id; }
     size_t getQueryPlanStepGroup() const { return query_plan_step_group; }
     const String & getPlanStepName() const { return plan_step_name; }
     const String & getPlanStepDescription() const { return plan_step_description; }
 
     uint64_t getElapsedNs() const { return elapsed_ns; }
+    /// Once processor can belong to multiple groups
+    /// see AggregatingTransform as an example
+    UInt64 getElapsedNs(size_t group) const;
+    void addElapsedNs(size_t group, UInt64 ns);
     uint64_t getInputWaitElapsedNs() const { return input_wait_elapsed_ns; }
     uint64_t getOutputWaitElapsedNs() const { return output_wait_elapsed_ns; }
 
@@ -399,10 +409,6 @@ public:
     /// For unspillable processors, the memory usage is not tracked.
     inline bool isSpillable() const { return spillable; }
 
-    void setStepWallClock(const StepWallClockPtr & clock) { step_wall_clock = clock; }
-
-    const StepWallClockPtr & getStepWallClock() { return step_wall_clock; }
-
     virtual ProcessorMemoryStats getMemoryStats()
     {
         return {};
@@ -419,6 +425,8 @@ protected:
     bool spillable = false;
 
 private:
+    void checkGroup(size_t group) const;
+
     /// For:
     /// - elapsed_ns
     friend class ExecutionThreadContext;
@@ -426,8 +434,6 @@ private:
     /// - input_wait_elapsed_ns
     /// - output_wait_elapsed_ns
     friend class ExecutingGraph;
-
-    StepWallClockPtr step_wall_clock;
 
     std::string processor_description;
 
@@ -437,10 +443,13 @@ private:
     uint64_t input_wait_elapsed_ns = 0;
     Stopwatch output_wait_watch;
     uint64_t output_wait_elapsed_ns = 0;
+    /// One processor can perform work for multiple groups
+    /// see AggregatingTranform as an example
+    std::array<UInt64, MAX_STEP_GROUPS> elapsed_by_group{};
 
     size_t stream_number = NO_STREAM;
 
-    IQueryPlanStep * query_plan_step = nullptr;
+    const IQueryPlanStep * query_plan_step = nullptr;
     String step_uniq_id;
     size_t query_plan_step_group = 0;
 
