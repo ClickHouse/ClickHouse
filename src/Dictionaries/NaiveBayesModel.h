@@ -7,7 +7,6 @@
 #include <limits>
 #include <memory>
 #include <vector>
-#include <base/StringViewHash.h>
 #include <base/defines.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
