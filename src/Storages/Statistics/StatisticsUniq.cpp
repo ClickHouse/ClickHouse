@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -28,45 +27,23 @@ StatisticsUniq::~StatisticsUniq()
 
 void StatisticsUniq::build(const ColumnPtr & column)
 {
-    ColumnPtr unwrapped;
+    const IColumn * raw_column_ptr = nullptr;
 
     /// For sparse and low cardinality columns an extra default
     /// value may be added. That is ok since the uniq count is an estimation.
     if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(column.get()))
     {
-        unwrapped = column_sparse->getValuesColumn().getPtr();
+        raw_column_ptr = &column_sparse->getValuesColumn();
     }
     else if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
     {
-        unwrapped = column_low_cardinality->getDictionary().getNestedColumn();
+        raw_column_ptr = column_low_cardinality->getDictionary().getNestedColumn().get();
     }
     else
     {
-        unwrapped = column;
+        raw_column_ptr = column.get();
     }
 
-    /// `collector` is the Null combinator (`getNestedFunction() != nullptr`) iff the declared type
-    /// was Nullable. The runtime column may have the opposite nullability, so reconcile it before
-    /// feeding the collector, which otherwise mis-casts to/from ColumnNullable.
-    const bool collector_expects_nullable = collector->getNestedFunction() != nullptr;
-    const bool column_is_nullable = isColumnNullable(*unwrapped);
-
-    if (!collector_expects_nullable && column_is_nullable)
-    {
-        /// Plain `uniq` ignores NULLs but cannot read a ColumnNullable. Pass the nested column with
-        /// its null map so NULL rows are skipped; unwrapping alone would count the synthetic default
-        /// stored at NULL positions and inflate the distinct estimate.
-        const auto & nullable = assert_cast<const ColumnNullable &>(*unwrapped);
-        const IColumn * raw_column_ptr = &nullable.getNestedColumn();
-        collector->addBatchSinglePlaceNotNull(
-            0, raw_column_ptr->size(), data, &(raw_column_ptr), nullable.getNullMapData().data(), nullptr);
-        return;
-    }
-
-    if (collector_expects_nullable && !column_is_nullable)
-        unwrapped = makeNullable(unwrapped);
-
-    const IColumn * raw_column_ptr = unwrapped.get();
     collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, &(raw_column_ptr), nullptr);
 }
 

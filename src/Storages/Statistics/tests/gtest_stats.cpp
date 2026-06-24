@@ -6,6 +6,9 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
+#include <Common/Exception.h>
+#include <Core/Block.h>
+#include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/convertFieldToType.h>
@@ -20,6 +23,11 @@
 #include <Parsers/ExpressionListParsers.h>
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 
 TEST(Statistics, TDigestLessThan)
 {
@@ -401,47 +409,85 @@ TEST(Statistics, LikeSelectivity)
     EXPECT_EQ(notilike_direct_rows, 9000u);
 }
 
-/// STID 3524-3a4b: uniq statistics declared on a Nullable type, then `build()` fed a non-nullable
-/// column (and the reverse). A pending MODIFY COLUMN mutation or an asymmetric merge feeds the
-/// post-change column into statistics still declared on the pre-change type. Before the fix
-/// `StatisticsUniq::build` mis-cast the column inside `AggregateFunctionNullUnary` and aborted.
-TEST(Statistics, UniqNullabilityMismatch)
+/// STID 3524-3a4b: a statistics collector is declared on one column type, then the block column
+/// reaching `build` has a different type (a pending MODIFY COLUMN mutation, or an asymmetric merge
+/// where `structureEquals` only compares statistics types and misses a nullability-only change).
+/// Feeding the mismatched column to the collector previously mis-cast inside the aggregate function
+/// and aborted (`Bad cast ... ColumnNullable` for `uniq` on a Nullable type). The central
+/// `ColumnsStatistics::build` / `buildIfExists` now detects the mismatch and throws a diagnostic
+/// LOGICAL_ERROR naming the column, the expected type and the actual type, instead of silently
+/// adapting the column. This protects all statistics types, not just `uniq`.
+TEST(Statistics, BuildTypeMismatchThrows)
 {
     tryRegisterAggregateFunctions();
 
-    /// Collector declared Nullable, fed a plain (non-nullable) column.
+    auto make_stats = [](const String & column_name, const DataTypePtr & declared_type)
+    {
+        ColumnStatisticsDescription desc;
+        desc.data_type = declared_type;
+        desc.types_to_desc.emplace(StatisticsType::Uniq, SingleStatisticsDescription(StatisticsType::Uniq, nullptr, false));
+        ColumnsStatistics result;
+        result.emplace(column_name, MergeTreeStatisticsFactory::instance().get(desc));
+        return result;
+    };
+
+    auto int_block = [](const String & column_name)
+    {
+        MutableColumnPtr col = DataTypeInt32().createColumn();
+        for (Int32 i = 0; i < 100; ++i)
+            col->insert(i);
+        return Block{ColumnWithTypeAndName(std::move(col), std::make_shared<DataTypeInt32>(), column_name)};
+    };
+
+    /// In debug and sanitizer builds constructing a LOGICAL_ERROR aborts the process (it is treated
+    /// as a failed assertion), so the throw cannot be caught here. Assert the throw only in release
+    /// builds; the positive-path checks below run everywhere. This mirrors gtest_memory_resize.cpp.
+#ifndef DEBUG_OR_SANITIZER_BUILD
+    /// Statistics declared Nullable(Int32); block column is plain Int32 -> mismatch -> throws.
     {
         auto nullable_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
-        auto stats = createTestStats({StatisticsType::Uniq}, nullable_type);
-
-        MutableColumnPtr plain = DataTypeInt32().createColumn();
-        for (Int32 i = 0; i < 100; ++i)
-            plain->insert(i);
-
-        stats->build(std::move(plain));
-        EXPECT_EQ(stats->estimateCardinality(), 100u);
+        auto stats = make_stats("a", nullable_type);
+        try
+        {
+            stats.build(int_block("a"));
+            FAIL() << "expected LOGICAL_ERROR on nullability mismatch";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::LOGICAL_ERROR);
+            EXPECT_NE(e.message().find("Type mismatch when building statistics for column 'a'"), std::string::npos);
+        }
     }
 
-    /// Collector declared non-nullable, fed a Nullable column (reverse direction).
+    /// Same mismatch via `buildIfExists` (the mutation-rebuild entry point).
+    {
+        auto nullable_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
+        auto stats = make_stats("a", nullable_type);
+        try
+        {
+            stats.buildIfExists(int_block("a"));
+            FAIL() << "expected LOGICAL_ERROR on nullability mismatch";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::LOGICAL_ERROR);
+            EXPECT_NE(e.message().find("Type mismatch when building statistics for column 'a'"), std::string::npos);
+        }
+    }
+#endif
+
+    /// Matching type still builds normally (100 distinct values).
     {
         auto plain_type = std::make_shared<DataTypeInt32>();
-        auto stats = createTestStats({StatisticsType::Uniq}, plain_type);
+        auto stats = make_stats("a", plain_type);
+        EXPECT_NO_THROW(stats.build(int_block("a")));
+        EXPECT_EQ(stats.at("a")->estimateCardinality(), 100u);
+    }
 
-        auto nullable_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
-        MutableColumnPtr col = nullable_type->createColumn();
-        auto * nullable_col = assert_cast<ColumnNullable *>(col.get());
-        for (Int32 i = 0; i < 100; ++i)
-        {
-            if (i % 7 == 0)
-                nullable_col->insertDefault(); /// NULL
-            else
-                nullable_col->insert(i);
-        }
-
-        stats->build(std::move(col));
-        /// 100 rows, every 7th is NULL (15 NULLs at i = 0,7,...,98) → 85 distinct non-null values.
-        /// uniq ignores NULLs: the synthetic default stored in the nested column at NULL rows must
-        /// not be counted (counting it would wrongly yield 86).
-        EXPECT_EQ(stats->estimateCardinality(), 85u);
+    /// `buildIfExists` ignores columns absent from the block (no throw).
+    {
+        auto plain_type = std::make_shared<DataTypeInt32>();
+        auto stats = make_stats("missing", plain_type);
+        EXPECT_NO_THROW(stats.buildIfExists(int_block("a")));
     }
 }
