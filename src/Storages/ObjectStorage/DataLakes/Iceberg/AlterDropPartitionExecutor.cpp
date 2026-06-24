@@ -760,10 +760,14 @@ void AlterDropPartitionExecutor::cleanupNotCommited(std::vector<std::string> fil
 
 bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, DropPlan plan)
 {
+    /// Match the table's current metadata compression instead of the table-init default: a long-lived
+    /// table can move from uncompressed to e.g. `vN.gz.metadata.json` (external writer or changed
+    /// setting), and the replacement metadata must follow the same convention.
+    const auto compression_method = DB::Iceberg::getCompressionMethodFromMetadataFile(state.table_state.metadata_file_path);
     FileNamesGenerator filename_generator(
-        components.path_resolver.getTableLocation(), false, components.metadata_compression_method, write_format);
+        components.path_resolver.getTableLocation(), false, compression_method, write_format);
     filename_generator.setVersion(state.table_state.metadata_version + 1);
-    filename_generator.setCompressionMethod(components.metadata_compression_method);
+    filename_generator.setCompressionMethod(compression_method);
 
     std::vector<std::string> files_for_cleanup;
     bool committed = false;
