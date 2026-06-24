@@ -7,7 +7,7 @@ from helpers.cluster import ClickHouseCluster
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance(
+        node = cluster.add_instance(
             "node",
             with_minio=True,
         )

@@ -149,10 +149,10 @@ class Issue:
             "job_pattern": r"Job pattern:\s*([^\n]*)",
         }
 
-        for field_name, pattern in patterns.items():
+        for field, pattern in patterns.items():
             match = re.search(pattern, body, re.IGNORECASE)
             if match:
-                fields[field_name] = match.group(1).strip()
+                fields[field] = match.group(1).strip()
 
         flags_match = re.search(
             r"^Failure flags:[ \t]*(.*)$", body, re.IGNORECASE | re.MULTILINE
@@ -559,10 +559,10 @@ if __name__ == "__main__":
     Path(temp_path).mkdir(exist_ok=True)
 
     def collect_and_upload():
-        print("Fetching active testing issues...")
+        print(f"Fetching active testing issues...")
         c = TestCaseIssueCatalog.from_gh()
         c.dump()
-        print("Uploading to S3...")
+        print(f"Uploading to S3...")
         url = c.to_s3()
         print(f"Catalog uploaded to S3: {url}")
         return bool(url)
