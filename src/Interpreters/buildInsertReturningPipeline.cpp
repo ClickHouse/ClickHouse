@@ -76,6 +76,7 @@ namespace
             "priority",
             "low_priority_query_wait_time_ms",
             "workload",
+            "reserve_memory",
         };
 
         const auto * select_with_union = returning_select->as<ASTSelectWithUnionQuery>();

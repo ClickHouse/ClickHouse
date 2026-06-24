@@ -1078,9 +1078,12 @@ namespace
         }
 
         if (isQueryCancelled())
+        {
             executor.cancel();
-        else
-            executor.finish();
+            return;
+        }
+
+        executor.finish();
 
         if (insert_query)
             replacePipelineWithInsertReturningAfterPush(
