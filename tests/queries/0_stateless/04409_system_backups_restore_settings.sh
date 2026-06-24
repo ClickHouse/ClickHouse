@@ -35,7 +35,7 @@ from system.backups where id='$restore_id'
 "
 
 # The same must hold for the final (RESTORED) row persisted in system.backup_log.
-${CLICKHOUSE_CLIENT} --query "system flush logs"
+${CLICKHOUSE_CLIENT} --query "system flush logs backup_log"
 ${CLICKHOUSE_CLIENT} -m --query "
 select
     settings['restore_broken_parts_as_detached'],
