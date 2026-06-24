@@ -4,6 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ClientInfo.h>
 #include <base/getFQDNOrHostName.h>
+#include <Common/StringUtils.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/SocketAddress.h>
 
@@ -23,10 +24,66 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
 {
+
+/// Build a SocketAddress from a string read off the native protocol wire.
+/// ClientInfo::write always serializes the address as a numeric "host:port" (SocketAddress::toString),
+/// but the value is attacker-controlled and may be corrupted or desynced. Poco's SocketAddress(String)
+/// constructor resolves a non-numeric port via getservbyname(), which is a non-reentrant libc function
+/// trapped by base/harmful in debug/sanitizer builds (an uncatchable SIGILL, not an exception).
+/// Reject anything but a numeric port (<= 65535) up front so malformed input is a catchable error.
+/// The port substring is located exactly as Poco::Net::SocketAddress::init() does, so the token we
+/// validate is the same one Poco would otherwise pass to getservbyname().
+Poco::Net::SocketAddress makeSocketAddressFromWire(const String & host_and_port)
+{
+    if (host_and_port.empty())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Empty address received over the network");
+
+#if defined(POCO_OS_FAMILY_UNIX)
+    /// A UNIX local socket path: Poco treats it as a filesystem path and never resolves a service.
+    if (host_and_port.front() == '/')
+        return Poco::Net::SocketAddress(host_and_port);
+#endif
+
+    size_t port_pos = String::npos;
+    if (host_and_port.front() == '[')
+    {
+        /// "[ipv6]:port" - Poco requires ':' immediately after the closing ']'.
+        const auto closing_bracket = host_and_port.find(']');
+        if (closing_bracket == String::npos)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed IPv6 address received over the network");
+        if (closing_bracket + 1 < host_and_port.size() && host_and_port[closing_bracket + 1] == ':')
+            port_pos = closing_bracket + 2;
+    }
+    else
+    {
+        /// "host:port" - Poco splits on the first ':'.
+        const auto colon = host_and_port.find(':');
+        if (colon != String::npos)
+            port_pos = colon + 1;
+    }
+
+    const std::string_view port
+        = port_pos == String::npos ? std::string_view{} : std::string_view(host_and_port).substr(port_pos);
+    if (port.empty())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed address received over the network: missing port number");
+
+    UInt32 port_number = 0;
+    for (const char c : port)
+    {
+        if (!isNumericASCII(c))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed address received over the network: non-numeric port");
+        port_number = port_number * 10 + static_cast<UInt32>(c - '0');
+        if (port_number > 0xFFFF)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed address received over the network: port number out of range");
+    }
+
+    return Poco::Net::SocketAddress(host_and_port);
+}
 
 /// Detect whether the client (clickhouse-client or clickhouse-local) is being invoked under a known
 /// AI coding agent, by inspecting environment variables that these agents set for the processes they
@@ -235,7 +292,7 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
 
     String initial_address_string;
     readBinary(initial_address_string, in);
-    initial_address = std::make_shared<Poco::Net::SocketAddress>(initial_address_string);
+    initial_address = std::make_shared<Poco::Net::SocketAddress>(makeSocketAddressFromWire(initial_address_string));
 
     if (client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INITIAL_QUERY_START_TIME)
     {
