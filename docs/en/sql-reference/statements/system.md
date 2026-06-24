@@ -789,6 +789,8 @@ The per-table and wildcard forms differ in how they treat tables without a backg
 
 `STOP` and `CANCEL` interrupt consumption as soon as possible. For `Kafka`, `RabbitMQ` and `NATS` they stop reading from the source but do not interrupt an insert that has already started: a block already being written into the materialized views still finishes and commits. (`S3Queue` and `AzureQueue` read and insert in a single pipeline, so there the insert is cancelled too and the file is reprocessed later.) Data that was read but not yet committed is consumed again later, so nothing is lost, except for core NATS (without JetStream), which cannot redeliver and drops it.
 
+`PAUSE` does not interrupt a running insert, so it normally does not lose anything. Core NATS is the exception: pausing stops consuming and drops the messages it had already received but not yet inserted, and core NATS cannot redeliver them.
+
 :::note
 None of these states persist across a server restart. After a restart, refreshable views resume their configured schedules and streaming engines resume consuming.
 :::
