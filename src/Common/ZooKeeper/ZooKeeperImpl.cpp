@@ -20,8 +20,8 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <base/getThreadId.h>
+#include <base/scope_guard.h>
 #include <base/sleep.h>
-#include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/EventNotifier.h>
 #include <Common/Exception.h>
@@ -869,40 +869,64 @@ void ZooKeeper::sendThread()
                 {
                     /// After we popped element from the queue, we must register callbacks (even in the case when expired == true right now),
                     ///  because they must not be lost (callbacks must be called because the user will wait for them).
-                    {
-                        /// Until `info` is registered in `operations` it is the sole owner of the request's
-                        /// callback. The steps until then allocate, so block MEMORY_LIMIT_EXCEEDED: otherwise
-                        /// `info` would unwind with an unsatisfied callback, and an async caller waiting on its
-                        /// std::promise would see a broken-promise future_error that aborts the server.
+
+                    /// Until the request is registered in `operations` below, the local `info` is the
+                    /// only owner of its callback. If anything in between throws (span finalize,
+                    /// addRootPath, the map insert), `info` is destroyed while unwinding and the
+                    /// callback never runs. Async callers that capture a std::promise (e.g.
+                    /// asyncTryExistsNoThrow) would then get a broken promise, and ~promise() throwing
+                    /// future_error from a destructor aborts the server. Satisfy the callback with an
+                    /// error in that window instead. The completion itself allocates, so block
+                    /// MEMORY_LIMIT_EXCEEDED inside the guard rather than prebuilding the response.
+                    bool callback_registered = false;
+                    SCOPE_EXIT({
+                        if (callback_registered || !info.callback)
+                            return;
                         LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-
-                        fiu_do_on(FailPoints::zk_send_thread_request_window_throw, { CurrentMemoryTracker::injectFault(); });
-
-                        info.request->spans.maybeFinalize(
-                            KeeperSpan::ClientRequestsQueue,
-                            [&]
-                            {
-                                return std::vector<OpenTelemetry::SpanAttribute>{
-                                    {"zookeeper_client.requests_queue.size", requests_queue.size()},
-                                };
-                            });
-
-                        if (info.watch)
-                            info.request->has_watch = true;
-
-                        if (info.request->add_root_path)
-                            info.request->addRootPath(args.chroot);
-
-                        /// Insert into operations AFTER mutating the request (has_watch, addRootPath)
-                        /// to avoid a data race: receiveThread reads from operations concurrently,
-                        /// and the request object is shared via shared_ptr.
-                        if (info.request->xid != close_xid)
+                        try
                         {
-                            CurrentMetrics::add(CurrentMetrics::ZooKeeperRequest);
-                            std::lock_guard lock(operations_mutex);
-                            operations[info.request->xid] = info;
+                            ZooKeeperResponsePtr response = info.request->makeResponse();
+                            response->error = info.request->probably_sent ? Error::ZCONNECTIONLOSS : Error::ZSESSIONEXPIRED;
+                            response->xid = info.request->xid;
+                            info.callback(*response);
                         }
+                        catch (...)
+                        {
+                            tryLogCurrentException(log);
+                        }
+                    });
+
+                    fiu_do_on(FailPoints::zk_send_thread_request_window_throw,
+                        { throw Exception::fromMessage(Error::ZBADARGUMENTS, "Injected fault in sendThread request window"); });
+
+                    info.request->spans.maybeFinalize(
+                        KeeperSpan::ClientRequestsQueue,
+                        [&]
+                        {
+                            return std::vector<OpenTelemetry::SpanAttribute>{
+                                {"zookeeper_client.requests_queue.size", requests_queue.size()},
+                            };
+                        });
+
+                    if (info.watch)
+                        info.request->has_watch = true;
+
+                    if (info.request->add_root_path)
+                        info.request->addRootPath(args.chroot);
+
+                    /// Insert into operations AFTER mutating the request (has_watch, addRootPath)
+                    /// to avoid a data race: receiveThread reads from operations concurrently,
+                    /// and the request object is shared via shared_ptr.
+                    if (info.request->xid != close_xid)
+                    {
+                        CurrentMetrics::add(CurrentMetrics::ZooKeeperRequest);
+                        std::lock_guard lock(operations_mutex);
+                        operations[info.request->xid] = info;
                     }
+
+                    /// Ownership of the callback is now with `operations` (or the request is a close
+                    /// with no callback): receiveEvent() or finalize() will satisfy it. Disarm the guard.
+                    callback_registered = true;
 
                     if (requests_queue.isFinished() && info.request->xid != close_xid)
                     {

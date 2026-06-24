@@ -2,13 +2,19 @@
 # Regression test for a broken-promise server abort in Coordination::ZooKeeper::sendThread.
 #
 # In sendThread a popped request is the sole owner of its callback until it is registered in
-# `operations`. The steps before that allocate, so a MEMORY_LIMIT_EXCEEDED there makes the
-# request unwind with an unsatisfied callback, and an async caller waiting on a std::promise
-# sees a broken-promise future_error that aborts the server.
+# `operations`. If anything in that window throws (the OpenTelemetry span finalize, addRootPath,
+# the operations map insert), the request unwinds with an unsatisfied callback, and an async
+# caller waiting on a std::promise sees a broken-promise future_error that aborts the server.
 #
-# The zk_send_thread_request_window_throw failpoint injects a memory-tracker fault inside that
-# window. The LockMemoryExceptionInThread around the window suppresses it, so the server stays
-# up; remove the lock and the fault throws and aborts the server (caught here because the node
+# The window can throw for reasons other than memory pressure: addRootPath raises ZBADARGUMENTS
+# for an empty or non-absolute path, and that validation runs after the async wrapper has already
+# enqueued the callback. The SCOPE_EXIT guard satisfies the dropped callback with a normal Keeper
+# error for ANY throw in the window, so the server stays up and the waiter gets a Keeper error
+# rather than std::future_error.
+#
+# The zk_send_thread_request_window_throw failpoint throws a non-memory exception (ZBADARGUMENTS)
+# inside that window, mirroring the addRootPath path. With the guard the server stays up; remove
+# the guard and the throw abandons the promise and aborts the server (caught here because the node
 # enables abort_on_logical_error).
 
 import pytest
