@@ -708,6 +708,13 @@ std::vector<std::string> GPTJModel::getRecsTopN(const std::vector<std::string> &
     }
 
     eval_success = gptjEval(ids, logits);
+    /// If the evaluation failed, `logits` is empty. Do not advance the cached state or extract top ids
+    /// from an empty `logits` vector, otherwise `getTopNIdsFromLogits` would read past the end of its
+    /// index array. Leave the state untouched so the next call resets and re-evaluates from scratch.
+    if (!eval_success)
+    {
+        return {};
+    }
     n_past += ids.size();
 
     current_query_ids.insert(current_query_ids.end(), ids.begin(), ids.end());
