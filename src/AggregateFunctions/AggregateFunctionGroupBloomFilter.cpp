@@ -115,7 +115,7 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        const T value = assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
+        const T value = canonicalizeGroupBloomFilterValue(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
         IAggregateFunctionDataHelper<AggregateFunctionGroupBloomFilterData, AggregateFunctionGroupBloomFilter<T>>::data(place).add(reinterpret_cast<const char *>(&value), sizeof(T));
     }
 };

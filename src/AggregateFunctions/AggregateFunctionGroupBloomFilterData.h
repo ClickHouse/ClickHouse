@@ -7,8 +7,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <numbers>
+#include <type_traits>
 
 
 namespace DB
@@ -72,6 +74,23 @@ inline size_t bloomFilterOptimalHashes(size_t filter_size_bytes, size_t expected
     return hashes;
 }
 
+
+template <typename T>
+T canonicalizeGroupBloomFilterValue(T value)
+{
+    if constexpr (std::is_floating_point_v<T>)
+    {
+        /// IEEE 754 has multiple object representations for values that ClickHouse treats as equal
+        /// or equivalent for set-membership purposes. Hash a canonical representation so the Bloom
+        /// filter keeps the advertised no-false-negatives property for `Float32` and `Float64`.
+        if (value == static_cast<T>(0))
+            return static_cast<T>(0);
+        if (std::isnan(value))
+            return std::numeric_limits<T>::quiet_NaN();
+    }
+
+    return value;
+}
 
 /// Data structure for groupBloomFilter aggregate function.
 /// Wraps BloomFilter from src/Interpreters/BloomFilter.h for use in aggregate functions.

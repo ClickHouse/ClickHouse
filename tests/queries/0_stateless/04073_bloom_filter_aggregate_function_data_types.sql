@@ -64,9 +64,25 @@ FROM numbers(100);
 SELECT bloomFilterContains(groupBloomFilterState(1000)(toFloat32(number)), toFloat32(42)) AS result
 FROM numbers(100);
 
+-- Float32: signed zero must not cause a false negative
+WITH (SELECT groupBloomFilterState(1000)(toFloat32(0.0)) FROM numbers(1)) AS bf
+SELECT bloomFilterContains(bf, toFloat32(-0.0));
+
+-- Float32: NaN encodings are canonicalized for hashing
+WITH (SELECT groupBloomFilterState(1000)(CAST(nan AS Float32)) FROM numbers(1)) AS bf
+SELECT bloomFilterContains(bf, CAST(-nan AS Float32));
+
 -- Float64
 SELECT bloomFilterContains(groupBloomFilterState(1000)(toFloat64(number * 0.1)), toFloat64(4.2)) AS result
 FROM numbers(100);
+
+-- Float64: signed zero must not cause a false negative
+WITH (SELECT groupBloomFilterState(1000)(toFloat64(0.0)) FROM numbers(1)) AS bf
+SELECT bloomFilterContains(bf, toFloat64(-0.0));
+
+-- Float64: NaN encodings are canonicalized for hashing
+WITH (SELECT groupBloomFilterState(1000)(CAST(nan AS Float64)) FROM numbers(1)) AS bf
+SELECT bloomFilterContains(bf, CAST(-nan AS Float64));
 
 -- Date: value present
 SELECT bloomFilterContains(groupBloomFilterState(1000)(toDate('2023-01-01')), toDate('2023-01-01')) AS result

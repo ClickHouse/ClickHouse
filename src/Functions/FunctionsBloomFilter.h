@@ -284,7 +284,7 @@ private:
                 ? getBloomFilterData(*bloom_col_const, 0, bloom_data_offset)
                 : getBloomFilterData(*bloom_col, i, bloom_data_offset);
 
-            T value = value_is_const ? value_const : value_col->getData()[i];
+            T value = canonicalizeGroupBloomFilterValue(value_is_const ? value_const : value_col->getData()[i]);
 
             vec_to[i] = bloom_data.contains(reinterpret_cast<const char *>(&value), sizeof(T)) ? 1 : 0;
         }
