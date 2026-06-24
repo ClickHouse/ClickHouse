@@ -107,18 +107,21 @@ bool DatabaseS3::isTableExist(const String & name, ContextPtr context_) const
 
 StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) const
 {
-    /// A table without explicit credentials may resolve the server's own S3 credentials, and whether that is
-    /// allowed is decided per session by `s3_allow_server_credentials_in_user_queries` when the storage is
-    /// built. Caching such a storage would let a session that is allowed to use server credentials prime it
-    /// for a later restricted session, bypassing the restriction. Only a database configured with explicit
-    /// credentials (an access key pair or NOSIGN) never uses server credentials, so only its tables are safe
-    /// to cache and reuse across sessions; tables without explicit credentials are rebuilt under the current
-    /// query context every time, so the restriction is enforced for each session.
-    const bool credentials_are_explicit
-        = config.no_sign_request || (config.access_key_id.has_value() && config.secret_access_key.has_value());
+    /// A cached storage is reused by later sessions without rebuilding its S3 client, so it must be cached
+    /// only when that client can never carry server-managed credentials -- otherwise a session that is
+    /// allowed to use them could prime the cache for a later restricted session, bypassing the restriction.
+    /// `NOSIGN` is always anonymous, so it is safe. An explicit access key pair is safe only when the building
+    /// session is itself restricted: otherwise `StorageS3Configuration::fromAST` may inherit a
+    /// server-configured `role_arn` from the `<s3>` config and assume the server's role on top of the explicit
+    /// keys (under the restriction that inherited `role_arn` is stripped instead). Everything else is rebuilt
+    /// under the current query context every time, so the restriction is enforced for each session.
+    const bool safe_to_cache
+        = config.no_sign_request
+        || (config.access_key_id.has_value() && config.secret_access_key.has_value()
+            && context_->shouldRestrictUserQueryS3Credentials());
 
     /// Check if the table exists in the loaded tables map.
-    if (credentials_are_explicit)
+    if (safe_to_cache)
     {
         std::lock_guard lock(mutex);
         auto it = loaded_tables.find(name);
@@ -151,7 +154,7 @@ StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) co
 
     /// TableFunctionS3 throws exceptions, if table cannot be created.
     auto table_storage = table_function->execute(function, context_, name, /*cached_columns_=*/{}, /*use_global_context=*/false, /*is_insert_query=*/true);
-    if (table_storage && credentials_are_explicit)
+    if (table_storage && safe_to_cache)
         addTable(name, table_storage);
 
     return table_storage;
