@@ -31,3 +31,34 @@ SELECT
 FROM system.processors_profile_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = query_id_
 ORDER BY name;
+
+SELECT uniqExact(toString(number))
+FROM numbers(100000)
+SETTINGS
+    log_processors_profiles = 1,
+    log_queries = 1,
+    log_queries_min_type = 'QUERY_FINISH',
+    log_comment = '02210_processors_profile_log_memory_usage_delta',
+    max_threads = 1,
+    max_untracked_memory = 0
+FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log, processors_profile_log;
+
+WITH
+    (
+        SELECT query_id
+        FROM system.query_log
+        WHERE event_date >= yesterday()
+            AND event_time >= now() - 600
+            AND current_database = currentDatabase()
+            AND log_comment = '02210_processors_profile_log_memory_usage_delta'
+            AND type = 'QueryFinish'
+        ORDER BY event_time_microseconds DESC
+        LIMIT 1
+    ) AS query_id_
+SELECT
+    countIf(memory_usage_delta != 0) > 0,
+    sum(greatest(memory_usage_delta, 0)) > 0
+FROM system.processors_profile_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = query_id_;
