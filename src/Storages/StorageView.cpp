@@ -1052,7 +1052,8 @@ SinkToStoragePtr StorageView::write(
             getStorageID().getFullTableName(), target_table->getStorageID().getFullTableName());
 
     NameSet target_columns;
-    for (const auto & col : target_table->getInMemoryMetadataPtr(context, false)->getColumns().getOrdinary())
+    const auto target_table_metadata = target_table->getInMemoryMetadataPtr(context, false);
+    for (const auto & col : target_table_metadata->getColumns().getOrdinary())
         target_columns.insert(col.name);
 
     auto column_mapping = extractColumnMapping(select, getStorageID(), target_columns, target_table_ref);
