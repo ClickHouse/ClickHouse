@@ -861,39 +861,78 @@ protected:
         auto storage_arg = function->arguments->at(1);
         auto storage_function = storage_arg->getFunction();
 
-        /// Backup('', S3('url', 'access_key_id', 'secret_access_key'))
-        if (storage_function && storage_function->name() == "S3" && storage_function->arguments->size() >= 3)
+        /// The nested S3 destination is not recognized as an S3 engine when the formatter recurses into it,
+        /// so its secrets must be masked here. Handle both forms:
+        ///   Backup('', S3('url', 'access_key_id', 'secret_access_key' [, ...]))
+        ///   Backup('', S3(named_collection, ..., secret_access_key = '...', session_token = '...', ...))
+        /// by reconstructing the nested `S3(...)` with the secret arguments replaced by `[HIDDEN]`.
+        if (!storage_function || storage_function->name() != "S3" || !storage_function->hasArguments())
+            return;
+
+        static constexpr std::string_view secret_keys[]
+            = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token"};
+
+        const auto & nested_args = *storage_function->arguments;
+        const bool is_named_collection = nested_args.size() >= 1 && nested_args.at(0)->isIdentifier();
+
+        std::string replacement = "S3(";
+        bool has_secret = false;
+        for (size_t i = 0; i < nested_args.size(); ++i)
         {
-            std::string replacement = "S3(";
+            if (i > 0)
+                replacement += ", ";
 
-            for (size_t i = 0; i < storage_function->arguments->size(); ++i)
+            auto arg = nested_args.at(i);
+
+            /// Named argument `key = value`.
+            if (auto key_value = arg->getFunction();
+                key_value && key_value->name() == "equals" && key_value->hasArguments() && key_value->arguments->size() == 2)
             {
-                if (i > 0)
+                String key;
+                if (key_value->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true))
                 {
-                    replacement += ", ";
-                }
-
-                if (i == 2) // Secret key position
-                {
-                    replacement += "'[HIDDEN]'";
-                }
-                else
-                {
-                    String arg_value;
-                    if (!storage_function->arguments->at(i)->tryGetString(&arg_value, true))
+                    const bool is_secret = std::find(std::begin(secret_keys), std::end(secret_keys), key) != std::end(secret_keys);
+                    replacement += key;
+                    replacement += " = ";
+                    String value;
+                    if (is_secret)
                     {
-                        return;
+                        replacement += "'[HIDDEN]'";
+                        has_secret = true;
                     }
-                    replacement += "'" + arg_value + "'";
+                    else if (key_value->arguments->at(1)->tryGetString(&value, /* allow_identifier= */ true))
+                        replacement += "'" + value + "'";
+                    else
+                        replacement += "'[HIDDEN]'"; /// Cannot reconstruct the literal safely; hide it rather than leak.
+                    continue;
                 }
             }
-            replacement += ")";
 
-            result.start = 1;
-            result.count = 1;
-            result.replacement = std::move(replacement);
-            result.quote_replacement = false;
+            /// Positional argument. In the explicit-key form the secret is at position 2.
+            if (!is_named_collection && i == 2)
+            {
+                replacement += "'[HIDDEN]'";
+                has_secret = true;
+                continue;
+            }
+
+            String arg_value;
+            if (arg->isIdentifier() && arg->tryGetString(&arg_value, /* allow_identifier= */ true))
+                replacement += arg_value; /// e.g. the named collection name, kept unquoted.
+            else if (arg->tryGetString(&arg_value, /* allow_identifier= */ true))
+                replacement += "'" + arg_value + "'";
+            else
+                return; /// Cannot reconstruct an argument; do not emit a wrong masked form.
         }
+        replacement += ")";
+
+        if (!has_secret)
+            return;
+
+        result.start = 1;
+        result.count = 1;
+        result.replacement = std::move(replacement);
+        result.quote_replacement = false;
     }
 
     void findBackupNameSecretArguments()
