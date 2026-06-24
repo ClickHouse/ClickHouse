@@ -1,7 +1,9 @@
+#include <memory>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <Processors/Executors/ExecutingGraph.h>
 #include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -42,6 +44,7 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/StepWallClockRegistry.h>
 #include <QueryPipeline/printPipeline.h>
 
 #include <Common/CurrentThread.h>
@@ -1007,11 +1010,22 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             UInt64 planning_ns = 0;
             Stopwatch watch;
+            /// EXPLAIN ANALYZE executes the inner SELECT, so quota and result limits must follow the same
+            /// rules as running that SELECT directly. The inner interpreter resolves the effective
+            /// ignore_quota / ignore_limits during planning (e.g. exempt system tables such as `system.one`),
+            /// while the outer EXPLAIN options do not carry those source-specific exemptions. Capture them
+            /// from the inner interpreter after the plan is built.
+            bool inner_ignore_quota = false;
+            bool inner_ignore_limits = false;
             if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
                 context = interpreter.getContext();
                 parallel_replicas_builder = interpreter.getQueryPlanWithParallelReplicasBuilder();
+                /// Force planning so the effective ignore flags settle before we read them.
+                interpreter.getQueryPlan();
+                inner_ignore_quota = interpreter.ignoreQuota();
+                inner_ignore_limits = interpreter.ignoreLimits();
                 plan = std::move(interpreter).extractQueryPlan();
             }
             else
@@ -1019,6 +1033,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), query_context, options);
                 interpreter.buildQueryPlan(plan);
                 context = interpreter.getContext();
+                inner_ignore_quota = interpreter.ignoreQuota();
+                inner_ignore_limits = interpreter.ignoreLimits();
             }
             planning_ns += watch.elapsed();
 
@@ -1046,9 +1062,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
 
             auto to_complete = options.to_stage == QueryProcessingStage::Complete;
-            auto quota = (!options.ignore_quota && to_complete) ? context->getQuota() : nullptr;
+            auto quota = (!inner_ignore_quota && to_complete) ? context->getQuota() : nullptr;
 
-            if (!options.ignore_limits)
+            if (!inner_ignore_limits)
             {
                 StreamLocalLimits limits;
 
@@ -1082,7 +1098,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             planning_ns += watch.elapsed();
 
-            pipeline.setMeasureStepWallClock(true);
+            auto step_wall_clock_registry = std::make_unique<StepWallClockRegistry>();
+            step_wall_clock_registry->populateFromPlan(plan);
+            pipeline.setStepWallClocksRegistry(std::move(step_wall_clock_registry));
 
             CompletedPipelineExecutor executor(pipeline);
 
