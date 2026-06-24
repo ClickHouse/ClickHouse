@@ -11,7 +11,11 @@
 #include <Common/FieldVisitors.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
+
+#include <optional>
 
 #include <Processors/QueryPlan/FractionalLimitStep.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
@@ -97,6 +101,7 @@ namespace ProfileEvents
 {
     extern const Event SelectQueriesWithSubqueries;
     extern const Event QueriesWithSubqueries;
+    extern const Event QueryPlanningMicroseconds;
 }
 
 namespace DB
@@ -1921,10 +1926,27 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
 {
 }
 
+namespace
+{
+    /// buildQueryPlanIfNeeded recurses through nested planners (UNION branches, subqueries,
+    /// CTEs). Time only the outermost invocation on the thread so QueryPlanningMicroseconds
+    /// reflects wall-clock planning time and is not inflated by nesting.
+    thread_local size_t query_planning_recursion_depth = 0;
+}
+
 void Planner::buildQueryPlanIfNeeded()
 {
     if (query_plan.isInitialized())
         return;
+
+    /// Time only the outermost planner invocation on the thread (see query_planning_recursion_depth
+    /// above): nested sub-planners fold into this measurement instead of being counted again.
+    /// Placed after the early-return guard so repeated no-op calls do not record near-zero noise.
+    std::optional<ProfileEventTimeIncrement<Microseconds>> watch;
+    if (query_planning_recursion_depth == 0)
+        watch.emplace(ProfileEvents::QueryPlanningMicroseconds);
+    ++query_planning_recursion_depth;
+    SCOPE_EXIT(--query_planning_recursion_depth;);
 
     LOG_TRACE(
         log,
