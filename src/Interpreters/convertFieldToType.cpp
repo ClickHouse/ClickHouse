@@ -59,7 +59,7 @@ namespace
 template <typename From, typename To>
 Field convertNumericTypeImpl(const Field & from)
 {
-    To result;
+    To result{};
     if (!accurate::convertNumeric(from.safeGet<From>(), result))
         return {};
     return result;
@@ -347,22 +347,25 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return dynamic_cast<const IDataTypeEnum &>(type).castToValue(src);
         }
 
-        if ((which_type.isDate() || which_type.isDateTime()) && src.getType() == Field::Types::UInt64)
+        if (which_type.isDate() && src.getType() == Field::Types::UInt64)
         {
-            /// We don't need any conversion UInt64 is under type of Date and DateTime
+            /// Date is UInt16 under the hood; range-check so out-of-range integers
+            /// don't get silently truncated by the Date serializer downstream.
+            return convertNumericType<UInt16>(src, type);
+        }
+
+        if (which_type.isDateTime() && src.getType() == Field::Types::UInt64)
+        {
+            /// `DateTime` stores `UInt32` under the hood, so `UInt64` is the canonical `Field` type and no conversion is needed.
             return src;
         }
 
-        if ((which_type.isDate() || which_type.isTime()) && src.getType() == Field::Types::UInt64)
+        if (which_type.isTime() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
         {
-            /// We don't need any conversion UInt64 is under type of Date and Time
-            return src;
-        }
-
-        if (which_type.isTime() && src.getType() == Field::Types::Int64)
-        {
-            /// We don't need any conversion Int64 is under type of Date32
-            return src;
+            /// `Time` stores `Int32` under the hood; convert through `Int32` to produce the canonical
+            /// `Int64` `Field` matching what `Time` part loading produces, and to range-check the input
+            /// so out-of-range integers are not silently truncated by the `Time` serializer downstream.
+            return convertNumericType<Int32>(src, type);
         }
 
         if (which_type.isDate32() && src.getType() == Field::Types::Int64)
@@ -393,7 +396,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             }
             else if (scale_from < scale_to)
             {
-                Int64 result;
+                Int64 result = 0;
                 if (common::mulOverflow(value, scale_multiplier_diff.value, result))
                     throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Cannot convert {} to {} as it overflows: {} * {} does not fit in Int64",
                         src.getTypeName(), type.getName(), value, scale_multiplier_diff.value);
@@ -422,11 +425,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return DecimalField<Time64>(DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, 1), scale_to);
         }
 
-        /// For toDate('xxx') in 1::Int64, we CAST `src` to UInt64, which may
-        /// produce wrong result in some special cases.
+        /// For toDate('xxx') in 1::Int64. Date is UInt16 under the hood;
+        /// range-check so out-of-range integers don't get silently truncated
+        /// by the Date serializer downstream.
         if (which_type.isDate() && src.getType() == Field::Types::Int64)
         {
-            return convertNumericType<UInt64>(src, type);
+            return convertNumericType<UInt16>(src, type);
         }
 
         /// For toDate32('xxx') in 1, we CAST `src` to Int64. Also, it may

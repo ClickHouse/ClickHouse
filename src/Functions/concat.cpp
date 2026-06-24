@@ -114,14 +114,14 @@ private:
     ColumnPtr executeFormatImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         const size_t num_arguments = arguments.size();
-        assert(num_arguments >= 2);
+        chassert(num_arguments >= 2);
 
         auto col_res = ColumnString::create();
-        std::vector<const ColumnString::Chars *> data(num_arguments);
-        std::vector<const ColumnString::Offsets *> offsets(num_arguments);
-        std::vector<size_t> fixed_string_sizes(num_arguments);
-        std::vector<std::optional<String>> constant_strings(num_arguments);
-        std::vector<ColumnString::MutablePtr> converted_col_ptrs(num_arguments);
+        VectorWithMemoryTracking<const ColumnString::Chars *> data(num_arguments);
+        VectorWithMemoryTracking<const ColumnString::Offsets *> offsets(num_arguments);
+        VectorWithMemoryTracking<size_t> fixed_string_sizes(num_arguments);
+        VectorWithMemoryTracking<std::optional<String>> constant_strings(num_arguments);
+        VectorWithMemoryTracking<ColumnString::MutablePtr> converted_col_ptrs(num_arguments);
         bool has_column_string = false;
         bool has_column_fixed_string = false;
         for (size_t i = 0; i < num_arguments; ++i)

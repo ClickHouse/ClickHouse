@@ -56,12 +56,19 @@ set(SRCS
     "${POSTGRES_SOURCE_DIR}/src/port/pgstrcasecmp.c"
     "${POSTGRES_SOURCE_DIR}/src/port/pg_bitutils.c"
     "${POSTGRES_SOURCE_DIR}/src/port/path.c"
+    "${POSTGRES_SOURCE_DIR}/src/port/timingsafe_bcmp.c"
 )
 
 if(NOT OS_DARWIN)
     set(SRCS ${SRCS}
         "${POSTGRES_SOURCE_DIR}/src/port/strlcat.c"
         "${POSTGRES_SOURCE_DIR}/src/port/strlcpy.c"
+    )
+endif()
+
+if(OS_DARWIN OR ARCH_PPC64LE)
+    set(SRCS ${SRCS}
+        "${POSTGRES_SOURCE_DIR}/src/port/explicit_bzero.c"
     )
 endif()
 

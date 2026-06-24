@@ -44,7 +44,7 @@ protected:
         return result_column;
     }
 
-    void setResult(std::string_view & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> &) const override
+    void setResult(std::string_view & result, const Dwarf::LocationInfo & location, const VectorWithMemoryTracking<Dwarf::SymbolizedFrame> &) const override
     {
         const char * arena_begin = nullptr;
         WriteBufferFromArena out(cache.arena, arena_begin);
