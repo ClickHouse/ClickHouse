@@ -1,12 +1,10 @@
-import logging
 import time
 from random import randint
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster, QueryRuntimeException
-from helpers.network import PartitionManager
-from helpers.test_tools import TSV, assert_eq_with_retry, assert_logs_contain
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -40,6 +38,17 @@ reading_node = cluster.add_instance(
 nodes = [node1, node2]
 
 test_idx = 0
+
+
+def wait_until_view_registered(node, name):
+    # `system sync database replica` doesn't wait for the replicated view's startup() to
+    # register its refresh task, so the SYSTEM *VIEW commands below can race with it.
+    assert_eq_with_retry(
+        node,
+        f"select count() from system.view_refreshes where database = 're' and view = '{name}'",
+        "1\n",
+        retry_count=60,
+    )
 
 
 @pytest.fixture(scope="module")
@@ -83,6 +92,7 @@ def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
     )
     node1.query("system sync database replica re")
     for node in nodes:
+        wait_until_view_registered(node, "a")
         node.query("system wait view re.a")
         assert node.query("select * from re.a order by all") == "0\n10\n"
         assert (
@@ -101,8 +111,10 @@ def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
         )
         # Stop the clocks.
         for node in nodes:
+            node.query("system sync database replica re")
+            wait_until_view_registered(node, name)
             node.query(
-                f"system sync database replica re; system test view re.{name} set fake time '2040-01-01 00:00:01'"
+                f"system test view re.{name} set fake time '2040-01-01 00:00:01'"
             )
         # Wait for quiescence.
         for node in nodes:
@@ -140,6 +152,7 @@ def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
     )
     node2.query("system sync database replica re")
     for node in nodes:
+        wait_until_view_registered(node, "unreplicated_uncoordinated")
         node.query("system wait view re.unreplicated_uncoordinated")
         assert (
             node.query("select distinct x from re.unreplicated_uncoordinated") == "1\n"
@@ -603,7 +616,7 @@ def test_adding_replica(started_cluster, cleanup):
         node1.query("select last_refresh_replica from system.view_refreshes") == "1\n"
     )
 
-    r = node2.query(
+    node2.query(
         "create database re engine = Replicated('/test/re', 'shard1', 'r2');"
         "system sync database replica re"
     )
