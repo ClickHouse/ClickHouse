@@ -13,6 +13,7 @@
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/executeQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -119,6 +120,30 @@ namespace
 
         walk(returning_select.get());
     }
+
+    /// The `input()` table function streams the rows the client sends for the outer INSERT. Those
+    /// callbacks belong to the INSERT phase and are already consumed by the time the RETURNING
+    /// subquery runs; an `input()` inside the subquery would see the outer INSERT's stale callbacks
+    /// through `Context::getQueryContext()` and either misframe the input header as the result header
+    /// or hang waiting for a second input stream that the client never sends. Reject it explicitly.
+    void rejectInputInReturning(const ASTPtr & returning_select)
+    {
+        std::function<void(const IAST *)> walk = [&](const IAST * node)
+        {
+            if (!node)
+                return;
+
+            if (const auto * function = node->as<ASTFunction>(); function && function->name == "input")
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "The input() table function is not supported in an INSERT ... RETURNING subquery");
+
+            for (const auto & child : node->children)
+                walk(child.get());
+        };
+
+        walk(returning_select.get());
+    }
 }
 
 namespace Setting
@@ -155,6 +180,7 @@ QueryPipeline buildReturningSelectPipeline(
     QueryMetadataCachePtr & out_metadata_cache)
 {
     rejectUnsupportedReturningSettings(returning_select);
+    rejectInputInReturning(returning_select);
     auto returning_context = makeReturningSelectContext(returning_select, context);
 
     /// `executeQueryImpl` detaches the RETURNING subquery from the INSERT before running the global AST visitors, so

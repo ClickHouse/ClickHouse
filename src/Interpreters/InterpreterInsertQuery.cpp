@@ -1059,7 +1059,12 @@ BlockIO InterpreterInsertQuery::execute()
 
     if (query.select)
     {
-        if (settings[Setting::parallel_distributed_insert_select])
+        /// The distributed insert-select optimizations serialize this AST to build the remote INSERT sent to each
+        /// shard. With `returning_select` present that remote query would become `INSERT ... SELECT ... RETURNING (...)`,
+        /// so every shard would run the user RETURNING `SELECT` and stream a result the initiator cannot consume. The
+        /// contract is that RETURNING runs once on the initiator after the insert phase completes, so fall back to the
+        /// local insert-select pipeline (RETURNING is wrapped on the initiator in `executeQueryImpl`) when it is present.
+        if (settings[Setting::parallel_distributed_insert_select] && !query.returning_select)
         {
             /// distributed write paths may mutate the SELECT AST (CTE expansion), so keep a backup
             auto saved_select = query.select->clone();

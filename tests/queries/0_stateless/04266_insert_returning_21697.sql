@@ -155,5 +155,8 @@ INSERT INTO t_insert_returning (id, name) RETURNING (WITH cte AS (SELECT 1 SETTI
 -- `profile` is rejected because it can expand into any of the rejected query-global settings
 INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 SETTINGS profile='default') VALUES (204, 'profile'); -- { serverError NOT_IMPLEMENTED }
 
+-- input() in the RETURNING subquery is rejected: its callbacks belong to the INSERT phase
+INSERT INTO t_insert_returning (id, name) RETURNING (SELECT * FROM input('x UInt8')) VALUES (205, 'input'); -- { serverError NOT_IMPLEMENTED }
+
 DROP TABLE t_insert_returning_other;
 DROP TABLE t_insert_returning;
