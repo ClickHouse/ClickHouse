@@ -212,7 +212,7 @@ TEST(BloomFilterContains, WrongConstNumericBloomColumnThrowsAfterTypeValidation)
     probe_column->insertValue(42);
 
     EXPECT_THROW(
-        executeBloomFilterContains(std::move(const_wrong_bloom_column), bloom_type, std::move(probe_column), value_type, 1),
+        executeBloomFilterContains(const_wrong_bloom_column, bloom_type, std::move(probe_column), value_type, 1),
         Exception);
 }
 
@@ -247,7 +247,7 @@ TEST(BloomFilterContains, WrongConstStringBloomColumnThrowsAfterTypeValidation)
     probe_column->insertData("hello", 5);
 
     EXPECT_THROW(
-        executeBloomFilterContains(std::move(const_wrong_bloom_column), bloom_type, std::move(probe_column), value_type, 1),
+        executeBloomFilterContains(const_wrong_bloom_column, bloom_type, std::move(probe_column), value_type, 1),
         Exception);
 }
 
@@ -266,7 +266,7 @@ TEST(BloomFilterContains, WrongConstDateTime64BloomColumnThrowsAfterTypeValidati
     probe_column->insertValue(DateTime64(123456));
 
     EXPECT_THROW(
-        executeBloomFilterContains(std::move(const_wrong_bloom_column), bloom_type, std::move(probe_column), value_type, 1),
+        executeBloomFilterContains(const_wrong_bloom_column, bloom_type, std::move(probe_column), value_type, 1),
         Exception);
 }
 
