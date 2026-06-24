@@ -223,12 +223,18 @@ ASTPtr makeASTFunctionFromList(std::string_view name, ASTs children)
     return function;
 }
 
-/// True if the type is a Decimal or contains one nested anywhere (Array/Tuple/Map/Variant/Nullable/...).
-/// Used as a cheap guard to skip materializing the field for the common decimal-free constants.
-bool typeContainsDecimal(const IDataType & type)
+/// True if the constant may contain a decimal leaf: a static Decimal anywhere in the type
+/// (Array/Tuple/Map/Variant/Nullable/...), or a Dynamic whose runtime value can be a decimal that is
+/// not visible in the declared type. Used as a cheap guard to skip materializing the field for the
+/// common decimal-free constants; fieldContainsDecimal is the authoritative check on the value.
+bool typeMayContainDecimal(const IDataType & type)
 {
     bool result = false;
-    auto check = [&](const IDataType & nested) { result |= WhichDataType(nested).isDecimal(); };
+    auto check = [&](const IDataType & nested)
+    {
+        WhichDataType which(nested);
+        result |= which.isDecimal() || which.isDynamic();
+    };
     check(type);
     type.forEachChild(check);
     return result;
@@ -313,7 +319,7 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     /// This must run even when add_cast_for_constants is false (e.g. the RHS of IN/notIn, where casts
     /// are suppressed): a bare decimal in the set would be parsed as Float64 on the shard and round,
     /// so an OR-to-IN rewrite over high-scale Decimal values could filter on rounded constants.
-    if (typeContainsDecimal(*constant_value_type))
+    if (typeMayContainDecimal(*constant_value_type))
     {
         if (auto literal_field = getFieldFromColumnForASTLiteral(constant_value.getColumn(), 0, constant_value_type);
             fieldContainsDecimal(literal_field))

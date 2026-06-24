@@ -48,6 +48,12 @@ FROM remote('127.0.0.{1,2}', system.one);
 SELECT DISTINCT materialize(map('k', toDecimal64('123456789012.34567', 5))) AS c
 FROM remote('127.0.0.{1,2}', system.one);
 
+-- A decimal stored in Dynamic must keep both its value and its active subtype (Decimal, not Float64)
+-- on every shard. The declared type is just Dynamic, so the value's exactness depends on inspecting
+-- the actual field, not the type name.
+SELECT DISTINCT d, dynamicType(d)
+FROM (SELECT materialize(toDecimal64('123456789012.34567', 5)::Dynamic) AS d FROM remote('127.0.0.{1,2}', system.one));
+
 DROP TABLE ts_data_94612;
 
 -- An OR chain of >= 3 equalities is rewritten to IN, whose RHS set is a constant with casts
