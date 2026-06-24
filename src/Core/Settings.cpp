@@ -8761,6 +8761,16 @@ std::string_view Settings::getDescription(std::string_view name) const
     return impl->getDescription(name);
 }
 
+std::string_view Settings::getTypeName(std::string_view name) const
+{
+    return impl->getTypeName(name);
+}
+
+String Settings::getDefaultValueString(std::string_view name) const
+{
+    return impl->getDefaultValueString(name);
+}
+
 bool Settings::tryGet(std::string_view name, Field & value) const
 {
     return impl->tryGet(name, value);
