@@ -6196,7 +6196,10 @@ Allow to convert ANY JOIN to SEMI or ANTI JOIN if filter after JOIN always evalu
 Allow to merge filter into `JOIN` condition and convert `CROSS JOIN` to `INNER`.
 )", 0) \
     DECLARE(Bool, query_plan_merge_expression_into_join, true, R"(
-Allow to merge `Expression` and `Filter` steps into JOIN step during join reordering optimization.
+Allow to merge `Expression` steps into JOIN step during join reordering optimization.
+)", 0) \
+    DECLARE(Bool, query_plan_merge_filters_into_join, false, R"(
+Allow to merge `Filter` steps into JOIN step during join reordering optimization.
 A merged filter condition becomes a join condition of an inner join or a post-join filter of an outer join.
 )", 0) \
     DECLARE(Bool, query_plan_convert_join_to_in, false, R"(

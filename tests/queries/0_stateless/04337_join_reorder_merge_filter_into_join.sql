@@ -10,6 +10,7 @@ SET join_use_nulls = 0;
 SET query_plan_optimize_join_order_limit = 64;
 SET query_plan_optimize_join_order_randomize = 1;
 SET query_plan_merge_expression_into_join = 1;
+SET query_plan_merge_filters_into_join = 1;
 
 CREATE TABLE a (id Int32, x Int32, s String) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE b (id Int32, x Nullable(Int32), s Nullable(String)) ENGINE = MergeTree ORDER BY tuple();
@@ -162,7 +163,7 @@ FROM (EXPLAIN PLAN keep_logical_steps = 1, description = 0
             FROM a JOIN b ON a.id = b.id WHERE a.x + coalesce(b.x, 0) > 50
         ) t JOIN c ON t.id = c.id
     ) u JOIN d ON u.id = d.id
-    SETTINGS query_plan_merge_expression_into_join = 1, query_plan_optimize_join_order_randomize = 0,
+    SETTINGS query_plan_merge_expression_into_join = 1, query_plan_merge_filters_into_join = 1, query_plan_optimize_join_order_randomize = 0,
              query_plan_optimize_join_order_algorithm = 'greedy', enable_join_runtime_filters = 0);
 
 SELECT
@@ -179,7 +180,7 @@ FROM (EXPLAIN PLAN keep_logical_steps = 1, description = 0
             FROM a JOIN b ON a.id = b.id WHERE a.x + coalesce(b.x, 0) > 50
         ) t JOIN c ON t.id = c.id
     ) u JOIN d ON u.id = d.id
-    SETTINGS query_plan_merge_expression_into_join = 0, query_plan_optimize_join_order_randomize = 0,
+    SETTINGS query_plan_merge_expression_into_join = 0, query_plan_merge_filters_into_join = 0, query_plan_optimize_join_order_randomize = 0,
              query_plan_optimize_join_order_algorithm = 'greedy', enable_join_runtime_filters = 0);
 
 DROP TABLE a;

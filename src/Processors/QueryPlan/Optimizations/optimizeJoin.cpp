@@ -689,7 +689,7 @@ static bool canMergeFilterIntoJoinGraph(const T & filter_step)
     return !dag.hasArrayJoin() && !dag.hasStatefulFunctions() && !dag.hasNonDeterministic() && !dag.hasCorrelatedColumns();
 }
 
-static bool isMergeableStepAboveJoin(const QueryPlan::Node * node, bool merge_expression_into_join)
+static bool isMergeableStepAboveJoin(const QueryPlan::Node * node, bool merge_expression_into_join, bool merge_filters_into_join)
 {
     if (node->children.size() != 1)
         return false;
@@ -701,14 +701,14 @@ static bool isMergeableStepAboveJoin(const QueryPlan::Node * node, bool merge_ex
     }
     if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
     {
-        return merge_expression_into_join && canMergeFilterIntoJoinGraph(*filter_step);
+        return merge_filters_into_join && canMergeFilterIntoJoinGraph(*filter_step);
     }
     return false;
 }
 
-static const QueryPlan::Node * peelMergeableStepsAboveJoin(const QueryPlan::Node * node, bool merge_expression_into_join)
+static const QueryPlan::Node * peelMergeableStepsAboveJoin(const QueryPlan::Node * node, bool merge_expression_into_join, bool merge_filters_into_join)
 {
-    while (isMergeableStepAboveJoin(node, merge_expression_into_join))
+    while (isMergeableStepAboveJoin(node, merge_expression_into_join, merge_filters_into_join))
         node = node->children[0];
     return node;
 }
@@ -766,6 +766,7 @@ constexpr bool isInnerOrCross(JoinKind kind)
 static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, const String & label, int join_steps_limit)
 {
     bool merge_expression_into_join = graph.context->optimization_settings.merge_expression_into_join;
+    bool merge_filters_into_join = graph.context->optimization_settings.merge_filters_into_join;
 
     auto * root_node = node;
 
@@ -779,7 +780,7 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
     }
 
     std::vector<QueryPlan::Node *> merge_steps;
-    while (isMergeableStepAboveJoin(root_node, merge_expression_into_join))
+    while (isMergeableStepAboveJoin(root_node, merge_expression_into_join, merge_filters_into_join))
     {
         merge_steps.push_back(root_node);
         root_node = root_node->children[0];
@@ -881,7 +882,8 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
             if (allow_flatten)
             {
                 bool merge_expression_into_join = query_graph.context->optimization_settings.merge_expression_into_join;
-                const auto * check = peelMergeableStepsAboveJoin(plan, merge_expression_into_join);
+                bool merge_filters_into_join = query_graph.context->optimization_settings.merge_filters_into_join;
+                const auto * check = peelMergeableStepsAboveJoin(plan, merge_expression_into_join, merge_filters_into_join);
                 const auto * js = typeid_cast<const JoinStepLogical *>(check->step.get());
                 if (js && !js->isOptimized() && check->children.size() == 2)
                 {
@@ -1445,6 +1447,7 @@ static void collectJoinGraphRelationHeaders(
     int join_steps_limit,
     const JoinSettings & join_settings,
     bool merge_expression_into_join,
+    bool merge_filters_into_join,
     std::vector<SharedHeader> & relation_headers);
 
 /// Mirrors `buildQueryGraph` for a single join node: collects the output headers of the relations
@@ -1454,6 +1457,7 @@ static void collectJoinGraphRelationHeadersForJoin(
     int join_steps_limit,
     const JoinSettings & join_settings,
     bool merge_expression_into_join,
+    bool merge_filters_into_join,
     std::vector<SharedHeader> & relation_headers)
 {
     const auto * join_step = typeid_cast<const JoinStepLogical *>(join_node.step.get());
@@ -1470,14 +1474,15 @@ static void collectJoinGraphRelationHeadersForJoin(
         = !type_changing_sides.contains(JoinTableSide::Left) && (isInnerOrCross(join_kind) || isLeft(join_kind));
     const size_t lhs_before = relation_headers.size();
     collectJoinGraphRelationHeaders(
-        join_node.children[0], allow_left_subgraph ? join_steps_limit - 1 : 0, join_settings, merge_expression_into_join, relation_headers);
+        join_node.children[0], allow_left_subgraph ? join_steps_limit - 1 : 0, join_settings, merge_expression_into_join,
+        merge_filters_into_join, relation_headers);
     const size_t lhs_count = relation_headers.size() - lhs_before;
 
     const bool allow_right_subgraph
         = !type_changing_sides.contains(JoinTableSide::Right) && (isInnerOrCross(join_kind) || isRight(join_kind));
     collectJoinGraphRelationHeaders(
         join_node.children[1], allow_right_subgraph ? static_cast<int>(join_steps_limit - lhs_count) : 0, join_settings,
-        merge_expression_into_join, relation_headers);
+        merge_expression_into_join, merge_filters_into_join, relation_headers);
 }
 
 /// Mirrors `addChildQueryGraph`: either flattens a child join into multiple relations, or treats
@@ -1487,12 +1492,13 @@ static void collectJoinGraphRelationHeaders(
     int join_steps_limit,
     const JoinSettings & join_settings,
     bool merge_expression_into_join,
+    bool merge_filters_into_join,
     std::vector<SharedHeader> & relation_headers)
 {
     /// Look through a chain of mergeable Expression/Filter steps to find a flattenable join below,
     /// the same way `addChildQueryGraph` does. The header of the original node is used when the
     /// node below is not a flattenable join.
-    const QueryPlan::Node * join_candidate = peelMergeableStepsAboveJoin(node, merge_expression_into_join);
+    const QueryPlan::Node * join_candidate = peelMergeableStepsAboveJoin(node, merge_expression_into_join, merge_filters_into_join);
 
     if (const auto * child_join_step = typeid_cast<const JoinStepLogical *>(join_candidate->step.get());
         child_join_step && !child_join_step->isOptimized())
@@ -1505,7 +1511,7 @@ static void collectJoinGraphRelationHeaders(
 
         if (child_join_step->getJoinSettings() == join_settings && join_steps_limit > 1 && allow_child_join_kind)
         {
-            collectJoinGraphRelationHeadersForJoin(*join_candidate, join_steps_limit, join_settings, merge_expression_into_join, relation_headers);
+            collectJoinGraphRelationHeadersForJoin(*join_candidate, join_steps_limit, join_settings, merge_expression_into_join, merge_filters_into_join, relation_headers);
             return;
         }
     }
@@ -1524,10 +1530,11 @@ static bool joinGraphHasOverlappingColumnNames(
     const QueryPlan::Node & join_node,
     int join_steps_limit,
     const JoinSettings & join_settings,
-    bool merge_expression_into_join)
+    bool merge_expression_into_join,
+    bool merge_filters_into_join)
 {
     std::vector<SharedHeader> relation_headers;
-    collectJoinGraphRelationHeadersForJoin(join_node, join_steps_limit, join_settings, merge_expression_into_join, relation_headers);
+    collectJoinGraphRelationHeadersForJoin(join_node, join_steps_limit, join_settings, merge_expression_into_join, merge_filters_into_join, relation_headers);
 
     std::unordered_set<std::string_view> seen_names;
     for (const auto & header : relation_headers)
@@ -1588,7 +1595,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     /// names, which the `JoinExpressionActions`-based reconstruction does not support. See the comment
     /// on `joinGraphHasOverlappingColumnNames`. This generalizes a check over the immediate children to
     /// the whole flattened relation set, so it also covers overlaps that only appear after flattening.
-    // if (joinGraphHasOverlappingColumnNames(node, query_graph_size_limit, join_step->getJoinSettings(), optimization_settings.merge_expression_into_join))
+    // if (joinGraphHasOverlappingColumnNames(node, query_graph_size_limit, join_step->getJoinSettings(), optimization_settings.merge_expression_into_join, optimization_settings.merge_filters_into_join))
     // {
     //     join_step->setOptimized();
     //     return;

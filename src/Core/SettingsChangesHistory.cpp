@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
             {"query_plan_merge_expression_into_join", false, true, "New setting. Allow to merge Expression step into JOIN step during join reordering optimization."},
+            {"query_plan_merge_filters_into_join", false, false, "New setting. Allow to merge Filter step into JOIN step during join reordering optimization."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",

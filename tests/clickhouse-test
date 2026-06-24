@@ -1565,6 +1565,7 @@ class SettingsRandomizer:
         "enable_join_transitive_predicates": lambda: random.random() < 0.3,
         "analyzer_compatibility_prefer_alias_over_subcolumn": lambda: random.randint(0, 1),
         "query_plan_merge_expression_into_join": lambda: random.random() > 0.1,
+        "query_plan_merge_filters_into_join": lambda: random.random() > 0.1,
     }
 
     dependent_settings = {
