@@ -139,6 +139,10 @@ struct ProcessedManifestFileEntry
     // Always zero in case of format version 1
     Int64 sequence_number;
     Int32 resolved_schema_id;
+    /// The snapshot id that added the file, resolved from the entry (or inherited from the manifest
+    /// metadata for v2 `ADDED` entries whose stored `snapshot_id` is null). Needed to re-emit the
+    /// original origin snapshot when a partial DROP PARTITION rewrites this entry as `EXISTING`.
+    Int64 resolved_snapshot_id;
     String manifest_file_path;
 
     String dumpDeletesMatchingInfo() const;

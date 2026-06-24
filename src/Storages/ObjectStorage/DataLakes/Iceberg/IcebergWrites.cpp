@@ -753,12 +753,10 @@ void generateExistingManifestFile(
 
         manifest.field(Iceberg::f_status) = avro::GenericDatum(static_cast<Int32>(Iceberg::ManifestEntryStatus::EXISTING));
 
-        if (!parsed.parsed_snapshot_id.has_value())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot re-emit Iceberg manifest entry as EXISTING: snapshot_id is missing");
 
-        setVersionedField(manifest, *parsed.parsed_snapshot_id, Iceberg::f_snapshot_id);
+        /// Re-emit the original origin snapshot. For v2 `ADDED` entries the stored `snapshot_id` is
+        /// null and inherited from the manifest metadata, so use the resolved value carried on the entry.
+        setVersionedField(manifest, entry->resolved_snapshot_id, Iceberg::f_snapshot_id);
 
         if (version > 1)
         {
