@@ -143,3 +143,33 @@ FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
       SETTINGS optimize_qbit_distance_function_reads = 1);
 
 DROP TABLE qbit_mismatch_test;
+
+-- 8. Nullability nested inside a composite reference type. The `ref_vec_is_nullable` guard checks only
+--    top-level nullability, so a composite must keep working through the plain (non-masked) path.
+--    `Tuple(...)` is rejected at function resolution (the reference must be an Array), so it never
+--    reaches the pass. The only composite that can reach it is `Array(...)`. `Array(Nullable(T))` has a
+--    non-nullable top-level type, so the original function returns a non-nullable `Float64` (the nested
+--    nullability is not propagated to the result); the rewrite casts to `Array(element_type)` and the
+--    result type is unchanged, so the optimization correctly applies (reads `vec.1`) and matches opt = 0.
+DROP TABLE IF EXISTS qbit_test;
+CREATE TABLE qbit_test (id UInt64, vec QBit(Float32, 3)) ENGINE = Memory;
+INSERT INTO qbit_test VALUES (1, [0,1,2]), (2, [1,2,3]), (3, [2,3,4]);
+
+SELECT L2DistanceTransposed(vec, (1, 2, 3), 3) FROM qbit_test
+SETTINGS optimize_qbit_distance_function_reads = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT id, round(L2DistanceTransposed(vec, [0,1,2]::Array(Nullable(Float32)), 3), 4) AS dist
+FROM qbit_test ORDER BY id SETTINGS optimize_qbit_distance_function_reads = 1;
+
+SELECT id, round(L2DistanceTransposed(vec, [0,1,2]::Array(Nullable(Float32)), 3), 4) AS dist
+FROM qbit_test ORDER BY id SETTINGS optimize_qbit_distance_function_reads = 0;
+
+SELECT toTypeName(L2DistanceTransposed(vec, [0,1,2]::Array(Nullable(Float32)), 3)) FROM qbit_test LIMIT 1
+SETTINGS optimize_qbit_distance_function_reads = 1;
+
+SELECT countIf(explain ILIKE '%`vec.1`%') > 0 AS reads_subcolumns
+FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
+      SELECT L2DistanceTransposed(vec, [0,1,2]::Array(Nullable(Float32)), 3) FROM qbit_test
+      SETTINGS optimize_qbit_distance_function_reads = 1);
+
+DROP TABLE qbit_test;
