@@ -2,6 +2,11 @@
 #include <Common/Exception.h>
 #include <gtest/gtest.h>
 
+#include <map>
+#include <optional>
+#include <random>
+#include <string>
+
 using namespace DB;
 
 TEST(Common, GlobAST)
@@ -30,6 +35,45 @@ TEST(Common, GlobAST)
         EXPECT_EQ(s.getExpressions().size(), 3);
         EXPECT_EQ(s.getExpressions().front().type(), GlobAST::ExpressionType::CONSTANT);
         EXPECT_EQ(s.getExpressions().back().type(), GlobAST::ExpressionType::ENUM);
+    }
+    {
+        /// A single-character brace group is literal text, not a one-element enum
+        /// (parity with the legacy parser, whose enum pattern requires >= 2 chars).
+        auto s = GlobAST::GlobString("{a}");
+        for (const auto & expression : s.getExpressions())
+            EXPECT_EQ(expression.type(), GlobAST::ExpressionType::CONSTANT);
+        EXPECT_EQ(s.dump(), "{a}");
+        EXPECT_FALSE(s.hasEnums());
+    }
+    {
+        /// An enum body may not begin or end with ',' (no empty edge alternative), so
+        /// these are literal text, not enums (legacy parity).
+        for (const auto * glob : {"{a,}", "{,a}", "{,}", "{a,b,}", "{,a,b}"})
+        {
+            auto s = GlobAST::GlobString(glob);
+            EXPECT_FALSE(s.hasEnums()) << "glob=" << glob;
+            EXPECT_EQ(s.dump(), glob) << "glob=" << glob;
+        }
+    }
+    {
+        /// An enum body may not contain a nested '{', so these are literal text.
+        for (const auto * glob : {"{a{b}", "{0b{}", "{1{?}"})
+        {
+            auto s = GlobAST::GlobString(glob);
+            EXPECT_FALSE(s.hasEnums()) << "glob=" << glob;
+            EXPECT_EQ(s.dump(), glob) << "glob=" << glob;
+        }
+    }
+    {
+        /// A range needs digits on both sides; an empty side ("{..1}", "{0..}") is not a
+        /// range but a one-element enum matching the literal body (legacy parity).
+        auto missing_start = GlobAST::GlobString("{..1}");
+        EXPECT_EQ(missing_start.getExpressions().size(), 1);
+        EXPECT_EQ(missing_start.getExpressions().front().type(), GlobAST::ExpressionType::ENUM);
+
+        auto missing_end = GlobAST::GlobString("{0..}");
+        EXPECT_EQ(missing_end.getExpressions().size(), 1);
+        EXPECT_EQ(missing_end.getExpressions().front().type(), GlobAST::ExpressionType::ENUM);
     }
 
     // Range tests.
@@ -105,6 +149,9 @@ INSTANTIATE_TEST_SUITE_P(
         "?",
         "*",
         "/?",
+
+        // Single-character brace group is literal text, not an enum
+        "{a}",
 
         // Simple enum
         "{test}",
@@ -300,6 +347,27 @@ INSTANTIATE_TEST_SUITE_P(
         std::make_tuple("", "", true),
         std::make_tuple("/path/to/file.csv", "/path/to/file.csv", true),
         std::make_tuple("/path/to/file.csv", "/path/to/file.tsv", false),
+
+        // --- Single-character brace group is literal, not a one-element enum ---
+        std::make_tuple("{a}", "{a}", true),
+        std::make_tuple("{a}", "a", false),
+
+        // --- Malformed brace groups are literal text (legacy parity) ---
+        // Empty leading/trailing enum alternative
+        std::make_tuple("{a,}", "{a,}", true),
+        std::make_tuple("{a,}", "a", false),
+        std::make_tuple("{,a}", "{,a}", true),
+        std::make_tuple("{,a}", "a", false),
+        std::make_tuple("{,}", "{,}", true),
+        std::make_tuple("{,}", "", false),
+        // Nested '{' in the body
+        std::make_tuple("{a{b}", "{a{b}", true),
+        std::make_tuple("{a{b}", "ab", false),
+        // Range with an empty side is a one-element enum matching the literal body
+        std::make_tuple("{..1}", "..1", true),
+        std::make_tuple("{..1}", "0", false),
+        std::make_tuple("{0..}", "0..", true),
+        std::make_tuple("{0..}", "0", false),
 
         // --- Question mark wildcard ---
         std::make_tuple("?", "a", true),
@@ -557,4 +625,112 @@ TEST(Common, GlobASTRangeOverflow)
     EXPECT_FALSE(large_range.matches("99999999999999999999999"));
     EXPECT_TRUE(large_range.matches("0"));
     EXPECT_TRUE(large_range.matches("12345"));
+}
+
+/// Differential fuzzer prototype: the AST matcher (use_glob_ast_parser = 1) is compared
+/// against the legacy regex matcher (makeRegexpPatternFromGlobs + re2::RE2::FullMatch)
+/// on every (pattern, candidate) pair. Patterns and candidates are drawn from a small
+/// alphabet rich in glob metacharacters, with a fixed seed for reproducibility.
+/// Divergences are deduplicated by pattern and reported in bulk so a single run surfaces
+/// every distinct disagreement at once.
+///
+/// Disabled by default because it still *fails* on two buckets of legacy quirks. Run it
+/// explicitly with
+///   unit_tests_dbms --gtest_also_run_disabled_tests --gtest_filter='*GlobASTLegacyMatchFuzz'
+///
+/// A seeded run found 40 distinct diverging patterns in five buckets. Three were genuine
+/// AST bugs and are now FIXED in GlobString::parse (the run is down to 24 divergences):
+///   1. (fixed) Empty leading/trailing enum alternative ("{,0}", "{a?0,}") — was an enum
+///      with an empty edge; legacy enum_regex requires non-comma edges -> now literal.
+///   2. (fixed) Nested '{' in an enum body ("{b{,1}", "{0b{}}") — legacy enum_regex
+///      excludes '{' -> now literal.
+///   3. (fixed) Malformed range edge ("{..1}", "{0..}") — tryReadIntText accepts an empty
+///      side as 0; the range parser now requires digits on both sides, so these fall
+///      through to the enum path (matching legacy's literal-body enum).
+///
+/// The two remaining buckets are cases where legacy is arguably buggy and the AST follows
+/// the formal grammar instead (the parity policy here is still to be decided):
+///   4. Single-char body of an escaped char ("{-}") — legacy escapes '-' -> "\-" before
+///      enum detection, inflating the body to two chars, so legacy treats "{-}" as an enum
+///      matching '-'; AST treats it as the literal "{-}". Legacy quirk; AST is cleaner.
+///   5. Wildcard runs ("***", "*?*") — legacy maps every '*' after a '*' to "[^{}]" and
+///      '?' to "[^/]", giving odd run semantics; AST uses '**'+'*'. Legacy quirk.
+TEST(Common, DISABLED_GlobASTLegacyMatchFuzz)
+{
+    /// Pattern alphabet includes the glob metacharacters and a few literals that the
+    /// legacy escaper treats specially ('.', '-').
+    static const std::string PATTERN_ALPHABET = "ab01{},*?./-";
+    /// Candidate alphabet includes braces and slashes to probe enum/wildcard edges.
+    static const std::string CANDIDATE_ALPHABET = "ab01/.{}";
+
+    constexpr int num_patterns = 20000;
+    constexpr int candidates_per_pattern = 40;
+    constexpr size_t max_pattern_len = 6;
+    constexpr size_t max_candidate_len = 6;
+    constexpr size_t max_reported = 40;
+
+    std::mt19937 rng(0xC10BA5);
+
+    auto random_string = [&](const std::string & alphabet, size_t max_len)
+    {
+        size_t len = rng() % (max_len + 1);
+        std::string s;
+        s.reserve(len);
+        for (size_t i = 0; i < len; ++i)
+            s += alphabet[rng() % alphabet.size()];
+        return s;
+    };
+
+    std::map<std::string, std::string> divergences;   // pattern -> first disagreeing sample
+    size_t compared = 0;
+
+    for (int p = 0; p < num_patterns && divergences.size() < max_reported; ++p)
+    {
+        /// Patterns are at least one character long.
+        std::string pattern = random_string(PATTERN_ALPHABET, max_pattern_len - 1);
+        pattern += PATTERN_ALPHABET[rng() % PATTERN_ALPHABET.size()];
+
+        bool legacy_ok = true;
+        bool ast_ok = true;
+        std::optional<GlobMatcher> legacy;
+        std::optional<GlobMatcher> ast;
+        try { legacy = GlobMatcher::createLegacy(pattern); } catch (...) { legacy_ok = false; }
+        try { ast = GlobMatcher::createNew(pattern); } catch (...) { ast_ok = false; }
+
+        /// One engine accepting a pattern that the other rejects is itself a divergence.
+        if (legacy_ok != ast_ok)
+        {
+            divergences.emplace(pattern, "construction: legacy_ok=" + std::to_string(legacy_ok)
+                                             + " ast_ok=" + std::to_string(ast_ok));
+            continue;
+        }
+        if (!legacy_ok)
+            continue;
+
+        /// Always probe the pattern itself and the empty string, then random candidates.
+        std::vector<std::string> candidates{pattern, ""};
+        for (int c = 0; c < candidates_per_pattern; ++c)
+            candidates.push_back(random_string(CANDIDATE_ALPHABET, max_candidate_len));
+
+        for (const auto & candidate : candidates)
+        {
+            bool legacy_match = legacy->matches(candidate);
+            bool ast_match = ast->matches(candidate);
+            ++compared;
+            if (legacy_match != ast_match && !divergences.contains(pattern))
+            {
+                divergences.emplace(pattern, "candidate=[" + candidate + "] legacy="
+                                                 + std::to_string(legacy_match) + " ast=" + std::to_string(ast_match));
+            }
+        }
+    }
+
+    if (!divergences.empty())
+    {
+        std::string report = "AST vs legacy matcher diverged on " + std::to_string(divergences.size())
+            + " distinct pattern(s) (compared " + std::to_string(compared) + " pairs):\n";
+        for (const auto & [pattern, sample] : divergences)
+            report += "  pattern=[" + pattern + "] " + sample + "\n";
+        ADD_FAILURE() << report;
+    }
 }

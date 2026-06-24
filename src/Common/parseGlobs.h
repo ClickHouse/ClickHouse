@@ -23,6 +23,58 @@ namespace DB
     /// E.g. for a string like `file{1,2,3}.csv` return vector of strings: {`file1.csv`,`file2.csv`,`file3.csv`}
     std::vector<std::string> expandSelectionGlob(const std::string & path);
 
+/** Formal grammar of the glob expression syntax parsed by GlobAST::GlobString.
+  *
+  * This is the intended, regex-free language. It is derived from the legacy
+  * makeRegexpPatternFromGlobs semantics (the parity oracle), cleaned up where legacy is
+  * internally inconsistent. The character classes mirror the legacy enum_regex
+  * `{([^{}*,]+[^{}*]*[^{}*,])}` and range_regex `{([\d]+\.\.[\d]+)}`.
+  *
+  *   glob         = { element } ;
+  *
+  *   element      = wildcard | range | enum | literal-char ;
+  *
+  *   wildcard     = "**" | "*" | "?" ;
+  *
+  *   range        = "{" , integer , ".." , integer , "}" ;
+  *   integer      = digit , { digit } ;
+  *   digit        = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+  *
+  *   enum         = "{" , enum-body , "}" ;
+  *   enum-body    = enum-edge , { enum-mid } , enum-edge ;   (* length >= 2 *)
+  *   enum-edge    = ? any char except '{' '}' '*' ',' ? ;    (* first and last char *)
+  *   enum-mid     = ? any char except '{' '}' '*' ? ;        (* ',' allowed -> empty alternatives *)
+  *
+  *   literal-char = ? any character ? ;   (* incl. a '{' that starts neither a range nor an enum *)
+  *
+  * An enum's alternatives are obtained by splitting enum-body on ','. Because both edges
+  * are non-comma, the first and last alternatives are always non-empty; consecutive
+  * interior commas produce empty interior alternatives ("{a,,b}" -> "a", "", "b").
+  *
+  * Disambiguation (resolution order at '{'):
+  *   1. "**" is recognized before "*".
+  *   2. At a '{':
+  *      a. "{{" - the first '{' is a literal-char; scanning resumes at the second.
+  *      b. otherwise consume the brace body up to the first '}':
+  *         - if it is "{" integer ".." integer "}" -> range;
+  *         - else if the body satisfies enum-body (>= 2 chars, no '{'/'}'/'*' inside,
+  *           neither edge a ',') -> enum;
+  *         - else the '{' is a literal-char and scanning resumes after it.
+  *
+  * Matching semantics (whole-string / FullMatch):
+  *   literal-char c - matches exactly c.
+  *   ?              - matches exactly one char, not '/'.
+  *   *              - matches zero+ chars, none '/'.
+  *   **             - matches zero+ chars, none '{' or '}' (crosses '/').
+  *   range {M..N}   - matches a digit run whose value is in [min(M,N), max(M,N)],
+  *                    subject to the zero-padding width rules.
+  *   enum           - one alternative matches at the current position.
+  *
+  * The differential fuzzer DISABLED_GlobASTLegacyMatchFuzz in
+  * gtest_makeRegexpPatternFromGlobs.cpp enumerates the remaining divergences from the
+  * legacy oracle (each one a documented legacy quirk where this grammar is the cleaner
+  * behavior).
+  */
 namespace GlobAST
 {
 

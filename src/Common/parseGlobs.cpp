@@ -288,6 +288,12 @@ std::optional<Range> GlobString::tryParseRangeMatcher(const std::string_view & i
     range.start_digit_count = read_buffer.offset() - first_digit_pos;
     range.start_zero_padded = input[first_digit_pos] == '0';
 
+    /// A range needs at least one digit on each side (legacy range_regex is `[\d]+\.\.[\d]+`).
+    /// `tryReadIntText` succeeds while reading zero digits, so reject an empty side here;
+    /// the brace group then falls through to the enum path, as in legacy ("{..1}" → enum).
+    if (range.start_digit_count == 0)
+        return std::nullopt;
+
     ok &= checkChar('.', read_buffer);
     ok &= checkChar('.', read_buffer);
 
@@ -302,6 +308,9 @@ std::optional<Range> GlobString::tryParseRangeMatcher(const std::string_view & i
 
     range.end_digit_count = read_buffer.offset() - first_digit_pos;
     range.end_zero_padded = input[first_digit_pos] == '0';
+
+    if (range.end_digit_count == 0)
+        return std::nullopt;
 
     ok &= checkChar('}', read_buffer);
 
@@ -699,9 +708,12 @@ void GlobString::parse()
 
             auto matcher_expression = consumeMatcher(input.substr(position));
 
-            /// If no closing '}' was found, or the braces are empty like "{}",
-            /// treat the '{' as a literal character.
-            if (matcher_expression.empty() || matcher_expression.length() <= 2)
+            /// If no closing '}' was found, or the brace group holds fewer than two
+            /// characters of content (e.g. empty "{}" or single-character "{a}"), treat
+            /// the '{' as a literal character. The legacy enum pattern only recognizes a
+            /// brace group as an enum when it holds at least two characters of content,
+            /// so "{a}" stays the literal text "{a}" rather than becoming an enum of "a".
+            if (matcher_expression.empty() || matcher_expression.length() <= 3)
             {
                 expressions.emplace_back(input.substr(position, 1));
                 position += 1;
@@ -720,10 +732,15 @@ void GlobString::parse()
                 continue;
             }
 
-            /// Legacy treats a brace group containing '*' as literal text, not an enum
-            /// (its enum pattern excludes '*'). Treat the '{' as a literal character so
-            /// the '*' inside is parsed as a wildcard, matching legacy semantics.
-            if (matcher_expression.contains('*'))
+            /// A brace group is an enum only if its body matches the legacy enum grammar
+            /// `[^{}*,]+[^{}*]*[^{}*,]`: it may not contain '{' or '*' (a '}' cannot occur
+            /// because the matcher stops at the first '}'), and neither its first nor its
+            /// last character may be ',' (an empty leading or trailing alternative).
+            /// Otherwise the '{' is a literal character — this keeps groups like "{a*b}",
+            /// "{a{b}", "{,a}", "{a,}", and "{,}" as literal text, matching the legacy
+            /// parser. The '*' case in particular lets the inner '*' parse as a wildcard.
+            const std::string_view enum_body = matcher_expression.substr(1, matcher_expression.length() - 2);
+            if (enum_body.contains('*') || enum_body.contains('{') || enum_body.front() == ',' || enum_body.back() == ',')
             {
                 expressions.emplace_back(input.substr(position, 1));
                 position += 1;
