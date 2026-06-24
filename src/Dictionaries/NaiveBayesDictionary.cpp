@@ -132,10 +132,7 @@ std::map<UInt32, double> parseExplicitPriors(const String & priors_str)
 
 
 NaiveBayesDictionary::NaiveBayesDictionary(
-    const StorageID & dict_id_,
-    const DictionaryStructure & dict_struct_,
-    DictionarySourcePtr source_ptr_,
-    Configuration configuration_)
+    const StorageID & dict_id_, const DictionaryStructure & dict_struct_, DictionarySourcePtr source_ptr_, Configuration configuration_)
     : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr(std::move(source_ptr_))
@@ -148,12 +145,9 @@ NaiveBayesDictionary::NaiveBayesDictionary(
 
 void NaiveBayesDictionary::loadData()
 {
-    using Trainer = std::variant<
-        NaiveBayesTrainer<BytePolicy>,
-        NaiveBayesTrainer<CodePointPolicy>,
-        NaiveBayesTrainer<TokenPolicy>>;
+    using Trainer = std::variant<NaiveBayesTrainer<BytePolicy>, NaiveBayesTrainer<CodePointPolicy>, NaiveBayesTrainer<TokenPolicy>>;
 
-    Trainer trainer = [&]() -> Trainer
+    Trainer trainer_variant = [&]() -> Trainer
     {
         if (configuration.mode == "byte")
             return Trainer{std::in_place_type<NaiveBayesTrainer<BytePolicy>>, configuration.n, configuration.alpha};
@@ -171,95 +165,103 @@ void NaiveBayesDictionary::loadData()
     /// string; the class and count attributes are located by the indices resolved from `class_attribute`.
     const size_t key_size = dict_struct.getKeysSize();
 
-    MutableColumnPtr ngram_acc;
-    MutableColumnPtr class_id_acc;
-    MutableColumnPtr count_acc;
+    MutableColumnPtr ngram_accumulator;
+    MutableColumnPtr class_id_accumulator;
+    MutableColumnPtr count_accumulator;
 
     BlockIO io = source_ptr->loadAll();
 
     /// Stream the source rows into the trainer, validating each n-gram against the configured n and mode. A
     /// malformed n-gram — one with the wrong arity, or invalid UTF-8 in codepoint mode — can never be produced
-    /// by the tokenizer at query time, so it is rejected here instead of silently distorting the class totals
-    /// and priors.
-    io.executeWithCallbacks([&]()
-    {
-        DictionaryPipelineExecutor executor(io.pipeline, false);
-        io.pipeline.setConcurrencyControl(false);
-
-        Block block;
-        while (executor.pull(block))
+    /// by the tokenizer at query time, so it is rejected here.
+    io.executeWithCallbacks(
+        [&]()
         {
-            const size_t rows = block.rows();
-            const auto & ngram_col = block.safeGetByPosition(0).column;
-            const auto & class_id_col = block.safeGetByPosition(key_size + configuration.class_index).column;
-            const auto & count_col = block.safeGetByPosition(key_size + configuration.count_index).column;
+            DictionaryPipelineExecutor executor(io.pipeline, false);
+            io.pipeline.setConcurrencyControl(false);
 
-            for (size_t i = 0; i < rows; ++i)
+            Block block;
+            while (executor.pull(block))
             {
-                const std::string_view ngram_sv = ngram_col->getDataAt(i);
-                const UInt64 raw_class_id = class_id_col->getUInt(i);
-                if (raw_class_id > std::numeric_limits<UInt32>::max())
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "NaiveBayes dictionary class id {} exceeds the supported maximum of {}",
-                        raw_class_id, std::numeric_limits<UInt32>::max());
-                const auto class_id = static_cast<UInt32>(raw_class_id);
-                const UInt64 count = count_col->getUInt(i);
-                std::visit([&](auto & t)
+                const size_t rows = block.rows();
+                const auto & ngram_col = block.safeGetByPosition(0).column;
+                const auto & class_id_col = block.safeGetByPosition(key_size + configuration.class_index).column;
+                const auto & count_col = block.safeGetByPosition(key_size + configuration.count_index).column;
+
+                for (size_t i = 0; i < rows; ++i)
                 {
-                    const auto prepared = t.prepareNgram(ngram_sv);
-                    if (!prepared.valid)
+                    const std::string_view ngram_sv = ngram_col->getDataAt(i);
+                    const UInt64 raw_class_id = class_id_col->getUInt(i);
+                    if (raw_class_id > std::numeric_limits<UInt32>::max())
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
-                            "NaiveBayes dictionary: source n-gram '{}' is not valid UTF-8 for mode '{}'. Use mode "
-                            "'byte' for arbitrary byte sequences.",
-                            ngram_sv, configuration.mode);
-                    if (prepared.token_count != configuration.n)
-                        throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS,
-                            "NaiveBayes dictionary: source n-gram '{}' resolves to {} token(s) for mode '{}', but the "
-                            "layout specifies n = {}. The source n-grams must match the configured size and mode.",
-                            ngram_sv, prepared.token_count, configuration.mode, configuration.n);
-                    t.addNgram(class_id, prepared.key, count);
-                }, trainer);
-            }
-
-            if (configuration.store_source)
-            {
-                if (!ngram_acc)
-                {
-                    ngram_acc = ngram_col->cloneEmpty();
-                    class_id_acc = class_id_col->cloneEmpty();
-                    count_acc = count_col->cloneEmpty();
+                            "NaiveBayes dictionary class id {} exceeds the supported maximum of {}",
+                            raw_class_id,
+                            std::numeric_limits<UInt32>::max());
+                    const auto class_id = static_cast<UInt32>(raw_class_id);
+                    const UInt64 count = count_col->getUInt(i);
+                    std::visit(
+                        [&](auto & trainer)
+                        {
+                            const auto prepared = trainer.prepareNgram(ngram_sv);
+                            if (!prepared.valid)
+                                throw Exception(
+                                    ErrorCodes::BAD_ARGUMENTS,
+                                    "NaiveBayes dictionary: source n-gram '{}' is not valid UTF-8 for mode '{}'. Use mode "
+                                    "'byte' for arbitrary byte sequences.",
+                                    ngram_sv,
+                                    configuration.mode);
+                            if (prepared.token_count != configuration.n)
+                                throw Exception(
+                                    ErrorCodes::BAD_ARGUMENTS,
+                                    "NaiveBayes dictionary: source n-gram '{}' resolves to {} token(s) for mode '{}', but the "
+                                    "layout specifies n = {}. The source n-grams must match the configured size and mode.",
+                                    ngram_sv,
+                                    prepared.token_count,
+                                    configuration.mode,
+                                    configuration.n);
+                            trainer.addNgram(class_id, prepared.key, count);
+                        },
+                        trainer_variant);
                 }
-                ngram_acc->insertRangeFrom(*ngram_col, 0, rows);
-                class_id_acc->insertRangeFrom(*class_id_col, 0, rows);
-                count_acc->insertRangeFrom(*count_col, 0, rows);
+
+                if (configuration.store_source)
+                {
+                    if (!ngram_accumulator)
+                    {
+                        ngram_accumulator = ngram_col->cloneEmpty();
+                        class_id_accumulator = class_id_col->cloneEmpty();
+                        count_accumulator = count_col->cloneEmpty();
+                    }
+                    ngram_accumulator->insertRangeFrom(*ngram_col, 0, rows);
+                    class_id_accumulator->insertRangeFrom(*class_id_col, 0, rows);
+                    count_accumulator->insertRangeFrom(*count_col, 0, rows);
+                }
             }
-        }
-    });
+        });
 
     /// Finalizing the trainer computes the priors, compiles the flat model, and yields the immutable model.
-    model_variant.emplace(std::visit(
-        [&](auto & t) -> ModelVariant { return ModelVariant{t.finalize(configuration.priors_mode, configuration.explicit_priors)}; },
-        trainer));
+    model_variant.emplace(
+        std::visit(
+            [&](auto & trainer) -> ModelVariant
+            { return ModelVariant{trainer.finalize(configuration.priors_mode, configuration.explicit_priors)}; },
+            trainer_variant));
 
-    if (configuration.store_source && ngram_acc)
+    if (configuration.store_source && ngram_accumulator)
     {
-        source_ngram_column = std::move(ngram_acc);
-        source_class_id_column = std::move(class_id_acc);
-        source_count_column = std::move(count_acc);
+        source_ngram_column = std::move(ngram_accumulator);
+        source_class_id_column = std::move(class_id_accumulator);
+        source_count_column = std::move(count_accumulator);
     }
 
-    element_count = std::visit([](const auto & model) { return model.getElementCount(); }, *model_variant);
-    bytes_allocated = std::visit([](const auto & model) { return model.getAllocatedBytes(); }, *model_variant);
+    element_count = visitModel([](const auto & model) { return model.getElementCount(); });
+    bytes_allocated = visitModel([](const auto & model) { return model.getAllocatedBytes(); });
 
     /// Retaining the source rows for `store_source` costs memory too, so include it in the reported
     /// footprint instead of reporting only the model.
     if (configuration.store_source && source_ngram_column)
-        bytes_allocated += source_ngram_column->allocatedBytes()
-            + source_class_id_column->allocatedBytes()
-            + source_count_column->allocatedBytes();
+        bytes_allocated
+            += source_ngram_column->allocatedBytes() + source_class_id_column->allocatedBytes() + source_count_column->allocatedBytes();
 
     LOG_INFO(log, "Loaded NaiveBayes dictionary with {} n-grams, {} bytes allocated", element_count, bytes_allocated);
 }
@@ -296,29 +298,26 @@ ColumnPtr NaiveBayesDictionary::getColumn(
     {
         auto column = ColumnVector<T>::create(rows);
         auto & data = column->getData();
-        visitModel([&](const auto & model)
-        {
-            NaiveBayesScratch scratch;
-            for (size_t i = 0; i < rows; ++i)
-                data[i] = static_cast<T>(model.classify(string_col->getDataAt(i), scratch));
-        });
+        visitModel(
+            [&](const auto & model)
+            {
+                NaiveBayesScratch scratch;
+                for (size_t i = 0; i < rows; ++i)
+                    data[i] = static_cast<T>(model.classify(string_col->getDataAt(i), scratch));
+            });
         return column;
     };
 
-    const WhichDataType which(attribute_type);
-    ColumnPtr result;
-    if (which.isUInt8())
-        result = classify_as.operator()<UInt8>();
-    else if (which.isUInt16())
-        result = classify_as.operator()<UInt16>();
-    else if (which.isUInt32())
-        result = classify_as.operator()<UInt32>();
-    else
-        result = classify_as.operator()<UInt64>();
-
     query_count.fetch_add(rows, std::memory_order_relaxed);
 
-    return result;
+    const WhichDataType which(attribute_type);
+    if (which.isUInt8())
+        return classify_as.operator()<UInt8>();
+    if (which.isUInt16())
+        return classify_as.operator()<UInt16>();
+    if (which.isUInt32())
+        return classify_as.operator()<UInt32>();
+    return classify_as.operator()<UInt64>();
 }
 
 
@@ -365,7 +364,8 @@ Pipe NaiveBayesDictionary::read(const Names & column_names, size_t /* max_block_
         else
         {
             const auto & attribute = dict_struct.getAttribute(column_name);
-            /// Pick the stored class or count column by the resolved class attribute, not by position.
+
+            /// Pick the stored class or count column by the resolved class attribute.
             if (column_name == dict_struct.attributes[configuration.class_index].name)
                 column_with_type.column = source_class_id_column;
             else
@@ -384,20 +384,18 @@ Pipe NaiveBayesDictionary::read(const Names & column_names, size_t /* max_block_
 void registerDictionaryNaiveBayes(DictionaryFactory & factory);
 void registerDictionaryNaiveBayes(DictionaryFactory & factory)
 {
-    auto create_layout = [](
-        const std::string & /* full_name */,
-        const DictionaryStructure & dict_struct,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        DictionarySourcePtr source_ptr,
-        ContextPtr /* global_context */,
-        bool /* created_from_ddl */) -> DictionaryPtr
+    auto create_layout = [](const std::string & /* full_name */,
+                            const DictionaryStructure & dict_struct,
+                            const Poco::Util::AbstractConfiguration & config,
+                            const std::string & config_prefix,
+                            DictionarySourcePtr source_ptr,
+                            ContextPtr /* global_context */,
+                            bool /* created_from_ddl */) -> DictionaryPtr
     {
         /// The structure must be a complex key with a single String element, followed by two unsigned-integer
         /// attributes: a class label and a count.
         if (!dict_struct.key || dict_struct.key->size() != 1)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary must have exactly one complex key column (the n-gram text)");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary must have exactly one complex key column (the n-gram text)");
 
         if (dict_struct.attributes.size() != 2)
             throw Exception(
@@ -405,12 +403,10 @@ void registerDictionaryNaiveBayes(DictionaryFactory & factory)
                 "NaiveBayes dictionary must have exactly two attributes: the class label and the count, both unsigned integers");
 
         /// The key holds the n-gram text; the two attributes are the class label and the count, and the
-        /// `class_attribute` parameter (resolved below) says which is which. Both must be unsigned integers: the
-        /// source columns are coerced to these declared types, so this makes the `getUInt` reads in loadData well defined.
+        /// `class_attribute` parameter (resolved below) says which is which. Both must be unsigned integers.
         const auto & key_type = (*dict_struct.key)[0].type;
         if (!isString(key_type))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary key must be String, got {}", key_type->getName());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary key must be String, got {}", key_type->getName());
 
         for (size_t i = 0; i < 2; ++i)
         {
@@ -435,7 +431,8 @@ void registerDictionaryNaiveBayes(DictionaryFactory & factory)
             if (!known_layout_keys.contains(key))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "NaiveBayes dictionary: unknown layout parameter '{}'. Allowed: n, mode, alpha, priors_mode, priors, store_source, class_attribute",
+                    "NaiveBayes dictionary: unknown layout parameter '{}'. Allowed: n, mode, alpha, priors_mode, priors, store_source, "
+                    "class_attribute",
                     key);
 
         if (!config.has(layout_prefix + ".n"))
@@ -461,13 +458,12 @@ void registerDictionaryNaiveBayes(DictionaryFactory & factory)
         const String mode = config.getString(layout_prefix + ".mode");
         if (mode != "byte" && mode != "codepoint" && mode != "token")
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "NaiveBayes dictionary: mode must be 'byte', 'codepoint', or 'token', got '{}'",
-                mode);
+                ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary: mode must be 'byte', 'codepoint', or 'token', got '{}'", mode);
 
         const double alpha = config.getDouble(layout_prefix + ".alpha", 1.0);
         if (!std::isfinite(alpha) || alpha <= 0.0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary: alpha must be a finite number greater than 0");
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary: alpha must be a finite number greater than 0, got {}", alpha);
 
         const String priors_mode_str = config.getString(layout_prefix + ".priors_mode", "proportional");
         PriorsMode priors_mode = PriorsMode::Uniform;
@@ -497,18 +493,13 @@ void registerDictionaryNaiveBayes(DictionaryFactory & factory)
                 priors_mode_str);
         }
 
-        /// `priors` is consulted only in explicit mode; reject it otherwise so that a mistaken
-        /// `priors 'proportional'` (meaning `priors_mode 'proportional'`) is not silently ignored.
+        /// `priors` is consulted only in explicit mode; reject it otherwise.
         if (priors_mode != PriorsMode::Explicit && config.has(layout_prefix + ".priors"))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "NaiveBayes dictionary: 'priors' is only valid with priors_mode 'explicit'");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary: 'priors' is only valid with priors_mode 'explicit'");
 
         const bool store_source = config.getBool(layout_prefix + ".store_source", false);
 
-        /// `class_attribute` names which of the two attributes is the class label; the other is the count. Requiring
-        /// it, rather than assuming an attribute order, makes each column's role explicit, so reordering the attribute
-        /// declarations cannot silently swap the class and the count.
+        /// `class_attribute` names which of the two attributes is the class label; the other is the count.
         if (!config.has(layout_prefix + ".class_attribute"))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -531,8 +522,7 @@ void registerDictionaryNaiveBayes(DictionaryFactory & factory)
 
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 
-        NaiveBayesDictionary::Configuration cfg
-        {
+        NaiveBayesDictionary::Configuration cfg{
             .n = n,
             .mode = mode,
             .alpha = alpha,
@@ -549,7 +539,6 @@ void registerDictionaryNaiveBayes(DictionaryFactory & factory)
         return std::make_unique<NaiveBayesDictionary>(dict_id, dict_struct, std::move(source_ptr), std::move(cfg));
     };
 
-    /// This layout supports complex keys only; there is no simple-key variant.
     factory.registerLayout("naive_bayes", create_layout, /* is_layout_complex= */ true, /* has_layout_complex= */ false);
 }
 

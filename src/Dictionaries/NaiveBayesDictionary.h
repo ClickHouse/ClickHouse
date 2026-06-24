@@ -15,7 +15,6 @@
 namespace DB
 {
 
-/// A computational dictionary: the lookup key is an input to a computation rather than a stored key.
 /// The key is a text string, and the computed result is the predicted Naive Bayes class. The source
 /// supplies the training data as rows of `(ngram String, class_id UInt32, count UInt64)`, and from it
 /// the dictionary builds an immutable model once at load time.
@@ -28,7 +27,7 @@ public:
     struct Configuration
     {
         UInt32 n;
-        String mode;                /// "byte", "codepoint", "token"
+        String mode; /// "byte", "codepoint", "token"
         double alpha;
         PriorsMode priors_mode;
         /// These probabilities are consulted only when the priors mode is explicit.
@@ -53,15 +52,12 @@ public:
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
-    /// Records `count` classified rows from the dedicated functions, which bypass `getColumn` but should still
+    /// Records `count` classified rows from the dedicated functions (e.g. naiveBayesClassifier), which bypass `getColumn` but should still
     /// be reflected in the dictionary query statistics.
     void incrementQueryCount(size_t count) const { query_count.fetch_add(count, std::memory_order_relaxed); }
 
     /// Every input is classifiable, so the found rate is one once any query has run.
-    double getFoundRate() const override
-    {
-        return query_count.load(std::memory_order_relaxed) == 0 ? 0.0 : 1.0;
-    }
+    double getFoundRate() const override { return query_count.load(std::memory_order_relaxed) == 0 ? 0.0 : 1.0; }
 
     double getHitRate() const override { return 1.0; }
 
@@ -92,15 +88,10 @@ public:
         const DataTypes & key_types,
         DefaultOrFilter default_or_filter) const override;
 
-    ColumnUInt8::Ptr hasKeys(
-        const Columns & key_columns,
-        const DataTypes & key_types) const override;
+    ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
     Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
-    /// Invokes the given function with the concrete model, resolving the tokenizer-policy variant exactly
-    /// once. Callers that classify many rows do so under a single call so that the per-row hot path holds no
-    /// virtual or variant dispatch and can reuse one `NaiveBayesScratch`.
     template <typename Func>
     decltype(auto) visitModel(Func && func) const
     {
@@ -108,10 +99,7 @@ public:
     }
 
 private:
-    using ModelVariant = std::variant<
-        NaiveBayesModel<BytePolicy>,
-        NaiveBayesModel<CodePointPolicy>,
-        NaiveBayesModel<TokenPolicy>>;
+    using ModelVariant = std::variant<NaiveBayesModel<BytePolicy>, NaiveBayesModel<CodePointPolicy>, NaiveBayesModel<TokenPolicy>>;
 
     void loadData();
 
