@@ -406,6 +406,8 @@ y: 993
 
 `ALTER TABLE ... DROP PARTITION <value>` removes every data file belonging to a single partition and creates a new snapshot that no longer references them.
 
+It is supported only for Iceberg `format-version` 2 tables with a single, non-evolved partition spec. Tables that changed their partition spec over their lifetime (partition evolution), as well as the `DROP PARTITION ID '...'` and `DROP PARTITION ALL` forms, are not supported.
+
 The partition value follows the same rules as for `MergeTree`. For a single-column partition, pass a scalar literal; for a multi-column partition, pass a tuple of values:
 
 ```sql
@@ -413,13 +415,16 @@ ALTER TABLE iceberg_table DROP PARTITION 2;
 ALTER TABLE iceberg_table DROP PARTITION (2, 5);
 ```
 
-For a partition defined with a transform, you can supply either the already-transformed partition-key value as a literal, or the same transform expression applied to a raw source value — both forms are accepted and select the same partition. The supported transforms are `identity`, `icebergBucket`, `icebergTruncate`, `toYearNumSinceEpoch`, `toMonthNumSinceEpoch`, `toRelativeDayNum`, and `toRelativeHourNum`. For example, given `PARTITION BY (a, icebergBucket(4, b))`, the transform expression is evaluated by ClickHouse to the stored bucket index:
+For a partition defined with a transform, you can supply either the already-transformed partition-key value as a literal, or the same transform expression applied to a raw source value — both forms select the same partition. The supported transforms are `identity`, `icebergBucket`, `icebergTruncate`, `toYearNumSinceEpoch`, `toMonthNumSinceEpoch`, `toRelativeDayNum`, and `toRelativeHourNum`. A top-level transform expression must be wrapped in `tuple(...)`, because the partition parser accepts only `tuple` as a top-level function:
 
 ```sql
+-- single-column transformed partition, e.g. PARTITION BY (icebergBucket(4, b))
+ALTER TABLE iceberg_table DROP PARTITION tuple(icebergBucket(4, 'apple'));
+-- multi-column partition, e.g. PARTITION BY (a, icebergBucket(4, b))
 ALTER TABLE iceberg_table DROP PARTITION (1, icebergBucket(4, 'apple'));
 ```
 
-Dropping a partition that does not exist is a no-op. Dropping a partition does not erase history: a time-travel query against an earlier snapshot still sees the removed rows. The operation is also safe under concurrent writes — data files another writer adds to the same partition after the drop has started are never removed.
+Dropping a partition that does not exist is a no-op. Dropping a partition does not erase history: a time-travel query against an earlier snapshot still sees the removed rows. Concurrent writes are handled conservatively: data files another writer adds to the same partition after the drop has discovered its target files are never removed.
 
 ### Schema evolution {#iceberg-writes-schema-evolution}
 
