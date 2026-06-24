@@ -70,6 +70,10 @@ constexpr unsigned char resource_processors_profile_html[] =
 {
 #embed "../../programs/server/processors_profile.html"
 };
+constexpr unsigned char resource_docs_html[] =
+{
+#embed "../../programs/server/docs.html"
+};
 
 
 namespace DB
@@ -166,6 +170,11 @@ void SchemaWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPS
 void ProcessorsProfileWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
     handle(request, response, {reinterpret_cast<const char *>(resource_processors_profile_html), std::size(resource_processors_profile_html)}, http_response_headers_override);
+}
+
+void DocsWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+{
+    handle(request, response, {reinterpret_cast<const char *>(resource_docs_html), std::size(resource_docs_html)}, http_response_headers_override);
 }
 
 std::string ClickStackUIRequestHandler::getResourcePath(const std::string & uri) const
