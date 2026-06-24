@@ -258,7 +258,8 @@ static bool getResultFromQueryResultCache(
     bool can_use_query_result_cache,
     QueryResultCacheUsage & query_result_cache_usage,
     BlockIO & res,
-    const LoggerPtr & logger)
+    const LoggerPtr & logger,
+    QueryResultDetails & result_details)
 {
     chassert(!can_use_query_result_cache || settings_copy.has_value());
 
@@ -270,6 +271,8 @@ static bool getResultFromQueryResultCache(
     if (!reader.hasCacheEntryForKey())
         return false;
 
+    result_details.query_cache_entry_created_at = reader.entryCreatedAt();
+    result_details.query_cache_entry_expires_at = reader.entryExpiresAt();
     QueryPipeline pipeline;
     pipeline.readFromQueryResultCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
     res.pipeline = std::move(pipeline);
@@ -304,7 +307,8 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
     const QueryResultCachePtr & query_result_cache,
     const VectorQueryPlanCachePtr & vector_query_plan_cache,
     BlockIO & res,
-    const LoggerPtr & logger)
+    const LoggerPtr & logger,
+    QueryResultDetails & result_details)
 {
     VectorQueryPlanCacheRestoreResult result;
     VectorQueryParameters parameterizer;
@@ -375,7 +379,8 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
                             result.can_use_query_result_cache,
                             result.query_result_cache_usage,
                             res,
-                            logger);
+                            logger,
+                            result_details);
                         if (!result.query_result_cache_hit)
                         {
                             if (reader.hasCacheEntryForKey(true))
@@ -1317,7 +1322,7 @@ static std::optional<BlockIO> tryExecuteFromCache(
 
     auto cache_result = tryRestoreFromQueryPlanCache(
         begin, end, context, settings, internal,
-        query_result_cache, vector_query_plan_cache, res, logger);
+        query_result_cache, vector_query_plan_cache, res, logger, result_details);
 
     const char * new_begin = cache_result.new_query.empty() ? begin : cache_result.new_query.data();
     const char * new_end = cache_result.new_query.empty() ? end : cache_result.new_query.data() + cache_result.new_query.size();
@@ -2143,7 +2148,8 @@ static BlockIO executeQueryImpl(
                     can_use_query_result_cache,
                     query_result_cache_usage,
                     res,
-                    logger);
+                    logger,
+                    result_details);
             }
             
             if (!query_result_cache_entry_exists)

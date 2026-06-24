@@ -157,6 +157,7 @@ bool functionCanCache(const String & function_name)
         fun_name == "interval" || 
         fun_name == "profileevents" || 
         fun_name == "settings" || 
+        fun_name == "tonullable" || 
         // rand functions
         fun_name == "rand" || 
         fun_name == "rand64" || 
@@ -924,6 +925,7 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
         }
         if (token.type == TokenType::Comment)
         {
+            result.new_sql += std::string(token.begin, token.size());
             continue;
         }
         if (token.isEnd() || token.isError())
@@ -1746,7 +1748,7 @@ String VectorQueryParameters::rewriteVectorLiteralsToCasts(
         return new_sql;
     }
 
-    bool is_cast = false;
+    // bool is_cast = false;
     UInt32 vector_function_type = 0;
     bool is_comma = false;
     bool is_bare_word = false;
@@ -1754,18 +1756,11 @@ String VectorQueryParameters::rewriteVectorLiteralsToCasts(
     while (true)
     {
         Token token = lexer.nextToken();
-        if (token.type == TokenType::Semicolon)
+        if (token.isEnd() || token.isError())
         {
             new_sql += std::string(token.begin, token.size());
             break;
-        }
-        // add filtering for comments
-        if (token.type == TokenType::Comment)
-        {
-            continue;
-        }
-        if (token.isEnd() || token.isError())
-            break;
+        }    
         if (vector_function_type && token.type == TokenType::BareWord)
             is_bare_word = true;
         if (token.type == TokenType::BareWord && !vector_function_type
@@ -1784,30 +1779,11 @@ String VectorQueryParameters::rewriteVectorLiteralsToCasts(
         {
             is_comma = true;
         }
-        if (is_comma && (vector_function_type == 1 || vector_function_type == 3) &&
-            token.type == TokenType::BareWord && token.size() == 4 &&
-            tokenMatchesBareWord(token, getFunctionName(FunctionNames::CAST)))
-        {
-            is_cast = true;
-            appendFunctionName(new_sql, FunctionNames::CAST);
-            continue;
-        }
         if (vector_function_type && is_comma && token.type == TokenType::ClosingRoundBracket)
         {
             vector_function_type = 0;
             is_comma = false;
             is_bare_word = false;
-        }
-        if (is_comma && token.type == TokenType::StringLiteral &&
-                (vector_function_type == 2 ||
-                    (is_cast && 
-                        (vector_function_type == 1 || vector_function_type == 3)
-                    )
-                )
-            )
-        {
-            new_sql += std::string(token.begin, token.size());   
-            continue;
         }
         /// -------- literal --------
         if ((vector_function_type == 1 || vector_function_type == 3) && token.type == TokenType::OpeningSquareBracket)
