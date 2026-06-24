@@ -42,11 +42,7 @@ struct Base64EncodeTraits
     {
         /// simdutf emits the base64url alphabet ('-' and '_') without padding for the URL variant directly.
         constexpr auto options = (variant == Base64Variant::URL) ? simdutf::base64_url : simdutf::base64_default;
-        /// Resolve the active simdutf implementation once instead of paying the per-call dynamic dispatch
-        /// (an exported function call plus a sequentially-consistent atomic load of the implementation pointer)
-        /// on every short string.
-        static const simdutf::implementation * impl = simdutf::get_active_implementation();
-        const size_t outlen = impl->binary_to_base64(src.data(), src.size(), reinterpret_cast<char *>(dst), options);
+        const size_t outlen = simdutf::binary_to_base64(src.data(), src.size(), reinterpret_cast<char *>(dst), options);
 
         /// simdutf may use AVX-512 with some shuffle operations.
         /// Memory sanitizer doesn't understand if there was uninitialized memory in SIMD register but it was not used in the result of shuffle.
@@ -81,12 +77,8 @@ struct Base64DecodeTraits
         /// 3-character "foo".
         constexpr auto options = (variant == Base64Variant::URL) ? simdutf::base64_default_or_url : simdutf::base64_default;
         constexpr auto last_chunk = (variant == Base64Variant::URL) ? simdutf::loose : simdutf::strict;
-        /// Resolve the active simdutf implementation once instead of paying the per-call dynamic dispatch
-        /// (an exported function call plus a sequentially-consistent atomic load of the implementation pointer)
-        /// on every short string. This is the dominant fixed per-row overhead for base64 decoding.
-        static const simdutf::implementation * impl = simdutf::get_active_implementation();
         const simdutf::result res
-            = impl->base64_to_binary(src.data(), src.size(), reinterpret_cast<char *>(dst), options, last_chunk);
+            = simdutf::base64_to_binary(src.data(), src.size(), reinterpret_cast<char *>(dst), options, last_chunk);
         if (res.error != simdutf::SUCCESS) [[unlikely]]
             return std::nullopt;
 
