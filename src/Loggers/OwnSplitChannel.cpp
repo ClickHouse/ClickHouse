@@ -85,12 +85,10 @@ void OwnSplitChannel::log(Poco::Message && msg)
 namespace
 {
 
-/// Consumers poll their queues instead of futex-waiting, which keeps pushing into an empty queue cheap
-/// for producers. This is how long a consumer sleeps between polls while its queue is empty.
+/// Sleep between polls of an empty queue (consumers poll instead of futex-waiting, keeping pushes cheap).
 constexpr size_t sleep_on_empty_queue_ms = 10;
 
-/// Pops one message for a flush, or returns null on an empty queue. Waits out a head slot still being
-/// written by a producer, so a completed enqueue is never skipped behind an unfinished slot.
+/// Pops one message for a flush (null if empty), waiting out a head slot still being written so it isn't skipped.
 AsyncLogMessagePtr dequeueMessageForFlush(NonblockingBoundedQueue<AsyncLogMessagePtr> & messages)
 {
     AsyncLogMessagePtr message;
@@ -370,8 +368,7 @@ void OwnAsyncSplitChannel::log(Poco::Message && msg)
     try
     {
 #if defined(MEMORY_SANITIZER)
-        /// Catch which LOG call produces a message with uninitialized format string bytes.
-        /// STID 1478-2063: arm_msan stress test reports use-of-uninitialized-value in TextLog
+        /// Catch which LOG call produces uninitialized format string bytes (STID 1478-2063: arm_msan use-of-uninitialized-value in TextLog).
         {
             auto fmt = msg.getFormatString();
             __msan_check_mem_is_initialized(&fmt, sizeof(fmt));
@@ -379,8 +376,7 @@ void OwnAsyncSplitChannel::log(Poco::Message && msg)
                 __msan_check_mem_is_initialized(fmt.data(), fmt.size());
         }
 #endif
-        /// Based on logger_useful.h this won't be called if the message is not needed
-        /// so we can create the AsyncLogMessage as it won't penalize performance by being unused
+        /// logger_useful.h skips this when the message isn't needed, so creating the AsyncLogMessage here is free.
         auto msg_priority = msg.getPriority();
         auto notification = std::make_shared<AsyncLogMessage>(std::move(msg));
         if (const auto & logs_queue = CurrentThread::getInternalTextLogsQueue();
@@ -420,8 +416,7 @@ void OwnAsyncSplitChannel::flushTextLogs()
     if (!text_log_locked)
         return;
 
-    /// Wait out any flush already in progress; otherwise we'd wake when that earlier flush ends, not ours.
-    /// Concurrent callers simply wait and get flushed together in the same block.
+    /// Wait out any flush already in progress, else we'd wake when that one ends; concurrent callers flush together.
     text_log_flush_requested.wait(true, std::memory_order_seq_cst);
 
     /// The async thread checks this flag between messages and after each empty-queue sleep.
@@ -501,8 +496,7 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
             }
             else
             {
-                /// Empty queue: sleep, then report any overflow drops. Reporting only once caught up
-                /// coalesces a whole overflow episode into one warning that can't jump ahead of real messages.
+                /// Empty queue: sleep, then report overflow drops here (only once caught up, so the warning can't precede real messages).
                 sleepForMilliseconds(sleep_on_empty_queue_ms);
                 report_dropped_messages();
             }
@@ -590,8 +584,7 @@ void OwnAsyncSplitChannel::runTextLog()
             }
             else
             {
-                /// Empty queue: sleep, then report any overflow drops. Reporting only once caught up
-                /// coalesces a whole overflow episode into one warning that can't jump ahead of real messages.
+                /// Empty queue: sleep, then report overflow drops here (only once caught up, so the warning can't precede real messages).
                 sleepForMilliseconds(sleep_on_empty_queue_ms);
                 report_dropped_messages(text_log_locked);
             }

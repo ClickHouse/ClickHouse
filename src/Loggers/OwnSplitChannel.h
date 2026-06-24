@@ -99,9 +99,7 @@ struct OwnRunnableForTextLog;
 class AsyncLogMessage;
 using AsyncLogMessagePtr = std::shared_ptr<AsyncLogMessage>;
 
-/// Like OwnSplitChannel but logs on background threads: one per channel (plus one for text_log) rather
-/// than a shared pool, to preserve order. The internalTextLogsQueue (--send-logs-level TCP queue) is
-/// still written synchronously in log.
+/// Like OwnSplitChannel but logs on background threads — one per channel (plus text_log), to preserve order; internalTextLogsQueue (--send-logs-level) is still written synchronously.
 class OwnAsyncSplitChannel final : public OwnSplitChannelBase, public boost::noncopyable
 {
 public:
@@ -132,8 +130,7 @@ public:
     AsyncLogQueueSizes getAsynchronousMetrics();
 
 private:
-    /// One channel's queue: a lock-free bounded MPSC queue with drop-on-overflow accounting. Producers are
-    /// the `log` callers; the single consumer is the background thread feeding the channel (or text_log).
+    /// One channel's queue: lock-free bounded MPSC with drop-on-overflow accounting; producers are `log` callers, the single consumer is the background thread feeding the channel (or text_log).
     struct LogQueue : boost::noncopyable
     {
         LogQueue(
