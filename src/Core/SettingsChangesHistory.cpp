@@ -42,11 +42,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.7",
         {
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
-        });
-
-        addSettingsChanges(settings_changes_history, "26.6",
-        {
-            {"use_reader_executor", false, false, "New experimental setting to use ReaderExecutor-based read pipeline instead of the matryoshka ReadBuffer assembly."},
             {"enable_reader_executor_log", false, false, "New experimental setting to write one row per ReaderExecutor at destruction into system.reader_executor_log."},
             {"reader_executor_window_size", 8388608, 8388608, "New experimental setting to configure the read-ahead window size of the ReaderExecutor."},
             {"reader_executor_block_size", 1048576, 1048576, "New experimental setting to configure the chained-buffer node / block size of the ReaderExecutor."},
@@ -55,6 +50,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"reader_executor_use_long_connections", true, true, "New experimental setting to reuse a bounded long source connection across windows in the ReaderExecutor; disabling it forces the stateless one-shot-per-window path."},
             {"reader_executor_decrypt_ahead", false, false, "New experimental setting to decrypt prefetched bytes on the ReaderExecutor read-ahead worker, ahead of serving, instead of at the serve boundary on the query thread."},
             {"reader_executor_lookahead_window", 16777216, 16777216, "New experimental setting: flat residency-lookup look-ahead for the ReaderExecutor warm-read path, decoupling the held cache readers from the per-mark-range read-until bound so they are reused across mark ranges."},
+        });
+
+        addSettingsChanges(settings_changes_history, "26.6",
+        {
             {"output_format_image_width", 1024, 1024, "New setting controlling the width of the output image for image output formats such as PNG."},
             {"output_format_image_height", 1024, 1024, "New setting controlling the height of the output image for image output formats such as PNG."},
             {"output_format_image_terminal_mode", "", "", "New setting controlling whether image output formats such as PNG are rendered directly to the terminal using an inline image protocol."},
