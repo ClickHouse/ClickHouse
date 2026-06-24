@@ -61,11 +61,18 @@ namespace DB
   *           neither edge a ',') -> enum;
   *         - else the '{' is a literal-char and scanning resumes after it.
   *
-  * Matching semantics (whole-string / FullMatch):
+  * Matching semantics (whole-string / FullMatch). NB: '**' below intentionally
+  * reproduces the legacy matcher rather than the idealized "crosses '/', no braces"
+  * grammar, for backward compatibility:
   *   literal-char c - matches exactly c.
   *   ?              - matches exactly one char, not '/'.
   *   *              - matches zero+ chars, none '/'.
-  *   **             - matches zero+ chars, none '{' or '}' (crosses '/').
+  *   **             - matches the legacy regex `[^/]*[^{}]*`: a run of non-'/' chars
+  *                    followed by a run of non-'{','}' chars. It crosses '/', and a brace
+  *                    is allowed only before the first '/'. For example a leading slash
+  *                    then "**" matches both "/dir/file" and "/a{b}c" (the braces precede
+  *                    any slash in the tail). A legacy-compatibility carryover, not an
+  *                    idealized rule.
   *   range {M..N}   - matches a digit run whose value is in [min(M,N), max(M,N)],
   *                    subject to the zero-padding width rules.
   *   enum           - one alternative matches at the current position.

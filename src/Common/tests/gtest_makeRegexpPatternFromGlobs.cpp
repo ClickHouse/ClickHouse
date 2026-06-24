@@ -662,7 +662,7 @@ TEST(Common, GlobASTLegacyMatchFuzz)
     constexpr size_t max_candidate_len = 6;
     constexpr size_t max_reported = 40;
 
-    std::mt19937 rng(0xC10BA5);
+    std::mt19937 rng(0xC10BA5); // NOLINT(cert-msc32-c,cert-msc51-cpp): deterministic seed for reproducible fuzzing
 
     auto random_string = [&](const std::string & alphabet, size_t max_len)
     {
