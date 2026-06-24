@@ -1,6 +1,5 @@
 #pragma once
 
-#include <bit>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -31,8 +30,8 @@ struct StoredBlock;
 /// stored block. This is the mapped value of MapsOne join hash maps and the leaf of the ASOF
 /// sorted lookup vectors (resolved to a stored block the same way, at emit time).
 ///
-/// Layout: `row_no` occupies the LOW half and `block_no` the HIGH half of the 8-byte word
-/// (little-endian), so the MSB of the `block_no` field is bit 63 of the whole word.
+/// Word layout (`word()`): `row_no` occupies the LOW half and `block_no` the HIGH half of the
+/// 8-byte word, so the MSB of the `block_no` field is bit 63 of the whole word.
 /// That bit is the INLINE/SINGLETON flag. It is always set for refs stored in hash map
 /// cells and `LazyOutput` entries. It distinguishes an inline ref from:
 ///   - the zero word (the "default row" marker in `LazyOutput::row_refs`),
@@ -65,7 +64,10 @@ struct RowRef
     UInt32 blockNo() const { return block_no & BLOCK_NO_MASK; }
     UInt32 rowNo() const { return row_no; }
 
-    UInt64 word() const { return std::bit_cast<UInt64>(*this); }
+    /// Build the word with explicit shifts (not std::bit_cast of the struct) so the layout is
+    /// byte-order-independent: block_no (with SINGLETON_FLAG in its MSB) in the high half, row_no
+    /// in the low half, matching the refWord* decoders below on both little- and big-endian.
+    UInt64 word() const { return (static_cast<UInt64>(block_no) << 32) | row_no; }
 };
 
 static_assert(sizeof(RowRef) == 8, "RowRef must stay 8 bytes: it is the hash map cell payload");
