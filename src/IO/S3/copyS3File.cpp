@@ -152,7 +152,7 @@ namespace
             if (!storage_class_name.value.empty())
                 request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
 
-            if (upload_checksum_algorithm != S3::RequestChecksum::Algorithm::MD5)
+            if (S3::RequestChecksum::usesFlexibleChecksumHeader(upload_checksum_algorithm))
                 request.setUploadChecksumAlgorithm(upload_checksum_algorithm);
 
             client_ptr->setKMSHeaders(request);
@@ -208,7 +208,7 @@ namespace
             {
                 Aws::S3::Model::CompletedPart part;
                 part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1));
-                if (upload_checksum_algorithm != S3::RequestChecksum::Algorithm::MD5)
+                if (S3::RequestChecksum::usesFlexibleChecksumHeader(upload_checksum_algorithm))
                     S3::RequestChecksum::setPartChecksum(part, upload_checksum_algorithm, multipart_checksums.at(i));
                 multipart_upload.AddParts(part);
             }
@@ -396,7 +396,7 @@ namespace
 
         String prepareUploadPartRequest(Aws::AmazonWebServiceRequest & request) const
         {
-            if (upload_checksum_algorithm == S3::RequestChecksum::Algorithm::MD5)
+            if (!S3::RequestChecksum::usesFlexibleChecksumHeader(upload_checksum_algorithm))
                 return {};
 
             auto * upload_part_request = typeid_cast<S3::UploadPartRequest *>(&request);
@@ -405,9 +405,12 @@ namespace
 
             upload_part_request->setUploadChecksumAlgorithm(upload_checksum_algorithm);
 
-            auto checksum = S3::RequestChecksum::calculateChecksum(*upload_part_request, upload_checksum_algorithm);
-            S3::RequestChecksum::setRequestChecksum(*upload_part_request, upload_checksum_algorithm, checksum);
-            return checksum;
+            auto checksum = S3::RequestChecksum::calculateFlexibleChecksum(*upload_part_request, upload_checksum_algorithm);
+            if (!checksum)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing flexible checksum for multipart upload request");
+
+            S3::RequestChecksum::setRequestChecksum(*upload_part_request, upload_checksum_algorithm, *checksum);
+            return *checksum;
         }
 
         void processUploadTask(UploadPartTask & task, String & part_tag, String & part_checksum)
@@ -428,7 +431,7 @@ namespace
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
                 part_tag = std::move(result.tag);
-                if (upload_checksum_algorithm != S3::RequestChecksum::Algorithm::MD5)
+                if (S3::RequestChecksum::usesFlexibleChecksumHeader(upload_checksum_algorithm))
                 {
                     part_checksum = std::move(checksum);
                     if (part_checksum.empty())
@@ -524,7 +527,7 @@ namespace
             if (!storage_class_name.value.empty())
                 request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
 
-            if (upload_checksum_algorithm != S3::RequestChecksum::Algorithm::MD5)
+            if (S3::RequestChecksum::usesFlexibleChecksumHeader(upload_checksum_algorithm))
                 request.setUploadChecksumAlgorithm(upload_checksum_algorithm);
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840

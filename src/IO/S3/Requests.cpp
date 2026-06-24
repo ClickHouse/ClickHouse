@@ -2,6 +2,7 @@
 
 #if USE_AWS_S3
 
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/Crypto/OpenSSLInitializer.h>
@@ -11,6 +12,14 @@
 
 #include <string_view>
 #include <fmt/format.h>
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int INVALID_SETTING_VALUE;
+}
+}
 
 namespace DB::S3RequestSetting
 {
@@ -22,26 +31,30 @@ namespace DB::S3
 
 RequestChecksum::Algorithm RequestChecksum::getUploadChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket, bool checksum_disabled)
 {
+    /// An explicit setting always wins. `MD5` selects the SDK's `Content-MD5` path, which `S3Express` rejects.
+    const auto & name = request_settings[DB::S3RequestSetting::upload_checksum_algorithm].value;
+    if (name == "CRC32")
+        return RequestChecksum::Algorithm::CRC32;
+    if (name == "SHA256")
+        return RequestChecksum::Algorithm::SHA256;
+    if (name == "MD5")
+    {
+        if (is_s3express_bucket)
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting upload_checksum_algorithm cannot be MD5 for S3Express buckets, "
+                "which require a flexible checksum; use CRC32 or SHA256");
+        return RequestChecksum::Algorithm::MD5;
+    }
+
+    /// No explicit choice: pick a default for the environment.
     if (is_s3express_bucket)
-        return RequestChecksum::Algorithm::CRC32;
+        return RequestChecksum::Algorithm::CRC32; /// flexible checksum is mandatory, `Content-MD5` not accepted
 
-    /// Explicit `CRC32`/`SHA256` override `s3_disable_checksum`.
-    /// `MD5` only defers to `Content-MD5`, so disabling checksums still suppresses it.
-    const auto & algorithm = request_settings[DB::S3RequestSetting::upload_checksum_algorithm].value;
-    if (algorithm == "CRC32")
-        return RequestChecksum::Algorithm::CRC32;
-    if (algorithm == "SHA256")
+    /// Default to the SDK's `Content-MD5` path. Under FIPS that is unavailable and silently dropped, so upgrade
+    /// to `SHA256`, unless the user disabled checksums, in which case we leave it on the suppressed path.
+    if (!checksum_disabled && OpenSSLInitializer::instance().isFIPSEnabled())
         return RequestChecksum::Algorithm::SHA256;
-    if (algorithm == "MD5")
-        return RequestChecksum::Algorithm::MD5;
-
-    if (checksum_disabled)
-        return RequestChecksum::Algorithm::MD5;
-
-    /// FIPS has no `MD5`: the SDK drops `Content-MD5` silently and Object Lock uploads get rejected.
-    if (OpenSSLInitializer::instance().isFIPSEnabled())
-        return RequestChecksum::Algorithm::SHA256;
-
     return RequestChecksum::Algorithm::MD5;
 }
 

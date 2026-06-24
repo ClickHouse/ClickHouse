@@ -425,7 +425,7 @@ void WriteBufferFromS3::createMultipartUpload()
         req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
 
     if (auto checksum_algorithm = S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, client_ptr->isS3ExpressBucket(), client_ptr->isChecksumDisabled());
-        checksum_algorithm != S3::RequestChecksum::Algorithm::MD5)
+        S3::RequestChecksum::usesFlexibleChecksumHeader(checksum_algorithm))
         req.setUploadChecksumAlgorithm(checksum_algorithm);
 
     client_ptr->setKMSHeaders(req);
@@ -522,11 +522,14 @@ S3::UploadPartRequest WriteBufferFromS3::getUploadRequest(size_t part_number, Pa
     /// Checksums need to be provided on CompleteMultipartUpload requests, so we calculate them manually and store in multipart_checksums.
     const auto checksum_algorithm = S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, client_ptr->isS3ExpressBucket(), client_ptr->isChecksumDisabled());
     req.setUploadChecksumAlgorithm(checksum_algorithm);
-    if (checksum_algorithm != S3::RequestChecksum::Algorithm::MD5)
+    if (S3::RequestChecksum::usesFlexibleChecksumHeader(checksum_algorithm))
     {
-        auto checksum = S3::RequestChecksum::calculateChecksum(req, checksum_algorithm);
-        S3::RequestChecksum::setRequestChecksum(req, checksum_algorithm, checksum);
-        multipart_checksums.push_back(std::move(checksum));
+        auto checksum = S3::RequestChecksum::calculateFlexibleChecksum(req, checksum_algorithm);
+        if (!checksum)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing flexible checksum for part #{} of multipart upload", part_number);
+
+        S3::RequestChecksum::setRequestChecksum(req, checksum_algorithm, *checksum);
+        multipart_checksums.push_back(std::move(*checksum));
     }
 
     return req;
@@ -659,7 +662,7 @@ bool WriteBufferFromS3::completeMultipartUpload()
     {
         Aws::S3::Model::CompletedPart part;
         part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1));
-        if (!multipart_checksums.empty())
+        if (S3::RequestChecksum::usesFlexibleChecksumHeader(checksum_algorithm))
             S3::RequestChecksum::setPartChecksum(part, checksum_algorithm, multipart_checksums.at(i));
         multipart_upload.AddParts(part);
     }
@@ -729,7 +732,7 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
         req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
 
     if (auto checksum_algorithm = S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, client_ptr->isS3ExpressBucket(), client_ptr->isChecksumDisabled());
-        checksum_algorithm != S3::RequestChecksum::Algorithm::MD5)
+        S3::RequestChecksum::usesFlexibleChecksumHeader(checksum_algorithm))
         req.setUploadChecksumAlgorithm(checksum_algorithm);
 
     if (!write_settings.object_storage_write_if_none_match.empty())

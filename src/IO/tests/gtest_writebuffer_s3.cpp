@@ -26,6 +26,7 @@
 #include <IO/WriteBufferFromS3.h>
 #include <IO/S3Common.h>
 #include <IO/S3/copyS3File.h>
+#include <IO/S3/Requests.h>
 #include <IO/FileEncryptionCommon.h>
 #include <IO/ReadBufferFromEncryptedFile.h>
 #include <IO/ReadBufferFromString.h>
@@ -240,7 +241,7 @@ static String readRequestBody(std::istream & body)
 
 struct Client : DB::S3::Client
 {
-    explicit Client(std::shared_ptr<S3MemStrore> mock_s3_store, bool disable_checksum = false)
+    explicit Client(std::shared_ptr<S3MemStrore> mock_s3_store, bool disable_checksum = false, bool is_s3express_bucket = false)
         : DB::S3::Client(
             100,
             DB::S3::ServerSideEncryptionKMSConfig(),
@@ -251,16 +252,16 @@ struct Client : DB::S3::Client
                 .use_virtual_addressing = true,
                 .disable_checksum = disable_checksum,
                 .gcs_issue_compose_request = false,
-                .is_s3express_bucket = false,
+                .is_s3express_bucket = is_s3express_bucket,
             })
         , store(mock_s3_store)
     {}
 
-    static std::shared_ptr<Client> CreateClient(String bucket = "mock-s3-bucket", bool disable_checksum = false)
+    static std::shared_ptr<Client> CreateClient(String bucket = "mock-s3-bucket", bool disable_checksum = false, bool is_s3express_bucket = false)
     {
         auto s3store = std::make_shared<S3MemStrore>();
         s3store->CreateBucket(bucket);
-        return std::make_shared<Client>(s3store, disable_checksum);
+        return std::make_shared<Client>(s3store, disable_checksum, is_s3express_bucket);
     }
 
     static DB::S3::PocoHTTPClientConfiguration GetClientConfiguration()
@@ -1004,6 +1005,54 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmValidationAndNormalization)
     }, DB::Exception);
 }
 
+TEST_F(WBS3Test, UploadChecksumAlgorithmDefaults)
+{
+    using Algorithm = S3::RequestChecksum::Algorithm;
+
+    /// Default-constructed settings leave upload_checksum_algorithm empty.
+    S3::S3RequestSettings request_settings;
+    const bool fips = DB::OpenSSLInitializer::instance().isFIPSEnabled();
+
+    /// Empty setting: SHA256 under FIPS (Content-MD5 is unavailable there), otherwise defer to Content-MD5.
+    ASSERT_EQ(fips ? Algorithm::SHA256 : Algorithm::MD5,
+        S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ false, /* checksum_disabled */ false));
+
+    /// Disabling checksums opts out of the FIPS default.
+    ASSERT_EQ(Algorithm::MD5,
+        S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ false, /* checksum_disabled */ true));
+
+    /// S3Express requires a flexible checksum: an empty (or disabled) setting defaults to CRC32.
+    ASSERT_EQ(Algorithm::CRC32,
+        S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ true, /* checksum_disabled */ false));
+    ASSERT_EQ(Algorithm::CRC32,
+        S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ true, /* checksum_disabled */ true));
+
+    /// S3Express honors an explicit flexible algorithm instead of forcing CRC32.
+    getSettings()[Setting::s3_upload_checksum_algorithm] = "SHA256";
+    request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ true);
+    ASSERT_EQ(Algorithm::SHA256,
+        S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ true, /* checksum_disabled */ false));
+
+    /// S3Express cannot use MD5 (no Content-MD5), so an explicit MD5 is rejected rather than silently upgraded.
+    if (!DB::OpenSSLInitializer::instance().isFIPSEnabled())
+    {
+        getSettings()[Setting::s3_upload_checksum_algorithm] = "MD5";
+        request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ true);
+        EXPECT_THROW({
+            try
+            {
+                S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ true, /* checksum_disabled */ false);
+            }
+            catch (const DB::Exception & e)
+            {
+                ASSERT_EQ(ErrorCodes::INVALID_SETTING_VALUE, e.code());
+                EXPECT_THAT(e.what(), testing::HasSubstr("cannot be MD5 for S3Express buckets"));
+                throw;
+            }
+        }, DB::Exception);
+    }
+}
+
 TEST_F(WBS3Test, UploadChecksumAlgorithmTakesPrecedenceOverDisabledChecksum)
 {
     client = MockS3::Client::CreateClient(bucket, /* disable_checksum */ true);
@@ -1022,6 +1071,27 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmTakesPrecedenceOverDisabledChecksum)
     ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::SHA256, injection->put_object_algorithm);
     ASSERT_TRUE(injection->put_object_request_checksum_required);
     ASSERT_FALSE(injection->put_object_should_compute_content_md5);
+}
+
+TEST_F(WBS3Test, S3ExpressHonorsExplicitUploadChecksumAlgorithm)
+{
+    /// S3Express forces CRC32 only as a default; an explicit SHA256 must survive `setIsS3ExpressBucket`,
+    /// which is applied when the request is sent (after the upload algorithm has been chosen).
+    client = MockS3::Client::CreateClient(bucket, /* disable_checksum */ false, /* is_s3express_bucket */ true);
+
+    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
+    setInjectionModel(injection);
+
+    getSettings()[Setting::s3_upload_checksum_algorithm] = "SHA256";
+
+    auto buffer = getWriteBuffer("s3express_explicit_sha256");
+    writeAsOneBlock(*buffer, 10);
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::SHA256, injection->put_object_algorithm);
+    ASSERT_TRUE(injection->put_object_request_checksum_required);
 }
 
 

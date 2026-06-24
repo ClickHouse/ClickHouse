@@ -711,6 +711,8 @@ The checksum algorithm used for `S3` upload requests. `CRC32` and `SHA256` are s
 
 By default the value is empty and ClickHouse lets the AWS SDK compute `Content-MD5`. In FIPS mode `MD5` is unavailable, so an empty value uses `SHA256` instead and an explicit `MD5` is rejected.
 
+`S3Express` buckets require a flexible checksum and do not accept `Content-MD5`: an explicit `CRC32` or `SHA256` is honored, an empty value uses `CRC32`, and an explicit `MD5` is rejected.
+
 This setting does not apply to server-side copy requests such as `CopyObject`.
 )", 0) \
     DECLARE(UInt64, s3_request_timeout_ms, S3::DEFAULT_REQUEST_TIMEOUT_MS, R"(
