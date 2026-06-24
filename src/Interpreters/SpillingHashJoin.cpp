@@ -15,6 +15,17 @@ extern const Event JoinSpillingHashJoinSwitchedToGraceJoin;
 namespace DB
 {
 
+/// Spill is triggered when the (measured or projected) live bytes reach
+/// `max_bytes_before_external_join` divided by this factor - i.e. at half the configured cap rather
+/// than the full cap. The headroom absorbs allocations not yet reflected in the byte count at the
+/// moment of the check:
+///   - the transient conversion peak while handing buffers over to `GraceHashJoin`, and
+///   - for a pending deferred `ConcurrentHashJoin` build, the `RowRefList` arena nodes that
+///     `getProjectedTotalByteCount` cannot size yet (it lacks the distinct-key count).
+/// The call sites apply it for different subsets of these reasons (see the comment at each use):
+/// they share a value, not a rationale, so it is named rather than written as a bare literal.
+static constexpr size_t SPILL_TRIGGER_HEADROOM_FACTOR = 2;
+
 SpillingHashJoin::SpillingHashJoin(
     std::shared_ptr<TableJoin> table_join_,
     SharedHeader left_sample_block_,
@@ -126,12 +137,12 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
     /// the replay reserves them.
     if (concurrent_join)
     {
-        if (concurrent_join->getProjectedTotalByteCount() * 2 >= max_bytes_before_external_join)
+        if (concurrent_join->getProjectedTotalByteCount() * SPILL_TRIGGER_HEADROOM_FACTOR >= max_bytes_before_external_join)
             switchToGraceHashJoin();
     }
     else
     {
-        if (hash_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
+        if (hash_join->getTotalByteCount() * SPILL_TRIGGER_HEADROOM_FACTOR >= max_bytes_before_external_join)
             switchToGraceHashJoin();
     }
 
@@ -258,7 +269,7 @@ void SpillingHashJoin::onBuildPhaseFinish()
         /// `HashJoin` path) already has its maps and arena built, so its byte count is exact and the
         /// full threshold applies.
         const bool deferred_pending = concurrent_join && concurrent_join->hasPendingDeferredBuild();
-        const size_t effective_bytes = deferred_pending ? total_bytes * 2 : total_bytes;
+        const size_t effective_bytes = deferred_pending ? total_bytes * SPILL_TRIGGER_HEADROOM_FACTOR : total_bytes;
         if (effective_bytes >= max_bytes_before_external_join)
         {
             switchToGraceHashJoin();

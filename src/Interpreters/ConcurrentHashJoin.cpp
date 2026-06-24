@@ -931,10 +931,7 @@ BlocksList ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
             scattered_block.filterBySelector();
             blocks.emplace_back(std::move(scattered_block).getSourceBlock());
         }
-        hash_join->buffered_blocks.clear();
-        hash_join->buffered_blocks.shrink_to_fit();
-        hash_join->buffered_rows = 0;
-        hash_join->buffered_bytes = 0;
+        hash_join->clearBuffers();
         return blocks;
     }
 
@@ -993,10 +990,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                         auto [block, selector] = std::move(scattered_block).detachData();
                         hash_join->data->addBlockToJoin(block, std::move(selector), /*check_limits=*/false);
                     }
-                    hash_join->buffered_blocks.clear();
-                    hash_join->buffered_blocks.shrink_to_fit();
-                    hash_join->buffered_rows = 0;
-                    hash_join->buffered_bytes = 0;
+                    hash_join->clearBuffers();
 
                     /// `addBlockToJoin(..., check_limits=false)` early-returns before maintaining
                     /// `keys_to_join` and before the memory-pressure shrink, so compensate here, as

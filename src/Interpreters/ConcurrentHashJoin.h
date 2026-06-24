@@ -138,6 +138,16 @@ public:
         VectorWithMemoryTracking<ScatteredBlock> buffered_blocks;
         size_t buffered_rows = 0;
         size_t buffered_bytes = 0;
+
+        /// Empty the parked deferred build as one unit, once its blocks have left the buffer - either
+        /// replayed into the map (`onBuildPhaseFinish`) or handed to `GraceHashJoin` (`releaseSlotBlocks`).
+        void clearBuffers()
+        {
+            buffered_blocks.clear();
+            buffered_blocks.shrink_to_fit();
+            buffered_rows = 0;
+            buffered_bytes = 0;
+        }
     };
 
     friend class NotJoinedHash;
