@@ -78,6 +78,9 @@ bool atomSubstitutable(const ActionsDAG::Node * node, const SubstitutionMap & su
         return false;
     if (!node->isDeterministic())
         return false;
+    /// Stateful functions (aiEmbed, timeSeriesStoreTags) are deterministic but carry side effects or external calls
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->isStateful())
+        return false;
     if (node->type == ActionsDAG::ActionType::INPUT)
         return sub.contains(node->result_name);
     for (const auto * child : node->children)
