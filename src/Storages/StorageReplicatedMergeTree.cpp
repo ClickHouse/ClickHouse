@@ -202,7 +202,6 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
-    extern const MergeTreeSettingsBool allow_minmax_index_for_json;
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsBool assign_part_uuids;
@@ -6780,8 +6779,7 @@ void StorageReplicatedMergeTree::alter(
     auto table_id = getStorageID();
     const auto & query_settings = query_context->getSettingsRef();
 
-    StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(query_context, false);
-    StorageInMemoryMetadata future_metadata = old_metadata;
+    StorageInMemoryMetadata future_metadata = *getInMemoryMetadataPtr(query_context, false);
 
     removeImplicitStatistics(future_metadata.columns);
     commands.apply(future_metadata, query_context);
@@ -6805,20 +6803,6 @@ void StorageReplicatedMergeTree::alter(
         /// Also we don't upgrade alter lock to table structure lock.
         merge_strategy_picker.refreshState();
         changeSettings(future_metadata.settings_changes, table_lock_holder);
-
-        if (!(*getSettings())[MergeTreeSetting::allow_minmax_index_for_json])
-        {
-            try
-            {
-                for (const auto & index : future_metadata.secondary_indices)
-                    checkMinMaxIndexForJSON(index);
-            }
-            catch (...)
-            {
-                changeSettings(old_metadata.settings_changes, table_lock_holder);
-                throw;
-            }
-        }
 
         if (statistics_changed)
             setInMemoryMetadata(future_metadata);
@@ -6845,20 +6829,6 @@ void StorageReplicatedMergeTree::alter(
     {
         merge_strategy_picker.refreshState();
         changeSettings(future_metadata.settings_changes, table_lock_holder);
-
-        if (!(*getSettings())[MergeTreeSetting::allow_minmax_index_for_json])
-        {
-            try
-            {
-                for (const auto & index : future_metadata.secondary_indices)
-                    checkMinMaxIndexForJSON(index);
-            }
-            catch (...)
-            {
-                changeSettings(old_metadata.settings_changes, table_lock_holder);
-                throw;
-            }
-        }
 
         /// changeSettings is the sole writer of the setting-derived escape fields and has
         /// already committed them; carry them into future_metadata so the comment commit

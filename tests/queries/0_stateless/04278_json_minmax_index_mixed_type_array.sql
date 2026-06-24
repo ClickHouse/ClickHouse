@@ -49,37 +49,6 @@ ALTER TABLE t_json_minmax_forbidden ADD COLUMN extra UInt8 DEFAULT 0;
 
 DROP TABLE IF EXISTS t_json_minmax_forbidden;
 
--- Should fail: RESET SETTING while JSON minmax index is still present must be rejected,
--- because after reset the effective table setting returns to default (false).
-CREATE TABLE t_json_minmax_forbidden (
-    id Int32,
-    col1 JSON,
-    INDEX col_idx col1 TYPE minmax GRANULARITY 1
-) ENGINE = MergeTree() ORDER BY id
-SETTINGS allow_minmax_index_for_json = 1;
-
-ALTER TABLE t_json_minmax_forbidden RESET SETTING allow_minmax_index_for_json; -- { serverError BAD_ARGUMENTS }
-
--- Should succeed: table should remain usable after rejected RESET SETTING.
-ALTER TABLE t_json_minmax_forbidden ADD COLUMN extra UInt8 DEFAULT 0;
-
-DROP TABLE IF EXISTS t_json_minmax_forbidden;
-
--- Should fail: MODIFY SETTING to disable the escape hatch while JSON minmax index exists.
-CREATE TABLE t_json_minmax_forbidden (
-    id Int32,
-    col1 JSON,
-    INDEX col_idx col1 TYPE minmax GRANULARITY 1
-) ENGINE = MergeTree() ORDER BY id
-SETTINGS allow_minmax_index_for_json = 1;
-
-ALTER TABLE t_json_minmax_forbidden MODIFY SETTING allow_minmax_index_for_json = 0; -- { serverError BAD_ARGUMENTS }
-
--- Should succeed: table should remain usable after rejected MODIFY SETTING.
-ALTER TABLE t_json_minmax_forbidden ADD COLUMN extra UInt8 DEFAULT 0;
-
-DROP TABLE IF EXISTS t_json_minmax_forbidden;
-
 CREATE TABLE t_json_minmax_forbidden (
     id Int32,
     col1 JSON
@@ -97,23 +66,10 @@ CREATE TABLE t_json_minmax_forbidden (
     col1 JSON
 ) ENGINE = MergeTree() ORDER BY id;
 
--- Should fail: MODIFY SETTING alone does not suppress validation of the current ALTER.
+-- Should succeed: MODIFY SETTING in the same ALTER applies before validation.
 ALTER TABLE t_json_minmax_forbidden
     ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1,
-    MODIFY SETTING allow_minmax_index_for_json = 1; -- { serverError BAD_ARGUMENTS }
-
-DROP TABLE IF EXISTS t_json_minmax_forbidden;
-
-CREATE TABLE t_json_minmax_forbidden (
-    id Int32,
-    col1 JSON
-) ENGINE = MergeTree() ORDER BY id;
-
--- Should succeed: mixed ALTER works when the query-level setting suppresses validation.
-ALTER TABLE t_json_minmax_forbidden
-    ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1,
-    MODIFY SETTING allow_minmax_index_for_json = 1
-    SETTINGS allow_minmax_index_for_json = 1;
+    MODIFY SETTING allow_minmax_index_for_json = 1;
 
 -- Should succeed: table-level setting made by the previous ALTER keeps later unrelated ALTER valid.
 ALTER TABLE t_json_minmax_forbidden ADD COLUMN extra UInt8 DEFAULT 0;
@@ -175,37 +131,6 @@ SYSTEM SYNC REPLICA t_json_minmax_forbidden_replicated_r2;
 
 DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated_r1 SYNC;
 DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated_r2 SYNC;
-
-DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated_reset_r1 SYNC;
-DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated_reset_r2 SYNC;
-
--- Should fail: RESET SETTING on replicated table with JSON minmax index must be rejected.
-CREATE TABLE t_json_minmax_forbidden_replicated_reset_r1 (
-    id Int32,
-    col1 JSON,
-    INDEX col_idx col1 TYPE minmax GRANULARITY 1
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04278_json_minmax_index_mixed_type_array_reset', 'r1') ORDER BY id
-SETTINGS allow_minmax_index_for_json = 1;
-
-CREATE TABLE t_json_minmax_forbidden_replicated_reset_r2 (
-    id Int32,
-    col1 JSON,
-    INDEX col_idx col1 TYPE minmax GRANULARITY 1
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04278_json_minmax_index_mixed_type_array_reset', 'r2') ORDER BY id
-SETTINGS allow_minmax_index_for_json = 1;
-
-ALTER TABLE t_json_minmax_forbidden_replicated_reset_r1 RESET SETTING allow_minmax_index_for_json; -- { serverError BAD_ARGUMENTS }
-
-ALTER TABLE t_json_minmax_forbidden_replicated_reset_r1 MODIFY SETTING allow_minmax_index_for_json = 0; -- { serverError BAD_ARGUMENTS }
-
--- Should fail: mixed comment+settings ALTER that disables the escape hatch (areNonReplicatedAlterCommands path).
-ALTER TABLE t_json_minmax_forbidden_replicated_reset_r1 COMMENT COLUMN col1 'test', RESET SETTING allow_minmax_index_for_json; -- { serverError BAD_ARGUMENTS }
-
--- Should succeed: table remains usable after rejected RESET/MODIFY.
-ALTER TABLE t_json_minmax_forbidden_replicated_reset_r1 ADD COLUMN extra UInt8 DEFAULT 0;
-
-DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated_reset_r1 SYNC;
-DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated_reset_r2 SYNC;
 
 -- Should succeed: dropping the JSON minmax index and resetting the escape hatch in one ALTER
 -- leaves a valid final metadata state.

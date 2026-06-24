@@ -104,7 +104,6 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
-    extern const MergeTreeSettingsBool allow_minmax_index_for_json;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
@@ -477,20 +476,6 @@ void StorageMergeTree::alter(
     if (commands.isSettingsAlter())
     {
         changeSettings(new_metadata.settings_changes, table_lock_holder);
-
-        if (!(*getSettings())[MergeTreeSetting::allow_minmax_index_for_json])
-        {
-            try
-            {
-                for (const auto & index : new_metadata.secondary_indices)
-                    checkMinMaxIndexForJSON(index);
-            }
-            catch (...)
-            {
-                changeSettings(old_metadata.settings_changes, table_lock_holder);
-                throw;
-            }
-        }
 
         if (statistics_changed)
             setInMemoryMetadata(new_metadata);
