@@ -491,3 +491,33 @@ TEST(Statistics, BuildTypeMismatchThrows)
         EXPECT_NO_THROW(stats.buildIfExists(int_block("a")));
     }
 }
+
+/// The build-time guard above only fires when statistics are rebuilt from a block. The merge path in
+/// MergeTask takes a different route: when `ColumnStatistics::structureEquals` returns true it merges an
+/// already-loaded part statistic into the result collector instead of rebuilding it, so the mismatched
+/// loaded statistic never reaches the build guard. `structureEquals` must therefore also reject a
+/// different declared type, so a nullability-only change forces a rebuild rather than merging
+/// incompatible aggregate-state layouts.
+TEST(Statistics, StructureEqualsConsidersDataType)
+{
+    tryRegisterAggregateFunctions();
+
+    auto make_stat = [](const DataTypePtr & declared_type)
+    {
+        ColumnStatisticsDescription desc;
+        desc.data_type = declared_type;
+        desc.types_to_desc.emplace(StatisticsType::Uniq, SingleStatisticsDescription(StatisticsType::Uniq, nullptr, false));
+        return MergeTreeStatisticsFactory::instance().get(desc);
+    };
+
+    auto plain_type = std::make_shared<DataTypeInt32>();
+    auto nullable_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
+
+    /// Same kinds and same declared type -> equal structure (the common case keeps merging, no rebuild).
+    EXPECT_TRUE(make_stat(plain_type)->structureEquals(*make_stat(plain_type)));
+    EXPECT_TRUE(make_stat(nullable_type)->structureEquals(*make_stat(nullable_type)));
+
+    /// Same kinds but different declared type (nullability flip) -> not equal, both directions.
+    EXPECT_FALSE(make_stat(plain_type)->structureEquals(*make_stat(nullable_type)));
+    EXPECT_FALSE(make_stat(nullable_type)->structureEquals(*make_stat(plain_type)));
+}

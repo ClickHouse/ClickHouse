@@ -159,6 +159,17 @@ void ColumnStatistics::merge(const ColumnStatisticsPtr & other)
 
 bool ColumnStatistics::structureEquals(const ColumnStatistics & other) const
 {
+    /// A collector is built once from the declared column type, so merging a part statistic built on a
+    /// different type (e.g. a MODIFY COLUMN that flips nullability) feeds mismatched aggregate-state
+    /// layouts to ColumnStatistics::merge. Treat a different declared type as a different structure so
+    /// the merge path rebuilds the statistics instead of merging incompatible states.
+    const auto & lhs_type = stats_desc.data_type;
+    const auto & rhs_type = other.stats_desc.data_type;
+    if (static_cast<bool>(lhs_type) != static_cast<bool>(rhs_type))
+        return false;
+    if (lhs_type && !lhs_type->equals(*rhs_type))
+        return false;
+
     if (stats.size() != other.stats.size())
         return false;
 
