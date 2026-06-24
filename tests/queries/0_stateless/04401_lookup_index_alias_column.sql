@@ -4,6 +4,9 @@
 -- `Cannot find column ... in table lookup cache`.
 
 SET enable_analyzer = 1;
+SET serialize_query_plan = 0;
+SET enable_parallel_replicas = 0;
+SET max_parallel_replicas = 1;
 SET allow_experimental_lookup_index = 1;
 SET join_algorithm = 'direct,hash';
 
