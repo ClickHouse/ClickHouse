@@ -1,5 +1,7 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-object-storage, no-random-merge-tree-settings
 -- no-parallel: uses global ProfileEvents counters to prove the metadata-only cleanup path.
+-- no-object-storage: metadata-only TTLClearIndex fast path is local/full-storage only.
+-- no-random-merge-tree-settings: randomized part-format/storage settings can disable the specific fast path asserted here.
 DROP TABLE IF EXISTS ttl_clear_index;
 DROP TABLE IF EXISTS ttl_clear_index_bad;
 DROP TABLE IF EXISTS ttl_clear_index_same_expr;
