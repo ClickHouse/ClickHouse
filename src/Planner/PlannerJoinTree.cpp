@@ -111,6 +111,8 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool optimize_trivial_view_pushdown_to_distributed;
     extern const SettingsUInt64 distributed_group_by_no_merge;
+    extern const SettingsBool optimize_skip_unused_shards;
+    extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_unaligned_array_join;
@@ -1612,8 +1614,28 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                                 table_expression_query_info.table_expression, inner_query_tree);
                             table_expression_query_info.table_expression = dist_table_node;
                             effective_storage = underlying_dist;
-                            effective_snapshot = underlying_dist->getStorageSnapshot(
-                                underlying_dist->getInMemoryMetadataPtr(query_context, false), query_context);
+                            auto dist_metadata_snapshot = underlying_dist->getInMemoryMetadataPtr(query_context, false);
+                            effective_snapshot = underlying_dist->getStorageSnapshot(dist_metadata_snapshot, query_context);
+
+                            /// filter_actions_dag was built from the VIEW's output columns. After
+                            /// inlining, StorageDistributed::skipUnusedShardsWithAnalyzer would interpret
+                            /// that view-namespace predicate against the underlying table's sharding key,
+                            /// which is wrong when the view rewrites the sharding-key column but keeps its
+                            /// name (e.g. SELECT id + 1 AS id FROM dist). Clear it so shard pruning is
+                            /// skipped rather than applied to a stale predicate; the WHERE still rides in
+                            /// the inlined query_tree shipped to the shards, so results stay correct — we
+                            /// only forgo the optimize_skip_unused_shards pruning hint for this read.
+                            if (table_expression_query_info.filter_actions_dag
+                                && (settings[Setting::optimize_skip_unused_shards] || settings[Setting::force_optimize_skip_unused_shards]))
+                            {
+                                LOG_DEBUG(getLogger("Planner"),
+                                    "optimize_trivial_view_pushdown_to_distributed is enabled; shard pruning "
+                                    "(optimize_skip_unused_shards) is skipped for this query because the view's "
+                                    "filter is in the view's output namespace and cannot be safely applied to "
+                                    "the underlying table's sharding key. Disable "
+                                    "optimize_trivial_view_pushdown_to_distributed to use shard pruning.");
+                            }
+                            table_expression_query_info.filter_actions_dag = nullptr;
 
                             /// Disable result-size limits and extremes for the underlying distributed
                             /// read, mirroring StorageView::readImpl (getViewContext). These settings
