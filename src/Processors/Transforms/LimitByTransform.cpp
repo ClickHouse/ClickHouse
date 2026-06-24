@@ -6,6 +6,7 @@
 #include <DataTypes/IDataType.h>
 #include <base/defines.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 #include <algorithm>
@@ -19,6 +20,11 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+extern const char limit_by_sorted_stream_transform_pause[];
 }
 
 namespace
@@ -435,6 +441,8 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
     UInt64 current_run_start_row = 0;
     for (UInt64 row_idx = 1; row_idx < row_count; ++row_idx)
     {
+        FailPointInjection::pauseFailPoint(FailPoints::limit_by_sorted_stream_transform_pause);
+
         if (isCancelled())
         {
             LOG_TEST(getLogger("LimitBySortedStreamTransform"), "Cancelled during row processing");
