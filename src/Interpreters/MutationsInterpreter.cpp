@@ -1076,6 +1076,16 @@ void MutationsInterpreter::prepare(bool dry_run)
                     backQuote(command.column_name));
             }
 
+            /// A UNIQUE KEY column must not be rewritten outside the UNIQUE KEY dedup path, otherwise
+            /// duplicate live keys could be produced. `MergeTreeData::checkMutationIsPossible` already
+            /// rejects MATERIALIZE COLUMN of a *direct* UNIQUE KEY column, but it cannot see that a
+            /// *dependent* stored MATERIALIZED column (recomputed in the extra stage below) is part of
+            /// the UNIQUE KEY. Collect the UNIQUE KEY columns here so the dependent check below can
+            /// refuse that indirect case the same way the sign / version columns are refused above.
+            Names unique_key_columns;
+            if (metadata_snapshot->hasUniqueKey())
+                unique_key_columns = metadata_snapshot->getUniqueKeyColumns();
+
             /// A stored MATERIALIZED column may be computed from the column being materialized.
             /// Rewriting the source column would leave such dependent columns stale, so they are
             /// recomputed in an extra stage below. If a dependent column feeds the sorting key or
@@ -1125,6 +1135,15 @@ void MutationsInterpreter::prepare(bool dry_run)
                         "Refused to materialize column {} because the MATERIALIZED column {} is computed from it "
                         "and is used as the sign or version column of the table engine, which the merge logic "
                         "depends on. Recomputing it could change the collapsing or replacing semantics of existing data",
+                        backQuote(command.column_name), backQuote(dependent_name));
+                }
+
+                if (column_required_by(dependent_name, unique_key_columns))
+                {
+                    throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                        "Refused to materialize column {} because the MATERIALIZED column {} is computed from it "
+                        "and is part of the UNIQUE KEY. Recomputing it would rewrite stored values outside the "
+                        "UNIQUE KEY dedup path, which could produce duplicate live keys",
                         backQuote(command.column_name), backQuote(dependent_name));
                 }
             }
