@@ -54,7 +54,8 @@ def with_tables(nodes, create_query, drop_query):
 
 
 @pytest.mark.parametrize("insert_type", ["sync", "async"])
-def test_cross_version_compatible_to_unified(cluster, insert_type):
+@pytest.mark.parametrize("first", ["compatible", "new"])
+def test_cross_version_compatible_to_unified(cluster, insert_type, first):
     # Rolling-upgrade compatibility: a 26.5 replica running `compatible_double_hashes` (which writes
     # both the legacy and the unified deduplication hashes) shares one replicated table with a
     # current replica that uses only the unified hash. The same rows inserted from both replicas must
@@ -81,10 +82,12 @@ def test_cross_version_compatible_to_unified(cluster, insert_type):
     ):
         async_insert = insert_type == "async"
         insert_settings = f"async_insert={1 if async_insert else 0}, deduplicate_insert='enable'"
-        # Compatible (26.5) replica inserts first and publishes the unified hash to keeper; the current
-        # replica then inserts the same rows and must recognize them as a duplicate across versions.
-        node_compatible.query(f"INSERT INTO test_cross_version_compatible_to_unified SETTINGS {insert_settings} VALUES (1, 100), (2, 200), (3, 300)")
-        node_new.query(f"INSERT INTO test_cross_version_compatible_to_unified SETTINGS {insert_settings} VALUES (1, 100), (2, 200), (3, 300)")
+        # Cross-version deduplication must be order-independent: whichever replica inserts first
+        # publishes the unified hash to keeper, and the other must recognize the same rows as a
+        # duplicate. `first` exercises both directions (compatible -> current and current -> compatible).
+        first_node, second_node = (node_compatible, node_new) if first == "compatible" else (node_new, node_compatible)
+        first_node.query(f"INSERT INTO test_cross_version_compatible_to_unified SETTINGS {insert_settings} VALUES (1, 100), (2, 200), (3, 300)")
+        second_node.query(f"INSERT INTO test_cross_version_compatible_to_unified SETTINGS {insert_settings} VALUES (1, 100), (2, 200), (3, 300)")
 
         for node in nodes:
             node.query("SYSTEM SYNC REPLICA test_cross_version_compatible_to_unified")
