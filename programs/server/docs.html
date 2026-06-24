@@ -609,7 +609,10 @@
         const url = buildURL() + `&param_q=${encodeURIComponent(term)}`;
 
         try {
-            const response = await fetch(url, { method: 'POST', body: QUERY });
+            /// `Authorization: never` keeps the browser from attaching stored HTTP Basic
+            /// credentials, so the empty `user`/`password` fields connect as the default user,
+            /// exactly as `play.html` does, instead of authenticating as a cached `default` login.
+            const response = await fetch(url, { method: 'POST', body: QUERY, headers: { 'Authorization': 'never' } });
 
             if (seq !== request_seq) {
                 return; /// A newer query has been issued; drop this stale response.
@@ -945,7 +948,7 @@
         if (all_names) return all_names;
         const map = new Map();
         try {
-            const response = await fetch(buildURL(), { method: 'POST', body: 'SELECT name, type FROM system.documentation' });
+            const response = await fetch(buildURL(), { method: 'POST', body: 'SELECT name, type FROM system.documentation', headers: { 'Authorization': 'never' } });
             if (!response.ok) {
                 /// Do not cache on failure. On a server that requires credentials, the initial
                 /// background call can run before the user enters them; returning an empty map for
