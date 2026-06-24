@@ -345,6 +345,50 @@ def test_cancel_during_insert_does_not_duplicate(started_cluster):
     assert_dst_count_stable(node, table, n_files * ROWS_PER_FILE, seconds=8)
 
 
+def test_cancel_during_insert_dedup_off_no_duplicates(started_cluster):
+    # Same in-flight CANCEL as the test above, but with deduplication_v2 = 0. With dedup off the fix
+    # attaches no cancel callback, so the running insert is NOT aborted: it finishes and commits, and
+    # the CANCEL is honored only at the next batch boundary. So every file still lands exactly once --
+    # no duplicates and no data loss -- without relying on deduplication to mask a reprocess.
+    node = started_cluster.instances["instance"]
+    n_files = 10
+    table = f"s3q_cancel_inflight_dedup_off_{generate_random_string()}"
+    files_path = f"{table}_data"
+    create_table(
+        started_cluster,
+        node,
+        table,
+        "unordered",
+        files_path,
+        additional_settings={
+            "max_processed_files_before_commit": 1000,
+            "processing_threads_num": 1,
+            "deduplication_v2": 0,
+        },
+    )
+    node.query(f"DROP TABLE IF EXISTS {table}_dst")
+    node.query(
+        f"CREATE TABLE {table}_dst (column1 UInt32, column2 UInt32, column3 UInt32) "
+        "ENGINE = MergeTree ORDER BY column1"
+    )
+    node.query(
+        f"CREATE MATERIALIZED VIEW {table}_mv TO {table}_dst AS "
+        f"SELECT column1, column2, column3 FROM {table} WHERE sleepEachRow(0.1) = 0"
+    )
+
+    node.query(f"SYSTEM STOP {table}")
+    generate_random_files(started_cluster, files_path, count=n_files, start_ind=0)
+    node.query(f"SYSTEM START {table}")
+
+    time.sleep(3)  # the batch is now in-flight: files being inserted, none committed yet
+    node.query(f"SYSTEM CANCEL {table}")
+
+    # Every file lands exactly once: count reaches n_files*ROWS and never grows (no duplicate, no loss).
+    wait_dst_count(node, table, n_files * ROWS_PER_FILE)
+    assert_dst_count_stable(node, table, n_files * ROWS_PER_FILE, seconds=8)
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
 def test_stopped_state_does_not_persist_across_restart(started_cluster):
     # The STOP state lives in in-memory action locks, not in on-disk metadata, so it does not survive
     # a server restart: a STOPped table resumes consuming on its own after the node restarts, with no

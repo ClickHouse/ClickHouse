@@ -972,15 +972,25 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
 
         try
         {
+            std::atomic_bool cancelled_mid_insert = false;
             CompletedPipelineExecutor executor(block_io.pipeline);
-            executor.setCancelCallback(
-                [this, cycle_epoch] { return stream_control.isCancelRequested(cycle_epoch); },
-                std::max<UInt64>(100, queue_context->getSettingsRef()[Setting::interactive_delay] / 1000));
+            /// Aborting while the insert is running and reprocessing re-adds the same rows
+            /// that is only safe when deduplication is on.
+            if (is_deduplication_v2)
+                executor.setCancelCallback(
+                    [this, cycle_epoch, &cancelled_mid_insert]
+                    {
+                        if (stream_control.isCancelRequested(cycle_epoch))
+                        {
+                            cancelled_mid_insert = true;
+                            return true;
+                        }
+                        return false;
+                    },
+                    std::max<UInt64>(100, queue_context->getSettingsRef()[Setting::interactive_delay] / 1000));
             executor.execute();
 
-            /// If the pipeline was cancelled because of an interrupt request, route to the failure
-            /// path below so the files are reset for reprocessing instead of marked Processed.
-            if (stream_control.isCancelRequested(cycle_epoch))
+            if (cancelled_mid_insert)
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Consumption was interrupted");
         }
         catch (...)
