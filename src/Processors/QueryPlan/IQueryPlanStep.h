@@ -171,6 +171,7 @@ public:
     /// Returns true if the step can remove any columns from the output using removeUnusedColumns.
     virtual bool canRemoveColumnsFromOutput() const;
 
+    virtual std::vector<size_t> getStepGroups() const { return {0}; }
     virtual String getStepGroupName(size_t) const { return {}; }
 
 protected:
