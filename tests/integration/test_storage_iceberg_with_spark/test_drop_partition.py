@@ -118,7 +118,7 @@ def test_drop_partition_on_spark_table_round_trip(started_cluster_iceberg_with_s
             SELECT operation, summary['removed-data-files'], summary['deleted-records'],
                    summary['total-data-files'], summary['total-records']
             FROM system.iceberg_history
-            WHERE table = '{table_name}'
+            WHERE table = '{table_name}' AND operation = 'DELETE'
             ORDER BY made_current_at DESC
             LIMIT 1
         """
