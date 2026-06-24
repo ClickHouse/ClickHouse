@@ -1,0 +1,46 @@
+asciiCJK tokenizer (was a false positive)
+- substring of CJK run, with index	0
+- substring of CJK run, no index	0
+ngrams tokenizer, needle shorter than n (was a false negative)
+- short needle, with index	1
+- short needle, no index	1
+ngrams tokenizer, substring vs whole token
+- inner substring, with index	0
+- inner substring, no index	0
+- whole word, with index	1
+- whole word, no index	1
+array tokenizer, needle is a real token of a multi-word value (was a false negative)
+- token of multi-word value, with index	1
+- token of multi-word value, no index	1
+splitByString tokenizer, needle inside a token spanning a non-separator boundary (was a false negative)
+- token inside a separator span, with index	1
+- token inside a separator span, no index	1
+asciiCJK tokenizer, connector merges what splitByNonAlpha splits (was a false negative)
+- connector-joined token, with index	1
+- connector-joined token, no index	1
+splitByNonAlpha tokenizer (exact read still used, results unchanged)
+- existing token, with index	1
+- existing token, no index	1
+- missing substring, with index	0
+- missing substring, no index	0
+splitByNonAlpha tokenizer with preprocessor (documented divergence still works, index kept)
+- preprocessed token, with index	1
+- preprocessed token, no index	1
+coarse tokenizer with preprocessor: documented divergence kept, granule pruning suppressed (was a false negative)
+- coarse + preprocessor, with index	1
+- coarse + preprocessor, no index	0
+preprocessed needle maps to no index token but a preprocessor is active (was a false negative)
+- preprocessor + empty index tokens, with index	1
+- preprocessor + empty index tokens, no index	0
+coarse + preprocessor, non-prunable hasToken ANDed with a matching atom (was a false negative)
+- non-prunable hasToken AND matching atom, with index	1
+- non-prunable hasToken AND matching atom, no index	1
+ill-formed needle (contains a separator): index must not hide the row-level BAD_ARGUMENTS
+ill-formed needle with a conservative ngrams index: hint path must not hide the error
+ill-formed raw needle but a preprocessor strips the separator: index stays usable
+- separator-stripping preprocessor, with index	1
+hasTokenOrNull + preprocessor must match hasToken (index rewrites the predicate the same way)
+- hasTokenOrNull, with index	0
+- hasToken, with index	0
+- hasTokenOrNull, no index	1
+- hasToken, no index	1

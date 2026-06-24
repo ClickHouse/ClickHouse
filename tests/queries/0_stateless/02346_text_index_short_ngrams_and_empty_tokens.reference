@@ -22,8 +22,10 @@ SELECT count() FROM tab WHERE hasAllTokens(message, '');
 0
 SELECT tokens('abc', 'ngrams', 4) AS tokens;
 []
+-- hasToken keeps fixed splitByNonAlpha semantics regardless of the index tokenizer, so 'abc' is a real token of row 1.
+-- The ngrams index cannot represent that, so hasToken does not use it (see issue #107186) and the row is matched.
 SELECT count() FROM tab WHERE hasToken(message, 'abc');
-0
+1
 -- Arrays
 SELECT count() FROM tab WHERE hasAnyTokens(arr, ['abc']);
 0
@@ -102,8 +104,10 @@ SELECT count() FROM tab WHERE hasAllTokens(message, '');
 0
 SELECT tokens('abc', 'ngrams', 4) AS tokens;
 []
+-- hasToken keeps fixed splitByNonAlpha semantics regardless of the index tokenizer, so 'abc' is a real token of row 1.
+-- The ngrams index cannot represent that, so hasToken does not use it (see issue #107186) and the row is matched.
 SELECT count() FROM tab WHERE hasToken(message, 'abc');
-0
+1
 -- Arrays
 SELECT count() FROM tab WHERE hasAnyTokens(arr, ['abc']);
 0

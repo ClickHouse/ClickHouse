@@ -333,7 +333,11 @@ void TextIndexAnalyzer::processTokenOperation(std::string_view token, Operation 
 
         if (query_builder.is_failed)
         {
-            if (global_search_mode == TextSearchMode::All)
+            /// A non-prunable query's index tokens are not a necessary condition for the row-level match
+            /// (a coarse hasToken kept only to drive the preprocessor rewrite), so a missing token must not
+            /// fail the whole `All` predicate. Its builder is never read by mayBeTrueOnGranule, which
+            /// short-circuits on prunable, so leaving it failed here is harmless; only skip the escalation.
+            if (global_search_mode == TextSearchMode::All && query_builder.query->prunable)
                 always_false = true;
 
             /// Erase the failed query for the full declared token set so yet-unseen tokens stop passing isTokenNeeded.

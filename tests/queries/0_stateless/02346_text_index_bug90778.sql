@@ -22,10 +22,12 @@ WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 SELECT count() FROM tab WHERE hasToken(col, 'config');
 
+-- hasToken keeps fixed splitByNonAlpha semantics, so the array tokenizer is not a necessary condition for it
+-- (issue #107186): the index is declined entirely and there is no __text_index INPUT (the next query returns nothing).
 SELECT trim(explain) FROM
 (
     EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasToken(col, 'config')
-    SETTINGS use_skip_indexes_on_data_read = 1, query_plan_text_index_add_hint = 1, query_plan_direct_read_from_text_index = 1 -- CI may inject False; text index hint INPUT actions not added to EXPLAIN output
+    SETTINGS use_skip_indexes_on_data_read = 1, query_plan_text_index_add_hint = 1, query_plan_direct_read_from_text_index = 1
 )
 WHERE explain LIKE '%INPUT%\_\_text_index%';
 

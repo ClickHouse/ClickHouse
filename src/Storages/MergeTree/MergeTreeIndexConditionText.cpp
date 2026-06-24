@@ -224,17 +224,42 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getHintOrNoneMode() const
     return settings[Setting::query_plan_text_index_add_hint] ? TextIndexDirectReadMode::Hint : TextIndexDirectReadMode::None;
 }
 
+bool MergeTreeIndexConditionText::isConservativeHasTokenTokenizer() const
+{
+    /// Preprocessor-independent: a preprocessor transforms the needle and the indexed text the same way,
+    /// so it does not change whether the index tokens are a necessary condition for a row-level match.
+    const auto type = tokenizer->getType();
+    return type == ITokenizer::Type::SplitByNonAlpha || type == ITokenizer::Type::Ngrams;
+}
+
 TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const String & function_name) const
 {
-    if (function_name == "hasToken"
-        || function_name == "hasAnyTokens"
+    bool is_array_tokenizer = typeid_cast<const ArrayTokenizer *>(tokenizer);
+    bool is_split_by_non_alpha_tokenizer = typeid_cast<const SplitByNonAlphaTokenizer *>(tokenizer);
+    bool has_preprocessor = preprocessor && preprocessor->hasActions();
+
+    if (function_name == "hasToken")
+    {
+        /// hasToken has fixed splitByNonAlpha semantics. Exact direct read from the posting lists is sound
+        /// only when the index produces the same tokens: splitByNonAlpha without a preprocessor.
+        if (is_split_by_non_alpha_tokenizer && !has_preprocessor)
+            return TextIndexDirectReadMode::Exact;
+        /// A conservative tokenizer (splitByNonAlpha or ngrams) keeps the index tokens a necessary
+        /// condition for a match, so the index is a valid hint and re-evaluation runs on the rows.
+        if (isConservativeHasTokenTokenizer())
+            return getHintOrNoneMode();
+        /// A coarser tokenizer can omit a row-level token: a hint virtual column would answer "needle
+        /// present in the row's index tokens" (not a necessary condition) and drop a matching row. Use
+        /// None so no hint column is built; the condition still drives the preprocessor rewrite and the
+        /// preprocessed row-level predicate decides (granule pruning is suppressed, see traverseFunctionNode).
+        return TextIndexDirectReadMode::None;
+    }
+
+    if (function_name == "hasAnyTokens"
         || function_name == "hasAllTokens")
     {
         return TextIndexDirectReadMode::Exact;
     }
-
-    bool is_array_tokenizer = typeid_cast<const ArrayTokenizer *>(tokenizer);
-    bool has_preprocessor = preprocessor && preprocessor->hasActions();
 
     if (function_name == "equals"
         || function_name == "has"
@@ -361,8 +386,11 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
         else if (element.function == RPNElement::FUNCTION_EQUALS)
         {
             chassert(element.text_search_queries.size() == 1);
+            /// A non-prunable atom (hasToken on a coarser tokenizer) must not drop a granule: its index
+            /// tokens are not a necessary condition for the row-level match, so treat it as may-be-true
+            /// and leave the decision to the (preprocessed) row-level predicate.
             const auto & text_search_query = element.text_search_queries.front();
-            bool exists_in_granule = granule->hasAllQueryTokensOrEmpty(*text_search_query);
+            bool exists_in_granule = !text_search_query->prunable || granule->hasAllQueryTokensOrEmpty(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
         else if (element.function == RPNElement::FUNCTION_HAS_ANY_ELEMENTS)
@@ -533,6 +561,17 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringToTokens(con
     const String value = preprocessor->processConstant(field.safeGet<String>());
     tokenizer->stringToTokens(value.data(), value.size(), tokens);
     return tokenizer->compactTokens(tokens);
+}
+
+bool MergeTreeIndexConditionText::isIllFormedHasTokenNeedle(const Field & field) const
+{
+    if (field.getType() != Field::Types::String)
+        return false;
+    /// Validate the preprocessed (rewritten) needle: it is what the row-level hasToken evaluates after the
+    /// preprocessor rewrite. Mirror HasTokenImpl::isTokenSeparator (an ASCII non-alphanumeric byte), which is
+    /// what makes row-level hasToken throw BAD_ARGUMENTS / return NULL.
+    const String value = preprocessor->processConstant(field.safeGet<String>());
+    return std::ranges::any_of(value, [](char c) { return isASCII(c) && !isAlphaNumericASCII(c); });
 }
 
 VectorWithMemoryTracking<String> MergeTreeIndexConditionText::substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const
@@ -925,22 +964,48 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             return false;
 
         auto tokens = stringToTokens(value_field);
-        if (tokens.empty())
+        /// The index cannot stand in for the row-level predicate when the preprocessed needle either maps to no
+        /// index token (separator-only, or shorter than the tokenizer can represent, e.g. "abc" with ngrams(4)),
+        /// or contains a token separator (row-level hasToken then throws BAD_ARGUMENTS / returns NULL for
+        /// hasTokenOrNull, and the index must not prune or replace the predicate and hide that).
+        if (tokens.empty() || isIllFormedHasTokenNeedle(value_field))
         {
-            const String & string_needle = value_field.safeGet<String>();
-            if (!string_needle.empty())
-            {
-                /// hasToken uses splitByNonAlpha as its tokenizer, so:
-                ///  - A needle without any word character (alphanumeric or non-ASCII) is invalid.
-                ///  - Bypass the index in that case so the row-level evaluation throws BAD_ARGUMENTS (or returns NULL for hasTokenOrNull)
-                ///  -- Consistnt with the no-index behaviour.
-                /// If the needle does contain word characters (e.g. "abc" with ngrams(4)):
-                ///  - It is valid but too short for the index's tokenizer:
-                ///  -- Fall through to push "" so all granules are pruned and the query returns 0 rows.
-                if (std::ranges::none_of(string_needle, [](unsigned char c) { return !isASCII(c) || isAlphaNumericASCII(c); }))
-                    return false;
-            }
-            tokens.push_back("");
+            /// Without a preprocessor the index offers nothing over row-level evaluation: decline and let
+            /// the raw row-level hasToken decide (it returns the match, throws BAD_ARGUMENTS, or returns
+            /// NULL for an invalid needle).
+            if (!preprocessor || !preprocessor->hasActions())
+                return false;
+
+            /// With a preprocessor the condition still carries the documented hasToken rewrite
+            /// (hasToken(s, n) -> hasToken(preproc(s), preproc(n))). Keep it in None mode and non-prunable
+            /// so the index neither prunes a granule nor replaces the predicate; the preprocessed row-level
+            /// hasToken decides (including its own BAD_ARGUMENTS / NULL for an ill-formed needle). The
+            /// posting-list tokens are unusable here, so drop them. Same shape as the empty-token case.
+            tokens.clear();
+            out.function = RPNElement::FUNCTION_EQUALS;
+            auto query = std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, TextIndexDirectReadMode::None, std::move(tokens));
+            query->prunable = false;
+            out.text_search_queries.emplace_back(std::move(query));
+            return true;
+        }
+
+        if (!isConservativeHasTokenTokenizer())
+        {
+            /// A coarser tokenizer (array/splitByString/asciiCJK/sparseGrams) can omit a row-level token,
+            /// so the needle's index tokens are not a necessary condition for a match. Without a
+            /// preprocessor the index adds nothing over row-level evaluation: decline.
+            if (!preprocessor || !preprocessor->hasActions())
+                return false;
+
+            /// With a preprocessor the index path stays useful: it carries the documented hasToken
+            /// preprocessor rewrite (the needle and the indexed text are transformed the same way). Keep
+            /// the condition so that rewrite runs, but mark it non-prunable so granule pruning cannot drop
+            /// a row the preprocessed row-level predicate would match.
+            out.function = RPNElement::FUNCTION_EQUALS;
+            auto query = std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens));
+            query->prunable = false;
+            out.text_search_queries.emplace_back(std::move(query));
+            return true;
         }
 
         out.function = RPNElement::FUNCTION_EQUALS;
