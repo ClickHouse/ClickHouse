@@ -68,9 +68,9 @@ struct UniqueKeyDeleteRowFinderStats
 ///   - A malformed `_part` (cannot parse partition id) from the read pipeline
 ///     is a should-never-happen; `find()` throws (fail-closed) rather than
 ///     silently under-deleting that part's rows.
-///   - The row finder does NOT take the per-partition UK mutex; the caller
-///     is responsible for acquiring it before resolving part_name →
-///     DataPartPtr and writing bitmaps.
+///   - The row finder does NOT take the partition's writer guard; the caller
+///     is responsible for acquiring it (`controller.lockForWrite()`) before
+///     resolving part_name → DataPartPtr and writing bitmaps.
 struct UniqueKeyDeleteRowFinder
 {
     struct Result

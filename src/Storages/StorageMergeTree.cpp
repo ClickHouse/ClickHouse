@@ -1340,7 +1340,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 {
     /// Merges are disabled for UNIQUE KEY tables: a background merge can outdate
     /// a DELETE's target part between part-resolution and marker publish (the
-    /// per-partition UK mutex guards DELETE but not merges), silently dropping the
+    /// partition's writer guard serializes DELETEs but not merges), silently dropping the
     /// delete. Until merge-side bitmap forwarding + late-kill lands, gate every
     /// merge here — the single chokepoint for both background selection and the
     /// OPTIMIZE -> merge() path. Marker + data parts simply accumulate for now.

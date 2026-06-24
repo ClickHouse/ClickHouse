@@ -53,8 +53,9 @@ public:
 
     /// Install `bitmap` for `(storage, part_id)` at `csn`. Atomic. Caller has
     /// already computed the cumulative `prev_bitmap ∪ new_kills`, MUST hold the
-    /// per-partition UK mutex, and has fsync'd the per-part manifest before this
-    /// call. Throws `LOGICAL_ERROR` if `csn` is not strictly greater than every
+    /// partition's writer guard (`controller.lockForWrite()`), and has fsync'd
+    /// the per-part manifest before this call. Throws `LOGICAL_ERROR` if `csn`
+    /// is not strictly greater than every
     /// previously installed version for this part (monotonicity).
     void installBitmap(
         IDataPartStorage & storage,
@@ -96,7 +97,7 @@ public:
     /// rollback and recovery's orphan tmp-scan to reclaim a bitmap named in
     /// an aborted commit's `bitmaps_created`. Caller must serialize this with
     /// `installBitmap` / `gcObsoleteBitmaps` / `dropPart` for the same part
-    /// under the per-partition UK mutex (see `installBitmap`).
+    /// under the partition's writer guard (see `installBitmap`).
     void removeBitmap(
         IDataPartStorage & storage,
         const std::string & part_id,

@@ -66,9 +66,20 @@ The same `commit` drives `INSERT` and `DELETE`. The request carries a `staged` p
 (`INSERT` → data part, `DELETE` → marker part) and a `touched` list of older parts with their kill
 deltas (`INSERT` → superseded duplicate keys, `DELETE` → matched rows; either may be empty).
 
+A whole write statement is serialized per partition by the WRITER lock, held by the caller across
+`resolve → stage → commit`. Without it, two concurrent writers could each read `prev` before either
+publishes and the later would overwrite the earlier's kills (lost update). It is the OUTER lock and
+distinct from the publish lock `attemptCommit` takes internally; readers never take it.
+
+- **Local** (`LocalCommitCoordinator`) — `lockForWrite()` returns a held per-partition `writer_mutex`
+  (pessimistic). Lock order: `writer_mutex` (outer) → publish `commit_lock` (inner).
+- **Shared** (future, Keeper-CAS) — `lockForWrite()` returns an empty (unlocked) guard; serialization
+  is the CAS retry loop in `commit`, not a process-local mutex.
+
 ```
-INSERT (data part)                 DELETE (marker part)
-        │                                  │
+                                                            ── controller.lockForWrite()  (caller holds across the statement)
+INSERT (data part)                 DELETE (marker part)        Local: per-partition writer_mutex
+        │                                  │                   Shared: empty guard (CAS retry serializes)
         └────────────────┬────────────────┘
                          ▼
    commit()                                                 ── PartitionTxnController::commit

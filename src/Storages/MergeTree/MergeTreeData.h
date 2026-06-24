@@ -39,7 +39,6 @@
 #include <Common/ThreadPool_fwd.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/UniqueKey/Txn/SnapshotPinning.h>
-#include <Storages/MergeTree/UniqueKey/Txn/UniqueKeyPartitionMutex.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -789,15 +788,6 @@ public:
     DataPartsVector getVisibleDataPartsVectorInPartition(ContextPtr local_context, const String & partition_id, const DataPartsAnyLock & lock) const;
     DataPartsVector getVisibleDataPartsVectorInPartition(ContextPtr local_context, const String & partition_id) const;
     DataPartsVector getVisibleDataPartsVectorInPartitions(ContextPtr local_context, const std::unordered_set<String> & partition_ids) const;
-
-    /// UNIQUE KEY — return the per-partition mutex used to serialize
-    /// INSERT / DELETE / merge-commit writers within a partition. Stable
-    /// for the table's lifetime; repeated calls for the same partition_id
-    /// return the same mutex.
-    ///
-    /// SharedMergeTree must NOT call this — it uses optimistic CAS via
-    /// Keeper and has no process-local equivalent.
-    std::shared_ptr<std::mutex> getOrCreatePartitionMutex(const String & partition_id) const;
 
     /// UNIQUE KEY — lazily return the partition's transaction controller. Owned
     /// by `unique_key_txn_controllers`, valid for the table's lifetime (no eviction).
@@ -1677,18 +1667,12 @@ protected:
     mutable std::mutex patch_parts_metadata_mutex;
     mutable std::unordered_map<String, StorageMetadataPtr> patch_parts_metadata_cache;
 
-    /// UNIQUE KEY — per-partition writer mutex registry. INSERT / DELETE /
-    /// merge-commit hold the partition's mutex across their commit window
-    /// to serialize concurrent writers in the same partition. The registry
-    /// object is cheap (empty map + map-level mutex); kept `mutable`
-    /// because `getOrCreatePartitionMutex` is logically `const` from the
-    /// caller's point of view (observing / installing an ephemeral
-    /// coordination primitive, not mutating table data).
-    mutable UniqueKeyPartitionMutex unique_key_partition_mutex;
-
     /// UNIQUE KEY — per-partition transaction controllers, lazily populated by
-    /// `getOrCreateTxnController`. `mutable` for the same reason as
-    /// `unique_key_partition_mutex`.
+    /// `getOrCreateTxnController`. Each controller owns the partition's writer
+    /// mutex (handed out via `controller.lockForWrite()`), so there is no
+    /// separate mutex registry. `mutable` because `getOrCreateTxnController` is
+    /// logically `const` from the caller's point of view (lazily materializing
+    /// an ephemeral coordination primitive, not mutating table data).
     mutable std::mutex unique_key_txn_controllers_mutex;
     mutable std::unordered_map<String, std::unique_ptr<UniqueKeyTxn::PartitionTxnController>> unique_key_txn_controllers;
 

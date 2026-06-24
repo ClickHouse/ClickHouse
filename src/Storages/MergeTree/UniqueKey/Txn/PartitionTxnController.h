@@ -73,12 +73,13 @@ using QuerySnapshotResult = QuerySnapshot;
 ///
 /// Threading contract:
 ///   - `commit` is NOT thread-safe on its own — the caller must hold the
-///     partition's UK mutex (`MergeTreeData::getOrCreatePartitionMutex`)
-///     across the whole call. The coordinator's INTERNAL mutex serializes only
+///     partition's writer guard (`controller.lockForWrite()`) across the whole
+///     write statement. The coordinator's INTERNAL publish lock serializes only
 ///     the publish region against `takeQuerySnapshot`'s atomic capture.
 ///   - `takeQuerySnapshot` is safe from any thread, including
-///     concurrently with `commit` — the coordinator's internal mutex
+///     concurrently with `commit` — the coordinator's internal lock
 ///     makes `(parts, csn, pin)` capture atomic with the publish region.
+///     Readers do NOT take the writer mutex.
 ///   - `runGcRound` runs on the background scheduler.
 ///
 /// Fail-closed poison: if a `commit` rollback cannot remove an already-installed
@@ -107,13 +108,19 @@ public:
     /// coordinator (on Local the coordinator never reports a conflict, so no
     /// retry).
     ///
-    /// Concurrency contract: the CALLER must hold the partition's UK mutex
-    /// (`MergeTreeData::getOrCreatePartitionMutex(partition_id)`) across the
-    /// entire `commit` call. `commit` reads `prev_bitmap` from
-    /// `IBitmapStore::readBitmap` BEFORE entering the coordinator's publish
-    /// lock, so two unserialized `commit` calls would each cumulate against a
-    /// stale `prev_bitmap` and the later would overwrite the earlier's kills.
+    /// Concurrency contract: the CALLER must hold the partition's writer guard
+    /// (`controller.lockForWrite()`) across the entire write statement. `commit`
+    /// reads `prev_bitmap` from `IBitmapStore::readBitmap` BEFORE entering the
+    /// coordinator's publish lock, so two unserialized `commit` calls would each
+    /// cumulate against a stale `prev_bitmap` and the later would overwrite the
+    /// earlier's kills.
     CommitResult commit(CommitRequest req);
+
+    /// Per-partition writer lock; forwards to the coordinator. The caller holds
+    /// the returned guard across the whole write statement (resolve → stage →
+    /// commit). Local returns a held per-partition mutex (pessimistic); a future
+    /// Shared coordinator returns an empty guard (CAS retry carries serialization).
+    [[nodiscard]] std::unique_lock<std::mutex> lockForWrite() { return coordinator->lockForWrite(); }
 
     /// Atomic snapshot capture + pin install. Returns a `Pinned<>` that holds
     /// the snapshot + pin until destroyed (RAII).

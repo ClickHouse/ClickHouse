@@ -6,7 +6,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyReadFilter.h>
-#include <Storages/MergeTree/UniqueKey/Txn/UniqueKeyPartitionMutex.h>
 #include <Storages/MergeTree/UniqueKey/Txn/PartitionTxnController.h>
 #include <Storages/MergeTree/UniqueKey/Txn/MakeLocalStrategies.h>
 #include <Storages/PartitionCommands.h>
@@ -6622,11 +6621,6 @@ MergeTreeData::getActivePartsInPartitionShared(const String & partition_id) cons
         data_parts_by_state_and_info.lower_bound(state_with_partition),
         data_parts_by_state_and_info.upper_bound(state_with_partition));
     return std::make_shared<const DataPartsVector>(std::move(parts));
-}
-
-std::shared_ptr<std::mutex> MergeTreeData::getOrCreatePartitionMutex(const String & partition_id) const
-{
-    return unique_key_partition_mutex.getOrCreate(partition_id);
 }
 
 UniqueKeyTxn::PartitionTxnController & MergeTreeData::getOrCreateTxnController(const String & partition_id) const

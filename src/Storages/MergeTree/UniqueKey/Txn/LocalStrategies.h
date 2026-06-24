@@ -13,13 +13,20 @@
 namespace DB::UniqueKeyTxn
 {
 
-/// Local MergeTree implementation: `commit_lock` + in-memory `csn`.
-/// `attemptCommit` runs `staging(tentative_csn)` (engine-specific publish:
-/// rename + fsync(active/)) under the mutex, then bumps `csn`. Pessimistic:
-/// it always assigns a csn under the lock, never reporting a conflict.
+/// Local MergeTree implementation: `writer_mutex` + `commit_lock` + in-memory
+/// `csn`. `attemptCommit` runs `staging(tentative_csn)` (engine-specific
+/// publish: rename + fsync(active/)) under `commit_lock`, then bumps `csn`.
+/// Pessimistic: it always assigns a csn under the lock, never reporting a
+/// conflict.
 ///
-/// `commit_lock` vs the storage-level `UniqueKeyPartitionMutex`: distinct
-/// locks, both required. See `Txn/README.md` for the protocol.
+/// Two distinct locks, both required (see `Txn/README.md` for the protocol):
+///   - `writer_mutex` (OUTER, writers only): `lockForWrite` hands a held guard
+///     to the caller, which holds it across the whole write statement so two
+///     concurrent writers in the same partition can't both read `prev` bitmaps
+///     before either publishes and lost-update.
+///   - `commit_lock` (INNER): linearizes a single commit's publish and a
+///     lock-free reader's snapshot capture (`withinSnapshotRegion`). Readers
+///     take ONLY this lock, never `writer_mutex`.
 class LocalCommitCoordinator : public ICommitCoordinator
 {
 public:
@@ -35,10 +42,18 @@ public:
 
     void withinSnapshotRegion(std::function<void(CSN)> fn) override;
 
+    std::unique_lock<std::mutex> lockForWrite() override { return std::unique_lock(writer_mutex); }
+
 private:
-    /// Linearizes a commit's publish and a lock-free reader's snapshot capture;
-    /// distinct from the storage-level `UniqueKeyPartitionMutex` that serializes
-    /// whole writer statements.
+    /// Per-partition writer lock (OUTER). Serializes whole write statements so
+    /// the read-prev → publish window is not interleaved across writers.
+    /// Distinct from `commit_lock`: held by the CALLER across the statement,
+    /// never re-entered inside this class.
+    std::mutex writer_mutex;
+
+    /// Linearizes a single commit's publish and a lock-free reader's snapshot
+    /// capture (INNER). Distinct from `writer_mutex`, which serializes whole
+    /// writer statements.
     mutable std::mutex commit_lock;
     CSN csn = INVALID_CSN;
 };

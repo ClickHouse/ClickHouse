@@ -12,7 +12,6 @@
 #include <Storages/MergeTree/UniqueKey/Txn/PartitionTxnController.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyDeleteRowFinder.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyMarkerPart.h>
-#include <Storages/MergeTree/UniqueKey/Txn/UniqueKeyPartitionMutex.h>
 #include <Storages/MergeTree/UniqueKey/Txn/UniqueKeyManifest.h>
 #include <Storages/StorageMergeTree.h>
 
@@ -43,22 +42,24 @@ namespace
 /// Run one partition's DELETE commit through the per-partition
 /// `PartitionTxnController`. Returns the number of touched targets actually
 /// committed (skipped-outdated targets are accounted by the caller). Caller
-/// holds the per-partition UK mutex for the duration.
+/// holds the partition's writer guard (`controller.lockForWrite()`) for the
+/// duration.
 size_t commitDeleteForPartition(
     StorageMergeTree & storage,
+    UniqueKeyTxn::PartitionTxnController & txn_controller,
     const String & partition_id,
     const std::vector<UniqueKeyTxn::UniqueKeyDeleteRowsForPart> & parts_in_partition,
     LoggerPtr log,
     size_t & out_skipped_outdated_parts,
     std::unique_ptr<PlainCommittingBlockHolder> marker_block_holder)
 {
-    /// Resolve part_name → DataPartPtr under the UK mutex. NOTE: the UK
-    /// partition mutex is DELETE-only — merges do NOT take it. So resolving
-    /// here only freezes the part set against other DELETEs, not against
-    /// merges; the exact-match skip below catches a merge that committed
-    /// BEFORE this resolution, but a merge that outdates a target AFTER it
-    /// (between this critical section and the bitmap install) is not caught
-    /// here — see the install-side note on that race below.
+    /// Resolve part_name → DataPartPtr under the writer guard. NOTE: the writer
+    /// mutex is DELETE-only — merges do NOT take it. So resolving here only
+    /// freezes the part set against other DELETEs, not against merges; the
+    /// exact-match skip below catches a merge that committed BEFORE this
+    /// resolution, but a merge that outdates a target AFTER it (between this
+    /// critical section and the bitmap install) is not caught here — see the
+    /// install-side note on that race below.
     struct ResolvedTarget
     {
         MergeTreeData::DataPartPtr part;
@@ -90,14 +91,14 @@ size_t commitDeleteForPartition(
             /// best-effort skip otherwise.
             ///
             /// TODO(unique-key): this catches only a pre-resolution merge. A
-            /// post-resolution merge (merges don't take the UK mutex) is a
+            /// post-resolution merge (merges don't take the writer mutex) is a
             /// silent under-delete until merge-side late-kill lands; re-running
             /// the DELETE clears the survivors.
             if (part->name != entry.part_name)
             {
                 LOG_DEBUG(log,
                     "UNIQUE KEY DELETE: skipping part '{}' — merged into covering part '{}' "
-                    "between SELECT and UK mutex; stale _part_offset values cannot be remapped",
+                    "between SELECT and the writer guard; stale _part_offset values cannot be remapped",
                     entry.part_name, part->name);
                 ++out_skipped_outdated_parts;
                 continue;
@@ -188,7 +189,6 @@ size_t commitDeleteForPartition(
         }
     };
 
-    auto & txn_controller = storage.getOrCreateTxnController(partition_id);
     auto result = txn_controller.commit(std::move(req));
     chassert(result.csn != UniqueKeyTxn::INVALID_CSN,
         "UNIQUE KEY DELETE: PartitionTxnController::commit returned INVALID_CSN");
@@ -216,8 +216,8 @@ void executeUniqueKeyDelete(
     /// bitmap-dead row stays invisible and the new row supersedes it.
     ///
     /// NOT a transaction. The atomic unit is one partition's commit (marker
-    /// part + per-target bitmap installs under that partition's UK mutex); the
-    /// loop below visits partitions independently with no cross-partition
+    /// part + per-target bitmap installs under that partition's writer guard);
+    /// the loop below visits partitions independently with no cross-partition
     /// atomicity or rollback. A crash or mid-loop error leaves the
     /// already-committed partitions deleted and the rest untouched — re-running
     /// the same DELETE is the recovery (idempotent: already-dead rows are
@@ -243,8 +243,12 @@ void executeUniqueKeyDelete(
 
     for (auto & [partition_id, parts_in_partition] : rf.by_partition)
     {
-        auto uk_mutex = storage.getOrCreatePartitionMutex(partition_id);
-        std::lock_guard<std::mutex> partition_lock(*uk_mutex);
+        /// Acquire the partition's writer guard and hold it across the whole
+        /// commit (resolve → stage → commit). On Local this is a held
+        /// per-partition mutex; the guard closes the read-prev → publish window
+        /// against a concurrent DELETE in the same partition.
+        auto & txn_controller = storage.getOrCreateTxnController(partition_id);
+        auto partition_lock = txn_controller.lockForWrite();
         Stopwatch mutex_hold_watch;
 
         /// Allocated here rather than in the anon-namespace helper below,
@@ -253,7 +257,7 @@ void executeUniqueKeyDelete(
         auto marker_block_holder = storage.allocateBlockNumber(CommittingBlock::Op::NewPart);
 
         total_committed_rows += commitDeleteForPartition(
-            storage, partition_id, parts_in_partition, log, skipped_outdated_parts,
+            storage, txn_controller, partition_id, parts_in_partition, log, skipped_outdated_parts,
             std::move(marker_block_holder));
 
         ProfileEvents::increment(
@@ -264,7 +268,7 @@ void executeUniqueKeyDelete(
 
     LOG_DEBUG(log,
         "UNIQUE KEY DELETE: predicate matched {} rows across {} parts; committed {} newly-dead rows; "
-        "{} parts skipped (outdated under UK mutex)",
+        "{} parts skipped (outdated under writer guard)",
         rf.stats.total_matched_rows, rf.stats.parts_with_hits, total_committed_rows, skipped_outdated_parts);
 
     /// Loud signal for the DELETE-vs-merge skip (see commitDeleteForPartition):

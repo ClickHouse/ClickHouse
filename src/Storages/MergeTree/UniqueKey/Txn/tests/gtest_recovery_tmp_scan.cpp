@@ -64,6 +64,7 @@ public:
     /// Never invoked by recovery; stubs to satisfy the interface.
     CSN attemptCommit(PublishAction) override { return INVALID_CSN; }
     void withinSnapshotRegion(std::function<void(CSN)>) override {}
+    std::unique_lock<std::mutex> lockForWrite() override { return {}; }
 };
 
 class StubPinRegistry : public IPinRegistry

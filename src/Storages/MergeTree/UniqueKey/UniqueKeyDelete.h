@@ -14,9 +14,10 @@ class StorageMergeTree;
 ///   1. Build internal `SELECT _part, _part_offset FROM t WHERE <pred>` to
 ///      resolve `(part_name, row_number)` pairs (reuses MergeTree's
 ///      predicate-pushdown / PREWHERE / primary-key skipping).
-///   2. Per partition: take the per-partition UK mutex, resolve part pointers,
-///      and commit a marker-part staged commit that writes each affected
-///      part's cumulative delete-bitmap sidecar.
+///   2. Per partition: take the partition's writer guard
+///      (`controller.lockForWrite()`), resolve part pointers, and commit a
+///      marker-part staged commit that writes each affected part's cumulative
+///      delete-bitmap sidecar.
 ///   3. Increment `UniqueKeyDeleteRows` by the rows committed.
 ///
 /// Writes only a 0-row marker part (no data rows, no mutation entry);

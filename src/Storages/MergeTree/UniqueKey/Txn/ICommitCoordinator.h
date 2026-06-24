@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/UniqueKey/Txn/UniqueKeyTxnTypes.h>
 
 #include <functional>
+#include <mutex>
 
 namespace DB::UniqueKeyTxn
 {
@@ -56,6 +57,20 @@ public:
     /// pin under `fn` observes one commit boundary. `fn` MUST NOT re-enter the
     /// coordinator (the region is not reentrant).
     virtual void withinSnapshotRegion(std::function<void(CSN)> fn) = 0;
+
+    /// Acquire the per-partition WRITER lock; the caller holds the returned
+    /// guard across the whole write statement (resolve → stage → commit), so
+    /// two concurrent writers in the same partition can't both read `prev`
+    /// bitmaps before either publishes and lost-update. This is DISTINCT from
+    /// the publish-region lock `attemptCommit`/`withinSnapshotRegion` take
+    /// internally: the writer lock is held strictly above this interface and
+    /// is the OUTER lock (writers only); readers never take it.
+    ///
+    /// Local is pessimistic: it returns a held lock on a per-partition writer
+    /// mutex. The future optimistic Shared coordinator (see the class TODO)
+    /// will return an empty (unlocked) guard — serialization is the CAS retry
+    /// loop, not a process-local mutex.
+    [[nodiscard]] virtual std::unique_lock<std::mutex> lockForWrite() = 0;
 };
 
 }

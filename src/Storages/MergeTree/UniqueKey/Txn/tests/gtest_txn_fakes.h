@@ -236,6 +236,9 @@ public:
     }
 
     void withinSnapshotRegion(std::function<void(CSN)> fn) override { fn(csn); }
+
+    /// Tests drive the controller single-threaded; an empty guard suffices.
+    std::unique_lock<std::mutex> lockForWrite() override { return {}; }
 };
 
 struct Fixture
