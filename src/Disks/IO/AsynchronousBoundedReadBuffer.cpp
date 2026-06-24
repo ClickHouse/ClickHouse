@@ -307,19 +307,28 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
 
     file_offset_of_buffer_end = result.file_offset_of_buffer_end;
 
-    chassert(file_offset_of_buffer_end <= getFileSize());
+    /// The reader must not hand back data past the boundary we are reading up to.
+    /// That boundary is read_until_position when set, otherwise the file size.
+    /// The known file size is a snapshot taken when this buffer was created: an
+    /// object-storage file (e.g. a data-lake metadata file) may be rewritten by a
+    /// concurrent external writer and grow past it, in which case the reader returns
+    /// more bytes than we recorded. Clamp to the known boundary instead of aborting,
+    /// the same way we already handle overshooting read_until_position.
+    std::optional<size_t> upper_bound = read_until_position;
+    if (auto known_file_size = tryGetFileSize(); known_file_size && (!upper_bound || *known_file_size < *upper_bound))
+        upper_bound = known_file_size;
 
-    if (read_until_position && (file_offset_of_buffer_end > *read_until_position))
+    if (upper_bound && file_offset_of_buffer_end > *upper_bound)
     {
-        size_t excessive_bytes_read = file_offset_of_buffer_end - *read_until_position;
+        size_t excessive_bytes_read = file_offset_of_buffer_end - *upper_bound;
 
         if (excessive_bytes_read > working_buffer.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "File offset moved too far: old_file_offset = {}, new_file_offset = {}, read_until_position = {}, bytes_read = {}",
-                            old_file_offset_of_buffer_end, file_offset_of_buffer_end, *read_until_position, bytes_read);
+                            "File offset moved too far: old_file_offset = {}, new_file_offset = {}, upper_bound = {}, bytes_read = {}",
+                            old_file_offset_of_buffer_end, file_offset_of_buffer_end, *upper_bound, bytes_read);
 
         working_buffer.resize(working_buffer.size() - excessive_bytes_read);
-        file_offset_of_buffer_end = *read_until_position;
+        file_offset_of_buffer_end = *upper_bound;
     }
 
     return !working_buffer.empty();
