@@ -22,8 +22,10 @@ A Bloom filter is a probabilistic data structure. It may return **false positive
 ## Syntax {#syntax}
 
 ```sql
-groupBloomFilter([expected_elements[, false_positive_rate[, seed]]])(column)
-groupBloomFilterState([expected_elements[, false_positive_rate[, seed]]])(column)
+groupBloomFilter(column)
+groupBloomFilterState(column)
+groupBloomFilter(expected_elements[, false_positive_rate[, seed]])(column)
+groupBloomFilterState(expected_elements[, false_positive_rate[, seed]])(column)
 groupBloomFilter(filter_size_bytes, num_hashes[, seed])(column)
 groupBloomFilterState(filter_size_bytes, num_hashes[, seed])(column)
 ```

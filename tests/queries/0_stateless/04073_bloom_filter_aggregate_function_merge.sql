@@ -29,20 +29,20 @@ SELECT bloomFilterContains(
 FROM numbers(1);
 
 -- Merge of incompatible filters (different size) must throw.
--- UNION ALL of states with different parameters produces a Variant type,
--- which is rejected at the type-checking level before merge is attempted.
+-- UNION ALL of states with different parameters is rejected at the
+-- type-checking level before merge is attempted.
 SELECT groupBloomFilterMerge(state) FROM (
     SELECT groupBloomFilterState(100)(number) AS state FROM numbers(10)
     UNION ALL
     SELECT groupBloomFilterState(200)(number) AS state FROM numbers(10)
-); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+); -- { serverError NO_COMMON_TYPE }
 
 -- Merge of incompatible filters (different seed) must throw.
 SELECT groupBloomFilterMerge(state) FROM (
     SELECT groupBloomFilterState(1000, 0.01, 0)(number) AS state FROM numbers(10)
     UNION ALL
     SELECT groupBloomFilterState(1000, 0.01, 42)(number) AS state FROM numbers(10)
-); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+); -- { serverError NO_COMMON_TYPE }
 
 -- Merge with empty rhs: result equals lhs
 SELECT bloomFilterContains(

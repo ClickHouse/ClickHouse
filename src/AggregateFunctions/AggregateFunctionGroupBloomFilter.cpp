@@ -332,8 +332,10 @@ The parameter form is selected by the second parameter: if it is a `Float64` val
 it is interpreted as `false_positive_rate`; otherwise, it is interpreted as `num_hashes`.
     )";
     FunctionDocumentation::Syntax syntax = R"(
-groupBloomFilter([expected_elements[, false_positive_rate[, seed]]])(column)
-groupBloomFilterState([expected_elements[, false_positive_rate[, seed]]])(column)
+groupBloomFilter(column)
+groupBloomFilterState(column)
+groupBloomFilter(expected_elements[, false_positive_rate[, seed]])(column)
+groupBloomFilterState(expected_elements[, false_positive_rate[, seed]])(column)
 groupBloomFilter(filter_size_bytes, num_hashes[, seed])(column)
 groupBloomFilterState(filter_size_bytes, num_hashes[, seed])(column)
     )";
