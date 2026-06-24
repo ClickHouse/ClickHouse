@@ -17,16 +17,17 @@ ${CLICKHOUSE_CLIENT} --query "backup table ${CLICKHOUSE_DATABASE}.\`04409_t\` to
 
 ${CLICKHOUSE_CLIENT} --query "drop table ${CLICKHOUSE_DATABASE}.\`04409_t\`"
 
-# Restore with a couple of non-default restore-specific settings.
+# Restore with a few non-default restore-specific settings.
 ${CLICKHOUSE_CLIENT} --query "
 restore table ${CLICKHOUSE_DATABASE}.\`04409_t\` from $backup_name
-settings id='$restore_id', restore_broken_parts_as_detached=1, allow_non_empty_tables=1;
+settings id='$restore_id', structure_only=1, restore_broken_parts_as_detached=1, allow_non_empty_tables=1;
 " | grep -o "RESTORED"
 
 # The restore-specific settings are observable in system.backups.settings, while the secret
 # 'password' and the duplicative 'id' are never exposed.
 ${CLICKHOUSE_CLIENT} -m --query "
 select
+    settings['structure_only'],
     settings['restore_broken_parts_as_detached'],
     settings['allow_non_empty_tables'],
     mapContains(settings, 'password'),
@@ -38,6 +39,7 @@ from system.backups where id='$restore_id'
 ${CLICKHOUSE_CLIENT} --query "system flush logs backup_log"
 ${CLICKHOUSE_CLIENT} -m --query "
 select
+    settings['structure_only'],
     settings['restore_broken_parts_as_detached'],
     settings['allow_non_empty_tables'],
     mapContains(settings, 'password'),
