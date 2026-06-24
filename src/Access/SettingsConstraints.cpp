@@ -240,12 +240,15 @@ void SettingsConstraints::clamp(const Settings & current_settings, SettingsChang
 
 void SettingsConstraints::checkOrClamp(const Settings & current_settings, SettingsChanges & changes, ReactionOnViolation reaction, SettingSource source) const
 {
-    /// If we filter out settings that match the current default here, `compatibility` will silently override them.
-    /// So when `compatibility` is present, we keep unchanged settings so they are applied after `compatibility`.
-    bool has_compatibility_setting = changes.tryGet("compatibility") != nullptr;
+    /// If we filter out settings that match the current default here, compatibility supersettings
+    /// (`compatibility`, `sql_compatibility_mode`) may silently override those explicit values.
+    /// Keep unchanged settings in the same batch so user-provided overrides are applied afterwards.
+    bool keep_unchanged_settings
+        = changes.tryGet("compatibility") != nullptr
+        || changes.tryGet("sql_compatibility_mode") != nullptr;
     std::erase_if(changes, [&](SettingChange & change)
     {
-        return !checkImpl(current_settings, change, reaction, source, /*ignore_unchanged_settings=*/has_compatibility_setting);
+        return !checkImpl(current_settings, change, reaction, source, /*ignore_unchanged_settings=*/keep_unchanged_settings);
     });
 }
 

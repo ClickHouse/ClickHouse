@@ -103,6 +103,7 @@ class WriteBuffer;
     M(CLASS_NAME, SetOperationMode) \
     M(CLASS_NAME, ShortCircuitFunctionEvaluation) \
     M(CLASS_NAME, S3UriStyle) \
+    M(CLASS_NAME, SQLCompatibilityMode) \
     M(CLASS_NAME, SQLSecurityType) \
     M(CLASS_NAME, StreamingHandleErrorMode) \
     M(CLASS_NAME, String) \
@@ -186,4 +187,8 @@ struct Settings
 private:
     std::unique_ptr<SettingsImpl> impl;
 };
+
+/// Expands the effective settings bundle for `sql_compatibility_mode`.
+/// The returned changes do not include the wrapper setting itself.
+SettingsChanges getSQLCompatibilityModeSettingChanges(SQLCompatibilityMode mode);
 }
