@@ -242,19 +242,6 @@ UInt64 & getInlineCountState(DB::AggregateDataPtr & ptr)
     return getCountState(reinterpret_cast<DB::AggregateDataPtr>(&ptr));
 }
 
-std::unique_ptr<MemoryTracker> tryCreateAggregationMemoryTracker()
-{
-    auto * thread_memory_tracker = DB::CurrentThread::getMemoryTracker();
-    if (!thread_memory_tracker || thread_memory_tracker->level != VariableContext::Thread)
-        return nullptr;
-
-    auto * query_memory_tracker = thread_memory_tracker->getParent();
-    if (!query_memory_tracker || query_memory_tracker->level != VariableContext::Process)
-        return nullptr;
-
-    return std::make_unique<MemoryTracker>(query_memory_tracker, VariableContext::Thread);
-}
-
 }
 
 namespace DB
@@ -658,7 +645,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     if (params.only_merge)
         memory_usage_before_aggregation = getCurrentQueryMemoryUsage();
     else
-        memory_tracker = tryCreateAggregationMemoryTracker();
+        memory_tracker = tryCreateMemoryTracker();
 
     aggregate_functions.resize(params.aggregates_size);
     for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -1661,10 +1648,10 @@ bool Aggregator::executeOnBlock(Columns columns,
     /// Tracking starts after input materialization if necessary.
     /// When tracking the aggregation memory, the aggregator memory tracker is inserted between the thread
     /// and query memory trackers, and accounts for the aggregation state across all threads.
-    const bool track_aggregation_memory = memory_tracker && CurrentThread::getMemoryTracker()
+    const bool use_own_tracker = memory_tracker && CurrentThread::getMemoryTracker()
         && CurrentThread::getMemoryTracker()->getParent() == memory_tracker->getParent();
     std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;
-    if (track_aggregation_memory)
+    if (use_own_tracker)
         memory_tracker_switcher.emplace(memory_tracker.get());
 
     /// How to perform the aggregation?
@@ -1706,8 +1693,10 @@ bool Aggregator::executeOnBlock(Columns columns,
     }
 
     size_t result_size = result.sizeWithoutOverflowRow();
-    Int64 current_memory_usage = track_aggregation_memory ? memory_tracker->getParent()->get() : getCurrentQueryMemoryUsage();
-    Int64 result_size_bytes = track_aggregation_memory ? memory_tracker->get() : current_memory_usage;
+    Int64 current_memory_usage = use_own_tracker ? memory_tracker->getParent()->get() : getCurrentQueryMemoryUsage();
+
+    /// Here all the results in the sum are taken into account, from different threads.
+    Int64 result_size_bytes = use_own_tracker ? memory_tracker->get() : current_memory_usage;
 
     bool worth_convert_to_two_level = worthConvertToTwoLevel(
         params.group_by_two_level_threshold, result_size, params.group_by_two_level_threshold_bytes, result_size_bytes);
