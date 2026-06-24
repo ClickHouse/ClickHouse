@@ -120,7 +120,8 @@ static std::string buildScannConfigString(
     size_t training_sample_size,
     size_t min_cluster_size,
     size_t num_blocks,
-    bool use_residual)
+    bool use_residual,
+    const std::string & precision)
 {
     /// num_clusters_per_block MUST be 16 here. The proto default is 256, but lookup_type
     /// INT8_LUT16 packs two 4-bit codes per byte (CreatePackedDataset: u1 * 16 + u0), so it
@@ -132,6 +133,17 @@ static std::string buildScannConfigString(
     /// noise_shaping_threshold enables anisotropic vector quantization (AVQ), ScaNN's standard
     /// technique for biasing per-block quantization error orthogonal to the datapoint direction
     /// to better preserve inner products. 0.2 is the long-standing ScaNN default.
+
+    /// The exact-reordering vectors are stored at this precision: "f32" (float32, exact),
+    /// "bf16" (bfloat16, half the size), or "i8" (scalar fixed point, a quarter of the size).
+    /// Lower precision shrinks the index at a small recall cost. ScaNN derives the reorder
+    /// helper for the configured precision from the (quantized) reorder dataset on restore.
+    std::string reorder_quant;
+    if (precision == "bf16")
+        reorder_quant = "bfloat16 { enabled: true }";
+    else if (precision == "i8")
+        reorder_quant = "fixed_point { enabled: true }";
+
     return fmt::format(
         "num_neighbors: 100\n"
         "distance_measure {{ distance_measure: \"{}\" }}\n"
@@ -154,7 +166,7 @@ static std::string buildScannConfigString(
         "    projection {{ projection_type: CHUNK num_blocks: {} num_dims_per_block: 2 input_dim: {} }}\n"
         "  }}\n"
         "}}\n"
-        "exact_reordering {{ approx_num_neighbors: 100 }}\n",
+        "exact_reordering {{ approx_num_neighbors: 100 {} }}\n",
         distance_measure,
         num_leaves,
         min_cluster_size,
@@ -163,7 +175,8 @@ static std::string buildScannConfigString(
         distance_measure,
         use_residual ? "true" : "false",
         num_blocks,
-        num_blocks * 2);  /// input_dim = padded_dim = num_blocks × num_dims_per_block
+        num_blocks * 2,  /// input_dim = padded_dim = num_blocks × num_dims_per_block
+        reorder_quant);
 }
 
 // ---------------------------------------------------------------------------
@@ -184,15 +197,31 @@ size_t MergeTreeIndexGranuleVectorSimilarityScann::memoryUsageBytes() const
 {
     size_t total = 0;
 
-    /// After buildIndexFromSerialized, vectors and hashed_data are moved into the
-    /// searcher's dataset/hashed_dataset. Count only whichever side actually holds the data.
+    /// Reorder vectors. Before build/restore they live in the granule members; afterwards they
+    /// are moved into the searcher's reorder helper. The members are empty in the latter case,
+    /// so fall back to the size implied by the precision when the searcher holds them.
+    const size_t reorder_member_bytes =
+        vectors.size() * sizeof(float)
+        + bf16_data.size() * sizeof(int16_t)
+        + int8_data.size() * sizeof(int8_t)
+        + (int8_multipliers.size() + int8_norms.size()) * sizeof(float);
+    if (reorder_member_bytes > 0)
+    {
+        total += reorder_member_bytes;
+    }
+    else if (searcher && searcher->inner)
+    {
+        size_t bytes_per_elem = sizeof(float);
+        if (params.precision == "bf16")
+            bytes_per_elem = sizeof(int16_t);
+        else if (params.precision == "i8")
+            bytes_per_elem = sizeof(int8_t);
+        total += num_vectors * padded_dim * bytes_per_elem;
+    }
+
+    /// After buildIndexFromSerialized, hashed_data is moved into the searcher's hashed_dataset.
     if (searcher && searcher->inner)
     {
-        if (const auto * ds = searcher->inner->dataset())
-            total += ds->MemoryUsageExcludingDocids();
-        else
-            total += vectors.size() * sizeof(float);
-
         if (const auto * hds = searcher->inner->hashed_dataset())
             total += hds->MemoryUsageExcludingDocids();
         else
@@ -200,7 +229,6 @@ size_t MergeTreeIndexGranuleVectorSimilarityScann::memoryUsageBytes() const
     }
     else
     {
-        total += vectors.size() * sizeof(float);
         total += hashed_data.size();
     }
 
@@ -214,20 +242,86 @@ size_t MergeTreeIndexGranuleVectorSimilarityScann::memoryUsageBytes() const
 
 void MergeTreeIndexGranuleVectorSimilarityScann::serializeBinary(WriteBuffer & ostr) const
 {
-    writeIntBinary(FILE_FORMAT_VERSION, ostr); /// 1
     writeIntBinary(static_cast<UInt64>(num_vectors), ostr);
     writeIntBinary(static_cast<UInt64>(padded_dim), ostr);
-    if (!vectors.empty())
+
+    /// Precision tag for the exact-reordering vectors: 0 = f32, 1 = bf16, 2 = i8.
+    /// When no index was built (too few vectors), no quantization happened and the granule still
+    /// holds the raw float `vectors`, so fall back to f32 regardless of the configured precision.
+    const bool index_built = (searcher && searcher->inner);
+    const bool have_quantized = !bf16_data.empty() || !int8_data.empty();
+    UInt8 precision_tag = 0;
+    if (index_built || have_quantized)
+        precision_tag = (params.precision == "bf16") ? 1 : (params.precision == "i8" ? 2 : 0);
+    writeIntBinary(precision_tag, ostr);
+
+    if (precision_tag == 0)
     {
-        ostr.write(reinterpret_cast<const char *>(vectors.data()), vectors.size() * sizeof(float));
+        /// f32: raw float32 reorder vectors (from the granule, or read back from the searcher's
+        /// dataset after buildIndexFromSerialized moved them out).
+        if (!vectors.empty())
+        {
+            ostr.write(reinterpret_cast<const char *>(vectors.data()), vectors.size() * sizeof(float));
+        }
+        else
+        {
+            chassert(searcher && searcher->inner && searcher->inner->dataset());
+            const auto * ds = static_cast<const research_scann::DenseDataset<float> *>(searcher->inner->dataset());
+            auto span = ds->data();
+            ostr.write(reinterpret_cast<const char *>(span.data()), span.size() * sizeof(float));
+        }
     }
     else
     {
-        /// vectors was moved into the searcher's dataset by buildIndexFromSerialized.
-        chassert(searcher && searcher->inner && searcher->inner->dataset());
-        const auto * ds = static_cast<const research_scann::DenseDataset<float> *>(searcher->inner->dataset());
-        auto span = ds->data();
-        ostr.write(reinterpret_cast<const char *>(span.data()), span.size() * sizeof(float));
+        /// bf16/i8: the quantized reorder vectors. Use the granule members when populated
+        /// (freshly built), otherwise read them back from the searcher's reordering helper
+        /// (after buildIndexFromSerialized moved the members into ScaNN).
+        research_scann::SingleMachineFactoryOptions extracted;
+        const bool from_members = (precision_tag == 1) ? !bf16_data.empty() : !int8_data.empty();
+        if (!from_members)
+        {
+            chassert(searcher && searcher->inner);
+            searcher->inner->reordering_helper().AppendDataToSingleMachineFactoryOptions(&extracted);
+        }
+
+        if (precision_tag == 1)
+        {
+            const int16_t * data = nullptr;
+            size_t count = 0;
+            if (from_members) { data = bf16_data.data(); count = bf16_data.size(); }
+            else { auto span = extracted.bfloat16_dataset->data(); data = span.data(); count = span.size(); }
+            ostr.write(reinterpret_cast<const char *>(data), count * sizeof(int16_t));
+        }
+        else
+        {
+            const int8_t * data = nullptr;
+            size_t count = 0;
+            const std::vector<float> * mult = nullptr;
+            const std::vector<float> * norms = nullptr;
+            std::vector<float> mult_tmp;
+            std::vector<float> norms_tmp;
+            if (from_members)
+            {
+                data = int8_data.data(); count = int8_data.size();
+                mult = &int8_multipliers; norms = &int8_norms;
+            }
+            else
+            {
+                const auto & fp = extracted.pre_quantized_fixed_point;
+                auto span = fp->fixed_point_dataset->data();
+                data = span.data(); count = span.size();
+                if (fp->multiplier_by_dimension) mult_tmp = *fp->multiplier_by_dimension;
+                if (fp->squared_l2_norm_by_datapoint) norms_tmp = *fp->squared_l2_norm_by_datapoint;
+                mult = &mult_tmp; norms = &norms_tmp;
+            }
+            ostr.write(reinterpret_cast<const char *>(data), count * sizeof(int8_t));
+            writeIntBinary(static_cast<UInt64>(mult->size()), ostr);
+            if (!mult->empty())
+                ostr.write(reinterpret_cast<const char *>(mult->data()), mult->size() * sizeof(float));
+            writeIntBinary(static_cast<UInt64>(norms->size()), ostr);
+            if (!norms->empty())
+                ostr.write(reinterpret_cast<const char *>(norms->data()), norms->size() * sizeof(float));
+        }
     }
 
     /// Pre-trained ScaNN artifacts (all zero-length when index was not built).
@@ -277,12 +371,6 @@ void MergeTreeIndexGranuleVectorSimilarityScann::serializeBinary(WriteBuffer & o
 
 void MergeTreeIndexGranuleVectorSimilarityScann::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
 {
-    UInt8 fmt_version = 0;
-    readIntBinary(fmt_version, istr);
-    if (fmt_version != FILE_FORMAT_VERSION)
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Unsupported vector_similarity('scann', ...) index version: {}", static_cast<int>(fmt_version));
-
     UInt64 n = 0;
     UInt64 pd = 0;
     readIntBinary(n, istr);
@@ -290,8 +378,41 @@ void MergeTreeIndexGranuleVectorSimilarityScann::deserializeBinary(ReadBuffer & 
     num_vectors = n;
     padded_dim = pd;
 
-    vectors.resize(num_vectors * padded_dim);
-    istr.readStrict(reinterpret_cast<char *>(vectors.data()), vectors.size() * sizeof(float));
+    /// Reorder vectors at the stored precision. The on-disk tag is authoritative (it must match
+    /// how the artifacts were quantized), so set params.precision from it.
+    UInt8 precision_tag = 0;
+    readIntBinary(precision_tag, istr);
+    if (precision_tag == 0)
+    {
+        params.precision = "f32";
+        vectors.resize(num_vectors * padded_dim);
+        istr.readStrict(reinterpret_cast<char *>(vectors.data()), vectors.size() * sizeof(float));
+    }
+    else if (precision_tag == 1)
+    {
+        params.precision = "bf16";
+        bf16_data.resize(num_vectors * padded_dim);
+        istr.readStrict(reinterpret_cast<char *>(bf16_data.data()), bf16_data.size() * sizeof(int16_t));
+    }
+    else if (precision_tag == 2)
+    {
+        params.precision = "i8";
+        int8_data.resize(num_vectors * padded_dim);
+        istr.readStrict(reinterpret_cast<char *>(int8_data.data()), int8_data.size() * sizeof(int8_t));
+        UInt64 mult_len = 0;
+        readIntBinary(mult_len, istr);
+        int8_multipliers.resize(mult_len);
+        if (mult_len > 0)
+            istr.readStrict(reinterpret_cast<char *>(int8_multipliers.data()), mult_len * sizeof(float));
+        UInt64 norms_len = 0;
+        readIntBinary(norms_len, istr);
+        int8_norms.resize(norms_len);
+        if (norms_len > 0)
+            istr.readStrict(reinterpret_cast<char *>(int8_norms.data()), norms_len * sizeof(float));
+    }
+    else
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Unsupported vector_similarity('scann', ...) reorder precision tag: {}", static_cast<int>(precision_tag));
 
     /// Read pre-trained artifacts and restore without retraining.
 
@@ -399,7 +520,7 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
 
     const std::string config_str = buildScannConfigString(
         scann_distance_measure, num_leaves, num_leaves_to_search,
-        training_sample_size, min_cluster_size, num_blocks, use_residual);
+        training_sample_size, min_cluster_size, num_blocks, use_residual, params.precision);
 
     LOG_DEBUG(log, "Building ScaNN index: num_vectors={} padded_dim={} num_leaves={} config=\n{}",
         num_vectors, padded_dim, num_leaves, config_str);
@@ -480,6 +601,34 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
             datapoints_by_token.emplace_back(token.begin(), token.end());
     }
 
+    /// For non-f32 precision, persist the quantized exact-reordering vectors that ScaNN derived
+    /// from the float dataset (extracted above), and drop the float vectors so they are neither
+    /// kept in memory nor written to disk. The index is built entirely in float (AH codebook and
+    /// IVF centroids train on the float dataset); only the reordering representation is quantized.
+    if (params.precision == "bf16")
+    {
+        if (!opts.bfloat16_dataset || opts.bfloat16_dataset->empty())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "ScaNN bf16 reorder dataset was not produced");
+        const auto span = opts.bfloat16_dataset->data();
+        bf16_data.assign(span.data(), span.data() + span.size());
+        vectors.clear();
+        vectors.shrink_to_fit();
+    }
+    else if (params.precision == "i8")
+    {
+        const auto & fp = opts.pre_quantized_fixed_point;
+        if (!fp || !fp->fixed_point_dataset || fp->fixed_point_dataset->empty())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "ScaNN i8 reorder dataset was not produced");
+        const auto span = fp->fixed_point_dataset->data();
+        int8_data.assign(span.data(), span.data() + span.size());
+        if (fp->multiplier_by_dimension)
+            int8_multipliers.assign(fp->multiplier_by_dimension->begin(), fp->multiplier_by_dimension->end());
+        if (fp->squared_l2_norm_by_datapoint)
+            int8_norms.assign(fp->squared_l2_norm_by_datapoint->begin(), fp->squared_l2_norm_by_datapoint->end());
+        vectors.clear();
+        vectors.shrink_to_fit();
+    }
+
     const size_t hashed_rows_extracted = (opts.hashed_dataset && hashed_dim > 0) ? opts.hashed_dataset->size() : 0;
     LOG_DEBUG(log, "Extracted ScaNN artifacts: partitioner={} bytes, codebook={} bytes, "
         "hashed_dataset={}×{} bytes, {} IVF tokens",
@@ -504,7 +653,7 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndexFromSerialized()
             return;
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "ScaNN index restore failed: serialized artifacts are missing for {} vectors. "
-            "The index may have been built with an older version; drop and recreate it.",
+            "Drop and recreate the index.",
             num_vectors);
     }
 
@@ -565,18 +714,37 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndexFromSerialized()
 
     const std::string config_str = buildScannConfigString(
         scann_distance_measure, num_leaves, num_leaves_to_search,
-        training_sample_size, min_cluster_size, num_blocks, use_residual);
+        training_sample_size, min_cluster_size, num_blocks, use_residual, params.precision);
 
     research_scann::ScannConfig config;
     if (!google::protobuf::TextFormat::ParseFromString(config_str, &config))
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "ScaNN index restore failed: could not parse ScaNN config string");
 
-    /// The float dataset is required for the exact-reordering step.
-    /// Move vectors[] into the dataset to avoid holding a duplicate copy in memory;
-    /// serializeBinary reads the data back from the searcher's dataset when vectors is empty.
-    auto dataset = std::make_shared<research_scann::DenseDataset<float>>(
-        std::move(vectors), num_vectors);
+    /// Reorder dataset at the stored precision. For f32 the float vectors are the reordering
+    /// dataset; for bf16/i8 the quantized dataset is supplied via opts and no float dataset is
+    /// needed (the AH leaf searchers are rebuilt from the precomputed hashed codes). In all
+    /// cases the members are moved into ScaNN so only a single copy is held in memory.
+    std::shared_ptr<research_scann::DenseDataset<float>> dataset;
+    if (params.precision == "bf16")
+    {
+        opts.bfloat16_dataset = std::make_shared<research_scann::DenseDataset<int16_t>>(
+            std::move(bf16_data), num_vectors);
+    }
+    else if (params.precision == "i8")
+    {
+        auto fp = std::make_shared<research_scann::PreQuantizedFixedPoint>();
+        fp->fixed_point_dataset = std::make_shared<research_scann::DenseDataset<int8_t>>(
+            std::move(int8_data), num_vectors);
+        fp->multiplier_by_dimension = std::make_shared<std::vector<float>>(std::move(int8_multipliers));
+        fp->squared_l2_norm_by_datapoint = std::make_shared<std::vector<float>>(std::move(int8_norms));
+        opts.pre_quantized_fixed_point = std::move(fp);
+    }
+    else
+    {
+        dataset = std::make_shared<research_scann::DenseDataset<float>>(
+            std::move(vectors), num_vectors);
+    }
 
     try
     {

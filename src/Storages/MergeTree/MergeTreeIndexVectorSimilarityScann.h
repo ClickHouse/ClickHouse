@@ -20,6 +20,9 @@ struct ScannIndexParams
 {
     String distance_name; /// "L2Distance", "cosineDistance", "dotProduct"
     UInt64 dimensions = 0;
+    /// On-disk precision of the exact-reordering vectors: "f32" (default), "bf16", or "i8".
+    /// Lower precision shrinks the index at a small recall cost (recoverable with a larger pool).
+    String precision = "f32";
 };
 
 /// Opaque wrapper so ScaNN heavy headers stay out of this header.
@@ -44,8 +47,8 @@ public:
     void buildIndex();
 
     /// Reconstruct the ScaNN index from pre-trained artifacts read by
-    /// deserializeBinary (format version 2).  Falls back to buildIndex if
-    /// any artifact is missing or cannot be parsed.
+    /// deserializeBinary.  Falls back to buildIndex if any artifact is missing
+    /// or cannot be parsed.
     void buildIndexFromSerialized();
 
     ScannIndexParams params;
@@ -54,9 +57,17 @@ public:
     size_t padded_dim = 0;            /// ceil(params.dimensions / 8) * 8
     std::unique_ptr<ScannSearcherWrapper> searcher; /// non-null when index is built
 
+    /// Exact-reordering vectors at the configured params.precision. Exactly one of these holds
+    /// the persisted reorder data (the other(s) stay empty); for "f32" the float `vectors` above
+    /// are used. ScaNN derives these at build time and we serialize them in place of float32.
+    std::vector<int16_t> bf16_data;   /// "bf16": num_vectors × padded_dim bfloat16 (as int16)
+    std::vector<int8_t> int8_data;    /// "i8": num_vectors × padded_dim scalar-quantized int8
+    std::vector<float> int8_multipliers; /// "i8": per-dimension inverse multiplier (padded_dim)
+    std::vector<float> int8_norms;    /// "i8": per-datapoint squared L2 norm (num_vectors), may be empty
+
     /// Pre-trained artifacts extracted after buildIndex() and persisted by
-    /// serializeBinary (format version 2).  All empty when the index was not
-    /// built (too few vectors) or when artifacts could not be extracted.
+    /// serializeBinary.  All empty when the index was not built (too few
+    /// vectors) or when artifacts could not be extracted.
     std::string serialized_partitioner_proto;   /// SerializedPartitioner binary proto
     std::string serialized_codebook_proto;      /// CentersForAllSubspaces binary proto
     std::vector<uint8_t> hashed_data;           /// flat AH codes: num_vectors × hashed_dim
@@ -65,10 +76,6 @@ public:
 
 private:
     LoggerPtr log;
-    /// Version 1: stores raw vectors plus all pre-trained ScaNN artifacts
-    /// (serialized_partitioner_proto, ah_codebook, hashed_data, datapoints_by_token)
-    /// so that the index can be restored from disk without retraining.
-    static constexpr UInt8 FILE_FORMAT_VERSION = 1;
 };
 
 using MergeTreeIndexGranuleVectorSimilarityScannPtr = std::shared_ptr<MergeTreeIndexGranuleVectorSimilarityScann>;

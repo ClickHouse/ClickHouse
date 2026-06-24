@@ -157,7 +157,7 @@ SET allow_experimental_scann_index = 1;
 ```
 :::
 
-ScaNN indexes are created with exactly three arguments — no optional extras:
+ScaNN indexes are created with three or four arguments:
 
 ```sql
 SET allow_experimental_scann_index = 1;
@@ -166,7 +166,7 @@ CREATE TABLE table
 (
   [...],
   vectors Array(Float32),
-  INDEX index_name vectors TYPE vector_similarity('scann', <distance_function>, <dimensions>) [GRANULARITY N]
+  INDEX index_name vectors TYPE vector_similarity('scann', <distance_function>, <dimensions>[, <precision>]) [GRANULARITY N]
 )
 ENGINE = MergeTree
 ORDER BY [...];
@@ -174,6 +174,9 @@ ORDER BY [...];
 
 The supported distance functions for ScaNN are `L2Distance`, `cosineDistance`, and `dotProduct`.
 Unlike HNSW, ScaNN supports only `Array(Float32)` and `Array(Float64)` columns — `Array(BFloat16)` is not supported.
+
+This ScaNN-specific parameter is available:
+- `<precision>` controls the on-disk precision of the exact-reordering vectors. Possible values are `f32` (float32), `bf16` (bfloat16), or `i8` (scalar-quantized int8). The default value is `f32`. The index is always trained in full float precision (the asymmetric-hashing codebook and IVF centroids are unaffected); only the reordering vectors are stored at the chosen precision. Lower precision shrinks the index on disk and speeds up cold loads (`bf16` roughly halves it, `i8` roughly quarters it) at a small recall cost, which can be recovered by raising `scann_candidate_pool_size`.
 
 **ScaNN-specific query settings**
 
