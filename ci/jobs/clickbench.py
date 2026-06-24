@@ -113,7 +113,7 @@ def main():
 
     # stop log replication
     Shell.check(
-        f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --stop-log-replication",
+        "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --stop-log-replication",
         verbose=True,
     )
 

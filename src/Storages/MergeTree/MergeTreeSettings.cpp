@@ -620,8 +620,10 @@ namespace ErrorCodes
     - `0` (disable deduplication).
 
     A deduplication mechanism is used, similar to replicated tables (see
-    [replicated_deduplication_window](#replicated_deduplication_window) setting).
-    The hash sums of the created parts are written to a local file on a disk.
+    [replicated_deduplication_window](#replicated_deduplication_window) setting), including the
+    `insert_deduplication_version` granularity (whole inserted block under the default
+    `new_unified_hash`, per created part under the legacy versions). The hash sums are written to
+    a local file on a disk rather than to ClickHouse Keeper.
     )", 0) \
     DECLARE(UInt64, max_parts_to_merge_at_once, 100, R"(
     Max amount of parts which can be merged at once (0 - disabled). Doesn't affect
@@ -668,6 +670,22 @@ namespace ErrorCodes
     -- default setting, no indexes excluded from being updated during merge
     ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge = '';
     ```
+    )", 0) \
+    DECLARE(NonZeroUInt64, text_index_dictionary_block_size, 512, R"(
+    Default dictionary block size for text indexes.
+    Can be overridden by explicit `dictionary_block_size` index argument.
+    )", 0) \
+    DECLARE(Bool, text_index_dictionary_block_frontcoding_compression, true, R"(
+    Default front-coding compression for text index dictionary blocks.
+    Can be overridden by explicit `dictionary_block_frontcoding_compression` index argument.
+    )", 0) \
+    DECLARE(NonZeroUInt64, text_index_posting_list_block_size, 1048576, R"(
+    Default posting list block size for text indexes (rows).
+    Can be overridden by explicit `posting_list_block_size` index argument.
+    )", 0) \
+    DECLARE(TextIndexPostingListCodec, text_index_posting_list_codec, TextIndexPostingListCodec::None, R"(
+    Default posting list codec for text indexes.
+    Can be overridden by explicit `posting_list_codec` index argument.
     )", 0) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
     Minimum time to wait before trying to select parts to merge again after no
@@ -1116,17 +1134,20 @@ namespace ErrorCodes
     - Any positive integer.
     - 0 (disable deduplication)
 
-    The `Insert` command creates one or more blocks (parts). For
-    [insert deduplication](../../engines/table-engines/mergetree-family/replication.md),
-    when writing into replicated tables, ClickHouse writes the hash sums of the
-    created parts into ClickHouse Keeper. Hash sums are stored only for the most
-    recent `replicated_deduplication_window` blocks. The oldest hash sums are
-    removed from ClickHouse Keeper.
+    For [insert deduplication](../../engines/table-engines/mergetree-family/replication.md),
+    when writing into replicated tables, ClickHouse writes deduplication hash sums into
+    ClickHouse Keeper. Hash sums are stored only for the most recent
+    `replicated_deduplication_window` blocks. The oldest hash sums are removed from
+    ClickHouse Keeper.
 
-    A large number for `replicated_deduplication_window` slows down `Inserts`
-    because more entries need to be compared. The hash sum is calculated from
-    the composition of the field names and types and the data of the inserted
-    part (stream of bytes).
+    Under the default `insert_deduplication_version = new_unified_hash` the hash sum covers the
+    whole inserted block, so an insert is deduplicated only when its entire data matches a
+    previous insert (a retry), not per individual part. Under the legacy `old_separate_hashes` /
+    `compatible_double_hashes` the hash sum is instead calculated per created part, from the
+    composition of the field names and types and the data of that part (stream of bytes).
+
+    A large number for `replicated_deduplication_window` slows down `Inserts` because more
+    entries need to be compared.
     )", 0) \
     DECLARE(UInt64, replicated_deduplication_window_seconds, 60 * 60 /* one hour */, R"(
     The number of seconds after which the hash sums of the inserted blocks are
@@ -1162,6 +1183,12 @@ namespace ErrorCodes
     down `Async Inserts` because it needs to compare more entries.
     The hash sum is calculated from the composition of the field names and types
     and the data of the insert (stream of bytes).
+
+    This setting applies only under `insert_deduplication_version = old_separate_hashes` or
+    `compatible_double_hashes`, which keep async-insert hashes in a separate `async_blocks`
+    directory. Under the default `new_unified_hash`, async inserts share the unified
+    `deduplication_hashes` directory with sync inserts and are governed by
+    `replicated_deduplication_window` / `replicated_deduplication_window_seconds` instead.
     )", 0) \
     DECLARE(UInt64, replicated_deduplication_window_seconds_for_async_inserts, 7 * 24 * 60 * 60 /* one week */, R"(
     The number of seconds after which the hash sums of the async inserts are
@@ -1179,6 +1206,10 @@ namespace ErrorCodes
 
     The time is relative to the time of the most recent record, not to the wall
     time. If it's the only record it will be stored forever.
+
+    Like `replicated_deduplication_window_for_async_inserts`, this applies only under
+    `insert_deduplication_version = old_separate_hashes` / `compatible_double_hashes`; under the
+    default `new_unified_hash`, async inserts use `replicated_deduplication_window_seconds`.
     )", 0) \
     DECLARE(Milliseconds, async_block_ids_cache_update_wait_ms, 100, R"(
     How long each insert iteration will wait for async_block_ids_cache update
@@ -1514,8 +1545,8 @@ namespace ErrorCodes
     Only available in ClickHouse Cloud.
     )", 0) \
     DECLARE(UInt64, shared_merge_tree_range_for_merge_window_size, 10, R"(
-    Time to keep a locally merged part without starting a new merge containing
-    this part. Gives other replicas a chance fetch the part and start this merge.
+    Window size (in block numbers) used to distribute merge assignment across
+    replicas. Parts within the same window are assigned to the same replicas.
     Only available in ClickHouse Cloud
     )", 0) \
     DECLARE(Bool, shared_merge_tree_use_too_many_parts_count_from_virtual_parts, 0, R"(
@@ -1545,6 +1576,13 @@ namespace ErrorCodes
     How often replicas will try to update replica set in background. Next run is jittered
     uniformly in [0, value] seconds. Exception: value = 0 does not follow that contract;
     the implementation applies a minimum of 200 ms, so the next run is jittered in [0, 200] ms.
+    )", 0) \
+    DECLARE(Seconds, shared_merge_tree_inactive_replica_cutoff_seconds, 0, R"(
+    For how long an inactive replica is still taken into account by the background cleanup
+    (`OutdatedPartsQuorumThread`): while a replica has been inactive for less than this many seconds,
+    it still holds back removal of outdated parts and truncation of finished mutations. A value of 0
+    means use the default of two ZooKeeper session timeouts.
+    Only in ClickHouse Cloud
     )", 0) \
     DECLARE(Bool, allow_reduce_blocking_parts_task, true, R"(
     Background task which reduces blocking parts for shared merge tree tables.
@@ -1624,6 +1662,13 @@ namespace ErrorCodes
     /** Compatibility settings */ \
     DECLARE(Bool, allow_suspicious_indices, false, R"(
     Reject primary/secondary indexes and sorting keys with identical expressions
+    )", 0) \
+    DECLARE(Bool, allow_tuple_element_aggregation, false, R"(
+    When enabled, individual elements within Tuple columns participate in
+    aggregation during merge in SummingMergeTree, AggregatingMergeTree, and
+    CoalescingMergeTree. Nested Tuples are expanded recursively so that all
+    leaf elements are aggregated independently. This setting is immutable
+    and must be specified at table creation time.
     )", 0) \
     DECLARE(Bool, compatibility_allow_sampling_expression_not_in_primary_key, false, R"(
     Allow to create a table with sampling expression not in primary key. This is
@@ -1900,6 +1945,38 @@ namespace ErrorCodes
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
     Supported statistics types: basic, tdigest, countmin, minmax, uniq.
     )", 0) \
+    DECLARE(UInt64, packed_skip_index_max_bytes, 0, R"(
+    Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
+    chain) below which a skip-index substream is bundled into a single `skp_idx.packed`
+    archive per part instead of being written as a separate `skp_idx_<name>.idx2` / `.mrk2`
+    file. Substreams larger than this stay in the legacy per-file layout. The decision is
+    made independently per substream at write time, so a single part can have small indices
+    (e.g. `minmax`) packed and large ones (e.g. a heavy `bloom_filter`) per-file. Set to 0
+    to disable packing entirely (default).
+
+    Each skip-index substream actually consists of a data file and a marks file; both buffer
+    in memory up to the threshold before the spill decision is made. So peak memory while
+    writing scales with `2 * packed_skip_index_max_bytes * (number of substreams that stay
+    below the threshold)`.
+
+    Full-text indices are not supported by this setting and are never packed.
+
+    Packing reduces inode pressure when many skip indices are defined on a table (for example
+    with `add_minmax_index_for_numeric_columns`).
+
+    The on-disk format is self-describing: readers detect `skp_idx.packed` and serve packed
+    substreams from inside it transparently. Changing this setting affects newly written parts
+    only; existing parts retain whatever layout they had at write time.
+
+    Known limitation: `system.data_skipping_indices.data_uncompressed_bytes` and
+    `system.parts.secondary_indices_uncompressed_bytes` report the compressed size for packed
+    substreams (the archive index doesn't store uncompressed sizes). This is cosmetic in
+    monitoring with one functional consequence:
+    `distributed_index_analysis_min_indexes_bytes_to_activate` compares against
+    `data_uncompressed`, so a packed index that compresses well (`set` or `bloom_filter` over
+    strings) may not cross the activation threshold even if the real uncompressed size would.
+    The fallback is the normal query plan, not a wrong result.
+    )", EXPERIMENTAL) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in
     the partition or sorting key.
@@ -1908,7 +1985,7 @@ namespace ErrorCodes
     When enabled, allows coalescing columns in a CoalescingMergeTree table to be used in
     the partition or sorting key.
     )", 0) \
-    DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, false, R"(
+    DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, true, R"(
     Enables writing attributes into virtual parts and committing blocks in keeper
     )", 0) \
     DECLARE(Bool, shared_merge_tree_activate_coordinated_merges_tasks, false, R"(
@@ -1916,7 +1993,7 @@ namespace ErrorCodes
     shared_merge_tree_enable_coordinated_merges=0 because this will populate merge coordinator
     statistics and help with cold start.
     )", 0) \
-    DECLARE(Bool, shared_merge_tree_enable_coordinated_merges, false, R"(
+    DECLARE(Bool, shared_merge_tree_enable_coordinated_merges, true, R"(
     Enables coordinated merges strategy
     )", 0) \
     DECLARE(UInt64Auto, shared_merge_tree_merge_coordinator_merges_prepare_count, Field("auto"), R"(
@@ -2014,36 +2091,6 @@ namespace ErrorCodes
     Possible values:
     - `true`
     - `false`
-    )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_reverse_key, false, R"(
-    Enables support for descending sort order in MergeTree sorting keys. This
-    setting is particularly useful for time series analysis and Top-N queries,
-    allowing data to be stored in reverse chronological order to optimize query
-    performance.
-
-    With `allow_experimental_reverse_key` enabled, you can define descending sort
-    orders within the `ORDER BY` clause of a MergeTree table. This enables the
-    use of more efficient `ReadInOrder` optimizations instead of `ReadInReverseOrder`
-    for descending queries.
-
-    **Example**
-
-    ```sql
-    CREATE TABLE example
-    (
-    time DateTime,
-    key Int32,
-    value String
-    ) ENGINE = MergeTree
-    ORDER BY (time DESC, key)  -- Descending order on 'time' field
-    SETTINGS allow_experimental_reverse_key = 1;
-
-    SELECT * FROM example WHERE key = 'xxx' ORDER BY time DESC LIMIT 10;
-    ```
-
-    By using `ORDER BY time DESC` in the query, `ReadInOrder` is applied.
-
-    **Default Value:** false
     )", EXPERIMENTAL) \
     DECLARE(Bool, allow_commit_order_projection, false, R"(
     Enables commit-order projections that store `_block_number` and `_block_offset` virtual columns, preserving original insertion order through merges.
@@ -2200,6 +2247,19 @@ namespace ErrorCodes
     DECLARE(Bool, table_readonly, false, R"(
     If set to true, the table is in read-only mode. Any attempts to insert data or modify the table will fail.
     )", 0) \
+    DECLARE(Bool, materialize_projections_on_insert, true, R"(
+    When enabled, INSERTs create new parts with projections.
+    Otherwise, they can be created by explicit [MATERIALIZE PROJECTION](/sql-reference/statements/alter/projection.md/#materialize-projection)
+    or during merges with [materialize_projections_on_merge](/operations/settings/merge-tree-settings.md/#materialize_projections_on_merge).
+    )", 0) \
+    DECLARE(Bool, materialize_projections_on_merge, false, R"(
+    When enabled, a merge rebuilds a projection that is missing from all of its source parts (for example because they were
+    inserted with `materialize_projections_on_insert = 0`), so the merged part has the projection.
+
+    Merges still only combine parts that share the same set of projections. To backfill a projection to all existing parts,
+    use an explicit [MATERIALIZE PROJECTION](/sql-reference/statements/alter/projection.md/#materialize-projection). Projections
+    are also created during INSERTs with [materialize_projections_on_insert](/operations/settings/merge-tree-settings.md/#materialize_projections_on_insert).
+    )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE)
@@ -2235,6 +2295,7 @@ namespace ErrorCodes
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_delay_period_random_add, 10) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_threads, 128) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, cleanup_threads, 128) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, allow_experimental_reverse_key, false) \
 
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
@@ -2449,6 +2510,14 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             ErrorCodes::BAD_ARGUMENTS,
             "index_granularity: value {} makes no sense",
             (*this)[MergeTreeSetting::index_granularity].value);
+    }
+
+    if ((*this)[MergeTreeSetting::shared_merge_tree_range_for_merge_window_size] < 1)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "shared_merge_tree_range_for_merge_window_size: value {} makes no sense",
+            (*this)[MergeTreeSetting::shared_merge_tree_range_for_merge_window_size].value);
     }
 
     // The min_index_granularity_bytes value is 1024 b and index_granularity_bytes is 10 mb by default.
@@ -2670,6 +2739,25 @@ std::vector<std::string_view> MergeTreeSettings::getAllRegisteredNames() const
     return setting_names;
 }
 
+std::vector<std::string_view> MergeTreeSettings::getAllAliasNames() const
+{
+    std::vector<std::string_view> alias_names;
+    const auto & settings_to_aliases = MergeTreeSettingsImpl::Traits::settingsToAliases();
+    for (const auto & [_, aliases] : settings_to_aliases)
+        alias_names.insert(alias_names.end(), aliases.begin(), aliases.end());
+    return alias_names;
+}
+
+std::string_view MergeTreeSettings::getDescription(std::string_view name) const
+{
+    return impl->getDescription(name);
+}
+
+SettingsTierType MergeTreeSettings::getTier(std::string_view name) const
+{
+    return impl->getTier(name);
+}
+
 void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata)
 {
     impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata);
@@ -2849,6 +2937,7 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
         || name == "add_minmax_index_for_block_number_column"
         || name == "add_minmax_index_for_block_offset_column"
         || name == "table_disk"
+        || name == "allow_tuple_element_aggregation"
         || name == "share_nested_offsets"
     ;
 }
