@@ -6,14 +6,11 @@
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
-# shellcheck source=./cache.lib
-. "$CUR_DIR"/cache.lib
 
 set -e
 
 # Populate a cache-on-write table and return the number of cache state-lock
 # reservation attempts the INSERT made (ProfileEvents['FilesystemCacheReserveAttempts']).
-# The data is deterministic and uncompressed, so the count is reproducible.
 function run() {
     local granule=$1
     local suffix=$2
@@ -46,9 +43,8 @@ function run() {
 
     $CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES $table"
 
-    local cache_name
-    cache_name=$($CLICKHOUSE_CLIENT -q "SELECT name FROM system.disks WHERE cache_path LIKE '%$cache_path%'")
-    drop_filesystem_cache "$cache_name" > /dev/null
+    # Cache is fresh (uniquely-named per database); drop in case the test is re-run in the same database.
+    $CLICKHOUSE_CLIENT -q "SYSTEM DROP FILESYSTEM CACHE '$cache_path'"
 
     # Incompressible value so the data really spans many file segments.
     $CLICKHOUSE_CLIENT --query_id "$qid" --enable_filesystem_cache_on_write_operations=1 -q "
