@@ -102,15 +102,6 @@ jobs:
             echo "DOCKER_TAG_TYPE=release" >> "$GITHUB_ENV"
             echo "IS_LATEST=0" >> "$GITHUB_ENV"
           fi
-          # A recovery run (only-repo/only-docker) rebuilds an already-released
-          # tag, which may no longer be the current release on its branch. The
-          # floating docker tags (minor/major/latest) must keep pointing at the
-          # current release, so they are not (re)published on a recovery run.
-          if [ "${{ inputs.only-repo }}" == "true" ] || [ "${{ inputs.only-docker }}" == "true" ]; then
-            echo "IS_RECOVERY=1" >> "$GITHUB_ENV"
-          else
-            echo "IS_RECOVERY=0" >> "$GITHUB_ENV"
-          fi
       - name: Download All Release Artifacts
         if: ${{ inputs.type == 'patch' && ! inputs.only-docker }}
         shell: bash
@@ -270,13 +261,13 @@ jobs:
             LABEL_VERSION="${CLICKHOUSE_VERSION_STRING}${VERSION_SUFFIX}"
             # The exact version tag is always (re)built. The floating
             # minor/major/latest tags track the current release, so they are
-            # skipped on a recovery run to avoid moving them back to an older
-            # image (IS_RECOVERY is set in "Prepare Release Info").
+            # skipped on a recovery run (only-repo/only-docker) to avoid moving
+            # them back to an older image.
             TAGS=(
               "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_STRING}${VERSION_SUFFIX}"
             )
 
-            if [ "$IS_RECOVERY" != "1" ]; then
+            if [ "${{ inputs.only-repo }}" != "true" ] && [ "${{ inputs.only-docker }}" != "true" ]; then
               TAGS+=(
                 "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_MINOR}${VERSION_SUFFIX}"
                 "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_MAJOR}${VERSION_SUFFIX}"
@@ -348,13 +339,13 @@ jobs:
             LABEL_VERSION="${CLICKHOUSE_VERSION_STRING}${VERSION_SUFFIX}"
             # The exact version tag is always (re)built. The floating
             # minor/major/latest tags track the current release, so they are
-            # skipped on a recovery run to avoid moving them back to an older
-            # image (IS_RECOVERY is set in "Prepare Release Info").
+            # skipped on a recovery run (only-repo/only-docker) to avoid moving
+            # them back to an older image.
             TAGS=(
               "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_STRING}${VERSION_SUFFIX}"
             )
 
-            if [ "$IS_RECOVERY" != "1" ]; then
+            if [ "${{ inputs.only-repo }}" != "true" ] && [ "${{ inputs.only-docker }}" != "true" ]; then
               TAGS+=(
                 "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_MINOR}${VERSION_SUFFIX}"
                 "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_MAJOR}${VERSION_SUFFIX}"
