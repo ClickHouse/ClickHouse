@@ -2244,6 +2244,19 @@ public:
     std::optional<NameSet> supportedPrewhereColumns() const override { return nested->supportedPrewhereColumns(); }
     bool canMoveConditionsToPrewhere() const override { return nested->canMoveConditionsToPrewhere(); }
 
+    /// Forward the delegate's trivial-count contract. `StorageProxy` does not forward
+    /// `supportsTrivialCountOptimization`, so without this override the wrapper would fall back to the
+    /// `IStorage` default (`false`), while `StorageFile`, `StorageObjectStorage` and plain `StorageURL`
+    /// all return `true`. The planner (`applyTrivialCountIfPossible`) reads this bit before setting
+    /// `SelectQueryInfo::optimize_trivial_count`, which the delegate's `read()` uses to count rows
+    /// without materializing columns (and which, for object storage, also enables the cached
+    /// `totalRows()` path). Otherwise `SELECT count()` from `ENGINE = URL('file://...')` / `URL('s3://...')`
+    /// would read the external data instead of using the backend's optimized count path.
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override
+    {
+        return nested->supportsTrivialCountOptimization(storage_snapshot, query_context);
+    }
+
     /// Keep the persisted syntax as `URL(...)`, but materialize the `url_base`-resolved URL into the
     /// stored arguments. Otherwise a relative reference resolved via `url_base` (e.g.
     /// `URL('data.csv')` with `SET url_base = 'file://.../'`) would persist without a scheme and, after
@@ -2515,9 +2528,11 @@ void registerStorageURL(StorageFactory & factory)
             .description = R"DOCS_MD(
 Queries data to/from a remote HTTP/HTTPS server. This engine is similar to the [File](../../../engines/table-engines/special/file.md) engine.
 
+The `URL` engine is also a unified wrapper that dispatches to the right backend based on the URL scheme, so a recognized non-HTTP scheme is delegated to the matching engine — see [Dispatching by URL scheme](#scheme-dispatch) below.
+
 Syntax: `URL(URL [,Format] [,CompressionMethod])`
 
-- The `URL` parameter must conform to the structure of a Uniform Resource Locator. The specified URL must point to a server that uses HTTP or HTTPS. This does not require any additional headers for getting a response from the server.
+- The `URL` parameter must conform to the structure of a Uniform Resource Locator. For an `http`/`https` URL (the default backend), it must point to a server that uses HTTP or HTTPS, and getting a response from the server does not require any additional headers. A URL with a recognized non-HTTP scheme (`file://`, `s3://`, `az://`, `hdfs://`, …) is instead delegated to the matching engine — see [Dispatching by URL scheme](#scheme-dispatch) below.
 
 - The `Format` must be one that ClickHouse can use in `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see [Formats](/interfaces/formats#formats-overview).
 
@@ -2542,6 +2557,14 @@ The supported `CompressionMethod` should be one of following:
 If `CompressionMethod` is not specified, it defaults to `auto`. This means ClickHouse detects compression method from the suffix of `URL` parameter automatically. If the suffix matches any of compression method listed above, corresponding compression is applied or there won't be any compression enabled.
 
 For example, for engine expression `URL('http://localhost/test.gzip')`, `gzip` compression method is applied, but for `URL('http://localhost/test.fr')`, no compression is enabled because the suffix `fr` does not match any compression methods above.
+
+## Dispatching by URL scheme {#scheme-dispatch}
+
+The `URL` engine is a unified wrapper on top of the other file- and object-storage engines: it dispatches to the right backend based on the URL scheme. `http`/`https` (and any unrecognized scheme) are served by the `URL` engine itself; `file://` is served by the [File](../../../engines/table-engines/special/file.md) engine; `s3://`, `gs://`, `gcs://`, `oss://` by the [S3](/engines/table-engines/integrations/s3) engine; `az://`, `azure://`, `abfss://` by the [AzureBlobStorage](/engines/table-engines/integrations/azureBlobStorage) engine; and `hdfs://` by the [HDFS](/engines/table-engines/integrations/hdfs) engine.
+
+Only the S3 schemes that the S3 URI mapper resolves to a concrete endpoint without extra configuration (`s3`, plus `gs`/`gcs`/`oss`) are dispatched. Other S3-compatible vendor schemes (`cos`, `obs`, `eos`, …) are region-specific and have no default endpoint mapping, so passing such a URL to the `URL` engine is treated as an unrecognized scheme and reported as an error; use the [S3](/engines/table-engines/integrations/s3) engine directly (with `url_scheme_mappers` configured) for those backends.
+
+The [url_base](/operations/settings/settings.md#url_base) setting is applied before scheme dispatch, so a relative reference is first resolved against the base and then routed to the matching engine.
 
 ## Usage {#using-the-engine-in-the-clickhouse-server}
 
