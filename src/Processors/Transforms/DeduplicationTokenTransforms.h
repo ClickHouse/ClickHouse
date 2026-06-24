@@ -32,7 +32,6 @@ class AddDeduplicationInfoTransform final : public ISimpleTransform
     StorageIDMaybeEmpty root_view_id;
     std::string user_token;
     size_t block_number = 0;
-    InsertDeduplicationVersions unification_stage = InsertDeduplicationVersions::NEW_UNIFIED_HASHES;
 public:
     explicit AddDeduplicationInfoTransform(SharedHeader header_);
 
@@ -40,7 +39,6 @@ public:
         InsertDependenciesBuilderConstPtr insert_dependencies_,
         StorageIDMaybeEmpty root_view_id_,
         std::string user_token_,
-        InsertDeduplicationVersions unification_stage_,
         SharedHeader header_);
 
     String getName() const override { return "AddDeduplicationInfoTransform"; }

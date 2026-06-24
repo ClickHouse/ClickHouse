@@ -75,7 +75,7 @@ public:
     DeduplicationInfo(const DeduplicationInfo & other);
     DeduplicationInfo(DeduplicationInfo && other) = default;
 
-    static Ptr create(bool async_insert_, InsertDeduplicationVersions unification_stage);
+    static Ptr create(bool async_insert_);
 
     ChunkInfo::Ptr merge(const ChunkInfo::Ptr & right) const override;
     Ptr mergeSelf(const Ptr & right) const;
@@ -125,16 +125,13 @@ public:
     const std::vector<StorageIDMaybeEmpty> & getVisitedViews() const;
 
 private:
-    DeduplicationInfo(bool async_insert_, InsertDeduplicationVersions unification_stage_);
+    explicit DeduplicationInfo(bool async_insert_);
 
     /// Row-major hash: for each row, hash all columns. Used by the old compatibility path.
     UInt128 calculateDataHashRowWise(size_t offset, const Block & block) const;
     /// Column-major hash: for each column, hash the row range. Used by the unified path.
     /// Produces a different hash than row-wise for the same data.
     UInt128 calculateDataHashColumnWise(size_t offset, const Block & block) const;
-    // the old one hash
-    DeduplicationHash getBlockHash(size_t offset, const std::string & partition_) const;
-    // the new unified hash
     DeduplicationHash getBlockUnifiedHash(size_t offset, const std::string & partition_) const;
     std::vector<DeduplicationHash> chooseDeduplicationHashes(size_t offset, const std::string & partition_id) const;
 
@@ -165,7 +162,6 @@ private:
     LoggerPtr logger = getLogger("DedupInfo");
     size_t instance_id = 0;
     bool is_async_insert = false;
-    InsertDeduplicationVersions unification_stage;
 
 
     InsertDependenciesBuilderConstPtr insert_dependencies;
