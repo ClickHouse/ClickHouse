@@ -15,15 +15,13 @@ extern const Event JoinSpillingHashJoinSwitchedToGraceJoin;
 namespace DB
 {
 
-/// Spill is triggered when the (measured or projected) live bytes reach
+/// The per-block pre-insert spill check trips when the live bytes reach
 /// `max_bytes_before_external_join` divided by this factor - i.e. at half the configured cap rather
 /// than the full cap. The headroom absorbs allocations not yet reflected in the byte count at the
-/// moment of the check:
-///   - the transient conversion peak while handing buffers over to `GraceHashJoin`, and
-///   - for a pending deferred `ConcurrentHashJoin` build, the `RowRefList` arena nodes that
-///     `getProjectedTotalByteCount` cannot size yet (it lacks the distinct-key count).
-/// The call sites apply it for different subsets of these reasons (see the comment at each use):
-/// they share a value, not a rationale, so it is named rather than written as a bare literal.
+/// moment of the check: the power-of-two hash-table buffer doubling (which transiently holds the old
+/// and new buffers at once) and the conversion peak while handing buffers over to `GraceHashJoin`.
+/// The terminal check in `onBuildPhaseFinish` does not use this factor: there the projected byte
+/// count is already a complete, conservative upper bound on the post-replay footprint.
 static constexpr size_t SPILL_TRIGGER_HEADROOM_FACTOR = 2;
 
 SpillingHashJoin::SpillingHashJoin(
@@ -251,26 +249,17 @@ void SpillingHashJoin::onBuildPhaseFinish()
 {
     if (state.load(std::memory_order_acquire) == State::COLLECTING)
     {
-        /// Safety net for the terminal block: the proactive pre-insert check in `addBlockToJoin`
-        /// fires only on subsequent calls. If the very last block pushed total bytes past
-        /// `max_bytes_before_external_join` without a follow-up insert to trigger the switch,
-        /// promote it to `GraceHashJoin` here so the configured cap is honored. The projected
-        /// byte count matters here even more than in `addBlockToJoin`: this check runs right
-        /// before the deferred build would be replayed (`onBuildPhaseFinish` below), the last
-        /// point where switching to `GraceHashJoin` is still possible.
+        /// Final spill decision, made right before the deferred build would be replayed
+        /// (`onBuildPhaseFinish` below) - the last point where switching to `GraceHashJoin` is still
+        /// possible. For a pending deferred `ConcurrentHashJoin` build the projected byte count now
+        /// accounts for the full post-replay footprint - the hash-table buffers and the `RowRefList`
+        /// arena nodes, both sized from the distinct-key estimate gathered while buffering - so the
+        /// raw projection is compared against the cap directly, with no extra margin (the projection
+        /// is already a conservative upper bound). A non-deferred build (or the single `HashJoin`
+        /// path) has its maps and arena built, so its byte count is exact.
         const size_t total_bytes = concurrent_join ? concurrent_join->getProjectedTotalByteCount() : hash_join->getTotalByteCount();
 
-        /// A pending deferred `ConcurrentHashJoin` build has not allocated its `RowRefList` arena
-        /// nodes yet, and `getProjectedTotalByteCount` cannot size them (it lacks the distinct-key
-        /// count). Mirror the pre-insert half-threshold margin in `addBlockToJoin`: trip at half of
-        /// `max_bytes_before_external_join` so the last buffered block cannot push the post-replay
-        /// footprint past the cap with no spill opportunity left here - this is the last point where
-        /// switching to `GraceHashJoin` is still possible. A non-deferred build (or the single
-        /// `HashJoin` path) already has its maps and arena built, so its byte count is exact and the
-        /// full threshold applies.
-        const bool deferred_pending = concurrent_join && concurrent_join->hasPendingDeferredBuild();
-        const size_t effective_bytes = deferred_pending ? total_bytes * SPILL_TRIGGER_HEADROOM_FACTOR : total_bytes;
-        if (effective_bytes >= max_bytes_before_external_join)
+        if (total_bytes >= max_bytes_before_external_join)
         {
             switchToGraceHashJoin();
         }

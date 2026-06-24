@@ -8,6 +8,7 @@
 #include <base/types.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/HyperLogLogWithSmallSetOptimization.h>
 #include <Interpreters/TableJoin.h>
 #include <atomic>
 
@@ -65,18 +66,15 @@ public:
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
 
-    /// `getTotalByteCount` plus a projection of the memory the pending deferred build will allocate
-    /// once it is replayed at `onBuildPhaseFinish`: the hash-table buffers sized for the buffered
-    /// rows and, for string-key maps, the arena copies of the keys. During a deferred build the maps
-    /// are still empty, so `getTotalByteCount` alone would let the wrapping `SpillingHashJoin` pass
-    /// its spill threshold and the replay would then overshoot the cap with no spill opportunity
-    /// left. Equals `getTotalByteCount` when nothing is buffered (non-deferred builds).
+    /// `getTotalByteCount` plus a conservative upper bound on the memory the pending deferred build
+    /// will allocate once it is replayed at `onBuildPhaseFinish`: the hash-table buffers sized for the
+    /// estimated distinct-key count, the arena copies of string keys, and the `RowRefList` arena nodes
+    /// for duplicate rows. During a deferred build the maps are still empty, so `getTotalByteCount`
+    /// alone would let the wrapping `SpillingHashJoin` pass its spill threshold and the replay would
+    /// then overshoot the cap with no spill opportunity left. Equals `getTotalByteCount` when nothing
+    /// is buffered (non-deferred builds). The distinct-key count it uses is the same one that sizes
+    /// the reserve in `onBuildPhaseFinish`, so the spill decision matches the build.
     size_t getProjectedTotalByteCount() const;
-
-    /// True while a deferred build is still parked in the buffers (blocks not yet replayed). The
-    /// wrapping `SpillingHashJoin` uses this to know that `getProjectedTotalByteCount` is an estimate
-    /// that omits the `RowRefList` arena nodes, so its terminal spill check must keep a margin.
-    bool hasPendingDeferredBuild() const;
 
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
@@ -128,8 +126,9 @@ public:
 
         /// Deferred (exact-size) build: scattered right blocks routed to this slot are buffered here
         /// during the build phase instead of being inserted immediately. At `onBuildPhaseFinish` the
-        /// slot's hash map is reserved to the exact row count and the blocks are replayed, so the map
-        /// is filled without any rehash. Only used when `deferred_build` is set (no statistics hint).
+        /// slot's hash map is reserved to the estimated distinct-key count (see `NdvShard`) and the
+        /// blocks are replayed, so the map is filled with few or no rehashes. Only used when
+        /// `deferred_build` is set (no statistics hint).
         /// `buffered_rows`/`buffered_bytes` keep `getTotalRowCount`/`getTotalByteCount` accurate while
         /// the data is parked here, and `getProjectedTotalByteCount` projects the size of the maps the
         /// replay would build on top of them, so the wrapping `SpillingHashJoin` can still decide to
@@ -164,7 +163,8 @@ private:
     const size_t external_join_threshold;
 
     /// When true, slots buffer their right blocks during the build phase and the hash maps are filled
-    /// at `onBuildPhaseFinish` after being reserved to the exact row count (no rehash during build).
+    /// at `onBuildPhaseFinish` after being reserved to the estimated distinct-key count (few or no
+    /// rehashes during build).
     /// Enabled only when there is no statistics-driven preallocation to fall back on (see the ctor),
     /// and never under `join_overflow_mode = 'break'` (which cannot be honored after a full replay).
     bool deferred_build = false;
@@ -185,7 +185,43 @@ private:
     std::mutex totals_mutex;
     Block totals;
 
-    ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
+    /// Distinct-key estimation for the deferred build. Each `addBlockToJoin` caller feeds the scatter
+    /// hashes of its whole source block into ONE shard, chosen round-robin, taking that shard's lock
+    /// once per block (not per row) - this keeps the HLL updates off the per-slot buffering mutex and
+    /// avoids the per-row contention/allocation of the previous per-slot design. The shards are merged
+    /// (HLL union, so cross-shard duplicate keys are not double-counted) once the build finishes to get
+    /// the global distinct-key estimate. The number of shards equals `slots` (>= the build concurrency,
+    /// so round-robin rarely makes two concurrent callers collide). Only allocated for deferred builds.
+    struct NdvShard
+    {
+        std::mutex mutex;
+        HyperLogLogWithSmallSetOptimization<UInt64, 16, 12> hll;
+    };
+    std::vector<std::unique_ptr<NdvShard>> ndv_shards;
+    std::atomic<size_t> ndv_shard_round_robin = 0;
+
+    /// Feed a source block's scatter hashes into a round-robin distinct-key shard (deferred build).
+    /// The raw scatter hash is reused directly: the HLL's own `intHash32` mixes it, and because the
+    /// estimate is now global (shards are merged, not partitioned per slot) there is no per-slot bit
+    /// correlation that would require an extra finalizer.
+    void feedDistinctKeyEstimator(const std::vector<UInt64> & block_key_hashes);
+
+    /// Merged global distinct-key estimate over all shards (raw, unbiased), plus the buffered
+    /// source-row count via `total_buffered_rows`. Valid after the build phase (shards are frozen).
+    size_t sumBufferedDistinctKeyEstimates(size_t & total_buffered_rows) const;
+
+    /// Up-biased, source-row-clamped distinct-key estimate (see `ndvReserveEstimate`). Returns 0 when
+    /// nothing is buffered. Used both to size the reserve (`onBuildPhaseFinish`) and as the hash-table
+    /// buffer term of `getProjectedTotalByteCount`; the two MUST agree, so they derive it identically
+    /// from the same frozen shards.
+    size_t estimateBufferedDistinctKeys() const;
+
+    /// `out_block_key_hashes`, when non-null, is filled with the raw scatter hashes of all rows of the
+    /// source block (in row order, not split per slot), for the deferred build's distinct-key estimate.
+    ScatteredBlocks dispatchBlock(
+        const Strings & key_columns_names,
+        Block && from_block,
+        std::vector<UInt64> * out_block_key_hashes = nullptr);
 };
 
 }
