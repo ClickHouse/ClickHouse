@@ -483,6 +483,12 @@ def main():
                     if is_latest:
                         tags.append(f"--tag={image}:latest{version_suffix}")
 
+                    # The multi-arch buildx log is large; praktika captures and
+                    # truncates the tail of a step's output, which hides the
+                    # actual build error. Redirect the full log to a file and,
+                    # on failure, print just its tail so the real error survives.
+                    image_slug = image.replace("/", "_")
+                    build_log = f"/tmp/docker_build_{image_slug}_{variant}.log"
                     Shell.check(
                         f"docker buildx build"
                         f" --platform=linux/amd64,linux/arm64"
@@ -494,7 +500,11 @@ def main():
                         f" --build-arg=VERSION={version_string}"
                         f" --progress=plain"
                         f" --file={dockerfile}"
-                        f" {context}",
+                        f" {context}"
+                        f" > {build_log} 2>&1"
+                        f" || (echo '=== docker buildx build failed for"
+                        f" {image}:{label_version}; tail of {build_log}: ===';"
+                        f" tail -n 200 {build_log}; exit 1)",
                         strict=True,
                     )
 
