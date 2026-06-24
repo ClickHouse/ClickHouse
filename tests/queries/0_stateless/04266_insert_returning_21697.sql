@@ -143,5 +143,14 @@ SET async_insert = 0;
 SELECT 'nested union settings rejection';
 INSERT INTO t_insert_returning (id, name) RETURNING ((SELECT 1 SETTINGS max_memory_usage=1000000) UNION ALL SELECT 2) VALUES (200, 'nested'); -- { serverError NOT_IMPLEMENTED }
 
+-- Rejected setting inside a derived-table (FROM) subquery must also be caught
+INSERT INTO t_insert_returning (id, name) RETURNING (SELECT * FROM (SELECT 1 SETTINGS max_memory_usage=1000000)) VALUES (201, 'derived'); -- { serverError NOT_IMPLEMENTED }
+
+-- Rejected setting inside a scalar subquery must also be caught
+INSERT INTO t_insert_returning (id, name) RETURNING (SELECT (SELECT 1 SETTINGS max_memory_usage=1000000)) VALUES (202, 'scalar'); -- { serverError NOT_IMPLEMENTED }
+
+-- Rejected setting inside a CTE must also be caught
+INSERT INTO t_insert_returning (id, name) RETURNING (WITH cte AS (SELECT 1 SETTINGS max_memory_usage=1000000) SELECT * FROM cte) VALUES (203, 'cte'); -- { serverError NOT_IMPLEMENTED }
+
 DROP TABLE t_insert_returning_other;
 DROP TABLE t_insert_returning;

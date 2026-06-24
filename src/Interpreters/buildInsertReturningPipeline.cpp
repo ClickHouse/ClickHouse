@@ -22,6 +22,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 
+#include <functional>
 #include <string_view>
 #include <unordered_set>
 
@@ -82,34 +83,37 @@ namespace
             "use_concurrency_control",
         };
 
-        /// Walk every SELECT branch in the UNION tree recursively. Each branch's SETTINGS are
-        /// applied by InterpreterSelectQuery::initSettings / the analyzer QueryTreeBuilder.
-        /// Parenthesised sub-unions produce nested ASTSelectWithUnionQuery children, so the scan
-        /// must recurse to avoid bypassing this check via a nested union branch.
-        std::function<void(const ASTPtr &)> walk = [&](const ASTPtr & node)
+        /// A SETTINGS clause attached to any SELECT in the subquery is applied to the query context
+        /// when that SELECT is interpreted (InterpreterSelectQuery::initSettings / the analyzer
+        /// QueryTreeBuilder). The blocked settings configure shared query-level state that is bound
+        /// once when the outer INSERT registers in the process list, so a value set anywhere in the
+        /// subquery — a UNION branch, a derived-table or scalar subquery, a CTE — is silently
+        /// ineffective rather than scoped. Reject such a setting at any depth instead of ignoring it.
+        /// The scan walks the whole AST so no SETTINGS position is missed.
+        std::function<void(const IAST *)> walk = [&](const IAST * node)
         {
-            if (const auto * union_node = node->as<ASTSelectWithUnionQuery>())
-            {
-                if (union_node->list_of_selects)
-                    for (const auto & child : union_node->list_of_selects->children)
-                        walk(child);
-            }
-            else if (const auto * select = node->as<ASTSelectQuery>())
-            {
-                if (!select->settings())
-                    return;
-                for (const auto & change : select->settings()->as<ASTSetQuery &>().changes)
-                {
+            if (!node)
+                return;
+
+            const ASTSetQuery * settings = nullptr;
+            if (const auto * select = node->as<ASTSelectQuery>())
+                settings = select->settings() ? &select->settings()->as<ASTSetQuery &>() : nullptr;
+            else
+                settings = node->as<ASTSetQuery>();
+
+            if (settings)
+                for (const auto & change : settings->changes)
                     if (unsupported_settings.contains(change.name))
                         throw Exception(
                             ErrorCodes::NOT_IMPLEMENTED,
                             "Setting '{}' is not supported in the SETTINGS clause of an INSERT ... RETURNING subquery",
                             change.name);
-                }
-            }
+
+            for (const auto & child : node->children)
+                walk(child.get());
         };
 
-        walk(returning_select);
+        walk(returning_select.get());
     }
 }
 
