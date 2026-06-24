@@ -30,3 +30,12 @@ SELECT countMatches('aaa', '^a');
 SELECT splitByRegexp('^a', 'aaa');
 -- splitByRegexp: separator anchored at a word boundary matches only the first `x` (the others are mid-word)
 SELECT splitByRegexp('\\bx', 'xxx');
+
+-- regexpPosition: 2nd occurrence of `\b\w` should be the 'y' in 'york' at byte 5
+SELECT regexpPosition('new york is the greatest', '\\b\\w', 1, 2);
+-- regexpPosition: 3rd occurrence of `\b\w`
+SELECT regexpPosition('new york is the greatest', '\\b\\w', 1, 3);
+-- regexpPosition: `^.` has only one occurrence; asking for the 2nd should return 0
+SELECT regexpPosition('abc', '^.', 1, 2);
+-- regexpPosition: last letter of each word, 2nd occurrence ('k' in 'york' at byte 8)
+SELECT regexpPosition('new york is the greatest', '(\\w)\\b', 1, 2);
