@@ -1138,6 +1138,18 @@ do
             || head -10 "$log"
     } | sed "s/^/$test\t/" >> run-errors.tsv ||:
 done
+
+# Shell-script queries (<query type="shell">) report a failure on a server by
+# emitting a `run-error` line to stdout (the per-test *-err.log is not always
+# available at report time). Fold those into run-errors.tsv as well, in the
+# 'test<tab>error' shape the Run Errors table and CIDB expect, so a shell test
+# that failed on one server is reported instead of silently disappearing.
+for test_file in *-raw.tsv
+do
+    test_name=$(basename "$test_file" "-raw.tsv")
+    sed -n "s/^run-error\t\([0-9]*\)\t\([0-9]*\)\t/$test_name\tquery \1 server \2: /p" \
+        < "$test_file" >> run-errors.tsv ||:
+done
 }
 
 function report_metrics

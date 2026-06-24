@@ -741,6 +741,33 @@ for query_index in queries_to_run:
         else:
             no_errors.append(i)
 
+    # A shell-script query is a benchmark we control end to end, so -- unlike an
+    # SQL query that may legitimately use a function missing from the old server
+    # -- it is expected to run on every server. If it fails on any of them the
+    # comparison is meaningless. Previously such a failure was swallowed as a
+    # "partial" query: the run continued on whatever server survived and the
+    # query was dropped from the report and CIDB with no error anywhere (empty
+    # run-errors.tsv, green job), so a broken shell test looked like it simply
+    # produced no data. Fail loudly instead, and echo the captured error from
+    # each failing server to stdout as a `run-error` line so it survives in the
+    # archived per-test raw .tsv (the per-test stderr log is not uploaded).
+    # compare.sh parses raw .tsv by known leading tag and ignores the rest, so
+    # adding this tag is safe.
+    if q_item["kind"] == "shell" and len(no_errors) < len(all_connections):
+        failed = []
+        for i, e in enumerate(query_error_on_connection):
+            if e:
+                failed.append(i)
+                print(f"run-error\t{query_index}\t{i}\t{tsv_escape(e)}")
+        # Flush before raising so the diagnostics reach the raw .tsv even though
+        # we are about to exit through an unhandled exception.
+        sys.stdout.flush()
+        raise Exception(
+            f"Shell query {query_prefix} failed on server(s) {failed}: a shell "
+            "performance test must run on all servers to be comparable. See the "
+            "'run-error' lines in the raw output for the captured stderr."
+        )
+
     if len(no_errors) == 0:
         continue
     elif len(no_errors) < len(all_connections):
