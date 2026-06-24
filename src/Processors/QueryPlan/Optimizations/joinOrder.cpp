@@ -1097,7 +1097,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
         LOG_TRACE(log,
             "Number of relations {} exceeds the DP threshold {}, skipping DP optimization invoking greedy algorithm",
             n, std::numeric_limits<Bitvector>::digits);
-        return solveGreedy();
+        return nullptr;
     }
 
     struct DPEntry
@@ -1139,7 +1139,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
     if (!full_built)
     {
         LOG_TRACE(log, "DPsub: join graph is either too complex or disconnected!");
-        return solveGreedy();
+        return nullptr;
     }
 
     return buildPhysicalPlan(dptable, full_set);
