@@ -325,7 +325,12 @@ public:
         bool find_exact_ranges,
         bool is_parallel_reading_from_replicas_,
         bool allow_query_condition_cache_,
-        bool supports_skip_indexes_on_data_read);
+        bool supports_skip_indexes_on_data_read,
+        /// UNIQUE KEY — per-partition snapshots pinned at part-selection time
+        /// (`MergeTreeData::SnapshotData::uk_partition_snapshots`). Null on
+        /// estimation / without-data paths ⇒ every partition reads as fully
+        /// live. See `applyUniqueKeyDeleteBitmaps`.
+        const std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> * uk_partition_snapshots = nullptr);
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;

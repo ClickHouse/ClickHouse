@@ -1816,7 +1816,10 @@ Block MergeTreeData::getBlockWithVirtualsForFilter(
 
 
 std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
-    const ActionsDAG & filter_actions_dag, ContextPtr local_context, const RangesInDataParts & parts) const
+    const ActionsDAG & filter_actions_dag,
+    ContextPtr local_context,
+    const RangesInDataParts & parts,
+    const std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> & uk_partition_snapshots) const
 {
     if (parts.empty())
         return 0;
@@ -1878,7 +1881,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     /// `matched_parts` on the non-UK hot path.
     if (table_has_uk)
     {
-        size_t dead = getDeadRowsForUniqueKey(matched_parts, local_context);
+        size_t dead = getDeadRowsForUniqueKey(matched_parts, uk_partition_snapshots);
         res = (dead >= res) ? 0 : res - dead;
     }
     return res;
@@ -6156,28 +6159,29 @@ size_t MergeTreeData::getTotalUncompressedBytesInPatches() const
     return total_uncompressed_bytes_in_patches.load();
 }
 
-size_t MergeTreeData::getDeadRowsForUniqueKey(const DataPartsVector & parts, ContextPtr query_context) const
+size_t MergeTreeData::getDeadRowsForUniqueKey(
+    const DataPartsVector & parts,
+    const std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> & partition_snapshots) const
 {
-    /// Early bail for non-UK tables — avoids paying per-partition snapshot
-    /// capture on hot paths (`StorageMergeTree::totalRows` is called per query).
-    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/false);
-    if (!metadata_snapshot || !metadata_snapshot->hasUniqueKey())
-        return 0;
-
-    /// One snapshot per touched partition, from the same `(parts, csn,
-    /// bitmap_at)` source the read path uses so `count()` and `SELECT` agree.
-    /// Bitmap-read exceptions propagate (don't silently over-count on corrupt
-    /// bitmaps); see the header for the full contract.
-    std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> partition_to_snapshot;
+    /// The snapshots were pinned by the caller (BEFORE it captured `parts`) from
+    /// the same `(csn, bitmap_at)` source the read path uses, so `count()` and
+    /// `SELECT` agree. Bitmap-read exceptions propagate (don't silently
+    /// over-count on corrupt bitmaps); see the header for the full contract.
     size_t dead = 0;
     for (const auto & part : parts)
     {
         if (!part)
             continue;
         const String & partition_id = part->info.getPartitionId();
-        auto it = partition_to_snapshot.find(partition_id);
-        if (it == partition_to_snapshot.end())
-            it = partition_to_snapshot.emplace(partition_id, getOrCreateTxnController(partition_id).takeQuerySnapshot()).first;
+
+        /// Partition ABSENT ⇒ it was not active when the snapshots were pinned
+        /// (created concurrently after) ⇒ no pre-snapshot DELETE ⇒ no dead rows
+        /// for this read. Don't lazily pin (a gap-DELETE is post-snapshot and
+        /// must be ignored). Active partitions whose only DELETE state is on-disk
+        /// bitmaps are instantiated and pinned by the capture, so never absent.
+        auto it = partition_snapshots.find(partition_id);
+        if (it == partition_snapshots.end())
+            continue;
 
         const auto & snapshot = it->second;
         if (!snapshot)
@@ -6188,10 +6192,6 @@ size_t MergeTreeData::getDeadRowsForUniqueKey(const DataPartsVector & parts, Con
         /// added this part's full `rows_count` to the live total, so counting
         /// `rows_count` dead here nets it to zero — the live total and the dead
         /// count stay over the SAME filtered set.
-        /// TODO(unique-key): same two deferred refinements as the SELECT path
-        /// (`UniqueKeyReadFilter.cpp::applyUniqueKeyDeleteBitmaps`): pin at
-        /// part-list-capture time once UPSERT lands, and merge↔bitmap
-        /// reconciliation.
         if (!UniqueKeyTxn::isPartVisibleAtSnapshotCsn(part->getUniqueKeyMeta(), snapshot.pinnedCsn()))
         {
             dead += part->rows_count;
@@ -6646,6 +6646,32 @@ UniqueKeyTxn::PartitionTxnController & MergeTreeData::getOrCreateTxnController(c
     auto state = UniqueKeyTxn::MakeLocalStrategies(*this, partition_id);
     auto [inserted_it, _] = unique_key_txn_controllers.emplace(partition_id, std::move(state));
     return *inserted_it->second;
+}
+
+std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> MergeTreeData::captureUniqueKeyPartitionSnapshots() const
+{
+    /// Enumerate every ACTIVE partition — NOT just the controllers already
+    /// instantiated. A controller is created lazily (`getOrCreateTxnController`),
+    /// and on a clean restart/ATTACH a partition with committed
+    /// `delete_bitmap_<csn>.rbm` sidecars on disk has no in-memory controller
+    /// until first access. If we pinned only existing controllers, such a
+    /// partition would be absent from the map, the read would skip its bitmap
+    /// filter, and already-deleted rows would resurface. So instantiate (and
+    /// CSN-seed from on-disk state via `MakeLocalStrategies`) a controller for
+    /// every active partition, then pin it.
+    ///
+    /// `getAllPartitionIds()` takes (and releases) the parts read-lock and
+    /// returns a value copy; we hold no stock-MergeTree lock while calling
+    /// `getOrCreateTxnController` (registry mutex) or `takeQuerySnapshot`
+    /// (coordinator publish lock), per the no-stock-lock-under-strategy-lock
+    /// contract.
+    const auto active_partition_ids = getAllPartitionIds();
+
+    std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> snapshots;
+    snapshots.reserve(active_partition_ids.size());
+    for (const auto & partition_id : active_partition_ids)
+        snapshots.emplace(partition_id, getOrCreateTxnController(partition_id).takeQuerySnapshot());
+    return snapshots;
 }
 
 /// Out-of-line here (where `PartitionTxnController` is complete) so the
@@ -11198,6 +11224,13 @@ MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapsho
 
     auto snapshot_data = std::make_unique<SnapshotData>();
     snapshot_data->storage = shared_from_this();
+
+    /// UNIQUE KEY — pin the per-partition snapshots BEFORE capturing the part
+    /// list, so each pinned csn lower-bounds the parts the read then sees and a
+    /// DELETE committing in the gap is excluded by the read-side csn filter.
+    /// Non-UK tables skip this entirely.
+    if (metadata_snapshot->hasUniqueKey())
+        snapshot_data->uk_partition_snapshots = captureUniqueKeyPartitionSnapshots();
 
     auto [query_ranges, query_parts] = getPossiblySharedVisibleDataPartsRanges(query_context);
     snapshot_data->parts = query_ranges;

@@ -38,6 +38,7 @@
 #include <Poco/Timestamp.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Storages/MergeTree/UniqueKey/Txn/SnapshotPinning.h>
 #include <Storages/MergeTree/UniqueKey/Txn/UniqueKeyPartitionMutex.h>
 
 #include <boost/multi_index_container.hpp>
@@ -665,6 +666,13 @@ public:
         RangesInDataPartsPtr parts;
 
         MutationsSnapshotPtr mutations_snapshot;
+
+        /// UNIQUE KEY — per-partition query snapshots pinned BEFORE `parts` was
+        /// captured (so each pinned csn lower-bounds the part list). The read
+        /// path keys off `data_part->info.getPartitionId()`: in-map ⇒ apply the
+        /// snapshot's csn filter + delete bitmap; not-in-map ⇒ fully live. Empty
+        /// for non-UK tables. `QuerySnapshot` is move-only, so this map is too.
+        std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> uk_partition_snapshots;
     };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
@@ -795,6 +803,25 @@ public:
     /// by `unique_key_txn_controllers`, valid for the table's lifetime (no eviction).
     UniqueKeyTxn::PartitionTxnController & getOrCreateTxnController(const String & partition_id) const;
 
+    /// UNIQUE KEY — pin a query snapshot on EVERY currently-ACTIVE partition,
+    /// returning partition_id → snapshot. Instantiates the controller for any
+    /// active partition not yet touched (lazily created controllers would
+    /// otherwise miss a partition that has on-disk delete bitmaps but no
+    /// in-memory controller after restart — "no controller" does NOT imply "no
+    /// committed DELETE"). Callers MUST invoke this BEFORE capturing the part
+    /// list, so each pinned csn is a lower bound consistent with the parts they
+    /// then read: a DELETE committing after the pin gets a csn above it, its
+    /// marker part is `creation_csn`-filtered, and `readBitmap(part, C)` excludes
+    /// its bitmap. A partition ABSENT from the map did not exist at pin time
+    /// (created concurrently after the snapshot) ⇒ no pre-snapshot DELETE ⇒ its
+    /// parts are fully live for this snapshot (the read path must skip the bitmap
+    /// filter, NOT lazily pin). Returns empty for a non-UK table / no active
+    /// partitions.
+    /// TODO(unique-key): this holds GC pins table-wide for the query because the
+    /// snapshot is taken before partition pruning knows which partitions the
+    /// query reads; narrow once pruning can inform the snapshot.
+    std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> captureUniqueKeyPartitionSnapshots() const;
+
     /// Return the number of marks in all parts
     size_t getTotalMarksCount() const;
 
@@ -820,9 +847,17 @@ public:
     size_t getTotalUncompressedBytesInPatches() const;
 
     /// UNIQUE KEY — sum of delete-bitmap dead rows across `parts`, each at its
-    /// partition snapshot. Corrects the trivial-count shortcut so `count()` agrees
-    /// with `SELECT`; non-UK / legacy parts contribute 0. Read errors propagate.
-    size_t getDeadRowsForUniqueKey(const DataPartsVector & parts, ContextPtr query_context) const;
+    /// partition's snapshot from `partition_snapshots` (pinned by the caller via
+    /// `captureUniqueKeyPartitionSnapshots()` BEFORE it captured `parts`, so the
+    /// csns lower-bound the part list). A part whose partition is in the map: a
+    /// too-new part (`creation_csn > C`) counts all its rows dead, else the
+    /// bitmap-at-C cardinality. A part whose partition is ABSENT (no controller
+    /// at pin time ⇒ no committed DELETE) contributes 0 dead. Corrects the
+    /// trivial-count shortcut so `count()` agrees with `SELECT`. Read errors
+    /// propagate.
+    size_t getDeadRowsForUniqueKey(
+        const DataPartsVector & parts,
+        const std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> & partition_snapshots) const;
 
     size_t getAllPartsCount() const;
     size_t getActivePartsCount() const;
@@ -1695,8 +1730,14 @@ protected:
         return data_parts_by_info.equal_range(PartitionID(partition_id), LessDataPart());
     }
 
+    /// `uk_partition_snapshots` must be pinned by the caller via
+    /// `captureUniqueKeyPartitionSnapshots()` BEFORE it captured `parts` (empty
+    /// for non-UK / replicated). Threaded into `getDeadRowsForUniqueKey`.
     std::optional<UInt64> totalRowsByPartitionPredicateImpl(
-        const ActionsDAG & filter_actions_dag, ContextPtr context, const RangesInDataParts & parts) const;
+        const ActionsDAG & filter_actions_dag,
+        ContextPtr context,
+        const RangesInDataParts & parts,
+        const std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> & uk_partition_snapshots) const;
 
     static decltype(auto) getStateModifier(DataPartState state)
     {

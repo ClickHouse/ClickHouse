@@ -1,13 +1,12 @@
 #include <Storages/MergeTree/UniqueKey/UniqueKeyReadFilter.h>
 
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/UniqueKey/Txn/PartitionTxnController.h>
 #include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 
-#include <unordered_map>
+#include <unordered_set>
 
 namespace ProfileEvents
 {
@@ -81,7 +80,7 @@ LiveMarkRanges selectLiveMarkRanges(
 }
 
 std::shared_ptr<std::vector<QuerySnapshot>> applyUniqueKeyDeleteBitmaps(
-    const MergeTreeData & data,
+    const std::unordered_map<String, QuerySnapshot> & partition_snapshots,
     RangesInDataParts & parts_with_ranges,
     LoggerPtr log,
     size_t & sum_marks,
@@ -94,45 +93,50 @@ std::shared_ptr<std::vector<QuerySnapshot>> applyUniqueKeyDeleteBitmaps(
     size_t sum_ranges_after_bitmap = 0;
     size_t sum_rows_after_bitmap = 0;
 
+    /// Hold a `.share()`d refcount of every snapshot we read against so its GC
+    /// pin survives past `AnalysisResult` (the caller attaches this to pipeline
+    /// resources). One entry per touched partition.
     auto pins = std::make_shared<std::vector<QuerySnapshot>>();
     pins->reserve(8);
-    std::unordered_map<String, size_t> partition_id_to_pin;
-    partition_id_to_pin.reserve(8);
+    std::unordered_set<String> shared_partitions;
+    shared_partitions.reserve(8);
 
     for (auto & part_with_ranges : parts_with_ranges)
     {
         const auto & data_part = part_with_ranges.data_part;
         const String & partition_id = data_part->info.getPartitionId();
 
-        size_t pin_idx = 0;
-        auto it = partition_id_to_pin.find(partition_id);
-        if (it == partition_id_to_pin.end())
+        /// Partition ABSENT from the map ⇒ it was not an active partition when
+        /// the snapshot was pinned (before the part list was captured), i.e. it
+        /// was created concurrently AFTER the snapshot ⇒ no pre-snapshot DELETE
+        /// ⇒ no pre-snapshot bitmaps. The part is fully live; skip the bitmap
+        /// filter entirely. We must NOT lazily pin here: a DELETE committing in
+        /// the gap is post-snapshot and its bitmap must be ignored for this read.
+        /// (The pin captures EVERY active partition, including ones whose only
+        /// committed DELETE state is on-disk bitmaps with no in-memory controller
+        /// yet — those are instantiated and pinned, so they are never absent.)
+        auto snap_it = partition_snapshots.find(partition_id);
+        if (snap_it == partition_snapshots.end())
         {
-            auto & txn_controller = data.getOrCreateTxnController(partition_id);
-            pins->push_back(txn_controller.takeQuerySnapshot());
-            pin_idx = pins->size() - 1;
-            partition_id_to_pin.emplace(partition_id, pin_idx);
-        }
-        else
-        {
-            pin_idx = it->second;
+            sum_marks_after_bitmap += part_with_ranges.getMarksCount();
+            sum_ranges_after_bitmap += part_with_ranges.ranges.size();
+            sum_rows_after_bitmap += part_with_ranges.getRowsCount();
+            continue;
         }
 
-        const auto & snapshot = (*pins)[pin_idx];
+        const QuerySnapshot & snapshot = snap_it->second;
+        if (shared_partitions.insert(partition_id).second)
+            pins->push_back(snapshot.share());
         const CSN pinned_csn = snapshot.pinnedCsn();
 
         /// Snapshot-consistency at the pinned csn C: a reader at C sees only
         /// parts with `creation_csn ≤ C` (and, per kept part, the bitmap with
         /// max csn ≤ C). A part newer than C must not have C-era bitmaps
-        /// applied to it, so drop it from this read.
-        /// TODO(unique-key) — KNOWN GAP, fix next batch: the CSN is pinned HERE,
-        /// after the part list was already captured upstream. A DELETE that
-        /// commits in that window is applied to an already-started SELECT/count
-        /// (snapshot-isolation weakening — the query sees a newer bitmap than its
-        /// part list). Fix: pin the per-partition CSN at the part-selection
-        /// boundary and reuse that one pin in both the read and the count paths.
-        /// (Related, also deferred: merge↔bitmap reconciliation — see the
-        /// DELETE-vs-merge TODO in `UniqueKeyDelete.cpp`.)
+        /// applied to it, so drop it from this read. The pin was taken at
+        /// part-selection time (`createStorageSnapshot`), so a DELETE committing
+        /// after it gets csn > C and is filtered here.
+        /// TODO(unique-key): merge↔bitmap reconciliation remains deferred — see
+        /// the DELETE-vs-merge TODO in `UniqueKeyDelete.cpp`.
         if (!isPartVisibleAtSnapshotCsn(data_part->getUniqueKeyMeta(), pinned_csn))
         {
             ++parts_filtered_by_csn;

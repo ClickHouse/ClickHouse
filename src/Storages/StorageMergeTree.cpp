@@ -420,6 +420,9 @@ std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr local_context) cons
     /// SINGLE parts snapshot. Reusing `getTotalActiveSizeInRows()` could pair
     /// a pre-merge sum with a post-merge snapshot (merge publish/retire is not
     /// atomic to this reader) and return a count matching neither state.
+    /// Pin the per-partition snapshots BEFORE capturing parts so a DELETE
+    /// committing in the gap is excluded by the csn filter (snapshot isolation).
+    auto uk_partition_snapshots = captureUniqueKeyPartitionSnapshots();
     auto parts = getDataPartsVectorForInternalUsage();
     UInt64 total = 0;
     for (const auto & part : parts)
@@ -427,14 +430,21 @@ std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr local_context) cons
         if (part)
             total += part->rows_count;
     }
-    size_t dead = getDeadRowsForUniqueKey(parts, local_context);
+    size_t dead = getDeadRowsForUniqueKey(parts, uk_partition_snapshots);
     return (dead >= total) ? UInt64{0} : total - dead;
 }
 
 std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr local_context) const
 {
+    /// UNIQUE KEY only: pin BEFORE capturing parts (snapshot isolation). Guard so
+    /// a plain count on a non-UK table doesn't pay the `getAllPartitionIds()` scan
+    /// or instantiate a controller per partition as a side effect.
+    std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> uk_partition_snapshots;
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/false);
+    if (metadata_snapshot && metadata_snapshot->hasUniqueKey())
+        uk_partition_snapshots = captureUniqueKeyPartitionSnapshots();
     auto parts = getVisibleDataPartsVector(local_context);
-    return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts));
+    return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts), uk_partition_snapshots);
 }
 
 std::optional<UInt64> StorageMergeTree::totalBytes(ContextPtr) const

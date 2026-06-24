@@ -1977,6 +1977,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool find_exact_ranges) const
 {
+    /// UNIQUE KEY — forward the per-partition snapshots pinned when this query's
+    /// `StorageSnapshot` was built (before the part list was captured), so the
+    /// delete-bitmap filter uses csns consistent with the parts it reads.
+    const std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> * uk_partition_snapshots = nullptr;
+    if (const auto * snapshot_data = dynamic_cast<const MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
+        uk_partition_snapshots = &snapshot_data->uk_partition_snapshots;
+
     analyzed_result_ptr = selectRangesToRead(
         getParts(),
         mutations_snapshot,
@@ -1995,7 +2002,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         find_exact_ranges,
         is_parallel_reading_from_replicas,
         allow_query_condition_cache,
-        supportsSkipIndexesOnDataRead());
+        supportsSkipIndexesOnDataRead(),
+        uk_partition_snapshots);
 
     return analyzed_result_ptr;
 }
@@ -2492,7 +2500,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool find_exact_ranges,
     bool is_parallel_reading_from_replicas_,
     bool allow_query_condition_cache_,
-    bool supports_skip_indexes_on_data_read)
+    bool supports_skip_indexes_on_data_read,
+    const std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> * uk_partition_snapshots)
 {
     ProfileEvents::increment(ProfileEvents::IndexAnalysisRounds);
 
@@ -2931,8 +2940,17 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     /// them onto the pipeline so they outlive the read tasks (the
     /// `AnalysisResult` dies with the plan). See `UniqueKeyReadFilter`.
     if (metadata_snapshot->hasUniqueKey() && !result.parts_with_ranges.empty())
+    {
+        /// The snapshot map was pinned at part-selection time (in
+        /// `createStorageSnapshot`, before this part list was captured). A null
+        /// map means no `MergeTreeData::SnapshotData` reached us (e.g. a
+        /// without-data path); treat it as empty — every partition is then
+        /// "not in map" (fully live), the same as a brand-new UK table.
+        static const std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> empty_snapshots;
         result.uk_partition_pins = UniqueKeyTxn::applyUniqueKeyDeleteBitmaps(
-            data, result.parts_with_ranges, log, sum_marks, sum_ranges, sum_rows);
+            uk_partition_snapshots ? *uk_partition_snapshots : empty_snapshots,
+            result.parts_with_ranges, log, sum_marks, sum_ranges, sum_rows);
+    }
 
     result.total_parts = total_parts;
     result.parts_before_pk = parts_before_pk;
