@@ -4,6 +4,8 @@
 -- returning_select into the remote INSERT.
 
 SET async_insert = 0;
+SET parallel_distributed_insert_select = 1;
+SET distributed_foreground_insert = 1;
 
 DROP TABLE IF EXISTS t_ret_dist_local;
 DROP TABLE IF EXISTS t_ret_dist;
@@ -19,8 +21,7 @@ INSERT INTO t_ret_dist_src VALUES (1), (2), (3);
 -- shard and the streamed result would break the remote insert.
 SELECT 'distributed insert select returning';
 INSERT INTO t_ret_dist SELECT id FROM t_ret_dist_src
-RETURNING (SELECT 'returned-on-initiator')
-SETTINGS parallel_distributed_insert_select = 1, distributed_foreground_insert = 1;
+RETURNING (SELECT 'returned-on-initiator');
 
 -- The rows were actually inserted into the underlying local table.
 SELECT 'rows in local table';
