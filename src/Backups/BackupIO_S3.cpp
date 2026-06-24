@@ -217,9 +217,11 @@ private:
 
     /// Serializes the S3 request settings effectively used by the backup. The HTTP-client-level values
     /// that makeS3Client overrides (retries, redirects, timeout, slow-thread/logging behavior) are
-    /// replaced with the authoritative values from the client configuration.
+    /// replaced with the authoritative values from the client configuration, and the seek threshold with
+    /// the read setting (remote_read_min_bytes_for_seek) actually used by ReadBufferFromS3.
     std::map<String, String> serializeBackupS3RequestSettings(
-        const S3::S3RequestSettings & request_settings, const S3::PocoHTTPClientConfiguration & client_config)
+        const S3::S3RequestSettings & request_settings, const S3::PocoHTTPClientConfiguration & client_config,
+        const ReadSettings & read_settings)
     {
         auto res = request_settings.getSettingsRepresentation();
 
@@ -231,6 +233,7 @@ private:
         res["slow_all_threads_after_network_error"] = client_config.s3_slow_all_threads_after_network_error ? "1" : "0";
         res["slow_all_threads_after_retryable_error"] = client_config.s3_slow_all_threads_after_retryable_error ? "1" : "0";
         res["enable_request_logging"] = client_config.enable_s3_requests_logging ? "1" : "0";
+        res["min_bytes_for_seek"] = std::to_string(read_settings.remote_fs_settings.min_bytes_for_seek);
 
         return res;
     }
@@ -299,7 +302,7 @@ BackupReaderS3::~BackupReaderS3() = default;
 
 std::map<String, String> BackupReaderS3::getSerializedSettings() const
 {
-    return serializeBackupS3RequestSettings(s3_settings.request_settings, client->getClientConfiguration());
+    return serializeBackupS3RequestSettings(s3_settings.request_settings, client->getClientConfiguration(), read_settings);
 }
 
 bool BackupReaderS3::fileExists(const String & file_name)
@@ -484,7 +487,7 @@ BackupWriterS3::~BackupWriterS3() = default;
 
 std::map<String, String> BackupWriterS3::getSerializedSettings() const
 {
-    return serializeBackupS3RequestSettings(s3_settings.request_settings, client->getClientConfiguration());
+    return serializeBackupS3RequestSettings(s3_settings.request_settings, client->getClientConfiguration(), read_settings);
 }
 
 bool BackupWriterS3::fileExists(const String & file_name)
