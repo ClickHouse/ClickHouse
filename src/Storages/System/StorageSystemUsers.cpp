@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Poco/JSON/JSON.h>
@@ -171,6 +172,17 @@ namespace
             /// guard (`use_index_for_in_with_subqueries_max_values`) defaults to `0` (unlimited)
             /// and would not stop a large literal list from being materialized.
             if (auto built_set = future_set->get(); built_set && built_set->getTotalRowCount() > max_names_for_fast_path)
+                return {};
+
+            /// `getTotalRowCount` above counts only *distinct* values. Building the explicit elements
+            /// (`buildOrderedSetInplace` below → `Set::appendSetElements`) filters the *original*
+            /// right-hand side columns, so its cost is proportional to the original list length, not
+            /// the distinct count. A duplicate-heavy or mostly-`NULL` literal such as
+            /// `name IN ('x', 'x', ..., 'y')` stays under the limit by distinct count yet would still
+            /// scan a huge right-hand side here. For an explicit tuple set the original length is known
+            /// in O(1), so bound on it too and fall back to the full scan above the limit.
+            if (const auto * tuple_set = typeid_cast<const FutureSetFromTuple *>(future_set.get());
+                tuple_set && tuple_set->getInputRowCount() > max_names_for_fast_path)
                 return {};
 
             auto set = future_set->buildOrderedSetInplace(context);

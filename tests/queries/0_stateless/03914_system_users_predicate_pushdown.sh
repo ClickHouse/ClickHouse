@@ -81,6 +81,24 @@ echo "-- fallback: a large IN set (above the fast-path limit) falls back to the 
 LARGE_IN=$(seq 1 1500 | sed "s/.*/'${P}_filler_&'/" | paste -sd, -)
 ${CLICKHOUSE_CLIENT} -q "SELECT replaceOne(name, '${P}_', '') FROM system.users WHERE name IN (${LARGE_IN}, '${P}_alice')"
 
+echo "-- fallback: a duplicate-heavy IN (few distinct values, long list above the limit) falls back to the full scan and stays correct"
+# The distinct count here is small (2), but the original list has >1000 entries. Building the
+# explicit set elements costs O(original list length), not O(distinct count), so the fast path must
+# fall back instead of materializing the whole right-hand side. Correctness is unchanged: only the
+# single matching user is returned.
+DUP_IN=$(yes "'${P}_dup'" | head -n 1500 | paste -sd, -)
+${CLICKHOUSE_CLIENT} -q "SELECT replaceOne(name, '${P}_', '') FROM system.users WHERE name IN (${DUP_IN}, '${P}_alice')"
+# Witness: the fallback reads every user (strictly more than the single matched row a fast path
+# would read), so reading more than one row proves the long list was not taken on the fast path.
+dup_read_rows=$(read_rows "${P}_dup_in" "SELECT name FROM system.users WHERE name IN (${DUP_IN}, '${P}_alice') FORMAT Null")
+if [ "${dup_read_rows}" -gt 1 ]; then echo "fell back to full scan"; else echo "took fast path"; fi
+
+echo "-- fallback: a mostly-NULL IN (long NULL list above the limit) falls back to the full scan and stays correct"
+# The same bound applies when the list is dominated by NULLs: the distinct non-NULL count is 1, but
+# the original list length is >1000. NULLs match no row, so only the matching user is returned.
+NULL_IN=$(yes "NULL" | head -n 1500 | paste -sd, -)
+${CLICKHOUSE_CLIENT} -q "SELECT replaceOne(name, '${P}_', '') FROM system.users WHERE name IN (${NULL_IN}, '${P}_alice')"
+
 echo "-- fallback: counting all users still works"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM system.users"
 
