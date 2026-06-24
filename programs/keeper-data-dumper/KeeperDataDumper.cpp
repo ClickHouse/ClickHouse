@@ -89,6 +89,7 @@ int mainEntryClickHouseKeeperDataDumper(int argc, char ** argv)
     DB::KeeperLogStore changelog(
         LogFileSettings{.force_sync = true, .compress_logs = (*settings)[DB::CoordinationSetting::compress_logs], .rotate_interval = 10000000},
         FlushSettings(),
+        ReadAheadSettings{},
         keeper_context);
     changelog.init(last_commited_index, 10000000000UL); /// collect all logs
     if (changelog.size() == 0)

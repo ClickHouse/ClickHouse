@@ -29,6 +29,14 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 log_file_overallocate_size;
     extern const CoordinationSettingsUInt64 max_flush_batch_size;
     extern const CoordinationSettingsUInt64 max_log_file_size;
+    extern const CoordinationSettingsUInt64 keeper_log_readahead_chunk_size;
+    extern const CoordinationSettingsUInt64 keeper_log_readahead_eviction_timeout_ms;
+    extern const CoordinationSettingsUInt64 keeper_log_readahead_fill_timeout_ms;
+    extern const CoordinationSettingsBool keeper_log_readahead_enabled;
+    extern const CoordinationSettingsUInt64 keeper_log_readahead_max_peer_readers;
+    extern const CoordinationSettingsUInt64 keeper_log_readahead_pool_threads;
+    extern const CoordinationSettingsUInt64 keeper_log_readahead_serve_wait_timeout_ms;
+    extern const CoordinationSettingsUInt64 keeper_log_readahead_window_bytes;
     extern const CoordinationSettingsNonZeroUInt64 rotate_log_storage_interval;
 }
 
@@ -282,6 +290,7 @@ KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host,
     , log_store(nuraft::cs_new<KeeperLogStore>(
           LogFileSettings{.force_sync = false, .compress_logs = false, .rotate_interval = 5000},
           FlushSettings{},
+          ReadAheadSettings{},
           keeper_context_))
     , server_state_file_name("state")
     , keeper_context(keeper_context_)

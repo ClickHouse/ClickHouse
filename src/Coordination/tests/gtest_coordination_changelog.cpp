@@ -1723,7 +1723,7 @@ TYPED_TEST(CoordinationChangelogTest, ConcurrentAppendWhileHistoricalReadPaused)
     {
         // log_entries_ext calls getReadPlan (under shared lock), then
         // pauseFailPoint (no lock held), then executeReadPlan.
-        auto entries = changelog.log_entries_ext(1, 6, /*batch_size_hint_in_bytes=*/0);
+        auto entries = changelog.log_entries_ext(1, 6, /*batch_size_hint_in_bytes=*/0, DB::KeeperLogStore::NO_PEER_ID);
         entries_promise.set_value(std::move(entries));
     });
 
@@ -1795,7 +1795,7 @@ TYPED_TEST(CoordinationChangelogTest, CompactionRemovesFileAfterPlanBeforeRead)
 
         std::thread reader([&]
         {
-            auto entries = changelog.log_entries_ext(1, 4, /*batch_size_hint_in_bytes=*/0);
+            auto entries = changelog.log_entries_ext(1, 4, /*batch_size_hint_in_bytes=*/0, DB::KeeperLogStore::NO_PEER_ID);
             entries_promise.set_value(std::move(entries));
         });
 
@@ -1818,7 +1818,7 @@ TYPED_TEST(CoordinationChangelogTest, CompactionRemovesFileAfterPlanBeforeRead)
 
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-        auto entries = changelog.log_entries_ext(1, 4, 0);
+        auto entries = changelog.log_entries_ext(1, 4, 0, DB::KeeperLogStore::NO_PEER_ID);
         EXPECT_EQ(entries, nullptr);
     }
 }
@@ -1860,7 +1860,7 @@ TYPED_TEST(CoordinationChangelogTest, PrefetchCancelDoesNotWedgeRead)
 
     std::thread reader([&]
     {
-        auto entries = changelog.log_entries_ext(1, 6, 0);
+        auto entries = changelog.log_entries_ext(1, 6, 0, DB::KeeperLogStore::NO_PEER_ID);
         entries_promise.set_value(std::move(entries));
     });
 
@@ -1912,7 +1912,7 @@ TYPED_TEST(CoordinationChangelogTest, WriteAtRaceHistoricalRead)
     {
         try
         {
-            auto entries = changelog.log_entries_ext(1, 6, 0);
+            auto entries = changelog.log_entries_ext(1, 6, 0, DB::KeeperLogStore::NO_PEER_ID);
             entries_promise.set_value(std::move(entries));
         }
         catch (...)
@@ -1976,7 +1976,7 @@ TYPED_TEST(CoordinationChangelogTest, ActiveFileEvictedEntryStillReturned)
     DB::KeeperLogStore changelog(settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
     changelog.init(0, 0);
 
-    auto entries = changelog.log_entries_ext(1, 11, 0);
+    auto entries = changelog.log_entries_ext(1, 11, 0, DB::KeeperLogStore::NO_PEER_ID);
     ASSERT_NE(entries, nullptr);
     ASSERT_EQ(entries->size(), 10u);
 
@@ -2039,7 +2039,7 @@ TYPED_TEST(CoordinationChangelogTest, ConcurrentAppendVsActiveFileRead)
         {
             try
             {
-                auto entries = changelog.log_entries_ext(1, 6, 0);
+                auto entries = changelog.log_entries_ext(1, 6, 0, DB::KeeperLogStore::NO_PEER_ID);
                 // Either nullptr (if compacted) or non-empty.
                 if (entries && !entries->empty())
                 {
@@ -2070,7 +2070,8 @@ namespace FailPoints
 }
 
 // NO_PEER_ID or disabled read-ahead must return identical results to the direct path.
-TYPED_TEST(CoordinationChangelogTest, L2ReadAheadDisabledPathIdentical)
+// Verify read-ahead returns the same entries as the direct path.
+TYPED_TEST(CoordinationChangelogTest, ReadAheadMatchesDirectPath)
 {
     if (this->enable_compression)
         return;
@@ -2099,20 +2100,49 @@ TYPED_TEST(CoordinationChangelogTest, L2ReadAheadDisabledPathIdentical)
     changelog.end_of_append_batch(0, 0);
     waitDurableLogs(changelog);
 
-    auto l1_result = changelog.log_entries_ext(1, 11, /*batch_size_hint=*/0, DB::KeeperLogStore::NO_PEER_ID);
-    ASSERT_NE(l1_result, nullptr);
-    ASSERT_EQ(l1_result->size(), 10u);
+    // Direct path (NO_PEER_ID skips read-ahead).
+    auto direct_result = changelog.log_entries_ext(1, 11, /*batch_size_hint=*/0, DB::KeeperLogStore::NO_PEER_ID);
+    ASSERT_NE(direct_result, nullptr);
+    ASSERT_EQ(direct_result->size(), 10u);
 
-    auto l2_result_disabled = changelog.log_entries_ext(1, 11, /*batch_size_hint=*/0, /*peer_id=*/42);
-    ASSERT_NE(l2_result_disabled, nullptr);
-    ASSERT_EQ(l2_result_disabled->size(), 10u);
+    // Read-ahead path (peer_id != NO_PEER_ID, enabled = true).
+    auto ra_result = changelog.log_entries_ext(1, 11, /*batch_size_hint=*/0, /*peer_id=*/42);
+    ASSERT_NE(ra_result, nullptr);
+    ASSERT_EQ(ra_result->size(), 10u);
 
     for (size_t i = 0; i < 10; ++i)
-        EXPECT_EQ((*l1_result)[i]->get_term(), (*l2_result_disabled)[i]->get_term());
+        EXPECT_EQ((*direct_result)[i]->get_term(), (*ra_result)[i]->get_term());
+
+    // Disabled read-ahead (enabled = false) must also match the direct path.
+    DB::KeeperLogStore changelog_disabled(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 10,
+            .latest_logs_cache_size_threshold = 1,
+            .commit_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{.enabled = false},
+        this->keeper_context);
+    changelog_disabled.init(0, 0);
+    for (size_t i = 0; i < 20; ++i)
+    {
+        auto entry = getLogEntry("readahead_test_l2_test1", static_cast<size_t>(i + 1));
+        changelog_disabled.append(entry);
+    }
+    changelog_disabled.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog_disabled);
+
+    auto disabled_result = changelog_disabled.log_entries_ext(1, 11, /*batch_size_hint=*/0, /*peer_id=*/42);
+    ASSERT_NE(disabled_result, nullptr);
+    ASSERT_EQ(disabled_result->size(), 10u);
+    for (size_t i = 0; i < 10; ++i)
+        EXPECT_EQ((*direct_result)[i]->get_term(), (*disabled_result)[i]->get_term());
 }
 
 // serveReadAhead runs without changelog_lock; concurrent appends must not deadlock.
-TYPED_TEST(CoordinationChangelogTest, L2ReadAheadConcurrentAppend)
+TYPED_TEST(CoordinationChangelogTest, ReadAheadConcurrentAppend)
 {
     if (this->enable_compression)
         return;
@@ -2175,7 +2205,7 @@ TYPED_TEST(CoordinationChangelogTest, L2ReadAheadConcurrentAppend)
 }
 
 // Wedged fill must escape via timeout and return correct entries.
-TYPED_TEST(CoordinationChangelogTest, L2ReadAheadWedgedFillTimeout)
+TYPED_TEST(CoordinationChangelogTest, ReadAheadWedgedFillTimeout)
 {
     if (this->enable_compression)
         return;
@@ -2222,7 +2252,7 @@ TYPED_TEST(CoordinationChangelogTest, L2ReadAheadWedgedFillTimeout)
 }
 
 // Rewind must clear the deque and return contiguous entries from the new start.
-TYPED_TEST(CoordinationChangelogTest, L2ReadAheadNonSequentialRewind)
+TYPED_TEST(CoordinationChangelogTest, ReadAheadNonSequentialRewind)
 {
     if (this->enable_compression)
         return;
@@ -2263,7 +2293,7 @@ TYPED_TEST(CoordinationChangelogTest, L2ReadAheadNonSequentialRewind)
 }
 
 // Compaction after PLAN must produce nullptr, not a throw.
-TYPED_TEST(CoordinationChangelogTest, L2ReadAheadCompactionDuringServe)
+TYPED_TEST(CoordinationChangelogTest, ReadAheadCompactionDuringServe)
 {
     if (this->enable_compression)
         return;
@@ -2304,7 +2334,7 @@ TYPED_TEST(CoordinationChangelogTest, L2ReadAheadCompactionDuringServe)
 }
 
 // Shutdown must join all fill tasks without deadlock.
-TYPED_TEST(CoordinationChangelogTest, L2ReadAheadShutdownJoinsFills)
+TYPED_TEST(CoordinationChangelogTest, ReadAheadShutdownJoinsFills)
 {
     if (this->enable_compression)
         return;
@@ -2339,16 +2369,18 @@ TYPED_TEST(CoordinationChangelogTest, L2ReadAheadShutdownJoinsFills)
     {
         changelog.log_entries_ext(1, 6, 0, /*peer_id=*/4);
     });
-    reader.detach();
 
+    // Give the fill task time to enter the wedge before releasing it.
+    // The test verifies that changelog.shutdown() (called in destructor) joins all fill tasks.
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
-
     DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
+
+    reader.join();
 
 }
 
 // log_entries_ext must dispatch correctly through the virtual base.
-TYPED_TEST(CoordinationChangelogTest, L2ReadAheadSignatureOverride)
+TYPED_TEST(CoordinationChangelogTest, ReadAheadSignatureOverride)
 {
     ChangelogDirTest test("./logs");
     this->setLogDirectory("./logs");
@@ -2375,7 +2407,8 @@ TYPED_TEST(CoordinationChangelogTest, L2ReadAheadSignatureOverride)
 }
 
 // Byte hint must truncate results the same as the direct path.
-TYPED_TEST(CoordinationChangelogTest, L2ReadAheadByteHintTruncation)
+// Tests the direct path (NO_PEER_ID, read-ahead disabled) byte-hint truncation.
+TYPED_TEST(CoordinationChangelogTest, DirectPathByteHintTruncation)
 {
     if (this->enable_compression)
         return;
@@ -2418,7 +2451,7 @@ TYPED_TEST(CoordinationChangelogTest, L2ReadAheadByteHintTruncation)
 }
 
 // serve_wait_timeout must bound serve time when fill is blocked.
-TYPED_TEST(CoordinationChangelogTest, L2ReadAheadServeWaitBound)
+TYPED_TEST(CoordinationChangelogTest, ReadAheadServeWaitBound)
 {
     if (this->enable_compression)
         return;
@@ -2463,7 +2496,7 @@ TYPED_TEST(CoordinationChangelogTest, L2ReadAheadServeWaitBound)
 }
 
 // After a reader terminates, the next request must create a fresh reader.
-TYPED_TEST(CoordinationChangelogTest, L2ReadAheadTerminalReaderReaping)
+TYPED_TEST(CoordinationChangelogTest, ReadAheadTerminalReaderReaping)
 {
     if (this->enable_compression)
         return;
@@ -2498,13 +2531,14 @@ TYPED_TEST(CoordinationChangelogTest, L2ReadAheadTerminalReaderReaping)
 
     changelog.compact(15);
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
+    // The second serve call reaps the terminal reader (Compacted due to compaction)
+    // and creates a new one for entries 16-20. The fill may still be in-flight when
+    // compact returns; serve_wait_timeout_ms (100ms) bounds the wait.
     (void)changelog.log_entries_ext(16, 21, 0, /*peer_id=*/6);
 }
 
 // TSan stress: interleave appends, read-ahead serves, and compaction.
-TYPED_TEST(CoordinationChangelogTest, L2ReadAheadTSanStress)
+TYPED_TEST(CoordinationChangelogTest, ReadAheadTSanStress)
 {
     if (this->enable_compression)
         return;

@@ -33,14 +33,14 @@ public:
     void write_at(uint64_t index, nuraft::ptr<nuraft::log_entry> & entry) override;
 
     /// Return entries between [start, end).
-    nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> log_entries(uint64_t start, uint64_t end) override TSA_NO_THREAD_SAFETY_ANALYSIS;
+    nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> log_entries(uint64_t start, uint64_t end) override;
 
     static constexpr int32_t NO_PEER_ID = -1;
 
     /// Return entries between [start, end) with total size limited by batch_size_hint_in_bytes.
     /// peer_id identifies the follower peer; NO_PEER_ID disables read-ahead.
     nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>
-    log_entries_ext(uint64_t start, uint64_t end, int64_t batch_size_hint_in_bytes, int32_t peer_id = NO_PEER_ID) override TSA_NO_THREAD_SAFETY_ANALYSIS;
+    log_entries_ext(uint64_t start, uint64_t end, int64_t batch_size_hint_in_bytes, int32_t peer_id) override TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     /// Return entry at index
     nuraft::ptr<nuraft::log_entry> entry_at(uint64_t index) override;

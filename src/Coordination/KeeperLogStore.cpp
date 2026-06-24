@@ -83,25 +83,26 @@ nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> KeeperLogStore::log_ent
 nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>
 KeeperLogStore::log_entries_ext(uint64_t start, uint64_t end, int64_t batch_size_hint_in_bytes, int32_t peer_id)
 {
-    if (peer_id != NO_PEER_ID && changelog.isReadAheadEnabled())
+    const auto build_plan_under_lock = [&](auto && build)
     {
         LogReadPlan plan;
-        uint64_t retained_start = 0;
         {
             ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
-            retained_start = changelog.getStartIndex();
-            plan = changelog.getReadAheadPlan(start, end, batch_size_hint_in_bytes, retained_start);
+            plan = build();
         }
         FailPointInjection::pauseFailPoint(FailPoints::keeper_changelog_read_plan_resolved);
+        return plan;
+    };
+
+    if (peer_id != NO_PEER_ID && changelog.isReadAheadEnabled())
+    {
+        auto plan = build_plan_under_lock([&] TSA_NO_THREAD_SAFETY_ANALYSIS
+                                          { return changelog.getReadAheadPlan(start, end, batch_size_hint_in_bytes); });
         return changelog.serveReadAhead(peer_id, plan);
     }
 
-    LogReadPlan plan;
-    {
-        ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
-        plan = changelog.getReadPlan(start, end, batch_size_hint_in_bytes);
-    }
-    FailPointInjection::pauseFailPoint(FailPoints::keeper_changelog_read_plan_resolved);
+    auto plan
+        = build_plan_under_lock([&] TSA_NO_THREAD_SAFETY_ANALYSIS { return changelog.getReadPlan(start, end, batch_size_hint_in_bytes); });
     return changelog.executeReadPlan(plan);
 }
 
