@@ -20,11 +20,11 @@ SORTED_QUERY = """SELECT
     number AS key1,
     number + 1 AS key2,
     number AS value
-FROM numbers(30000000)
+FROM numbers(50000000)
 ORDER BY key1 ASC, key2 ASC
 LIMIT 1 BY key1, key2
 FORMAT Null
-SETTINGS max_block_size=30000000, max_threads=1, max_rows_to_read=0"""
+SETTINGS max_block_size=50000000, max_threads=1, max_rows_to_read=0"""
 
 
 @pytest.fixture(scope="module")
@@ -82,5 +82,5 @@ def test_sorted_kill_query(started_cluster):
     run_kill_query_test(
         SORTED_QUERY,
         "Transform a chunk in LimitBySortedStreamTransform",
-        log_timeout=120,
+        log_timeout=180,
     )
