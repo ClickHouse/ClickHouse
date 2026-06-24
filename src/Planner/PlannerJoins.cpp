@@ -75,6 +75,8 @@ namespace Setting
     extern const SettingsBool allow_dynamic_type_in_join_keys;
     extern const SettingsUInt64 max_bytes_before_external_join;
     extern const SettingsDouble max_bytes_ratio_before_external_join;
+    extern const SettingsUInt64 max_rows_in_join;
+    extern const SettingsUInt64 max_bytes_in_join;
 }
 
 namespace ServerSetting
@@ -1082,6 +1084,13 @@ PreparedJoinStorage tryGetLookupJoinStorage(
     if (hasAdditionalTableFilterForStorage(storage, table_expression->getOriginalAlias(), planner_context->getQueryContext()))
         return {};
 
+    /// The regular join build enforces the per-query right-side size limits while constructing the
+    /// hash table; the lookup fast path reads and caches the whole right table (and later cache hits
+    /// reuse it without re-checking), so it cannot honor `max_rows_in_join` / `max_bytes_in_join`.
+    /// Fall back to the regular join path when either limit is active.
+    if (settings[Setting::max_rows_in_join] != 0 || settings[Setting::max_bytes_in_join] != 0)
+        return {};
+
     PreparedJoinStorage result;
     if (const auto * table_expression_data = planner_context->getTableExpressionDataOrNull(table_expression))
     {
@@ -1094,6 +1103,21 @@ PreparedJoinStorage tryGetLookupJoinStorage(
             return {};
 
         result.column_mapping = table_expression_data->getColumnIdentifierToColumnName();
+
+        /// The lookup-join entity (`MergeTreeTableJoinEntity`) only contains the top-level physical
+        /// columns (`getAllPhysicalColumnsForLookupJoin`). The analyzer can still map a right-side
+        /// column identifier to a subcolumn (e.g. `m.keys`) or a virtual column (e.g. `_part`), which
+        /// is neither an alias expression nor present in that set. The regular plan materializes such
+        /// a column, but the direct lookup join would request it from the physical-only entity and
+        /// fail with `Cannot find column ... in table lookup cache`. Fall back to the regular join
+        /// path unless every mapped right-side column is served by the lookup entity.
+        NameSet lookup_entity_columns;
+        for (const auto & column : table_node->getStorageSnapshot()->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysical)))
+            lookup_entity_columns.insert(column.name);
+
+        for (const auto & [_, storage_column_name] : result.column_mapping)
+            if (!lookup_entity_columns.contains(storage_column_name))
+                return {};
     }
     else
     {
