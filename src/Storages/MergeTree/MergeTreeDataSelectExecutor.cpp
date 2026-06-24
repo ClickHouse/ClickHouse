@@ -124,6 +124,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int ILLEGAL_STREAM;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -132,6 +133,18 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & d
     , data_settings(data.getSettings(projection ? &projection->settings_changes : nullptr))
     , log(getLogger(data.getLogName() + " (SelectExecutor)"))
 {
+    /// Reading a projection part bypasses the parent table's delete-bitmap filter, so
+    /// logically-deleted rows would resurface. This is the single point every projection
+    /// read passes through (optimizer estimate/read and the explicit projection table
+    /// function), so fail closed here regardless of how the combination came to exist
+    /// (CREATE/ALTER reject it, but SECONDARY_CREATE/ATTACH still load it).
+    if (projection)
+    {
+        auto metadata_snapshot = data.getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/true);
+        if (metadata_snapshot->hasUniqueKey())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "UNIQUE KEY tables do not support reading via projections");
+    }
 }
 
 size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
