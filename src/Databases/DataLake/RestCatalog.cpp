@@ -486,9 +486,9 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
 
     /// Otherwise the token comes from the GCP metadata service, i.e. the server's own (ambient) identity.
     /// S3/GCS access that originates from user SQL must not use it (see shouldRestrictUserQueryS3Credentials),
-    /// unless that was allowed when the database was created (`allow_server_credentials_in_user_queries`
-    /// captures it; the context here is the global one, whose settings never reflect the creating session).
-    if (!allow_server_credentials_in_user_queries && context->shouldRestrictUserQueryS3Credentials())
+    /// unless that was allowed when the database was created. The context here is the global one, whose live
+    /// setting never reflects the creating session, so pass the value captured at CREATE time.
+    if (context->shouldRestrictUserQueryS3Credentials(allow_server_credentials_in_user_queries))
         throw DB::Exception(
             DB::ErrorCodes::ACCESS_DENIED,
             "BigLake catalog access from user queries is not allowed to mint a token from the server's GCP "

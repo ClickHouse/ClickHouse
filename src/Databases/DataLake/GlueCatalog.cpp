@@ -114,11 +114,11 @@ GlueCatalog::GlueCatalog(
 
     /// A Glue catalog is created by user SQL (`CREATE DATABASE ... ENGINE = DataLakeCatalog`), so it must
     /// not be able to reuse the server's own credentials unless that was allowed when the database was
-    /// created. The context here is the global one (the catalog is cached and shared by every query), so
-    /// the effective setting arrives as `allow_server_credentials_in_user_queries_`, captured at CREATE
-    /// time; `shouldRestrictUserQueryS3Credentials` still exempts non-server applications.
+    /// created. The context here is the global one (the catalog is cached and shared by every query) and its
+    /// live setting no longer reflects the creating session, so pass the value captured at CREATE time; the
+    /// overload still exempts non-server applications.
     creds_config.forbid_implicit_credentials
-        = !allow_server_credentials_in_user_queries_ && getContext()->shouldRestrictUserQueryS3Credentials();
+        = getContext()->shouldRestrictUserQueryS3Credentials(allow_server_credentials_in_user_queries_);
 
     const auto & server_settings = getContext()->getGlobalContext()->getServerSettings();
     const DB::Settings & global_settings = getContext()->getGlobalContext()->getSettingsRef();

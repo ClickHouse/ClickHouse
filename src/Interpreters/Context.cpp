@@ -7028,16 +7028,21 @@ void Context::setApplicationType(ApplicationType type)
 
 }
 
-bool Context::shouldRestrictUserQueryS3Credentials() const
+bool Context::shouldRestrictUserQueryS3Credentials(bool allow_server_credentials_in_user_queries) const
 {
     /// Only the server runs untrusted user SQL against shared infrastructure. In clickhouse-local the
     /// user is the operator, so server-managed credentials (e.g. an instance profile) are theirs to use.
     if (getApplicationType() != ApplicationType::SERVER)
         return false;
 
+    return !allow_server_credentials_in_user_queries;
+}
+
+bool Context::shouldRestrictUserQueryS3Credentials() const
+{
     /// A session setting, so a trusted administrative client can enable it for its own operations while a
     /// settings constraint keeps it disabled for untrusted users.
-    return !getSettingsRef()[Setting::s3_allow_server_credentials_in_user_queries];
+    return shouldRestrictUserQueryS3Credentials(getSettingsRef()[Setting::s3_allow_server_credentials_in_user_queries]);
 }
 
 void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & config)
