@@ -1,0 +1,89 @@
+-- { echo }
+
+-- The boolean-position `ifNull(X, 0)` / `coalesce(X, 0)` -> `X` index rewrite (see
+-- 04303_key_condition_ifnull_coalesce_boolean) applies in every filter context, not only the
+-- MergeTree primary-key path. This test covers the other index entry points: `numbers()`/`primes()`
+-- range extraction, partition pruning, and the minmax skip index.
+
+SET enable_analyzer = 1;
+SET allow_key_condition_coalesce_rewrite = 1;
+-- numbers(): wrapped predicate prunes identically to the bare one.
+SELECT count() FROM numbers(1000000) WHERE number < 100;
+100
+SELECT count() FROM numbers(1000000) WHERE ifNull(number < 100, 0);
+100
+SELECT count() FROM numbers(1000000) WHERE coalesce(number < 100, 0);
+100
+-- Over the unbounded source the extracted range [0, 100) bounds the scan, so the row cap is not hit.
+SELECT count() FROM system.numbers WHERE number < 100 SETTINGS max_rows_to_read = 1000;
+100
+SELECT count() FROM system.numbers WHERE ifNull(number < 100, 0) SETTINGS max_rows_to_read = 1000;
+100
+SELECT count() FROM system.numbers WHERE coalesce(number < 100, 0) SETTINGS max_rows_to_read = 1000;
+100
+-- Truthy fallback is not rewritten: no range is extracted, the unbounded scan trips the row cap.
+SELECT count() FROM system.numbers WHERE ifNull(number < 100, 1) SETTINGS max_rows_to_read = 1000; -- { serverError TOO_MANY_ROWS }
+-- primes(): same mechanism over the unbounded sieve.
+SELECT count() FROM system.primes WHERE prime < 100 SETTINGS max_rows_to_read = 1000;
+25
+SELECT count() FROM system.primes WHERE ifNull(prime < 100, 0) SETTINGS max_rows_to_read = 1000;
+25
+SELECT count() FROM system.primes WHERE coalesce(prime < 100, 0) SETTINGS max_rows_to_read = 1000;
+25
+SELECT count() FROM system.primes WHERE ifNull(prime < 100, 1) SETTINGS max_rows_to_read = 1000; -- { serverError TOO_MANY_ROWS }
+-- Partition pruning: granularity 1 so each row is its own granule. The bare predicate selects 1 of 4
+-- parts; the falsy-fallback wrappers prune identically; the truthy fallback does not (keeps 4/4).
+DROP TABLE IF EXISTS t_ifnull_part;
+CREATE TABLE t_ifnull_part (p UInt8, v UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY v SETTINGS index_granularity = 1;
+INSERT INTO t_ifnull_part SELECT number % 4, number FROM numbers(40);
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_ifnull_part WHERE p = 1) WHERE explain LIKE '%Parts%' OR explain LIKE '%Granules%';
+Parts: 1/4
+Granules: 10/40
+Parts: 1/1
+Granules: 10/10
+Parts: 1/1
+Granules: 10/10
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_ifnull_part WHERE ifNull(p = 1, 0)) WHERE explain LIKE '%Parts%' OR explain LIKE '%Granules%';
+Parts: 1/4
+Granules: 10/40
+Parts: 1/1
+Granules: 10/10
+Parts: 1/1
+Granules: 10/10
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_ifnull_part WHERE coalesce(p = 1, 0)) WHERE explain LIKE '%Parts%' OR explain LIKE '%Granules%';
+Parts: 1/4
+Granules: 10/40
+Parts: 1/1
+Granules: 10/10
+Parts: 1/1
+Granules: 10/10
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_ifnull_part WHERE ifNull(p = 1, 1)) WHERE explain LIKE '%Parts%' OR explain LIKE '%Granules%';
+Parts: 4/4
+Granules: 40/40
+Parts: 4/4
+Granules: 40/40
+Parts: 4/4
+Granules: 40/40
+DROP TABLE t_ifnull_part;
+-- Minmax skip index: the wrapped comparison must prune through the index exactly like the bare one.
+DROP TABLE IF EXISTS t_ifnull_mm;
+CREATE TABLE t_ifnull_mm (k UInt64, x UInt64, INDEX idx x TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
+INSERT INTO t_ifnull_mm SELECT number, number FROM numbers(40);
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_ifnull_mm WHERE x = 7) WHERE explain LIKE '%Name%' OR explain LIKE '%Granules%';
+Granules: 40/40
+Name: idx
+Granules: 1/40
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_ifnull_mm WHERE ifNull(x = 7, 0)) WHERE explain LIKE '%Name%' OR explain LIKE '%Granules%';
+Granules: 40/40
+Name: idx
+Granules: 1/40
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_ifnull_mm WHERE coalesce(x = 7, 0)) WHERE explain LIKE '%Name%' OR explain LIKE '%Granules%';
+Granules: 40/40
+Name: idx
+Granules: 1/40
+SELECT count() FROM t_ifnull_mm WHERE ifNull(x = 7, 0) SETTINGS force_data_skipping_indices = 'idx';
+1
+SELECT count() FROM t_ifnull_mm WHERE coalesce(x = 7, 0) SETTINGS force_data_skipping_indices = 'idx';
+1
+SELECT count() FROM t_ifnull_mm WHERE ifNull(x = 7, 1) SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+DROP TABLE t_ifnull_mm;

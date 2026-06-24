@@ -226,6 +226,9 @@ public:
     /// Get the type name of a setting (e.g., "UInt64", "String")
     std::string_view getTypeName(std::string_view name) const;
 
+    /// Get the default value of a setting as a string
+    String getDefaultValueString(std::string_view name) const;
+
     /// Get the description of a setting
     std::string_view getDescription(std::string_view name) const;
 
@@ -491,6 +494,18 @@ std::string_view BaseSettings<TTraits>::getTypeName(std::string_view name) const
         return accessor.getTypeName(index);
     if (tryGetCustomSetting(name))
         return "Custom";
+    BaseSettingsHelpers::throwSettingNotFound(name);
+}
+
+template <typename TTraits>
+String BaseSettings<TTraits>::getDefaultValueString(std::string_view name) const
+{
+    name = TTraits::resolveName(name);
+    const auto & accessor = Traits::Accessor::instance();
+    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+        return accessor.getDefaultValueString(index);
+    if (tryGetCustomSetting(name))
+        return {};
     BaseSettingsHelpers::throwSettingNotFound(name);
 }
 
