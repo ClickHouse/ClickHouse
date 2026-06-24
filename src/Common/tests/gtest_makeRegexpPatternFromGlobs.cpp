@@ -341,9 +341,13 @@ INSTANTIATE_TEST_SUITE_P(
         // --- Double asterisk wildcard ---
         std::make_tuple("**", "", true),
         std::make_tuple("**", "anything", true),
-        std::make_tuple("**", "a/b/c", true),     // '**' matches across '/'
-        std::make_tuple("**", "a{b", false),       // '**' does not match '{'
-        std::make_tuple("**", "a}b", false),       // '**' does not match '}'
+        std::make_tuple("**", "a/b/c", true),      // '**' matches across '/'
+        // Legacy translates '**' to the regex `[^/]*[^{}]*`, so a brace is matched
+        // as long as it does not appear at or after the first '/'.
+        std::make_tuple("**", "a{b", true),        // brace before any '/' is matched
+        std::make_tuple("**", "a}b", true),        // brace before any '/' is matched
+        std::make_tuple("**", "a/b{c", false),     // brace at/after the first '/' is not matched
+        std::make_tuple("**", "a/b}c", false),     // brace at/after the first '/' is not matched
 
         // --- Ranges ---
         std::make_tuple("f{1..9}", "f1", true),
