@@ -263,9 +263,18 @@ size_t readOrGetCachedSparseOffsets(
 
     /// Cache miss: the getter needs `settings.path` to include `SparseOffsets` to compute the file name.
     settings.path.push_back(ISerialization::Substream::SparseOffsets);
+    const auto * cached_element = ISerialization::getElementFromSubstreamsCache(cache, settings.path);
 
     size_t num_read_offsets = 0;
-    if (auto * stream = settings.getter(settings.path))
+    if (cached_element)
+    {
+        const auto & cached_offsets_element = assert_cast<const SubstreamsCacheSparseOffsetsElement &>(*cached_element);
+        num_read_offsets = cached_offsets_element.offsets->size() - cached_offsets_element.old_size;
+        read_rows = cached_offsets_element.read_rows;
+        skipped_values_rows = cached_offsets_element.skipped_values_rows;
+        ISerialization::insertDataFromCachedColumn(settings, offsets_column, cached_offsets_element.offsets, num_read_offsets, cache);
+    }
+    else if (auto * stream = settings.getter(settings.path))
     {
         if (!settings.continuous_reading)
             state_sparse.reset();
@@ -274,10 +283,10 @@ size_t readOrGetCachedSparseOffsets(
         size_t old_size = offsets_data.size();
         read_rows = deserializeOffsets(offsets_data, *stream, prev_size, rows_offset, limit, skipped_values_rows, state_sparse);
 
-        if (cache)
-            cache->insert_or_assign(
-                std::move(cache_key),
-                std::make_unique<SubstreamsCacheSparseOffsetsElement>(offsets_column, old_size, read_rows, skipped_values_rows));
+        ISerialization::addElementToSubstreamsCache(
+            cache,
+            settings.path,
+            std::make_unique<SubstreamsCacheSparseOffsetsElement>(offsets_column, old_size, read_rows, skipped_values_rows));
 
         num_read_offsets = offsets_column->size() - old_size;
     }
