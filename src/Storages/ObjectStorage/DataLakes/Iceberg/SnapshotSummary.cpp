@@ -243,9 +243,9 @@ try
 
     return result;
 }
-catch (const DB::Exception & error)
+catch (const std::exception & error)
 {
-    return std::unexpected(error.message());
+    return std::unexpected(error.what());
 }
 
 
