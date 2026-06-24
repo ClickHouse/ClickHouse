@@ -503,8 +503,8 @@ def main():
                         f" {context}"
                         f" > {build_log} 2>&1"
                         f" || (echo '=== docker buildx build failed for"
-                        f" {image}:{label_version}; tail of {build_log}: ===';"
-                        f" tail -n 200 {build_log}; exit 1)",
+                        f" {image}:{label_version}; tail of {build_log}: ==='"
+                        f" >&2; tail -n 200 {build_log} >&2; exit 1)",
                         strict=True,
                     )
 
