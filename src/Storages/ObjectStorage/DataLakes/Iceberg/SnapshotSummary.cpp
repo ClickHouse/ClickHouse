@@ -128,6 +128,7 @@ Map SnapshotSummary::toMap() const
 }
 
 SnapshotSummary::Expected SnapshotSummary::fromJSON(const Poco::JSON::Object & obj, bool with_extra_fields)
+try
 {
     std::unordered_set<std::string_view> parsed;
 
@@ -242,6 +243,11 @@ SnapshotSummary::Expected SnapshotSummary::fromJSON(const Poco::JSON::Object & o
 
     return result;
 }
+catch (const DB::Exception & error)
+{
+    return std::unexpected(error.message());
+}
+
 
 void SnapshotSummary::forEachField(std::function<void(std::string_view, std::string)> && fn, bool with_extra_fields) const
 {
