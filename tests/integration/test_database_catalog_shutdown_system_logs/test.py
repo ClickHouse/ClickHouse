@@ -11,16 +11,24 @@
 # server aborts with "The MergeTreePartsLoaderThreadPool is not initialized".
 #
 # The fix wraps each user-database shutdown() in try/catch so shutdown_system_logs() always
-# runs (and joins the flush threads) before the static pools are torn down. It also makes
-# DatabaseWithOwnTablesBase::shutdown() release every table's references (UUID mappings + tables)
-# even when a table throws, so the leftover storages are destroyed during shutdown rather than at
-# process exit (which would abort with a Poco LoggerDeleter assertion).
+# runs (and joins the flush threads) before the static pools are torn down. It also makes the
+# database shutdown() release every table's references (UUID mappings + tables) even when a
+# step throws, so the leftover storages are destroyed during shutdown rather than at process
+# exit (which would abort with a Poco LoggerDeleter assertion, or hit the catalog uuid_map
+# chassert in debug builds).
 #
-# A table can throw from either of the two shutdown phases: the prepare phase
-# (flushAndPrepareForShutdown, e.g. StorageReplicatedMergeTree rethrows preparation failures) or
-# the shutdown phase (flushAndShutdown). Both must end up on the same release-and-continue path,
-# so this test injects a throw in each phase (the two failpoints below) and asserts the server
-# still shuts down cleanly (no abort, no hang) in both cases.
+# A shutdown can throw from three places, all of which must still reach the table-reference
+# cleanup:
+#   - the prepare phase (flushAndPrepareForShutdown, e.g. StorageReplicatedMergeTree rethrows
+#     preparation failures),
+#   - the shutdown phase (flushAndShutdown),
+#   - a database override's pre-cleanup that runs before the common cleanup. For example
+#     DatabaseReplicated::shutdown() calls stopReplication() (-> the DDL worker's
+#     ZooKeeper::tryRemove, which throws on timeout/session errors) before DatabaseAtomic::shutdown(),
+#     where the UUID/table cleanup lives. If stopReplication throws and we skip the cleanup, the
+#     Replicated database's table UUID mappings survive, which is the same late-destruction failure.
+# This test injects a throw in each of the three places (the failpoints below) and asserts the
+# server still shuts down cleanly (no abort, no hang) in every case.
 
 import pytest
 
@@ -28,12 +36,14 @@ from helpers.cluster import ClickHouseCluster
 
 SHUTDOWN_FAILPOINT = "database_catalog_throw_on_table_shutdown"
 PREPARE_FAILPOINT = "database_catalog_throw_on_table_prepare_shutdown"
+STOP_REPLICATION_FAILPOINT = "database_replicated_throw_on_stop_replication"
 NOT_INITIALIZED = "The MergeTreePartsLoaderThreadPool is not initialized"
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/config.xml"],
+    with_zookeeper=True,
     stay_alive=True,
 )
 
@@ -47,21 +57,40 @@ def started_cluster():
         cluster.shutdown()
 
 
+def _create_failing_database(failpoint):
+    # Each case uses its own database so the cases do not interfere regardless of order. The
+    # database must have a table with a UUID, so there is a UUID -> storage mapping that leaks
+    # if the cleanup is skipped on the throwing path.
+    if failpoint == STOP_REPLICATION_FAILPOINT:
+        # A Replicated database whose stopReplication() the failpoint makes throw on shutdown,
+        # before DatabaseAtomic::shutdown() (where the UUID/table cleanup runs) is reached.
+        node.query(
+            "CREATE DATABASE IF NOT EXISTS repldb "
+            "ENGINE = Replicated('/clickhouse/databases/repldb', 'shard1', 'replica1')"
+        )
+        node.query(
+            "CREATE TABLE IF NOT EXISTS repldb.t (a UInt64) ENGINE = MergeTree ORDER BY a"
+        )
+    else:
+        # A user table whose flushAndPrepareForShutdown / flushAndShutdown the failpoint makes throw.
+        node.query("CREATE DATABASE IF NOT EXISTS userdb")
+        node.query(
+            "CREATE TABLE IF NOT EXISTS userdb.t (a UInt64) ENGINE = MergeTree ORDER BY a"
+        )
+
+
 @pytest.mark.parametrize(
     "failpoint, fault_message",
     [
         (SHUTDOWN_FAILPOINT, "Injecting fault while shutting down table"),
         (PREPARE_FAILPOINT, "Injecting fault while preparing to shut down table"),
+        (STOP_REPLICATION_FAILPOINT, "Injecting fault while stopping replication of database"),
     ],
 )
-def test_system_logs_shutdown_when_user_table_shutdown_throws(
+def test_system_logs_shutdown_when_user_database_shutdown_throws(
     started_cluster, failpoint, fault_message
 ):
-    # A user table whose shutdown the failpoint will make throw (a non-predefined database).
-    node.query("CREATE DATABASE IF NOT EXISTS userdb")
-    node.query(
-        "CREATE TABLE IF NOT EXISTS userdb.t (a UInt64) ENGINE = MergeTree ORDER BY a"
-    )
+    _create_failing_database(failpoint)
 
     # Generate some activity so the system log flush threads are busy (re)creating their
     # backing tables around shutdown time - the threads that race the static pool teardown.
@@ -74,10 +103,10 @@ def test_system_logs_shutdown_when_user_table_shutdown_throws(
         ["bash", "-c", ": > /var/log/clickhouse-server/clickhouse-server.log"]
     )
 
-    # Make a user table throw while shutting down, exactly the condition that used to skip
-    # system-log shutdown (the same effect a table hitting a ZooKeeper timeout would have). The
-    # failpoint targets either the prepare phase or the shutdown phase, both of which must still
-    # reach the table-reference cleanup.
+    # Make a user database shutdown throw, exactly the condition that used to skip system-log
+    # shutdown and skip the table-reference cleanup. The failpoint targets the prepare phase, the
+    # shutdown phase, or a database override's pre-cleanup (stopReplication) - all of which must
+    # still reach the table-reference cleanup.
     node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
 
     # Graceful shutdown - same Context::shutdown / DatabaseCatalog::shutdown path SIGTERM hits.
@@ -87,7 +116,7 @@ def test_system_logs_shutdown_when_user_table_shutdown_throws(
 
     # The injected fault must have fired (otherwise the test proves nothing).
     fault_log = node.grep_in_log(fault_message, only_latest=True)
-    assert fault_log, "Expected the injected table shutdown fault in the log."
+    assert fault_log, "Expected the injected database shutdown fault in the log."
 
     # With the fix, the catalog catches the failed database shutdown and still runs system-log
     # shutdown, so the flush threads are joined on the throwing path.
@@ -105,7 +134,8 @@ def test_system_logs_shutdown_when_user_table_shutdown_throws(
     )
 
     # Shutdown must reach the end. This is logged right before the static thread pools are torn
-    # down, so its presence means we got past the database/system-log shutdown without aborting.
+    # down, so its presence means we got past the database/system-log shutdown without aborting
+    # (including the catalog uuid_map chassert that a leaked table mapping trips in debug builds).
     assert node.contains_in_log(
         "Background threads finished", from_host=True
     ), "Server shutdown did not complete after a user-database shutdown threw."
