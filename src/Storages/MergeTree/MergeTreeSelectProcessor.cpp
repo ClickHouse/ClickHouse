@@ -74,6 +74,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 }
@@ -261,58 +262,78 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
         /// `_part_offset` virtual column. Applied AFTER PREWHERE / skip-indexes
         /// so `_part_offset` reflects absolute part-local rows; PREWHERE wastes
         /// a little eval on dead rows in exchange for keeping the bitmap filter
-        /// out of the PREWHERE DAG.
+        /// out of the PREWHERE DAG. `_part_offset` is retained through PREWHERE
+        /// for UK-with-bitmap reads (getReadTaskColumns / addPartOffsetForDeleteBitmap),
+        /// even when PREWHERE references it directly, so it is present here.
         const auto & delete_bitmap = current_task.getInfo().delete_bitmap;
-        if (delete_bitmap && !delete_bitmap->empty() && res.block.has("_part_offset"))
+        if (delete_bitmap && !delete_bitmap->empty())
         {
+            /// Fail closed: any state that prevents applying the filter would
+            /// silently return deleted rows. `_part_offset` is contracted to be
+            /// present, of type UInt64, and row-aligned for UK-with-bitmap reads
+            /// (getReadTaskColumns / addPartOffsetForDeleteBitmap); a violation is a
+            /// regression, not a runtime condition to tolerate. Throw rather than skip.
+            if (!res.block.has("_part_offset"))
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "UNIQUE KEY read has a non-empty delete bitmap but `_part_offset` is missing from the "
+                    "post-PREWHERE block; the delete-bitmap filter cannot be applied");
+
             const auto & part_offset_col = res.block.getByName("_part_offset").column;
             const auto * offsets = typeid_cast<const ColumnUInt64 *>(part_offset_col.get());
-            if (offsets && offsets->size() == res.row_count)
+            if (!offsets || offsets->size() != res.row_count)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "UNIQUE KEY read has a non-empty delete bitmap but `_part_offset` is malformed "
+                    "(type {}, size {}, expected ColumnUInt64 of size {}); the delete-bitmap filter "
+                    "cannot be applied",
+                    part_offset_col->getName(),
+                    part_offset_col->size(),
+                    res.row_count);
+
+            const auto & offset_data = offsets->getData();
+            IColumn::Filter filter(res.row_count);
+            const size_t kept = delete_bitmap->buildKeepFilter(
+                offset_data.data(), res.row_count, filter.data());
+
+            if (kept != res.row_count)
             {
-                const auto & offset_data = offsets->getData();
-                IColumn::Filter filter(res.row_count);
-                const size_t kept = delete_bitmap->buildKeepFilter(
-                    offset_data.data(), res.row_count, filter.data());
+                const size_t skipped = res.row_count - kept;
+                ProfileEvents::increment(ProfileEvents::UniqueKeyBitmapRowsSkipped, skipped);
 
-                if (kept != res.row_count)
+                if (kept == 0)
                 {
-                    const size_t skipped = res.row_count - kept;
-                    ProfileEvents::increment(ProfileEvents::UniqueKeyBitmapRowsSkipped, skipped);
+                    /// All PREWHERE-surviving rows were filtered by the delete
+                    /// bitmap — treat as an empty chunk. DO NOT record the read
+                    /// marks (`res.read_mark_ranges`) in the query-condition
+                    /// cache: those rows matched PREWHERE and only the
+                    /// (csn-dependent) bitmap killed them. The cache is
+                    /// csn-oblivious and server-shared, so a concurrent query
+                    /// pinned at an older snapshot — before this delete — would
+                    /// consult the entry and wrongly skip a mark whose rows are
+                    /// live at its csn, dropping live rows. The append-only-bitmap
+                    /// invariant doesn't make this safe: it only holds forward in
+                    /// csn. Fully bitmap-dead marks are re-scanned and re-filtered
+                    /// until a csn/bitmap-aware cache exists.
+                    ///
+                    /// Genuine PREWHERE misses in this batch ARE still cacheable —
+                    /// they're csn-independent (the predicate, not the bitmap,
+                    /// rejected them) — so record `res.unmatched_mark_ranges` as
+                    /// the normal path below does.
+                    if (reader_settings.use_query_condition_cache && prewhere_info
+                        && !res.unmatched_mark_ranges.empty()
+                        && !current_task.readersChainCanSkipMarksBeforePrewhere())
+                        current_task.addPrewhereUnmatchedMarks(res.unmatched_mark_ranges);
 
-                    if (kept == 0)
-                    {
-                        /// All PREWHERE-surviving rows were filtered by the delete
-                        /// bitmap — treat as an empty chunk. DO NOT record the read
-                        /// marks (`res.read_mark_ranges`) in the query-condition
-                        /// cache: those rows matched PREWHERE and only the
-                        /// (csn-dependent) bitmap killed them. The cache is
-                        /// csn-oblivious and server-shared, so a concurrent query
-                        /// pinned at an older snapshot — before this delete — would
-                        /// consult the entry and wrongly skip a mark whose rows are
-                        /// live at its csn, dropping live rows. The append-only-bitmap
-                        /// invariant doesn't make this safe: it only holds forward in
-                        /// csn. Fully bitmap-dead marks are re-scanned and re-filtered
-                        /// until a csn/bitmap-aware cache exists.
-                        ///
-                        /// Genuine PREWHERE misses in this batch ARE still cacheable —
-                        /// they're csn-independent (the predicate, not the bitmap,
-                        /// rejected them) — so record `res.unmatched_mark_ranges` as
-                        /// the normal path below does.
-                        if (reader_settings.use_query_condition_cache && prewhere_info
-                            && !res.unmatched_mark_ranges.empty()
-                            && !current_task.readersChainCanSkipMarksBeforePrewhere())
-                            current_task.addPrewhereUnmatchedMarks(res.unmatched_mark_ranges);
-
-                        return {Chunk(), res.num_read_rows, res.num_read_bytes, false, std::move(res.read_mark_ranges)};
-                    }
-
-                    for (size_t i = 0, cols = res.block.columns(); i < cols; ++i)
-                    {
-                        auto & col = res.block.getByPosition(i);
-                        col.column = col.column->filter(filter, kept);
-                    }
-                    res.row_count = kept;
+                    return {Chunk(), res.num_read_rows, res.num_read_bytes, false, std::move(res.read_mark_ranges)};
                 }
+
+                for (size_t i = 0, cols = res.block.columns(); i < cols; ++i)
+                {
+                    auto & col = res.block.getByPosition(i);
+                    col.column = col.column->filter(filter, kept);
+                }
+                res.row_count = kept;
             }
         }
 

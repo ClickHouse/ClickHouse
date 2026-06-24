@@ -1,0 +1,10 @@
+po_after_insert	6
+po_after_delete	4
+po_all_count	4
+po_all_rows	1	a
+po_all_rows	3	c
+po_all_rows	5	e
+po_all_rows	6	f
+po_grp100	1	a
+po_grp100	5	e
+po_with_offset	4

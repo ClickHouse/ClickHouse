@@ -345,8 +345,15 @@ void StorageMergeTree::read(
     size_t num_streams)
 {
     const auto & settings = local_context->getSettingsRef();
+
+    /// UNIQUE KEY — the per-row delete-bitmap filter is applied from a partition
+    /// snapshot pinned in THIS server's memory during `selectRangesToRead`; another
+    /// replica/node has no access to it, so any branch that ships the read elsewhere
+    /// would resurrect logically-deleted rows. Force the local single-replica path.
+    const bool is_unique_key = storage_snapshot->metadata->hasUniqueKey();
+
     /// reading step for parallel replicas with the analyzer is built in Planner, so don't do it here
-    if (local_context->canUseParallelReplicasOnInitiator() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
+    if (!is_unique_key && local_context->canUseParallelReplicasOnInitiator() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
         && !settings[Setting::allow_experimental_analyzer])
     {
         ClusterProxy::executeQueryWithParallelReplicas(
@@ -354,7 +361,7 @@ void StorageMergeTree::read(
         return;
     }
 
-    if (local_context->canUseParallelReplicasCustomKey() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
+    if (!is_unique_key && local_context->canUseParallelReplicasCustomKey() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
         && !settings[Setting::allow_experimental_analyzer] && local_context->getClientInfo().distributed_depth == 0)
     {
         auto cluster = local_context->getClusterForParallelReplicas();
@@ -381,7 +388,7 @@ void StorageMergeTree::read(
             cluster->getName());
     }
 
-    const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower()
+    const bool enable_parallel_reading = !is_unique_key && local_context->canUseParallelReplicasOnFollower()
         && local_context->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree];
 
     QueryPlanPtr plan = MergeTreeDataSelectExecutor(*this).read(

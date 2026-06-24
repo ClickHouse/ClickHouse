@@ -41,11 +41,32 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
+/// UNIQUE KEY — the per-row delete-bitmap filter is applied from a partition
+/// snapshot pinned in this server's memory; a remote replica has no access to it,
+/// so reading there would resurrect logically-deleted rows. Keep UK reads on the
+/// local single-replica path. Mirrors the guard in StorageMergeTree::read and
+/// PlannerJoinTree::parallelReplicasEnabledForStorage.
+///
+/// TODO(unique-key): this disqualifies a query whose parallel-replica-DRIVING
+/// table is UK (and the View/MV-target above). A UK table on the NON-driving side
+/// of a JOIN (non-UK left drives parallel replicas, UK right read per-replica
+/// under parallel_replicas_prefer_local_join) can still be read off-node. Close
+/// that by disabling parallel replicas for any query whose read tree contains a
+/// UK table, or by forcing such joins GLOBAL.
+static bool storageHasUniqueKey(const StoragePtr & storage, const ContextPtr & context)
+{
+    auto metadata = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
+    return metadata && metadata->hasUniqueKey();
+}
+
 bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const StoragePtr & storage, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
 
     if (!storage->isMergeTree() && !typeid_cast<const StorageDummy *>(storage.get()))
+        return false;
+
+    if (storageHasUniqueKey(storage, context))
         return false;
 
     if (!storage->supportsReplication() && !settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
@@ -70,6 +91,11 @@ static bool canUseTableForParallelReplicas(const TableNode & table_node, const C
         {
             auto underlying_storage = view->getUnderlyingMergeTreeStorageForParallelReplicas(context);
             if (!underlying_storage)
+                return false;
+
+            /// This branch returns without reaching isTableNodeEligibleForParallelReplicas,
+            /// so guard the unwrapped MergeTree table against UNIQUE KEY here too.
+            if (storageHasUniqueKey(underlying_storage, context))
                 return false;
 
             return true;

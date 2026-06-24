@@ -551,6 +551,24 @@ MergeTreeReadTaskColumns getReadTaskColumns(
             post_column_names.push_back(name);
     }
 
+    /// UNIQUE KEY — `_part_offset` keys the post-PREWHERE delete-bitmap filter.
+    /// When PREWHERE itself references `_part_offset` it is consumed as a PREWHERE
+    /// input above and would be dropped from the post-PREWHERE columns, leaving the
+    /// final block without it and silently skipping the filter (resurrecting deleted
+    /// rows). `ReadFromMergeTree::addPartOffsetForDeleteBitmap` already forces it into
+    /// the required columns for UK-with-bitmap reads, so re-add it here — but ONLY for
+    /// UK tables, to keep non-UK reads (which can also reference `_part_offset` in
+    /// PREWHERE) byte-for-byte unchanged. The retention can't ride the projection-style
+    /// "add to prewhere_actions outputs" path (projectionsCommon.cpp): that runs at
+    /// planning time on a fresh DAG, whereas the UK bitmap is only known at
+    /// initializePipeline time when the output header is already frozen.
+    if (storage_snapshot->metadata->hasUniqueKey()
+        && std::ranges::contains(required_columns, "_part_offset")
+        && !std::ranges::contains(post_column_names, "_part_offset"))
+    {
+        post_column_names.push_back("_part_offset");
+    }
+
     result.columns = storage_snapshot->getColumnsByNames(options, post_column_names);
     return result;
 }
