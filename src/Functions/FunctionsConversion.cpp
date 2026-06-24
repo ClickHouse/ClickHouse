@@ -56,6 +56,21 @@ ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
 namespace detail
 {
 
+/// When assembling the result of a Variant/Dynamic-to-column conversion, the result column must have
+/// the exact type of the converted columns it is filled from, otherwise `insertFrom` fails the column
+/// type check. Under `accurateCastOrNull` a per-variant conversion may return a `Nullable` column even
+/// when `result_type` is not `Nullable` (a NULL marks a value that could not be converted), so the
+/// result column cannot always be created from `result_type` directly. All convertible variants share
+/// the same target type, so the type of any non-empty converted column is a valid template. Returns
+/// `nullptr` when there is no converted column to copy the type from.
+static MutableColumnPtr cloneEmptyFromFirstConvertedColumn(const VectorWithMemoryTracking<ColumnPtr> & cast_columns)
+{
+    for (const auto & column : cast_columns)
+        if (column)
+            return column->cloneEmpty();
+    return nullptr;
+}
+
 ColumnPtr ConvertImplFromDynamicToColumn::execute(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & result_type,
@@ -152,7 +167,11 @@ ColumnPtr ConvertImplFromDynamicToColumn::execute(
     }
 
     /// Construct result column from all cast variants.
-    auto res = result_type->createColumn();
+    auto res = cloneEmptyFromFirstConvertedColumn(cast_variant_columns);
+    if (!res)
+        res = cloneEmptyFromFirstConvertedColumn(cast_shared_variant_columns);
+    if (!res)
+        res = result_type->createColumn();
     res->reserve(input_rows_count);
     for (size_t i = 0; i != input_rows_count; ++i)
     {
@@ -304,7 +323,9 @@ ColumnPtr ConvertImplFromVariantToColumn::execute(
         }
     }
 
-    auto res = result_type->createColumn();
+    auto res = cloneEmptyFromFirstConvertedColumn(cast_variant_columns);
+    if (!res)
+        res = result_type->createColumn();
     res->reserve(input_rows_count);
     for (size_t i = 0; i != input_rows_count; ++i)
     {
@@ -1579,7 +1600,9 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
 
         /// Second, construct resulting column from cast variant columns according to discriminators.
         const auto & local_discriminators = column_variant.getLocalDiscriminators();
-        auto res = result_type->createColumn();
+        auto res = cloneEmptyFromFirstConvertedColumn(cast_variant_columns);
+        if (!res)
+            res = result_type->createColumn();
         res->reserve(input_rows_count);
         for (size_t i = 0; i != input_rows_count; ++i)
         {

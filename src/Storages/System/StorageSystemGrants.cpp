@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemGrants.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemPrivileges.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -194,3 +195,6 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemGrants) }
