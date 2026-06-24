@@ -240,6 +240,15 @@ void FileCacheSettings::validate()
     if (settings[FileCacheSetting::overcommit_eviction_evict_step] == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`overcommit_eviction_evict_step` cannot be zero");
 
+    if (settings[FileCacheSetting::use_split_cache]
+        && (settings[FileCacheSetting::cache_policy] == FileCachePolicy::LRU_OVERCOMMIT
+            || settings[FileCacheSetting::cache_policy] == FileCachePolicy::SLRU_OVERCOMMIT))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "`use_split_cache` is not supported with overcommit cache policies. "
+            "`SplitFileCachePriority` merges and fans out eviction infos of its sub-priorities "
+            "for total space cleanup, which the overcommit eviction cannot consume correctly");
+
     if (settings[FileCacheSetting::boundary_alignment] > settings[FileCacheSetting::max_file_segment_size])
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
