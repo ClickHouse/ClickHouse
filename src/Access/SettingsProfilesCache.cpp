@@ -37,15 +37,23 @@ void SettingsProfilesCache::ensureAllProfilesRead()
     all_profiles_read = true;
 
     subscription = access_control.subscribeForChanges<SettingsProfile>(
-        [&](const UUID & id, const AccessEntityPtr & entity)
+        [this](const std::vector<AccessChangesNotifier::Change> & changes)
         {
-            if (entity)
-                profileAddedOrChanged(id, typeid_cast<SettingsProfilePtr>(entity));
-            else
-                profileRemoved(id);
+            std::lock_guard lock{mutex};
+            for (const auto & change : changes)
+            {
+                if (change.entity)
+                    profileAddedOrChanged(change.id, typeid_cast<SettingsProfilePtr>(change.entity));
+                else
+                    profileRemoved(change.id);
+            }
+            if (need_merge_settings_and_constraints)
+            {
+                /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.
+                mergeSettingsAndConstraints();
+                need_merge_settings_and_constraints = false;
+            }
         });
-
-    batch_subscription = access_control.subscribeForBatchFinished([this] { mergeSettingsAndConstraintsIfNeeded(); });
 
     for (const UUID & id : access_control.findAll<SettingsProfile>())
     {
@@ -61,7 +69,7 @@ void SettingsProfilesCache::ensureAllProfilesRead()
 
 void SettingsProfilesCache::profileAddedOrChanged(const UUID & profile_id, const SettingsProfilePtr & new_profile)
 {
-    std::lock_guard lock{mutex};
+    /// `mutex` is already locked.
     auto it = all_profiles.find(profile_id);
     if (it == all_profiles.end())
     {
@@ -83,7 +91,7 @@ void SettingsProfilesCache::profileAddedOrChanged(const UUID & profile_id, const
 
 void SettingsProfilesCache::profileRemoved(const UUID & profile_id)
 {
-    std::lock_guard lock{mutex};
+    /// `mutex` is already locked.
     auto it = all_profiles.find(profile_id);
     if (it == all_profiles.end())
         return;
@@ -91,17 +99,6 @@ void SettingsProfilesCache::profileRemoved(const UUID & profile_id)
     all_profiles.erase(it);
     profile_infos_cache.clear();
     need_merge_settings_and_constraints = true;
-}
-
-
-void SettingsProfilesCache::mergeSettingsAndConstraintsIfNeeded()
-{
-    std::lock_guard lock{mutex};
-    if (!need_merge_settings_and_constraints)
-        return;
-    /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.
-    mergeSettingsAndConstraints();
-    need_merge_settings_and_constraints = false;
 }
 
 

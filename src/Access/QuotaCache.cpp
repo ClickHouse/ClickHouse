@@ -292,15 +292,23 @@ void QuotaCache::ensureAllQuotasRead()
     all_quotas_read = true;
 
     subscription = access_control.subscribeForChanges<Quota>(
-        [&](const UUID & id, const AccessEntityPtr & entity)
+        [this](const std::vector<AccessChangesNotifier::Change> & changes)
         {
-            if (entity)
-                quotaAddedOrChanged(id, typeid_cast<QuotaPtr>(entity));
-            else
-                quotaRemoved(id);
+            std::lock_guard lock{mutex};
+            for (const auto & change : changes)
+            {
+                if (change.entity)
+                    quotaAddedOrChanged(change.id, typeid_cast<QuotaPtr>(change.entity));
+                else
+                    quotaRemoved(change.id);
+            }
+            if (need_choose_quota)
+            {
+                /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.
+                chooseQuotaToConsume();
+                need_choose_quota = false;
+            }
         });
-
-    batch_subscription = access_control.subscribeForBatchFinished([this] { chooseQuotaToConsumeIfNeeded(); });
 
     for (const UUID & quota_id : access_control.findAll<Quota>())
     {
@@ -313,7 +321,7 @@ void QuotaCache::ensureAllQuotasRead()
 
 void QuotaCache::quotaAddedOrChanged(const UUID & quota_id, const std::shared_ptr<const Quota> & new_quota)
 {
-    std::lock_guard lock{mutex};
+    /// `mutex` is already locked.
     auto it = all_quotas.find(quota_id);
     if (it == all_quotas.end())
     {
@@ -333,20 +341,9 @@ void QuotaCache::quotaAddedOrChanged(const UUID & quota_id, const std::shared_pt
 
 void QuotaCache::quotaRemoved(const UUID & quota_id)
 {
-    std::lock_guard lock{mutex};
+    /// `mutex` is already locked.
     all_quotas.erase(quota_id);
     need_choose_quota = true;
-}
-
-
-void QuotaCache::chooseQuotaToConsumeIfNeeded()
-{
-    std::lock_guard lock{mutex};
-    if (!need_choose_quota)
-        return;
-    /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.
-    chooseQuotaToConsume();
-    need_choose_quota = false;
 }
 
 

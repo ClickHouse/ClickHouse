@@ -149,15 +149,23 @@ void RowPolicyCache::ensureAllRowPoliciesRead()
     all_policies_read = true;
 
     subscription = access_control.subscribeForChanges<RowPolicy>(
-        [&](const UUID & id, const AccessEntityPtr & entity)
+        [this](const std::vector<AccessChangesNotifier::Change> & changes)
         {
-            if (entity)
-                rowPolicyAddedOrChanged(id, typeid_cast<RowPolicyPtr>(entity));
-            else
-                rowPolicyRemoved(id);
+            std::lock_guard lock{mutex};
+            for (const auto & change : changes)
+            {
+                if (change.entity)
+                    rowPolicyAddedOrChanged(change.id, typeid_cast<RowPolicyPtr>(change.entity));
+                else
+                    rowPolicyRemoved(change.id);
+            }
+            if (need_mix_filters)
+            {
+                /// Clear the flag only after a successful rebuild, so a throwing mixFilters() is retried next batch.
+                mixFilters();
+                need_mix_filters = false;
+            }
         });
-
-    batch_subscription = access_control.subscribeForBatchFinished([this] { mixFiltersIfNeeded(); });
 
     for (const UUID & id : access_control.findAll<RowPolicy>())
     {
@@ -172,7 +180,7 @@ void RowPolicyCache::ensureAllRowPoliciesRead()
 
 void RowPolicyCache::rowPolicyAddedOrChanged(const UUID & policy_id, const RowPolicyPtr & new_policy)
 {
-    std::lock_guard lock{mutex};
+    /// `mutex` is already locked.
     auto it = all_policies.find(policy_id);
     if (it == all_policies.end())
     {
@@ -192,20 +200,9 @@ void RowPolicyCache::rowPolicyAddedOrChanged(const UUID & policy_id, const RowPo
 
 void RowPolicyCache::rowPolicyRemoved(const UUID & policy_id)
 {
-    std::lock_guard lock{mutex};
+    /// `mutex` is already locked.
     all_policies.erase(policy_id);
     need_mix_filters = true;
-}
-
-
-void RowPolicyCache::mixFiltersIfNeeded()
-{
-    std::lock_guard lock{mutex};
-    if (!need_mix_filters)
-        return;
-    /// Clear the flag only after a successful rebuild, so a throwing mixFilters() is retried next batch.
-    mixFilters();
-    need_mix_filters = false;
 }
 
 

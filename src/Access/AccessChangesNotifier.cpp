@@ -1,6 +1,7 @@
 #include <Access/AccessChangesNotifier.h>
 #include <Common/Exception.h>
-#include <boost/range/algorithm/copy.hpp>
+
+#include <utility>
 
 
 namespace DB
@@ -15,30 +16,30 @@ AccessChangesNotifier::~AccessChangesNotifier() = default;
 void AccessChangesNotifier::onEntityAdded(const UUID & id, const AccessEntityPtr & new_entity)
 {
     std::lock_guard lock{queue_mutex};
-    Event event;
-    event.id = id;
-    event.entity = new_entity;
-    event.type = new_entity->getType();
-    queue.push(std::move(event));
+    Change change;
+    change.id = id;
+    change.entity = new_entity;
+    change.type = new_entity->getType();
+    queue.push_back(std::move(change));
 }
 
 void AccessChangesNotifier::onEntityUpdated(const UUID & id, const AccessEntityPtr & changed_entity)
 {
     std::lock_guard lock{queue_mutex};
-    Event event;
-    event.id = id;
-    event.entity = changed_entity;
-    event.type = changed_entity->getType();
-    queue.push(std::move(event));
+    Change change;
+    change.id = id;
+    change.entity = changed_entity;
+    change.type = changed_entity->getType();
+    queue.push_back(std::move(change));
 }
 
 void AccessChangesNotifier::onEntityRemoved(const UUID & id, AccessEntityType type)
 {
     std::lock_guard lock{queue_mutex};
-    Event event;
-    event.id = id;
-    event.type = type;
-    queue.push(std::move(event));
+    Change change;
+    change.id = id;
+    change.type = type;
+    queue.push_back(std::move(change));
 }
 
 scope_guard AccessChangesNotifier::subscribeForChanges(AccessEntityType type, const OnChangedHandler & handler)
@@ -83,74 +84,62 @@ scope_guard AccessChangesNotifier::subscribeForChanges(const std::vector<UUID> &
     return subscriptions;
 }
 
-scope_guard AccessChangesNotifier::subscribeForBatchFinished(const OnBatchFinishedHandler & handler)
-{
-    std::lock_guard lock{handlers->mutex};
-    auto & list = handlers->on_batch_finished;
-    list.push_back(handler);
-    auto handler_it = std::prev(list.end());
-
-    return [my_handlers = handlers, handler_it]
-    {
-        std::lock_guard lock2{my_handlers->mutex};
-        my_handlers->on_batch_finished.erase(handler_it);
-    };
-}
-
 void AccessChangesNotifier::sendNotifications()
 {
-    /// Only one thread can send notification at any time.
+    /// Only one thread can send notifications at any time.
     std::lock_guard sending_notifications_lock{sending_notifications};
 
-    std::unique_lock queue_lock{queue_mutex};
-    while (!queue.empty())
+    /// Drain the whole queue into a single batch.
+    std::vector<Change> batch;
     {
-        auto event = std::move(queue.front());
-        queue.pop();
-        queue_lock.unlock();
-
-        std::vector<OnChangedHandler> current_handlers;
-        {
-            std::lock_guard handlers_lock{handlers->mutex};
-            boost::range::copy(handlers->by_type[static_cast<size_t>(event.type)], std::back_inserter(current_handlers));
-            auto it = handlers->by_id.find(event.id);
-            if (it != handlers->by_id.end())
-                boost::range::copy(it->second, std::back_inserter(current_handlers));
-        }
-
-        for (const auto & handler : current_handlers)
-        {
-            try
-            {
-                handler(event.id, event.entity);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-
-        queue_lock.lock();
+        std::lock_guard queue_lock{queue_mutex};
+        batch = std::exchange(queue, {});
     }
-    queue_lock.unlock();
 
-    /// Run the coalesced per-batch work unconditionally, even when this call drained nothing: a
-    /// per-batch handler whose previous rebuild threw left its work pending, and the per-entity flag
-    /// guarding that rebuild is only cleared on success, so the retry must not depend on a fresh event
-    /// being queued (an up-to-date `SYSTEM RELOAD USERS` diffs to zero and would otherwise never retry).
-    /// Each handler is cheap when nothing is pending (a mutex + a flag check). Copied out so handlers
-    /// run without `handlers->mutex` held.
-    std::vector<OnBatchFinishedHandler> batch_finished_handlers;
+    /// Group the batch by entity type (one copy of each change).
+    std::vector<Change> changes_by_type[static_cast<size_t>(AccessEntityType::MAX)];
+    for (const auto & change : batch)
+        changes_by_type[static_cast<size_t>(change.type)].push_back(change);
+
+    /// Snapshot the handlers and the changes to deliver to each of them, then call them without
+    /// `handlers->mutex` held (a handler may add or remove subscriptions, which takes that mutex).
+    const std::vector<Change> no_changes;
+    std::unordered_map<UUID, std::vector<Change>> changes_by_id; /// built only for subscribed ids
+    std::vector<std::pair<OnChangedHandler, const std::vector<Change> *>> calls;
     {
         std::lock_guard handlers_lock{handlers->mutex};
-        boost::range::copy(handlers->on_batch_finished, std::back_inserter(batch_finished_handlers));
+
+        /// Every by-type handler is called even when nothing of its type changed (with an empty batch)
+        /// so a recomputation that threw is retried on the next call.
+        for (size_t type = 0; type != static_cast<size_t>(AccessEntityType::MAX); ++type)
+        {
+            const auto & changes = changes_by_type[type];
+            for (const auto & handler : handlers->by_type[type])
+                calls.emplace_back(handler, changes.empty() ? &no_changes : &changes);
+        }
+
+        /// By-id handlers are called only for ids that actually changed.
+        /// Collect per-id changes only for ids someone subscribed to.
+        if (!handlers->by_id.empty())
+        {
+            for (const auto & change : batch)
+            {
+                if (handlers->by_id.contains(change.id))
+                    changes_by_id[change.id].push_back(change);
+            }
+            for (const auto & [id, changes] : changes_by_id)
+            {
+                for (const auto & handler : handlers->by_id.at(id))
+                    calls.emplace_back(handler, &changes);
+            }
+        }
     }
 
-    for (const auto & handler : batch_finished_handlers)
+    for (const auto & [handler, changes] : calls)
     {
         try
         {
-            handler();
+            handler(*changes);
         }
         catch (...)
         {
