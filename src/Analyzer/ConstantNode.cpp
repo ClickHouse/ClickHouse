@@ -25,6 +25,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
     ConstantNode::ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression_, bool is_deterministic_)
     : IQueryTreeNode(children_size)
     , constant_value(std::move(constant_value_))
@@ -159,6 +164,82 @@ boost::intrusive_ptr<ASTLiteral> ConstantNode::getCachedAST(const F &ast_generat
     return make_intrusive<ASTLiteral>(*cached_ast);
 }
 
+namespace
+{
+
+bool isDecimalField(const Field & field)
+{
+    switch (field.getType())
+    {
+        case Field::Types::Decimal32:
+        case Field::Types::Decimal64:
+        case Field::Types::Decimal128:
+        case Field::Types::Decimal256:
+            return true;
+        default:
+            return false;
+    }
+}
+
+UInt32 getDecimalFieldScale(const Field & field)
+{
+    switch (field.getType())
+    {
+        case Field::Types::Decimal32:
+            return field.safeGet<DecimalField<Decimal32>>().getScale();
+        case Field::Types::Decimal64:
+            return field.safeGet<DecimalField<Decimal64>>().getScale();
+        case Field::Types::Decimal128:
+            return field.safeGet<DecimalField<Decimal128>>().getScale();
+        case Field::Types::Decimal256:
+            return field.safeGet<DecimalField<Decimal256>>().getScale();
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a decimal field in makeExactDecimalConstantAST");
+    }
+}
+
+/// Decimal-backed constants (Decimal*, DateTime64, Time64) have no exact literal syntax in SQL:
+/// a bare numeric literal is re-parsed as Float64 and loses precision, while a quoted string cast
+/// directly to DateTime64 is interpreted as a date-time text and fails for values such as "0"
+/// (https://github.com/ClickHouse/ClickHouse/issues/94612).
+/// We serialize the value as its exact textual form cast from a String to a Decimal type with
+/// enough precision, then cast that to the final type. The String -> Decimal conversion parses
+/// the digits exactly, so the constant round-trips without loss.
+ASTPtr makeExactDecimalConstantAST(const Field & field, const String & result_type_name)
+{
+    const String text = applyVisitor(FieldVisitorToString(), field);
+    const UInt32 scale = getDecimalFieldScale(field);
+
+    size_t digits = 0;
+    for (char c : text)
+        if (c >= '0' && c <= '9')
+            ++digits;
+
+    /// The carrier Decimal type must be wide enough to hold every significant digit; e.g. a
+    /// DateTime64(9) value near the present has 19 digits and would overflow Decimal64(18).
+    const size_t needed_precision = digits > scale ? digits : scale;
+    const char * decimal_type_name = "Decimal256";
+    if (needed_precision <= 9)
+        decimal_type_name = "Decimal32";
+    else if (needed_precision <= 18)
+        decimal_type_name = "Decimal64";
+    else if (needed_precision <= 38)
+        decimal_type_name = "Decimal128";
+
+    const String carrier_type_name = String(decimal_type_name) + "(" + std::to_string(scale) + ")";
+
+    auto carrier = makeASTFunction(
+        "_CAST", make_intrusive<ASTLiteral>(text), make_intrusive<ASTLiteral>(carrier_type_name));
+
+    /// If the value's own decimal type is exactly the result type, the single cast is enough.
+    if (carrier_type_name == result_type_name)
+        return carrier;
+
+    return makeASTFunction("_CAST", std::move(carrier), make_intrusive<ASTLiteral>(result_type_name));
+}
+
+}
+
 ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     static const auto from_column = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node.constant_value.getColumn(), 0, node.constant_value.getType())); };
@@ -171,6 +252,12 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
         return getCachedAST(from_column);
 
     const auto & constant_value_type = constant_value.getType();
+
+    /// Decimal-backed constants need an exact, precision-safe serialization so they round-trip
+    /// without going through Float64 (precision loss) or string -> DateTime64 parsing (which fails
+    /// for some values). This covers both the cast and no-cast paths below.
+    if (const auto field = getValue(); isDecimalField(field))
+        return makeExactDecimalConstantAST(field, constant_value_type->getName());
 
     // Add cast if constant was created as a result of constant folding.
     // Constant folding may lead to type transformation and literal on shard
