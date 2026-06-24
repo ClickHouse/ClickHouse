@@ -600,6 +600,10 @@ public:
 
     unsigned toMillisecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const;
 
+    unsigned toMicrosecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const;
+
+    unsigned toNanosecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const;
+
     unsigned toMinute(Time t) const
     {
         if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
@@ -976,7 +980,8 @@ public:
 
         /// Assume that if offset was fractional, then the fraction is the same as at the beginning of epoch.
         /// NOTE This assumption is false for "Pacific/Pitcairn" and "Pacific/Kiritimati" time zones.
-        return (t + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);
+        /// Sum in UInt64 to avoid signed overflow UB on extreme t; non-negative for any representable time, so the result is unchanged.
+        return static_cast<Time>(static_cast<UInt64>(t) + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);
     }
 
     template <typename DateOrTime>
@@ -989,7 +994,8 @@ public:
     /// It's needed for correct work of dateDiff function.
     Time toStableRelativeHourNum(Time t) const
     {
-        return (t + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);
+        /// Sum in UInt64 to avoid signed overflow UB on extreme t; non-negative for any representable time, so the result is unchanged.
+        return static_cast<Time>(static_cast<UInt64>(t) + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);
     }
 
     template <typename DateOrTime>
@@ -1000,7 +1006,8 @@ public:
 
     Time toRelativeMinuteNum(Time t) const /// NOLINT
     {
-        return (t + DATE_LUT_ADD) / 60 - (DATE_LUT_ADD / 60);
+        /// Sum in UInt64 to avoid signed overflow UB on extreme t; non-negative for any representable time, so the result is unchanged.
+        return static_cast<Time>(static_cast<UInt64>(t) + DATE_LUT_ADD) / 60 - (DATE_LUT_ADD / 60);
     }
 
     template <typename DateOrTime>
