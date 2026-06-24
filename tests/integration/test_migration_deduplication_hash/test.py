@@ -3,6 +3,7 @@ import pytest
 from contextlib import contextmanager
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 
 @pytest.fixture(scope="module")
@@ -193,3 +194,61 @@ def test_new_unified_async_enable_follows_sync_window(cluster):
     ):
         two_identical_async_inserts("t_async_enable_unified_zero")
         assert node.query("SELECT count() FROM t_async_enable_unified_zero").strip() == "2"
+
+
+def test_legacy_async_blocks_cleanup(cluster):
+    # During a rolling upgrade an older replica (here the pinned 26.5 in compatible_double_hashes) keeps
+    # writing legacy async-insert ids under /async_blocks. The current leader must keep trimming that
+    # directory down to replicated_deduplication_window_for_async_inserts; otherwise old replicas would
+    # over-deduplicate past the window or leak Keeper nodes. node_compatible is barred from leadership
+    # (replicated_can_become_leader = 0) so the current binary's restored sweep is what does the
+    # trimming under test: without that sweep the directory would stay at num_inserts instead of window.
+    node_compatible = cluster.instances["node_compatible"]
+    node_new = cluster.instances["node_new"]
+
+    zk_path = "/clickhouse/tables/test_legacy_async_blocks_cleanup"
+    async_blocks_path = zk_path + "/async_blocks"
+    window = 3
+    num_inserts = 6
+
+    drop_query = "DROP TABLE IF EXISTS test_legacy_async_blocks_cleanup SYNC"
+
+    try:
+        node_compatible.query(
+            f"""
+            CREATE TABLE test_legacy_async_blocks_cleanup (k UInt32)
+            ENGINE=ReplicatedMergeTree('{zk_path}', '{{replica}}')
+            ORDER BY k
+            SETTINGS replicated_can_become_leader = 0
+            """
+        )
+        node_new.query(
+            f"""
+            CREATE TABLE test_legacy_async_blocks_cleanup (k UInt32)
+            ENGINE=ReplicatedMergeTree('{zk_path}', '{{replica}}')
+            ORDER BY k
+            SETTINGS replicated_deduplication_window_for_async_inserts = {window},
+                     cleanup_delay_period = 1, cleanup_delay_period_random_add = 1
+            """
+        )
+
+        # The 26.5 replica writes num_inserts distinct async inserts; compatible_double_hashes writes a
+        # legacy /async_blocks id for each, so the directory accumulates more entries than the window.
+        for i in range(num_inserts):
+            node_compatible.query(
+                "INSERT INTO test_legacy_async_blocks_cleanup "
+                "SETTINGS async_insert = 1, wait_for_async_insert = 1, async_insert_deduplicate = 1 "
+                f"VALUES ({i})"
+            )
+
+        # The current leader's restored sweep must trim /async_blocks down to the window.
+        assert_eq_with_retry(
+            node_new,
+            f"SELECT count() FROM system.zookeeper WHERE path = '{async_blocks_path}'",
+            str(window),
+            retry_count=60,
+            sleep_time=1,
+        )
+    finally:
+        node_compatible.query(drop_query)
+        node_new.query(drop_query)
