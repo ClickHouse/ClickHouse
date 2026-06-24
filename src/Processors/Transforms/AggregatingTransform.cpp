@@ -9,7 +9,6 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/Pipe.h>
-#include <azure/core/internal/json/json.hpp>
 #include <base/types.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>

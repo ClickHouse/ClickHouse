@@ -710,6 +710,101 @@ static void formatHeaderExplainAnalyze(
     out << "\n";
 }
 
+struct InterpreterExplainQuery::AnalyzedInnerQuery
+{
+    QueryPlan plan;
+    ContextPtr context;
+    std::function<std::unique_ptr<QueryPlan>()> parallel_replicas_builder;
+    bool ignore_quota = false;
+    bool ignore_limits = false;
+    UInt64 planning_ns = 0;
+};
+
+InterpreterExplainQuery::InterpreterExplainQuery(const ASTPtr & query_, ContextPtr context_, const SelectQueryOptions & options_)
+    : WithContext(context_)
+    , query(query_)
+    , options(options_)
+{
+}
+
+InterpreterExplainQuery::~InterpreterExplainQuery() = default;
+
+bool InterpreterExplainQuery::isExecutableAnalyze() const
+{
+    const auto & ast = query->as<const ASTExplainQuery &>();
+    if (ast.getKind() != ASTExplainQuery::Analyze)
+        return false;
+
+    /// Only an inner SELECT is executed by EXPLAIN ANALYZE; other inner queries are rejected in executeImpl.
+    if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
+        return false;
+
+    /// Distributed EXPLAIN ANALYZE is rejected before execution, so do not plan it here (e.g. while
+    /// charging quota in executeQuery). The quota is charged as for a generic query and the error follows.
+    if (getContext()->getSettingsRef()[Setting::make_distributed_plan])
+        return false;
+
+    return true;
+}
+
+InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyzedInnerQuery() const
+{
+    if (analyzed_inner_query)
+        return *analyzed_inner_query;
+
+    const auto & ast = query->as<const ASTExplainQuery &>();
+
+    /// Mirror the context and option setup that executeImpl applies before planning the inner SELECT,
+    /// so the effective ignore_quota / ignore_limits we expose match what actual execution would use.
+    auto inner_options = options;
+    inner_options.setExplain();
+
+    auto planning_context = Context::createCopy(getContext());
+    inner_options.max_step_description_length = planning_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+    InterpreterSetQuery::applySettingsFromQuery(query, planning_context);
+
+    auto result = std::make_unique<AnalyzedInnerQuery>();
+
+    Stopwatch watch;
+    if (planning_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), planning_context, inner_options);
+        result->context = interpreter.getContext();
+        result->parallel_replicas_builder = interpreter.getQueryPlanWithParallelReplicasBuilder();
+        /// Force planning so the effective ignore flags settle before we read them.
+        interpreter.getQueryPlan();
+        result->ignore_quota = interpreter.ignoreQuota();
+        result->ignore_limits = interpreter.ignoreLimits();
+        result->plan = std::move(interpreter).extractQueryPlan();
+    }
+    else
+    {
+        InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), planning_context, inner_options);
+        interpreter.buildQueryPlan(result->plan);
+        result->context = interpreter.getContext();
+        result->ignore_quota = interpreter.ignoreQuota();
+        result->ignore_limits = interpreter.ignoreLimits();
+    }
+    result->planning_ns = watch.elapsed();
+
+    analyzed_inner_query = std::move(result);
+    return *analyzed_inner_query;
+}
+
+bool InterpreterExplainQuery::ignoreQuota() const
+{
+    if (!isExecutableAnalyze())
+        return IInterpreter::ignoreQuota();
+    return getAnalyzedInnerQuery().ignore_quota;
+}
+
+bool InterpreterExplainQuery::ignoreLimits() const
+{
+    if (!isExecutableAnalyze())
+        return IInterpreter::ignoreLimits();
+    return getAnalyzedInnerQuery().ignore_limits;
+}
+
 QueryPipeline InterpreterExplainQuery::executeImpl()
 {
     const auto & ast = query->as<const ASTExplainQuery &>();
@@ -1016,40 +1111,20 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     "EXPLAIN ANALYZE doesn't support queries executed in distributed mode");
 
             auto settings = checkAndGetSettings<QueryAnalyzeSettings>(ast.getSettings());
-            QueryPlan plan;
-            ContextPtr context;
 
-            std::function<std::unique_ptr<QueryPlan>()> parallel_replicas_builder;
-
-            UInt64 planning_ns = 0;
-            Stopwatch watch;
+            /// Plan the inner SELECT. This is cached when ignoreQuota / ignoreLimits already triggered
+            /// it during quota charging in executeQuery, so the inner query is never planned twice.
             /// EXPLAIN ANALYZE executes the inner SELECT, so quota and result limits must follow the same
-            /// rules as running that SELECT directly. The inner interpreter resolves the effective
-            /// ignore_quota / ignore_limits during planning (e.g. exempt system tables such as `system.one`),
-            /// while the outer EXPLAIN options do not carry those source-specific exemptions. Capture them
-            /// from the inner interpreter after the plan is built.
-            bool inner_ignore_quota = false;
-            bool inner_ignore_limits = false;
-            if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
-            {
-                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
-                context = interpreter.getContext();
-                parallel_replicas_builder = interpreter.getQueryPlanWithParallelReplicasBuilder();
-                /// Force planning so the effective ignore flags settle before we read them.
-                interpreter.getQueryPlan();
-                inner_ignore_quota = interpreter.ignoreQuota();
-                inner_ignore_limits = interpreter.ignoreLimits();
-                plan = std::move(interpreter).extractQueryPlan();
-            }
-            else
-            {
-                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), query_context, options);
-                interpreter.buildQueryPlan(plan);
-                context = interpreter.getContext();
-                inner_ignore_quota = interpreter.ignoreQuota();
-                inner_ignore_limits = interpreter.ignoreLimits();
-            }
-            planning_ns += watch.elapsed();
+            /// rules as running that SELECT directly; the inner interpreter resolves the effective
+            /// ignore_quota / ignore_limits during planning (e.g. exempt system tables such as `system.one`).
+            auto & analyzed = getAnalyzedInnerQuery();
+            QueryPlan plan = std::move(analyzed.plan);
+            ContextPtr context = analyzed.context;
+            auto parallel_replicas_builder = analyzed.parallel_replicas_builder;
+            const bool inner_ignore_quota = analyzed.ignore_quota;
+            const bool inner_ignore_limits = analyzed.ignore_limits;
+            UInt64 planning_ns = analyzed.planning_ns;
+            Stopwatch watch;
 
             auto optimization_settings = QueryPlanOptimizationSettings(context);
 
