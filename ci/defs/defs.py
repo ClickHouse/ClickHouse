@@ -304,11 +304,18 @@ DOCKERS = [
 class BuildTypes(metaclass=MetaClasses.WithIter):
     AMD_DEBUG = "amd_debug"
     AMD_RELEASE = "amd_release"
+    # sccache-warmup variants of the release builds (MasterCI only): PR-style
+    # cmake flags (no official-build flag, debug symbols stripped, no PGO/BOLT),
+    # but built on master so the shared sccache is populated read-write for
+    # read-only PR builds to reuse. See build_clickhouse.py and
+    # PR_CACHE_WARMUP_BUILD_TYPES.
+    AMD_RELEASE_PR_CACHE_WARMUP = "amd_release_pr_cache_warmup"
     AMD_BINARY = "amd_binary"
     AMD_ASAN_UBSAN = "amd_asan_ubsan"
     AMD_TSAN = "amd_tsan"
     AMD_MSAN = "amd_msan"
     ARM_RELEASE = "arm_release"
+    ARM_RELEASE_PR_CACHE_WARMUP = "arm_release_pr_cache_warmup"
     ARM_DEBUG = "arm_debug"
     ARM_ASAN_UBSAN = "arm_asan_ubsan"
     ARM_TSAN = "arm_tsan"

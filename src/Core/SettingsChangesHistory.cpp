@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.6",
         {
+            {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
             {"output_format_image_width", 1024, 1024, "New setting controlling the width of the output image for image output formats such as PNG."},
             {"output_format_image_height", 1024, 1024, "New setting controlling the height of the output image for image output formats such as PNG."},
             {"output_format_image_terminal_mode", "", "", "New setting controlling whether image output formats such as PNG are rendered directly to the terminal using an inline image protocol."},
@@ -246,7 +247,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_full_text_index", true, true, "The text index is now GA"},
             {"allow_experimental_full_text_index", true, true, "The text index is now GA"},
             {"query_plan_direct_read_from_text_index", true, true, "The text index is now GA"},
-            {"use_skip_indexes_on_data_read", true, true, "The text index is now GA"},
+            {"use_skip_indexes_on_data_read", false, true, "The text index is now GA"},
             {"use_page_cache_for_local_disks", false, false, "New setting to use userspace page cache for local disks"},
             {"use_page_cache_for_object_storage", false, false, "New setting to use userspace page cache for object storage table functions"},
             {"use_statistics_cache", false, true, "Enable statistics cache"},
@@ -285,7 +286,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "New setting"},
             {"check_conversion_from_numbers_to_enum", false, true, "New setting"},
             {"allow_experimental_nullable_tuple_type", false, false, "New experimental setting"},
-            {"use_skip_indexes_on_data_read", true, true, "Default enable"},
+            {"use_skip_indexes_on_data_read", false, false, "Default enable"},
             {"check_conversion_from_numbers_to_enum", false, false, "New setting"},
             {"archive_adaptive_buffer_max_size_bytes", 8 * 1024 * 1024, 8 * 1024 * 1024, "New setting"},
             {"type_json_allow_duplicated_key_with_literal_and_nested_object", false, false, "Add a new setting to allow duplicated paths in JSON type with literal and nested object"},
@@ -419,7 +420,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"input_format_protobuf_oneof_presence", false, false, "New setting"},
             {"iceberg_delete_data_on_drop", false, false, "New setting"},
-            {"use_skip_indexes_on_data_read", true, false, "New setting"},
+            {"use_skip_indexes_on_data_read", false, false, "New setting"},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
             {"iceberg_metadata_log_level", "none", "none", "New setting."},
             {"iceberg_insert_max_rows_in_data_file", 1000000, 1000000, "New setting."},
