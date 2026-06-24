@@ -346,8 +346,10 @@ namespace
             return std::nullopt;
         case SnapshotSummaryOperation::OVERWRITE: {
             const auto & update = summary->getUpdate<Iceberg::SnapshotSummaryUpdateOverwrite>();
-            /// current compaction (OPTIME TABLE my_iceberg) supports only overwrites wich has only position delete files
-            if (update.added_files == 0 && (update.added_position_deletes == update.added_delete_files) && update.added_position_deletes != 0)
+            /// current compaction (OPTIMIZE TABLE my_iceberg) supports only overwrites which add delete files and no data files.
+            /// `added_delete_files` is a file count and `added_position_deletes` a row count, so they must not be compared to
+            /// each other: a single position-delete file with several rows is a valid, supported position-delete overwrite.
+            if (update.added_files == 0 && update.added_delete_files != 0)
                 return std::nullopt;
             [[fallthrough]];
         }
@@ -367,6 +369,28 @@ void checkIfIcebergHistorySupported(const IcebergHistory & history)
         if (append && append->added_files == 0)
             throw DB::Exception(
                 DB::ErrorCodes::BAD_ARGUMENTS, "Found an append with 0 added_files, snapshot={}", history_record.snapshot_id);
+    }
+}
+
+/// A `DELETE` snapshot that removed data files (produced by `ALTER TABLE ... DROP PARTITION`) is skipped
+/// when compaction rebuilds the metadata from history, which would resurrect the dropped data. This only
+/// matters when compaction actually rebuilds (`plan.need_optimize`); a no-op OPTIMIZE leaves the snapshot
+/// in place and is safe. Reject the rebuild until applying such snapshots is implemented.
+void checkNoDataDeletingDelete(const IcebergHistory & history)
+{
+    for (const auto & history_record : history)
+    {
+        if (history_record.snapshot_summary
+            && history_record.snapshot_summary->getOperation() == SnapshotSummaryOperation::DELETE)
+        {
+            const auto & del = history_record.snapshot_summary->getUpdate<Iceberg::SnapshotSummaryUpdateDelete>();
+            if (del.deleted_data_files != 0 || del.removed_records != 0)
+                throw DB::Exception(
+                    DB::ErrorCodes::NOT_IMPLEMENTED,
+                    "OPTIMIZE is not supported on Iceberg tables whose history contains a data-deleting DELETE "
+                    "snapshot (e.g. after DROP PARTITION), snapshot={}",
+                    history_record.snapshot_id);
+        }
     }
 }
 
@@ -640,6 +664,8 @@ void compactIcebergTable(
         persistent_table_components.metadata_compression_method);
     if (plan.need_optimize)
     {
+        checkNoDataDeletingDelete(plan.history);
+
         auto old_files = getOldFiles(object_storage_, persistent_table_components.table_path);
         writeDataFiles(
             plan,
