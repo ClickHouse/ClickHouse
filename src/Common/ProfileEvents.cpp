@@ -1062,6 +1062,8 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperCheckWatchRequest, "Number of remove watches requests", ValueType::Number) \
     M(KeeperRequestRejectedDueToSoftMemoryLimitCount, "Number requests that have been rejected due to soft memory limit exceeded", ValueType::Number) \
     M(KeeperStaleRequestsSkipped, "Number of Keeper requests skipped because the session is no longer live", ValueType::Number) \
+    M(KeeperTTLRemoveRequestsEnqueued, "Number of TTL remove requests successfully enqueued", ValueType::Number) \
+    M(KeeperTTLRemoveRequestsDropped, "Number of TTL remove requests dropped because the queue was full", ValueType::Number) \
     M(KeeperLiveSessionsLockWaitMicroseconds, "Time spent waiting to acquire Keeper live sessions lock", ValueType::Microseconds) \
     M(KeeperWatchesTriggered, "Number of watch triggers", ValueType::Number) \
     M(KeeperWatchTriggeredNodeCreated, "Number of watch triggers by `CREATE` operation", ValueType::Number) \
