@@ -468,4 +468,26 @@ TEST(IcebergSnapshotSummary, AppendPreservesInheritedEqualityDeletes)
     EXPECT_EQ(append.getTotals().records, 55);
 }
 
+TEST(IcebergSnapshotSummary, FromJSONNegativeCounterReturnsErrorNotThrows)
+{
+    /// Regression: an underflowed total is serialized as a negative number
+    /// (e.g. `total-files-size = -924`). `fromJSON` must report it as an error
+    /// instead of throwing `CANNOT_PARSE_NUMBER`, otherwise the exception escapes
+    /// `IcebergMetadata::getHistory` and `system.iceberg_history` reports the
+    /// whole table as broken instead of one snapshot with an UNKNOWN summary.
+    Poco::JSON::Object obj;
+    obj.set(DB::Iceberg::f_operation, std::string(DB::Iceberg::f_append));
+    obj.set(DB::Iceberg::f_total_files_size, std::string("-924"));
+
+    bool has_value = true;
+    EXPECT_NO_THROW({ has_value = SnapshotSummary::fromJSON(obj).has_value(); });
+    EXPECT_FALSE(has_value);
+
+    /// Sanity: the same summary with a valid value parses successfully.
+    obj.set(DB::Iceberg::f_total_files_size, std::string("924"));
+    auto ok = SnapshotSummary::fromJSON(obj);
+    EXPECT_TRUE(ok.has_value());
+    EXPECT_EQ(ok->getTotals().files_size, 924);
+}
+
 #endif
