@@ -369,8 +369,24 @@ bool ParserTablesInSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     else
         return false;
 
-    while (ParserTablesInSelectQueryElement(false, allow_alias_without_as_keyword).parse(pos, child, expected))
+    while (true)
+    {
+        /// A comma (cross) join is not supported right after an ARRAY JOIN, so reject it
+        /// here. ARRAY JOIN greedily consumes its comma-separated expression list, so a
+        /// leftover comma means the next item failed to parse as an expression (e.g.
+        /// `(t, view(SELECT ...), x)`, which is not a valid tuple) and was returned to
+        /// this loop. Without this guard it is reinterpreted as a comma-joined table,
+        /// which parses, but the table is reformatted into a plain `(SELECT ...)`
+        /// subquery that the ARRAY JOIN then absorbs on reparse, breaking the
+        /// format/parse round-trip. Stop instead so the query fails as a syntax error.
+        const auto * prev = res->children.back()->as<ASTTablesInSelectQueryElement>();
+        if (prev && prev->array_join && pos->type == TokenType::Comma)
+            break;
+
+        if (!ParserTablesInSelectQueryElement(false, allow_alias_without_as_keyword).parse(pos, child, expected))
+            break;
         res->children.emplace_back(child);
+    }
 
     node = res;
     return true;
