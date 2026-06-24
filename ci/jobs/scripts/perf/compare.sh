@@ -1113,10 +1113,19 @@ wait
 unset IFS
 
 # Create differential flamegraphs.
+#
+# Frames are 'file:line#symbol' (see the addresses query above), but PR builds
+# compile with -g0 (DISABLE_ALL_DEBUG_SYMBOLS), so addressToLine has no DWARF and
+# the prefix degrades to the binary basename ('clickhouse#...'), while master
+# keeps 'file:line#'. difffolded.pl matches frames by exact string, so the two
+# sides never line up. -g0 keeps the symbol table, so strip the prefix here and
+# diff by demangled symbol. A frame holds at most one '#' (demangled C++ symbols
+# contain none), so '[^;]*#' removes exactly the prefix per frame.
 while IFS=$'\t' read -r query_file trace_type
 do
-    difffolded.pl "report/tmp/$query_file.stacks.left.tsv" \
-            "report/tmp/$query_file.stacks.right.tsv" \
+    difffolded.pl \
+            <(sed 's/[^;]*#//g' "report/tmp/$query_file.stacks.left.tsv") \
+            <(sed 's/[^;]*#//g' "report/tmp/$query_file.stacks.right.tsv") \
         | tee "report/tmp/$query_file.stacks.diff.tsv" \
         | flamegraph.pl $(flamegraph_opts "$trace_type") > "$query_file.diff.svg" &
 done < report/query-files.txt
