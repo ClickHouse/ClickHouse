@@ -706,7 +706,13 @@ HiveFilePtr StorageHive::getHiveFileIfNeeded(
         LOG_TRACE(log, "Get hive file {} from cache, prune_level {}", file_info.path, pruneLevelToString(prune_level));
     }
 
-    /// Without a filter there is nothing to prune by, so keep the file as is.
+    /// Without a filter there is nothing to prune by, so keep the file as is. The file may be
+    /// served from `hive_files_cache` with a stale split-skip set left by an earlier filtered
+    /// query; clear it so an unfiltered read returns all splits instead of silently dropping the
+    /// row groups or stripes excluded by that earlier predicate.
+    if (!filter_actions_dag)
+        hive_file->setSkipSplits({});
+
     if (filter_actions_dag && prune_level >= PruneLevel::File)
     {
         ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), context_, /* boolean_context */ true);
