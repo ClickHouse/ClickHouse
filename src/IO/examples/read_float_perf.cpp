@@ -17,7 +17,6 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <Compression/CompressedReadBuffer.h>
-#include <Examples/clickhouse_examples.h>
 
 /** How to test:
 
@@ -65,7 +64,7 @@ void NO_INLINE loop(ReadBuffer & in, WriteBuffer & out)
 }
 
 
-int mainEntryExampleReadFloatPerf(int argc, char ** argv)
+int main(int argc, char ** argv)
 try
 {
     int method = 0;
