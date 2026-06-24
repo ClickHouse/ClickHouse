@@ -115,18 +115,19 @@ DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated_r2 SYNC;
 CREATE TABLE t_json_minmax_forbidden_replicated_r1 (
     id Int32,
     col1 JSON
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04278_json_minmax_index_mixed_type_array_two_replicas', 'r1') ORDER BY id;
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04278_json_minmax_index_mixed_type_array_two_replicas', 'r1') ORDER BY id
+SETTINGS allow_minmax_index_for_json = 1;
 
 CREATE TABLE t_json_minmax_forbidden_replicated_r2 (
     id Int32,
     col1 JSON
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04278_json_minmax_index_mixed_type_array_two_replicas', 'r2') ORDER BY id;
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04278_json_minmax_index_mixed_type_array_two_replicas', 'r2') ORDER BY id
+SETTINGS allow_minmax_index_for_json = 1;
 
--- Should succeed: query-level setting allows the initiating ALTER, and metadata replay on
--- the second replica must not fail because the original query context is not replayed.
+-- Should succeed: table-level setting allows the ALTER on the initiating replica,
+-- and metadata replay on the follower sees the same table-level setting.
 ALTER TABLE t_json_minmax_forbidden_replicated_r1
-    ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1
-    SETTINGS allow_minmax_index_for_json = 1;
+    ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1;
 SYSTEM SYNC REPLICA t_json_minmax_forbidden_replicated_r2;
 
 DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated_r1 SYNC;

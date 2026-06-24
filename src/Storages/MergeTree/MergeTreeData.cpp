@@ -940,8 +940,7 @@ void MergeTreeData::checkProperties(
     bool attach,
     bool allow_empty_sorting_key,
     bool allow_nullable_key_,
-    ContextPtr local_context,
-    bool check_minmax_index_for_json) const
+    ContextPtr local_context) const
 {
     if (!new_metadata.sorting_key.definition_ast && !allow_empty_sorting_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY cannot be empty");
@@ -1058,7 +1057,7 @@ void MergeTreeData::checkProperties(
                         checkSuspiciousIndices(index_expression_ptr);
                 }
 
-                if (!attach && check_minmax_index_for_json && !allow_minmax_index_for_json)
+                if (!attach && !allow_minmax_index_for_json)
                     checkMinMaxIndexForJSON(index);
                 MergeTreeIndexFactory::instance().validate(index, attach, *getSettings());
             }
@@ -1141,8 +1140,7 @@ void MergeTreeData::checkProperties(
                 attach,
                 is_aggregate,
                 true /* allow_nullable_key */,
-                local_context,
-                check_minmax_index_for_json);
+                local_context);
 
             if (!canUseAdaptiveGranularity() && projection.has_index_granularity_overrides)
             {
@@ -1234,8 +1232,7 @@ void MergeTreeData::setProperties(
     const StorageInMemoryMetadata & new_metadata,
     const StorageInMemoryMetadata & old_metadata,
     bool attach,
-    ContextPtr local_context,
-    bool check_minmax_index_for_json)
+    ContextPtr local_context)
 {
     /// Route the table-level metadata clones produced here (the new `StorageInMemoryMetadata`
     /// stored in `metadata.set(...)`, the cloned `ColumnsDescription`, `VirtualColumnsDescription`,
@@ -1249,8 +1246,7 @@ void MergeTreeData::setProperties(
         attach,
         false,
         allow_nullable_key,
-        local_context,
-        check_minmax_index_for_json);
+        local_context);
 
     setInMemoryMetadata(new_metadata);
 

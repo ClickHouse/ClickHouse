@@ -1685,15 +1685,13 @@ protected:
         bool attach,
         bool allow_empty_sorting_key,
         bool allow_nullable_key_,
-        ContextPtr local_context,
-        bool check_minmax_index_for_json = true) const;
+        ContextPtr local_context) const;
 
     void setProperties(
         const StorageInMemoryMetadata & new_metadata,
         const StorageInMemoryMetadata & old_metadata,
         bool attach = false,
-        ContextPtr local_context = nullptr,
-        bool check_minmax_index_for_json = true);
+        ContextPtr local_context = nullptr);
 
     void checkMinMaxIndexForJSON(const IndexDescription & index) const;
 
