@@ -10,12 +10,12 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <unordered_set>
 
-TYPED_TEST(CoordinationTest, TestSystemNodeModify)
+TEST_P(CoordinationTest, TestSystemNodeModify)
 {
     using namespace Coordination;
     int64_t zxid{0};
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     // On INIT we abort when a system path is modified
@@ -45,12 +45,12 @@ TYPED_TEST(CoordinationTest, TestSystemNodeModify)
     assert_create("/keeper1/test", Error::ZOK);
 }
 
-TYPED_TEST(CoordinationTest, TestCheckNotExistsRequest)
+TEST_P(CoordinationTest, TestCheckNotExistsRequest)
 {
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     Storage storage{500, "", this->keeper_context};
@@ -121,12 +121,12 @@ TYPED_TEST(CoordinationTest, TestCheckNotExistsRequest)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestDeterministicPreprocess)
+TEST_P(CoordinationTest, TestDeterministicPreprocess)
 {
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     static constexpr int64_t initial_zxid = 100;
@@ -206,12 +206,12 @@ TYPED_TEST(CoordinationTest, TestDeterministicPreprocess)
     ASSERT_TRUE(children1_set == children2_set);
 }
 
-TYPED_TEST(CoordinationTest, TestRemoveRecursiveRequest)
+TEST_P(CoordinationTest, TestRemoveRecursiveRequest)
 {
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     Storage storage{500, "", this->keeper_context};
@@ -377,12 +377,12 @@ Coordination::RequestPtr makeRemoveRecursiveRequest(const std::string & path, ui
 }
 }
 
-TYPED_TEST(CoordinationTest, TestRemoveRecursiveInMultiRequest)
+TEST_P(CoordinationTest, TestRemoveRecursiveInMultiRequest)
 {
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     Storage storage{500, "", this->keeper_context};
@@ -587,12 +587,12 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveInMultiRequest)
 
 }
 
-TYPED_TEST(CoordinationTest, TestRemoveRecursiveWatches)
+TEST_P(CoordinationTest, TestRemoveRecursiveWatches)
 {
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     Storage storage{500, "", this->keeper_context};
@@ -693,12 +693,12 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveWatches)
     ASSERT_EQ(storage.list_watches.size(), 0);
 }
 
-TYPED_TEST(CoordinationTest, TestRemoveRecursiveAcls)
+TEST_P(CoordinationTest, TestRemoveRecursiveAcls)
 {
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     Storage storage{500, "", this->keeper_context};
@@ -755,12 +755,12 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveAcls)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestListRequestTypes)
+TEST_P(CoordinationTest, TestListRequestTypes)
 {
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     Storage storage{500, "", this->keeper_context};
@@ -842,12 +842,12 @@ TYPED_TEST(CoordinationTest, TestListRequestTypes)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestGetChildrenWithStatsAndData)
+TEST_P(CoordinationTest, TestGetChildrenWithStatsAndData)
 {
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     Storage storage{500, "", this->keeper_context};
@@ -1042,12 +1042,12 @@ TYPED_TEST(CoordinationTest, TestGetChildrenWithStatsAndData)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestUncommittedStateBasicCrud)
+TEST_P(CoordinationTest, TestUncommittedStateBasicCrud)
 {
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     Storage storage{500, "", this->keeper_context};
@@ -1163,12 +1163,12 @@ TYPED_TEST(CoordinationTest, TestUncommittedStateBasicCrud)
     ASSERT_EQ(get_committed_data(), std::nullopt);
 }
 
-TYPED_TEST(CoordinationTest, TestBlockACL)
+TEST_P(CoordinationTest, TestBlockACL)
 {
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     Storage storage{500, "", this->keeper_context};
@@ -1232,12 +1232,12 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestMultiWatches)
+TEST_P(CoordinationTest, TestMultiWatches)
 {
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     Storage storage{500, "", this->keeper_context};
@@ -1330,12 +1330,12 @@ TYPED_TEST(CoordinationTest, TestMultiWatches)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestCheckStat)
+TEST_P(CoordinationTest, TestCheckStat)
 {
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     Storage storage{500, "", this->keeper_context};
@@ -1415,12 +1415,12 @@ TYPED_TEST(CoordinationTest, TestCheckStat)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestTryRemove)
+TEST_P(CoordinationTest, TestTryRemove)
 {
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     Storage storage{500, "", this->keeper_context};
@@ -1518,12 +1518,12 @@ TYPED_TEST(CoordinationTest, TestTryRemove)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestListRecursiveRequest)
+TEST_P(CoordinationTest, TestListRecursiveRequest)
 {
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     Storage storage{500, "", this->keeper_context};
@@ -1704,12 +1704,12 @@ TYPED_TEST(CoordinationTest, TestListRecursiveRequest)
 
 }
 
-TYPED_TEST(CoordinationTest, TestListRecursiveInMultiRequest)
+TEST_P(CoordinationTest, TestListRecursiveInMultiRequest)
 {
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     Storage storage{500, "", this->keeper_context};
@@ -1774,12 +1774,12 @@ TYPED_TEST(CoordinationTest, TestListRecursiveInMultiRequest)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestListRecursiveAcls)
+TEST_P(CoordinationTest, TestListRecursiveAcls)
 {
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     Storage storage{500, "", this->keeper_context};

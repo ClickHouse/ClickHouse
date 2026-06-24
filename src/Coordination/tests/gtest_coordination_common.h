@@ -52,24 +52,37 @@ struct ChangelogDirTest
     }
 };
 
-/// TODO: Try to remove the TStorage template and make all tests use virtual methods of KeeperStorage instead.
-template <typename TStorage, bool enable_compression_param>
+/// Test parameter for the value-parametrized CoordinationTest suite.
+/// TODO: Add a field selecting the KeeperStorage implementation; makeKeeperContext should then
+///       translate it into a CoordinationSettings option that KeeperStorage::create reads.
 struct TestParam
 {
-    using Storage = TStorage;
-    static constexpr bool enable_compression = enable_compression_param;
+    bool enable_compression;
 };
 
-template<typename TestType>
-class CoordinationTest : public ::testing::Test
+class CoordinationTest : public ::testing::TestWithParam<TestParam>
 {
 public:
-    using Storage = typename TestType::Storage;
-    static constexpr bool enable_compression = TestType::enable_compression;
+    bool enable_compression = false;
     std::string extension;
 
     DB::KeeperContextPtr keeper_context;
     LoggerPtr log{getLogger("CoordinationTest")};
+
+    /// Single place that creates a KeeperContext for tests. In the future the test parameter will
+    /// be translated here into a CoordinationSettings option that selects which KeeperStorage
+    /// implementation KeeperStorage::create constructs. Tests that need custom settings (e.g. a
+    /// specific rotate interval or chunk size) pass their own `settings` object and this method
+    /// augments it with the parameter-derived options.
+    DB::KeeperContextPtr makeKeeperContext(std::shared_ptr<DB::CoordinationSettings> settings = nullptr) const
+    {
+        if (!settings)
+            settings = std::make_shared<DB::CoordinationSettings>();
+        /// TODO: apply TestParam-derived options to `settings` here.
+        auto context = std::make_shared<DB::KeeperContext>(true, settings);
+        context->setLocalLogsPreprocessed();
+        return context;
+    }
 
     void SetUp() override
     {
@@ -78,20 +91,19 @@ public:
         const char * log_level = std::getenv("TEST_LOG_LEVEL"); // NOLINT(concurrency-mt-unsafe)
         Poco::Logger::root().setLevel(log_level ? log_level : "none");
 
-        auto settings = std::make_shared<DB::CoordinationSettings>();
-        keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
-        keeper_context->setLocalLogsPreprocessed();
+        enable_compression = GetParam().enable_compression;
+        keeper_context = makeKeeperContext();
         extension = enable_compression ? ".zstd" : "";
     }
 
-    void setLogDirectory(const std::string & path) { keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", path)); }
+    void setLogDirectory(const std::string & path) const { keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", path)); }
 
-    void setSnapshotDirectory(const std::string & path)
+    void setSnapshotDirectory(const std::string & path) const
     {
         keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", path));
     }
 
-    void setStateFileDirectory(const std::string & path)
+    void setStateFileDirectory(const std::string & path) const
     {
         keeper_context->setStateFileDisk(std::make_shared<DB::DiskLocal>("StateFile", path));
     }
@@ -106,9 +118,6 @@ Coordination::ACLs getUncommittedACLs(DB::KeeperStorage & storage, std::string_v
 bool committedNodeExists(DB::KeeperStorage & storage, std::string_view path);
 /// Returns "<NO NODE>" if node doesn't exist.
 std::string committedNodeData(DB::KeeperStorage & storage, std::string_view path);
-
-using Implementation = testing::Types<TestParam<DB::KeeperMemoryStorage, true>, TestParam<DB::KeeperMemoryStorage, false>>;
-TYPED_TEST_SUITE(CoordinationTest, Implementation);
 
 using LogEntryPtr = nuraft::ptr<nuraft::log_entry>;
 

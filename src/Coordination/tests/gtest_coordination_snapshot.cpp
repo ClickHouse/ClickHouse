@@ -264,7 +264,7 @@ TEST(ACLMapTest, RemoveUnusedACLs)
     EXPECT_EQ(acl_map.convertNumber(new_id), (Coordination::ACLs{{1, "digest", "unused:pwd"}}));
 }
 
-TYPED_TEST(CoordinationTest, SnapshotableHashMapSimple)
+TEST_P(CoordinationTest, SnapshotableHashMapSimple)
 {
     DB::SnapshotableHashTable<IntNode> hello;
     EXPECT_TRUE(hello.insert("hello", 5).second);
@@ -279,7 +279,7 @@ TYPED_TEST(CoordinationTest, SnapshotableHashMapSimple)
     EXPECT_EQ(hello.size(), 0);
 }
 
-TYPED_TEST(CoordinationTest, SnapshotableHashMapTrySnapshot)
+TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
 {
     DB::SnapshotableHashTable<IntNode> map_snp;
     EXPECT_TRUE(map_snp.insert("/hello", 7).second);
@@ -356,7 +356,7 @@ TYPED_TEST(CoordinationTest, SnapshotableHashMapTrySnapshot)
     EXPECT_EQ(itr, map_snp.end());
 }
 
-TYPED_TEST(CoordinationTest, SnapshotableHashMapDataSize)
+TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
 {
     /// int
     DB::SnapshotableHashTable<IntNode> hello;
@@ -438,12 +438,12 @@ TYPED_TEST(CoordinationTest, SnapshotableHashMapDataSize)
     EXPECT_EQ(world.getApproximateDataSize(), 0);
 }
 
-TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)
+TEST_P(CoordinationTest, TestStorageSnapshotSimple)
 {
     ChangelogDirTest test("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
@@ -507,13 +507,13 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)
     EXPECT_EQ(restored_storage->nodes.container.find("/")->value.stats.getSeqNum(), large_seq_num);
 }
 
-TYPED_TEST(CoordinationTest, TestStorageSnapshotMoreWrites)
+TEST_P(CoordinationTest, TestStorageSnapshotMoreWrites)
 {
 
     ChangelogDirTest test("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
@@ -553,13 +553,13 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotMoreWrites)
 }
 
 
-TYPED_TEST(CoordinationTest, TestStorageSnapshotManySnapshots)
+TEST_P(CoordinationTest, TestStorageSnapshotManySnapshots)
 {
 
     ChangelogDirTest test("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
@@ -598,13 +598,13 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotManySnapshots)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestStorageSnapshotMode)
+TEST_P(CoordinationTest, TestStorageSnapshotMode)
 {
 
     ChangelogDirTest test("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
@@ -655,13 +655,13 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotMode)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestStorageSnapshotBroken)
+TEST_P(CoordinationTest, TestStorageSnapshotBroken)
 {
 
     ChangelogDirTest test("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
@@ -687,12 +687,12 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotBroken)
     EXPECT_THROW(manager.restoreFromLatestSnapshot(restored_storage), DB::Exception);
 }
 
-TYPED_TEST(CoordinationTest, TestStorageSnapshotDifferentCompressions)
+TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
 {
     ChangelogDirTest test("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
@@ -736,12 +736,12 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     EXPECT_EQ(restored_storage->session_and_timeout.size(), 2);
 }
 
-TYPED_TEST(CoordinationTest, TestStorageSnapshotEqual)
+TEST_P(CoordinationTest, TestStorageSnapshotEqual)
 {
     ChangelogDirTest test("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     std::optional<UInt128> snapshot_hash;
@@ -781,12 +781,12 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotEqual)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestStorageSnapshotBlockACL)
+TEST_P(CoordinationTest, TestStorageSnapshotBlockACL)
 {
     ChangelogDirTest test("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
@@ -1703,14 +1703,14 @@ TEST(KeeperMemorySnapshotApplyTest, SameIndexReReceiveReplacesStaleRegistryEntry
 /// A remote disk causes `RemoteSnapshotLoader` to be used, which loads the snapshot into memory once
 /// and serves all concurrent followers from the same buffer. The test checks that all followers
 /// receive correct data and that the snapshot file is read from disk exactly once.
-TYPED_TEST(CoordinationTest, TestReadSnapshotParallelMultiChunk)
+TEST_P(CoordinationTest, TestReadSnapshotParallelMultiChunk)
 {
     getContext(); /// needed for DiskObjectStorage background threads
 
     ChangelogDirTest snap_meta("./snapshots");
     ChangelogDirTest snap_obj("./snapshots_obj");
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
     auto leader_settings = std::make_shared<DB::CoordinationSettings>();
     (*leader_settings)[DB::CoordinationSetting::snapshot_transfer_chunk_size] = 10;
@@ -1754,11 +1754,11 @@ TYPED_TEST(CoordinationTest, TestReadSnapshotParallelMultiChunk)
     snap_disk->shutdown();
 }
 
-TYPED_TEST(CoordinationTest, SerializeSnapshotToDiskCleansPartialFilesOnOpenException)
+TEST_P(CoordinationTest, SerializeSnapshotToDiskCleansPartialFilesOnOpenException)
 {
     ChangelogDirTest snapshots("./snapshots");
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
     const std::string snapshot_file_name = "snapshot_50.bin" + this->extension;
     this->keeper_context->setSnapshotDisk(std::make_shared<ThrowingSnapshotDisk>(
@@ -1774,11 +1774,11 @@ TYPED_TEST(CoordinationTest, SerializeSnapshotToDiskCleansPartialFilesOnOpenExce
         manager, "./snapshots/" + snapshot_file_name, "./snapshots/tmp_" + snapshot_file_name);
 }
 
-TYPED_TEST(CoordinationTest, SerializeSnapshotBufferToDiskCleansPartialFilesOnSyncException)
+TEST_P(CoordinationTest, SerializeSnapshotBufferToDiskCleansPartialFilesOnSyncException)
 {
     ChangelogDirTest snapshots("./snapshots");
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
     const std::string snapshot_file_name = "snapshot_51.bin" + this->extension;
     this->keeper_context->setSnapshotDisk(std::make_shared<ThrowingSnapshotDisk>(
@@ -1795,11 +1795,11 @@ TYPED_TEST(CoordinationTest, SerializeSnapshotBufferToDiskCleansPartialFilesOnSy
         manager, "./snapshots/" + snapshot_file_name, "./snapshots/tmp_" + snapshot_file_name);
 }
 
-TYPED_TEST(CoordinationTest, SerializeSnapshotBufferToDiskKeepsMarkerWhenCleanupCannotRemoveDataFile)
+TEST_P(CoordinationTest, SerializeSnapshotBufferToDiskKeepsMarkerWhenCleanupCannotRemoveDataFile)
 {
     ChangelogDirTest snapshots("./snapshots");
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
     const std::string snapshot_file_name = "snapshot_56.bin" + this->extension;
     const std::string tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
@@ -1820,11 +1820,11 @@ TYPED_TEST(CoordinationTest, SerializeSnapshotBufferToDiskKeepsMarkerWhenCleanup
     EXPECT_EQ(manager.getLatestSnapshotInfo(), nullptr);
 }
 
-TYPED_TEST(CoordinationTest, SerializeSnapshotBufferToDiskCleansMarkerWhenMarkerCreationFails)
+TEST_P(CoordinationTest, SerializeSnapshotBufferToDiskCleansMarkerWhenMarkerCreationFails)
 {
     ChangelogDirTest snapshots("./snapshots");
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
     const std::string snapshot_file_name = "snapshot_52.bin" + this->extension;
     const std::string tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
@@ -1842,11 +1842,11 @@ TYPED_TEST(CoordinationTest, SerializeSnapshotBufferToDiskCleansMarkerWhenMarker
         manager, "./snapshots/" + snapshot_file_name, "./snapshots/" + tmp_snapshot_file_name);
 }
 
-TYPED_TEST(CoordinationTest, SerializeSnapshotBufferToDiskRemovesDataFileWhenMarkerRemovalFails)
+TEST_P(CoordinationTest, SerializeSnapshotBufferToDiskRemovesDataFileWhenMarkerRemovalFails)
 {
     ChangelogDirTest snapshots("./snapshots");
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
     const std::string snapshot_file_name = "snapshot_53.bin" + this->extension;
     const std::string tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
@@ -1864,11 +1864,11 @@ TYPED_TEST(CoordinationTest, SerializeSnapshotBufferToDiskRemovesDataFileWhenMar
         manager, "./snapshots/" + snapshot_file_name, "./snapshots/" + tmp_snapshot_file_name);
 }
 
-TYPED_TEST(CoordinationTest, BeginSnapshotReceiveToDiskCleansPartialFilesOnOpenException)
+TEST_P(CoordinationTest, BeginSnapshotReceiveToDiskCleansPartialFilesOnOpenException)
 {
     ChangelogDirTest snapshots("./snapshots");
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
     const std::string snapshot_file_name = "snapshot_54.bin" + this->extension;
     this->keeper_context->setSnapshotDisk(std::make_shared<ThrowingSnapshotDisk>(
@@ -1881,11 +1881,11 @@ TYPED_TEST(CoordinationTest, BeginSnapshotReceiveToDiskCleansPartialFilesOnOpenE
         manager, "./snapshots/" + snapshot_file_name, "./snapshots/tmp_" + snapshot_file_name);
 }
 
-TYPED_TEST(CoordinationTest, FinalizeSnapshotReceiveToDiskCleansPartialFilesOnSyncException)
+TEST_P(CoordinationTest, FinalizeSnapshotReceiveToDiskCleansPartialFilesOnSyncException)
 {
     ChangelogDirTest snapshots("./snapshots");
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
     const std::string snapshot_file_name = "snapshot_55.bin" + this->extension;
     this->keeper_context->setSnapshotDisk(std::make_shared<ThrowingSnapshotDisk>(

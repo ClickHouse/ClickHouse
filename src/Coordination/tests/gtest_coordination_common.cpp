@@ -5,6 +5,14 @@
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Coordination/KeeperStateMachine.h>
 
+/// Single instantiation of the value-parametrized CoordinationTest suite. All TEST_P(CoordinationTest, ...)
+/// across the gtest_coordination*.cpp files belong to this suite and run once per parameter.
+INSTANTIATE_TEST_SUITE_P(
+    Compression,
+    CoordinationTest,
+    ::testing::Values(TestParam{.enable_compression = true}, TestParam{.enable_compression = false}),
+    [](const ::testing::TestParamInfo<TestParam> & param_info) { return param_info.param.enable_compression ? "Compressed" : "Uncompressed"; });
+
 LogEntryPtr getLogEntry(const std::string & s, size_t term)
 {
     DB::WriteBufferFromNuraftBuffer bufwriter;

@@ -25,7 +25,7 @@
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
 
-TYPED_TEST(CoordinationTest, RaftServerConfigParse)
+TEST_P(CoordinationTest, RaftServerConfigParse)
 {
     auto parse = Coordination::RaftServerConfig::parse;
     using Cfg = std::optional<DB::RaftServerConfig>;
@@ -50,7 +50,7 @@ TYPED_TEST(CoordinationTest, RaftServerConfigParse)
         (Cfg{{1, "2001:0db8:85a3:0000:0000:8a2e:0370:7334:80"}}));
 }
 
-TYPED_TEST(CoordinationTest, RaftServerClusterConfigParse)
+TEST_P(CoordinationTest, RaftServerClusterConfigParse)
 {
     auto parse = Coordination::parseRaftServers;
     using Cfg = DB::RaftServerConfig;
@@ -66,14 +66,14 @@ TYPED_TEST(CoordinationTest, RaftServerClusterConfigParse)
         (Servers{Cfg{1, "host:80"}, Cfg{2, "host:81"}}));
 }
 
-TYPED_TEST(CoordinationTest, BuildTest)
+TEST_P(CoordinationTest, BuildTest)
 {
     DB::InMemoryLogStore store;
     DB::SummingStateMachine machine;
     EXPECT_EQ(1, 1);
 }
 
-TYPED_TEST(CoordinationTest, BufferSerde)
+TEST_P(CoordinationTest, BufferSerde)
 {
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Get);
     request->xid = 3;
@@ -225,7 +225,7 @@ static nuraft::ptr<nuraft::buffer> getBuffer(int64_t number)
     return ret;
 }
 
-TYPED_TEST(CoordinationTest, TestSummingRaft1)
+TEST_P(CoordinationTest, TestSummingRaft1)
 {
     ChangelogDirTest test("./logs");
     this->setLogDirectory("./logs");
@@ -359,12 +359,12 @@ void testLogAndStateMachine(
     }
 }
 
-TYPED_TEST(CoordinationTest, TestStateMachineAndLogStore)
+TEST_P(CoordinationTest, TestStateMachineAndLogStore)
 {
     using namespace Coordination;
     using namespace DB;
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
@@ -432,7 +432,7 @@ TYPED_TEST(CoordinationTest, TestStateMachineAndLogStore)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestEphemeralNodeRemove)
+TEST_P(CoordinationTest, TestEphemeralNodeRemove)
 {
     using namespace Coordination;
     using namespace DB;
@@ -440,7 +440,7 @@ TYPED_TEST(CoordinationTest, TestEphemeralNodeRemove)
     ChangelogDirTest snapshots("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     SnapshotsQueue snapshots_queue{1};
@@ -468,7 +468,7 @@ TYPED_TEST(CoordinationTest, TestEphemeralNodeRemove)
 }
 
 
-TYPED_TEST(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecommitted)
+TEST_P(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecommitted)
 {
     using namespace Coordination;
     using namespace DB;
@@ -476,7 +476,7 @@ TYPED_TEST(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecomm
     ChangelogDirTest snapshots("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     SnapshotsQueue snapshots_queue{1};
@@ -521,7 +521,7 @@ TYPED_TEST(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecomm
     EXPECT_EQ(acls[0].permissions, 31);
 }
 
-TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
+TEST_P(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
 {
     using namespace Coordination;
     using namespace DB;
@@ -529,7 +529,7 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
     ChangelogDirTest snapshots("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
     SnapshotsQueue snapshots_queue{1};
     int64_t session_without_auth = 1;
@@ -702,7 +702,7 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestMultiRequestWithNoAuth)
+TEST_P(CoordinationTest, TestMultiRequestWithNoAuth)
 {
     using namespace Coordination;
     using namespace DB;
@@ -710,7 +710,7 @@ TYPED_TEST(CoordinationTest, TestMultiRequestWithNoAuth)
     ChangelogDirTest snapshots("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
     SnapshotsQueue snapshots_queue{1};
     int64_t session_without_auth = 1;
@@ -755,7 +755,7 @@ TYPED_TEST(CoordinationTest, TestMultiRequestWithNoAuth)
     ASSERT_TRUE(node_it->value.getData() == "notmodified");
 }
 
-TYPED_TEST(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitted)
+TEST_P(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitted)
 {
     using namespace Coordination;
     using namespace DB;
@@ -766,7 +766,7 @@ TYPED_TEST(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitte
 
     SnapshotsQueue snapshots_queue{1};
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
     auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, this->keeper_context, nullptr);
     state_machine->init();
 
@@ -813,7 +813,7 @@ TYPED_TEST(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitte
     EXPECT_EQ(acls[0].permissions, 31);
 }
 
-TYPED_TEST(CoordinationTest, TestSessionExpiryQueue)
+TEST_P(CoordinationTest, TestSessionExpiryQueue)
 {
     using namespace Coordination;
     SessionExpiryQueue queue(500);
@@ -830,7 +830,7 @@ TYPED_TEST(CoordinationTest, TestSessionExpiryQueue)
     EXPECT_EQ(queue.getExpiredSessions(), std::vector<int64_t>({1}));
 }
 
-TYPED_TEST(CoordinationTest, TestDurableState)
+TEST_P(CoordinationTest, TestDurableState)
 {
     ChangelogDirTest logs("./logs");
     this->setLogDirectory("./logs");
@@ -904,10 +904,10 @@ TYPED_TEST(CoordinationTest, TestDurableState)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestFeatureFlags)
+TEST_P(CoordinationTest, TestFeatureFlags)
 {
     using namespace Coordination;
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
 
     Storage storage{500, "", this->keeper_context};
