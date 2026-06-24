@@ -131,3 +131,40 @@ TEST(AccessChangesNotifier, ByIdHandlerOnlyCalledWhenItsEntityChanged)
     EXPECT_EQ(handler_calls, 1u);
     EXPECT_EQ(total_changes, 1u);
 }
+
+/// A handler may enqueue more changes while sendNotifications() runs: LDAP role mapping reacts to a Role
+/// change by updating the mapped users through this same notifier. Those handler-generated changes must be
+/// delivered before sendNotifications() returns (it drains until the queue is empty), otherwise a session's
+/// by-id subscription would keep stale access until some unrelated change flushes the queue.
+TEST(AccessChangesNotifier, HandlerEnqueuedChangesDeliveredInSameCall)
+{
+    AccessChangesNotifier notifier;
+
+    auto user_id = UUIDHelpers::generateV4();
+    bool user_change_injected = false;
+    size_t user_changes_delivered = 0;
+
+    /// Reacts to a Role change by enqueueing a User change, the way LDAP role mapping updates mapped users.
+    auto role_subscription = notifier.subscribeForChanges(
+        AccessEntityType::ROLE,
+        [&](const std::vector<AccessChangesNotifier::Change> & changes)
+        {
+            if (!changes.empty() && !user_change_injected)
+            {
+                user_change_injected = true;
+                notifier.onEntityRemoved(user_id, AccessEntityType::USER);
+            }
+        });
+
+    /// Models a per-session ContextAccess subscription on that user.
+    auto user_subscription = notifier.subscribeForChanges(
+        user_id,
+        [&](const std::vector<AccessChangesNotifier::Change> & changes) { user_changes_delivered += changes.size(); });
+
+    notifier.onEntityRemoved(UUIDHelpers::generateV4(), AccessEntityType::ROLE);
+    notifier.sendNotifications();
+
+    /// The User change the Role handler enqueued is delivered within this single sendNotifications() call.
+    EXPECT_TRUE(user_change_injected);
+    EXPECT_EQ(user_changes_delivered, 1u);
+}
