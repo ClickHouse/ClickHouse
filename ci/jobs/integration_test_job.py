@@ -6,8 +6,6 @@ import time
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from more_itertools import tail
-
 from ci.jobs.scripts.bugfix_validation import BUGFIX_BUILD_TYPES, find_master_builds
 from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.integration_tests_configs import (
@@ -392,7 +390,7 @@ def merge_profraw_files(llvm_profdata_cmd: str, job_params: list):
         print(f"  Deleted {deleted_count} profraw files", flush=True)
         return final_file
     else:
-        print(f"ERROR: Failed to create final coverage file", flush=True)
+        print("ERROR: Failed to create final coverage file", flush=True)
         if result.stderr:
             print(result.stderr, flush=True)
         return None
@@ -668,7 +666,6 @@ tar -czf ./ci/tmp/logs.tar.gz \
         if "/" in to:
             batch_num, total_batches = map(int, to.split("/"))
         elif any(build in to for build in ("amd_", "arm_")):
-            build_type = to
             if "amd_llvm_coverage" in to:
                 is_llvm_coverage = True
         elif to == "old analyzer":
@@ -937,7 +934,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         ),
     }
     if is_llvm_coverage:
-        test_env["LLVM_PROFILE_FILE"] = f"it-%4m.profraw"
+        test_env["LLVM_PROFILE_FILE"] = "it-%4m.profraw"
         print(
             f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
         )
