@@ -76,7 +76,9 @@ void executeNaiveBayes(
     if (!nb_dict)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary '{}' is not a NaiveBayes dictionary", dictionary_name);
 
-    ColumnPtr text_column = arguments[1].column->convertToFullColumnIfConst();
+    /// The text is always a full column here: when every argument is constant, useDefaultImplementationForConstants()
+    /// passes each non-always-constant argument as its data column; otherwise the text is non-constant to begin with.
+    const ColumnPtr & text_column = arguments[1].column;
 
     nb_dict->visitModel([&](const auto & model)
     {
