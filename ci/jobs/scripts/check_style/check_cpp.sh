@@ -112,6 +112,7 @@ EXTERN_TYPES_EXCLUDES=(
     CurrentMetrics::end
     CurrentMetrics::Increment
     CurrentMetrics::Metric
+    CurrentMetrics::METRIC
     CurrentMetrics::values
     CurrentMetrics::Value
     CurrentMetrics::keeper_metrics
@@ -290,6 +291,7 @@ std_cerr_cout_excludes=(
     src/Processors/IProcessor.cpp
     src/Client/ClientApplicationBase.cpp
     src/Common/ProgressIndication.h
+    src/Common/Scheduler/Debug.h
     src/Client/LineReader.h
     src/Client/ReplxxLineReader.h
     src/Client/Suggest.cpp
