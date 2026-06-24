@@ -187,6 +187,26 @@ size_t GlobString::cardinality() const
     return result;
 }
 
+size_t GlobString::expansionSize(bool expand_ranges) const
+{
+    size_t result = 1;
+
+    for (const auto & expression : expressions)
+    {
+        /// Only enums (and ranges when expand_ranges is set) multiply the expansion;
+        /// everything else is rendered as literal text by expand() and is a factor of 1.
+        size_t factor = 1;
+        const auto type = expression.type();
+        if (type == ExpressionType::ENUM || (type == ExpressionType::RANGE && expand_ranges))
+            factor = expression.cardinality();
+
+        if (factor == std::numeric_limits<size_t>::max() || common::mulOverflow(result, factor, result))
+            return std::numeric_limits<size_t>::max();
+    }
+
+    return result;
+}
+
 bool GlobString::hasExactlyOneEnum() const
 {
     size_t enum_counter = 0;
@@ -288,10 +308,11 @@ std::optional<Range> GlobString::tryParseRangeMatcher(const std::string_view & i
     range.start_digit_count = read_buffer.offset() - first_digit_pos;
     range.start_zero_padded = input[first_digit_pos] == '0';
 
-    /// A range needs at least one digit on each side (legacy range_regex is `[\d]+\.\.[\d]+`).
-    /// `tryReadIntText` succeeds while reading zero digits, so reject an empty side here;
-    /// the brace group then falls through to the enum path, as in legacy ("{..1}" → enum).
-    if (range.start_digit_count == 0)
+    /// Range endpoints are digits only: legacy range_regex is `[\d]+\.\.[\d]+` and the
+    /// GlobAST grammar's `integer` is `digit { digit }`. `tryReadIntText` also accepts a
+    /// leading sign ("{+1..2}") and an empty run ("{..1}"), so require the endpoint to start
+    /// with an ASCII digit; otherwise the brace group falls through to the enum/literal path.
+    if (range.start_digit_count == 0 || input[first_digit_pos] < '0' || input[first_digit_pos] > '9')
         return std::nullopt;
 
     ok &= checkChar('.', read_buffer);
@@ -309,7 +330,7 @@ std::optional<Range> GlobString::tryParseRangeMatcher(const std::string_view & i
     range.end_digit_count = read_buffer.offset() - first_digit_pos;
     range.end_zero_padded = input[first_digit_pos] == '0';
 
-    if (range.end_digit_count == 0)
+    if (range.end_digit_count == 0 || input[first_digit_pos] < '0' || input[first_digit_pos] > '9')
         return std::nullopt;
 
     ok &= checkChar('}', read_buffer);

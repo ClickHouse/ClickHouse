@@ -164,6 +164,14 @@ public:
     std::string dump() const;
     size_t cardinality() const;
 
+    /// Number of strings expand(expand_ranges) would produce: the product of the enum
+    /// alternative counts (and range lengths when expand_ranges is set). Constants,
+    /// wildcards, and unexpanded ranges contribute a factor of 1, because expand() renders
+    /// them as literal text rather than enumerating them. Saturates at SIZE_MAX. Unlike
+    /// cardinality(), a wildcard does not make the whole product SIZE_MAX. Use this to
+    /// decide whether expand() stays within a budget without risking it throwing.
+    size_t expansionSize(bool expand_ranges = false) const;
+
     /// Expand enum globs (and optionally range globs) into concrete path strings
     /// via cartesian product.
     /// Non-expanded expressions (constants, wildcards, unexpanded ranges) are rendered as literal text.

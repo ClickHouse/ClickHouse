@@ -74,6 +74,15 @@ TEST(Common, GlobAST)
         auto missing_end = GlobAST::GlobString("{0..}");
         EXPECT_EQ(missing_end.getExpressions().size(), 1);
         EXPECT_EQ(missing_end.getExpressions().front().type(), GlobAST::ExpressionType::ENUM);
+
+        /// Range endpoints are digits only; a leading sign is not a range ("{+1..2}",
+        /// "{1..+2}"), so the brace body is treated as a literal enum element.
+        for (const auto * glob : {"{+1..2}", "{1..+2}", "{-1..2}"})
+        {
+            auto signed_range = GlobAST::GlobString(glob);
+            EXPECT_EQ(signed_range.getExpressions().size(), 1) << "glob=" << glob;
+            EXPECT_EQ(signed_range.getExpressions().front().type(), GlobAST::ExpressionType::ENUM) << "glob=" << glob;
+        }
     }
 
     // Range tests.
@@ -368,6 +377,10 @@ INSTANTIATE_TEST_SUITE_P(
         std::make_tuple("{..1}", "0", false),
         std::make_tuple("{0..}", "0..", true),
         std::make_tuple("{0..}", "0", false),
+        // A signed range endpoint is not a range; the body is a literal enum element
+        std::make_tuple("{+1..2}", "+1..2", true),
+        std::make_tuple("{+1..2}", "1", false),
+        std::make_tuple("{+1..2}", "2", false),
 
         // --- Question mark wildcard ---
         std::make_tuple("?", "a", true),
@@ -609,6 +622,26 @@ TEST(Common, GlobASTFindDoubleDot)
     EXPECT_EQ(range.getExpressions().size(), 1);
     EXPECT_EQ(range.getExpressions().front().type(), GlobAST::ExpressionType::RANGE);
     EXPECT_TRUE(range.matches("3"));
+}
+
+TEST(Common, GlobASTExpansionSize)
+{
+    /// expansionSize() counts only what expand() actually enumerates: enum alternatives
+    /// (and ranges when expand_ranges is set). Wildcards and unexpanded ranges are a factor
+    /// of 1, unlike cardinality() where a wildcard saturates the whole product to SIZE_MAX.
+    EXPECT_EQ(GlobAST::GlobString("file.csv").expansionSize(), 1);
+    EXPECT_EQ(GlobAST::GlobString("{a,b}{1,2}").expansionSize(), 4);
+    EXPECT_EQ(GlobAST::GlobString("{a,b,c}").expansionSize(), 3);
+    /// Wildcards do not multiply the expansion (rendered as literal text).
+    EXPECT_EQ(GlobAST::GlobString("file{a,b}*.csv").expansionSize(), 2);
+    EXPECT_EQ(GlobAST::GlobString("*.csv").expansionSize(), 1);
+    /// Ranges count only when expand_ranges is requested.
+    EXPECT_EQ(GlobAST::GlobString("f{1..9}.csv").expansionSize(), 1);
+    EXPECT_EQ(GlobAST::GlobString("f{1..9}.csv").expansionSize(/*expand_ranges=*/true), 9);
+    EXPECT_EQ(GlobAST::GlobString("{a,b}{1..3}.csv").expansionSize(/*expand_ranges=*/true), 6);
+    /// It must equal the actual number of strings expand() produces.
+    EXPECT_EQ(GlobAST::GlobString("{a,b}{c,d}{e,f}").expansionSize(),
+              GlobAST::GlobString("{a,b}{c,d}{e,f}").expand().size());
 }
 
 TEST(Common, GlobASTRangeOverflow)

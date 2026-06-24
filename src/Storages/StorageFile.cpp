@@ -277,7 +277,18 @@ std::vector<std::string> listFilesWithRegexpMatching(
 
     Strings for_match_paths_expanded;
     if (use_glob_ast)
-        for_match_paths_expanded = GlobAST::GlobString(for_match).expand(max_expansion);
+    {
+        GlobAST::GlobString glob(for_match);
+        /// Expand enum globs into separate traversals only when the expansion stays within
+        /// the budget; otherwise traverse the unexpanded pattern once (listFilesWithRegexpMatchingImpl
+        /// matches enums per directory level via GlobMatcher). This mirrors
+        /// StorageObjectStorageSource::createFileIterator, which falls back to list-and-filter
+        /// instead of throwing when the expansion would be too large.
+        if (glob.expansionSize() <= max_expansion)
+            for_match_paths_expanded = glob.expand(max_expansion);
+        else
+            for_match_paths_expanded = {for_match};
+    }
     else
         for_match_paths_expanded = expandSelectionGlob(for_match);
 

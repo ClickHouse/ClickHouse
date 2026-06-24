@@ -6,3 +6,4 @@ data_{1..3}.csv: OK
 data_{01..10}.csv: OK
 data_[ab].csv: OK
 **/*.csv: OK
+data_{x}.csv (AST literal): OK

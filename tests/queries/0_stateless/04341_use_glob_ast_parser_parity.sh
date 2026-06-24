@@ -46,4 +46,17 @@ run 'data_{01..10}.csv'
 run 'data_[ab].csv'
 run '**/*.csv'
 
+# Intentional divergence (POSIX shell semantics): a single-element brace group "{x}" is
+# expanded by the legacy parser (it would read data_x.csv) but treated as a literal by the
+# AST parser, which reads the file whose name literally contains the braces. Assert the AST
+# behavior explicitly, since the parity run() above only covers patterns where both agree.
+echo "literal-braces" > "$DIR/data_{x}.csv"
+ast_literal=$(${CLICKHOUSE_CLIENT} --use_glob_ast_parser 1 -q \
+    "SELECT _file FROM file('${CLICKHOUSE_DATABASE}/data_{x}.csv', 'CSV', 'x String')" 2>&1)
+if [ "$ast_literal" == 'data_{x}.csv' ]; then
+    echo 'data_{x}.csv (AST literal): OK'
+else
+    echo "data_{x}.csv (AST literal): MISMATCH got [$ast_literal]"
+fi
+
 rm -rf "$DIR"
