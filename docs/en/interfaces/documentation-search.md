@@ -13,10 +13,11 @@ Navigate to `/docs` on any ClickHouse HTTP port (for example, `http://localhost:
 
 ## What it does {#what-it-does}
 
-The page queries the [`system.documentation`](/operations/system-tables/documentation) table over HTTP as you type, and renders the selected entity's Markdown. Because it reads `system.documentation`, it covers every entity that table exposes — functions, aggregate functions, table functions, table engines, database engines, data types, and so on — and always matches the documentation embedded in the running server.
+The page queries the [`system.documentation`](/operations/system-tables/documentation) table over HTTP as you type, and renders the selected entity's Markdown. Because it reads `system.documentation`, it covers every entity that table exposes — functions, aggregate functions, table functions, table engines, database engines, data types, settings, formats, compression codecs, profile events, metrics, the system tables themselves, and more — and always matches the documentation embedded in the running server.
 
 Type in the search box and the matches appear in a type-color-coded list; selecting a match renders its documentation. Rendering includes:
 
+- a pencil link next to the entity's title that opens its source file on GitHub, taken from the `source` column of `system.documentation`;
 - ClickHouse SQL syntax highlighting of code blocks, using the same embedded lexer (`Lexer.wasm`) as the [`/play`](/interfaces/http) UI;
 - TeX math via [KaTeX](https://katex.org/) (for example, the formula on the `corr` page);
 - `:::note`/`:::tip`/… admonitions, heading anchors with shareable links, and a hover "Copy" button on code blocks;

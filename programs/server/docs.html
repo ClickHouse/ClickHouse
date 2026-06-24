@@ -254,6 +254,29 @@
             margin-bottom: 0.5rem;
         }
 
+        /* A pencil link next to the entity title that opens the entity's source file on GitHub
+           (from the `source` column of `system.documentation`). Muted by default, accented on hover. */
+        #doc .source-link {
+            color: var(--muted);
+            text-decoration: none;
+            margin-left: 0.6rem;
+            opacity: 0.7;
+            transition: color 0.1s, opacity 0.1s;
+        }
+        #doc h1:hover .source-link {
+            opacity: 1;
+        }
+        #doc .source-link:hover {
+            color: var(--link);
+            opacity: 1;
+        }
+        #doc .source-link svg {
+            width: 0.7em;
+            height: 0.7em;
+            fill: currentColor;
+            vertical-align: baseline;
+        }
+
         #logo {
             height: 1.6rem;
             display: block;
@@ -459,6 +482,11 @@
         'MergeTree Setting':             '#C7A400',
         'Server Setting':                '#B89600',
         'Format':                        '#E05A93',
+        'Compression Codec':             '#D95F4F',
+        'Profile Event':                 '#7C8FB8',
+        'Current Metric':                '#5FA88F',
+        'Asynchronous Metric':           '#9A8FCF',
+        'System Table':                  '#8A8F99',
     };
 
     function buildURL() {
@@ -577,7 +605,7 @@
     /// Search both the name and the body of the documentation, but rank exact and prefix
     /// name matches first, so the most relevant entities are at the top.
     const QUERY = `
-        SELECT name, type, description
+        SELECT name, type, description, source
         FROM system.documentation
         WHERE positionCaseInsensitive(name, {q:String}) > 0
            OR positionCaseInsensitive(description, {q:String}) > 0
@@ -696,7 +724,15 @@
             `<h1 class="entity-name"></h1>` +
             `<div class="entity-body"></div>`;
         $doc.querySelector('.entity-type').innerText = row.type;
-        $doc.querySelector('.entity-name').innerText = row.name;
+        const name_el = $doc.querySelector('.entity-name');
+        name_el.innerText = row.name;
+        /// When the entity's source location is known, show a pencil link next to the title that
+        /// opens the source file on GitHub (the `master` branch). `source` is the repository-relative
+        /// path from `system.documentation`; it is empty for entities of unknown origin (e.g. an alias
+        /// of an undocumented function), in which case no link is shown.
+        if (row.source) {
+            name_el.appendChild(sourceLink(row.source));
+        }
         const body = $doc.querySelector('.entity-body');
         body.innerHTML = html;
 
@@ -719,6 +755,28 @@
         /// Keep the selected item visible in the list.
         const sel = $results.children[selected];
         if (sel) sel.scrollIntoView({ block: 'nearest' });
+    }
+
+    /// Build the pencil link to an entity's source file on GitHub, from its repository-relative
+    /// `source` path. The `master` branch is used, and the link opens in a new tab. Path segments
+    /// are encoded individually (keeping the `/` separators) so unusual characters are handled safely.
+    const GITHUB_SOURCE_BASE = 'https://github.com/ClickHouse/ClickHouse/blob/master/';
+    function sourceLink(source) {
+        const a = document.createElement('a');
+        a.className = 'source-link';
+        a.href = GITHUB_SOURCE_BASE + source.split('/').map(encodeURIComponent).join('/');
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.title = `View the source of this page on GitHub (${source})`;
+        a.setAttribute('aria-label', 'View the source of this page on GitHub');
+        /// The GitHub "pencil" octicon, inlined so the page stays self-contained and the icon is
+        /// theme-aware (it inherits the link color via `fill: currentColor`).
+        a.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true">'
+            + '<path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61'
+            + 'c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Z'
+            + 'm.176 4.823L9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064Z'
+            + 'm1.238-3.763a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354Z"></path></svg>';
+        return a;
     }
 
     /// Turn a heading into a section: assign it an id (from an explicit `{#anchor}` if present,
