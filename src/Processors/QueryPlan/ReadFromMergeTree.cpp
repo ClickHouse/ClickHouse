@@ -519,7 +519,9 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             index_read_tasks,
             actions_settings,
             reader_settings,
-            index_build_context);
+            index_build_context,
+            {},
+            &storage_snapshot->metadata->getColumns());
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
         pipes.emplace_back(std::move(source));
@@ -628,7 +630,9 @@ Pipe ReadFromMergeTree::readFromPool(
             index_read_tasks,
             actions_settings,
             reader_settings,
-            index_build_context);
+            index_build_context,
+            {},
+            &storage_snapshot->metadata->getColumns());
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
 
@@ -745,7 +749,9 @@ Pipe ReadFromMergeTree::readInOrder(
             index_read_tasks,
             actions_settings,
             reader_settings,
-            index_build_context);
+            index_build_context,
+            {},
+            &storage_snapshot->metadata->getColumns());
 
         processor->addPartLevelToChunk(isQueryWithFinal());
 
