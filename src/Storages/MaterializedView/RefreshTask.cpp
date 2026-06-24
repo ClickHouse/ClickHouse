@@ -226,8 +226,6 @@ OwnedRefreshTask RefreshTask::create(
 
     task->watch_callback = std::make_shared<Coordination::WatchCallback>([w = task->coordination.watches, task_waker = task->scheduling_task->getWatchCallback()](const Coordination::WatchResponse & response)
     {
-        w->root_watch_active.store(false);
-        w->children_watch_active.store(false);
         w->should_reread_znodes.store(true);
         (*task_waker)(response);
     });
@@ -1377,20 +1375,13 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
     if (!zookeeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Keeper server doesn't support multi-reads. Refreshable materialized views won't work.");
 
-    /// Set watches. (This is a lot of code, is there a better way?)
+    /// Do separate requests just to add watches.
     Coordination::WatchCallbackPtrOrEventPtr labelled_watch{
         watch_callback, ProfileEvents::ZooKeeperWatchTriggeredMaterializedViewRefresh};
-    if (!coordination.watches->root_watch_active.load())
-    {
-        coordination.watches->root_watch_active.store(true);
-        zookeeper->existsWatch(coordination.path, nullptr, labelled_watch);
-    }
-    if (!coordination.watches->children_watch_active.load())
-    {
-        coordination.watches->children_watch_active.store(true);
-        zookeeper->getChildrenWatch(coordination.path, nullptr, labelled_watch);
-    }
+    zookeeper->existsWatch(coordination.path, nullptr, labelled_watch);
+    zookeeper->getChildrenWatch(coordination.path, nullptr, labelled_watch);
 
+    /// Do an atomic multi-read.
     Strings paths {coordination.path, coordination.path + "/running", coordination.path + "/paused"};
     auto responses = zookeeper->tryGet(paths.begin(), paths.end());
 
