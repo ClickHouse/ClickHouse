@@ -775,26 +775,6 @@ public:
             }
             else
             {
-                /// enable using subscript operator for kql_array_sort
-                if (cur_op.function_name == "arrayElement" && !operands.empty())
-                {
-                    auto* first_arg_as_node = operands.front()->as<ASTFunction>();
-                    if (first_arg_as_node)
-                    {
-                        if (first_arg_as_node->name == "kql_array_sort_asc" || first_arg_as_node->name == "kql_array_sort_desc")
-                        {
-                            cur_op.function_name = "tupleElement";
-                            cur_op.type = OperatorType::TupleElement;
-                        }
-                        else if (first_arg_as_node->name == "arrayElement" && !first_arg_as_node->arguments->children.empty())
-                        {
-                            auto *arg_inside = first_arg_as_node->arguments->children[0]->as<ASTFunction>();
-                            if (arg_inside && (arg_inside->name == "kql_array_sort_asc" || arg_inside->name == "kql_array_sort_desc"))
-                                first_arg_as_node->name = "tupleElement";
-                        }
-                    }
-                }
-
                 function = makeASTFunction(cur_op);
 
                 if (!popLastNOperands(function->children[0]->children, cur_op.arity))
