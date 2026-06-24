@@ -2,6 +2,7 @@
 
 #include <Common/VersionNumber.h>
 #include <base/types.h>
+#include <source_location>
 #include <vector>
 
 
@@ -147,6 +148,11 @@ struct FunctionDocumentation
     Examples examples {};                         ///
     IntroducedIn introduced_in {VERSION_UNKNOWN}; /// E.g. {25, 5}
     Category category{};                            /// E.g. Category::DatesAndTimes
+
+    /// The source file where this documentation is defined. Captured automatically at the construction site (the
+    /// function registration), so it points to the source code that documents the function; do not set it explicitly.
+    /// The path is as produced by the compiler; `system.documentation` exposes it relative to the repository root.
+    const char * source = std::source_location::current().file_name();
 
     String syntaxAsString() const;
     String argumentsAsString() const;

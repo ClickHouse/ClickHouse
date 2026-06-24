@@ -2753,6 +2753,16 @@ std::string_view MergeTreeSettings::getDescription(std::string_view name) const
     return impl->getDescription(name);
 }
 
+std::string_view MergeTreeSettings::getTypeName(std::string_view name) const
+{
+    return impl->getTypeName(name);
+}
+
+String MergeTreeSettings::getDefaultValueString(std::string_view name) const
+{
+    return impl->getDefaultValueString(name);
+}
+
 SettingsTierType MergeTreeSettings::getTier(std::string_view name) const
 {
     return impl->getTier(name);
