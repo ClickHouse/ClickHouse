@@ -48,6 +48,8 @@ namespace Setting
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
     extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
+    extern const SettingsUInt64 glob_expansion_max_elements;
+    extern const SettingsBool use_glob_ast_parser;
 }
 
 namespace ErrorCodes
@@ -61,6 +63,7 @@ namespace ErrorCodes
 String StorageObjectStorage::getPathSample(ContextPtr context)
 {
     const auto path = configuration->getRawPath();
+    const bool use_glob_ast = context->getSettingsRef()[Setting::use_glob_ast_parser];
 
     /// When use_hive_partitioning is enabled, we need a real file path even in distributed mode
     /// (not a path from the distributed task queue), so force distributed_processing to false.
@@ -68,8 +71,19 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
         local_distributed_processing = false;
 
+    /// Classify and expand the path using the same parser contract as the read iterator
+    /// (StorageObjectStorageSource::createFileIterator), so schema-inference sampling never
+    /// disagrees with what is actually read. In particular, with use_glob_ast_parser = 1 a
+    /// brace group like "{a}" or "{a,}" is literal text, not an enum, so it must not be
+    /// expanded here (the legacy parser would strip it to "a").
+    std::optional<GlobAST::GlobString> glob_string;
+    if (use_glob_ast)
+        glob_string.emplace(path.path);
+
+    const bool has_globs = use_glob_ast ? glob_string->hasGlobs() : path.hasGlobs();
+
     /// For non-glob paths, return directly without any S3 API calls.
-    if (!configuration->isArchive() && !path.hasGlobs() && !local_distributed_processing)
+    if (!configuration->isArchive() && !has_globs && !local_distributed_processing)
         return path.path;
 
     /// For pure brace-expansion globs like {a,b,c}.tsv (no wildcards * or ? involved),
@@ -78,9 +92,21 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
     /// creating a file iterator just to get a sample path string.
     /// Archives are excluded because they need the file iterator to return paths from inside
     /// the archive (e.g. archive.zip::file.csv), not the raw archive path.
-    if (!configuration->isArchive() && containsOnlyEnumGlobs(path.path))
+    if (!configuration->isArchive())
     {
-        auto expanded = expandSelectionGlob(path.path);
+        const size_t max_expansion = context->getSettingsRef()[Setting::glob_expansion_max_elements];
+        Strings expanded;
+        if (use_glob_ast)
+        {
+            if (glob_string->hasEnums() && !glob_string->hasRanges() && !glob_string->hasQuestionOrAsterisk()
+                && glob_string->cardinality() <= max_expansion)
+                expanded = glob_string->expand(max_expansion, /*expand_ranges=*/false);
+        }
+        else if (containsOnlyEnumGlobs(path.path))
+        {
+            expanded = expandSelectionGlob(path.path);
+        }
+
         if (!expanded.empty())
             return expanded.front();
     }
