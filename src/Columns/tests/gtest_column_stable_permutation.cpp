@@ -21,7 +21,7 @@
 
 using namespace DB;
 
-void stableGetColumnPermutation(
+static void stableGetColumnPermutation(
     const IColumn & column,
     IColumn::PermutationSortDirection direction,
     size_t limit,
@@ -48,7 +48,7 @@ void stableGetColumnPermutation(
         });
 }
 
-void columnGetPermutation(
+static void columnGetPermutation(
     const IColumn & column,
     IColumn::PermutationSortDirection direction,
     size_t limit,
@@ -58,7 +58,7 @@ void columnGetPermutation(
     column.getPermutation(direction, IColumn::PermutationSortStability::Stable, limit, nan_direction_hint, out_permutation);
 }
 
-void printColumn(const IColumn & column)
+[[maybe_unused]] static void printColumn(const IColumn & column)
 {
     size_t column_size = column.size();
     Field value;
@@ -92,7 +92,7 @@ void generateRanges(VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> & 
     }
 }
 
-void insertRangesIntoColumn(VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> & ranges, const VectorWithMemoryTracking<size_t> & ranges_permutations, IColumn & column)
+static void insertRangesIntoColumn(VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> & ranges, const VectorWithMemoryTracking<size_t> & ranges_permutations, IColumn & column)
 {
     for (const auto & range_permutation : ranges_permutations)
     {
@@ -105,7 +105,7 @@ void insertRangesIntoColumn(VectorWithMemoryTracking<VectorWithMemoryTracking<Fi
     }
 }
 
-void assertPermutationsWithLimit(const IColumn::Permutation & lhs, const IColumn::Permutation & rhs, size_t limit)
+static void assertPermutationsWithLimit(const IColumn::Permutation & lhs, const IColumn::Permutation & rhs, size_t limit)
 {
     if (limit == 0)
     {
@@ -118,7 +118,7 @@ void assertPermutationsWithLimit(const IColumn::Permutation & lhs, const IColumn
     }
 }
 
-void assertColumnPermutation(
+static void assertColumnPermutation(
     const IColumn & column,
     IColumn::PermutationSortDirection direction,
     size_t limit,
