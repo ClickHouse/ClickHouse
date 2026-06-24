@@ -121,13 +121,8 @@ MatcherNode::MatcherNode(MatcherNodeType matcher_type_,
     children[column_transformers_child_index] = std::move(column_transformers_list_node);
 
     columns_identifiers_set.reserve(columns_identifiers.size());
-
     for (auto & column_identifier : columns_identifiers)
-    {
-        const auto & full_name = column_identifier.getFullName();
-        columns_identifiers_set.insert(full_name);
-        columns_identifiers_lowercase_set.insert(Poco::toLower(full_name));
-    }
+        columns_identifiers_set.insert(column_identifier.getFullName());
 }
 
 bool MatcherNode::isMatchingColumn(const std::string & column_name, bool standard_mode)
@@ -147,14 +142,8 @@ bool MatcherNode::isMatchingColumn(const std::string & column_name, bool standar
     if (!standard_mode)
         return false;
 
-    const auto lowered = Poco::toLower(column_name);
-    if (!columns_identifiers_lowercase_set.contains(lowered))
-        return false;
-
-    /// Compare per part: unquoted parts match case-insensitively, double-quoted parts must match exactly.
-    /// For example `COLUMNS(data."Name")` matches `Data.Name` (unquoted `data` -> case-insensitive,
-    /// quoted `"Name"` -> exact). Compound column names are split on '.' so per-part comparison stays
-    /// aligned with the user-typed identifier.
+    /// Per-part comparison: unquoted parts match case-insensitively, double-quoted parts must match
+    /// exactly. So `COLUMNS(data."Name")` matches `Data.Name` (`data` folds; `"Name"` stays exact).
     Identifier column_identifier(column_name);
     for (size_t i = 0; i < columns_identifiers.size(); ++i)
     {
@@ -312,7 +301,6 @@ QueryTreeNodePtr MatcherNode::cloneImpl() const
     matcher_node->columns_identifiers_quote_styles = columns_identifiers_quote_styles;
     matcher_node->columns_matcher = columns_matcher;
     matcher_node->columns_identifiers_set = columns_identifiers_set;
-    matcher_node->columns_identifiers_lowercase_set = columns_identifiers_lowercase_set;
 
     return matcher_node;
 }

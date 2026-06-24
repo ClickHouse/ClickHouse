@@ -1,5 +1,6 @@
 #include <Analyzer/ColumnTransformers.h>
 
+#include <algorithm>
 #include <limits>
 
 #include <Poco/String.h>
@@ -121,11 +122,14 @@ ASTPtr ApplyColumnTransformerNode::toASTImpl(const ConvertToASTOptions & options
 
 /// ExceptColumnTransformerNode implementation
 
-ExceptColumnTransformerNode::ExceptColumnTransformerNode(Names except_column_names_, bool is_strict_, std::vector<bool> is_double_quoted_)
+ExceptColumnTransformerNode::ExceptColumnTransformerNode(
+    Names except_column_names_,
+    bool is_strict_,
+    std::vector<std::vector<bool>> target_parts_double_quoted_)
     : IColumnTransformerNode(children_size)
     , except_transformer_type(ExceptColumnTransformerType::COLUMN_LIST)
     , except_column_names(std::move(except_column_names_))
-    , target_is_double_quoted(std::move(is_double_quoted_))
+    , target_parts_double_quoted(std::move(target_parts_double_quoted_))
     , is_strict(is_strict_)
 {
 }
@@ -135,6 +139,36 @@ ExceptColumnTransformerNode::ExceptColumnTransformerNode(std::shared_ptr<re2::RE
     , except_transformer_type(ExceptColumnTransformerType::REGEXP)
     , column_matcher(std::move(column_matcher_))
 {
+}
+
+namespace
+{
+
+/// Split a (possibly compound) name on `.` into views over the original string.
+std::vector<std::string_view> splitOnDot(const std::string & name)
+{
+    std::vector<std::string_view> parts;
+    size_t start = 0;
+    for (size_t i = 0; i < name.size(); ++i)
+    {
+        if (name[i] == '.')
+        {
+            parts.emplace_back(name.data() + start, i - start);
+            start = i + 1;
+        }
+    }
+    parts.emplace_back(name.data() + start, name.size() - start);
+    return parts;
+}
+
+/// Compare two name parts, folding case unless the target part was double-quoted.
+bool partsEqualWithQuote(std::string_view target_part, std::string_view column_part, bool target_part_quoted)
+{
+    if (target_part_quoted)
+        return target_part == column_part;
+    return Poco::icompare(std::string(target_part), std::string(column_part)) == 0;
+}
+
 }
 
 bool ExceptColumnTransformerNode::isColumnMatching(const std::string & column_name, bool standard_mode, std::string * matched_target) const
@@ -156,18 +190,34 @@ bool ExceptColumnTransformerNode::isColumnMatching(const std::string & column_na
     if (!standard_mode)
         return false;
 
-    /// `standard` mode: unquoted EXCEPT targets fold case-insensitively. Quoted targets (tracked in
-    /// `target_is_double_quoted`) stay case-sensitive. Multiple distinct unquoted targets that fold
-    /// to the same column are ambiguous — mirror the column/alias/REPLACE rule rather than silently
-    /// picking the first.
+    /// `standard` mode: unquoted target parts fold case-insensitively; double-quoted parts stay
+    /// exact. Splitting both sides on `.` lets `EXCEPT (data."Name")` match `data.Name` while
+    /// excluding `Data.name`. Multiple distinct unquoted targets that fold to the same column are
+    /// ambiguous — mirror the column/alias/REPLACE rule rather than silently picking the first.
+    auto column_parts = splitOnDot(column_name);
     size_t matched_index = std::numeric_limits<size_t>::max();
     for (size_t i = 0, n = except_column_names.size(); i < n; ++i)
     {
-        const bool target_quoted = i < target_is_double_quoted.size() && target_is_double_quoted[i];
-        if (target_quoted)
+        auto target_parts = splitOnDot(except_column_names[i]);
+        if (target_parts.size() != column_parts.size())
             continue;
-        if (Poco::icompare(column_name, except_column_names[i]) != 0)
+
+        const auto & per_part_quote
+            = i < target_parts_double_quoted.size() ? target_parts_double_quoted[i] : std::vector<bool>{};
+
+        bool all_parts_match = true;
+        for (size_t p = 0; p < target_parts.size(); ++p)
+        {
+            const bool part_quoted = p < per_part_quote.size() && per_part_quote[p];
+            if (!partsEqualWithQuote(target_parts[p], column_parts[p], part_quoted))
+            {
+                all_parts_match = false;
+                break;
+            }
+        }
+        if (!all_parts_match)
             continue;
+
         if (matched_index != std::numeric_limits<size_t>::max()
             && except_column_names[matched_index] != except_column_names[i])
             throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
@@ -224,7 +274,7 @@ bool ExceptColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs, Compar
     if (except_transformer_type != rhs_typed.except_transformer_type ||
         is_strict != rhs_typed.is_strict ||
         except_column_names != rhs_typed.except_column_names ||
-        target_is_double_quoted != rhs_typed.target_is_double_quoted)
+        target_parts_double_quoted != rhs_typed.target_parts_double_quoted)
         return false;
 
     const auto & rhs_column_matcher = rhs_typed.column_matcher;
@@ -252,16 +302,21 @@ void ExceptColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState &
         hash_state.update(column_name);
     }
 
-    /// Mix in quote-style bits only when at least one target was quoted so the hash stays stable
+    /// Mix in per-part quote bits only when at least one part was quoted so the hash stays stable
     /// for the common (unquoted) case.
-    bool any_quoted = false;
-    for (bool b : target_is_double_quoted)
-        if (b) { any_quoted = true; break; }
+    const bool any_quoted = std::any_of(
+        target_parts_double_quoted.begin(),
+        target_parts_double_quoted.end(),
+        [](const auto & per_part) { return std::any_of(per_part.begin(), per_part.end(), [](bool b) { return b; }); });
     if (any_quoted)
     {
-        hash_state.update(target_is_double_quoted.size());
-        for (bool b : target_is_double_quoted)
-            hash_state.update(static_cast<uint8_t>(b));
+        hash_state.update(target_parts_double_quoted.size());
+        for (const auto & per_part : target_parts_double_quoted)
+        {
+            hash_state.update(per_part.size());
+            for (bool b : per_part)
+                hash_state.update(static_cast<uint8_t>(b));
+        }
     }
 
     if (column_matcher)
@@ -277,7 +332,7 @@ QueryTreeNodePtr ExceptColumnTransformerNode::cloneImpl() const
     if (except_transformer_type == ExceptColumnTransformerType::REGEXP)
         return std::make_shared<ExceptColumnTransformerNode>(column_matcher);
 
-    return std::make_shared<ExceptColumnTransformerNode>(except_column_names, is_strict, target_is_double_quoted);
+    return std::make_shared<ExceptColumnTransformerNode>(except_column_names, is_strict, target_parts_double_quoted);
 }
 
 ASTPtr ExceptColumnTransformerNode::toASTImpl(const ConvertToASTOptions & /* options */) const
@@ -294,8 +349,15 @@ ASTPtr ExceptColumnTransformerNode::toASTImpl(const ConvertToASTOptions & /* opt
     for (size_t i = 0, n = except_column_names.size(); i < n; ++i)
     {
         auto identifier = make_intrusive<ASTIdentifier>(except_column_names[i]);
-        if (i < target_is_double_quoted.size() && target_is_double_quoted[i])
-            identifier->setQuoteStyles({IdentifierQuoteStyle::DoubleQuote});
+        if (i < target_parts_double_quoted.size())
+        {
+            const auto & per_part = target_parts_double_quoted[i];
+            std::vector<IdentifierQuoteStyle> styles;
+            styles.reserve(per_part.size());
+            for (bool b : per_part)
+                styles.push_back(b ? IdentifierQuoteStyle::DoubleQuote : IdentifierQuoteStyle::None);
+            identifier->setQuoteStyles(std::move(styles));
+        }
         ast_except_transformer->children.push_back(std::move(identifier));
     }
 
@@ -414,9 +476,8 @@ void ReplaceColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState 
         hash_state.update(replacement_name);
     }
 
-    bool any_quoted = false;
-    for (bool b : replacements_are_double_quoted)
-        if (b) { any_quoted = true; break; }
+    const bool any_quoted = std::any_of(
+        replacements_are_double_quoted.begin(), replacements_are_double_quoted.end(), [](bool b) { return b; });
     if (any_quoted)
     {
         hash_state.update(replacements_are_double_quoted.size());

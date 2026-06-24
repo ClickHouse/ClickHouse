@@ -1316,21 +1316,25 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
             else
             {
                 Names except_column_names;
-                std::vector<bool> target_is_double_quoted;
+                std::vector<std::vector<bool>> target_parts_double_quoted;
                 except_column_names.reserve(except_transformer->children.size());
-                target_is_double_quoted.reserve(except_transformer->children.size());
+                target_parts_double_quoted.reserve(except_transformer->children.size());
 
                 for (auto & except_transformer_child : except_transformer->children)
                 {
                     auto & ident = except_transformer_child->as<ASTIdentifier &>();
                     except_column_names.push_back(ident.full_name);
-                    /// Preserve per-target quote style so `EXCEPT ("Col")` stays case-sensitive in
-                    /// `standard` mode while bare `EXCEPT (col)` folds case-insensitively.
-                    target_is_double_quoted.push_back(ident.getQuoteStyleAt(0) == IdentifierQuoteStyle::DoubleQuote);
+                    /// Per-part quote tracking lets compound targets like `data."Name"` fold the
+                    /// `data` segment case-insensitively while keeping `Name` exact in `standard` mode.
+                    std::vector<bool> per_part;
+                    per_part.reserve(ident.name_parts.size());
+                    for (size_t p = 0; p < ident.name_parts.size(); ++p)
+                        per_part.push_back(ident.getQuoteStyleAt(p) == IdentifierQuoteStyle::DoubleQuote);
+                    target_parts_double_quoted.push_back(std::move(per_part));
                 }
 
                 column_transformers.emplace_back(std::make_shared<ExceptColumnTransformerNode>(
-                    std::move(except_column_names), except_transformer->is_strict, std::move(target_is_double_quoted)));
+                    std::move(except_column_names), except_transformer->is_strict, std::move(target_parts_double_quoted)));
             }
         }
         else if (auto * replace_transformer = child->as<ASTColumnsReplaceTransformer>())

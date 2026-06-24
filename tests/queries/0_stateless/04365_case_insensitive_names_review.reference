@@ -41,3 +41,7 @@ Alice	Smith	0
 1
 1
 1
+--- Lambda arguments: exact case wins over case-insensitive bucket ---
+[11,22]
+--- ARRAY JOIN: double-quoted alias does not bind to unquoted lookup ---
+1	1

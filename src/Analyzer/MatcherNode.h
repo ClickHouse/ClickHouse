@@ -184,9 +184,6 @@ private:
     std::vector<std::vector<IdentifierQuoteStyle>> columns_identifiers_quote_styles;
     std::shared_ptr<re2::RE2> columns_matcher;
     std::unordered_set<std::string> columns_identifiers_set;
-    /// For case-insensitive `COLUMNS(...)` matching in `standard` mode. Built alongside the
-    /// case-sensitive set so an unquoted argument can match a column whose case differs.
-    std::unordered_set<std::string> columns_identifiers_lowercase_set;
 
     static constexpr size_t column_transformers_child_index = 0;
     static constexpr size_t children_size = column_transformers_child_index + 1;

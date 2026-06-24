@@ -1,5 +1,7 @@
 #include <Analyzer/IdentifierNode.h>
 
+#include <algorithm>
+
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 
@@ -63,9 +65,9 @@ void IdentifierNode::updateTreeHashImpl(HashState & state, CompareOptions) const
     /// formatter, so including them in the hash would diverge between the initiator's tree and a
     /// reparsed copy on the remote side (e.g. distributed IN-CTE set names — `03520`). Encode only
     /// the per-part double-quote bit; identifiers with no DoubleQuote parts keep their previous hash.
-    bool any_double_quoted = false;
-    for (auto style : quote_styles)
-        if (style == IdentifierQuoteStyle::DoubleQuote) { any_double_quoted = true; break; }
+    const bool any_double_quoted = std::any_of(
+        quote_styles.begin(), quote_styles.end(),
+        [](auto style) { return style == IdentifierQuoteStyle::DoubleQuote; });
     if (any_double_quoted)
     {
         state.update(quote_styles.size());

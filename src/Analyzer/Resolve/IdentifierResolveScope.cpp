@@ -167,10 +167,13 @@ IdentifierResolveScope::registerCTE(const std::string & cte_name, QueryTreeNodeP
 std::unordered_map<std::string, QueryTreeNodePtr>::iterator
 IdentifierResolveScope::findExpressionArgument(const std::string & name, bool case_insensitive)
 {
-    if (!case_insensitive)
-        return expression_argument_name_to_node.find(name);
+    /// Exact-case wins, like columns/aliases/tables in `standard` mode. Without this,
+    /// `arrayMap((x, X) -> x + X, [1], [2])` would throw AMBIGUOUS_IDENTIFIER because
+    /// `x` and `X` share a lowercase bucket, even though both references are exact.
+    auto exact_it = expression_argument_name_to_node.find(name);
+    if (exact_it != expression_argument_name_to_node.end() || !case_insensitive)
+        return exact_it;
 
-    /// O(1) lookup - map is precomputed
     auto lowercase_it = lowercase_expression_arg_to_names.find(Poco::toLower(name));
     if (lowercase_it == lowercase_expression_arg_to_names.end())
         return expression_argument_name_to_node.end();

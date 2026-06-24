@@ -107,3 +107,17 @@ SELECT formatQuery($$ SELECT x FROM (SELECT 1 AS x) ORDER BY x WITH FILL FROM 1 
 
 DROP TABLE IF EXISTS t_using_l;
 DROP TABLE IF EXISTS t_using_r;
+
+SELECT '--- Lambda arguments: exact case wins over case-insensitive bucket ---';
+-- Bot review #1: `arrayMap((x, X) -> x + X, [1], [2])` must NOT throw AMBIGUOUS_IDENTIFIER even when
+-- standard mode folds case for lookups — exact-case matches win against the lowercase bucket.
+SELECT arrayMap((x, X) -> x + X, [1, 2], [10, 20]);
+
+SELECT '--- ARRAY JOIN: double-quoted alias does not bind to unquoted lookup ---';
+-- Bot review #2: `ARRAY JOIN [1] AS "X"` pins the alias to its canonical case; unquoted `x` must
+-- not bind to it. With the bind helper now respecting the alias quote bit, the unqualified column
+-- `x` resolves to the table column and the row prints `1 1`.
+CREATE TABLE t_array_join_quoted (x Int32) ENGINE = Memory;
+INSERT INTO t_array_join_quoted VALUES (1);
+SELECT x, "X" FROM t_array_join_quoted ARRAY JOIN [1] AS "X";
+DROP TABLE t_array_join_quoted;

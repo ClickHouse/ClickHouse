@@ -836,7 +836,10 @@ bool IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(const Identifie
         for (const auto & array_join_expression : array_join_node->getJoinExpressions())
         {
             const auto & array_join_expression_alias = array_join_expression->getAlias();
-            if (use_case_insensitive)
+            /// A double-quoted ARRAY JOIN alias (e.g. `ARRAY JOIN [1] AS "X"`) pins the alias to its
+            /// canonical case, so unquoted `x` must not bind to it. Mirror `tryResolveIdentifierFromArrayJoin`.
+            const bool fold_case = use_case_insensitive && !array_join_expression->isAliasDoubleQuoted();
+            if (fold_case)
             {
                 if (Poco::icompare(identifier_lookup.identifier.front(), array_join_expression_alias) == 0)
                     return true;

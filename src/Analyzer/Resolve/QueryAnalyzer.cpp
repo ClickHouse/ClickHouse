@@ -70,6 +70,7 @@
 #include <base/types.h>
 
 #include <boost/algorithm/string/predicate.hpp>
+#include <algorithm>
 #include <memory>
 #include <ranges>
 
@@ -5479,9 +5480,10 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
             if (standard_mode)
             {
-                bool any_part_double_quoted = false;
-                for (auto style : identifier_node->getQuoteStyles())
-                    if (style == IdentifierQuoteStyle::DoubleQuote) { any_part_double_quoted = true; break; }
+                const auto & quote_styles = identifier_node->getQuoteStyles();
+                const bool any_part_double_quoted = std::any_of(
+                    quote_styles.begin(), quote_styles.end(),
+                    [](auto style) { return style == IdentifierQuoteStyle::DoubleQuote; });
                 if (!any_part_double_quoted)
                 {
                     const String lowered = Poco::toLower(identifier_full_name);

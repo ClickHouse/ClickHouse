@@ -175,7 +175,10 @@ class ExceptColumnTransformerNode final : public IColumnTransformerNode
 {
 public:
     /// Initialize except column transformer with column names
-    explicit ExceptColumnTransformerNode(Names except_column_names_, bool is_strict_, std::vector<bool> is_double_quoted_ = {});
+    explicit ExceptColumnTransformerNode(
+        Names except_column_names_,
+        bool is_strict_,
+        std::vector<std::vector<bool>> target_parts_double_quoted_ = {});
 
     /// Initialize except column transformer with regexp column matcher
     explicit ExceptColumnTransformerNode(std::shared_ptr<re2::RE2> column_matcher_);
@@ -230,10 +233,12 @@ protected:
 private:
     ExceptColumnTransformerType except_transformer_type;
     Names except_column_names;
-    /// Parallel to `except_column_names`: true when the corresponding identifier was written
-    /// as `"Name"` rather than `Name` / `` `Name` ``. Targets pinned this way stay case-sensitive
-    /// even in `standard` mode. Empty when the transformer was built without quote tracking.
-    std::vector<bool> target_is_double_quoted;
+    /// Parallel to `except_column_names`. Each inner vector is per-part for that target — element
+    /// `j` is true when part `j` of the identifier was written `"Name"` rather than `Name` /
+    /// `` `Name` ``. A compound target like `data."Name"` carries `{false, true}` so the `data`
+    /// part folds case-insensitively in `standard` mode while the `Name` suffix stays exact.
+    /// Empty when the transformer was built without quote tracking.
+    std::vector<std::vector<bool>> target_parts_double_quoted;
     std::shared_ptr<re2::RE2> column_matcher;
     bool is_strict = false;
 

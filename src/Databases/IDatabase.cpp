@@ -90,6 +90,13 @@ String IDatabase::tryResolveTableNameCaseInsensitive(const String & name, Contex
         }
     }
 
+    /// `getTablesIterator` lists the whole catalog. For remote / data-lake databases
+    /// (PostgreSQL, MySQL, DataLake, etc.) that means a paid round trip per missing-name lookup —
+    /// far worse than the typo it would help with. Skip the scan for those engines; the
+    /// exact-name `tryGetTable` above already covered the cheap path.
+    if (isRemoteDatabase())
+        return {};
+
     String found_name;
     for (auto table_it = getTablesIterator(context); table_it->isValid(); table_it->next())
     {

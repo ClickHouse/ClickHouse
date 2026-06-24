@@ -136,8 +136,11 @@ void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetti
     /// quoting policy (which avoids spurious backticks in the output for plain identifiers).
     auto format_element = [&](const String & elem_name, IdentifierQuoteStyle quote)
     {
+        /// Hoist the optional out of the `if` condition: `to_write` borrows from
+        /// `special_delimiter_and_identifier->second`, so the optional must outlive its use.
+        auto special_delimiter_and_identifier = ParserCompoundIdentifier::splitSpecialDelimiterAndIdentifierIfAny(elem_name);
         std::string_view to_write = elem_name;
-        if (auto special_delimiter_and_identifier = ParserCompoundIdentifier::splitSpecialDelimiterAndIdentifierIfAny(elem_name))
+        if (special_delimiter_and_identifier)
         {
             ostr << special_delimiter_and_identifier->first;
             to_write = special_delimiter_and_identifier->second;
