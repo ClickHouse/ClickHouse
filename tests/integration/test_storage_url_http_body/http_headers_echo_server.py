@@ -1,5 +1,4 @@
 import http.server
-import json
 import sys
 
 RESULT_PATH = "/echo_server_headers.txt"
@@ -27,10 +26,10 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.log_method("POST")
         transfer_encoding = self.headers.get('Transfer-Encoding')
         if transfer_encoding == 'chunked':
-            body, body_length = self.read_chunked()
+            body, _ = self.read_chunked()
         else:
             content_length = int(self.headers.get('Content-Length', 0))
-            body, body_length = self.rfile.read(content_length).decode('utf-8', errors='replace'), content_length
+            body = self.rfile.read(content_length).decode('utf-8', errors='replace')
 
         self.log_body(body)
         print("-" * 60)

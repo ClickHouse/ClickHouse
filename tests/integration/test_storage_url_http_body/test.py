@@ -5,9 +5,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 from . import (
-    body_dependent_response_server,
     http_headers_echo_server,
-    redirect_server,
     request_counting_server,
 )
 
