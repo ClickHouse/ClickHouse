@@ -672,12 +672,36 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     s3_settings->loadFromConfigForObjectStorage(
         config, "s3", context->getSettingsRef(), url.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
+    /// A user query must not assume a role_arn that comes from the server `<s3>` configuration (it would gain
+    /// the server's identity). Drop any role_arn/STS fields the global `<s3>` config supplied before reading
+    /// the query's own `extra_credentials`, so that after parsing only a query-supplied role_arn remains.
+    const bool restrict_server_credentials = context->shouldRestrictUserQueryS3Credentials();
+    if (restrict_server_credentials)
+    {
+        s3_settings->auth_settings[S3AuthSetting::role_arn] = "";
+        s3_settings->auth_settings[S3AuthSetting::role_session_name] = "";
+        s3_settings->auth_settings[S3AuthSetting::external_id] = "";
+    }
+
     S3StorageParsedArguments::collectCredentials(extra_credentials, s3_settings->auth_settings, context);
+
+    /// Remember the query-supplied role_arn/STS fields (if any) so the per-endpoint `<s3>` config merged
+    /// below cannot replace them with a server-configured role for a restricted user query.
+    const String user_role_arn = s3_settings->auth_settings[S3AuthSetting::role_arn];
+    const String user_role_session_name = s3_settings->auth_settings[S3AuthSetting::role_session_name];
+    const String user_external_id = s3_settings->auth_settings[S3AuthSetting::external_id];
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
     {
         s3_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
         s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
+    }
+
+    if (restrict_server_credentials)
+    {
+        s3_settings->auth_settings[S3AuthSetting::role_arn] = user_role_arn;
+        s3_settings->auth_settings[S3AuthSetting::role_session_name] = user_role_session_name;
+        s3_settings->auth_settings[S3AuthSetting::external_id] = user_external_id;
     }
 
     /// Re-apply user/profile/query-level settings on top, so they take priority over the global <s3> config section.

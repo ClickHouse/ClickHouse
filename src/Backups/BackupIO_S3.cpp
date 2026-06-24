@@ -139,7 +139,11 @@ private:
         const Settings & global_settings = context->getGlobalContext()->getSettingsRef();
         const Settings & local_settings = context->getSettingsRef();
 
-        if (role_arn.empty())
+        /// The passed-in role_arn is the one supplied by the backup query or its named collection. Only fall
+        /// back to the server `<s3>` configuration's role_arn when server-managed credentials are allowed:
+        /// a restricted user backup must not assume a server-configured role (it would gain the server's
+        /// identity), so it is left without a role unless the query supplied one explicitly.
+        if (role_arn.empty() && !context->shouldRestrictUserQueryS3Credentials())
         {
             role_arn = settings.auth_settings[S3AuthSetting::role_arn];
             role_session_name = settings.auth_settings[S3AuthSetting::role_session_name];

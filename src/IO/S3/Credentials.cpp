@@ -1363,7 +1363,11 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
 
     /// For S3 access that originates from user SQL in clickhouse-server, refuse every server-managed
     /// credential source so a user cannot make the server authenticate to S3 with its own identity.
-    /// A user may still supply explicit credentials or use no_sign_request.
+    /// A user may still supply explicit credentials, use no_sign_request, or supply explicit credentials
+    /// together with a role_arn (then the STS assume-role uses the user's own credentials, which is safe).
+    /// A server-configured role_arn (from the global or per-endpoint `<s3>` config) is stripped by the
+    /// storage and backup layers before this point, so any role_arn that reaches here for a restricted
+    /// request was supplied by the query or named collection.
     if (credentials_configuration.forbid_implicit_credentials)
     {
         /// A partial key pair (e.g. an access_key_id with an empty secret) is not enough to authorize a
@@ -1373,21 +1377,6 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
         /// `gcp_oauth` http client), so the request must be rejected unless it is unsigned (NOSIGN).
         const bool has_explicit_credentials
             = !credentials.GetAWSAccessKeyId().empty() && !credentials.GetAWSSecretKey().empty();
-
-        /// Do not assume a `role_arn` on top of user-supplied explicit keys: the `role_arn` may be inherited
-        /// from the server `<s3>` configuration (the request would then assume the server's role with the
-        /// user's keys, gaining the server's permissions), and the merged auth settings cannot tell a
-        /// query-supplied `role_arn` from a server-configured one. With explicit keys, use them directly and
-        /// drop the role/STS fields, so no role is assumed. A `role_arn` with no explicit keys is still
-        /// refused below (its STS base credentials would be the server's ambient identity). To assume a role
-        /// from a user query, enable `s3_allow_server_credentials_in_user_queries`.
-        if (has_explicit_credentials)
-        {
-            credentials_configuration.role_arn.clear();
-            credentials_configuration.role_session_name.clear();
-            credentials_configuration.external_id.clear();
-            credentials_configuration.sts_endpoint_override.clear();
-        }
 
         /// `gcp_oauth` mints an OAuth bearer token: from an explicit Application Default Credentials triple
         /// if one is given, otherwise from the server's GCP metadata service (server-managed). The token is
