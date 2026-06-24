@@ -508,7 +508,7 @@ The table structure can differ from the original MySQL table structure:
 
 - `host:port` — MySQL server address.
 - `database` — Remote database name.
-- `table` — Remote table name.
+- `table` — Remote table name, or a query passed to MySQL as is (see [Passing a query instead of a table name](#passing-a-query)).
 - `user` — MySQL user.
 - `password` — User password.
 - `replace_query` — Flag that converts `INSERT INTO` queries to `REPLACE INTO`. If `replace_query=1`, the query is substituted.
@@ -521,6 +521,17 @@ Arguments also can be passed using [named collections](/operations/named-collect
 Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are executed on the MySQL server.
 
 The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
+
+## Passing a query instead of a table name {#passing-a-query}
+
+Instead of a table name, the `table` argument can be a `SELECT` query that is passed to MySQL as is. The structure of the table is inferred from the query result. The query can be written either as a subquery, or wrapped into the `query` function:
+
+```sql
+CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
+CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+This is useful to push down joins, aggregations or any other processing to MySQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`mysql`](/sql-reference/table-functions/mysql) table function.
 
 Supports multiple replicas that must be listed by `|`. For example:
 

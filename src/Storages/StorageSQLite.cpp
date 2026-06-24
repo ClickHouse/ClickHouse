@@ -284,7 +284,18 @@ The engine allows to import and export data to SQLite and supports queries to SQ
 **Engine Parameters**
 
 - `db_path` — Path to SQLite file with a database.
-- `table` — Name of a table in the SQLite database.
+- `table` — Name of a table in the SQLite database, or a query passed to SQLite as is (see [Passing a query instead of a table name](#passing-a-query)).
+
+## Passing a query instead of a table name {#passing-a-query}
+
+Instead of a table name, the `table` argument can be a `SELECT` query that is passed to SQLite as is. The structure of the table is inferred from the query result. The query can be written either as a subquery, or wrapped into the `query` function:
+
+```sql
+CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', (SELECT col1, col2 FROM table1 WHERE col2 > 1));
+CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', query('SELECT col1, col2 FROM table1 WHERE col2 > 1'));
+```
+
+Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`sqlite`](/sql-reference/table-functions/sqlite) table function.
 
 ## Data types support {#data-types-support}
 
