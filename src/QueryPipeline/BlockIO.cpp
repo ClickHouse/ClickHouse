@@ -25,7 +25,7 @@ void BlockIO::reset()
       */
     /// TODO simplify it all
 
-    releaseWorkloadResources();
+    releaseQuerySlot();
     resetPipeline(/*cancel=*/false);
     process_list_entries.clear();
 
@@ -60,7 +60,7 @@ BlockIO::~BlockIO()
 
 void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
 {
-    releaseWorkloadResources();
+    releaseQuerySlot();
     if (finalize_query_pipeline)
     {
         /// Keep the same teardown order as in resetPipeline:
@@ -75,23 +75,19 @@ void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
 
 void BlockIO::onException(bool log_as_error)
 {
+    releaseQuerySlot();
     setAllDataSent();
 
     for (const auto & callback : exception_callbacks)
         callback(log_as_error);
 
-    /// Stop the pipeline before releasing workload resources: pipeline threads hold raw
-    /// pointers to `MemoryReservation` and call `syncWithMemoryTracker` between processors.
     resetPipeline(/*cancel=*/true);
-    releaseWorkloadResources();
 }
 
 void BlockIO::onCancelOrConnectionLoss()
 {
-    /// Stop the pipeline before releasing workload resources: pipeline threads hold raw
-    /// pointers to `MemoryReservation` and call `syncWithMemoryTracker` between processors.
+    releaseQuerySlot();
     resetPipeline(/*cancel=*/true);
-    releaseWorkloadResources();
 }
 
 void BlockIO::setAllDataSent() const
@@ -105,13 +101,13 @@ void BlockIO::setAllDataSent() const
     }
 }
 
-void BlockIO::releaseWorkloadResources() const
+void BlockIO::releaseQuerySlot() const
 {
     /// If the query executed an external query, we need to release all query slots
     for (const auto & entry : process_list_entries)
     {
         if (entry)
-            entry->getQueryStatus()->releaseWorkloadResources();
+            entry->getQueryStatus()->releaseQuerySlot();
     }
 }
 
