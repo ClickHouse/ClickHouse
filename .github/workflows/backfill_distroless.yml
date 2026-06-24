@@ -19,6 +19,9 @@ concurrency:
 env:
   PYTHONUNBUFFERED: 1
 
+permissions:
+  contents: read
+
 jobs:
   BackfillDistroless:
     runs-on: [self-hosted, release-maker]
