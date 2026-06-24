@@ -1073,6 +1073,18 @@ def test_backup_database(started_cluster):
     assert "is not supported" in error, error
     assert "MaterializedPostgreSQL" in error, error
 
+    # The same rejection must also fire in `must-exist` mode, where RESTORE does not create the
+    # database but reuses an existing one: otherwise the backed-up nested ReplacingMergeTree parts
+    # would be attached into a database that is actively replicating from PostgreSQL, mixing the
+    # snapshot with the live remote state. `test_database` is already a live MaterializedPostgreSQL
+    # database, so restoring into it must be rejected during the database-creation stage, before any
+    # table data is restored.
+    error = instance.query_and_get_error(
+        f"RESTORE DATABASE test_database FROM {backup_name} SETTINGS create_database = 'must-exist'"
+    )
+    assert "is not supported" in error, error
+    assert "MaterializedPostgreSQL" in error, error
+
     # The backed-up table data can be restored as a standalone ReplacingMergeTree.
     # `allow_different_table_def` is required because we intentionally restore a
     # MaterializedPostgreSQL table as a plain ReplacingMergeTree: the create query stored in the
