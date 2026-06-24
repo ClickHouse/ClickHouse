@@ -101,6 +101,12 @@ public:
 
     void serialize(WriteBuffer & out, size_t max_supported_version) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context);
+
+    /// Local-only serialization for the query plan cache. It may use a newer private
+    /// format than the distributed query plan protocol.
+    void serializeForQueryPlanCache(WriteBuffer & out) const;
+    static QueryPlanAndSets deserializeForQueryPlanCache(ReadBuffer & in, const ContextPtr & context);
+
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
 
     /// Serializes the query plan and store the result

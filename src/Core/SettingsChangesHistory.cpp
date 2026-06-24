@@ -46,6 +46,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
 
         addSettingsChanges(settings_changes_history, "26.6",
         {
+            {"allow_experimental_query_plan_cache", false, false, "New experimental setting to allow the query plan cache feature"},
+            {"enable_query_plan_cache", false, false, "New setting to enable query plan cache for SELECT queries"},
+            {"query_plan_cache_size_in_bytes_quota", 0, 0, "New setting for query plan cache size quota"},
             {"output_format_image_width", 1024, 1024, "New setting controlling the width of the output image for image output formats such as PNG."},
             {"output_format_image_height", 1024, 1024, "New setting controlling the height of the output image for image output formats such as PNG."},
             {"output_format_image_terminal_mode", "", "", "New setting controlling whether image output formats such as PNG are rendered directly to the terminal using an inline image protocol."},
@@ -151,6 +154,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
+            {"paimon_target_snapshot_id", -1, -1, "New setting."},
+            {"max_consume_snapshots", 0, 0, "New setting."},
+            {"allow_experimental_paimon_storage_engine", false, false, "New setting."},
             {"max_bytes_before_external_join", 0, 0, "New setting to control automatic spilling of hash joins to disk. Non-zero value enables spilling and sets the byte threshold."},
             {"allow_iceberg_remove_orphan_files", false, false, "New setting to gate Iceberg orphan file removal"},
             {"iceberg_orphan_files_older_than_seconds", 259200, 259200, "New setting for default orphan file age threshold"},

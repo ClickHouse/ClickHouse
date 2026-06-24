@@ -156,6 +156,61 @@ def test_query_cache_size_is_runtime_configurable(start_cluster):
     assert res == "1\n"
 
 
+def test_query_plan_cache_size_is_runtime_configurable(start_cluster):
+    node.query("SYSTEM DROP QUERY PLAN CACHE")
+
+    node.query("DROP TABLE IF EXISTS test_query_plan_cache")
+    node.query("CREATE TABLE test_query_plan_cache (id UInt64) ENGINE=MergeTree ORDER BY id")
+    node.query("INSERT INTO test_query_plan_cache VALUES (1), (2), (3)")
+
+    node.query(
+        "SELECT * FROM test_query_plan_cache WHERE id = 1 SETTINGS allow_experimental_query_plan_cache = 1, enable_query_plan_cache = 1, allow_experimental_analyzer = 1 FORMAT Null"
+    )
+    node.query(
+        "SELECT * FROM test_query_plan_cache WHERE id = 2 SETTINGS allow_experimental_query_plan_cache = 1, enable_query_plan_cache = 1, allow_experimental_analyzer = 1 FORMAT Null"
+    )
+
+    res = node.query(
+        "SELECT value FROM system.metrics WHERE metric = 'QueryPlanCacheEntries'",
+    )
+    assert res == "2\n"
+
+    node.copy_file_to_container(
+        os.path.join(CONFIG_DIR, "empty_query_plan_cache.xml"),
+        "/etc/clickhouse-server/config.d/default.xml",
+    )
+
+    node.query("SYSTEM RELOAD CONFIG")
+
+    res = node.query(
+        "SELECT value FROM system.metrics WHERE metric = 'QueryPlanCacheEntries'",
+    )
+    assert res == "0\n"
+
+    node.query(
+        "SELECT * FROM test_query_plan_cache WHERE id = 3 SETTINGS allow_experimental_query_plan_cache = 1, enable_query_plan_cache = 1, allow_experimental_analyzer = 1 FORMAT Null"
+    )
+    res = node.query(
+        "SELECT value FROM system.metrics WHERE metric = 'QueryPlanCacheEntries'",
+    )
+    assert res == "0\n"
+
+    node.copy_file_to_container(
+        os.path.join(CONFIG_DIR, "default.xml"),
+        "/etc/clickhouse-server/config.d/default.xml",
+    )
+
+    node.query("SYSTEM RELOAD CONFIG")
+
+    node.query(
+        "SELECT * FROM test_query_plan_cache WHERE id = 1 SETTINGS allow_experimental_query_plan_cache = 1, enable_query_plan_cache = 1, allow_experimental_analyzer = 1 FORMAT Null"
+    )
+    res = node.query(
+        "SELECT value FROM system.metrics WHERE metric = 'QueryPlanCacheEntries'",
+    )
+    assert res == "1\n"
+
+
 def test_cache_size_capped_by_ram_ratio(start_cluster):
     """
     Test that cache sizes are capped by `cache_size_to_ram_max_ratio * RAM` when config

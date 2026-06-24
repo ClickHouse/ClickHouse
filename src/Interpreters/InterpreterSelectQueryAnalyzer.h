@@ -48,6 +48,10 @@ public:
     }
 
     SharedHeader getSampleBlock();
+    /// Returns the output header and the planner context.
+    /// Note: if the plan was injected via setQueryPlan() (cache-hit path), the returned
+    /// PlannerContextPtr will be null because planning was skipped. Callers that need a
+    /// non-null PlannerContextPtr must use the static overload, which always runs planning.
     std::pair<SharedHeader, PlannerContextPtr> getSampleBlockAndPlannerContext();
 
     static SharedHeader getSampleBlock(const ASTPtr & query,
@@ -63,6 +67,13 @@ public:
         const SelectQueryOptions & select_query_options = {});
 
     BlockIO execute() override;
+
+    /// Inject a pre-built query plan (e.g. from the query plan cache).
+    /// Must be called before any method that triggers buildQueryPlanIfNeeded().
+    void setQueryPlan(QueryPlan && plan)
+    {
+        planner.setQueryPlan(std::move(plan));
+    }
 
     QueryPlan & getQueryPlan();
 

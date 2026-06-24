@@ -62,6 +62,7 @@ static Block deserializeHeader(ReadBuffer & in)
 /// Nothing is here for now
 struct QueryPlan::SerializationFlags
 {
+    UInt64 version = 0;
 };
 
 void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
@@ -69,7 +70,15 @@ void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
     UInt64 version = std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
     writeVarUInt(version, out);
 
-    SerializationFlags flags;
+    SerializationFlags flags{.version = version};
+    serialize(out, flags);
+}
+
+void QueryPlan::serializeForQueryPlanCache(WriteBuffer & out) const
+{
+    writeVarUInt(QUERY_PLAN_CACHE_SERIALIZATION_VERSION, out);
+
+    SerializationFlags flags{.version = QUERY_PLAN_CACHE_SERIALIZATION_VERSION};
     serialize(out, flags);
 }
 
@@ -126,7 +135,7 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
 
         settings.writeChangedBinary(out);
 
-        IQueryPlanStep::Serialization ctx{out, registry};
+        IQueryPlanStep::Serialization ctx{.out = out, .registry = registry, .version = flags.version};
         node->step->serialize(ctx);
     }
 
@@ -167,7 +176,21 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
             "Query plan serialization version {} is not supported. The last supported version is {}",
             version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
 
-    SerializationFlags flags;
+    SerializationFlags flags{.version = version};
+    return deserialize(in, context, flags);
+}
+
+QueryPlanAndSets QueryPlan::deserializeForQueryPlanCache(ReadBuffer & in, const ContextPtr & context)
+{
+    UInt64 version = 0;
+    readVarUInt(version, in);
+
+    if (version > QUERY_PLAN_CACHE_SERIALIZATION_VERSION)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Query plan cache serialization version {} is not supported. The last supported version is {}",
+            version, QUERY_PLAN_CACHE_SERIALIZATION_VERSION);
+
+    SerializationFlags flags{.version = version};
     return deserialize(in, context, flags);
 }
 
@@ -222,7 +245,15 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         for (const auto & child : frame.children)
             input_headers.push_back(child->step->getOutputHeader());
 
-        IQueryPlanStep::Deserialization ctx{in, sets_registry, {}, context, input_headers, output_header, settings};
+        IQueryPlanStep::Deserialization ctx{
+            .in = in,
+            .registry = sets_registry,
+            .version = flags.version,
+            .storage_holders = {},
+            .context = context,
+            .input_headers = input_headers,
+            .output_header = output_header,
+            .settings = settings};
         auto step = step_registry.createStep(step_name, ctx);
 
         if (step->hasOutputHeader())
