@@ -43,10 +43,8 @@ function run() {
 
     $CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES $table"
 
-    # Cache is fresh (uniquely-named per database); drop in case the test is re-run in the same database.
-    $CLICKHOUSE_CLIENT -q "SYSTEM DROP FILESYSTEM CACHE '$cache_path'"
-
-    # Incompressible value so the data really spans many file segments.
+    # The cache is freshly created with a per-database unique name, so it starts empty
+    # (no need to drop it). Incompressible value so the data really spans many file segments.
     $CLICKHOUSE_CLIENT --query_id "$qid" --enable_filesystem_cache_on_write_operations=1 -q "
         INSERT INTO $table SELECT number, randomString(2000) FROM numbers(20000)"
 
