@@ -91,6 +91,7 @@ CREATE TABLE table
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
                                 [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, positions = 0 | 1 ]
                             )
 )
 ENGINE = MergeTree
@@ -125,6 +126,7 @@ ALTER TABLE table
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
                                 [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, positions = 0 | 1 ]
                             )
 
 ```
@@ -463,6 +465,13 @@ There is no fallback to using the index as a hint: if the setting is disabled or
 The preprocessor, if present, must be `lower` or `upper`; postprocessors are not supported.
 
 **Other arguments (optional)**.
+
+Experimental parameter `positions` (default: `0`) controls whether the index stores token positions.
+When set to `1`, the index additionally stores positional data (in a `.pos` file) which enables exact phrase matching via direct reads for the [`hasPhrase`](#functions-example-hasphrase) function.
+Storing positions increases the on-disk size of the index and the write cost, so it is opt-in.
+The on-disk format is not yet stable, so this parameter is experimental and may change in a future release.
+Creating an index with `positions = 1` therefore requires the MergeTree setting [`allow_experimental_text_index_positions`](/operations/settings/merge-tree-settings#allow_experimental_text_index_positions) to be enabled.
+Set `positions = 0` (the default) to keep the posting-list-only storage; text indexes created without this argument remain position-less.
 
 <details markdown="1">
 

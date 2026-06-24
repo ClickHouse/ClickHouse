@@ -27,6 +27,7 @@ enum class TextSearchMode : uint8_t
 {
     Any,
     All,
+    Phrase,
 };
 
 enum class TextIndexDirectReadMode : uint8_t
@@ -49,6 +50,8 @@ struct TextSearchQuery
     TextIndexDirectReadMode direct_read_mode;
     VectorWithMemoryTracking<String> tokens;
     std::vector<OptimizedRegularExpression> patterns;
+    /// not sorted, not deduplicated
+    VectorWithMemoryTracking<String> phrase_tokens;
 
     SipHash getHash() const;
 };
@@ -73,7 +76,8 @@ public:
         const Block & index_sample_block,
         TokenizerPtr tokenizer_,
         MergeTreeIndexTextPreprocessorPtr preprocessor_,
-        MergeTreeIndexTextPostprocessorPtr postprocessor_);
+        MergeTreeIndexTextPostprocessorPtr postprocessor_,
+        bool has_positions_);
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
@@ -115,6 +119,7 @@ private:
             FUNCTION_HAS_ANY_ELEMENTS,
             FUNCTION_HAS_ANY_TOKENS,
             FUNCTION_HAS_ALL_TOKENS,
+            FUNCTION_HAS_PHRASE,
             FUNCTION_LIKE,
             /// Can take any value
             FUNCTION_UNKNOWN,
@@ -187,11 +192,13 @@ private:
     /// Reference postprocessor expression
     MergeTreeIndexTextPostprocessorPtr postprocessor;
     bool has_postprocessor;
+    /// Whether the index has position data for phrase queries.
+    bool has_positions = false;
     /// Cache for tokens and their infos (cardinality, etc.)
     TextIndexTokensCachePtr tokens_cache;
     /// Cache for headers of the text index
     TextIndexHeaderCachePtr header_cache;
-    /// Cache for posting lists of tokens.
+    /// Cache for posting lists of tokens (and phrase-search results, keyed with the Phrase discriminator).
     TextIndexPostingsCachePtr postings_cache;
     /// Cache for tokens cardinalities
     TokensCardinalitiesCachePtr cardinalities_cache;
