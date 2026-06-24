@@ -11,15 +11,23 @@
 # server aborts with "The MergeTreePartsLoaderThreadPool is not initialized".
 #
 # The fix wraps each user-database shutdown() in try/catch so shutdown_system_logs() always
-# runs (and joins the flush threads) before the static pools are torn down. This test injects a
-# throw in one user table's shutdown (the database_catalog_throw_on_table_shutdown failpoint)
-# and asserts the server still shuts down cleanly (no abort, no hang).
+# runs (and joins the flush threads) before the static pools are torn down. It also makes
+# DatabaseWithOwnTablesBase::shutdown() release every table's references (UUID mappings + tables)
+# even when a table throws, so the leftover storages are destroyed during shutdown rather than at
+# process exit (which would abort with a Poco LoggerDeleter assertion).
+#
+# A table can throw from either of the two shutdown phases: the prepare phase
+# (flushAndPrepareForShutdown, e.g. StorageReplicatedMergeTree rethrows preparation failures) or
+# the shutdown phase (flushAndShutdown). Both must end up on the same release-and-continue path,
+# so this test injects a throw in each phase (the two failpoints below) and asserts the server
+# still shuts down cleanly (no abort, no hang) in both cases.
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
 
-FAILPOINT = "database_catalog_throw_on_table_shutdown"
+SHUTDOWN_FAILPOINT = "database_catalog_throw_on_table_shutdown"
+PREPARE_FAILPOINT = "database_catalog_throw_on_table_prepare_shutdown"
 NOT_INITIALIZED = "The MergeTreePartsLoaderThreadPool is not initialized"
 
 cluster = ClickHouseCluster(__file__)
@@ -39,7 +47,16 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_system_logs_shutdown_when_user_table_shutdown_throws(started_cluster):
+@pytest.mark.parametrize(
+    "failpoint, fault_message",
+    [
+        (SHUTDOWN_FAILPOINT, "Injecting fault while shutting down table"),
+        (PREPARE_FAILPOINT, "Injecting fault while preparing to shut down table"),
+    ],
+)
+def test_system_logs_shutdown_when_user_table_shutdown_throws(
+    started_cluster, failpoint, fault_message
+):
     # A user table whose shutdown the failpoint will make throw (a non-predefined database).
     node.query("CREATE DATABASE IF NOT EXISTS userdb")
     node.query(
@@ -57,10 +74,11 @@ def test_system_logs_shutdown_when_user_table_shutdown_throws(started_cluster):
         ["bash", "-c", ": > /var/log/clickhouse-server/clickhouse-server.log"]
     )
 
-    # Make a user table's flushAndShutdown throw, exactly the condition that used to skip
-    # system-log shutdown (the same effect a table flushAndShutdown hitting a ZooKeeper timeout
-    # would have).
-    node.query(f"SYSTEM ENABLE FAILPOINT {FAILPOINT}")
+    # Make a user table throw while shutting down, exactly the condition that used to skip
+    # system-log shutdown (the same effect a table hitting a ZooKeeper timeout would have). The
+    # failpoint targets either the prepare phase or the shutdown phase, both of which must still
+    # reach the table-reference cleanup.
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
 
     # Graceful shutdown - same Context::shutdown / DatabaseCatalog::shutdown path SIGTERM hits.
     # Without the fix the escaped exception leaves the system log flush threads running, so this
@@ -68,9 +86,7 @@ def test_system_logs_shutdown_when_user_table_shutdown_throws(started_cluster):
     node.stop_clickhouse(kill=False, stop_wait_sec=60)
 
     # The injected fault must have fired (otherwise the test proves nothing).
-    fault_log = node.grep_in_log(
-        "Injecting fault while shutting down table", only_latest=True
-    )
+    fault_log = node.grep_in_log(fault_message, only_latest=True)
     assert fault_log, "Expected the injected table shutdown fault in the log."
 
     # With the fix, the catalog catches the failed database shutdown and still runs system-log
@@ -105,4 +121,4 @@ def test_system_logs_shutdown_when_user_table_shutdown_throws(started_cluster):
 
     # Disable the failpoint and bring the server back up for the next test / teardown.
     node.start_clickhouse()
-    node.query(f"SYSTEM DISABLE FAILPOINT {FAILPOINT}")
+    node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")

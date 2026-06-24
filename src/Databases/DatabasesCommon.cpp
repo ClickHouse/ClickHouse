@@ -59,6 +59,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char database_catalog_throw_on_table_shutdown[];
+    extern const char database_catalog_throw_on_table_prepare_shutdown[];
 }
 namespace
 {
@@ -570,17 +571,36 @@ void DatabaseWithOwnTablesBase::shutdown()
         tables_snapshot = tables;
     }
 
-    for (const auto & kv : tables_snapshot)
-    {
-        kv.second->flushAndPrepareForShutdown();
-    }
-
-    /// If a table's flushAndShutdown throws (e.g. a ZooKeeper timeout), we must still release the
+    /// If a table throws while shutting down (e.g. a ZooKeeper timeout), we must still release the
     /// references this catalog holds on every table: the UUID -> storage mapping keeps the storage
     /// (and this database) alive otherwise, so it would be destroyed only when DatabaseCatalog is
     /// destroyed at process exit - after the Poco logger registry and the static thread pools are
     /// already gone, which aborts. Remember the first error and rethrow it after the cleanup.
     std::exception_ptr first_error;
+
+    /// The prepare phase can throw too: e.g. StorageReplicatedMergeTree::flushAndPrepareForShutdown
+    /// catches preparation failures, sets an immediate deadline and rethrows. Keep going so the
+    /// cleanup below still runs for every table.
+    for (const auto & kv : tables_snapshot)
+    {
+        auto table_id = kv.second->getStorageID();
+        try
+        {
+            fiu_do_on(FailPoints::database_catalog_throw_on_table_prepare_shutdown,
+            {
+                if (!DatabaseCatalog::isPredefinedDatabase(table_id.database_name))
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while preparing to shut down table {}", table_id.getNameForLogs());
+            });
+            kv.second->flushAndPrepareForShutdown();
+        }
+        catch (...)
+        {
+            if (!first_error)
+                first_error = std::current_exception();
+            tryLogCurrentException(log, fmt::format("Failed to prepare to shut down table {}", table_id.getNameForLogs()));
+        }
+    }
+
     for (const auto & kv : tables_snapshot)
     {
         auto table_id = kv.second->getStorageID();

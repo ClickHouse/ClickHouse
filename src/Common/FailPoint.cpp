@@ -102,6 +102,7 @@ static struct InitFiu
     REGULAR(file_cache_modify_size_limits_fail) \
     REGULAR(check_table_query_delay_for_part) \
     REGULAR(database_catalog_throw_on_table_shutdown) \
+    REGULAR(database_catalog_throw_on_table_prepare_shutdown) \
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \
     REGULAR(taskstats_counters_reset_throw) \
