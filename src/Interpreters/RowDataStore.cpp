@@ -19,6 +19,53 @@ namespace ErrorCodes
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
+namespace
+{
+
+#define APPLY_FOR_FIELD_SIZES(M) \
+    M(1) \
+    M(2) \
+    M(4) \
+    M(8) \
+    M(16) \
+    M(32)
+
+template <size_t field_size>
+void gatherField(char * dst, const char * src, size_t row_length, size_t offset, size_t length)
+{
+    for (size_t row = 0; row < length; ++row)
+        memcpy(dst + row * row_length + offset, src + row * field_size, field_size);
+}
+
+void gatherField(char * dst, const char * src, size_t row_length, size_t offset, size_t field_size, size_t length)
+{
+    for (size_t row = 0; row < length; ++row)
+        memcpy(dst + row * row_length + offset, src + row * field_size, field_size);
+}
+
+template <size_t value_size>
+void gatherNullableField(char * dst, const char * null_src, const char * data_src, size_t row_length, size_t offset, size_t length)
+{
+    for (size_t row = 0; row < length; ++row)
+    {
+        char * row_dst = dst + row * row_length + offset;
+        row_dst[0] = null_src[row];
+        memcpy(row_dst + 1, data_src + row * value_size, value_size);
+    }
+}
+
+void gatherNullableField(char * dst, const char * null_src, const char * data_src, size_t row_length, size_t offset, size_t value_size, size_t length)
+{
+    for (size_t row = 0; row < length; ++row)
+    {
+        char * row_dst = dst + row * row_length + offset;
+        row_dst[0] = null_src[row];
+        memcpy(row_dst + 1, data_src + row * value_size, value_size);
+    }
+}
+
+}
+
 RowDataStore::RowLayout RowDataStore::computeLayout(const Columns & columns)
 {
     RowLayout layout;
@@ -148,21 +195,39 @@ void RowDataStore::gatherRows(const Columns & columns, size_t start, size_t leng
             const char * data_src = nullable_column->getNestedColumn().getDataAt(start).data();
             const size_t value_size = field_layout.size - 1;
 
-            for (size_t row = 0; row < length; ++row)
+            switch (value_size)
             {
-                char * row_dst = dst + row * row_length + field_layout.offset;
-                row_dst[0] = null_src[row];
-                memcpy(row_dst + 1, data_src + row * value_size, value_size);
+#define M(N) \
+                case N: \
+                    gatherNullableField<N>(dst, null_src, data_src, row_length, field_layout.offset, length); \
+                    break;
+                APPLY_FOR_FIELD_SIZES(M)
+#undef M
+                default:
+                    gatherNullableField(dst, null_src, data_src, row_length, field_layout.offset, value_size, length);
             }
         }
         else
         {
             const char * src = columns[i]->getDataAt(start).data();
-            for (size_t row = 0; row < length; ++row)
-                memcpy(dst + row * row_length + field_layout.offset, src + row * field_layout.size, field_layout.size);
+            const size_t field_size = field_layout.size;
+
+            switch (field_size)
+            {
+#define M(N) \
+                case N: \
+                    gatherField<N>(dst, src, row_length, field_layout.offset, length); \
+                    break;
+                APPLY_FOR_FIELD_SIZES(M)
+#undef M
+                default:
+                    gatherField(dst, src, row_length, field_layout.offset, field_size, length);
+            }
         }
     }
 }
+
+#undef APPLY_FOR_FIELD_SIZES
 
 RowDataStore::FieldLayout RowDataStore::getFieldLayout(size_t input_col_index) const
 {
