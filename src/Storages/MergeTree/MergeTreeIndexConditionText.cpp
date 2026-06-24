@@ -799,6 +799,16 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "equals")
     {
+        /// Special case: Don't use the index if the needle is empty.
+        /// - Reason 1: The index doesn't index empty values (regardless of the tokenizer). So this needle
+        ///   is invalid.
+        /// - Reason 2: We also end up here if optimizer rule `optimize_empty_string_comparisons` (default: 1)
+        ///   is disabled, i.e. `col = ''` is _not_ rewritten into `empty(col)`. The latter doesn't
+        ///   use the index (because it doesn't support `empty`). For consistency, make sure `equals('')`
+        ///   behaves the same.
+        if (value_field.safeGet<String>().empty())
+            return false;
+
         auto tokens = stringToTokens(value_field);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
