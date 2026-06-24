@@ -57,6 +57,11 @@ def read_metric_names(metric_name, start_timestamp, end_timestamp, read_path="/p
 
 DEFERRED_WRITE_PATH = "/prometheus_deferred/api/v1/write"
 DEFERRED_READ_PATH = "/prometheus_deferred/api/v1/read"
+DEFERRED_QUERY_PATH = "/prometheus_deferred/api/v1/query"
+
+# Handlers with a pinned <table> in the config (default.prometheus_http).
+PINNED_WRITE_PATH = "/api/v1/write"
+PINNED_READ_PATH = "/api/v1/read"
 
 
 def send_with_headers(time_series, path, extra_headers):
@@ -90,6 +95,17 @@ def read_metric_names_with_headers(
                 if label.name == "__name__":
                     metric_names.append(label.value)
     return metric_names
+
+
+def query_with_headers(metric_name, timestamp, path, extra_headers):
+    return execute_query_via_http_api(
+        node.ip_address,
+        MAIN_HTTP_PORT,
+        path,
+        metric_name,
+        timestamp=timestamp,
+        extra_headers=extra_headers,
+    )
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -288,3 +304,61 @@ def test_deferred_handler_without_target_fails():
     )
     assert response.status_code != 204
     assert "time series table name is not set" in response.text
+
+
+def test_deferred_handler_query_api_targets_table_from_headers():
+    timestamp = 1_700_002_400.0
+    metric_name = "deferred_query_header_target"
+    headers = {"X-ClickHouse-Database": "otherdb", "X-ClickHouse-Table": "hdr_target"}
+
+    # Land a sample in the header-selected table via the deferred write handler.
+    send_with_headers(
+        [({"__name__": metric_name}, {timestamp: 25.0})],
+        DEFERRED_WRITE_PATH,
+        headers,
+    )
+
+    # The deferred query/API handler (no <table>) must resolve the same table from the headers.
+    data = query_with_headers(metric_name, timestamp, DEFERRED_QUERY_PATH, headers)
+    assert metric_name in data
+
+
+def test_pinned_handler_ignores_targeting_headers():
+    timestamp = 1_700_002_500.0
+    metric_name = "pinned_ignores_headers_target"
+    # The handler pins default.prometheus_http, so these headers must be ignored entirely.
+    headers = {"X-ClickHouse-Database": "otherdb", "X-ClickHouse-Table": "hdr_target"}
+
+    pinned_before = int(
+        node.query(
+            f"SELECT count() FROM timeSeriesData({MAIN_HTTP_TIMESERIES_TABLE})"
+        ).strip()
+    )
+    header_before = int(
+        node.query("SELECT count() FROM timeSeriesData(otherdb.hdr_target)").strip()
+    )
+
+    send_with_headers(
+        [({"__name__": metric_name}, {timestamp: 26.0})],
+        PINNED_WRITE_PATH,
+        headers,
+    )
+
+    pinned_after = int(
+        node.query(
+            f"SELECT count() FROM timeSeriesData({MAIN_HTTP_TIMESERIES_TABLE})"
+        ).strip()
+    )
+    header_after = int(
+        node.query("SELECT count() FROM timeSeriesData(otherdb.hdr_target)").strip()
+    )
+
+    # The sample landed in the pinned table; the header-named table was left untouched.
+    assert pinned_after > pinned_before
+    assert header_after == header_before
+
+    # And it reads back from the pinned table, again ignoring the conflicting headers.
+    metric_names = read_metric_names_with_headers(
+        metric_name, timestamp - 1, timestamp + 1, PINNED_READ_PATH, headers
+    )
+    assert metric_name in metric_names

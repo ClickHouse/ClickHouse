@@ -35,6 +35,15 @@
                 <type>prometheus_read</type>
             </handler>
         </rule>
+        <!-- Deferred query/API handler: no <table> element either, so the query path resolves
+             its target table per request from the same headers (or ?database=&table=). Placed
+             after the exact write/read rules above so those still win for /write and /read. -->
+        <rule>
+            <url_prefix>/prometheus_deferred/api/v1</url_prefix>
+            <handler>
+                <type>prometheus_api_v1</type>
+            </handler>
+        </rule>
         <defaults/>
     </http_handlers>
 </clickhouse>
