@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/LloydMaxQuantizer.h>
 
 #include <algorithm>
 #include <array>
@@ -25,29 +26,28 @@ namespace ErrorCodes
 namespace
 {
 
-/// Quantization codec id (mirrors the flat vector similarity index codecs).
+/// Quantization codec id.
 enum class FlatQuantization : UInt8
 {
-    B1 = 0,
-    B1Projected = 1,
     TurboQuant = 2,
     RaBitQ = 3,
     E8 = 4,
+    Int8 = 5,
 };
 
 size_t expectedFlatBytesPerVector(FlatQuantization quantization, size_t dimensions, size_t e8_bits)
 {
     switch (quantization)
     {
-        case FlatQuantization::B1:
-        case FlatQuantization::B1Projected:
-            return dimensions / 8;
         case FlatQuantization::TurboQuant:
             return dimensions / 4 + sizeof(float);
         case FlatQuantization::RaBitQ:
             return dimensions / 8 + sizeof(float);
         case FlatQuantization::E8:
             return (dimensions / 8) * (e8_bits <= 8 ? 1 : 2) + sizeof(float);
+        case FlatQuantization::Int8:
+            /// One Int8 Lloyd-Max code per coordinate, followed by the 4-byte original L2 norm.
+            return dimensions + sizeof(float);
     }
     return 0;
 }
@@ -138,20 +138,20 @@ void applyRandomProjection(const std::vector<float> & sign_flips, const T * x, s
 }
 
 /// RaBitQ (1-bit, asymmetric estimator), data-oblivious / no codebook (Gao & Long, "RaBitQ", SIGMOD 2024).
-/// After the same random projection used by 'b1_projected', the data vector is sign-binarized (1 bit/coordinate) exactly
-/// like 'b1_projected'. RaBitQ additionally stores a per-vector correction factor that turns the sign code into an
+/// After the structured random projection (a random rotation), the data vector is sign-binarized (1 bit/coordinate).
+/// RaBitQ additionally stores a per-vector correction factor that turns the sign code into an
 /// UNBIASED estimator of the cosine similarity. With `o` the unit (rotated) data vector and `s_i = sign(o_i)`, the
 /// stored value is `inv_factor = ||o||_2 / ||o||_1` (note `||o||_2 = 1`, so `factor = sum_i |o_i| >= 1` and
 /// `inv_factor` in (0, 1]). The estimator is asymmetric (the query has more resolution than the 1-bit data):
 ///   cos(o, q) ~= (sum_i s_i * q_i) * (1 / ||q||_2) * inv_factor,    with sum_i s_i * q_i = 2 * sum_{s_i = +1} q_i - sum_i q_i.
-/// Layout per vector: `dimensions / 8` packed sign bits, followed by the 4-byte `inv_factor`. The sign code matches
-/// 'b1_projected' bit-for-bit; the extra factor and the query resolution are what lift recall above plain SimHash.
+/// Layout per vector: `dimensions / 8` packed sign bits, followed by the 4-byte `inv_factor`. The extra factor and the
+/// query resolution are what lift recall above plain SimHash.
 ///
 /// The data half `sum_{s_i = +1} q_i` is the inner product of the 1-bit data code with the query. Rather than a
-/// full-precision float dot product (which costs like the multi-bit 'turboquant' scan, not like the 1-bit 'b1' scan),
+/// full-precision float dot product (which costs like the multi-bit 'turboquant' scan, not like the 1-bit sign scan),
 /// the query is uniformly quantized to RABITQ_QUERY_BITS bits and stored "bit-sliced" as one bit-plane per bit. The
-/// inner product then reduces to a few AND+popcount passes over the data code (see `RaBitQQuery`), which is back in
-/// 'b1's popcount regime - the same trick RaBitQ/BBQ use to keep the 1-bit scan fast.
+/// inner product then reduces to a few AND+popcount passes over the data code (see `RaBitQQuery`), keeping the 1-bit
+/// scan in the popcount regime - the same trick RaBitQ/BBQ use to keep it fast.
 template <typename T>
 void encodeRaBitQ(const std::vector<float> & projection, const T * x, size_t dimensions, float * work, char * dst)
 {
@@ -765,35 +765,6 @@ inline float e8Distance(const E8Query & q, const char * code)
     return 1.0f - ip;
 }
 
-/// --------------------------- 'b1' / 'b1_projected' (sign quantization) ---------------------------
-/// Sign-binarize `dimensions` floats into packed bits (bit set when value >= 0), dimensions/8 bytes.
-inline void signPack(const float * v, size_t dimensions, char * dst)
-{
-    const size_t code_bytes = dimensions / 8;
-    std::memset(dst, 0, code_bytes);
-    for (size_t i = 0; i < dimensions; ++i)
-        if (v[i] >= 0.0f)
-            dst[i >> 3] |= static_cast<char>(1u << (i & 7u));
-}
-
-/// Hamming distance over packed sign codes; a monotone proxy for angular distance (smaller = nearer).
-inline float hammingDistance(const char * a, const char * b, size_t code_bytes)
-{
-    UInt64 acc = 0;
-    size_t i = 0;
-    for (; i + 8 <= code_bytes; i += 8)
-    {
-        UInt64 wa = 0;
-        UInt64 wb = 0;
-        std::memcpy(&wa, a + i, sizeof(wa));
-        std::memcpy(&wb, b + i, sizeof(wb));
-        acc += static_cast<UInt64>(std::popcount(wa ^ wb));
-    }
-    for (; i < code_bytes; ++i)
-        acc += static_cast<UInt64>(std::popcount(static_cast<unsigned>(static_cast<UInt8>(a[i] ^ b[i]))));
-    return static_cast<float>(acc);
-}
-
 }
 
 namespace VectorQuantization
@@ -803,23 +774,21 @@ namespace
 {
 FlatQuantization methodToCodec(std::string_view method)
 {
-    if (method == "b1")
-        return FlatQuantization::B1;
-    if (method == "b1_projected")
-        return FlatQuantization::B1Projected;
     if (method == "turboquant")
         return FlatQuantization::TurboQuant;
     if (method == "rabitq")
         return FlatQuantization::RaBitQ;
     if (method == "e8")
         return FlatQuantization::E8;
+    if (method == "int8")
+        return FlatQuantization::Int8;
     throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown fastknn quantization method '{}'", method);
 }
 }
 
 bool isSupportedMethod(std::string_view method)
 {
-    return method == "b1" || method == "b1_projected" || method == "turboquant" || method == "rabitq" || method == "e8";
+    return method == "turboquant" || method == "rabitq" || method == "e8" || method == "int8";
 }
 
 size_t bytesPerVector(std::string_view method, size_t dimensions, size_t bits)
@@ -832,18 +801,6 @@ void encode(std::string_view method, const float * vec, size_t dimensions, size_
     const FlatQuantization codec = methodToCodec(method);
     switch (codec)
     {
-        case FlatQuantization::B1:
-            signPack(vec, dimensions, dst);
-            return;
-        case FlatQuantization::B1Projected:
-        {
-            const std::vector<float> projection = generateRandomProjection(dimensions);
-            const size_t padded = projection.size() / PROJECTION_ROUNDS;
-            std::vector<float> work(padded);
-            applyRandomProjection(projection, vec, dimensions, work.data());
-            signPack(work.data(), dimensions, dst);
-            return;
-        }
         case FlatQuantization::RaBitQ:
         {
             const std::vector<float> projection = generateRandomProjection(dimensions);
@@ -886,21 +843,61 @@ void encode(std::string_view method, const float * vec, size_t dimensions, size_
             encodeE8(*codebook, work.data(), dimensions, code_bytes, norm, dst);
             return;
         }
+        case FlatQuantization::Int8:
+        {
+            const std::vector<float> projection = generateRandomProjection(dimensions);
+            const size_t padded = projection.size() / PROJECTION_ROUNDS;
+            std::vector<float> work(padded);
+
+            double norm_sq = 0.0;
+            for (size_t i = 0; i < dimensions; ++i)
+                norm_sq += static_cast<double>(vec[i]) * static_cast<double>(vec[i]);
+            const float norm = static_cast<float>(std::sqrt(norm_sq));
+
+            applyRandomProjection(projection, vec, dimensions, work.data());
+            double rnorm_sq = 0.0;
+            for (size_t i = 0; i < dimensions; ++i)
+                rnorm_sq += static_cast<double>(work[i]) * static_cast<double>(work[i]);
+
+            /// Scale the rotated vector so each kept coordinate is ~N(0, 1): unit-normalize the rotated vector (each of
+            /// its `dimensions` coordinates then has variance 1/dimensions) and multiply by sqrt(dimensions). Lloyd-Max
+            /// is the MSE-optimal scalar quantizer for that standard-normal coordinate distribution.
+            const float scale = (rnorm_sq > 0.0)
+                ? static_cast<float>(std::sqrt(static_cast<double>(dimensions) / rnorm_sq))
+                : 0.0f;
+            for (size_t i = 0; i < dimensions; ++i)
+                dst[i] = static_cast<char>(LloydMax::quantize(work[i] * scale));
+            std::memcpy(dst + dimensions, &norm, sizeof(float));
+            return;
+        }
     }
 }
+
+/// The query side of the 'int8' Lloyd-Max estimator: the unit-normalized rotated query direction (kept in full
+/// precision - the estimator is asymmetric, only the data is quantized), plus the constants to turn the reconstructed
+/// inner product into an L2 or cosine distance (mirrors `E8Query`).
+struct Int8Query
+{
+    std::vector<float> q_dir;   /// unit-normalized rotated query, `dimensions` floats
+    float inv_sqrt_d = 0.0f;    /// 1 / sqrt(dimensions): rescales the dequantized data direction back to unit norm
+    bool is_l2 = false;
+    float q_norm = 0.0f;        /// ||q|| of the original query (L2 only)
+    float q_norm_sq = 0.0f;
+    size_t dimensions = 0;
+};
 
 /// Prepared query state for computing approximate distances from codes.
 struct Query
 {
-    FlatQuantization codec = FlatQuantization::B1;
+    FlatQuantization codec = FlatQuantization::RaBitQ;
     size_t dimensions = 0;
     size_t bits = 0;
     size_t code_bytes = 0;
-    std::vector<char> b1_code;     /// b1 / b1_projected: packed sign code of the (projected) reference
     RaBitQQuery rabitq;
     TurboQuantQuery turbo;
     E8Query e8;
     std::shared_ptr<const E8Codebook> e8_codebook; /// keep the codebook alive for e8.coords
+    Int8Query int8;
 };
 
 std::shared_ptr<const Query> prepareQuery(std::string_view method, const float * ref, size_t dimensions, size_t bits, bool is_l2)
@@ -917,23 +914,6 @@ std::shared_ptr<const Query> prepareQuery(std::string_view method, const float *
 
     switch (q->codec)
     {
-        case FlatQuantization::B1:
-        {
-            q->code_bytes = dimensions / 8;
-            q->b1_code.assign(q->code_bytes, 0);
-            signPack(ref, dimensions, q->b1_code.data());
-            break;
-        }
-        case FlatQuantization::B1Projected:
-        {
-            q->code_bytes = dimensions / 8;
-            const std::vector<float> projection = generateRandomProjection(dimensions);
-            std::vector<float> work(projection.size() / PROJECTION_ROUNDS);
-            applyRandomProjection(projection, ref, dimensions, work.data());
-            q->b1_code.assign(q->code_bytes, 0);
-            signPack(work.data(), dimensions, q->b1_code.data());
-            break;
-        }
         case FlatQuantization::RaBitQ:
         {
             q->code_bytes = dimensions / 8 + sizeof(float);
@@ -969,6 +949,26 @@ std::shared_ptr<const Query> prepareQuery(std::string_view method, const float *
             q->e8 = buildE8Query(*q->e8_codebook, work.data(), dimensions, q->code_bytes, is_l2, ref_norm);
             break;
         }
+        case FlatQuantization::Int8:
+        {
+            q->code_bytes = dimensions; /// Int8 codes; the 4-byte norm factor follows.
+            const std::vector<float> projection = generateRandomProjection(dimensions);
+            std::vector<float> work(projection.size() / PROJECTION_ROUNDS);
+            applyRandomProjection(projection, ref, dimensions, work.data());
+            double rnorm_sq = 0.0;
+            for (size_t i = 0; i < dimensions; ++i)
+                rnorm_sq += static_cast<double>(work[i]) * static_cast<double>(work[i]);
+            const float inv_rnorm = (rnorm_sq > 0.0) ? static_cast<float>(1.0 / std::sqrt(rnorm_sq)) : 0.0f;
+            q->int8.q_dir.resize(dimensions);
+            for (size_t i = 0; i < dimensions; ++i)
+                q->int8.q_dir[i] = work[i] * inv_rnorm;
+            q->int8.inv_sqrt_d = (dimensions > 0) ? static_cast<float>(1.0 / std::sqrt(static_cast<double>(dimensions))) : 0.0f;
+            q->int8.is_l2 = is_l2;
+            q->int8.q_norm = ref_norm;
+            q->int8.q_norm_sq = ref_norm * ref_norm;
+            q->int8.dimensions = dimensions;
+            break;
+        }
     }
     return q;
 }
@@ -977,15 +977,31 @@ float distance(const Query & q, const char * code)
 {
     switch (q.codec)
     {
-        case FlatQuantization::B1:
-        case FlatQuantization::B1Projected:
-            return hammingDistance(q.b1_code.data(), code, q.dimensions / 8);
         case FlatQuantization::RaBitQ:
             return raBitQDistanceFast(q.rabitq, code);
         case FlatQuantization::TurboQuant:
             return turboQuantDistanceFast(q.turbo, code);
         case FlatQuantization::E8:
             return e8Distance(q.e8, code);
+        case FlatQuantization::Int8:
+        {
+            const Int8Query & iq = q.int8;
+            const Int8 * codes = reinterpret_cast<const Int8 *>(code);
+            /// Reconstruct the data direction from the codes (LloydMax::dequantize(code_i) ~ sqrt(d) * data_dir_i) and
+            /// take its inner product with the unit-normalized query direction; the rotation is orthogonal, so this
+            /// inner product estimates cos(data, query).
+            float dot = 0.0f;
+            for (size_t i = 0; i < iq.dimensions; ++i)
+                dot += LloydMax::dequantize(codes[i]) * iq.q_dir[i];
+            float ip = std::clamp(dot * iq.inv_sqrt_d, -1.0f, 1.0f);
+
+            float norm_x = 0.0f;
+            std::memcpy(&norm_x, code + iq.dimensions, sizeof(float));
+
+            if (iq.is_l2)
+                return iq.q_norm_sq + norm_x * norm_x - 2.0f * iq.q_norm * norm_x * ip;
+            return 1.0f - ip;
+        }
     }
     return 0.0f;
 }

@@ -11,8 +11,9 @@
 /// the codes can be produced on the write path (as a derived companion stream of the vector column) and the per-row
 /// approximate distance computed at query time.
 ///
-/// Methods: "b1", "b1_projected", "turboquant", "rabitq", "e8". `bits` is only used by "e8" (bits per 8-dim
-/// sub-quantizer, 1..16); ignored otherwise.
+/// Methods: "b1", "b1_projected", "turboquant", "rabitq", "e8", "int8". `bits` is only used by "e8" (bits per 8-dim
+/// sub-quantizer, 1..16); ignored otherwise. "int8" stores one Lloyd-Max Int8 code per coordinate (of the rotated,
+/// unit-variance vector) plus the per-vector L2 norm, and uses an asymmetric (full-precision query) distance.
 namespace DB::VectorQuantization
 {
 

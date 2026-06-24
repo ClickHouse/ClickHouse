@@ -241,9 +241,9 @@ Each method is a stateless per-row function of the vector (a fixed-seed random p
 lattice; there is no trained codebook). The same kernels back the `Quantize` column codec. Use `quantizeDistance` to
 compute an approximate distance from the resulting code at query time.
 
-Supported methods: `b1` (sign bits), `b1_projected` (random projection + sign), `rabitq`, `turboquant`, and `e8`
-(E8 lattice product quantization). The `bits` argument is only used by `e8` (bits per 8-dimensional sub-quantizer);
-it is ignored by the other methods.
+Supported methods: `rabitq` (1-bit), `turboquant` (2-bit), `e8` (E8 lattice product quantization), and `int8`
+(per-coordinate Lloyd-Max scalar quantization). The `bits` argument is only used by `e8` (bits per 8-dimensional
+sub-quantizer); it is ignored by the other methods.
 )";
     FunctionDocumentation::Syntax syntax = "quantizeEncode(vec, method, dimensions, bits)";
     FunctionDocumentation::Arguments arguments = {
@@ -254,7 +254,7 @@ it is ignored by the other methods.
     };
     FunctionDocumentation::ReturnedValue returned_value = {"The quantized code.", {"FixedString"}};
     FunctionDocumentation::Examples examples = {
-        {"Encode", "SELECT length(quantizeEncode([1., 2., 3., 4.], 'b1', 4, 0));", "1"}};
+        {"Encode", "SELECT length(quantizeEncode([1., 2., 3., 4., 5., 6., 7., 8.], 'rabitq', 8, 0));", "5"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Distance;
     FunctionDocumentation documentation = {
@@ -281,7 +281,7 @@ codes against a single query. `is_l2` selects `L2Distance` (1) versus `cosineDis
     };
     FunctionDocumentation::ReturnedValue returned_value = {"The approximate distance.", {"Float32"}};
     FunctionDocumentation::Examples examples = {
-        {"Distance", "SELECT quantizeDistance(quantizeEncode([1., 0.], 'b1', 2, 0), [1., 0.], 'b1', 2, 0, 1);", "0"}};
+        {"Distance", "SELECT quantizeDistance(quantizeEncode([1., 0.], 'rabitq', 2, 0), [1., 0.], 'rabitq', 2, 0, 1);", "0"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Distance;
     FunctionDocumentation documentation = {
