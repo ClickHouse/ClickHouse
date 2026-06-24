@@ -21,7 +21,7 @@ import shutil
 import subprocess
 import time
 
-from ci.defs.defs import BuildTypes, ToolSet
+from ci.defs.defs import ToolSet
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
