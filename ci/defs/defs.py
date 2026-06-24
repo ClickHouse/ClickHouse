@@ -77,17 +77,17 @@ SECRETS = [
     azure_secret,
     chcache_secret,
     Secret.Config(
-        name="woolenwolf_gh_app.clickhouse-app-id",
+        name="/github-app/clickhouse-gh.clickhouse-app-id",
         type=Secret.Type.AWS_SSM_SECRET,
         region="us-east-1",
     ),
     Secret.Config(
-        name="woolenwolf_gh_app.clickhouse-app-key",
+        name="/github-app/clickhouse-gh.clickhouse-app-key",
         type=Secret.Type.AWS_SSM_SECRET,
         region="us-east-1",
     ),
     Secret.Config(
-        name="woolenwolf_gh_app.installation_id",
+        name="/github-app/clickhouse-gh.installation_id",
         type=Secret.Type.AWS_SSM_SECRET,
         region="us-east-1",
     ),
@@ -304,11 +304,18 @@ DOCKERS = [
 class BuildTypes(metaclass=MetaClasses.WithIter):
     AMD_DEBUG = "amd_debug"
     AMD_RELEASE = "amd_release"
+    # sccache-warmup variants of the release builds (MasterCI only): PR-style
+    # cmake flags (no official-build flag, debug symbols stripped, no PGO/BOLT),
+    # but built on master so the shared sccache is populated read-write for
+    # read-only PR builds to reuse. See build_clickhouse.py and
+    # PR_CACHE_WARMUP_BUILD_TYPES.
+    AMD_RELEASE_PR_CACHE_WARMUP = "amd_release_pr_cache_warmup"
     AMD_BINARY = "amd_binary"
     AMD_ASAN_UBSAN = "amd_asan_ubsan"
     AMD_TSAN = "amd_tsan"
     AMD_MSAN = "amd_msan"
     ARM_RELEASE = "arm_release"
+    ARM_RELEASE_PR_CACHE_WARMUP = "arm_release_pr_cache_warmup"
     ARM_DEBUG = "arm_debug"
     ARM_ASAN_UBSAN = "arm_asan_ubsan"
     ARM_TSAN = "arm_tsan"
@@ -339,7 +346,6 @@ class JobNames:
     STYLE_CHECK = "Style check"
     CODE_REVIEW = "Code Review"
     FAST_TEST = "Fast test"
-    SMOKE_TEST_MACOS = "Smoke test (amd_darwin)"
     BUILD = "Build"
     UNITTEST = "Unit tests"
     STATELESS = "Stateless tests"
@@ -356,6 +362,7 @@ class JobNames:
     DOCKER_KEEPER = "Docker keeper image"
     SQL_TEST = "SQLTest"
     SQL_LOGIC_TEST = "SQLLogic test"
+    SQL_STORM_TEST = "SQLStorm test"
     SQLANCER = "SQLancer"
     LLVM_COVERAGE = "LLVM Coverage"
     INSTALL_TEST = "Install packages"
@@ -465,12 +472,12 @@ LLVM_FT_ARTIFACTS_LIST = [
 
 LLVM_FT_ARTIFACTS_LIST += [
     # default.profdata files for 6 jobs from Functional tests with Old Analyzer + S3 + AsyncInsert + parallel/sequential execution
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_parallel",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_sequential",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_parallel",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_sequential",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_parallel",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_sequential",
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_old_s3_db_repl_wasm_parallel",
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_old_s3_db_repl_wasm_sequential",
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_parallel",
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_sequential",
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_parallel",
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_sequential",
 ]
 
 LLVM_IT_ARTIFACTS_LIST = [
@@ -540,7 +547,7 @@ class ArtifactConfigs:
         name="...",
         type=Artifact.Type.S3,
         path=[
-            f"./*.profdata",
+            "./*.profdata",
         ],
     ).parametrize(names=LLVM_ARTIFACTS_LIST)
 

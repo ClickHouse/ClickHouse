@@ -6,7 +6,6 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <base/types.h>
 #include <base/sort.h>
@@ -327,10 +326,16 @@ void ColumnLowCardinality::skipSerializedInArena(ReadBuffer & in) const
     getDictionary().skipSerializedInArena(in);
 }
 
-WeakHash32 ColumnLowCardinality::getWeakHash32() const
+void ColumnLowCardinality::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    WeakHash32 dict_hash = getDictionary().getNestedColumn()->getWeakHash32();
-    return idx.getWeakHash(dict_hash);
+    const auto & nested = getDictionary().getNestedColumn();
+    const size_t dict_size = nested->size();
+
+    PaddedPODArray<UInt32> dict_hash(dict_size);
+    if (dict_size)
+        nested->computeHashInto(0, dict_size, dict_hash.data(), true);
+
+    idx.computeHashInto(dict_hash, row_begin, row_end, hash_out, initial);
 }
 
 void ColumnLowCardinality::updateHashFast(SipHash & hash) const
@@ -676,6 +681,20 @@ ColumnPtr ColumnLowCardinality::countKeys() const
 bool ColumnLowCardinality::containsNull() const
 {
     return getDictionary().nestedColumnIsNullable() && idx.containsDefault();
+}
+
+void ColumnLowCardinality::applyNegatedNullMap(const NullMap & map, size_t offset)
+{
+    if (!nestedIsNullable())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot apply a null map to {} with a non-nullable dictionary", getName());
+
+    if (offset + map.size() != size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Null map of size {} at offset {} does not match {} of size {}",
+            map.size(), offset, getName(), size());
+
+    idx.setIndexesWhereMaskZero(map, getDictionary().getNullValueIndex(), offset);
 }
 
 ColumnLowCardinality::Dictionary::Dictionary(MutableColumnPtr && column_unique_, bool is_shared)

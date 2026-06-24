@@ -2529,8 +2529,6 @@
 "kolmogorovSmirnovTestSimpleState"
 "kolmogorovSmirnovTestState"
 "kostikConsistentHash"
-"kql_array_sort_asc"
-"kql_array_sort_desc"
 "kurtPop"
 "kurtPopArgMax"
 "kurtPopArgMin"
