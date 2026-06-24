@@ -418,31 +418,33 @@ template <size_t copy_amount>
 inline constexpr BootMasks<copy_amount> boot_masks{};
 
 /// The 16-byte small-offset overlap fill, via one unconditional table-lookup shuffle using the
-/// constexpr `boot_masks` table. `idx` is the table index: callers on the branchless path pass
-/// `min(real_offset, 16)`, so an index of 16 selects the identity shuffle (a plain copy). That is
-/// what lets the caller drop the highly mispredicted `offset < 16` branch and call this
+/// constexpr `boot_masks` table. Here `offset` is the table index: callers on the branchless path
+/// pass `min(real_offset, 16)`, so an index of 16 selects the identity shuffle (a plain copy).
+/// That is what lets the caller drop the highly mispredicted `offset < 16` branch and call this
 /// unconditionally — the only difference from a plain `copyOverlap` is that clamp (one `cmov`),
 /// computed at the call site. `copyOverlap<8>` and `copyOverlap<32>` are the branched-only
 /// variants and index by the real `offset` directly.
+/// (The parameter is named `offset` to match the primary template; on the branchless path it
+/// carries the clamped index `min(real_offset, 16)`.)
 template <>
-[[maybe_unused]] void ALWAYS_INLINE copyOverlap<16>(UInt8 * op, UInt8 *& match, size_t idx)
+[[maybe_unused]] void ALWAYS_INLINE copyOverlap<16>(UInt8 * op, UInt8 *& match, size_t offset)
 {
 #if defined(__SSSE3__)
     _mm_storeu_si128(reinterpret_cast<__m128i *>(op),
         _mm_shuffle_epi8(
             _mm_loadu_si128(reinterpret_cast<const __m128i *>(match)),
-            _mm_load_si128(reinterpret_cast<const __m128i *>(boot_masks<16>.boot[idx]))));
+            _mm_load_si128(reinterpret_cast<const __m128i *>(boot_masks<16>.boot[offset]))));
     __msan_unpoison(op, 16);
-    match += boot_masks<16>.shift[idx];
+    match += boot_masks<16>.shift[offset];
 #elif defined(__aarch64__) && defined(__ARM_NEON)
     vst1q_u8(reinterpret_cast<uint8_t *>(op),
         vqtbl1q_u8(
             vld1q_u8(reinterpret_cast<const uint8_t *>(match)),
-            vld1q_u8(boot_masks<16>.boot[idx])));
+            vld1q_u8(boot_masks<16>.boot[offset])));
     __msan_unpoison(op, 16);
-    match += boot_masks<16>.shift[idx];
+    match += boot_masks<16>.shift[offset];
 #else
-    /// Scalar fallback (no SSSE3/NEON): reached only via the branched call path, where `idx` is
+    /// Scalar fallback (no SSSE3/NEON): reached only via the branched call path, where `offset` is
     /// the real offset < 16.
     static constexpr UInt8 shift1[] = {0, 1, 2, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4};
     static constexpr UInt8 shift2[] = {0, 1, 2, 2, 4, 3, 2, 1, 0, 8, 8, 8, 8, 8, 8, 8};
@@ -451,9 +453,9 @@ template <>
     op[1] = match[1];
     op[2] = match[2];
     op[3] = match[3];
-    memcpy(op + 4, match + shift1[idx], 4);
-    memcpy(op + 8, match + shift2[idx], 8);
-    match += shift3[idx];
+    memcpy(op + 4, match + shift1[offset], 4);
+    memcpy(op + 8, match + shift2[offset], 8);
+    match += shift3[offset];
 #endif
 }
 
