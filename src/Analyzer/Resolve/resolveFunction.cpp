@@ -506,8 +506,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// does an exact `context->resolveStorageID` lookup. Don't substitute in default mode
                 /// (or when the names already match) — the analyzer here can't see temporary tables,
                 /// so always-substituting would steer `joinGet('03775_join', ...)` away from a
-                /// session temporary `03775_join` to a same-named regular table.
-                if (standard_mode)
+                /// session temporary `03775_join` to a same-named regular table. Also skip the
+                /// substitution for temporary tables: `getStorageID().getTableName()` is the
+                /// internal `_tmp_<id>` name, but `FunctionJoinGet::getJoin` reparses the string
+                /// and looks up the user-visible temporary name through `Context::resolveStorageID`,
+                /// so passing the internal name would fail with `UNKNOWN_TABLE` at runtime.
+                if (standard_mode && !table_node_typed.isTemporaryTable())
                 {
                     const auto resolved_storage_id = table_node_typed.getStorageID();
                     const String resolved_table_name = resolved_storage_id.getTableName();
