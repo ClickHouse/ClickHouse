@@ -39,6 +39,8 @@ public:
     bool canUpdatePrewhereInfoMultipleTimes() const override { return false; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    void describeIndexes(FormatSettings & format_settings) const override;
+    void describeIndexes(JSONBuilder::JSONMap & map) const override;
     QueryPlanStepPtr clone() const override;
 #if CLICKHOUSE_CLOUD
     /// In distributed query plan, this step will be executed in a distributed manner - shards will be read in parallel.

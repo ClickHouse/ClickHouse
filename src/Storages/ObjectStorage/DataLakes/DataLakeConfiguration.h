@@ -275,6 +275,12 @@ public:
         return current_metadata.get();
     }
 
+    const IDataLakeMetadata * getExternalMetadata() const override
+    {
+        assertInitialized();
+        return current_metadata.get();
+    }
+
     bool supportsFileIterator() const override { return true; }
 
     bool supportsWrites() const override

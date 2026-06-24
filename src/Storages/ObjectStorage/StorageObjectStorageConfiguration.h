@@ -161,6 +161,7 @@ public:
     virtual bool isDataSortedBySortingKey(StorageMetadataPtr, ContextPtr) const { return false; }
 
     virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
+    virtual const IDataLakeMetadata * getExternalMetadata() const { return nullptr; }
 
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
 

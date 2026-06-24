@@ -6,12 +6,14 @@
 #if USE_AVRO
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/KeyDescription.h>
 
 #include <mutex>
+#include <unordered_set>
 #include <unordered_map>
 
 namespace DB::Iceberg
@@ -48,6 +50,16 @@ class ManifestFilesPruner;
 class ManifestFileIterator : public boost::noncopyable
 {
 public:
+    struct ExplainPruningStatistics
+    {
+        size_t initial_data_files = 0;
+        size_t partition_selected_data_files = 0;
+        size_t minmax_selected_data_files = 0;
+        size_t initial_partitions = 0;
+        size_t partition_selected_partitions = 0;
+        size_t minmax_selected_partitions = 0;
+    };
+
     struct ManifestFileEntriesHandle
     {
         using FilesPtr = std::shared_ptr<const std::vector<ProcessedManifestFileEntryPtr>>;
@@ -96,6 +108,9 @@ public:
     std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
 
     bool areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const;
+    ExplainPruningStatistics getExplainPruningStatistics() const;
+    std::optional<IDataLakeMetadata::ExplainIndexDescription> getPartitionExplainIndexDescription() const;
+    std::optional<IDataLakeMetadata::ExplainIndexDescription> getMinMaxExplainIndexDescription() const;
 
     /// Returns true if all manifest file entries have been processed
     bool isInitialized() const;
@@ -161,6 +176,16 @@ private:
     mutable std::mutex pruners_mutex;
     std::unordered_map<Int32, std::unique_ptr<ManifestFilesPruner>> pruners_by_schema_id;
     const ManifestFilesPruner * getOrCreatePruner(Int32 schema_id);
+
+    mutable std::mutex explain_stats_mutex;
+    size_t explain_initial_data_files TSA_GUARDED_BY(explain_stats_mutex) = 0;
+    size_t explain_partition_selected_data_files TSA_GUARDED_BY(explain_stats_mutex) = 0;
+    size_t explain_minmax_selected_data_files TSA_GUARDED_BY(explain_stats_mutex) = 0;
+    std::unordered_set<String> explain_initial_partitions TSA_GUARDED_BY(explain_stats_mutex);
+    std::unordered_set<String> explain_partition_selected_partitions TSA_GUARDED_BY(explain_stats_mutex);
+    std::unordered_set<String> explain_minmax_selected_partitions TSA_GUARDED_BY(explain_stats_mutex);
+    std::optional<IDataLakeMetadata::ExplainIndexDescription> partition_explain_index_description TSA_GUARDED_BY(explain_stats_mutex);
+    std::optional<IDataLakeMetadata::ExplainIndexDescription> minmax_explain_index_description TSA_GUARDED_BY(explain_stats_mutex);
 };
 
 using ManifestIteratorPtr = std::shared_ptr<ManifestFileIterator>;

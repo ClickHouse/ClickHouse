@@ -1031,6 +1031,102 @@ bool IcebergMetadata::isDataSortedBySortingKey(StorageMetadataPtr storage_metada
     return true;
 }
 
+std::vector<IDataLakeMetadata::ExplainIndexDescription> IcebergMetadata::getExplainIndexDescriptions(
+    const ActionsDAG * filter_dag,
+    StorageMetadataPtr storage_metadata,
+    ContextPtr context) const
+{
+    if (!filter_dag || !context->getSettingsRef()[Setting::use_iceberg_partition_pruning].value)
+        return {};
+
+    auto iceberg_table_state = extractIcebergSnapshotIdFromMetadataObject(storage_metadata);
+    if (iceberg_table_state == nullptr)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Can't extract iceberg table state from storage snapshot for table location {}",
+            persistent_components.table_location);
+    }
+
+    auto data_snapshot = getRelevantDataSnapshotFromTableStateSnapshot(*iceberg_table_state, context);
+    if (!data_snapshot)
+        return {};
+
+    std::shared_ptr<const ActionsDAG> filter_dag_copy = std::make_shared<ActionsDAG>(filter_dag->clone());
+    std::optional<IDataLakeMetadata::ExplainIndexDescription> partition_description;
+    std::optional<IDataLakeMetadata::ExplainIndexDescription> minmax_description;
+
+    size_t initial_partitions = 0;
+    size_t partition_selected_partitions = 0;
+    size_t minmax_selected_partitions = 0;
+    size_t initial_files = 0;
+    size_t partition_selected_files = 0;
+    size_t minmax_selected_files = 0;
+
+    for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
+    {
+        if (manifest_list_entry.content_type != Iceberg::ManifestFileContentType::DATA)
+            continue;
+
+        auto manifest_file_cacheable_part = Iceberg::getManifestFile(
+            object_storage,
+            persistent_components,
+            context,
+            log,
+            manifest_list_entry.manifest_file_path,
+            manifest_list_entry.manifest_file_byte_size);
+
+        auto iterator = Iceberg::ManifestFileIterator::create(
+            manifest_file_cacheable_part.deserializer,
+            manifest_list_entry.manifest_file_path,
+            persistent_components.path_resolver,
+            *persistent_components.schema_processor,
+            manifest_list_entry.added_sequence_number,
+            manifest_list_entry.added_snapshot_id,
+            context,
+            filter_dag_copy,
+            iceberg_table_state->schema_id);
+
+        while (iterator->next())
+        {
+        }
+
+        auto stats = iterator->getExplainPruningStatistics();
+        initial_partitions += stats.initial_partitions;
+        partition_selected_partitions += stats.partition_selected_partitions;
+        minmax_selected_partitions += stats.minmax_selected_partitions;
+        initial_files += stats.initial_data_files;
+        partition_selected_files += stats.partition_selected_data_files;
+        minmax_selected_files += stats.minmax_selected_data_files;
+
+        if (!partition_description)
+            partition_description = iterator->getPartitionExplainIndexDescription();
+        if (!minmax_description)
+            minmax_description = iterator->getMinMaxExplainIndexDescription();
+    }
+
+    std::vector<IDataLakeMetadata::ExplainIndexDescription> result;
+    if (partition_description)
+    {
+        partition_description->initial_partitions = initial_partitions;
+        partition_description->selected_partitions = partition_selected_partitions;
+        partition_description->initial_files = initial_files;
+        partition_description->selected_files = partition_selected_files;
+        result.push_back(*partition_description);
+    }
+
+    if (minmax_description)
+    {
+        minmax_description->initial_partitions = partition_selected_partitions;
+        minmax_description->selected_partitions = minmax_selected_partitions;
+        minmax_description->initial_files = partition_selected_files;
+        minmax_description->selected_files = minmax_selected_files;
+        result.push_back(*minmax_description);
+    }
+
+    return result;
+}
+
 std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
 {
     auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);

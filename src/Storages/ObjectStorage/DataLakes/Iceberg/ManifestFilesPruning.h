@@ -35,7 +35,15 @@ DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String &
 /// Prune specific data files based on manifest content
 class ManifestFilesPruner
 {
+public:
+    struct ExplainDescription
+    {
+        std::vector<String> used_keys;
+        String condition;
+    };
+
 private:
+
     const IcebergSchemaProcessor & schema_processor;
     Int32 current_schema_id;
     Int32 initial_schema_id;
@@ -43,6 +51,8 @@ private:
     std::optional<DB::KeyCondition> partition_key_condition;
 
     std::unordered_map<Int32, DB::KeyCondition> min_max_key_conditions;
+    std::optional<ExplainDescription> partition_explain_description;
+    std::optional<ExplainDescription> minmax_explain_description;
     /// NOTE: tricky part to support RENAME column.
     /// Takes ActionDAG representation of user's WHERE expression and
     /// rename columns to the their origina numeric ID's in iceberg
@@ -58,6 +68,9 @@ public:
         DB::ContextPtr context);
 
     PruningReturnStatus canBePruned(const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const;
+
+    const std::optional<ExplainDescription> & getPartitionExplainDescription() const { return partition_explain_description; }
+    const std::optional<ExplainDescription> & getMinMaxExplainDescription() const { return minmax_explain_description; }
 };
 
 }
