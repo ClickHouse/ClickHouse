@@ -345,7 +345,9 @@ public:
     /// Replace corresponding discriminators with NULL_DISCRIMINATOR
     /// and filter out rows in variants if needed.
     void applyNullMap(const ColumnVector<UInt8>::Container & null_map);
-    void applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map);
+    /// When `offset` is given, `null_map` covers the suffix `[offset, size())`: the affected range must end
+    /// at the last row. Otherwise `null_map` must cover the whole column.
+    void applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map, size_t offset = 0);
 
     /// Create a null map column from the discriminators: 1 for NULL_DISCRIMINATOR rows, 0 otherwise.
     ColumnPtr createNullMap() const;
@@ -373,8 +375,10 @@ private:
     void initIdentityGlobalToLocalDiscriminatorsMapping();
     void constructOffsetsFromDiscriminators();
 
+    /// When `offset` is given, `null_map` covers the suffix `[offset, size())` (the range must end at the
+    /// last row); otherwise it must cover the whole column.
     template <bool inverted>
-    void applyNullMapImpl(const ColumnVector<UInt8>::Container & null_map);
+    void applyNullMapImpl(const ColumnVector<UInt8>::Container & null_map, size_t offset = 0);
 
     WrappedPtr local_discriminators;
     WrappedPtr offsets;
