@@ -1,7 +1,6 @@
 00558_parse_floats
 01037_polygon_dicts_correctness_all
 01037_polygon_dicts_correctness_fast
-01043_geo_distance
 01085_max_distributed_connections
 01172_transaction_counters
 01173_transaction_control_queries
