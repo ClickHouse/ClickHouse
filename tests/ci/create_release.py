@@ -241,7 +241,7 @@ class ReleaseInfo:
         commit_ref: str,
         release_type: str,
         _skip_tag_check: bool,
-        recovery: bool = False,
+        _skip_out_of_order_check: bool = False,
     ) -> "ReleaseInfo":
         version = None
         release_branch = None
@@ -309,7 +309,7 @@ class ReleaseInfo:
             # we only rebuild repos/docker for an already-released tag, so an
             # out-of-order check is irrelevant and would always trip once a later
             # release exists on the branch. Skip it in that case.
-            if not recovery:
+            if not _skip_out_of_order_check:
                 ref_cmake = Shell.get_output_or_raise(
                     f"git show {commit_ref}:{FILE_WITH_VERSION_PATH}"
                 )
@@ -930,10 +930,11 @@ def parse_args() -> argparse.Namespace:
         help="To skip check against latest git tag on a release branch",
     )
     parser.add_argument(
-        "--recovery",
+        "--skip-out-of-order-check",
         action="store_true",
-        help="Recovery run (only-repo/only-docker): rebuild repos/docker for an "
-        "already-released tag without tagging, so skip the out-of-order release check",
+        help="Skip the out-of-order release check. Used by recovery runs "
+        "(only-repo/only-docker) that rebuild repos/docker for an "
+        "already-released tag without tagging",
     )
     parser.add_argument(
         "--push-release-tag",
@@ -1028,7 +1029,7 @@ if __name__ == "__main__":
                 commit_ref=args.ref,
                 release_type=args.release_type,
                 _skip_tag_check=args.skip_tag_check,
-                recovery=args.recovery,
+                _skip_out_of_order_check=args.skip_out_of_order_check,
             )
 
     if args.download_packages:
