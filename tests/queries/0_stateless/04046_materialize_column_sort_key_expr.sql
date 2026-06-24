@@ -227,3 +227,34 @@ CREATE TABLE t_mat_ttl_dynamic_subcolumn
     ENGINE = MergeTree() ORDER BY a TTL j.d::DateTime + INTERVAL 1 DAY;
 ALTER TABLE t_mat_ttl_dynamic_subcolumn MATERIALIZE COLUMN j; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_ttl_dynamic_subcolumn;
+
+-- Case 22: A `TTL ... DELETE WHERE <cond>` reads the columns of its WHERE condition (stored in
+-- `where_expression_columns`), which `getColumnDependencies` does not expand (it only expands the
+-- TTL expression). Materializing a column used only in the WHERE condition would change which rows
+-- participate in the rows-where TTL while the mutation copies the part's stale `rows_where_ttl_info`.
+-- Recomputing it is not supported (it would require changing the shared dependency expansion, which
+-- also drives UPDATE), so — following the same fail-close approach as the subcolumn cases — the
+-- command is refused. Here `c3` is only in the WHERE condition (the TTL expression reads `d`).
+DROP TABLE IF EXISTS t_mat_ttl_where_full;
+CREATE TABLE t_mat_ttl_where_full (a Int, c3 UInt8 MATERIALIZED (a % 2)::UInt8, d DateTime MATERIALIZED toDateTime(1700000000 + a))
+    ENGINE = MergeTree() ORDER BY a TTL d + INTERVAL 1 DAY DELETE WHERE c3 = 1;
+ALTER TABLE t_mat_ttl_where_full MATERIALIZE COLUMN c3; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_ttl_where_full;
+
+-- Case 23: Same as Case 22, but a *subcolumn* of the materialized column is used in the TTL WHERE
+-- condition (DELETE WHERE t.k = 1 while materializing the parent Tuple column t). Refused as well.
+DROP TABLE IF EXISTS t_mat_ttl_where_subcolumn;
+CREATE TABLE t_mat_ttl_where_subcolumn (a Int, t Tuple(k UInt8, v UInt64) MATERIALIZED ((a % 2)::UInt8, a), d DateTime MATERIALIZED toDateTime(1700000000 + a))
+    ENGINE = MergeTree() ORDER BY a TTL d + INTERVAL 1 DAY DELETE WHERE t.k = 1;
+ALTER TABLE t_mat_ttl_where_subcolumn MATERIALIZE COLUMN t; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_ttl_where_subcolumn;
+
+-- Case 24: The WHERE refusal must NOT over-reject when the same materialized column also feeds the
+-- TTL *expression*: that already forces a full TTL recalculation (every physical column is fed into
+-- the mutation and the whole TTL, including its WHERE condition, is re-evaluated). Materializing `d`,
+-- which is in both the TTL expression and its WHERE condition, must therefore still be allowed.
+DROP TABLE IF EXISTS t_mat_ttl_where_expr;
+CREATE TABLE t_mat_ttl_where_expr (a Int, d DateTime MATERIALIZED toDateTime(1700000000 + a))
+    ENGINE = MergeTree() ORDER BY a TTL d + INTERVAL 1 DAY DELETE WHERE d > toDateTime(1700000000);
+ALTER TABLE t_mat_ttl_where_expr MATERIALIZE COLUMN d;
+DROP TABLE t_mat_ttl_where_expr;

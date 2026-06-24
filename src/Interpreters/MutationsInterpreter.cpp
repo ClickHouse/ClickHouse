@@ -1303,6 +1303,52 @@ void MutationsInterpreter::prepare(bool dry_run)
                     || dependency.kind == ColumnDependency::TTL_TARGET)
                     dependencies.insert(dependency);
             }
+
+            /// `TTL <expr> DELETE WHERE <cond>` (a rows-where TTL) and `TTL <expr> GROUP BY ... [WHERE
+            /// <cond>]` also read the columns of their WHERE condition, stored separately in
+            /// `where_expression_columns`. These are NOT covered by the recalculation above:
+            /// `getColumnDependencies` only expands a row / group-by TTL's `expression_columns` (it even
+            /// carries a `//TODO what about rows_where_ttl and group_by_ttl ??`), so changing a column
+            /// used only in the WHERE condition can change which rows participate in the TTL while the
+            /// mutation copies the part's `rows_where_ttl_info` with stale bounds.
+            ///
+            /// When any rewritten column feeds a row / group-by TTL *expression*, the recalculation
+            /// above forces every physical column into the mutation and re-evaluates the whole TTL
+            /// (a `TTL_TARGET` dependency, i.e. `ExecuteTTLType::NORMAL`), which re-evaluates the WHERE
+            /// condition too — that case is already handled. Otherwise nothing recomputes the WHERE
+            /// side. Making it recompute on its own would require teaching the shared
+            /// `getColumnDependencies` to expand `where_expression_columns`, which would also change the
+            /// UPDATE path; so, following the same fail-close approach used for subcolumn TTL
+            /// dependencies above, refuse the command rather than leaving stale TTL bounds in the new part.
+            bool full_ttl_recalc = std::ranges::any_of(dependencies,
+                [](const auto & dependency) { return dependency.kind == ColumnDependency::TTL_TARGET; });
+
+            if (!full_ttl_recalc)
+            {
+                auto refuse_if_rewritten_in_ttl_where = [&](const Names & where_columns)
+                {
+                    for (const auto & where_column : where_columns)
+                    {
+                        /// Resolve to the name in storage so both a full column (`c`) and a subcolumn
+                        /// (`t.k`, including a dynamic JSON path) of a rewritten column are caught.
+                        auto resolved = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, where_column);
+                        if (resolved && rewritten_columns.contains(resolved->getNameInStorage()))
+                            throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                                "Refused to materialize column {} because the column {} is used in the WHERE "
+                                "condition of a TTL DELETE / GROUP BY expression. Recomputing it would require "
+                                "recalculating the part's rows-where TTL bounds, which is not supported for "
+                                "WHERE-condition dependencies",
+                                backQuote(command.column_name), backQuote(where_column));
+                    }
+                };
+
+                if (metadata_snapshot->hasRowsTTL())
+                    refuse_if_rewritten_in_ttl_where(metadata_snapshot->getRowsTTL().where_expression_columns.getNames());
+                for (const auto & ttl_entry : metadata_snapshot->getRowsWhereTTLs())
+                    refuse_if_rewritten_in_ttl_where(ttl_entry.where_expression_columns.getNames());
+                for (const auto & ttl_entry : metadata_snapshot->getGroupByTTLs())
+                    refuse_if_rewritten_in_ttl_where(ttl_entry.where_expression_columns.getNames());
+            }
         }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
