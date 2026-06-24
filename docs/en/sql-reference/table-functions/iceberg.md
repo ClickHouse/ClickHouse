@@ -415,11 +415,12 @@ ALTER TABLE iceberg_table DROP PARTITION 2;
 ALTER TABLE iceberg_table DROP PARTITION (2, 5);
 ```
 
-For a partition defined with a transform, you can supply either the already-transformed partition-key value as a literal, or the same transform expression applied to a raw source value — both forms select the same partition. The supported transforms are `identity`, `icebergBucket`, `icebergTruncate`, `toYearNumSinceEpoch`, `toMonthNumSinceEpoch`, `toRelativeDayNum`, and `toRelativeHourNum`. A top-level transform expression must be wrapped in `tuple(...)`, because the partition parser accepts only `tuple` as a top-level function:
+For a partition defined with a transform, you can supply either the already-transformed partition-key value as a literal, or the same transform expression applied to a raw source value — both forms select the same partition. The supported transforms are `identity`, `icebergBucket`, `icebergTruncate`, `toYearNumSinceEpoch`, `toMonthNumSinceEpoch`, `toRelativeDayNum`, and `toRelativeHourNum`. For a single-column partition the literal form can be a bare scalar, but the transform-expression form must be wrapped in `tuple(...)`:
 
 ```sql
 -- single-column transformed partition, e.g. PARTITION BY (icebergBucket(4, b))
-ALTER TABLE iceberg_table DROP PARTITION tuple(icebergBucket(4, 'apple'));
+ALTER TABLE iceberg_table DROP PARTITION 0;                              -- already-transformed value
+ALTER TABLE iceberg_table DROP PARTITION tuple(icebergBucket(4, 'apple')); -- transform expression
 -- multi-column partition, e.g. PARTITION BY (a, icebergBucket(4, b))
 ALTER TABLE iceberg_table DROP PARTITION (1, icebergBucket(4, 'apple'));
 ```
