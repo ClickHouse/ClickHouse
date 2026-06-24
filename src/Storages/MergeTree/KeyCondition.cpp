@@ -5295,6 +5295,52 @@ TupleLexCornerCmp compareTupleCorner(const std::vector<Range> & ranges, const Tu
     return TupleLexCornerCmp::Equal;
 }
 
+/// Decide whether a lexicographic comparison `(box) <op> c` can be true / false for a single box, given
+/// the box's per-element ranges. `greater`/`strict` encode the normalized operator (see the
+/// `tuple_lexicographic_*` fields of RPNElement). Shared by the dense and sparse `checkInHyperrectangle`
+/// overloads; the caller builds `elem_ranges` and relaxes `can_be_false` when the atom (or a truncated
+/// prefix) is relaxed.
+BoolMask evaluateTupleLexicographic(const std::vector<Range> & elem_ranges, const Tuple & c, bool greater, bool strict)
+{
+    const TupleLexCornerCmp lower = compareTupleCorner(elem_ranges, c, /*use_lower*/ true);
+    const TupleLexCornerCmp upper = compareTupleCorner(elem_ranges, c, /*use_lower*/ false);
+
+    if (lower == TupleLexCornerCmp::Indeterminate || upper == TupleLexCornerCmp::Indeterminate)
+        return BoolMask(true, true);
+
+    bool can_be_true = false;
+    bool can_be_false = false;
+    if (!greater)
+    {
+        /// less / lessOrEquals
+        if (strict)
+        {
+            can_be_true = (lower == TupleLexCornerCmp::Less);
+            can_be_false = (upper != TupleLexCornerCmp::Less);
+        }
+        else
+        {
+            can_be_true = (lower != TupleLexCornerCmp::Greater);
+            can_be_false = (upper == TupleLexCornerCmp::Greater);
+        }
+    }
+    else
+    {
+        /// greater / greaterOrEquals
+        if (strict)
+        {
+            can_be_true = (upper == TupleLexCornerCmp::Greater);
+            can_be_false = (lower != TupleLexCornerCmp::Greater);
+        }
+        else
+        {
+            can_be_true = (upper != TupleLexCornerCmp::Less);
+            can_be_false = (lower == TupleLexCornerCmp::Less);
+        }
+    }
+    return BoolMask(can_be_true, can_be_false);
+}
+
 }
 
 BoolMask KeyCondition::checkInHyperrectangle(
@@ -5640,49 +5686,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
             }
             else
             {
-                const bool greater = element.tuple_lexicographic_greater;
-                const bool strict = element.tuple_lexicographic_strict;
-
-                const TupleLexCornerCmp lower = compareTupleCorner(elem_ranges, c, /*use_lower*/ true);
-                const TupleLexCornerCmp upper = compareTupleCorner(elem_ranges, c, /*use_lower*/ false);
-
-                bool can_be_true;
-                bool can_be_false;
-                if (lower == TupleLexCornerCmp::Indeterminate || upper == TupleLexCornerCmp::Indeterminate)
-                {
-                    can_be_true = true;
-                    can_be_false = true;
-                }
-                else if (!greater)
-                {
-                    /// less / lessOrEquals
-                    if (strict)
-                    {
-                        can_be_true = (lower == TupleLexCornerCmp::Less);
-                        can_be_false = (upper != TupleLexCornerCmp::Less);
-                    }
-                    else
-                    {
-                        can_be_true = (lower != TupleLexCornerCmp::Greater);
-                        can_be_false = (upper == TupleLexCornerCmp::Greater);
-                    }
-                }
-                else
-                {
-                    /// greater / greaterOrEquals
-                    if (strict)
-                    {
-                        can_be_true = (upper == TupleLexCornerCmp::Greater);
-                        can_be_false = (lower != TupleLexCornerCmp::Greater);
-                    }
-                    else
-                    {
-                        can_be_true = (upper != TupleLexCornerCmp::Less);
-                        can_be_false = (lower == TupleLexCornerCmp::Less);
-                    }
-                }
-
-                rpn_stack.emplace_back(can_be_true, can_be_false);
+                rpn_stack.emplace_back(evaluateTupleLexicographic(
+                    elem_ranges, c, element.tuple_lexicographic_greater, element.tuple_lexicographic_strict));
 
                 if (element.relaxed)
                     rpn_stack.back().can_be_false = true;
@@ -6177,6 +6182,60 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// Because the polygon may have a hole so the "can_be_false" should always be true.
             bool intersects = boost::geometry::intersects(index_box, element.polygon->ring);
             rpn_stack.emplace_back(intersects, true);
+        }
+        else if (element.function == RPNElement::FUNCTION_TUPLE_LEXICOGRAPHIC)
+        {
+            /// Lexicographic tuple comparison on sparse key columns; see the dense overload for the
+            /// corner-comparison reasoning. A tuple key column may be absent from the sparse index
+            /// (`key_col_to_sparse_pos == -1`); then only the present leading prefix is usable, so we
+            /// truncate the comparison there and relax it to a sound non-strict superset.
+            const auto & lex_columns = element.key_columns;
+            const auto & chains = element.tuple_lexicographic_chains;
+            const Tuple & c = element.tuple_lexicographic_constant;
+
+            std::vector<Range> elem_ranges;
+            elem_ranges.reserve(lex_columns.size());
+            bool indeterminate = false;
+            bool prefix_truncated = false;
+            for (size_t i = 0; i < lex_columns.size(); ++i)
+            {
+                auto [is_key_col_present, sparse_pos] = get_sparse_info(lex_columns[i]);
+                if (!is_key_col_present)
+                {
+                    /// Key column missing from the sparse index: only the leading prefix is usable.
+                    prefix_truncated = true;
+                    break;
+                }
+
+                Range range = sparse_hyperrectangle[sparse_pos];
+                if (i < chains.size() && !chains[i].empty())
+                {
+                    std::optional<Range> new_range
+                        = applyMonotonicFunctionsChainToRange(range, chains[i], sparse_data_types[sparse_pos], single_point);
+                    if (!new_range)
+                    {
+                        indeterminate = true;
+                        break;
+                    }
+                    range = std::move(*new_range);
+                }
+                elem_ranges.push_back(std::move(range));
+            }
+
+            if (indeterminate || elem_ranges.empty())
+            {
+                rpn_stack.emplace_back(true, true);
+            }
+            else
+            {
+                /// A truncated prefix relaxes a strict comparison to its non-strict (superset) variant.
+                const bool strict = element.tuple_lexicographic_strict && !prefix_truncated;
+                rpn_stack.emplace_back(evaluateTupleLexicographic(
+                    elem_ranges, c, element.tuple_lexicographic_greater, strict));
+
+                if (element.relaxed || prefix_truncated)
+                    rpn_stack.back().can_be_false = true;
+            }
         }
         else if (element.function == RPNElement::FUNCTION_IS_NULL
               || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
