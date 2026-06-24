@@ -28,7 +28,6 @@ namespace DB
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsMilliseconds async_block_ids_cache_update_wait_ms;
-    extern const MergeTreeSettingsBool use_async_block_ids_cache;
 }
 
 static constexpr int FAILURE_RETRY_MS = 3000;
@@ -82,8 +81,7 @@ AsyncBlockIDsCache<TStorage>::AsyncBlockIDsCache(TStorage & storage_, const std:
 template <typename TStorage>
 void AsyncBlockIDsCache<TStorage>::start()
 {
-    if ((*storage.getSettings())[MergeTreeSetting::use_async_block_ids_cache])
-        task->activateAndSchedule();
+    task->activateAndSchedule();
 }
 
 template <typename TStorage>
@@ -114,9 +112,6 @@ void AsyncBlockIDsCache<TStorage>::truncate()
 template <typename TStorage>
 std::vector<DeduplicationHash> AsyncBlockIDsCache<TStorage>::detectConflicts(const std::vector<DeduplicationHash> & deduplication_hashes, UInt64 & last_version)
 {
-    if (!(*storage.getSettings())[MergeTreeSetting::use_async_block_ids_cache])
-        return {};
-
     CachePtr cur_cache;
     {
         std::unique_lock lk(mu);
