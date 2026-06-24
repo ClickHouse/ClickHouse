@@ -1078,6 +1078,45 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmEmptyDefaultSinglepart)
     }
 }
 
+TEST_F(WBS3Test, UploadChecksumAlgorithmMD5Singlepart)
+{
+    if (DB::OpenSSLInitializer::instance().isFIPSEnabled())
+        return;
+
+    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
+    setInjectionModel(injection);
+
+    getSettings()[Setting::s3_upload_checksum_algorithm] = "MD5";
+
+    auto buffer = getWriteBuffer("checksum_md5_singlepart");
+    writeAsOneBlock(*buffer, 10);
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->put_object_algorithm);
+    ASSERT_FALSE(injection->put_object_request_checksum_required);
+    ASSERT_TRUE(injection->put_object_should_compute_content_md5);
+}
+
+TEST_F(WBS3Test, UploadChecksumAlgorithmEmptyDefaultDisabledChecksumSinglepart)
+{
+    client = MockS3::Client::CreateClient(bucket, /* disable_checksum */ true);
+
+    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
+    setInjectionModel(injection);
+
+    auto buffer = getWriteBuffer("checksum_empty_default_disabled_singlepart");
+    writeAsOneBlock(*buffer, 10);
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->put_object_algorithm);
+    ASSERT_FALSE(injection->put_object_request_checksum_required);
+    ASSERT_FALSE(injection->put_object_should_compute_content_md5);
+}
+
 TEST_F(WBS3Test, UploadChecksumAlgorithmTakesPrecedenceOverDisabledChecksum)
 {
     client = MockS3::Client::CreateClient(bucket, /* disable_checksum */ true);
