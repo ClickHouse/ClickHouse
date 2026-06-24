@@ -1269,6 +1269,9 @@ The table below shows the behavior of this setting for various date-time functio
 | `toStartOfFiveMinutes` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 | `toStartOfMinute` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 | `timeSlot` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
+
+For an always-on, per-function alternative to this session setting, see the `*Extended` family (`toStartOfMonthExtended`, `toStartOfDayExtended`, `toRelativeSecondNumExtended`, etc.). Each
+`*Extended` variant always uses the extended-result dispatch regardless of this setting and is the recommended choice in primary key or partition expressions.
 )", 0) \
     DECLARE(Bool, allow_nonconst_timezone_arguments, false, R"(
 Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*().

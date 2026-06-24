@@ -32,6 +32,28 @@ static constexpr auto nanosecond_multiplier = 1'000'000'000;
 
 static constexpr FormatSettings::DateTimeOverflowBehavior default_date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
 
+/// If true, widens output type from:
+///          date -> date32  or  datetime -> datetime64
+/// (whichever the function returns), so Date32/DateTime64 input keeps its range.
+template <typename Transform>
+constexpr bool widensDate32AndDateTime64Input()
+{
+    if constexpr (requires { Transform::widen_date32_and_datetime64_input; })
+        return Transform::widen_date32_and_datetime64_input;
+    return false;
+}
+
+/// If true, also widens output type for Date input, from:
+///          date -> date32       (round-up funcs: toLastDayOf*)
+///          date -> datetime64   (toStartOfDay)
+template <typename Transform>
+constexpr bool widensDateInput()
+{
+    if constexpr (requires { Transform::widen_date_input; })
+        return Transform::widen_date_input;
+    return false;
+}
+
 namespace ErrorCodes
 {
     extern const int CANNOT_CONVERT_TYPE;
@@ -232,6 +254,28 @@ struct ToStartOfDayImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToStartOfDayExtendedImpl : ToStartOfDayImpl
+{
+    static constexpr auto name = "toStartOfDayExtended";
+    /// `toStartOfDay` rounds a date-time down to midnight. Without widening it returns `DateTime`
+    /// (`1970-01-01`..`2106-02-07`), which wraps for a `Date32` (`1900-01-01`..`2299-12-31`)/`DateTime64`
+    /// (`1900-01-01`..`2299-12-31`) argument outside that range. For example,
+    /// `SELECT toStartOfDay(toDateTime64('1969-06-15 12:00:00', 0, 'UTC'))` returns `2105-07-22 06:28:16`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
+
+    /// A `Date` argument is widened too: `toStartOfDay` returns a `DateTime`, but `Date` reaches
+    /// `2149-06-06`, beyond `DateTime`'s `2106-02-07` maximum, so without widening the result wraps.
+    /// (Among the time-of-day functions only `toStartOfDay` accepts a date-only argument.) For example,
+    /// `SELECT toStartOfDay(toDate('2149-06-06'))` returns `2013-04-29 17:31:44`.
+    static constexpr bool widen_date_input = true;
+
+    using ToStartOfDayImpl::executeExtendedResult;
+    static Int64 executeExtendedResult(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return common::mulIgnoreOverflow(time_zone.fromDayNum(DayNum(d)), DecimalUtils::scaleMultiplier<DateTime64>(DataTypeDateTime64::default_scale));
+    }
+};
+
 struct ToMondayImpl
 {
     static constexpr auto name = "toMonday";
@@ -263,6 +307,16 @@ struct ToMondayImpl
         return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d));
     }
     using FactorTransform = ZeroTransform;
+};
+
+struct ToMondayExtendedImpl : ToMondayImpl
+{
+    static constexpr auto name = "toMondayExtended";
+    /// `toMonday` rounds a date down to the Monday of its week. Without widening it returns `Date`
+    /// (`1970-01-01`..`2149-06-06`), which wraps for a `Date32` (`1900-01-01`..`2299-12-31`)/`DateTime64`
+    /// (`1900-01-01`..`2299-12-31`) argument outside that range. For example,
+    /// `SELECT toMonday(toDate32('1969-12-29'))` returns `2149-06-04`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
 };
 
 struct ToStartOfMonthImpl
@@ -299,6 +353,16 @@ struct ToStartOfMonthImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToStartOfMonthExtendedImpl : ToStartOfMonthImpl
+{
+    static constexpr auto name = "toStartOfMonthExtended";
+    /// `toStartOfMonth` rounds a date down to the first day of its month. Without widening it returns `Date`
+    /// (`1970-01-01`..`2149-06-06`), which wraps for a `Date32` (`1900-01-01`..`2299-12-31`)/`DateTime64`
+    /// (`1900-01-01`..`2299-12-31`) argument outside that range. For example,
+    /// `SELECT toStartOfMonth(toDate32('1969-06-15'))` returns `2148-11-05`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
+};
+
 struct ToLastDayOfMonthImpl
 {
     static constexpr auto name = "toLastDayOfMonth";
@@ -329,7 +393,27 @@ struct ToLastDayOfMonthImpl
     {
         return time_zone.toLastDayNumOfMonth(ExtendedDayNum(d));
     }
+    static Int32 executeExtendedResult(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toLastDayNumOfMonth(ExtendedDayNum(d));
+    }
     using FactorTransform = ZeroTransform;
+};
+
+struct ToLastDayOfMonthExtendedImpl : ToLastDayOfMonthImpl
+{
+    static constexpr auto name = "toLastDayOfMonthExtended";
+    /// `toLastDayOfMonth` rounds a date up to the last day of its month. Without widening it returns `Date`
+    /// (`1970-01-01`..`2149-06-06`), which wraps for a `Date32` (`1900-01-01`..`2299-12-31`)/`DateTime64`
+    /// (`1900-01-01`..`2299-12-31`) argument outside that range. For example,
+    /// `SELECT toLastDayOfMonth(toDate32('1969-06-15'))` returns `2148-12-04`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
+
+    /// Because `toLastDayOfMonth` rounds up, even an in-range `Date` argument can overflow: it returns
+    /// `Date`, but `2149-06-06` is in June 2149, whose last day `2149-06-30` is past `Date`'s
+    /// `2149-06-06` maximum, so without widening the result wraps. For example,
+    /// `SELECT toLastDayOfMonth(toDate('2149-06-06'))` returns `1970-01-24`.
+    static constexpr bool widen_date_input = true;
 };
 
 struct ToStartOfQuarterImpl
@@ -365,6 +449,16 @@ struct ToStartOfQuarterImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToStartOfQuarterExtendedImpl : ToStartOfQuarterImpl
+{
+    static constexpr auto name = "toStartOfQuarterExtended";
+    /// `toStartOfQuarter` rounds a date down to the first day of its quarter. Without widening it returns
+    /// `Date` (`1970-01-01`..`2149-06-06`), which wraps for a `Date32`
+    /// (`1900-01-01`..`2299-12-31`)/`DateTime64` (`1900-01-01`..`2299-12-31`) argument outside that range.
+    /// For example, `SELECT toStartOfQuarter(toDate32('1969-06-15'))` returns `2148-09-05`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
+};
+
 struct ToStartOfYearImpl
 {
     static constexpr auto name = "toStartOfYear";
@@ -397,6 +491,16 @@ struct ToStartOfYearImpl
     }
 
     using FactorTransform = ZeroTransform;
+};
+
+struct ToStartOfYearExtendedImpl : ToStartOfYearImpl
+{
+    static constexpr auto name = "toStartOfYearExtended";
+    /// `toStartOfYear` rounds a date down to January 1 of its year. Without widening it returns `Date`
+    /// (`1970-01-01`..`2149-06-06`), which wraps for a `Date32` (`1900-01-01`..`2299-12-31`)/`DateTime64`
+    /// (`1900-01-01`..`2299-12-31`) argument outside that range. For example,
+    /// `SELECT toStartOfYear(toDate32('1969-06-15'))` returns `2148-06-07`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
 };
 
 struct ToYearWeekImpl
@@ -468,6 +572,16 @@ struct ToStartOfWeekImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToStartOfWeekExtendedImpl : ToStartOfWeekImpl
+{
+    static constexpr auto name = "toStartOfWeekExtended";
+    /// `toStartOfWeek` rounds a date down to the first day of its week. Without widening it returns `Date`
+    /// (`1970-01-01`..`2149-06-06`), which wraps for a `Date32` (`1900-01-01`..`2299-12-31`)/`DateTime64`
+    /// (`1900-01-01`..`2299-12-31`) argument outside that range. For example,
+    /// `SELECT toStartOfWeek(toDate32('1969-12-29'))` returns `2149-06-03`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
+};
+
 struct ToLastDayOfWeekImpl
 {
     static constexpr auto name = "toLastDayOfWeek";
@@ -499,9 +613,29 @@ struct ToLastDayOfWeekImpl
     {
         return time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), week_mode);
     }
+    static Int32 executeExtendedResult(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        /// Use `ExtendedDayNum` so end-of-week past `2149-06-06` isn't truncated to `UInt16`.
+        return time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), week_mode);
+    }
 
     static constexpr bool hasMonotonicity() { return true; }
     using FactorTransform = ZeroTransform;
+};
+
+struct ToLastDayOfWeekExtendedImpl : ToLastDayOfWeekImpl
+{
+    static constexpr auto name = "toLastDayOfWeekExtended";
+    /// `toLastDayOfWeek` rounds a date up to the last day of its week. Without widening it returns `Date`
+    /// (`1970-01-01`..`2149-06-06`), which wraps for a `Date32` (`1900-01-01`..`2299-12-31`)/`DateTime64`
+    /// (`1900-01-01`..`2299-12-31`) argument outside that range. For example,
+    /// `SELECT toLastDayOfWeek(toDate32('1969-06-15'))` returns `2148-11-25`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
+    /// Because `toLastDayOfWeek` rounds up, even an in-range `Date` argument can overflow: it returns
+    /// `Date`, but `2149-06-06` rounds up to `2149-06-07`, past `Date`'s `2149-06-06` maximum, so
+    /// without widening the result wraps. For example,
+    /// `SELECT toLastDayOfWeek(toDate('2149-06-06'))` returns `1970-01-01`.
+    static constexpr bool widen_date_input = true;
 };
 
 struct ToWeekImpl
@@ -965,6 +1099,16 @@ struct ToStartOfMinuteImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToStartOfMinuteExtendedImpl : ToStartOfMinuteImpl
+{
+    static constexpr auto name = "toStartOfMinuteExtended";
+    /// `toStartOfMinute` rounds a date-time down to the start of the minute. Without widening it returns
+    /// `DateTime` (`1970-01-01`..`2106-02-07`), which wraps for a `DateTime64` (`1900-01-01`..`2299-12-31`)
+    /// argument outside that range. For example,
+    /// `SELECT toStartOfMinute(toDateTime64('1969-12-31 23:59:30', 0, 'UTC'))` returns `2106-02-07 06:27:16`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
+};
+
 // Rounding towards negative infinity.
 // 1.01 => 1.00
 // -1.01 => -2
@@ -1266,6 +1410,17 @@ struct ToStartOfFiveMinutesImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToStartOfFiveMinutesExtendedImpl : ToStartOfFiveMinutesImpl
+{
+    static constexpr auto name = "toStartOfFiveMinutesExtended";
+    /// `toStartOfFiveMinutes` rounds a date-time down to the start of its five-minute interval. Without
+    /// widening it returns `DateTime` (`1970-01-01`..`2106-02-07`), which wraps for a `DateTime64`
+    /// (`1900-01-01`..`2299-12-31`) argument outside that range. For example,
+    /// `SELECT toStartOfFiveMinutes(toDateTime64('1969-12-31 23:57:30', 0, 'UTC'))` returns
+    /// `2106-02-07 06:23:16`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
+};
+
 struct ToStartOfTenMinutesImpl
 {
     static constexpr auto name = "toStartOfTenMinutes";
@@ -1310,6 +1465,17 @@ struct ToStartOfTenMinutesImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToStartOfTenMinutesExtendedImpl : ToStartOfTenMinutesImpl
+{
+    static constexpr auto name = "toStartOfTenMinutesExtended";
+    /// `toStartOfTenMinutes` rounds a date-time down to the start of its ten-minute interval. Without
+    /// widening it returns `DateTime` (`1970-01-01`..`2106-02-07`), which wraps for a `DateTime64`
+    /// (`1900-01-01`..`2299-12-31`) argument outside that range. For example,
+    /// `SELECT toStartOfTenMinutes(toDateTime64('1969-12-31 23:55:30', 0, 'UTC'))` returns
+    /// `2106-02-07 06:18:16`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
+};
+
 struct ToStartOfFifteenMinutesImpl
 {
     static constexpr auto name = "toStartOfFifteenMinutes";
@@ -1352,6 +1518,17 @@ struct ToStartOfFifteenMinutesImpl
     }
 
     using FactorTransform = ZeroTransform;
+};
+
+struct ToStartOfFifteenMinutesExtendedImpl : ToStartOfFifteenMinutesImpl
+{
+    static constexpr auto name = "toStartOfFifteenMinutesExtended";
+    /// `toStartOfFifteenMinutes` rounds a date-time down to the start of its fifteen-minute interval. Without
+    /// widening it returns `DateTime` (`1970-01-01`..`2106-02-07`), which wraps for a `DateTime64`
+    /// (`1900-01-01`..`2299-12-31`) argument outside that range. For example,
+    /// `SELECT toStartOfFifteenMinutes(toDateTime64('1969-12-31 23:50:30', 0, 'UTC'))` returns
+    /// `2106-02-07 06:13:16`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
 };
 
 /// Round to start of half-an-hour length interval with unspecified offset. This transform is specific for Metrica web analytics system.
@@ -1461,6 +1638,16 @@ struct ToStartOfHourImpl
     }
 
     using FactorTransform = ZeroTransform;
+};
+
+struct ToStartOfHourExtendedImpl : ToStartOfHourImpl
+{
+    static constexpr auto name = "toStartOfHourExtended";
+    /// `toStartOfHour` rounds a date-time down to the start of the hour. Without widening it returns
+    /// `DateTime` (`1970-01-01`..`2106-02-07`), which wraps for a `DateTime64` (`1900-01-01`..`2299-12-31`)
+    /// argument outside that range. For example,
+    /// `SELECT toStartOfHour(toDateTime64('1969-12-31 23:30:00', 0, 'UTC'))` returns `2106-02-07 05:28:16`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
 };
 
 struct ToYearImpl
@@ -2292,6 +2479,11 @@ struct ToRelativeWeekNumImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToRelativeWeekNumExtendedImpl : ToRelativeWeekNumImpl<ResultPrecision::Extended>
+{
+    static constexpr auto name = "toRelativeWeekNumExtended";
+};
+
 template <ResultPrecision precision_>
 struct ToRelativeDayNumImpl
 {
@@ -2322,6 +2514,11 @@ struct ToRelativeDayNumImpl
     static constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
+};
+
+struct ToRelativeDayNumExtendedImpl : ToRelativeDayNumImpl<ResultPrecision::Extended>
+{
+    static constexpr auto name = "toRelativeDayNumExtended";
 };
 
 template <ResultPrecision precision_>
@@ -2362,6 +2559,11 @@ struct ToRelativeHourNumImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToRelativeHourNumExtendedImpl : ToRelativeHourNumImpl<ResultPrecision::Extended>
+{
+    static constexpr auto name = "toRelativeHourNumExtended";
+};
+
 template <ResultPrecision precision_>
 struct ToRelativeMinuteNumImpl
 {
@@ -2394,6 +2596,11 @@ struct ToRelativeMinuteNumImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToRelativeMinuteNumExtendedImpl : ToRelativeMinuteNumImpl<ResultPrecision::Extended>
+{
+    static constexpr auto name = "toRelativeMinuteNumExtended";
+};
+
 template <ResultPrecision precision_>
 struct ToRelativeSecondNumImpl
 {
@@ -2414,13 +2621,21 @@ struct ToRelativeSecondNumImpl
         else
             return static_cast<UInt32>(std::clamp<Int64>(time_zone.fromDayNum(ExtendedDayNum(d)), 0, std::numeric_limits<UInt32>::max()));
     }
-    static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static auto execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)));
+        if constexpr (precision_ == ResultPrecision::Extended)
+            return static_cast<Int64>(time_zone.fromDayNum(DayNum(d)));
+        else
+            return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)));
     }
     static constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
+};
+
+struct ToRelativeSecondNumExtendedImpl : ToRelativeSecondNumImpl<ResultPrecision::Extended>
+{
+    static constexpr auto name = "toRelativeSecondNumExtended";
 };
 
 template <Int64 scale_multiplier>
@@ -2571,13 +2786,7 @@ struct ToDateTimeComponentsImpl
 
     static DateTimeComponentsWithFractionalPart execute(const DateTime64 & t, const DateTime64::NativeType scale_multiplier, const DateLUTImpl & time_zone)
     {
-        auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
-
-        if (t.value < 0 && components.fractional)
-        {
-            components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
-            --components.whole;
-        }
+        const auto components = DecimalUtils::splitWithScaleMultiplierFloor(t, scale_multiplier);
 
         // Normalize the dividers between microseconds and nanoseconds w.r.t. the scale.
         Int64 microsecond_divider = (millisecond_multiplier * scale_multiplier) / microsecond_multiplier;
