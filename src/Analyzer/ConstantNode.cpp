@@ -291,21 +291,33 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     if (options.use_source_expression_for_constants && source_expression)
         return source_expression->toAST(options);
 
-    if (!options.add_cast_for_constants)
-        return getCachedAST(from_column);
-
     const auto & constant_value_type = constant_value.getType();
 
     /// Decimal constants (including decimals nested in Array/Tuple/Map) have no exact literal syntax:
     /// a bare numeric literal is re-parsed as Float64 on the receiving side and rounds. We rebuild
     /// the literal from the same field used by the cast path below, upgrading every decimal leaf to
-    /// an exact String -> Decimal cast, then cast the whole value to the final type. The field is
-    /// produced by getFieldFromColumnForASTLiteral, which already renders DateTime64 and Variant
-    /// values in their own exact representation, so only the lossy decimal leaves are changed.
-    if (const auto literal_field = getFieldFromColumnForASTLiteral(constant_value.getColumn(), 0, constant_value_type);
-        fieldContainsDecimal(literal_field))
-        return makeASTFunction(
-            "_CAST", fieldToExactLiteralAST(literal_field), make_intrusive<ASTLiteral>(constant_value_type->getName()));
+    /// an exact String -> Decimal cast. The field is produced by getFieldFromColumnForASTLiteral,
+    /// which already renders DateTime64 and Variant values in their own exact representation, so only
+    /// the lossy decimal leaves are changed.
+    /// This must run even when add_cast_for_constants is false (e.g. the RHS of IN/notIn, where casts
+    /// are suppressed): a bare decimal in the set would be parsed as Float64 on the shard and round,
+    /// so an OR-to-IN rewrite over high-scale Decimal values could filter on rounded constants.
+    /// The type name mentions "Decimal" iff the value can contain a decimal leaf, so use it as a cheap
+    /// guard to avoid materializing the field for the common decimal-free constants.
+    if (constant_value_type->getName().find("Decimal") != String::npos)
+    {
+        if (auto literal_field = getFieldFromColumnForASTLiteral(constant_value.getColumn(), 0, constant_value_type);
+            fieldContainsDecimal(literal_field))
+        {
+            auto exact_ast = fieldToExactLiteralAST(literal_field);
+            if (!options.add_cast_for_constants)
+                return exact_ast;
+            return makeASTFunction("_CAST", std::move(exact_ast), make_intrusive<ASTLiteral>(constant_value_type->getName()));
+        }
+    }
+
+    if (!options.add_cast_for_constants)
+        return getCachedAST(from_column);
 
     // Add cast if constant was created as a result of constant folding.
     // Constant folding may lead to type transformation and literal on shard

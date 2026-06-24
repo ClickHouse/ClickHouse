@@ -49,3 +49,18 @@ SELECT DISTINCT materialize(map('k', toDecimal64('123456789012.34567', 5))) AS c
 FROM remote('127.0.0.{1,2}', system.one);
 
 DROP TABLE ts_data_94612;
+
+-- An OR chain of >= 3 equalities is rewritten to IN, whose RHS set is a constant with casts
+-- suppressed. The high-scale Decimal values in the set must still reach the shard exactly,
+-- otherwise the shard builds the set from rounded Float64 values and drops the matching row.
+DROP TABLE IF EXISTS dec_or_in;
+CREATE TABLE dec_or_in (d Decimal64(5)) ENGINE = MergeTree ORDER BY d;
+INSERT INTO dec_or_in VALUES (123456789012.34567);
+
+SELECT count()
+FROM remote('127.0.0.{1,2}', currentDatabase(), dec_or_in)
+WHERE d = toDecimal64('123456789012.34567', 5)
+   OR d = toDecimal64('11111111111.11111', 5)
+   OR d = toDecimal64('22222222222.22222', 5);
+
+DROP TABLE dec_or_in;
