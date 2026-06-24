@@ -14,8 +14,6 @@
 
 namespace DB
 {
-enum class InsertDeduplicationVersions : uint8_t;
-
 class InsertDependenciesBuilder;
 using InsertDependenciesBuilderConstPtr = std::shared_ptr<const InsertDependenciesBuilder>;
 
