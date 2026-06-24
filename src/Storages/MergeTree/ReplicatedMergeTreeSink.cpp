@@ -472,9 +472,6 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
 
                 storage.deduplication_hashes_cache.triggerCacheUpdate();
 
-                if (is_async_insert)
-                    storage.async_block_ids_cache.triggerCacheUpdate();
-
                 {
                     ProfileEventTimeIncrement<Microseconds> duplication_elapsed(ProfileEvents::DuplicationElapsedMicroseconds);
 
