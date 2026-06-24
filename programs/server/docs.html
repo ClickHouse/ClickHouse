@@ -946,16 +946,22 @@
         const map = new Map();
         try {
             const response = await fetch(buildURL(), { method: 'POST', body: 'SELECT name, type FROM system.documentation' });
-            if (response.ok) {
-                for (const line of (await response.text()).split('\n')) {
-                    if (!line) continue;
-                    const row = JSON.parse(line);
-                    const key = row.name.toLowerCase();
-                    if (!map.has(key)) map.set(key, row);
-                }
+            if (!response.ok) {
+                /// Do not cache on failure. On a server that requires credentials, the initial
+                /// background call can run before the user enters them; returning an empty map for
+                /// just this call (while leaving `all_names` null) lets a later call retry once the
+                /// credentials are available, instead of permanently poisoning the cross-link cache.
+                return map;
+            }
+            for (const line of (await response.text()).split('\n')) {
+                if (!line) continue;
+                const row = JSON.parse(line);
+                const key = row.name.toLowerCase();
+                if (!map.has(key)) map.set(key, row);
             }
         } catch (e) {
             console.log(e); /// Without this map, links simply fall back to clickhouse.com/docs.
+            return map; /// Network error: same as above — do not cache, retry on the next call.
         }
         all_names = map;
         return all_names;
@@ -976,6 +982,13 @@
             replaceURL();
         }, 120);
     });
+
+    /// Changing the connection (server URL, user, or password) invalidates the cross-link name
+    /// cache, so it is rebuilt against the new connection on the next search instead of keeping a
+    /// map (possibly empty) fetched with the previous credentials.
+    for (const $input of [$url, $user, $password]) {
+        $input.addEventListener('change', () => { all_names = null; });
+    }
 
     /// Up/Down arrows navigate the list of matches, regardless of where focus is (except when the
     /// user is typing in the connection inputs).
