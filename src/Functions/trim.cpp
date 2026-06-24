@@ -115,10 +115,9 @@ private:
     const bool trim_left;
     const bool trim_right;
 
-    /// Default trim: strip only ASCII spaces. The hot path (e.g. ltrim of decimal
-    /// strings) has no leading space, so a scalar first-byte check beats the SIMD
-    /// symbol scan for short strings. Output capacity is reserved once up front and
-    /// the final size is set after the loop, so there is no per-row reallocation.
+    /// Default trim strips ASCII spaces only. Rows that need no trimming are flushed in
+    /// one batched memcpy; the batch breaks only at a row that actually needs trimming.
+    /// Output capacity is reserved once and sized at the end (no per-row reallocation).
     void vectorSpace(
         const ColumnString::Chars & input_data,
         const ColumnString::Offsets & input_offsets,
@@ -132,28 +131,68 @@ private:
         const bool do_trim_left = trim_left;
         const bool do_trim_right = trim_right;
 
+        const UInt8 * input_begin = input_data.data();
         UInt8 * res_begin = res_data.data();
+
         size_t prev_offset = 0;
         size_t res_offset = 0;
+
+        /// A pending run of consecutive rows that need no trimming, copied in one memcpy.
+        bool batch_open = false;
+        size_t batch_input_begin = 0;
+        size_t batch_res_begin = 0;
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const UInt8 * begin = input_data.data() + prev_offset;
-            const UInt8 * end = input_data.data() + input_offsets[i];
+            const UInt8 * begin = input_begin + prev_offset;
+            const UInt8 * end = input_begin + input_offsets[i];
+            const size_t size = input_offsets[i] - prev_offset;
 
-            if (do_trim_left)
-                while (begin < end && *begin == ' ')
-                    ++begin;
-            if (do_trim_right)
-                while (end > begin && end[-1] == ' ')
-                    --end;
+            const bool trim_this_left = do_trim_left && begin < end && *begin == ' ';
+            const bool trim_this_right = do_trim_right && end > begin && end[-1] == ' ';
 
-            const size_t length = end - begin;
-            memcpySmallAllowReadWriteOverflow15(res_begin + res_offset, begin, length);
-            res_offset += length;
+            if (!trim_this_left && !trim_this_right)
+            {
+                /// Nothing to trim: extend the current run, defer the copy.
+                if (!batch_open)
+                {
+                    batch_open = true;
+                    batch_input_begin = prev_offset;
+                    batch_res_begin = res_offset;
+                }
+                res_offset += size;
+            }
+            else
+            {
+                /// Copy the accumulated run, then trim and copy this row on its own.
+                if (batch_open)
+                {
+                    memcpy(res_begin + batch_res_begin, input_begin + batch_input_begin, res_offset - batch_res_begin);
+                    batch_open = false;
+                }
+
+                if (do_trim_left)
+                {
+                    while (begin < end && *begin == ' ')
+                        ++begin;
+                }
+                if (do_trim_right)
+                {
+                    while (end > begin && end[-1] == ' ')
+                        --end;
+                }
+
+                const size_t length = end - begin;
+                memcpySmallAllowReadWriteOverflow15(res_begin + res_offset, begin, length);
+                res_offset += length;
+            }
 
             res_offsets[i] = res_offset;
             prev_offset = input_offsets[i];
         }
+
+        if (batch_open)
+            memcpy(res_begin + batch_res_begin, input_begin + batch_input_begin, res_offset - batch_res_begin);
 
         res_data.resize_exact(res_offset);
     }
@@ -183,11 +222,15 @@ private:
             const UInt8 * end = input_data.data() + input_offsets[i];
 
             if (do_trim_left)
+            {
                 while (begin < end && table[*begin])
                     ++begin;
+            }
             if (do_trim_right)
+            {
                 while (end > begin && table[end[-1]])
                     --end;
+            }
 
             const size_t length = end - begin;
             memcpySmallAllowReadWriteOverflow15(res_begin + res_offset, begin, length);
@@ -226,20 +269,28 @@ private:
             {
                 const TrimCharsTable & table = *custom_trim_characters;
                 if (do_trim_left)
+                {
                     while (begin < end && table[*begin])
                         ++begin;
+                }
                 if (do_trim_right)
+                {
                     while (end > begin && table[end[-1]])
                         --end;
+                }
             }
             else
             {
                 if (do_trim_left)
+                {
                     while (begin < end && *begin == ' ')
                         ++begin;
+                }
                 if (do_trim_right)
+                {
                     while (end > begin && end[-1] == ' ')
                         --end;
+                }
             }
 
             const size_t length = end - begin;
