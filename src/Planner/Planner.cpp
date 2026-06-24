@@ -2109,9 +2109,7 @@ void Planner::buildPlanForQueryNode()
 
     QueryResultCachePtr query_result_cache = planner_context->getMutableQueryContext()->getQueryResultCache();
     bool can_use_query_result_cache = query_context->getCanUseQueryResultCache();
-    /// The AST is only needed to build the query result cache key (read below and write at the end of
-    /// this function). It is materialized lazily inside the `local_can_use_cache` block, so a query
-    /// that does not use the cache never pays for `queryNodeToSelectQuery`.
+    /// The AST is only needed for the query result cache key, so materialize it lazily and let non-caching queries skip the rebuild.
     ASTPtr ast;
 
     /// Determine if the query result cache should be used for this query node (with `is_subquery = true` key).

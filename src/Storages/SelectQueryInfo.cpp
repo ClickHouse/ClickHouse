@@ -41,9 +41,7 @@ bool SelectQueryInfo::isFinal() const
     if (table_expression_modifiers)
         return table_expression_modifiers->hasFinal();
 
-    /// On the analyzer path FINAL is carried by `table_expression_modifiers` (the AST's FINAL is derived
-    /// from them in `addTableExpressionInSelectQuery`), so their absence means no FINAL. Avoid
-    /// materializing the lazy AST here; only the legacy path (no `query_tree`) encodes FINAL in the AST.
+    /// Analyzer path carries FINAL in `table_expression_modifiers`. Only the legacy path (no `query_tree`) needs the AST.
     if (query_tree)
         return false;
 

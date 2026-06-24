@@ -557,8 +557,7 @@ SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const 
 {
     SelectQueryInfo select_query_info;
     select_query_info.query_tree = query_tree;
-    /// Defer `queryNodeToSelectQuery(query_tree)` (an expensive full AST rebuild) until the AST is
-    /// actually needed. `getQuery` materializes it on first access from `query_tree`.
+    /// Defer the expensive `queryNodeToSelectQuery` AST rebuild. `getQuery` materializes it lazily on first access.
     select_query_info.setLazyQuery([query_tree] { return queryNodeToSelectQuery(query_tree); });
     select_query_info.planner_context = planner_context;
     return select_query_info;

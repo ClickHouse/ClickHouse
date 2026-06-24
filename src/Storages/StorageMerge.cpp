@@ -1277,10 +1277,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         /// However, it's needed for Materialized...SQL and it's unlikely that someone will use it with Merge tables.
         modified_select.setFinal();
 
-        /// Also force FINAL via `table_expression_modifiers`, the canonical analyzer source of truth (see
-        /// the `needRewriteQueryWithFinal` handling in `PlannerJoinTree`). `SelectQueryInfo::isFinal`
-        /// answers from the modifiers on the analyzer path and no longer consults the AST, so the AST-only
-        /// `setFinal()` above would otherwise be invisible to the nested read.
+        /// Also force FINAL via `table_expression_modifiers` (the analyzer source of truth), since `isFinal` no longer reads the AST.
         if (modified_query_info.table_expression_modifiers)
             modified_query_info.table_expression_modifiers = TableExpressionModifiers(
                 /*has_final=*/ true,
