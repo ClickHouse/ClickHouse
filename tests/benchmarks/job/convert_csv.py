@@ -100,8 +100,14 @@ def main() -> int:
             pending = None
     if pending is not None:
         fields, complete = parse_record(pending)
-        if fields is not None:
-            writer.writerow(fields)
+        if not complete:
+            sys.stderr.write(
+                "error: incomplete final record at end of input "
+                "(unterminated quoted field or trailing escape); "
+                "input is likely truncated or corrupted\n"
+            )
+            return 1
+        writer.writerow(fields)
     return 0
 
 
