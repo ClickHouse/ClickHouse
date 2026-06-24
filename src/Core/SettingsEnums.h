@@ -363,6 +363,14 @@ enum class DeduplicateMergeProjectionMode : uint8_t
 
 DECLARE_SETTING_ENUM(DeduplicateMergeProjectionMode)
 
+enum class ProjectionStorageFormat : uint8_t
+{
+    LEGACY_NESTED,
+    FLAT,
+};
+
+DECLARE_SETTING_ENUM(ProjectionStorageFormat)
+
 enum class AlterColumnSecondaryIndexMode : uint8_t
 {
     THROW,

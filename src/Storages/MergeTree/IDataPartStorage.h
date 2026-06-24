@@ -56,6 +56,9 @@ public:
 
 using DataPartStorageIteratorPtr = std::unique_ptr<IDataPartStorageIterator>;
 
+class IDataPartProjectionIterator;
+using DataPartProjectionIteratorPtr = std::unique_ptr<IDataPartProjectionIterator>;
+
 struct MergeTreeDataPartChecksums;
 
 class IReservation;
@@ -100,6 +103,18 @@ public:
 
     virtual MergeTreeDataPartStorageType getType() const = 0;
 
+    /// On-disk layout of projection sub-parts
+    ///   LEGACY_NESTED:   <parts_root>/<part_dir>/<projection>.proj/...
+    ///   FLAT:            <parts_root>/<part_dir>.<projection>.proj/...
+    enum class ProjectionStorageFormat : uint8_t
+    {
+        NONE,
+        LEGACY_NESTED,
+        FLAT,
+    };
+
+    virtual ProjectionStorageFormat getProjectionStorageFormat() const { return ProjectionStorageFormat::LEGACY_NESTED; }
+
     /// Methods to get path components of a data part.
     virtual std::string getFullPath() const = 0;         /// '/var/lib/clickhouse/data/database/table/moving/all_1_5_1'
     virtual std::string getRelativePath() const = 0;     ///                          'database/table/moving/all_1_5_1'
@@ -109,8 +124,13 @@ public:
     /// Can add it if needed                             ///                          'database/table/moving'
     /// virtual std::string getRelativeRootPath() const = 0;
 
-    /// Get a storage for projection.
+    /// Checks whether part has projection
+    virtual bool hasProjection(const std::string & name) = 0;
+
+    /// Get mutable projection
     virtual std::shared_ptr<IDataPartStorage> getProjection(const std::string & name, bool use_parent_transaction = true) = 0; // NOLINT
+
+    /// Get const projection
     virtual std::shared_ptr<const IDataPartStorage> getProjection(const std::string & name) const = 0;
 
     /// Part directory exists.
@@ -125,6 +145,10 @@ public:
 
     /// Iterate part directory. Iteration in subdirectory is not needed yet.
     virtual DataPartStorageIteratorPtr iterate() const = 0;
+
+    /// Iterate this part's projection sub-part dirs across layouts (nested children + flat siblings).
+    /// No default on `include_temp`: clang-tidy `google-default-arguments` forbids defaults on virtuals.
+    virtual DataPartProjectionIteratorPtr iterateProjections(bool include_temp) const = 0;
 
     /// Get metadata for a file inside path dir.
     virtual Poco::Timestamp getFileLastModified(const std::string & file_name) const = 0;
@@ -301,6 +325,7 @@ public:
     virtual void changeRootPath(const std::string & from_root, const std::string & to_root) = 0;
 
     virtual void createDirectories() = 0;
+    /// Creates the on-disk directory for a projection sub-part
     virtual void createProjection(const std::string & name) = 0;
 
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
@@ -363,6 +388,25 @@ public:
 
 using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;
 using MutableDataPartStoragePtr = std::shared_ptr<IDataPartStorage>;
+
+/// Cursor over a part's projection sub-part directories, normalized across on-disk layouts
+class IDataPartProjectionIterator
+{
+public:
+    virtual void next() = 0;
+    virtual bool isValid() const = 0;
+
+    /// Logical, layout-independent name (e.g. "p.proj")
+    virtual std::string name() const = 0;
+    /// On-disk basename (flat: "<part_dir>.p.proj")
+    virtual std::string realName() const = 0;
+    /// Dir on disk is rootPath()/realName()
+    virtual std::string rootPath() const = 0;
+    virtual IDataPartStorage::ProjectionStorageFormat format() const = 0;
+    virtual bool isTemp() const = 0;
+
+    virtual ~IDataPartProjectionIterator() = default;
+};
 
 /// A holder that encapsulates data part storage and
 /// gives access to const storage from const methods

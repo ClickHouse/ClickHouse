@@ -1259,6 +1259,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
+            {"projection_storage_format", "legacy_nested", "legacy_nested", "New setting to control the on-disk storage format of projection sub-parts."},
             {"allow_experimental_text_index_positions", false, false, "New setting"},
         });
 
