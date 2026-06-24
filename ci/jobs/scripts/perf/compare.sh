@@ -27,6 +27,12 @@ RIGHT_SERVER_INTERSERVER_PORT=19009
 #                 _SC_NPROCESSORS_ONLN/_SC_NPROCESSORS_CONF/sched_getaffinity
 export MALLOC_CONF="abort_conf:true,abort:true,narenas:$(nproc --all)"
 
+# jemalloc allocation sampling rate (lg2 of the average byte interval between
+# samples) for the per-query profiler used in the dedicated profile runs.
+# Lower than the 512 KiB (19) default: we profile single queries in isolation,
+# so we need a denser profile to get useful JemallocSample flamegraphs.
+JEMALLOC_PROFILER_SAMPLING_RATE=16
+
 function wait_for_server # port, pid
 {
     for _ in {1..60}
@@ -155,6 +161,7 @@ function restart
         --keeper_server.storage_path left/coordination
         --zookeeper.node.port $LEFT_SERVER_KEEPER_PORT
         --interserver_http_port $LEFT_SERVER_INTERSERVER_PORT
+        --jemalloc_profiler_sampling_rate $JEMALLOC_PROFILER_SAMPLING_RATE
     )
     left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
     left_pid=$!
@@ -175,6 +182,7 @@ function restart
         --keeper_server.storage_path right/coordination
         --zookeeper.node.port $RIGHT_SERVER_KEEPER_PORT
         --interserver_http_port $RIGHT_SERVER_INTERSERVER_PORT
+        --jemalloc_profiler_sampling_rate $JEMALLOC_PROFILER_SAMPLING_RATE
     )
     right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
     right_pid=$!
@@ -1049,9 +1057,13 @@ create table stacks engine File(TSV, 'report/stacks.$version.tsv') as
             ),
             ';'
         ) readable_trace,
-        count() c
+        -- Allocation samples are weighted by bytes; CPU/Real samples by count.
+        multiIf(trace_type in ('MemorySample', 'JemallocSample'), toUInt64(sum(size)), count()) c
     from trace_log
     join unstable_query_runs using query_id
+    -- Drop deallocation samples: their stack is the free site, not the
+    -- allocation site, so they cannot be folded with the matching allocation.
+    where size >= 0
     group by test, query_index, trace_type, trace
     order by test, query_index, trace_type, trace
     ;
