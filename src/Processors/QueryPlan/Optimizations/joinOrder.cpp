@@ -1130,7 +1130,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
     const auto & dptable = checker.getDPTable();
 
     /// a. If the join graph is too complex we break early
-    /// b. The full set is assembled only if the join graph is connected. When it is not — e.g.
+    /// b. The full set is assembled only if the join graph is connected. When it is not e.g.
     /// cross products, or predicates that reference a single relation or a constant and thus
     /// create no binary edge (`... LEFT JOIN t ON t.x = 5`): DPsub cannot stitch the
     /// disconnected components, so the full-set entry is missing (or was never given a join)
