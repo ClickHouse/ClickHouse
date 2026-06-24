@@ -85,17 +85,12 @@ void OwnSplitChannel::log(Poco::Message && msg)
 namespace
 {
 
-/// How long the consumer threads sleep when their queue is empty before checking it again.
-/// The queues serve the logging subsystem, which is rarely silent for long, so we expect them to be
-/// non-empty most of the time. Therefore, instead of futex-based waiting (which would also make pushing
-/// into an empty queue more expensive for producers), the consumers just poll the queues, sleeping
-/// in between when there is nothing to do.
+/// Consumers poll their queues instead of futex-waiting, which keeps pushing into an empty queue cheap
+/// for producers. This is how long a consumer sleeps between polls while its queue is empty.
 constexpr size_t sleep_on_empty_queue_ms = 10;
 
-/// Dequeues a single message for a flush. Returns an empty notification if the queue is empty.
-/// If the message at the head of the queue is still being written by a producer, waits for it to appear:
-/// a message whose enqueue had completed must not be skipped by the flush (it could be hidden behind
-/// such an unfinished slot).
+/// Pops one message for a flush, or returns null on an empty queue. Waits out a head slot still being
+/// written by a producer, so a completed enqueue is never skipped behind an unfinished slot.
 AsyncLogMessagePtr dequeueMessageForFlush(NonblockingBoundedQueue<AsyncLogMessagePtr> & messages)
 {
     AsyncLogMessagePtr message;
@@ -103,7 +98,7 @@ AsyncLogMessagePtr dequeueMessageForFlush(NonblockingBoundedQueue<AsyncLogMessag
     {
         if (messages.size() == 0)
             return nullptr;
-        sleepForMilliseconds(1);
+        sleepForMilliseconds(10);
     }
     return message;
 }
@@ -291,8 +286,7 @@ void OwnAsyncSplitChannel::close()
     is_open = false;
     try
     {
-        /// The consumer threads poll the queues (sleeping when there is nothing to do), so they will notice
-        /// that the channel is closed on their own, flush whatever is left in the queues and exit.
+        /// The polling consumers see is_open == false on their own, flush what is left, and exit.
         if (text_log_thread)
         {
             text_log_thread->join();
@@ -341,7 +335,7 @@ public:
 namespace
 {
 
-/// Builds the warning message about previously dropped messages, to be reported in the channel which dropped them.
+/// Builds the "dropped N messages" warning, reported in the channel that dropped them.
 AsyncLogMessagePtr makeDroppedMessagesWarning(size_t dropped)
 {
     auto warning = std::make_shared<AsyncLogMessage>(Poco::Message(
@@ -360,8 +354,7 @@ void OwnAsyncSplitChannel::enqueueMessage(LogQueue & queue, AsyncLogMessagePtr m
 
     if (unlikely(!queue.messages.tryPush(message)))
     {
-        /// The queue is full: the consumer doesn't keep up. Drop the message and remember the fact;
-        /// the consumer will report the dropped messages with a warning once it catches up.
+        /// Queue full: drop the message and count it; the consumer warns about drops once it catches up.
         queue.dropped_messages.fetch_add(1, std::memory_order_relaxed);
         ProfileEvents::incrementNoTrace(queue.event_on_dropped_message);
     }
@@ -427,14 +420,11 @@ void OwnAsyncSplitChannel::flushTextLogs()
     if (!text_log_locked)
         return;
 
-    /// If there is a query flushing already we must wait until it's done. Otherwise we will receive the notification to wake up
-    /// once the previous flush is finished, which is not what we need
-    /// This is not ideal and we could use some kind of flush id to wait only until the point when you entered this function
-    /// But notice that even if you call in many threads, they will all wait and be processed together in the same block once this is unlocked
+    /// Wait out any flush already in progress; otherwise we'd wake when that earlier flush ends, not ours.
+    /// Concurrent callers simply wait and get flushed together in the same block.
     text_log_flush_requested.wait(true, std::memory_order_seq_cst);
 
-    /// The async thread checks the flag between messages and when it wakes up from the sleep on an empty queue,
-    /// so it will notice the request on its own
+    /// The async thread checks this flag between messages and after each empty-queue sleep.
     text_log_flush_requested = true;
 
     /// Now we simply wait for the async thread to notify it has finished flushing
@@ -489,8 +479,7 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
 
     auto flush_queue = [&]()
     {
-        /// Process only the messages which were in the queue when the flush started,
-        /// so that concurrent producers cannot prolong the flush indefinitely
+        /// Only drain messages already queued when the flush started, so producers can't prolong it forever.
         size_t count = queue.messages.size();
         while (count-- > 0)
         {
@@ -512,11 +501,8 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
             }
             else
             {
-                /// The queue is empty: wait for new messages. Since we've fully caught up, this is also
-                /// the right moment to report the messages dropped during an overflow (if any): reporting
-                /// only here coalesces all drops of one overflow episode into a single warning which cannot
-                /// get ahead of the messages enqueued before it, and reporting cannot eat into the consumer
-                /// throughput while it is still behind.
+                /// Empty queue: sleep, then report any overflow drops. Reporting only once caught up
+                /// coalesces a whole overflow episode into one warning that can't jump ahead of real messages.
                 sleepForMilliseconds(sleep_on_empty_queue_ms);
                 report_dropped_messages();
             }
@@ -570,8 +556,7 @@ void OwnAsyncSplitChannel::runTextLog()
 
     auto flush_queue = [&](const std::shared_ptr<SystemLogQueue<TextLogElement>> & text_log_locked)
     {
-        /// Process only the messages which were in the queue when the flush started,
-        /// so that concurrent producers cannot prolong the flush indefinitely
+        /// Only drain messages already queued when the flush started, so producers can't prolong it forever.
         size_t count = text_log_queue.messages.size();
         while (count-- > 0)
         {
@@ -605,11 +590,8 @@ void OwnAsyncSplitChannel::runTextLog()
             }
             else
             {
-                /// The queue is empty: wait for new messages. Since we've fully caught up, this is also
-                /// the right moment to report the messages dropped during an overflow (if any): reporting
-                /// only here coalesces all drops of one overflow episode into a single warning which cannot
-                /// get ahead of the messages enqueued before it, and reporting cannot eat into the consumer
-                /// throughput while it is still behind.
+                /// Empty queue: sleep, then report any overflow drops. Reporting only once caught up
+                /// coalesces a whole overflow episode into one warning that can't jump ahead of real messages.
                 sleepForMilliseconds(sleep_on_empty_queue_ms);
                 report_dropped_messages(text_log_locked);
             }
@@ -625,8 +607,7 @@ void OwnAsyncSplitChannel::runTextLog()
 
     try
     {
-        /// We want to flush everything already in the queue before closing so all messages are logged,
-        /// and report the drops which were not reported yet
+        /// Flush everything still queued before closing, and report any drops not yet reported.
         auto text_log_locked = text_log.lock();
         if (!text_log_locked)
             return;

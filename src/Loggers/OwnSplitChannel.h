@@ -99,10 +99,9 @@ struct OwnRunnableForTextLog;
 class AsyncLogMessage;
 using AsyncLogMessagePtr = std::shared_ptr<AsyncLogMessage>;
 
-/// Same as OwnSplitChannel but it uses separate threads for logging.
-/// Note that it uses a separate thread per each different channel (including one for text_log) instead of using a common thread pool
-/// to ensure the order is kept
-/// Currently logging to the internalTextLogsQueue (TCP queue for --send-logs-level) is done synchronously when log is called
+/// Like OwnSplitChannel but logs on background threads: one per channel (plus one for text_log) rather
+/// than a shared pool, to preserve order. The internalTextLogsQueue (--send-logs-level TCP queue) is
+/// still written synchronously in log.
 class OwnAsyncSplitChannel final : public OwnSplitChannelBase, public boost::noncopyable
 {
 public:
@@ -133,9 +132,8 @@ public:
     AsyncLogQueueSizes getAsynchronousMetrics();
 
 private:
-    /// The message queue of one async logging channel: a lock-free bounded MPSC queue plus drop-on-overflow
-    /// accounting. Producers are the threads calling `log`, the single consumer is the background thread
-    /// passing the messages to the channel (or to the system.text_log queue).
+    /// One channel's queue: a lock-free bounded MPSC queue with drop-on-overflow accounting. Producers are
+    /// the `log` callers; the single consumer is the background thread feeding the channel (or text_log).
     struct LogQueue : boost::noncopyable
     {
         LogQueue(
@@ -148,13 +146,11 @@ private:
         {
         }
 
-        /// The capacity is fixed at construction (max_size rounded up to a power of two) and the slots are
-        /// preallocated; when the consumer doesn't keep up and the queue overflows, new messages are dropped.
+        /// Fixed power-of-two capacity, slots preallocated; new messages are dropped on overflow.
         NonblockingBoundedQueue<AsyncLogMessagePtr> messages;
         const ProfileEvents::Event & event_on_passed_message;
         const ProfileEvents::Event & event_on_dropped_message;
-        /// The number of messages dropped due to overflow so far. Incremented by the producers;
-        /// the consumer reports it with a warning message logged directly to the channel and resets it.
+        /// Overflow drops so far: incremented by producers, reported and reset by the consumer.
         std::atomic<size_t> dropped_messages = 0;
     };
 
@@ -173,8 +169,7 @@ private:
 
     /// system.text_log does not have a channel, but it's also async
     LogQueue text_log_queue;
-    /// Set by flushTextLogs to request the text log thread to flush the whole queue; the thread resets it
-    /// (and notifies the waiters) once done.
+    /// Set by flushTextLogs to request a full flush; the text log thread resets it and notifies waiters when done.
     std::atomic<bool> text_log_flush_requested = false;
     std::unique_ptr<Poco::Thread> text_log_thread;
     std::unique_ptr<OwnRunnableForTextLog> text_log_runnable;
