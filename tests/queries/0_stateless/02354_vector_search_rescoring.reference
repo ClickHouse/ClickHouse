@@ -10,6 +10,11 @@ _distance Float32
 -- Dont expect column "_distance" in EXPLAIN.
 Test exact row-positioning filters before ExpressionStep
 5	0
+Test exact row-positioning with multiple vector index granules
+2
+3
+4
+5
 Test "SELECT id, vec" without and with rescoring
 5	[0,2]
 6	[0,2.1]
