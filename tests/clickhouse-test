@@ -1713,16 +1713,33 @@ class MergeTreeSettingsRandomizer:
         "map_buckets_coefficient": lambda: round(random.uniform(0.5, 2.0), 2),
         "propagate_types_serialization_versions_to_nested_types": lambda: random.randint(0, 1),
         "compress_per_column_in_compact_parts": lambda: random.randint(0, 1),
+        "packed_skip_index_max_bytes": lambda: random.choice(
+            [0, 100, 1024, 1024 * 1024, 10 * 1024 * 1024]
+        ),
     }
 
     @staticmethod
     def get_random_settings(args):
         random_settings = {}
+        # Tiny granules multiply the number of marks per part (marks ~ rows /
+        # index_granularity), which is disproportionately expensive on slow
+        # builds and can turn a few-second test into minutes. Raise the lower
+        # bounds for index_granularity / index_granularity_bytes there.
+        slow_build = (
+            any(flag in args.build_flags for flag in BuildFlags.SANITIZERS)
+            or BuildFlags.DEBUG in args.build_flags
+            or BuildFlags.WITH_COVERAGE in args.build_flags
+        )
         for setting, generator in MergeTreeSettingsRandomizer.settings.items():
             if setting in args.changed_merge_tree_settings:
                 continue
 
-            value = generator()
+            if slow_build and setting == "index_granularity":
+                value = random.randint(100, 65536)
+            elif slow_build and setting == "index_granularity_bytes":
+                value = random.randint(100 * 1024, 30 * 1024 * 1024)
+            else:
+                value = generator()
             if type(value) == str and value == "":
                 continue
 
@@ -6752,36 +6769,17 @@ if __name__ == "__main__":
     else:
         args.client_options_query_str = ""
 
-    if args.llvm_coverage:
-        # Pin the seeds of random-by-default mechanisms so the set of branches
-        # exercised inside the server is stable run-to-run. Without this the
-        # LLVM coverage report flickers on files reachable from these injection
-        # points (keeper fault injection, etc.).
-        # `--allow_repeated_settings` is already appended later by the per-test
-        # composition, so a test that explicitly sets one of these still wins.
-        coverage_pinned_settings = {
-            "backup_restore_keeper_fault_injection_seed": 1,
-            "insert_keeper_fault_injection_seed": 1,
-        }
-        coverage_pinned_cli = " ".join(
-            f"--{k}={v}" for k, v in coverage_pinned_settings.items()
-        )
-        coverage_pinned_url = "&".join(
-            f"{k}={v}" for k, v in coverage_pinned_settings.items()
-        )
-
-        existing_client_opt = os.environ.get("CLICKHOUSE_CLIENT_OPT", "").rstrip()
-        os.environ["CLICKHOUSE_CLIENT_OPT"] = (
-            f"{existing_client_opt} {coverage_pinned_cli} ".lstrip()
-        )
-
-        existing_url_params = os.environ.get("CLICKHOUSE_URL_PARAMS", "").rstrip("&")
-        if existing_url_params:
-            os.environ["CLICKHOUSE_URL_PARAMS"] = (
-                f"{existing_url_params}&{coverage_pinned_url}"
-            )
-        else:
-            os.environ["CLICKHOUSE_URL_PARAMS"] = coverage_pinned_url
+    # NOTE: The seeds of random-by-default mechanisms (keeper fault injection,
+    # etc.) are pinned under LLVM coverage so the set of branches exercised
+    # inside the server is stable run-to-run. They are pinned server-side, in
+    # the `default` profile (see `tests/config/users.d/coverage_fault_injection_seeds.xml`,
+    # installed by `tests/config/install.sh --llvm-coverage`), rather than as
+    # per-query client/URL settings. Injecting them per query made every
+    # statement re-apply them, which broke tests that switch to readonly mode
+    # mid-session (e.g. `01187_set_profile_as_setting`, `00543_...`): the
+    # follow-up statement failed with "Cannot modify '...' setting in readonly
+    # mode" instead of the expected behaviour. As session defaults they are not
+    # re-applied per statement, so readonly tests are unaffected.
 
     if args.jobs is None:
         args.jobs = multiprocessing.cpu_count()
