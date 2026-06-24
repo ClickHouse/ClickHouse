@@ -491,6 +491,80 @@ TEST_F(ReaderExecutorCacheChain, GeneralizedPlanFoldsStraddlingHit)
     }
 }
 
+/// Stage 3: the generalized plan span is independent of `read_extent_end`, so advancing
+/// the extent per "mark range" does NOT rebuild the plan (the cursor stays inside the
+/// one plan that already reaches the file end). The legacy plan, sized by the extent,
+/// rebuilds on every advance. Both serve identical bytes -- proving serving across the
+/// reused plan (and its folded tail) is correct.
+TEST_F(ReaderExecutorCacheChain, GeneralizedPlanReusedAcrossExtentAdvances)
+{
+    constexpr size_t block_size = 16;
+    constexpr size_t file_size = 16 * block_size; /// 256
+    constexpr size_t mark = 32;                   /// per-"mark-range" extent step
+
+    const String content = makePattern(file_size);
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_size);
+
+    auto page_cache = makePageCache();
+    auto page_provider = makePageProvider(page_cache, "obj", block_size, file_size);
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(page_provider);
+
+    /// Warm the page cache over the whole file.
+    {
+        ReaderExecutor::Options o;
+        o.window_size = block_size;
+        o.min_bytes_for_seek = 0;
+        o.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+        ReaderExecutor warm(source, objects, caches, o);
+        EXPECT_EQ(drainAll(warm), content);
+    }
+
+    /// Scan the file in `mark`-sized "mark ranges": advance the extent, then read up to
+    /// it, repeat. Returns the bytes read and the number of plan (re)builds.
+    auto scan = [&](bool generalized) -> std::pair<String, UInt64>
+    {
+        ReaderExecutor::Options o;
+        o.window_size = file_size; /// base request covers the whole (small) file
+        o.min_bytes_for_seek = 0;
+        o.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+        o.generalized_plan_window = generalized;
+        o.plan_look_ahead_max_window = file_size;
+        ReaderExecutor ex(source, objects, caches, o);
+
+        String out;
+        for (size_t extent = mark;; extent = std::min(extent + mark, file_size))
+        {
+            ex.setReadExtent(extent);
+            while (out.size() < extent)
+            {
+                auto chain = ex.readNextWindow();
+                if (chain.empty())
+                    break;
+                for (const auto & node : chain.getNodes())
+                    out.append(node.data(), node.size);
+            }
+            if (extent >= file_size)
+                break;
+        }
+        return {out, inspect(ex).observationCount()};
+    };
+
+    const auto [legacy_out, legacy_obs] = scan(false);
+    const auto [gen_out, gen_obs] = scan(true);
+
+    EXPECT_EQ(legacy_out, content);
+    EXPECT_EQ(gen_out, content)
+        << "generalized serves identical bytes across extent advances";
+    EXPECT_EQ(gen_obs, 1u)
+        << "generalized plans the whole file once and reuses it across every extent advance";
+    EXPECT_LT(gen_obs, legacy_obs)
+        << "legacy rebuilds the plan per extent advance; generalized does not";
+}
+
 /// With a prefetch pool the gap fills and promotes run INLINE on the read thread (the put
 /// lane is gone). This asserts the cache is populated CORRECTLY (cold and warm): the warm
 /// re-read is fully served from the chain (cheaper than cold), i.e. the inline writes

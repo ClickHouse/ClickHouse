@@ -2736,9 +2736,17 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// read by the scan (User), so only the alignment slack around it is
     /// FillOnly. `schedule.retrieves[*].into` then drives `schedulePutStep` so a
     /// faster tier never receives slack bytes (see `ReadPlan::schedule`).
+    /// On the generalized path the User range is the whole extended span: the scan
+    /// reads through the folded hit tail as the cursor advances, so the schedule must
+    /// emit serve steps across `[plan_start, plan_end)`. The fold is all resident, so
+    /// this adds no fetch -- the gaps to fetch still lie only within the base request.
+    /// The legacy path keeps the base-window request.
+    const ByteRange schedule_request = generalized_plan_window
+        ? ByteRange{plan_range.offset, read_plan.geometry()->plan_end - plan_range.offset}
+        : ByteRange{plan_range.offset, plan_range.size};
     read_plan.schedule = buildSchedule(
         *read_plan.geometry(),
-        ByteRange{plan_range.offset, plan_range.size},
+        schedule_request,
         min_bytes_for_seek);
 
     /// Feed this plan's predicted source reads into the continuity estimator so its
