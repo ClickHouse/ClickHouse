@@ -777,6 +777,62 @@ void generateExistingManifestFile(
             data_file.field(Iceberg::f_content) = avro::GenericDatum(static_cast<Int32>(parsed.content_type));
         data_file.field(Iceberg::f_file_path) = avro::GenericDatum(parsed.file_path_key.serialize());
         data_file.field(Iceberg::f_file_format) = avro::GenericDatum(parsed.file_format);
+
+        /// Carry the per-column statistics of the surviving file over verbatim. They were parsed into
+        /// `columns_infos` (counts/sizes) and `value_bounds` (lower/upper bounds, kept as the original
+        /// serialized bytes), so re-emitting them needs no type-dependent re-encoding. Dropping them
+        /// would silently destroy the file's pruning statistics on every partial DROP PARTITION.
+        auto write_stat_array = [&](const String & field_name, const auto & items, auto make_value)
+        {
+            if (items.empty())
+                return;
+            auto & field = data_file.field(field_name);
+            field.selectBranch(1);
+            auto & values = field.value<avro::GenericArray>();
+            auto element_schema = values.schema()->leafAt(0);
+            for (const auto & [field_id, value] : items)
+            {
+                avro::GenericDatum record_datum(element_schema);
+                auto & record = record_datum.value<avro::GenericRecord>();
+                record.field(Iceberg::f_key) = static_cast<Int32>(field_id);
+                record.field(Iceberg::f_value) = make_value(value);
+                values.value().push_back(record_datum);
+            }
+        };
+
+        std::vector<std::pair<Int32, Int64>> column_sizes;
+        std::vector<std::pair<Int32, Int64>> value_counts;
+        std::vector<std::pair<Int32, Int64>> null_value_counts;
+        for (const auto & [field_id, info] : parsed.columns_infos)
+        {
+            if (info.bytes_size.has_value())
+                column_sizes.emplace_back(field_id, *info.bytes_size);
+            if (info.rows_count.has_value())
+                value_counts.emplace_back(field_id, *info.rows_count);
+            if (info.nulls_count.has_value())
+                null_value_counts.emplace_back(field_id, *info.nulls_count);
+        }
+
+        std::vector<std::pair<Int32, String>> lower_bounds;
+        std::vector<std::pair<Int32, String>> upper_bounds;
+        for (const auto & [field_id, bounds] : parsed.value_bounds)
+        {
+            if (!bounds.first.isNull())
+                lower_bounds.emplace_back(field_id, bounds.first.safeGet<String>());
+            if (!bounds.second.isNull())
+                upper_bounds.emplace_back(field_id, bounds.second.safeGet<String>());
+        }
+
+        auto to_long = [](Int64 value) { return avro::GenericDatum(value); };
+        auto to_bytes = [](const String & bytes)
+        { return avro::GenericDatum(std::vector<uint8_t>(bytes.begin(), bytes.end())); };
+
+        write_stat_array(Iceberg::f_column_sizes, column_sizes, to_long);
+        write_stat_array(Iceberg::f_value_counts, value_counts, to_long);
+        write_stat_array(Iceberg::f_null_value_counts, null_value_counts, to_long);
+        write_stat_array(Iceberg::f_lower_bounds, lower_bounds, to_bytes);
+        write_stat_array(Iceberg::f_upper_bounds, upper_bounds, to_bytes);
+
         data_file.field(Iceberg::f_record_count) = avro::GenericDatum(parsed.record_count);
         data_file.field(Iceberg::f_file_size_in_bytes) = avro::GenericDatum(parsed.file_size_in_bytes);
 
