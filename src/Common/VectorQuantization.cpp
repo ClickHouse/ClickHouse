@@ -4,6 +4,11 @@
 #include <Common/HadamardTransform.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/LloydMaxQuantizer.h>
+#include <Common/TargetSpecific.h>
+
+#if USE_MULTITARGET_CODE
+#include <immintrin.h>
+#endif
 
 #include <algorithm>
 #include <array>
@@ -302,16 +307,63 @@ inline float raBitQNumeratorScalar(const RaBitQQuery & q, const char * code)
     return raBitQNumeratorFromCounts(q, pc, plane_pc);
 }
 
-/// Scalar-only dispatch (the standalone module does not use the AVX-512 fast scan).
-inline float raBitQNumeratorFast(const RaBitQQuery & q, const char * code)
+#if USE_MULTITARGET_CODE
+/// AVX-512 (Ice Lake) bit-sliced dot: VPOPCNTDQ counts 8x 64-bit lanes per instruction, so each 512-bit chunk of the
+/// sign code is AND-ed with each query bit-plane and popcounted in one `_mm512_popcnt_epi64`. Integer popcount sums are
+/// order-independent, so the result is identical to the scalar kernel. This keeps the 1-bit scan in the popcount regime.
+X86_64_ICELAKE_FUNCTION_SPECIFIC_ATTRIBUTE
+inline float raBitQNumeratorICELAKE(const RaBitQQuery & q, const char * code)
 {
+    const size_t code_bytes = q.code_bytes;
+    const UInt8 * planes = q.planes.data();
+    __m512i acc_pc = _mm512_setzero_si512();
+    __m512i acc[RABITQ_QUERY_BITS];
+    for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
+        acc[j] = _mm512_setzero_si512();
+
+    size_t b = 0;
+    for (; b + 64 <= code_bytes; b += 64)
+    {
+        const __m512i c = _mm512_loadu_si512(reinterpret_cast<const void *>(code + b));
+        acc_pc = _mm512_add_epi64(acc_pc, _mm512_popcnt_epi64(c));
+        for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
+        {
+            const __m512i pj = _mm512_loadu_si512(reinterpret_cast<const void *>(planes + static_cast<size_t>(j) * code_bytes + b));
+            acc[j] = _mm512_add_epi64(acc[j], _mm512_popcnt_epi64(_mm512_and_si512(c, pj)));
+        }
+    }
+    UInt64 pc = _mm512_reduce_add_epi64(acc_pc);
+    UInt64 plane_pc[RABITQ_QUERY_BITS];
+    for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
+        plane_pc[j] = _mm512_reduce_add_epi64(acc[j]);
+
+    /// Tail (code_bytes not a multiple of 64): finish byte-wise.
+    for (; b < code_bytes; ++b)
+    {
+        const unsigned cw = static_cast<UInt8>(code[b]);
+        pc += static_cast<UInt64>(std::popcount(cw));
+        for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
+            plane_pc[j] += static_cast<UInt64>(std::popcount(cw & static_cast<unsigned>(planes[static_cast<size_t>(j) * code_bytes + b])));
+    }
+    return raBitQNumeratorFromCounts(q, pc, plane_pc);
+}
+#endif
+
+/// Dispatch to the Ice Lake (VPOPCNTDQ) kernel when available (decided once per query), else the scalar version.
+inline float raBitQNumeratorFast(const RaBitQQuery & q, const char * code, bool use_icelake)
+{
+#if USE_MULTITARGET_CODE
+    if (use_icelake)
+        return raBitQNumeratorICELAKE(q, code);
+#endif
+    (void)use_icelake;
     return raBitQNumeratorScalar(q, code);
 }
 
 /// 'rabitq' estimator -> cosineDistance.
-inline float raBitQDistanceFast(const RaBitQQuery & q, const char * code)
+inline float raBitQDistanceFast(const RaBitQQuery & q, const char * code, bool use_icelake)
 {
-    const float numerator = raBitQNumeratorFast(q, code);
+    const float numerator = raBitQNumeratorFast(q, code, use_icelake);
     float inv_factor = NAN;
     std::memcpy(&inv_factor, code + q.code_bytes, sizeof(float));
     return 1.0f - numerator * q.inv_qnorm * inv_factor;
@@ -400,11 +452,11 @@ TurboQuantQuery buildTurboQuantQuery(const std::vector<float> & p1, const std::v
 }
 
 /// Exact TurboQuant cosine estimator -> cosineDistance. `code` is `d/8` MSE sign bits, `d/8` QJL sign bits, then `gamma`.
-inline float turboQuantDistanceFast(const TurboQuantQuery & q, const char * code)
+inline float turboQuantDistanceFast(const TurboQuantQuery & q, const char * code, bool use_icelake)
 {
     const size_t code_bytes = q.mse.code_bytes; /// = dimensions / 8
-    const float mse_dot = raBitQNumeratorFast(q.mse, code);
-    const float qjl_dot = raBitQNumeratorFast(q.qjl, code + code_bytes);
+    const float mse_dot = raBitQNumeratorFast(q.mse, code, use_icelake);
+    const float qjl_dot = raBitQNumeratorFast(q.qjl, code + code_bytes, use_icelake);
     float gamma = NAN;
     std::memcpy(&gamma, code + 2 * code_bytes, sizeof(float));
     const float cosine = q.c0 * mse_dot + q.k * gamma * qjl_dot;
@@ -924,6 +976,8 @@ struct Query
     E8Query e8;
     std::shared_ptr<const E8Codebook> e8_codebook; /// keep the codebook alive for e8.coords
     Int8Query int8;
+    /// The AVX-512 (VPOPCNTDQ) popcount scan for the rabitq/turboquant 1-bit codes. Decided once here, read per code.
+    bool use_icelake = false;
 };
 
 std::shared_ptr<const Query> prepareQuery(std::string_view method, const float * ref, size_t dimensions, size_t bits, bool is_l2)
@@ -932,6 +986,9 @@ std::shared_ptr<const Query> prepareQuery(std::string_view method, const float *
     q->codec = methodToCodec(method);
     q->dimensions = dimensions;
     q->bits = bits;
+#if USE_MULTITARGET_CODE
+    q->use_icelake = isArchSupported(TargetArch::x86_64_icelake);
+#endif
 
     double ref_norm_sq = 0.0;
     for (size_t i = 0; i < dimensions; ++i)
@@ -1004,9 +1061,9 @@ float distance(const Query & q, const char * code)
     switch (q.codec)
     {
         case FlatQuantization::RaBitQ:
-            return raBitQDistanceFast(q.rabitq, code);
+            return raBitQDistanceFast(q.rabitq, code, q.use_icelake);
         case FlatQuantization::TurboQuant:
-            return turboQuantDistanceFast(q.turbo, code);
+            return turboQuantDistanceFast(q.turbo, code, q.use_icelake);
         case FlatQuantization::E8:
             return e8Distance(q.e8, code);
         case FlatQuantization::Int8:
