@@ -285,26 +285,50 @@ if __name__ == "__main__":
     curr_data = _parse_info(CURR)
     print(f"  {len(curr_data)} files in current")
 
-    # Stable union sets for computing global coverage stats.
-    # We build these in Python across all available baselines (primary + extras)
-    # instead of using `lcov -a`, which corrupts FNDA execution-count records on
-    # some lcov versions (2.1+), producing 0% function coverage in the output file
-    # even though the FNH header looks correct. Pure Python set-union on the
-    # parsed data is both correct and version-independent.
-    _stable_line_cov: set[tuple[str, int]] = set()
-    _stable_line_tot: set[tuple[str, int]] = set()
-    _stable_fn_cov: set[tuple[str, str]] = set()
-    _stable_fn_tot: set[tuple[str, str]] = set()
+    # Two stable union sets for computing the global coverage delta:
+    #
+    #   _stable_base = Union(m1, m2, ..., mN)       — all master runs
+    #   _stable_pr   = Union(m1, m2, ..., mN-1, PR) — same runs but last replaced by PR
+    #
+    # Delta = _stable_pr − _stable_base
+    #
+    # Lines covered by m1..mN-1 appear in BOTH unions and cancel out, so the
+    # delta reduces to: (lines PR covers that mN doesn't) − (lines mN covers
+    # that PR doesn't), filtered to lines not in m1..mN-1. This eliminates the
+    # -5k noise from the previous approach (Union(m1-mN) vs single PR run),
+    # because the shared context of m1..mN-1 cancels from both sides.
+    #
+    # We avoid `lcov -a` which corrupts FNDA records on some lcov 2.1+ versions.
+    _stable_base_line_cov: set[tuple[str, int]] = set()
+    _stable_base_line_tot: set[tuple[str, int]] = set()
+    _stable_base_fn_cov: set[tuple[str, str]] = set()
+    _stable_base_fn_tot: set[tuple[str, str]] = set()
+    # PR side: starts with the primary baseline (m1); extras m2..mN-1 added in
+    # the loop below; PR (curr_data) added after the loop.
+    _stable_pr_line_cov: set[tuple[str, int]] = set()
+    _stable_pr_line_tot: set[tuple[str, int]] = set()
+    _stable_pr_fn_cov: set[tuple[str, str]] = set()
+    _stable_pr_fn_tot: set[tuple[str, str]] = set()
 
-    for _rel, _v in base_data.items():
-        for _ln, _cnt in _v["lines"].items():
-            _stable_line_tot.add((_rel, _ln))
-            if _cnt > 0:
-                _stable_line_cov.add((_rel, _ln))
-        for _fn, _cnt in _v["fns"].items():
-            _stable_fn_tot.add((_rel, _fn))
-            if _cnt > 0:
-                _stable_fn_cov.add((_rel, _fn))
+    def _accum(data: dict,
+               lc: set, lt: set, fc: set, ft: set) -> None:
+        for _rel, _v in data.items():
+            for _ln, _cnt in _v["lines"].items():
+                lt.add((_rel, _ln))
+                if _cnt > 0:
+                    lc.add((_rel, _ln))
+            for _fn, _cnt in _v["fns"].items():
+                ft.add((_rel, _fn))
+                if _cnt > 0:
+                    fc.add((_rel, _fn))
+
+    # Primary (m1) goes into both sides.
+    _accum(base_data,
+           _stable_base_line_cov, _stable_base_line_tot,
+           _stable_base_fn_cov,  _stable_base_fn_tot)
+    _accum(base_data,
+           _stable_pr_line_cov, _stable_pr_line_tot,
+           _stable_pr_fn_cov,   _stable_pr_fn_tot)
 
     # Cross-validation: intersect the zero-coverage sets from all available extra
     # master baselines (N-of-N). A line passes only if it is uncovered in every
@@ -320,6 +344,11 @@ if __name__ == "__main__":
     # generate_diff_coverage_report.sh alongside base_llvm_coverage.info).
     primary_sha_path = f"{temp_dir}/base_llvm_coverage.sha"
     primary_sha = open(primary_sha_path).read().strip() if os.path.exists(primary_sha_path) else ""
+
+    # Accumulate extras into stable_pr as we go, but keep the last extra data
+    # aside so we can exclude it from stable_pr (PR will replace it in the delta).
+    _last_extra_data: dict = {}
+    _all_extra_data: list[dict] = []
 
     for extra_path in EXTRA_BASELINE_PATHS:
         if not (os.path.exists(extra_path) and os.path.getsize(extra_path) > 0):
@@ -372,16 +401,12 @@ if __name__ == "__main__":
                 if _cnt == 0:
                     this_zero_fns.add((_rel, _fn))
 
-        # Accumulate this extra baseline into the stable union stats.
-        for _rel, _v in _bx.items():
-            for _ln, _cnt in _v["lines"].items():
-                _stable_line_tot.add((_rel, _ln))
-                if _cnt > 0:
-                    _stable_line_cov.add((_rel, _ln))
-            for _fn, _cnt in _v["fns"].items():
-                _stable_fn_tot.add((_rel, _fn))
-                if _cnt > 0:
-                    _stable_fn_cov.add((_rel, _fn))
+        # Accumulate into stable_base (always).
+        _accum(_bx,
+               _stable_base_line_cov, _stable_base_line_tot,
+               _stable_base_fn_cov,  _stable_base_fn_tot)
+        # Keep a copy so we can build stable_pr = all-but-last + PR after loop.
+        _all_extra_data.append(_bx)
         del _bx
 
         if extra_zero_lines is None:
@@ -391,6 +416,19 @@ if __name__ == "__main__":
             extra_zero_lines &= this_zero_lines
             extra_zero_fns &= this_zero_fns
         extra_baselines_used += 1
+
+    # Build stable_pr = Union(primary, extras 2..N-1, PR).
+    # Extras 2..N-1 (all but last) go into stable_pr; the last extra is mN
+    # (the "reference run" that PR replaces in the delta).
+    # If there are no extras, stable_pr = Union(primary, PR) — still useful.
+    for _bx in _all_extra_data[:-1]:   # all but the last extra
+        _accum(_bx,
+               _stable_pr_line_cov, _stable_pr_line_tot,
+               _stable_pr_fn_cov,   _stable_pr_fn_tot)
+    # Add PR (curr_data) to the PR side.
+    _accum(curr_data,
+           _stable_pr_line_cov, _stable_pr_line_tot,
+           _stable_pr_fn_cov,   _stable_pr_fn_tot)
 
     have_extra = extra_zero_lines is not None
     if have_extra:
@@ -426,12 +464,22 @@ if __name__ == "__main__":
                     f_hit += 1
         return l_tot, l_hit, f_tot, f_hit
 
-    # Baseline stats come from the stable Python union (primary + all extras).
-    b_lt = len(_stable_line_tot)
-    b_lh = len(_stable_line_cov)
-    b_ft = len(_stable_fn_tot)
-    b_fh = len(_stable_fn_cov)
-    c_lt, c_lh, c_ft, c_fh = _totals(curr_data)
+    # Delta = stable_pr − stable_base = Union(m1..mN-1, PR) − Union(m1..mN).
+    # Lines in m1..mN-1 cancel from both sides; only PR vs mN contributes.
+    # Use the union of both total-sets as the shared denominator so percentages
+    # are comparable.
+    _all_tot = _stable_base_line_tot | _stable_pr_line_tot
+    _all_fn_tot = _stable_base_fn_tot | _stable_pr_fn_tot
+    b_lt = b_ft = len(_all_tot)   # same denominator for both sides
+    b_lh = len(_stable_base_line_cov)
+    b_fh = len(_stable_base_fn_cov)
+    c_lt = c_ft = len(_all_tot)
+    c_lh = len(_stable_pr_line_cov)
+    c_fh = len(_stable_pr_fn_cov)
+    # Fall back to raw line count if no extras (single-baseline mode).
+    if not _all_tot:
+        b_lt = c_lt = len(_stable_base_line_tot) or 1
+        b_ft = c_ft = len(_stable_base_fn_tot) or 1
     b_lp = (100.0 * b_lh / b_lt) if b_lt else 0.0
     c_lp = (100.0 * c_lh / c_lt) if c_lt else 0.0
     b_fp = (100.0 * b_fh / b_ft) if b_ft else 0.0
