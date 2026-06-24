@@ -3552,3 +3552,242 @@ TEST(SchedulerWorkloadResourceManager, WorkloadSettingsMaxMemoryRatio)
     }
 }
 
+// Unit-test coverage for the lazy-allocation path in CPULeaseAllocation
+// (current_max_slots gated schedule + setMax growth). Higher-level fairness /
+// preemption behaviour is exercised by the PreemptiveCPUScheduling* tests above;
+// these are focused on the new `initial_max_slots` constructor argument and the
+// `setMax` override added by PR #102928.
+namespace
+{
+    // Poll until predicate returns true or the timeout elapses. Returns the
+    // final predicate value so the caller can assert on it. Used to let the
+    // scheduler's event-queue thread make progress (grants arrive asynchronously).
+    template <typename Pred>
+    bool waitFor(Pred pred, std::chrono::milliseconds timeout = std::chrono::seconds(5))
+    {
+        auto deadline = std::chrono::steady_clock::now() + timeout;
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (pred())
+                return true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return pred();
+    }
+
+    CPULeaseSettings makeLeaseSettings(const String & workload)
+    {
+        CPULeaseSettings settings;
+        settings.workload = workload;
+        // No preemption timeout — these tests never let a lease run out of credit, so
+        // we don't want a wall-clock timer kicking in and failing the test on slow CI.
+        settings.preemption_timeout = std::chrono::milliseconds::max();
+        return settings;
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingLazyStartsAtInitialMax)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all");
+
+    t.async("all", "cpu", "cpu", [&](ResourceLink master_link, ResourceLink worker_link)
+    {
+        // max_threads=5 caps the request chain; initial_max_slots=1 says
+        // "only request one slot up front — caller will grow via setMax".
+        auto lease = std::make_shared<CPULeaseAllocation>(
+            /*max_threads=*/5, master_link, worker_link, makeLeaseSettings("all"), /*initial_max_slots=*/1);
+
+        // The initial schedule() enqueued one request — wait for the grant.
+        auto first = lease->acquire();
+        ASSERT_TRUE(first);
+
+        // No more slots should be granted, since current_max_slots == 1 and we
+        // never consume / call setMax. Holding `first` keeps `granted` at 0 and
+        // `allocated` at 1 (== current_max_slots), so schedule() bails on every
+        // chance. Verify by busy-trying for a short window — none should succeed.
+        bool extra_granted = false;
+        waitFor([&] {
+            if (auto extra = lease->tryAcquire())
+            {
+                extra_granted = true;
+                return true;
+            }
+            return false;
+        }, std::chrono::milliseconds(50));
+        EXPECT_FALSE(extra_granted) << "Lazy lease handed out a slot beyond initial_max_slots=1";
+
+        // No pending request either — the chain stopped after the first grant.
+        EXPECT_FALSE(lease->isRequesting());
+    });
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingLazySetMaxGrows)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all");
+
+    t.async("all", "cpu", "cpu", [&](ResourceLink master_link, ResourceLink worker_link)
+    {
+        auto lease = std::make_shared<CPULeaseAllocation>(
+            /*max_threads=*/5, master_link, worker_link, makeLeaseSettings("all"), /*initial_max_slots=*/1);
+
+        // Acquire the master slot first (consuming the initial grant).
+        auto master = lease->acquire();
+        ASSERT_TRUE(master);
+
+        // Grow the ceiling to 4. setMax should kick off scheduling for the
+        // additional capacity; the grant chain in grantImpl then fills up to
+        // current_max_slots=4 one request at a time.
+        lease->setMax(4);
+
+        // Wait for three more slots to land (one per additional grant). We
+        // accumulate them so they don't trigger consume() during teardown.
+        std::vector<AcquiredSlotPtr> workers;
+        bool got_all = waitFor([&] {
+            while (auto slot = lease->tryAcquire())
+                workers.push_back(std::move(slot));
+            return workers.size() >= 3;
+        });
+        ASSERT_TRUE(got_all) << "Got only " << workers.size() << " of 3 expected worker slots after setMax(4)";
+        EXPECT_EQ(workers.size(), 3u);
+
+        // current_max_slots reached — no more grants should appear.
+        EXPECT_FALSE(lease->isRequesting());
+    });
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingLazySetMaxClampedByMaxThreads)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all");
+
+    t.async("all", "cpu", "cpu", [&](ResourceLink master_link, ResourceLink worker_link)
+    {
+        // max_threads=2 is the hard cap (sizes the internal `requests` ring buffer
+        // and `threads` bitsets). setMax must never let the working set exceed it.
+        auto lease = std::make_shared<CPULeaseAllocation>(
+            /*max_threads=*/2, master_link, worker_link, makeLeaseSettings("all"), /*initial_max_slots=*/1);
+
+        auto master = lease->acquire();
+        ASSERT_TRUE(master);
+
+        // Ask for more than max_threads. Implementation clamps to max_threads.
+        lease->setMax(100);
+
+        // We should be able to acquire one more slot (total 2 = max_threads), no more.
+        std::vector<AcquiredSlotPtr> workers;
+        bool got_one_more = waitFor([&] {
+            while (auto slot = lease->tryAcquire())
+                workers.push_back(std::move(slot));
+            return !workers.empty();
+        });
+        ASSERT_TRUE(got_one_more);
+
+        // Verify the chain has stopped — we shouldn't see additional requests
+        // even with a wide setMax target.
+        bool extra_granted = false;
+        waitFor([&] {
+            if (auto extra = lease->tryAcquire())
+            {
+                extra_granted = true;
+                workers.push_back(std::move(extra));
+                return true;
+            }
+            return false;
+        }, std::chrono::milliseconds(50));
+        EXPECT_FALSE(extra_granted) << "Clamp ignored — got more than max_threads=2 slots";
+        EXPECT_EQ(workers.size(), 1u);
+        EXPECT_FALSE(lease->isRequesting());
+    });
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingLazySetMaxShrinkDoesNotReclaim)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all");
+
+    t.async("all", "cpu", "cpu", [&](ResourceLink master_link, ResourceLink worker_link)
+    {
+        auto lease = std::make_shared<CPULeaseAllocation>(
+            /*max_threads=*/5, master_link, worker_link, makeLeaseSettings("all"), /*initial_max_slots=*/1);
+
+        auto master = lease->acquire();
+        ASSERT_TRUE(master);
+
+        // Grow to 3 and collect both extra slots.
+        lease->setMax(3);
+        std::vector<AcquiredSlotPtr> workers;
+        bool got_two_more = waitFor([&] {
+            while (auto slot = lease->tryAcquire())
+                workers.push_back(std::move(slot));
+            return workers.size() >= 2;
+        });
+        ASSERT_TRUE(got_two_more);
+
+        // Shrink to 1. Already-acquired slots remain valid (we hold three).
+        // The shrink only caps future grants — no in-flight request was enqueued
+        // here (chain ended when allocated reached current_max_slots), so nothing
+        // to cancel.
+        lease->setMax(1);
+        EXPECT_TRUE(master);
+        EXPECT_EQ(workers.size(), 2u);
+        EXPECT_FALSE(lease->isRequesting());
+
+        // Trying for more should still fail — nothing got granted because
+        // allocated >= current_max_slots(=1) immediately on entry to schedule().
+        bool extra_granted = false;
+        waitFor([&] {
+            if (auto extra = lease->tryAcquire())
+            {
+                extra_granted = true;
+                workers.push_back(std::move(extra));
+                return true;
+            }
+            return false;
+        }, std::chrono::milliseconds(50));
+        EXPECT_FALSE(extra_granted);
+    });
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingEagerDefaultIsUnchanged)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all");
+
+    t.async("all", "cpu", "cpu", [&](ResourceLink master_link, ResourceLink worker_link)
+    {
+        // No `initial_max_slots` argument: existing callers (and the pre-this-PR
+        // codepath via use_concurrency_control eager rollback) must continue to
+        // request all `max_threads` slots up front.
+        auto lease = std::make_shared<CPULeaseAllocation>(
+            /*max_threads=*/3, master_link, worker_link, makeLeaseSettings("all"));
+
+        // We should be able to drain all max_threads slots without ever calling setMax.
+        std::vector<AcquiredSlotPtr> slots;
+        if (auto first = lease->acquire())
+            slots.push_back(std::move(first));
+        bool got_all = waitFor([&] {
+            while (auto slot = lease->tryAcquire())
+                slots.push_back(std::move(slot));
+            return slots.size() >= 3;
+        });
+        ASSERT_TRUE(got_all) << "Eager default lease granted only " << slots.size() << "/3 slots";
+        EXPECT_EQ(slots.size(), 3u);
+    });
+
+    t.wait();
+}

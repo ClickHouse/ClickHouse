@@ -12,15 +12,39 @@ class MemoryTracker;
 namespace DB
 {
 
-/// Represents a memory reservation that is used with:
-/// CREATE RESOURCE memory (MEMORY RESERVATION)
-/// CREATE WORKLOAD all SETTINGS max_memory = '1Gi'
-/// SELECT ... SETTINGS workload = 'all', reserve_memory = '100Mi'
-/// The scheduler sees usage through its `allocated = max(actual_size, reserve_memory)`
-/// and guarantees that total allocated memory does not exceed related workload `max_memory` limits.
-/// The MemoryTracker of a query is the source of truth and MemoryReservation synchronizes with it in safe points.
-/// During such syncs it may issue both increase and decrease requests to the scheduler,
-/// as well as respond to kill (evict) requests from the scheduler.
+/// `MemoryReservation` bridges a running query and the memory scheduler: the scheduler caps each
+/// workload's memory while the query's `MemoryTracker` stays the source of truth. It backs:
+///   CREATE RESOURCE memory (MEMORY RESERVATION)
+///   CREATE WORKLOAD all SETTINGS max_memory = '1Gi'
+///   SELECT ... SETTINGS workload = 'all', reserve_memory = '100Mi'
+/// The scheduler sees usage as `allocated = max(actual_size, reserve_memory)` and guarantees the
+/// total `allocated` under each workload does not exceed its `max_memory` limit.
+/// A single scheduler thread (top) serves many query/pipeline threads (bottom):
+///
+///    SpaceSharedScheduler    <-- dedicated thread + EventQueue (root)
+///             |
+///      AllocationLimit       <-- caps max_memory
+///             |
+///    Fair / Precedence       <-- share / order sibling workloads
+///             |
+///      AllocationQueue       <-- leaf; reservations attach here (IAllocationQueue)
+///             |  ^ requests  : insert / increase / decrease / remove
+///  - - - - - -+- - - - - - - - - - - - - - -  scheduler thread / query threads
+///             |  v approvals : increase / decrease / kill / fail
+///     MemoryReservation      <-- owned by QueryStatus (a ResourceAllocation)
+///             |                  syncWithMemoryTracker()
+///      PipelineExecutor      <-- drives query execution
+///             |                  read on each sync point
+///       MemoryTracker        <-- actual bytes used (source of truth)
+///
+/// The `workload` setting resolves (via `WorkloadResourceManager`) to a `ResourceLink` naming that
+/// workload's `AllocationQueue`. A reservation's life: construct (`insertAllocation`; blocks until
+/// admitted when `reserve_memory > 0`), sync (`syncWithMemoryTracker` issues at most one increase or
+/// decrease per call; may be killed under pressure), destruct (`removeAllocation`, wait for removal).
+/// Requests bubble up to the root and are approved on the scheduler thread; the scheduler-side nodes
+/// (`AllocationLimit`, `Fair`/`PrecedenceAllocation`, `AllocationQueue`) form one `ISpaceSharedNode`
+/// subtree per `WorkloadNode`. See also `IAllocationQueue`, `ISpaceSharedNode`,
+/// `IncreaseRequest`/`DecreaseRequest`.
 struct MemoryReservation : public ResourceAllocation
 {
 public:
