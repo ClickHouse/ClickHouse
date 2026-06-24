@@ -1,5 +1,10 @@
-from helpers.kafka.common_direct import *
-from helpers.kafka.common_direct import _VarintBytes
+import logging
+import time
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
 import helpers.kafka.common as k
 import os
 
