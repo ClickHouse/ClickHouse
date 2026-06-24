@@ -162,6 +162,9 @@ private:
      */
     ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
 
+    ColumnPtr executeWithArrayIndex(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
+
     using Offsets = ColumnArray::Offsets;
 
     static bool matchKeyToIndexNumber(
@@ -2103,6 +2106,155 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
 }
 
 template <ArrayElementExceptionMode mode>
+ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+{
+    if (input_rows_count == 0)
+        return result_type->createColumn();
+
+    const auto * result_array_type = checkAndGetDataType<DataTypeArray>(result_type.get());
+    chassert(result_array_type);
+    const auto & result_element_type = result_array_type->getNestedType();
+
+    const ColumnArray * col_data_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
+    ColumnPtr materialized_data;
+    if (!col_data_array)
+    {
+        materialized_data = arguments[0].column->convertToFullColumnIfConst();
+        col_data_array = checkAndGetColumn<ColumnArray>(materialized_data.get());
+        if (!col_data_array)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of first argument of function {}",
+                arguments[0].column->getName(),
+                getName());
+    }
+
+    const ColumnArray * col_index_array = checkAndGetColumn<ColumnArray>(arguments[1].column.get());
+    ColumnPtr materialized_index;
+    if (!col_index_array)
+    {
+        materialized_index = arguments[1].column->convertToFullColumnIfConst();
+        col_index_array = checkAndGetColumn<ColumnArray>(materialized_index.get());
+        if (!col_index_array)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of second argument of function {}",
+                arguments[1].column->getName(),
+                getName());
+    }
+
+    const IColumn & data_col = col_data_array->getData();
+    const auto & data_offsets = col_data_array->getOffsets();
+    const IColumn & index_data_col = col_index_array->getData();
+    const auto & index_offsets = col_index_array->getOffsets();
+
+    const ColumnNullable * nullable_data = checkAndGetColumn<ColumnNullable>(&data_col);
+    const IColumn & inner_data = nullable_data ? nullable_data->getNestedColumn() : data_col;
+    const NullMap * source_null_map = nullable_data ? &nullable_data->getNullMapData() : nullptr;
+
+    bool result_is_nullable = result_element_type->isNullable();
+    auto result_nested_col = removeNullable(result_element_type)->createColumn();
+    MutableColumnPtr result_null_map_col = result_is_nullable ? ColumnUInt8::create() : nullptr;
+    auto result_offsets_col = ColumnArray::ColumnOffsets::create();
+    auto & result_offsets = result_offsets_col->getData();
+    result_offsets.resize(input_rows_count);
+
+    size_t total_indices = index_offsets[input_rows_count - 1];
+    result_nested_col->reserve(total_indices);
+    if (result_null_map_col)
+        assert_cast<ColumnUInt8 &>(*result_null_map_col).getData().reserve(total_indices);
+
+    auto process = [&]<typename IndexType>(const PaddedPODArray<IndexType> & indices)
+    {
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            size_t data_start = row > 0 ? data_offsets[row - 1] : 0;
+            size_t array_size = data_offsets[row] - data_start;
+
+            size_t idx_start = row > 0 ? index_offsets[row - 1] : 0;
+            size_t idx_end = index_offsets[row];
+
+            for (size_t k = idx_start; k < idx_end; ++k)
+            {
+                IndexType idx = indices[k];
+                size_t resolved = array_size;
+
+                if constexpr (std::is_signed_v<IndexType>)
+                {
+                    if (idx > 0 && static_cast<size_t>(idx) <= array_size)
+                        resolved = static_cast<size_t>(idx) - 1;
+                    else if (idx < 0 && static_cast<size_t>(-static_cast<Int64>(idx)) <= array_size)
+                        resolved = array_size + static_cast<size_t>(static_cast<Int64>(idx));
+                }
+                else
+                {
+                    if (idx > 0 && static_cast<size_t>(idx) <= array_size)
+                        resolved = static_cast<size_t>(idx) - 1;
+                }
+
+                if (resolved < array_size)
+                {
+                    size_t source_pos = data_start + resolved;
+                    if (source_null_map && (*source_null_map)[source_pos])
+                    {
+                        result_nested_col->insertDefault();
+                        if (result_null_map_col)
+                            assert_cast<ColumnUInt8 &>(*result_null_map_col).getData().push_back(UInt8(1));
+                    }
+                    else
+                    {
+                        result_nested_col->insertFrom(inner_data, source_pos);
+                        if (result_null_map_col)
+                            assert_cast<ColumnUInt8 &>(*result_null_map_col).getData().push_back(UInt8(0));
+                    }
+                }
+                else
+                {
+                    result_nested_col->insertDefault();
+                    if (result_null_map_col)
+                        assert_cast<ColumnUInt8 &>(*result_null_map_col).getData().push_back(is_null_mode ? UInt8(1) : UInt8(0));
+                }
+            }
+
+            result_offsets[row] = idx_end;
+        }
+    };
+
+    auto try_dispatch = [&](const auto * col) -> bool
+    {
+        if (!col)
+            return false;
+        process(col->getData());
+        return true;
+    };
+
+    if (!try_dispatch(checkAndGetColumn<ColumnVector<UInt8>>(&index_data_col))
+        && !try_dispatch(checkAndGetColumn<ColumnVector<UInt16>>(&index_data_col))
+        && !try_dispatch(checkAndGetColumn<ColumnVector<UInt32>>(&index_data_col))
+        && !try_dispatch(checkAndGetColumn<ColumnVector<UInt64>>(&index_data_col))
+        && !try_dispatch(checkAndGetColumn<ColumnVector<Int8>>(&index_data_col))
+        && !try_dispatch(checkAndGetColumn<ColumnVector<Int16>>(&index_data_col))
+        && !try_dispatch(checkAndGetColumn<ColumnVector<Int32>>(&index_data_col))
+        && !try_dispatch(checkAndGetColumn<ColumnVector<Int64>>(&index_data_col)))
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Illegal column {} of second argument of function {}",
+            arguments[1].column->getName(),
+            getName());
+    }
+
+    ColumnPtr result_data;
+    if (result_null_map_col)
+        result_data = ColumnNullable::create(std::move(result_nested_col), std::move(result_null_map_col));
+    else
+        result_data = std::move(result_nested_col);
+
+    return ColumnArray::create(std::move(result_data), std::move(result_offsets_col));
+}
+
+template <ArrayElementExceptionMode mode>
 String FunctionArrayElement<mode>::getName() const
 {
     return name;
@@ -2127,11 +2279,28 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
             arguments[0]->getName());
     }
 
+    if (const auto * index_array_type = checkAndGetDataType<DataTypeArray>(arguments[1].get()))
+    {
+        if (!isNativeInteger(index_array_type->getNestedType()))
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument for function '{}' must be integer or array of integers, got '{}' instead",
+                getName(),
+                arguments[1]->getName());
+        }
+
+        auto nested_type = array_type->getNestedType();
+        if (is_null_mode && nested_type->canBeInsideNullable())
+            nested_type = makeNullable(nested_type);
+        return std::make_shared<DataTypeArray>(nested_type);
+    }
+
     if (!isNativeInteger(arguments[1]))
     {
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Second argument for function '{}' must be integer, got '{}' instead",
+            "Second argument for function '{}' must be integer or array of integers, got '{}' instead",
             getName(),
             arguments[1]->getName());
     }
@@ -2149,6 +2318,10 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
 
     if (col_map || col_const_map)
         return executeMap(arguments, result_type, input_rows_count);
+
+    /// Array-of-indices mode: arr1[arr2] where arr2 is Array(Int*)
+    if (checkAndGetDataType<DataTypeArray>(arguments[1].type.get()))
+        return executeWithArrayIndex(arguments, result_type, input_rows_count);
 
     /// Check nullability.
     bool is_array_of_nullable = false;
