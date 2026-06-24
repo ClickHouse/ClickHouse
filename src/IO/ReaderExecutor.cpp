@@ -1432,6 +1432,14 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
     SCOPE_EXIT_SAFE({
         pushChainToWriters(m.writer_views, window, led_bytes,
             /*interrupt=*/nullptr, m.stats);
+        /// `pushChainToWriters` completes only writers it had fetched bytes for; a writer the
+        /// interrupted fetch never reached keeps its elected segment DOWNLOADING. We are the
+        /// downloader (this worker thread), so reset those here - the foreground that tears the
+        /// plan down cannot (cross-thread `complete()` won't reset a foreign downloader), and a
+        /// leaked DOWNLOADING segment aborts the writer's holder dtor (`!is_last_holder`).
+        for (const auto & view : m.writer_views)
+            if (view.writer)
+                view.writer->releaseElectedDownloaders();
         m.fetched = std::move(led_bytes);
     });
     for (const auto & led : mergeRanges(led_disjoint, min_bytes_for_seek))

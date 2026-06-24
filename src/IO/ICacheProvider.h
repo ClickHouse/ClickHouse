@@ -87,6 +87,14 @@ public:
         VectorWithMemoryTracking<SiblingLed> & /*sibling_led*/)
     { led.push_back(range); }
 
+    /// Complete (reset the downloader of) any segment THIS thread still leads from a prior
+    /// `electDownloaders` but did not complete via `write()` - e.g. a prefetch interrupted
+    /// before its fetch reached the segment. MUST run on the electing (downloader) thread,
+    /// before the writer is handed to a teardown on another thread: a leaked DOWNLOADING
+    /// segment trips the holder dtor's `chassert(!is_last_holder)`, and `complete()` from a
+    /// foreign thread cannot reset it. Default no-op (e.g. page cache does not elect).
+    virtual void releaseElectedDownloaders() {}
+
     /// Wait until `sub`'s bytes are committed by the sibling downloader, then serve them
     /// from this writer's own held segments (cache file). Default: plain read (no wait).
     virtual ChainedBuffers waitAndReadSiblingLed(ByteRange sub) { return read(sub); }

@@ -477,6 +477,26 @@ void DiskCacheWriter::electDownloaders(
     }
 }
 
+void DiskCacheWriter::releaseElectedDownloaders()
+{
+    /// `electDownloaders` moved segments we won to DOWNLOADING, expecting a later `write()`
+    /// to complete them. A `write()` over any covered range completes EVERY segment in this
+    /// writer's range (its per-segment guard), but a writer with NO fetched bytes - the
+    /// prefetch fetch was interrupted before reaching it - never gets a `write()` call, so
+    /// its elected segment stays DOWNLOADING. Reset the downloader of any such segment here,
+    /// on the (downloader) electing thread; `complete()` from the foreground teardown thread
+    /// cannot reset a foreign downloader, so the holder dtor would otherwise abort on
+    /// `chassert(!is_last_holder)`. Mirrors the per-segment `SCOPE_EXIT_SAFE` in `write()`.
+    if (!holder)
+        return;
+    for (const auto & segment_ptr : *holder)
+    {
+        FileSegment & segment = *segment_ptr;
+        if (!segment.isDetached() && segment.isDownloader())
+            segment.completePartAndResetDownloader();
+    }
+}
+
 ChainedBuffers DiskCacheWriter::waitAndReadSiblingLed(ByteRange sub)
 {
     /// `sub` is FILE-space. Wait until each held segment overlapping it has committed

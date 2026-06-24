@@ -109,6 +109,7 @@ public:
     void electDownloaders(ByteRange range,
         VectorWithMemoryTracking<ByteRange> & led,
         VectorWithMemoryTracking<SiblingLed> & sibling_led) override;
+    void releaseElectedDownloaders() override;
     ChainedBuffers waitAndReadSiblingLed(ByteRange sub) override;
     CacheWriter::CacheSegmentPin pin(size_t frontier) const override;
 

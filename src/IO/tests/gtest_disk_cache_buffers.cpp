@@ -30,6 +30,7 @@
 #include <optional>
 #include <string>
 #include <cstring>
+#include <thread>
 
 namespace DB::FileCacheSetting
 {
@@ -608,4 +609,45 @@ TEST_F(DiskCacheBuffers, DeferredBumpOnViewDestroyDoesNotThrow)
 
     // Destroying the view runs the deferred bump over the recorded ranges; must not throw.
     EXPECT_NO_THROW(view.reset());
+}
+
+/// Regression for the `chassert(!is_last_holder)` abort (seen in
+/// test_reader_executor_metric, reached via `ReaderExecutor::seek` tearing down the read
+/// plan on a thread other than the one that elected). A prefetch worker elects a cold
+/// segment - `electDownloaders` moves it to DOWNLOADING, downloader = the worker thread -
+/// but the fetch that would complete it via `write()` is interrupted before reaching this
+/// writer, so no `write()` runs for it. `coordinatedPrefetch`'s SCOPE_EXIT must then call
+/// `releaseElectedDownloaders()` (on the worker = downloader thread) to reset the segment;
+/// otherwise it stays DOWNLOADING and, when the foreground tears the plan down on another
+/// thread, `~FileSegmentsHolder` -> `FileSegment::complete` cannot reset the foreign
+/// downloader and aborts on `chassert(!is_last_holder)` as the sole remaining holder.
+///
+/// This models that path: elect + `releaseElectedDownloaders()` on a worker thread (no
+/// `write()`), then destroy the writer on a different (foreground) thread. Without
+/// `releaseElectedDownloaders` resetting the segment, `misses.clear()` aborts.
+TEST_F(DiskCacheBuffers, ReleaseElectedDownloadersMakesForeignThreadTeardownSafe)
+{
+    auto provider = makeProvider();
+    auto object = makeObject("obj_elect", kSegmentSize);
+
+    auto misses = provider->openWriteBuffers(object, /*object_file_offset=*/0, {ByteRange{0, kSegmentSize}});
+    ASSERT_EQ(misses.size(), 1u);
+    ASSERT_NE(misses[0].writer, nullptr);
+
+    std::thread worker([&]
+    {
+        VectorWithMemoryTracking<ByteRange> led;
+        VectorWithMemoryTracking<CacheWriter::SiblingLed> sibling_led;
+        misses[0].writer->electDownloaders(ByteRange{0, kSegmentSize}, led, sibling_led);
+        ASSERT_FALSE(led.empty()) << "the cold segment is led (downloader role won)";
+        /// The fetch never reached this writer (interrupted); the worker must still reset
+        /// the segment it elected before exiting - what the SCOPE_EXIT does in production.
+        misses[0].writer->releaseElectedDownloaders();
+    });
+    worker.join();
+
+    /// Tear down on THIS (foreign) thread. The segment was reset by the worker, so the
+    /// holder dtor finalizes it cleanly instead of aborting on `chassert(!is_last_holder)`.
+    misses.clear();
+    SUCCEED();
 }
