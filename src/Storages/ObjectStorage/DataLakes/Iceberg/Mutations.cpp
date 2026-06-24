@@ -407,7 +407,7 @@ static bool writeMetadataFiles(
             Iceberg::SnapshotSummaryUpdateOverwrite{
                 .added_files = 0,
                 .added_records = 0,
-                .added_files_size = 0,
+                .added_files_size = total_bytes,
                 .added_delete_files = total_files,
                 .added_position_deletes = total_rows,
                 .deleted_data_files = 0,
