@@ -1110,7 +1110,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
         double cost{.0};
         double sel{.0};
         JoinKind kind{JoinKind::Inner};
-        std::vector<JoinActionRef*> edges; // required for physical plan generation
+        std::vector<JoinActionRef*> edges; // needed for physical plan generation
     };
     using DPTable = DPTable<DPEntry, Bitvector>;
     using Checker = EnumeratorCheckerWithCosts<DPTable, JoinOrderOptimizer>;
