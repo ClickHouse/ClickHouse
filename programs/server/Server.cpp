@@ -235,6 +235,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 config_reload_interval_ms;
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
     extern const ServerSettingsString default_database;
+    extern const ServerSettingsString insert_deduplication_version;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsBool message_queue_disable_insertion;
@@ -1223,6 +1224,21 @@ try
 
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
+
+    /// Fail closed if an operator is still on a legacy insert deduplication version. This build only
+    /// writes the unified deduplication hash, so silently ignoring the setting would break the
+    /// mixed-version deduplication contract; refuse to start and explain how to migrate.
+    const String dedup_version = server_settings[ServerSetting::insert_deduplication_version];
+    if (dedup_version != "new_unified_hash")
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Server setting 'insert_deduplication_version' is set to '{}', but this version of ClickHouse "
+            "supports only the unified insert deduplication hash ('new_unified_hash'). Remove the setting from "
+            "the configuration (or set it to 'new_unified_hash'). To migrate from a version that used "
+            "'old_separate_hashes' or 'compatible_double_hashes', first run on a release that supports "
+            "'compatible_double_hashes' (writing both the legacy and unified hashes) for at least the longest "
+            "deduplication window, then upgrade to this version.",
+            dedup_version);
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
