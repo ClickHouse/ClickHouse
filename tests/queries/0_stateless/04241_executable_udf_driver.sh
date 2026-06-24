@@ -250,7 +250,7 @@ CREATE FUNCTION test_udf_drv_qlog ARGUMENTS (x UInt8, y UInt8) RETURNS Int64
     ENGINE = DockerC() AS 'return (int64_t) x + (int64_t) y;';
 SET log_queries = 1;
 SELECT test_udf_drv_qlog(123, 45) SETTINGS use_query_cache = 1, query_cache_nondeterministic_function_handling = 'save';
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT
     if(has(used_executable_user_defined_functions, 'test_udf_drv_qlog'), 'executable', 'NOT_executable'),
     if(has(used_sql_user_defined_functions, 'test_udf_drv_qlog'), 'ALSO_sql_BUG', 'sql_clean')
