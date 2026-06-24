@@ -47,7 +47,8 @@ PrometheusHTTPProtocolAPI::~PrometheusHTTPProtocolAPI() = default;
 
 void PrometheusHTTPProtocolAPI::executePromQLQuery(
     WriteBuffer & response,
-    const Params & params)
+    const Params & params,
+    QueryFinishCallback query_finish_callback)
 {
     PrometheusQueryEvaluationSettings evaluation_settings;
     evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
@@ -101,6 +102,9 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         io.onException();
         throw;
     }
+
+    if (query_finish_callback)
+        query_finish_callback();
 
     /// Fire BlockIO finish callbacks so the query is recorded in system.query_log (QueryFinish with read_rows/read_bytes).
     io.onFinish();
