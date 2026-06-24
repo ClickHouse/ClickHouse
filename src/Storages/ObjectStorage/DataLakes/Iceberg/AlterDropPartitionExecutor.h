@@ -123,12 +123,7 @@ private:
         FileNamesGenerator & filename_generator,
         std::vector<String> & files_for_cleanup);
 
-    struct ManifestListWriteResult
-    {
-        Poco::JSON::Object::Ptr new_snapshot;
-        GeneratedMetadataFileWithInfo metadata_info;
-    };
-    ManifestListWriteResult writeManifestList(
+    GeneratedMetadataFileWithInfo writeManifestList(
         SnapshotState & state,
         const DropPlan & plan,
         const std::vector<ReplacementManifestWrite> & replacements,
