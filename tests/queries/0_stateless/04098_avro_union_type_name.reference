@@ -4,6 +4,8 @@ nullable_payload	Nullable(Tuple(x Int32))
 nullable_payload.$name	Nullable(String)
 variant_payload	Variant(Tuple(\n    y String), Tuple(\n    z Float64))
 variant_payload.$name	Nullable(String)
+variant_payload.TypeB	Nullable(Tuple(y String))
+variant_payload.TypeC	Nullable(Tuple(z Float64))
 
 == SELECT id, nullable_payload.$name, variant_payload.$name ==
 1	\N	TypeB
@@ -41,3 +43,33 @@ variant_payload.$name	Nullable(String)
 3	TypeA	TypeB
 4	\N	TypeC
 5	TypeA	TypeB
+
+== DESCRIBE: branch-value columns exposed (Variant only, not Nullable) ==
+nullable_payload.$name	Nullable(String)
+variant_payload.$name	Nullable(String)
+variant_payload.TypeB	Nullable(Tuple(y String))
+variant_payload.TypeC	Nullable(Tuple(z Float64))
+
+== Project a Variant branch value by the name $name reports ==
+1	TypeB	('hello')	\N
+2	TypeC	\N	(3.14)
+3	TypeB	('world')	\N
+4	TypeC	\N	(2.71)
+5	TypeB	('foo')	\N
+
+== Filter by $name + project that branch value ==
+1	('hello')
+3	('world')
+5	('foo')
+
+== Known limit: value + branch column together -> branch is NULL ==
+1	('hello')	\N
+2	(3.14)	\N
+3	('world')	\N
+4	(2.71)	\N
+5	('foo')	\N
+
+== Nullable union has NO branch-value column (only $name) ==
+nullable_payload	Nullable(Tuple(x Int32))
+nullable_payload.$name	Nullable(String)
+

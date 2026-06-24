@@ -83,6 +83,10 @@ private:
         std::vector<std::string> branch_names;
         /// For UnionName: per-branch skip functions (used when value column is not requested)
         std::vector<SkipFn> branch_skip_fns;
+        /// For UnionName: per-branch output column index (fieldname.branchName), -1 if not requested
+        std::vector<int> branch_column_idxs;
+        /// For UnionName: per-branch value deserializers for those branch columns
+        std::vector<DeserializeFn> branch_column_fns;
 
 
         Action() : type(Noop), target_column_idx(0) {}
@@ -112,7 +116,9 @@ private:
             int value_col_idx,
             std::vector<std::string> bnames,
             std::vector<DeserializeFn> value_fns,
-            std::vector<SkipFn> skip_fns)
+            std::vector<SkipFn> skip_fns,
+            std::vector<int> branch_col_idxs,
+            std::vector<DeserializeFn> branch_col_fns)
         {
             Action a;
             a.type = UnionName;
@@ -121,6 +127,8 @@ private:
             a.branch_names = std::move(bnames);
             a.nested_deserializers = std::move(value_fns);
             a.branch_skip_fns = std::move(skip_fns);
+            a.branch_column_idxs = std::move(branch_col_idxs);
+            a.branch_column_fns = std::move(branch_col_fns);
             return a;
         }
 

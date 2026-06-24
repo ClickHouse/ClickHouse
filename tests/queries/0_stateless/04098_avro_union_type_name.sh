@@ -70,3 +70,38 @@ $CH_CLIENT -q "
   ORDER BY id
 "
 echo
+
+echo "== DESCRIBE: branch-value columns exposed (Variant only, not Nullable) =="
+$CH_CLIENT -q "DESCRIBE file('$file_name') SETTINGS input_format_avro_union_type_name=1" \
+  | grep -E 'payload\.' || true
+echo
+
+echo "== Project a Variant branch value by the name \$name reports =="
+$CH_CLIENT --input_format_avro_union_type_name=1 -q "
+  SELECT id, \`variant_payload.\$name\`, \`variant_payload.TypeB\`, \`variant_payload.TypeC\`
+  FROM file('$file_name')
+  ORDER BY id
+"
+echo
+
+echo "== Filter by \$name + project that branch value =="
+$CH_CLIENT --input_format_avro_union_type_name=1 -q "
+  SELECT id, \`variant_payload.TypeB\`
+  FROM file('$file_name')
+  WHERE \`variant_payload.\$name\` = 'TypeB'
+  ORDER BY id
+"
+echo
+
+echo "== Known limit: value + branch column together -> branch is NULL =="
+$CH_CLIENT --input_format_avro_union_type_name=1 -q "
+  SELECT id, variant_payload, \`variant_payload.TypeB\`
+  FROM file('$file_name')
+  ORDER BY id
+"
+echo
+
+echo "== Nullable union has NO branch-value column (only \$name) =="
+$CH_CLIENT -q "DESCRIBE file('$file_name') SETTINGS input_format_avro_union_type_name=1" \
+  | grep -E 'nullable_payload' || true
+echo
