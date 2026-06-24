@@ -383,7 +383,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             /// `Time` stores `Int32` under the hood; convert through `Int32` to produce the canonical
             /// `Int64` `Field` matching what `Time` part loading produces, and to range-check the input
             /// so out-of-range integers are not silently truncated by the `Time` serializer downstream.
-            return convertNumericType<Int32>(src, type);
+            return convertNumericType<Int32>(src, type, strict);
         }
 
         if (which_type.isDate32() && src.getType() == Field::Types::Int64)
