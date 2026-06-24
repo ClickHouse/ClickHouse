@@ -69,6 +69,7 @@ def run_kill_query_test(query, log_line_pattern, log_timeout=30):
 
     cancel_log = node1.grep_in_log(query_id)
     assert "QUERY_WAS_CANCELLED" in cancel_log
+    assert "Cancelled during row processing" in cancel_log
 
 
 def test_hashmap_kill_query(started_cluster):

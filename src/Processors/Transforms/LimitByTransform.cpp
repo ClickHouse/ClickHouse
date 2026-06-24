@@ -231,6 +231,7 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
     {
         if (isCancelled())
         {
+            LOG_TEST(getLogger("LimitByTransform"), "Cancelled during row processing");
             stopReading();
             return;
         }
@@ -436,6 +437,7 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
     {
         if (isCancelled())
         {
+            LOG_TEST(getLogger("LimitBySortedStreamTransform"), "Cancelled during row processing");
             stopReading();
             return;
         }
