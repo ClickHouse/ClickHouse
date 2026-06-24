@@ -227,7 +227,7 @@ size_t tryLiftPredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryPlan::
 
     size_t lifts = 0;
     if (can_l_to_r)
-        lifts += tryLiftSide(parent_node, 1, left_root,  left_filter,  l_to_r, nodes);
+        lifts += tryLiftSide(parent_node, 1, left_root, left_filter, l_to_r, nodes);
     if (can_r_to_l)
         lifts += tryLiftSide(parent_node, 0, right_root, right_filter, r_to_l, nodes);
     return lifts;
