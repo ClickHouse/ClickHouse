@@ -729,8 +729,9 @@ namespace QueryPlanFormat
 
         /// Reserve the top plan's slot first so it is keyed even if it has no expression columns.
         auto & top_columns = per_plan_columns[&plan];
-        if (plan.getRootNode())
-            buildPrettyNamesForNode(plan.getRootNode(), top_columns, runtime_filter_names, subquery_set_names, per_plan_columns);
+        auto * root = plan.getRootNode();
+        if (root)
+            buildPrettyNamesForNode(root, top_columns, runtime_filter_names, subquery_set_names, per_plan_columns);
 
         PrettyNamesPerPlan result;
         for (auto & [plan_ptr, columns] : per_plan_columns)
