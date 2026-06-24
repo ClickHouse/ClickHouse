@@ -604,7 +604,7 @@ namespace
     };
 }
 
-AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::writeManifestList(
+GeneratedMetadataFileWithInfo AlterDropPartitionExecutor::writeManifestList(
     SnapshotState & state,
     const DropPlan & plan,
     const std::vector<ReplacementManifestWrite> & replacements,
@@ -691,7 +691,7 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
 
     buf->finalize();
 
-    return ManifestListWriteResult{new_snapshot, metadata_info};
+    return metadata_info;
 }
 
 bool AlterDropPartitionExecutor::commitMetadataJSON(
@@ -742,10 +742,13 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, DropPlan plan)
             cleanupNotCommited(std::move(files_for_cleanup));
     });
 
-    auto replacements = writeReplacementManifests(state, plan, filename_generator, files_for_cleanup);
-    auto list_result  = writeManifestList(state, plan, replacements, filename_generator, files_for_cleanup);
+    std::vector<ReplacementManifestWrite> replacements;
+    if (!plan.target_manifests.partially_matched.empty())
+        replacements = writeReplacementManifests(state, plan, filename_generator, files_for_cleanup);
 
-    committed = commitMetadataJSON(state, filename_generator, list_result.metadata_info);
+    auto metadata_info = writeManifestList(state, plan, replacements, filename_generator, files_for_cleanup);
+
+    committed = commitMetadataJSON(state, filename_generator, metadata_info);
     if (!committed)
         return false;
 
@@ -799,7 +802,6 @@ void AlterDropPartitionExecutor::run()
 
         DropPlan plan{std::move(target_manifests)};
 
-        /// `tryCommit` logs the committed snapshot details on success.
         if (tryCommit(state, std::move(plan)))
             return;
     }
