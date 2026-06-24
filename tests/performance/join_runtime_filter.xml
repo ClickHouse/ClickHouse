@@ -128,4 +128,50 @@
     <drop_query>DROP TABLE orders</drop_query>
     <drop_query>DROP TABLE customer</drop_query>
     <drop_query>DROP TABLE nation</drop_query>
+
+    <!-- Bloom filter with many keys and good selectivity.
+         fact table: 100M rows, 1M distinct keys.
+         dimension: 10K keys out of 1M = 1% selectivity.
+         Forces bloom filter via exact_values_limit=0. -->
+    <create_query>CREATE TABLE fact_wide(key UInt64, value UInt64) ENGINE MergeTree ORDER BY key</create_query>
+    <create_query>CREATE TABLE dim_10k(key UInt64) ENGINE MergeTree ORDER BY key</create_query>
+    <create_query>CREATE TABLE dim_100k(key UInt64) ENGINE MergeTree ORDER BY key</create_query>
+
+    <fill_query>INSERT INTO fact_wide SELECT number % 1000000, number FROM numbers(100000000)</fill_query>
+    <fill_query>INSERT INTO dim_10k SELECT number * 100 FROM numbers(10000)</fill_query>
+    <fill_query>INSERT INTO dim_100k SELECT number * 10 FROM numbers(100000)</fill_query>
+
+    <!-- 10K keys in bloom filter, 1% selectivity -->
+    <query>
+        SELECT sum(value)
+        FROM fact_wide
+        JOIN dim_10k ON fact_wide.key = dim_10k.key
+        SETTINGS enable_join_runtime_filters=0
+    </query>
+
+    <query>
+        SELECT sum(value)
+        FROM fact_wide
+        JOIN dim_10k ON fact_wide.key = dim_10k.key
+        SETTINGS enable_join_runtime_filters=1, join_runtime_filter_exact_values_limit=0
+    </query>
+
+    <!-- 100K keys in bloom filter, 10% selectivity -->
+    <query>
+        SELECT sum(value)
+        FROM fact_wide
+        JOIN dim_100k ON fact_wide.key = dim_100k.key
+        SETTINGS enable_join_runtime_filters=0
+    </query>
+
+    <query>
+        SELECT sum(value)
+        FROM fact_wide
+        JOIN dim_100k ON fact_wide.key = dim_100k.key
+        SETTINGS enable_join_runtime_filters=1, join_runtime_filter_exact_values_limit=0
+    </query>
+
+    <drop_query>DROP TABLE fact_wide</drop_query>
+    <drop_query>DROP TABLE dim_10k</drop_query>
+    <drop_query>DROP TABLE dim_100k</drop_query>
 </test>

@@ -2,7 +2,7 @@
 
 #include <DataTypes/hasNullable.h>
 #include <Functions/FunctionFactory.h>
-#include <Interpreters/BloomFilter.h>
+#include <Common/BlockedBloomFilter.h>
 #include <Interpreters/Set.h>
 
 #include <base/types.h>
@@ -231,7 +231,7 @@ public:
 };
 
 /// As long as the number of unique values is small they are stored in a Set but when it grows beyond the limit
-/// the values are moved into a BloomFilter.
+/// the values are moved into a blocked bloom filter (cache-line-friendly, with SIMD support).
 class ApproximateRuntimeFilter : public RuntimeFilterBase<false>
 {
     using Base = RuntimeFilterBase<false>;
@@ -266,10 +266,9 @@ private:
     /// Disables bloom filter if it is likely to have bad selectivity
     void checkBloomFilterWorthiness();
 
-    const UInt64 bloom_filter_hash_functions;
     const Float64 max_ratio_of_set_bits_in_bloom_filter = 0.7;
 
-    BloomFilterPtr bloom_filter;
+    BlockedBloomFilterPtr bloom_filter;
 };
 
 /// Runtime filter that delegates probe to a function captured at publication time.
