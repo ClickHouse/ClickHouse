@@ -41,7 +41,7 @@ void validateNBArguments(const IFunction & func, const ColumnsWithTypeAndName & 
         arguments,
         {
             {"dictionary_name", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
-            {"input_text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String"},
+            {"input_text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
         });
 }
 
