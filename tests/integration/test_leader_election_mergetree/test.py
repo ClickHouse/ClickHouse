@@ -371,7 +371,7 @@ def test_concurrent_inserts_with_restarts(started_cluster):
                 end = time.monotonic()
                 with records_lock:
                     records.append((node.name, start, end, True, value))
-            except Exception as e:
+            except Exception:
                 end = time.monotonic()
                 with records_lock:
                     records.append((node.name, start, end, False, value))
