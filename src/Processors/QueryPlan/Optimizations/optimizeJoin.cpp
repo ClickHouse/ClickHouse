@@ -1137,6 +1137,12 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 join_operator.kind = reverseJoinKind(join_operator.kind);
             }
 
+            /// The build side is the post-flip right child. Its column stats hold the distinct-key count
+            /// of the build relation before this join's `min(left, right)` equi-key clamp, which is what
+            /// sizes the build hash map (the merged `entry->column_stats` would undersize it when the
+            /// probe side has fewer distinct keys).
+            const DPJoinEntry * right_input_entry = flip_join ? entry->left.get() : entry->right.get();
+
             auto left_header_ptr = left_child_node->step->getOutputHeader();
             auto right_header_ptr = right_child_node->step->getOutputHeader();
 
@@ -1286,7 +1292,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             join_step->setInputLabels(std::move(left_label), std::move(right_label));
             relation_names[entry->relations] = join_step->getReadableRelationName();
 
-            join_step->setOptimized(entry->estimated_rows, lhs_estimation, rhs_estimation, entry->column_stats);
+            join_step->setOptimized(
+                entry->estimated_rows, lhs_estimation, rhs_estimation, entry->column_stats, right_input_entry->column_stats);
 
             auto & new_node = nodes.emplace_back();
 

@@ -1407,11 +1407,15 @@ static QueryPlanNode buildPhysicalJoinImpl(
 /// Distinct-key count of the right join key from the planner's column statistics, but only when it is
 /// trustworthy enough to size the build hash map: a single plain-column equi key whose right side is an
 /// INPUT column from one relation, and whose distinct count is backed by a real `uniq` statistic (not
-/// the `default_cardinality_ratio` mock). Returns nullopt for composite/expression keys, sources
-/// without `uniq` statistics, and anything the optimizer did not produce reliable column stats for.
+/// the `default_cardinality_ratio` mock). The count is read from the right (build) input relation stats
+/// (`getRightInputColumnStats`), before this join's `min(left, right)` equi-key clamp: the post-join
+/// result stats would undersize the build map when the probe side has fewer distinct keys, which would
+/// then preallocate the streaming build too small and rehash through the full right key set. Returns
+/// nullopt for composite/expression keys, sources without `uniq` statistics, and anything the optimizer
+/// did not produce reliable column stats for.
 static std::optional<UInt64> extractTrustworthyRightKeyNdv(const JoinStepLogical & join_step)
 {
-    const auto & column_stats = join_step.getResultColumnStats();
+    const auto & column_stats = join_step.getRightInputColumnStats();
     if (column_stats.empty())
         return std::nullopt;
 
