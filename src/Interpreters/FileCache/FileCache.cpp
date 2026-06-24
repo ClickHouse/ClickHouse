@@ -1586,6 +1586,11 @@ void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
 
     ProfileEvents::increment(ProfileEvents::FilesystemCacheFreeSpaceKeepingThreadRun);
 
+    /// Outcome of the drain loop below, reported in the final log line:
+    /// - SUCCESS: drained until nothing more needs to be evicted;
+    /// - CANNOT_EVICT: bailed out early (could not acquire the state lock, or shutdown).
+    auto status = IFileCachePriority::CollectStatus::SUCCESS;
+
     const size_t queue_capacity = std::max<size_t>(2 * keep_up_free_space_eviction_threads, 2);
     /// Stages done by a single main thread and N evicting thread:
     /// 1. Main thread iterates eviction candidates and pushes to candidates_to_evict.
@@ -1691,6 +1696,7 @@ void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
                 if (!lock)
                 {
                     reschedule_ms = free_space_keeping_lock_failed_reschedule_ms;
+                    status = IFileCachePriority::CollectStatus::CANNOT_EVICT;
                     break;
                 }
                 eviction_info = collectFreeSpaceEvictionInfo(lock, in_flight_size, in_flight_elements);
@@ -1740,7 +1746,12 @@ void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
     {
         ProfileEvents::increment(ProfileEvents::FilesystemCacheFreeSpaceKeepingThreadErrors);
         tryLogCurrentException(log, "Error while collecting background eviction candidates");
+        status = IFileCachePriority::CollectStatus::CANNOT_EVICT;
     }
+
+    /// Interrupted by shutdown before the drain could complete.
+    if (shutdown)
+        status = IFileCachePriority::CollectStatus::CANNOT_EVICT;
 
     /// Let the removers finish the queued batches, finalize all of them, then join.
     pending_eviction_queue.finish();
@@ -1749,8 +1760,8 @@ void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
     finalize_removed(/* blocking */true);
     eviction_pool->wait();
 
-    LOG_TRACE(log, "Free space ratio keeping thread evicted {} file segments ({} bytes)",
-              evicted_elements, evicted_size);
+    LOG_TRACE(log, "Free space ratio keeping thread finished with status `{}`, evicted {} file segments ({} bytes)",
+              status, evicted_elements, evicted_size);
 }
 
 void FileCache::iterate(IterateFunc && func, const UserID & user_id)
