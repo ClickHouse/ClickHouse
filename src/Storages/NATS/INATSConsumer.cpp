@@ -97,7 +97,12 @@ ReadBufferPtr INATSConsumer::consume(std::optional<UInt64> timeout_ms)
 void INATSConsumer::ackConsumed()
 {
     for (auto & msg : consumed_messages)
-        natsMsg_Ack(msg.get(), nullptr);
+    {
+        auto status = natsMsg_Ack(msg.get(), nullptr);
+        if (status != NATS_OK)
+            LOG_WARNING(log, "Failed to acknowledge a message in consumer {}: {} (server may redeliver it)",
+                static_cast<void *>(this), natsStatus_GetText(status));
+    }
     consumed_messages.clear();
 }
 
