@@ -134,7 +134,11 @@ class JobStages(metaclass=MetaClasses.WithIter):
 
 
 def _load_darwin_skip_tests():
-    skip_file = Path(__file__).resolve().parent.parent / "defs" / "darwin.skip"
+    skip_file = (
+        Path(__file__).resolve().parent.parent.parent
+        / "tests"
+        / "darwin_fast_test_blacklist.txt"
+    )
     return tuple(line for line in skip_file.read_text().splitlines() if line.strip())
 
 
