@@ -148,9 +148,10 @@ void NaiveBayesDictionary::loadData()
 
     BlockIO io = source_ptr->loadAll();
 
-    /// Validate that every source n-gram matches the configured n. An n-gram with a different arity can
-    /// never be produced by the tokenizer at query time, so it would load silently and only distort the
-    /// class totals and priors; reject the model instead.
+    /// Stream the source rows into the trainer, validating each n-gram against the configured n and mode. A
+    /// malformed n-gram — one with the wrong arity, or invalid UTF-8 in codepoint mode — can never be produced
+    /// by the tokenizer at query time, so it is rejected here instead of silently distorting the class totals
+    /// and priors.
     io.executeWithCallbacks([&]()
     {
         DictionaryPipelineExecutor executor(io.pipeline, false);
@@ -258,8 +259,8 @@ ColumnPtr NaiveBayesDictionary::getColumn(
 
     const size_t rows = string_col->size();
 
-    /// dictGet must return the declared class-attribute type. The predicted class ids are the original source
-    /// values, so they fit whichever unsigned width was declared; build the result column in that type.
+    /// dictGet must return the declared class-attribute type. The predicted class ids are the source class
+    /// values, so they fit whichever unsigned width is declared; build the result column in that type.
     auto classify_as = [&]<typename T>() -> ColumnPtr
     {
         auto column = ColumnVector<T>::create(rows);
@@ -361,8 +362,8 @@ void registerDictionaryNaiveBayes(DictionaryFactory & factory)
         ContextPtr /* global_context */,
         bool /* created_from_ddl */) -> DictionaryPtr
     {
-        /// The structure must be a complex key with a single String element, followed by a class id
-        /// attribute and a count attribute.
+        /// The structure must be a complex key with a single String element, followed by two unsigned-integer
+        /// attributes: a class label and a count.
         if (!dict_struct.key || dict_struct.key->size() != 1)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary must have exactly one complex key column (the n-gram text)");
@@ -372,9 +373,9 @@ void registerDictionaryNaiveBayes(DictionaryFactory & factory)
                 ErrorCodes::BAD_ARGUMENTS,
                 "NaiveBayes dictionary must have exactly two attributes: the class label and the count, both unsigned integers");
 
-        /// The key holds the n-gram text; the two attributes are the class label and the count (which is which is
-        /// resolved below from the `class_attribute` parameter). Both must be unsigned integers: the source columns
-        /// are coerced to these declared types, so this makes the `getUInt` reads in loadData well defined.
+        /// The key holds the n-gram text; the two attributes are the class label and the count, and the
+        /// `class_attribute` parameter (resolved below) says which is which. Both must be unsigned integers: the
+        /// source columns are coerced to these declared types, so this makes the `getUInt` reads in loadData well defined.
         const auto & key_type = (*dict_struct.key)[0].type;
         if (!isString(key_type))
             throw Exception(

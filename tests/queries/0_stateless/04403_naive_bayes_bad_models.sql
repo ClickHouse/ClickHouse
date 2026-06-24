@@ -146,9 +146,9 @@ PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_bad_src')) LAYOUT(NAIVE_BAYES(clas
 SELECT dictGet('nb_bad', 'class_id', 'good'); -- { serverError BAD_ARGUMENTS }
 DROP DICTIONARY nb_bad;
 
--- A single malformed n-gram is rejected even when it appears only after the first thousand rows, because
--- every source row is validated. It is ordered last so a check that stopped after a bounded sample would
--- never see it.
+-- A single malformed n-gram is rejected even when it appears only near the end of a large source, because
+-- every source row is validated. It is ordered last so that a check examining only an early sample of rows
+-- would miss it.
 CREATE DICTIONARY nb_bad (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
 PRIMARY KEY ngram SOURCE(CLICKHOUSE(QUERY '
   SELECT ngram, class_id, count FROM (
