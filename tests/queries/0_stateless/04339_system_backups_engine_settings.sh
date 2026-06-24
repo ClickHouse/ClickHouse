@@ -35,3 +35,13 @@ $CLICKHOUSE_CLIENT "${client_opts[@]}" -m -q "
         (select engine_settings['allow_native_copy'] from system.backups where query_id = '$qid_native')
         != (select engine_settings['allow_native_copy'] from system.backups where query_id = '$qid_no_native');
 "
+
+# The same must be exposed by the persisted system.backup_log row (exercises the log-specific
+# BackupLogElement::appendToBlock path): a settings value plus the non-empty engine_settings shape.
+$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "system flush logs backup_log"
+$CLICKHOUSE_CLIENT "${client_opts[@]}" -m -q "
+    select
+        settings['allow_s3_native_copy'],
+        length(engine_settings) > 0 and mapContains(engine_settings, 'allow_native_copy')
+    from system.backup_log where query_id = '$qid_native' and status = 'BACKUP_CREATED'
+"
