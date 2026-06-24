@@ -647,8 +647,13 @@ TEST_F(ResolvePoolTest, NoAditionalBannForConcurrentFail)
     ASSERT_EQ(0, CurrentMetrics::get(metrics.banned_count));
 }
 
-TEST_F(ResolvePoolTest, StillBannedAfterSuccess)
+TEST_F(ResolvePoolTest, UnbannedAfterConcurrentSuccess)
 {
+    /// Two connections borrow the same address concurrently. One of them fails, banning the
+    /// address, while the other is still in flight. When the in-flight connection then succeeds
+    /// it proves the address is reachable, so `Record::setSuccess` clears the `failed` flag and
+    /// decrements `banned_count` instead of leaving the address pessimized (see the comment on
+    /// `HostResolver::Record::setSuccess`).
     auto history = 5ms;
     auto resolver = make_resolver(toMilliseconds(history));
 
@@ -674,8 +679,8 @@ TEST_F(ResolvePoolTest, StillBannedAfterSuccess)
     ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
     check_no_failed_address(1, resolver, addresses, failed_addr, metrics, start_at + history - epsilon);
 
-    again_addr = std::nullopt; // success;
+    again_addr = std::nullopt; // the in-flight connection succeeds, un-banning the address
 
     ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
-    ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
+    ASSERT_EQ(0, CurrentMetrics::get(metrics.banned_count));
 }
