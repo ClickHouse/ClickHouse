@@ -64,6 +64,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_limit_by_function_keys", false, true, "New setting that eliminates LIMIT BY keys that are functions of other LIMIT BY keys."},
             {"optimize_injective_functions_in_limit_by", false, true, "New setting that replaces injective functions by their arguments in the LIMIT BY keys."},
             {"optimize_rewrite_has_to_in", false, true, "New setting"},
+            {"optimize_rewrite_has_phrase_or_chain", false, false, "New setting to coalesce OR chains of hasPhrase on the same column into hasAnyPhrases (off by default; auto-rewriting hasPhrase is not always beneficial)."},
+            {"optimize_rewrite_has_phrase_and_chain", false, false, "New setting to coalesce AND chains of hasPhrase on the same column into hasAllPhrases (off by default; can regress selective AND filters because AND short-circuits)."},
             {"unique_key_max_encoded_size", 256, 256, "New setting: maximum size (bytes) of the order-preserving binary encoding of a single UNIQUE KEY row"},
             {"query_plan_push_limit_by_into_sort", false, true, "New setting that pushes a per-stream LIMIT BY into the sort pipeline when LIMIT BY's columns are a prefix of ORDER BY, reducing rows flowing through the final merge."},
             {"input_format_geojson_unsupported_geometry_handling", "throw", "throw", "New setting that controls handling of GeoJSON geometry types that cannot be represented in the Geometry type (GeometryCollection, MultiPoint)"},
