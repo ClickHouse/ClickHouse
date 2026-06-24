@@ -244,3 +244,27 @@ SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, enable
     max_rows_to_group_by = 0;
 
 DROP TABLE t_smallest_column_bucket;
+
+-- A bucket can also trim mark RANGES inside a single surviving part (not just drop whole parts).
+-- getColumnSize() is a whole-part figure, so the carrier scales it by the selected mark fraction
+-- (selected / total marks of the part) to rank over the marks this worker actually reads. A single
+-- many-mark part read under a bucket plan exercises that scaling: every column's per-part cost is
+-- de-weighted by the same fraction, so a worker bucketed onto a mark subset still ranks the column
+-- that is cheap on disk. Small index_granularity so one part has many marks for the bucket filter to
+-- split. Same observability limit as above (the distributed worker pipeline does not surface
+-- ReadCompressedBytes), so assert the bucketed no-columns read stays correct.
+DROP TABLE IF EXISTS t_smallest_column_bucket_ranges;
+
+CREATE TABLE t_smallest_column_bucket_ranges (a String, lc LowCardinality(Nullable(String)))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 1024;
+
+INSERT INTO t_smallest_column_bucket_ranges SELECT randomString(200), toString(number % 10) FROM numbers(100000);
+
+SELECT count() FROM t_smallest_column_bucket_ranges
+SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, enable_parallel_replicas = 0,
+    distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 4,
+    optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, optimize_use_projections = 0,
+    max_rows_to_group_by = 0;
+
+DROP TABLE t_smallest_column_bucket_ranges;

@@ -117,7 +117,7 @@ size_t countPartitions(const RangesInDataParts & parts_with_ranges)
 /// Pick a non-virtual column to read for a query that selects no columns (e.g. SELECT count() or
 /// SELECT isNullable(x), where x constant-folds away). We must read something just to learn the
 /// row count, so prefer the column that is cheapest to read off disk. `parts` are the parts that
-/// will actually be read, so the size aggregate reflects the real cost.
+/// will actually be read, with `part.ranges` already trimmed to the marks this pipeline reads.
 String chooseColumnToReadForNoColumnsQuery(const RangesInDataParts & parts, const StorageMetadataPtr & metadata_snapshot)
 {
     NamesAndTypesList available_real_columns = metadata_snapshot->getColumns().getAllPhysical();
@@ -143,17 +143,23 @@ String chooseColumnToReadForNoColumnsQuery(const RangesInDataParts & parts, cons
 
     /// Among the candidates, pick the one cheapest to read from disk. getSmallestColumn() ranks by
     /// the in-memory value size, which mis-ranks compactly stored columns (a LowCardinality(String)
-    /// reads far fewer bytes than a UInt64 yet looks "larger" in memory), so prefer the aggregate
-    /// on-disk size summed over all parts. A compact part keeps every column in one file and reports
-    /// a per-column size of 0, so it contributes nothing to the aggregate while its real read cost
-    /// may dominate the table; the aggregate is therefore only trustworthy when *every* part reports
-    /// a positive size for the column. A candidate with a zero-size part is left unranked here and
-    /// handled by the fallback below. Iterate candidates (a stable order) so ties are deterministic.
+    /// reads far fewer bytes than a UInt64 yet looks "larger" in memory), so prefer the on-disk size.
+    /// getColumnSize().data_compressed is a whole-part figure, so scale it by the fraction of the
+    /// part's marks this pipeline actually reads: a distributed bucket read (filterMarkRangesForBucket)
+    /// can leave only a subset of a part's mark ranges, and a column cheap over a whole part may be the
+    /// expensive one in the marks a given worker reads. Scaling by selected/total marks is exact for a
+    /// full read (factor 1, so the ranking is unchanged) and tracks cross-part trimming; within a single
+    /// part it assumes uniform compression across marks, the best estimate available since per-range
+    /// compressed sizes are not tracked in part metadata. A compact part keeps every column in one file
+    /// and reports a per-column size of 0, so it contributes nothing while its real read cost may
+    /// dominate the table; the estimate is therefore only trustworthy when *every* part reports a
+    /// positive size for the column. A candidate with a zero-size part is left unranked here and handled
+    /// by the fallback below. Iterate candidates (a stable order) so ties are deterministic.
     String carrier;
-    size_t smallest_size = std::numeric_limits<size_t>::max();
+    double smallest_size = std::numeric_limits<double>::max();
     for (const auto & column : carrier_candidates)
     {
-        size_t size = 0;
+        double size = 0;
         bool measurable_in_all_parts = true;
         for (const auto & part : parts)
         {
@@ -163,7 +169,11 @@ String chooseColumnToReadForNoColumnsQuery(const RangesInDataParts & parts, cons
                 measurable_in_all_parts = false;
                 break;
             }
-            size += part_size;
+            size_t total_marks = part.data_part->index_granularity->getMarksCountWithoutFinal();
+            size_t selected_marks = part.ranges.getNumberOfMarks();
+            size += (total_marks > 0 && selected_marks < total_marks)
+                ? static_cast<double>(part_size) * static_cast<double>(selected_marks) / static_cast<double>(total_marks)
+                : static_cast<double>(part_size);
         }
         if (measurable_in_all_parts && size < smallest_size)
         {
@@ -3705,7 +3715,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// shrink it via filterPartsByProjection, and the distributed-read bucket filter above drops whole
     /// parts or trims ranges per worker, so a carrier chosen earlier could be ranked over parts this
     /// pipeline does not read. When no part survives, the read becomes a NullSource (handled below)
-    /// that reads nothing, so no carrier is needed.
+    /// that reads nothing, so no carrier is needed. The bucket filter can also leave only a subset of a
+    /// part's mark ranges; chooseColumnToReadForNoColumnsQuery scales each column's on-disk size by the
+    /// selected mark fraction, so it ranks over the ranges this worker actually reads.
     if (result.needs_no_columns_carrier && result.column_names_to_read.empty() && !result.parts_with_ranges.empty())
         result.column_names_to_read.push_back(
             chooseColumnToReadForNoColumnsQuery(result.parts_with_ranges, storage_snapshot->metadata));
