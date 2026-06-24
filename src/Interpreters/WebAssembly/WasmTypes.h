@@ -24,7 +24,7 @@ template <typename T>
 requires std::is_integral_v<T>
 T loadFromWasmMemory(const uint8_t * src)
 {
-    T value;
+    T value{};
     std::memcpy(&value, src, sizeof(T));
     if constexpr (std::endian::native == std::endian::big)
         value = std::byteswap(value);

@@ -58,6 +58,8 @@ namespace Setting
     extern const SettingsBool enable_lightweight_update;
     extern const SettingsBool validate_mutation_query;
     extern const SettingsTimezone session_timezone;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
 }
 
 namespace ServerSetting
@@ -69,7 +71,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int TABLE_IS_READ_ONLY;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
@@ -123,7 +125,12 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
         {
             segments_holder.take<PartitionCommands>().push_back(std::move(partition_command.value()));
         }
-        else if (auto mutation_command = MutationCommand::parse(*command_ast))
+        else if (auto mutation_command = MutationCommand::parse(
+                     *command_ast,
+                     /* parse_alter_commands = */ false,
+                     /* with_pure_metadata_commands = */ false,
+                     settings[Setting::max_parser_depth],
+                     settings[Setting::max_parser_backtracks]))
         {
             if (mutation_command->type == MutationCommand::UPDATE || mutation_command->type == MutationCommand::DELETE)
             {
@@ -132,7 +139,12 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
                 if (rewritten_command_ast)
                 {
                     auto * new_alter_command = rewritten_command_ast->as<ASTAlterCommand>();
-                    mutation_command = MutationCommand::parse(*new_alter_command);
+                    mutation_command = MutationCommand::parse(
+                        *new_alter_command,
+                        /* parse_alter_commands = */ false,
+                        /* with_pure_metadata_commands = */ false,
+                        settings[Setting::max_parser_depth],
+                        settings[Setting::max_parser_backtracks]);
                     if (!mutation_command)
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Alter command '{}' is rewritten to invalid command '{}'",
@@ -146,17 +158,23 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
             const auto & session_tz = settings[Setting::session_timezone].value;
             if (!session_tz.empty())
             {
-                const auto & source_ast = *mutation_command->ast->as<ASTAlterCommand>();
+                auto source_alter = mutation_command->ast();
+                auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
                 auto tz_rewritten_ast = rewriteDateTimeLiteralsWithTimezone(
-                    source_ast, table->getInMemoryMetadataPtr(context, true)->columns, session_tz);
+                    *source_alter, metadata_snapshot->columns, session_tz);
                 if (tz_rewritten_ast)
                 {
                     auto * tz_alter_command = tz_rewritten_ast->as<ASTAlterCommand>();
-                    mutation_command = MutationCommand::parse(*tz_alter_command);
+                    mutation_command = MutationCommand::parse(
+                        *tz_alter_command,
+                        /* parse_alter_commands = */ false,
+                        /* with_pure_metadata_commands = */ false,
+                        settings[Setting::max_parser_depth],
+                        settings[Setting::max_parser_backtracks]);
                     if (!mutation_command)
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Alter command '{}' is rewritten to invalid command '{}'",
-                            source_ast.formatForErrorMessage(), tz_rewritten_ast->formatForErrorMessage());
+                            source_alter->formatForErrorMessage(), tz_rewritten_ast->formatForErrorMessage());
                 }
             }
 
@@ -433,7 +451,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
-        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
+        throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
 
 #if CLICKHOUSE_CLOUD
     if (alter.isUnlockSnapshot())
@@ -473,7 +491,6 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
 {
     BlockIO res;
     getContext()->checkAccess(getRequiredAccess());
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(alter.getDatabase());
     AlterCommands alter_commands;
 
     for (const auto & child : alter.command_list->children)
@@ -492,10 +509,14 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
+    auto ddl_guard = (!alter.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(alter.getDatabase(), "", nullptr) : nullptr);
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(alter.getDatabase());
+
 #if CLICKHOUSE_CLOUD
     bool managed_by_shared_catalog = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(database->getEngineName());
     if (managed_by_shared_catalog && !getContext()->getClientInfo().is_shared_catalog_internal)
     {
+        ddl_guard.reset();
         return SharedDatabaseCatalog::instance().tryExecuteDDLQuery(query_ptr, getContext());
     }
 #endif
@@ -847,6 +868,7 @@ void InterpreterAlterQuery::extendQueryLogElemImpl(QueryLogElement & elem, const
     }
 }
 
+void registerInterpreterAlterQuery(InterpreterFactory & factory);
 void registerInterpreterAlterQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

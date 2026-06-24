@@ -1,3 +1,4 @@
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <base/scope_guard.h>
 #include <Common/PODArray.h>
@@ -20,12 +21,12 @@ namespace ErrorCodes
 }
 
 CachedInMemoryReadBufferFromFile::CachedInMemoryReadBufferFromFile(
-    PageCacheFile cache_file_, PageCachePtr cache_, std::unique_ptr<ReadBufferFromFileBase> in_, const ReadSettings & settings_)
+    PageCacheFile cache_file_, PageCachePtr cache_, std::unique_ptr<ReadBufferFromFileBase> in_, const PageCacheSettings & settings_)
     : ReadBufferFromFileBase(0, nullptr, 0, in_->getFileSize())
     , cache_file(std::move(cache_file_))
     , cache_key_base_hash(cache_file.baseHash())
     , cache(cache_)
-    , settings(settings_.getPageCacheSettings())
+    , settings(settings_)
     , in(std::move(in_)), read_until_position(file_size.value())
     , inner_read_until_position(read_until_position)
 {
@@ -119,7 +120,7 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
     if (file_offset_of_buffer_end >= read_until_position)
         return false;
 
-    size_t block_size = settings.page_cache_block_size;
+    size_t block_size = settings.block_size;
 
     if (chunk != nullptr)
     {
@@ -133,7 +134,7 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
         cache_range.offset = file_offset_of_buffer_end / block_size * block_size;
         cache_range.size = std::min(block_size, file_size.value() - cache_range.offset);
 
-        chunk = cache->getOrSet(cache_file, cache_range, settings.read_from_page_cache_if_exists_otherwise_bypass_cache, settings.page_cache_inject_eviction, [&](auto cell)
+        chunk = cache->getOrSet(cache_file, cache_range, settings.read_if_exists_otherwise_bypass, settings.random_eviction_for_tests, [&](auto cell)
         {
             Buffer prev_in_buffer = in->internalBuffer();
             SCOPE_EXIT({ in->set(prev_in_buffer.begin(), prev_in_buffer.size()); });
@@ -152,7 +153,7 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
                     /// nontrivial seek or setReadUntilPosition call).
                     /// Use aligned groups of blocks (rather than sliding window) to work better
                     /// with distributed cache.
-                    size_t lookahead_bytes = block_size * std::max<size_t>(1, settings.page_cache_lookahead_blocks);
+                    size_t lookahead_bytes = block_size * std::max<size_t>(1, settings.lookahead_blocks);
                     size_t lookahead_block_end = std::min({
                         file_size.value(),
                         (cache_range.offset / lookahead_bytes + 1) * lookahead_bytes,
@@ -171,7 +172,7 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
                         while (probe.offset < lookahead_block_end
                             && !cache->contains(
                                 probe.hash(cache_key_base_hash),
-                                settings.page_cache_inject_eviction));
+                                settings.random_eviction_for_tests));
                         inner_read_until_position = probe.offset;
                         in->setReadUntilPosition(inner_read_until_position);
                     }
@@ -220,23 +221,23 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
     return true;
 }
 
-std::vector<PageCache::MappedPtr> CachedInMemoryReadBufferFromFile::populateBlockRange(size_t offset, size_t n, const std::function<bool(PageCache::MappedPtr &)> & block_callback) const
+VectorWithMemoryTracking<PageCache::MappedPtr> CachedInMemoryReadBufferFromFile::populateBlockRange(size_t offset, size_t n, const std::function<bool(PageCache::MappedPtr &)> & block_callback) const
 {
     if (n == 0 || offset >= file_size.value())
         return {};
 
-    size_t block_size = settings.page_cache_block_size;
+    size_t block_size = settings.block_size;
     /// Compute end_offset without overflow: clamp n so that offset + n <= file_size.
     size_t end_offset = offset + std::min(n, file_size.value() - offset);
 
     size_t first_block_start = offset / block_size * block_size;
     size_t num_blocks = (end_offset - first_block_start + block_size - 1) / block_size;
 
-    bool detached_if_missing = settings.read_from_page_cache_if_exists_otherwise_bypass_cache;
-    bool inject_eviction = settings.page_cache_inject_eviction;
+    bool detached_if_missing = settings.read_if_exists_otherwise_bypass;
+    bool inject_eviction = settings.random_eviction_for_tests;
 
     /// Phase 1: probe cache for all blocks, record hits.
-    std::vector<PageCache::MappedPtr> cells(num_blocks);
+    VectorWithMemoryTracking<PageCache::MappedPtr> cells(num_blocks);
     PageCacheByteRange block_range;
     for (size_t i = 0; i < num_blocks; ++i)
     {
@@ -255,7 +256,7 @@ std::vector<PageCache::MappedPtr> CachedInMemoryReadBufferFromFile::populateBloc
     /// The coalesced read uses a temporary buffer, capped at `page_cache_max_coalesced_bytes` to
     /// bound transient memory under parallel cold reads. A run longer than the cap is split.
     /// Single-block misses bypass the buffer and read directly into the cache cell.
-    const size_t max_blocks_per_fetch = std::max<size_t>(1, settings.page_cache_max_coalesced_bytes / block_size);
+    const size_t max_blocks_per_fetch = std::max<size_t>(1, settings.max_coalesced_bytes / block_size);
 
     size_t i = 0;
     while (i < num_blocks)
@@ -361,18 +362,18 @@ size_t CachedInMemoryReadBufferFromFile::readBigAt(char * to, size_t n, size_t o
     return bytes_copied;
 }
 
-std::vector<SeekableReadBuffer::CachedRegion> CachedInMemoryReadBufferFromFile::readBigAtRetainCells(size_t n, size_t offset) const
+VectorWithMemoryTracking<SeekableReadBuffer::CachedRegion> CachedInMemoryReadBufferFromFile::readBigAtRetainCells(size_t n, size_t offset) const
 {
     if (n == 0 || offset >= file_size.value())
         return {};
 
-    size_t block_size = settings.page_cache_block_size;
+    size_t block_size = settings.block_size;
     size_t end_offset = offset + std::min(n, file_size.value() - offset);
     size_t first_block_start = offset / block_size * block_size;
 
     auto cells = populateBlockRange(offset, n);
 
-    std::vector<CachedRegion> regions;
+    VectorWithMemoryTracking<CachedRegion> regions;
     size_t current_offset = offset;
     for (size_t i = 0; i < cells.size() && current_offset < end_offset; ++i)
     {
@@ -406,14 +407,14 @@ bool CachedInMemoryReadBufferFromFile::isContentCached(size_t offset, size_t /*s
         return chunk->range.offset <= offset && chunk->range.offset + chunk->range.size > offset;
     }
 
-    size_t block_size = settings.page_cache_block_size;
+    size_t block_size = settings.block_size;
     cache_range.offset = offset / block_size * block_size;
     cache_range.size = std::min(block_size, file_size.value() - cache_range.offset);
 
     /// Use get() instead of contains() to populate `chunk`, so the subsequent nextImpl() call
     /// can reuse it without a second cache lookup.
     UInt128 key_hash = cache_range.hash(cache_key_base_hash);
-    chunk = cache->get(key_hash, settings.page_cache_inject_eviction);
+    chunk = cache->get(key_hash, settings.random_eviction_for_tests);
 
     return chunk != nullptr;
 }
