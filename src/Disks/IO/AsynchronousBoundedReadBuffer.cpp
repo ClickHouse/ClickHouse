@@ -46,6 +46,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
@@ -307,28 +308,33 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
 
     file_offset_of_buffer_end = result.file_offset_of_buffer_end;
 
-    /// The reader must not hand back data past the boundary we are reading up to.
-    /// That boundary is read_until_position when set, otherwise the file size.
-    /// The known file size is a snapshot taken when this buffer was created: an
-    /// object-storage file (e.g. a data-lake metadata file) may be rewritten by a
-    /// concurrent external writer and grow past it, in which case the reader returns
-    /// more bytes than we recorded. Clamp to the known boundary instead of aborting,
-    /// the same way we already handle overshooting read_until_position.
-    std::optional<size_t> upper_bound = read_until_position;
-    if (auto known_file_size = tryGetFileSize(); known_file_size && (!upper_bound || *known_file_size < *upper_bound))
-        upper_bound = known_file_size;
-
-    if (upper_bound && file_offset_of_buffer_end > *upper_bound)
+    if (read_until_position && (file_offset_of_buffer_end > *read_until_position))
     {
-        size_t excessive_bytes_read = file_offset_of_buffer_end - *upper_bound;
+        /// The caller bounded the read explicitly and the reader returned data past
+        /// that boundary. The bytes up to read_until_position are still valid, so trim
+        /// the excess, as before.
+        size_t excessive_bytes_read = file_offset_of_buffer_end - *read_until_position;
 
         if (excessive_bytes_read > working_buffer.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "File offset moved too far: old_file_offset = {}, new_file_offset = {}, upper_bound = {}, bytes_read = {}",
-                            old_file_offset_of_buffer_end, file_offset_of_buffer_end, *upper_bound, bytes_read);
+                            "File offset moved too far: old_file_offset = {}, new_file_offset = {}, read_until_position = {}, bytes_read = {}",
+                            old_file_offset_of_buffer_end, file_offset_of_buffer_end, *read_until_position, bytes_read);
 
         working_buffer.resize(working_buffer.size() - excessive_bytes_read);
-        file_offset_of_buffer_end = *upper_bound;
+        file_offset_of_buffer_end = *read_until_position;
+    }
+    else if (auto known_file_size = tryGetFileSize(); known_file_size && file_offset_of_buffer_end > *known_file_size)
+    {
+        /// We read past the file size recorded when this buffer was created. The
+        /// underlying object was rewritten and grew under us, e.g. a data-lake
+        /// metadata file updated by a concurrent external writer. The bytes and the
+        /// cached size are no longer a consistent snapshot, so returning a truncated
+        /// prefix would be indistinguishable from real data to the caller. Throw a
+        /// catchable exception (not chassert / LOGICAL_ERROR, which abort sanitizer
+        /// builds) so callers can retry or fall back to another path.
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                        "File {} was modified during read: read up to offset {} but its recorded size was {}",
+                        file_name, file_offset_of_buffer_end, *known_file_size);
     }
 
     return !working_buffer.empty();
