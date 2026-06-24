@@ -593,3 +593,83 @@ def test_azure_queue_pause_stops_after_current_batch(started_cluster):
 
     node.query(f"SYSTEM START {table}")
     wait_dst_count(node, table, n_files * ROWS_PER_FILE)
+
+
+def test_stopped_table_releases_hash_ring_slot(started_cluster):
+    # Two S3Queue tables on one node act as peer replicas: same keeper_path and same S3 path, with
+    # hash-ring filtering on, so files are split between them by hash. After SYSTEM STOP one table must
+    # drop out of the active registry, so the other replica takes over the files that hashed to the
+    # stopped one. Otherwise those files stay assigned to the stopped (still-registered) replica and are
+    # never processed by anyone until SYSTEM START or shutdown.
+    node = started_cluster.instances["instance"]
+    suffix = generate_random_string()
+    keeper_path = f"/clickhouse/test_hashring_{suffix}"
+    files_path = f"hashring_{suffix}_data"
+    table_a = f"s3q_hr_a_{suffix}"
+    table_b = f"s3q_hr_b_{suffix}"
+    dst = f"s3q_hr_dst_{suffix}"
+
+    # One shared destination so we can count the rows processed by either replica.
+    node.query(f"DROP TABLE IF EXISTS {dst}")
+    node.query(
+        f"CREATE TABLE {dst} (column1 UInt32, column2 UInt32, column3 UInt32) "
+        "ENGINE = MergeTree ORDER BY column1"
+    )
+
+    settings = {
+        "keeper_path": keeper_path,
+        "enable_hash_ring_filtering": 1,
+        # Poll fast and never back off, so STOP is observed within a poll.
+        "polling_min_timeout_ms": 100,
+        "polling_max_timeout_ms": 100,
+        "polling_backoff_ms": 0,
+    }
+    for t in (table_a, table_b):
+        create_table(started_cluster, node, t, "unordered", files_path,
+                     additional_settings=settings)
+        node.query(f"DROP TABLE IF EXISTS {t}_mv")
+        node.query(
+            f"CREATE MATERIALIZED VIEW {t}_mv TO {dst} AS "
+            f"SELECT column1, column2, column3 FROM {t}"
+        )
+
+    count_active = (
+        f"SELECT count() FROM system.zookeeper WHERE path = '{keeper_path}/registry'"
+    )
+    count_dst = f"SELECT count() FROM {dst}"
+
+    def wait_value(query, expected, timeout=30):
+        deadline = time.time() + timeout
+        cur = None
+        while time.time() < deadline:
+            cur = int(node.query(query))
+            if cur == expected:
+                return cur
+            time.sleep(0.3)
+        return cur
+
+    # Both replicas register as active and split the first batch between them.
+    n1 = 20
+    generate_random_files(started_cluster, files_path, count=n1, start_ind=0)
+    assert wait_value(count_active, 2) == 2, "both replicas should be active"
+    assert wait_value(count_dst, n1 * ROWS_PER_FILE) == n1 * ROWS_PER_FILE
+
+    # STOP one replica: it must release its active-registry slot (the fix). Without it the node lingers.
+    node.query(f"SYSTEM STOP {table_a}")
+    assert wait_value(count_active, 1) == 1, (
+        "a STOPped replica must release its active-registry slot"
+    )
+
+    # The running replica now owns the whole ring, so it drains the next batch in full -- including the
+    # files that would have hashed to the stopped replica.
+    n2 = 20
+    generate_random_files(started_cluster, files_path, count=n2, start_ind=n1)
+    total = (n1 + n2) * ROWS_PER_FILE
+    assert wait_value(count_dst, total) == total, (
+        "the running replica must drain files that hashed to the stopped replica"
+    )
+
+    node.query(f"SYSTEM START {table_a}")
+    node.query(f"DROP TABLE IF EXISTS {table_a} SYNC")
+    node.query(f"DROP TABLE IF EXISTS {table_b} SYNC")
+    node.query(f"DROP TABLE IF EXISTS {dst} SYNC")

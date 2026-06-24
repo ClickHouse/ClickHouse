@@ -763,6 +763,15 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
         LOG_TRACE(log, "Background consumption is stopped, rescheduling next check in {} ms", paused_reschedule_period);
 
+        try
+        {
+            files_metadata->unregisterActive(storage_id);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+
         std::lock_guard lock(mutex);
         reschedule_processing_interval_ms = paused_reschedule_period;
     }
