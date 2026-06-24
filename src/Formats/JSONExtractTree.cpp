@@ -851,7 +851,7 @@ public:
 
                 // Fallback to original conversion if string parsing fails
                 // This ensures backward compatibility and robustness
-                value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DecimalType>>(element.getDouble(), scale);
+                value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DecimalType>>(element.getDouble(), scale, format_settings.cast_float_to_decimal_uses_rounding);
                 break;
             }
             case ElementType::UINT64:
@@ -933,7 +933,7 @@ public:
             switch (element.type())
             {
                 case ElementType::DOUBLE:
-                    value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DateTime64>>(element.getDouble(), scale);
+                    value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DateTime64>>(element.getDouble(), scale, format_settings.cast_float_to_decimal_uses_rounding);
                     break;
                 case ElementType::UINT64:
                     value.value = element.getUInt64();
@@ -1015,7 +1015,7 @@ public:
             switch (element.type())
             {
                 case ElementType::DOUBLE:
-                    value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<Time64>>(element.getDouble(), scale);
+                    value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<Time64>>(element.getDouble(), scale, format_settings.cast_float_to_decimal_uses_rounding);
                     break;
                 case ElementType::UINT64:
                     value.value = element.getUInt64();

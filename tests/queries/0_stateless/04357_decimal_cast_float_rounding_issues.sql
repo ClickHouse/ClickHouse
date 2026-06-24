@@ -43,3 +43,17 @@ SELECT toTime64(1.2345678, 6) SETTINGS cast_float_to_decimal_uses_rounding = 0;
 -- (the same result is produced with or without rounding).
 SELECT toDateTime64(10413791999.4, 3, 'UTC');
 SELECT toTime64(3599999.6, 0);
+
+-- #103104: numbers in the JSON data type materialize as Float64, so JSONExtract goes through the
+-- float->Decimal conversion. The `cast_float_to_decimal_uses_rounding` setting reaches that path
+-- too, so it can round (default) or restore truncation.
+SELECT 'JSONExtract from JSON type honors the rounding setting:';
+SELECT JSONExtract(CAST('{"a":1.5}', 'JSON'), 'a', 'Decimal64(0)');
+SELECT JSONExtract(CAST('{"a":1.5}', 'JSON'), 'a', 'Decimal64(0)') SETTINGS cast_float_to_decimal_uses_rounding = 0;
+
+-- JSONExtract from a String JSON parses numbers as decimal text, but when the text has more
+-- significant digits than the target Decimal's precision the text parse fails and it falls back to
+-- a float conversion (JSONExtractTree Decimal node), which also honors the rounding setting.
+SELECT 'JSONExtract String-JSON high-precision float fallback honors the rounding setting:';
+SELECT JSONExtract('{"a": 12345678.915}', 'a', 'Decimal32(2)');
+SELECT JSONExtract('{"a": 12345678.915}', 'a', 'Decimal32(2)') SETTINGS cast_float_to_decimal_uses_rounding = 0;

@@ -117,7 +117,7 @@ Field convertDecimalToDecimalType(const Field & from, const DataTypeDecimal<T> &
 }
 
 template <typename From, typename T>
-Field convertFloatToDecimalType(const Field & from, const DataTypeDecimal<T> & type)
+Field convertFloatToDecimalType(const Field & from, const DataTypeDecimal<T> & type, bool cast_float_to_decimal_uses_rounding)
 {
     From value = from.safeGet<From>();
     if (!type.canStoreWhole(value))
@@ -127,7 +127,7 @@ Field convertFloatToDecimalType(const Field & from, const DataTypeDecimal<T> & t
     //int fromScale = sValue.length()- sValue.find('.') - 1;
     UInt32 scale = type.getScale();
 
-    auto scaled_value = convertToDecimal<DataTypeNumber<From>, DataTypeDecimal<T>>(value, scale);
+    auto scaled_value = convertToDecimal<DataTypeNumber<From>, DataTypeDecimal<T>>(value, scale, cast_float_to_decimal_uses_rounding);
     return DecimalField<T>(scaled_value, scale);
 }
 
@@ -146,7 +146,7 @@ Field convertFloatToDecimalType(const Field & from, const DataTypeDecimal<T> & t
 ///   SELECT CAST('33.3', 'Decimal64(1)') IN (33.33); -- 0 (RHS would round to 33.3 without strict check)
 ///   SELECT CAST('33.3', 'Decimal64(1)') IN (33.3);  -- 1
 template <typename To>
-Field convertDecimalType(const Field & from, const To & type, bool strict)
+Field convertDecimalType(const Field & from, const To & type, bool strict, bool cast_float_to_decimal_uses_rounding)
 {
     using T = typename To::FieldType;
     Field result;
@@ -174,7 +174,7 @@ Field convertDecimalType(const Field & from, const To & type, bool strict)
     else if (from.getType() == Field::Types::Decimal256)
         result = convertDecimalToDecimalType<Decimal256>(from, type);
     else if (from.getType() == Field::Types::Float64)
-        result = convertFloatToDecimalType<Float64>(from, type);
+        result = convertFloatToDecimalType<Float64>(from, type, cast_float_to_decimal_uses_rounding);
     else
         throw Exception(
             ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}", type.getName(), from.getType());
@@ -333,13 +333,13 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (which_type.isFloat64())
             return convertNumericType<Float64>(src, type);
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal32> *>(&type))
-            return convertDecimalType(src, *ptype, strict);
+            return convertDecimalType(src, *ptype, strict, format_settings.cast_float_to_decimal_uses_rounding);
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal64> *>(&type))
-            return convertDecimalType(src, *ptype, strict);
+            return convertDecimalType(src, *ptype, strict, format_settings.cast_float_to_decimal_uses_rounding);
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal128> *>(&type))
-            return convertDecimalType(src, *ptype, strict);
+            return convertDecimalType(src, *ptype, strict, format_settings.cast_float_to_decimal_uses_rounding);
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal256> *>(&type))
-            return convertDecimalType(src, *ptype, strict);
+            return convertDecimalType(src, *ptype, strict, format_settings.cast_float_to_decimal_uses_rounding);
 
         if (which_type.isEnum() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
         {

@@ -23,3 +23,9 @@ DateTime64 / Time64:
 00:00:01.234567
 2299-12-31 23:59:59.000
 999:59:59
+JSONExtract from JSON type honors the rounding setting:
+2
+1
+JSONExtract String-JSON high-precision float fallback honors the rounding setting:
+12345678.92
+12345678.91

@@ -52,6 +52,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
     extern const SettingsBool allow_experimental_nullable_tuple_type;
+    extern const SettingsBool cast_float_to_decimal_uses_rounding;
 
     extern SettingsGeoJSONUnsupportedGeometryHandling input_format_geojson_unsupported_geometry_handling;
     extern SettingsBool input_format_parallel_parsing;
@@ -301,6 +302,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.schema.is_server = context->hasGlobalContext() && (context->getGlobalContext()->getApplicationType() == Context::ApplicationType::SERVER);
     format_settings.schema.output_format_schema = settings[Setting::output_format_schema];
     format_settings.skip_unknown_fields = settings[Setting::input_format_skip_unknown_fields];
+    format_settings.cast_float_to_decimal_uses_rounding = settings[Setting::cast_float_to_decimal_uses_rounding];
     format_settings.template_settings.resultset_format = settings[Setting::format_template_resultset];
     format_settings.template_settings.row_between_delimiter = settings[Setting::format_template_rows_between_delimiter];
     format_settings.template_settings.row_format = settings[Setting::format_template_row];

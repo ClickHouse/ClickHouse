@@ -58,6 +58,12 @@ struct FormatSettings
     /// tolerates leading zeros during parsing integers
     bool allow_number_leading_zeros = false;
 
+    /// Mirrors the `cast_float_to_decimal_uses_rounding` query setting. When true, float -> `Decimal`
+    /// conversions in format/extraction paths (JSON, Protobuf, Field conversion) round to nearest
+    /// (ties to even); when false they truncate toward zero. Threaded so the compatibility setting
+    /// also covers these paths, not only `CAST`/`toDecimal*`.
+    bool cast_float_to_decimal_uses_rounding = true;
+
     inline static const String FORMAT_SCHEMA_SOURCE_FILE = "file";
     inline static const String FORMAT_SCHEMA_SOURCE_STRING = "string";
     inline static const String FORMAT_SCHEMA_SOURCE_QUERY = "query";

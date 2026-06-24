@@ -1370,7 +1370,10 @@ namespace
         template <typename NumberType>
         DecimalType numberToDecimal(NumberType value) const
         {
-            return convertToDecimal<DataTypeNumber<NumberType>, DataTypeDecimal<DecimalType>>(value, scale);
+            /// `round` only affects float sources; for integer protobuf fields it is ignored.
+            /// `reader` is set on the read path (where this is called); default to rounding otherwise.
+            const bool round = !reader || reader->cast_float_to_decimal_uses_rounding;
+            return convertToDecimal<DataTypeNumber<NumberType>, DataTypeDecimal<DecimalType>>(value, scale, round);
         }
 
         template <typename NumberType>

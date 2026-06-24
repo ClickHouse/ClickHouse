@@ -41,6 +41,11 @@ public:
     /// Does not touch the underlying ReadBuffer.
     void resetState();
 
+    /// Mirrors the `cast_float_to_decimal_uses_rounding` setting; consulted by the Decimal
+    /// serializer when a float/double protobuf field is read into a `Decimal` column
+    /// (rounds to nearest when true, truncates toward zero when false).
+    bool cast_float_to_decimal_uses_rounding = true;
+
 private:
     void readBinary(void * data, size_t size);
     void ignore(UInt64 num_bytes);
