@@ -1,7 +1,6 @@
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
 #include <Common/logger_useful.h>
-#include <Common/scope_guard_safe.h>
 #include <Core/Field.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -104,13 +103,35 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         throw;
     }
 
-    /// Fire BlockIO finish callbacks so the query is recorded in system.query_log (QueryFinish with
-    /// read_rows/read_bytes). Guarded so it always runs after successful execution, even if the
-    /// response finalization in query_finish_callback throws.
-    SCOPE_EXIT_SAFE(io.onFinish());
+    /// Mirror executeQuery's HTTP finish lifecycle:
+    /// - release workload resources (query slot, process-list entry, memory reservation) now, before
+    ///   query_finish_callback flushes the response, so a slow client draining a large response does
+    ///   not keep occupying query concurrency after execution has finished;
+    /// - capture finish_time before query_finish_callback so system.query_log.event_time excludes the
+    ///   HTTP final flush and matches the regular HTTP path;
+    /// - run the callback, then always fire io.onFinish() (recording QueryFinish with
+    ///   read_rows/read_bytes) with that finish_time, catching only the callback's exception and
+    ///   rethrowing it after onFinish so onFinish's own exceptions still propagate normally.
+    io.releaseWorkloadResources();
 
+    const auto finish_time = std::chrono::system_clock::now();
+    std::exception_ptr callback_exception;
     if (query_finish_callback)
-        query_finish_callback();
+    {
+        try
+        {
+            query_finish_callback();
+        }
+        catch (...)
+        {
+            callback_exception = std::current_exception();
+        }
+    }
+
+    io.onFinish(finish_time);
+
+    if (callback_exception)
+        std::rethrow_exception(callback_exception);
 }
 
 void PrometheusHTTPProtocolAPI::writeQueryResponse(
