@@ -34,7 +34,7 @@ namespace
 /// The dictionary name must be a constant String so the dictionary can be resolved once per block;
 /// the input text is any String column. `validateFunctionArguments` rejects a non-constant name with
 /// ILLEGAL_COLUMN and a wrong type with ILLEGAL_TYPE_OF_ARGUMENT.
-void validateNBArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
+void validateArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
 {
     validateFunctionArguments(
         func,
@@ -133,7 +133,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        validateNBArguments(*this, arguments);
+        validateArguments(*this, arguments);
         return std::make_shared<DataTypeUInt32>();
     }
 
@@ -165,7 +165,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        validateNBArguments(*this, arguments);
+        validateArguments(*this, arguments);
         return makeClassProbTuple();
     }
 
@@ -206,7 +206,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        validateNBArguments(*this, arguments);
+        validateArguments(*this, arguments);
         return std::make_shared<DataTypeArray>(makeClassProbTuple());
     }
 
