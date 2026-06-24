@@ -9,6 +9,8 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
+#include <xxhash.h>
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
@@ -18,7 +20,6 @@
 #include <Common/Jemalloc.h>
 #include <Common/JemallocCacheArena.h>
 #include <Common/ProfileEvents.h>
-#include <Common/SipHash.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <base/arithmeticOverflow.h>
@@ -123,51 +124,69 @@ PreprocessedPolygonsCache<PolygonImpl, MultiPolygonImpl> & preprocessedPolygonsC
     return cache;
 }
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
+
 template <class Ring>
-inline void sipHashRing(SipHash & hash, const Ring & ring)
+void updateHashWithRing(XXH3_state_t & state, const Ring & ring)
 {
-    static_assert(std::contiguous_iterator<decltype(ring.data())>, "sipHashRing expects a container with contiguous storage (e.g. std::vector).");
+    static_assert(
+        std::contiguous_iterator<decltype(ring.data())>,
+        "updateHashWithRing expects a container with contiguous storage (e.g. std::vector).");
 
     UInt32 size = static_cast<UInt32>(ring.size());
-    hash.update(size);
-    hash.update(reinterpret_cast<const char *>(ring.data()), size * sizeof(ring[0]));
+    XXH_INLINE_XXH3_128bits_update(&state, &size, sizeof(size));
+    XXH_INLINE_XXH3_128bits_update(&state, ring.data(), size * sizeof(ring[0]));
 }
 
 template <PolygonGeometry Polygon>
-UInt128 sipHash128(const Polygon & polygon)
+void updateHashWithPolygon(XXH3_state_t & state, const Polygon & polygon)
 {
-    SipHash hash;
-
-    /// Polygons and multipolygons share one cache; the leading byte separates their key spaces.
-    hash.update(static_cast<UInt8>(0));
-
-    sipHashRing(hash, polygon.outer());
+    updateHashWithRing(state, polygon.outer());
 
     const auto & inners = polygon.inners();
-    hash.update(static_cast<UInt32>(inners.size()));
+    UInt32 inners_size = static_cast<UInt32>(inners.size());
+    XXH_INLINE_XXH3_128bits_update(&state, &inners_size, sizeof(inners_size));
     for (const auto & inner_ring : inners)
-        sipHashRing(hash, inner_ring);
+        updateHashWithRing(state, inner_ring);
+}
 
-    return hash.get128();
+template <PolygonGeometry Polygon>
+UInt128 hash128(const Polygon & polygon)
+{
+    XXH3_state_t state;
+    XXH_INLINE_XXH3_128bits_reset(&state);
+
+    /// Polygons and multipolygons share one cache; the leading byte separates their key spaces.
+    UInt8 discriminator = 0;
+    XXH_INLINE_XXH3_128bits_update(&state, &discriminator, sizeof(discriminator));
+
+    updateHashWithPolygon(state, polygon);
+
+    auto hash = XXH_INLINE_XXH3_128bits_digest(&state);
+    return {hash.low64, hash.high64};
 }
 
 template <MultiPolygonGeometry MultiPolygon>
-UInt128 sipHash128(const MultiPolygon & multi_polygon)
+UInt128 hash128(const MultiPolygon & multi_polygon)
 {
-    SipHash hash;
+    XXH3_state_t state;
+    XXH_INLINE_XXH3_128bits_reset(&state);
 
-    hash.update(static_cast<UInt8>(1));
+    UInt8 discriminator = 1;
+    XXH_INLINE_XXH3_128bits_update(&state, &discriminator, sizeof(discriminator));
 
-    hash.update(static_cast<UInt32>(multi_polygon.size()));
+    UInt32 size = static_cast<UInt32>(multi_polygon.size());
+    XXH_INLINE_XXH3_128bits_update(&state, &size, sizeof(size));
 
     for (const auto & component : multi_polygon)
-    {
-        UInt128 component_hash = sipHash128(component);
-        hash.update(component_hash);
-    }
+        updateHashWithPolygon(state, component);
 
-    return hash.get128();
+    auto hash = XXH_INLINE_XXH3_128bits_digest(&state);
+    return {hash.low64, hash.high64};
 }
+
+#pragma clang diagnostic pop
 
 template <typename PointInConstPolygonImpl, typename PointInConstMultiPolygonImpl>
 class FunctionPointInPolygon final : public IFunction
@@ -378,7 +397,7 @@ public:
                     return ptr;
                 };
 
-                auto entry = known_polygons.getOrSet(sipHash128(multi_polygon), load).first;
+                auto entry = known_polygons.getOrSet(hash128(multi_polygon), load).first;
                 const auto & impl = std::get<PointInConstMultiPolygonImpl>(*entry);
 
                 if (point_is_const)
@@ -410,7 +429,7 @@ public:
                     return ptr;
                 };
 
-                auto entry = known_polygons.getOrSet(sipHash128(polygon), load).first;
+                auto entry = known_polygons.getOrSet(hash128(polygon), load).first;
                 const auto & impl = std::get<PointInConstPolygonImpl>(*entry);
 
                 if (point_is_const)
