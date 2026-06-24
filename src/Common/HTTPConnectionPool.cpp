@@ -1076,17 +1076,29 @@ private:
             catch (...)
             {
                 ProfileEvents::increment(getMetrics().errors);
+                /// A non-`NetException` error can also come from the post-connect socket setup
+                /// in `Poco::Net::HTTPSession::connect` (`setReceiveTimeout`/`setSendTimeout`/
+                /// `setNoDelay`): `Poco::Net::SocketImpl::error` maps some `setsockopt` errors to
+                /// `Poco::IOException` / `Poco::InvalidArgumentException` rather than `NetException`.
+                /// Those run after the TCP connect has already succeeded, so they are local to the
+                /// socket and must not pessimize the resolved address. Apply the same probe as the
+                /// `NetException` handler: if the socket has a peer, the address was reachable, so
+                /// propagate without `setFail` and let the `Entry` destructor record it as a success.
+                const bool tcp_connected = connection->isConnectedToPeer();
                 (*connection).reset();
-                try
+                if (!tcp_connected)
                 {
-                    /// `Entry::setFail` can throw on DNS errors (see `NetException`
-                    /// handler above). Swallow that here so the original (non-network)
-                    /// exception is preserved when this catch-all rethrows.
-                    address.setFail();
-                }
-                catch (...)
-                {
-                    tryLogCurrentException("HTTPConnectionPool", "Ignored exception from setFail during catch-all rethrow");
+                    try
+                    {
+                        /// `Entry::setFail` can throw on DNS errors (see `NetException`
+                        /// handler above). Swallow that here so the original (non-network)
+                        /// exception is preserved when this catch-all rethrows.
+                        address.setFail();
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException("HTTPConnectionPool", "Ignored exception from setFail during catch-all rethrow");
+                    }
                 }
                 throw;
             }
