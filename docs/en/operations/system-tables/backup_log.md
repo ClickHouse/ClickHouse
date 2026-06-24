@@ -54,7 +54,7 @@ BACKUP TABLE test_db.my_table TO Disk('backups_disk', '1.zip')
 ```
 
 ```sql
-SELECT * FROM system.backup_log WHERE id = 'e5b74ecb-f6f1-426a-80be-872f90043885' ORDER BY event_date, event_time_microseconds \G
+SELECT hostname, event_date, event_time, event_time_microseconds, id, name, status, error, start_time, end_time, num_files, total_size, num_entries, uncompressed_size, compressed_size, files_read, bytes_read FROM system.backup_log WHERE id = 'e5b74ecb-f6f1-426a-80be-872f90043885' ORDER BY event_date, event_time_microseconds \G
 ```
 
 ```response
@@ -108,7 +108,7 @@ RESTORE TABLE test_db.my_table FROM Disk('backups_disk', '1.zip')
 ```
 
 ```sql
-SELECT * FROM system.backup_log WHERE id = 'cdf1f731-52ef-42da-bc65-2e1bfcd4ce90' ORDER BY event_date, event_time_microseconds \G
+SELECT hostname, event_date, event_time, event_time_microseconds, id, name, status, error, start_time, end_time, num_files, total_size, num_entries, uncompressed_size, compressed_size, files_read, bytes_read FROM system.backup_log WHERE id = 'cdf1f731-52ef-42da-bc65-2e1bfcd4ce90' ORDER BY event_date, event_time_microseconds \G
 ```
 
 ```response
@@ -154,7 +154,7 @@ bytes_read:              4290364870
 This is essentially the same information that is written in the system table `system.backups`:
 
 ```sql
-SELECT * FROM system.backups ORDER BY start_time
+SELECT id, name, status, error, start_time, end_time, num_files, total_size, num_entries, uncompressed_size, compressed_size, files_read, bytes_read FROM system.backups ORDER BY start_time
 ```
 
 ```response
