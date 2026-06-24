@@ -31,14 +31,17 @@ namespace ErrorCodes
 
 namespace
 {
-    std::map<String, String> serializeAzureRequestSettings(const AzureBlobStorage::RequestSettings & settings)
+    std::map<String, String> serializeAzureRequestSettings(
+        const AzureBlobStorage::RequestSettings & settings, const ReadSettings & read_settings)
     {
         return {
             {"use_native_copy", settings.use_native_copy ? "true" : "false"},
             {"check_objects_after_upload", settings.check_objects_after_upload ? "true" : "false"},
             {"read_only", settings.read_only ? "true" : "false"},
             {"max_single_part_upload_size", std::to_string(settings.max_single_part_upload_size)},
-            {"min_bytes_for_seek", std::to_string(settings.min_bytes_for_seek)},
+            /// Backup reads use ReadBufferFromAzureBlobStorage, whose seek coalescing uses the read
+            /// setting (remote_read_min_bytes_for_seek), not RequestSettings::min_bytes_for_seek.
+            {"min_bytes_for_seek", std::to_string(read_settings.remote_fs_settings.min_bytes_for_seek)},
             {"max_single_read_retries", std::to_string(settings.max_single_read_retries)},
             {"max_single_download_retries", std::to_string(settings.max_single_download_retries)},
             {"list_object_keys_size", std::to_string(settings.list_object_keys_size)},
@@ -91,7 +94,7 @@ BackupReaderAzureBlobStorage::~BackupReaderAzureBlobStorage() = default;
 
 std::map<String, String> BackupReaderAzureBlobStorage::getSerializedSettings() const
 {
-    return serializeAzureRequestSettings(*settings);
+    return serializeAzureRequestSettings(*settings, read_settings);
 }
 
 bool BackupReaderAzureBlobStorage::fileExists(const String & file_name)
@@ -267,7 +270,7 @@ BackupWriterAzureBlobStorage::~BackupWriterAzureBlobStorage() = default;
 
 std::map<String, String> BackupWriterAzureBlobStorage::getSerializedSettings() const
 {
-    return serializeAzureRequestSettings(*settings);
+    return serializeAzureRequestSettings(*settings, read_settings);
 }
 
 bool BackupWriterAzureBlobStorage::fileExists(const String & file_name)
