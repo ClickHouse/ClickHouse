@@ -1818,6 +1818,12 @@ ColumnPtr convertDynamicColumnToTyped(
     WriteBufferFromOwnString write_buf;
     for (size_t i = 0; i < rows; ++i)
     {
+        if (src_column->isNullAt(i))
+        {
+            dest_column->insertDefault();
+            continue;
+        }
+
         write_buf.restart();
         dynamic_serialization->serializeTextJSON(*src_column, i, write_buf, json_format_settings);
 
@@ -1913,19 +1919,40 @@ ColumnPtr convertObjectColumns(
     /// which ones still need to be populated from shared data or filled with defaults).
     UnorderedSetWithMemoryTracking<String> new_typed_paths_populated;
 
-    /// Unchanged typed paths: reuse by pointer.
+    const auto & dst_typed_path_types = dst_type.getTypedPaths();
+
+    /// Unchanged typed paths: reuse by pointer (unless a new skip rule matches).
     for (const auto & path : plan.unchanged_typed_paths)
     {
-        auto it = src_typed_paths.find(path);
-        dst_typed_columns[path] = it->second;
+        if (shouldSkip(path))
+        {
+            /// New skip rule covers this typed path — fill with defaults, matching format+parse behavior.
+            auto col = dst_typed_path_types.at(path)->createColumn();
+            col->insertManyDefaults(rows);
+            dst_typed_columns[path] = std::move(col);
+        }
+        else
+        {
+            auto it = src_typed_paths.find(path);
+            dst_typed_columns[path] = it->second;
+        }
     }
 
-    /// Changed typed paths: CAST.
+    /// Changed typed paths: CAST (unless a new skip rule matches).
     for (const auto & [path, type_pair] : plan.changed_typed_paths)
     {
         const auto & [from_tp, to_tp] = type_pair;
-        auto it = src_typed_paths.find(path);
-        dst_typed_columns[path] = castColumn({it->second, from_tp, ""}, to_tp);
+        if (shouldSkip(path))
+        {
+            auto col = to_tp->createColumn();
+            col->insertManyDefaults(rows);
+            dst_typed_columns[path] = std::move(col);
+        }
+        else
+        {
+            auto it = src_typed_paths.find(path);
+            dst_typed_columns[path] = castColumn({it->second, from_tp, ""}, to_tp);
+        }
     }
 
     /// New typed paths from dynamic.
@@ -2107,6 +2134,10 @@ ColumnPtr convertObjectColumns(
             {
                 auto path = src_paths_col->getDataAt(idx);
 
+                /// Check skip rules first — skip wins over typed-path promotion.
+                if (shouldSkip(path))
+                    return;
+
                 /// Check if this path should become a new typed path.
                 auto it = new_typed_path_mutable_columns.find(String(path));
                 if (it != new_typed_path_mutable_columns.end())
@@ -2132,10 +2163,6 @@ ColumnPtr convertObjectColumns(
                     populated_in_row.insert(String(path));
                     return;
                 }
-
-                /// Check if this path should be skipped.
-                if (shouldSkip(path))
-                    return;
 
                 /// Copy entry to destination.
                 dst_shared_paths_col.insertData(path.data(), path.size());

@@ -433,3 +433,8 @@ SELECT accurateCastOrNull('{"a" : 42}'::JSON, 'JSON(a String)');
 
 SELECT '--- accurateCast: type mismatch still throws ---';
 SELECT accurateCast('{"a" : 42}'::JSON, 'JSON(a Array(String))'); -- { serverError INCORRECT_DATA }
+
+
+-- ============================================================================
+
+select arrayJoin(['{"a" : 42}', '{}', '{"a" : "43"}'])::JSON(max_dynamic_types=0)::JSON(a UInt32, max_dynamic_types=0) settings input_format_null_as_default=0;

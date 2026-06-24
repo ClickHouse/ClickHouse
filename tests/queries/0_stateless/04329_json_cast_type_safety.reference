@@ -227,3 +227,6 @@ format_parse:	2024-01-15
 --- accurateCastOrNull: valid conversion returns value ---
 {"a":"42"}
 --- accurateCast: type mismatch still throws ---
+{"a":42}
+{"a":0}
+{"a":43}

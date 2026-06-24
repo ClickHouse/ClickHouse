@@ -302,3 +302,25 @@ SETTINGS input_format_try_infer_datetimes_only_datetime64 = 1;
 SELECT 'format_parse:', JSONDynamicPathsWithTypes(data::JSON) FROM t_json_opt ORDER BY data.a
 SETTINGS input_format_try_infer_datetimes_only_datetime64 = 1, json_use_optimized_type_conversion = 0;
 DROP TABLE t_json_opt;
+
+SELECT '--- Skip REGEXP matching unchanged typed path ---';
+DROP TABLE IF EXISTS t_json_opt;
+CREATE TABLE t_json_opt (data JSON(skip_abc Int32, b Int32)) ENGINE = Memory;
+INSERT INTO t_json_opt VALUES ('{"skip_abc": 1, "b": 10}'), ('{"skip_abc": 2, "b": 20}');
+-- New SKIP REGEXP 'skip' should zero-out the skip_abc typed path (fill with defaults), matching format+parse.
+SELECT 'optimized:', (data::JSON(skip_abc Int32, b Int32, SKIP REGEXP 'skip')).skip_abc, (data::JSON(skip_abc Int32, b Int32, SKIP REGEXP 'skip')).b FROM t_json_opt ORDER BY data.b
+SETTINGS json_use_optimized_type_conversion = 1;
+SELECT 'format_parse:', (data::JSON(skip_abc Int32, b Int32, SKIP REGEXP 'skip')).skip_abc, (data::JSON(skip_abc Int32, b Int32, SKIP REGEXP 'skip')).b FROM t_json_opt ORDER BY data.b
+SETTINGS json_use_optimized_type_conversion = 0;
+DROP TABLE t_json_opt;
+
+SELECT '--- Skip REGEXP wins over shared-data promotion to new typed path ---';
+DROP TABLE IF EXISTS t_json_opt;
+CREATE TABLE t_json_opt (data JSON(max_dynamic_paths = 0)) ENGINE = Memory;
+INSERT INTO t_json_opt VALUES ('{"skip_abc": 1, "b": 10}'), ('{"skip_abc": 2, "b": 20}');
+-- skip_abc is in shared data; destination promotes it to typed AND has SKIP REGEXP matching it — skip wins.
+SELECT 'optimized:', (data::JSON(skip_abc Int32, max_dynamic_paths = 0, SKIP REGEXP 'skip')).skip_abc, (data::JSON(skip_abc Int32, max_dynamic_paths = 0, SKIP REGEXP 'skip')).b FROM t_json_opt ORDER BY data.b::Int64
+SETTINGS json_use_optimized_type_conversion = 1;
+SELECT 'format_parse:', (data::JSON(skip_abc Int32, max_dynamic_paths = 0, SKIP REGEXP 'skip')).skip_abc, (data::JSON(skip_abc Int32, max_dynamic_paths = 0, SKIP REGEXP 'skip')).b FROM t_json_opt ORDER BY data.b::Int64
+SETTINGS json_use_optimized_type_conversion = 0;
+DROP TABLE t_json_opt;

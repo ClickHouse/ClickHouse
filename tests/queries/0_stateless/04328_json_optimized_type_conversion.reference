@@ -148,3 +148,13 @@ optimized:	{'a':'DateTime64(9)'}
 optimized:	{'a':'DateTime64(9)'}
 format_parse:	{'a':'DateTime64(9)'}
 format_parse:	{'a':'DateTime64(9)'}
+--- Skip REGEXP matching unchanged typed path ---
+optimized:	0	10
+optimized:	0	20
+format_parse:	0	10
+format_parse:	0	20
+--- Skip REGEXP wins over shared-data promotion to new typed path ---
+optimized:	0	10
+optimized:	0	20
+format_parse:	0	10
+format_parse:	0	20
