@@ -1,5 +1,4 @@
 import os
-import time
 
 import pytest
 
@@ -156,7 +155,7 @@ def remove_file(node, disk_name: str, file_path: str):
 
 
 def test_attach_db_from_readonly_remote_disk(start_cluster):
-    db_name = f"db_test"
+    db_name = "db_test"
 
     node1.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
