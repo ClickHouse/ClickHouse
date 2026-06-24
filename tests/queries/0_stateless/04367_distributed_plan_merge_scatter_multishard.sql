@@ -23,8 +23,14 @@ CREATE TABLE d107946_1 AS base107946_1 ENGINE = Distributed(test_shard_localhost
 CREATE TABLE d107946_4 AS base107946_4 ENGINE = Distributed(test_shard_localhost, currentDatabase(), base107946_4);
 CREATE TABLE m107946 ENGINE = Merge(currentDatabase(), '^d107946_(1|4)$');
 
+-- max_rows_to_group_by must be 0: the CI test profile sets it to 10G, and make_distributed_plan
+-- rejects aggregation with a non-zero limit (Code 344), which would mask the crash path.
+-- prefer_localhost_replica must be 1: with 0 the Distributed engine serializes the plan to the
+-- localhost replica, where the experimental BlocksMarshalling step is not deserializable (Code 47);
+-- that path is unrelated to this crash, which happens earlier while building the per-child plan.
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
-    use_statistics = 1, distributed_plan_optimize_exchanges = 1, enable_join_runtime_filters = 0;
+    use_statistics = 1, distributed_plan_optimize_exchanges = 1, enable_join_runtime_filters = 0,
+    max_rows_to_group_by = 0, prefer_localhost_replica = 1;
 
 -- The exact reproducer from the issue. The Merge child plans are distributed, so the scatter built for
 -- the per-child aggregation sees the bucketed distributed read as its source. No rows match (the
