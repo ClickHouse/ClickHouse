@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings, no-replicated-database, no-flaky-check
+# Tags: no-fasttest, no-random-settings, no-replicated-database, no-flaky-check, no-sanitizers
 # no-fasttest: the `tpch` database is not created in fasttest.
 # no-replicated-database: the `tpch` database is not created in DatabaseReplicated mode.
 # no-random-settings: these tests verify correctness, not behavior under random settings that may cause memory issues.
 # no-flaky-check: TPC-H queries are too expensive for thread fuzzer.
+# no-sanitizers: this is one of the heaviest queries - under sanitizers it either overruns the
+# test timeout while spilling to disk, or uses too much memory if run in memory, so it is skipped.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -14,18 +14,10 @@ SETTINGS+=("${_tpch_lines[@]}")
 
 # Disk spill for GROUP BY and joins. Kept here (not in settings.json) on purpose:
 # tests/performance/tpch.xml reads the same settings.json and must stay in-memory.
-#
-# Skipped on sanitizer builds: there, spilling to disk is so slow that the heaviest
-# queries overrun the 600s test timeout. These are plan/result correctness tests, so
-# running them in memory on sanitizer builds (as before disk spill was enabled in
-# https://github.com/ClickHouse/ClickHouse/pull/107461) keeps coverage without the timeouts.
-if [ "$($CLICKHOUSE_CLIENT --query "SELECT value LIKE '%sanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" != "1" ]
-then
-    SETTINGS+=(
-        --max_bytes_before_external_group_by 314572800
-        --max_bytes_before_external_join 314572800
-    )
-fi
+SETTINGS+=(
+    --max_bytes_before_external_group_by 314572800
+    --max_bytes_before_external_join 314572800
+)
 
 # Plan/result test, not a perf test: spilling to disk starts slowly, so the test-env
 # estimated-time guard false-positives (TOO_SLOW) under sanitizer builds. Disable it.

@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings, no-replicated-database, no-flaky-check
+# Tags: no-fasttest, no-random-settings, no-replicated-database, no-flaky-check, no-sanitizers
 # no-fasttest: TPC-DS tables use web disk (S3) which is not available in fasttest.
 # no-random-settings: random session_timezone, query_plan_join_swap_table, etc. change query results.
 # no-replicated-database: the `tpcds` database is not created in DatabaseReplicated mode.
 # no-flaky-check: TPC-DS queries are too expensive for thread fuzzer.
+# no-sanitizers: this is one of the heaviest queries - under sanitizers it either overruns the
+# test timeout while spilling to disk, or uses too much memory if run in memory, so it is skipped.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
