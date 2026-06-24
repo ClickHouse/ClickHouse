@@ -5,6 +5,8 @@
 #include <Storages/NATS/INATSConsumer.h>
 #include <Storages/NATS/StorageNATS.h>
 
+#include <optional>
+
 
 namespace DB
 {
@@ -18,7 +20,8 @@ public:
         ContextPtr context_,
         const Names & columns,
         size_t max_block_size_,
-        StreamingHandleErrorMode handle_error_mode_);
+        StreamingHandleErrorMode handle_error_mode_,
+        std::optional<UInt64> cancel_epoch_ = {});
 
     ~NATSSource() override;
 
@@ -67,7 +70,8 @@ private:
         ContextPtr context_,
         const Names & columns,
         size_t max_block_size_,
-        StreamingHandleErrorMode handle_error_mode_);
+        StreamingHandleErrorMode handle_error_mode_,
+        std::optional<UInt64> cancel_epoch_ = {});
 };
 
 }

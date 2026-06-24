@@ -1178,6 +1178,7 @@ void StorageKafka2::threadFunc(size_t idx)
         auto table_id = getStorageID();
         // Check if at least one direct dependency is attached
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
+        const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
         const bool run_cycle = stream_control.claimCycle(task->last_seen_refresh_epoch);
         if (num_views && run_cycle)
         {
@@ -1215,7 +1216,7 @@ void StorageKafka2::threadFunc(size_t idx)
                     LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
                     // Exit the loop & reschedule if some stream stalled
-                    if (maybe_stall_reason = streamToViews(idx); maybe_stall_reason.has_value())
+                    if (maybe_stall_reason = streamToViews(idx, cycle_epoch); maybe_stall_reason.has_value())
                     {
                         LOG_TRACE(
                             log,
@@ -1224,7 +1225,7 @@ void StorageKafka2::threadFunc(size_t idx)
                         break;
                     }
 
-                    if (stream_control.isBlocked())
+                    if (stream_control.isBlocked() || stream_control.isCancelRequested(cycle_epoch))
                         break;
 
                     auto ts = std::chrono::steady_clock::now();
@@ -1263,13 +1264,10 @@ void StorageKafka2::threadFunc(size_t idx)
     }
 }
 
-std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx)
+std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx, UInt64 cycle_epoch)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageKafka2::streamToViews");
 
-    /// Snapshot the cancel epoch for this whole cycle; a STOP/CANCEL arriving mid-cycle advances it past
-    /// this value and aborts the in-flight block before its Keeper offset guard commits.
-    const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
     // This function is written assuming that each consumer has their own thread. This means once this is changed, this
     // function should be revisited. The return values should be revisited, as stalling all consumers because of a
     // single one stalled is not a good idea.

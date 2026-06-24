@@ -56,7 +56,8 @@ RabbitMQSource::RabbitMQSource(
     StreamingHandleErrorMode handle_error_mode_,
     bool nack_broken_messages_,
     bool ack_in_suffix_,
-    LoggerPtr log_)
+    LoggerPtr log_,
+    std::optional<UInt64> cancel_epoch_)
     : RabbitMQSource(
         storage_,
         storage_snapshot_,
@@ -68,7 +69,8 @@ RabbitMQSource::RabbitMQSource(
         handle_error_mode_,
         nack_broken_messages_,
         ack_in_suffix_,
-        log_)
+        log_,
+        cancel_epoch_)
 {
 }
 
@@ -83,7 +85,8 @@ RabbitMQSource::RabbitMQSource(
     StreamingHandleErrorMode handle_error_mode_,
     bool nack_broken_messages_,
     bool ack_in_suffix_,
-    LoggerPtr log_)
+    LoggerPtr log_,
+    std::optional<UInt64> cancel_epoch_)
     : ISource(std::make_shared<const Block>(getSampleBlock(headers.first, headers.second)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -95,7 +98,7 @@ RabbitMQSource::RabbitMQSource(
     , nack_broken_messages(nack_broken_messages_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
-    , cancel_epoch(storage_.currentCancelEpoch())
+    , cancel_epoch(cancel_epoch_.value_or(storage_.currentCancelEpoch()))
     , log(log_)
     , max_execution_time_ms(max_execution_time_)
 {

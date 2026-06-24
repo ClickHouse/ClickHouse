@@ -199,7 +199,7 @@ private:
     /// and pushing result to dependent tables.
     void threadFunc(size_t streaming_tasks_index);
     /// A subset of logic executed by threadFunc.
-    bool streamToViews(size_t streaming_tasks_index);
+    bool streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch);
     /// Apply after_processing action to successfully processed files.
     void postProcess(const StoredObjects & successful_objects) const;
     /// Commit processed files to keeper as either successful or unsuccessful.

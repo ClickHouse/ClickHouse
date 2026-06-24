@@ -149,7 +149,7 @@ private:
     size_t getMaxBlockSize() const;
     void deactivateTask(BackgroundSchedulePoolTaskHolder & task);
 
-    bool streamToViews();
+    bool streamToViews(UInt64 cycle_epoch);
     bool checkDependencies(const StorageID & table_id);
 };
 

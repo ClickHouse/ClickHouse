@@ -636,6 +636,7 @@ void StorageNATS::threadFunc()
     if (consumers_ready && subscription_stale.exchange(false))
         unsubscribeConsumers();
 
+    const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
     const bool run_cycle = stream_control.claimCycle(last_seen_refresh_epoch);
 
     try
@@ -662,14 +663,14 @@ void StorageNATS::threadFunc()
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
-                if (streamToViews())
+                if (streamToViews(cycle_epoch))
                 {
                     /// Reschedule with backoff.
                     consumers_queues_are_empty = true;
                     break;
                 }
 
-                if (stream_control.isBlocked())
+                if (stream_control.isBlocked() || stream_control.isCancelRequested(cycle_epoch))
                     break;
 
                 auto end_time = std::chrono::steady_clock::now();
@@ -712,7 +713,7 @@ void StorageNATS::threadFunc()
 }
 
 
-bool StorageNATS::streamToViews()
+bool StorageNATS::streamToViews(UInt64 cycle_epoch)
 {
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -754,7 +755,7 @@ bool StorageNATS::streamToViews()
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto source = std::make_shared<NATSSource>(*this, storage_snapshot, new_context, column_names, block_size, (*nats_settings)[NATSSetting::nats_handle_error_mode]);
+        auto source = std::make_shared<NATSSource>(*this, storage_snapshot, new_context, column_names, block_size, (*nats_settings)[NATSSetting::nats_handle_error_mode], cycle_epoch);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 

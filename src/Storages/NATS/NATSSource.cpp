@@ -40,8 +40,9 @@ NATSSource::NATSSource(
     ContextPtr context_,
     const Names & columns,
     size_t max_block_size_,
-    StreamingHandleErrorMode handle_error_mode_)
-    : NATSSource(storage_, storage_snapshot_, getHeaders(storage_snapshot_), context_, columns, max_block_size_, handle_error_mode_)
+    StreamingHandleErrorMode handle_error_mode_,
+    std::optional<UInt64> cancel_epoch_)
+    : NATSSource(storage_, storage_snapshot_, getHeaders(storage_snapshot_), context_, columns, max_block_size_, handle_error_mode_, cancel_epoch_)
 {
 }
 
@@ -52,7 +53,8 @@ NATSSource::NATSSource(
     ContextPtr context_,
     const Names & columns,
     size_t max_block_size_,
-    StreamingHandleErrorMode handle_error_mode_)
+    StreamingHandleErrorMode handle_error_mode_,
+    std::optional<UInt64> cancel_epoch_)
     : ISource(std::make_shared<const Block>(getSampleBlock(headers.first, headers.second)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -62,7 +64,7 @@ NATSSource::NATSSource(
     , handle_error_mode(handle_error_mode_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
-    , cancel_epoch(storage_.currentCancelEpoch())
+    , cancel_epoch(cancel_epoch_.value_or(storage_.currentCancelEpoch()))
 {
 }
 

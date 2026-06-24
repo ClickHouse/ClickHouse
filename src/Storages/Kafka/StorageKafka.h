@@ -165,7 +165,7 @@ private:
     size_t getPollTimeoutMillisecond() const;
     size_t getSchemaRegistrySkipBytes() const;
 
-    bool streamToViews();
+    bool streamToViews(UInt64 cycle_epoch);
 
     void cleanConsumersByTTL();
     void cleanConsumers();

@@ -216,7 +216,7 @@ private:
         LongStall,
     };
 
-    std::optional<StallKind> streamToViews(size_t idx);
+    std::optional<StallKind> streamToViews(size_t idx, UInt64 cycle_epoch);
 
     /// KeeperHandlingConsumer has to be acquired before polling it
     KeeperHandlingConsumerPtr acquireConsumer(size_t idx);

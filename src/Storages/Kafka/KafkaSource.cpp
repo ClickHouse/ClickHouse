@@ -45,7 +45,8 @@ KafkaSource::KafkaSource(
     const Names & columns,
     LoggerPtr log_,
     size_t max_block_size_,
-    bool commit_in_suffix_)
+    bool commit_in_suffix_,
+    std::optional<UInt64> cancel_epoch_)
     : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -57,7 +58,7 @@ KafkaSource::KafkaSource(
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , virtual_header(storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader))
     , handle_error_mode(storage.getStreamingHandleErrorMode())
-    , cancel_epoch(storage_.currentCancelEpoch())
+    , cancel_epoch(cancel_epoch_.value_or(storage_.currentCancelEpoch()))
 {
 }
 

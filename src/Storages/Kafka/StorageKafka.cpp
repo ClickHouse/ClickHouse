@@ -613,6 +613,7 @@ void StorageKafka::threadFunc(size_t idx)
         auto table_id = getStorageID();
         // Check if at least one direct dependency is attached
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
+        const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
         const bool run_cycle = stream_control.claimCycle(task->last_seen_refresh_epoch);
 
         if (num_views && run_cycle)
@@ -631,14 +632,14 @@ void StorageKafka::threadFunc(size_t idx)
                 LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
                 // Exit the loop & reschedule if some stream stalled
-                auto some_stream_is_stalled = streamToViews();
+                auto some_stream_is_stalled = streamToViews(cycle_epoch);
                 if (some_stream_is_stalled)
                 {
                     LOG_TRACE(log, "Stream(s) stalled. Rescheduling in {} ms.", (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
                     break;
                 }
 
-                if (stream_control.isBlocked())
+                if (stream_control.isBlocked() || stream_control.isCancelRequested(cycle_epoch))
                     break;
 
                 auto ts = std::chrono::steady_clock::now();
@@ -679,7 +680,7 @@ void StorageKafka::threadFunc(size_t idx)
 }
 
 
-bool StorageKafka::streamToViews()
+bool StorageKafka::streamToViews(UInt64 cycle_epoch)
 {
     Stopwatch watch;
 
@@ -724,7 +725,7 @@ bool StorageKafka::streamToViews()
     pipes.reserve(stream_count);
     for (size_t i = 0; i < stream_count; ++i)
     {
-        auto source = std::make_shared<KafkaSource>(*this, storage_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, false);
+        auto source = std::make_shared<KafkaSource>(*this, storage_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, false, cycle_epoch);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 

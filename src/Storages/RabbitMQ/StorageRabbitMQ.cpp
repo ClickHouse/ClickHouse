@@ -1101,6 +1101,7 @@ void StorageRabbitMQ::threadFunc()
             size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
             bool rabbit_connected = connection->isConnected() || connection->reconnect();
 
+            const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
             const bool run_cycle = rabbit_connected && stream_control.claimCycle(last_seen_refresh_epoch);
 
             if (num_views && run_cycle)
@@ -1115,11 +1116,11 @@ void StorageRabbitMQ::threadFunc()
 
                     LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
-                    bool continue_reading = streamToViews();
+                    bool continue_reading = streamToViews(cycle_epoch);
                     if (!continue_reading)
                         break;
 
-                    if (stream_control.isBlocked())
+                    if (stream_control.isBlocked() || stream_control.isCancelRequested(cycle_epoch))
                         break;
 
                     auto end_time = std::chrono::steady_clock::now();
@@ -1173,7 +1174,7 @@ void StorageRabbitMQ::threadFunc()
     }
 }
 
-bool StorageRabbitMQ::streamToViews()
+bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch)
 {
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -1205,7 +1206,7 @@ bool StorageRabbitMQ::streamToViews()
         auto source = std::make_shared<RabbitMQSource>(
             *this, storage_snapshot, new_context, Names{}, block_size,
             max_execution_time_ms, (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode],
-            reject_unhandled_messages, /* ack_in_suffix */false, log);
+            reject_unhandled_messages, /* ack_in_suffix */false, log, cycle_epoch);
 
         sources.emplace_back(source);
         pipes.emplace_back(source);

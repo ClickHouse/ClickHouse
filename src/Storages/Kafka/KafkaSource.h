@@ -6,6 +6,8 @@
 #include <Storages/Kafka/KafkaConsumer.h>
 #include <Common/Stopwatch.h>
 
+#include <optional>
+
 
 namespace Poco
 {
@@ -24,7 +26,8 @@ public:
         const Names & columns,
         LoggerPtr log_,
         size_t max_block_size_,
-        bool commit_in_suffix = false);
+        bool commit_in_suffix = false,
+        std::optional<UInt64> cancel_epoch_ = {});
     ~KafkaSource() override;
 
     String getName() const override { return storage.getName(); }

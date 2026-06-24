@@ -755,6 +755,8 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
     const auto storage_id = getStorageID();
 
+    const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
+
     if (!stream_control.claimCycle(streaming_task_refresh_epochs.at(streaming_tasks_index)))
     {
         /// SYSTEM STOP/PAUSE blocks polling: skip processing. SYSTEM START wakes the task promptly
@@ -795,7 +797,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
                 files_metadata->registerActive(storage_id);
 
-                if (streamToViews(streaming_tasks_index))
+                if (streamToViews(streaming_tasks_index, cycle_epoch))
                 {
                     /// Reset the reschedule interval.
                     std::lock_guard lock(mutex);
@@ -848,14 +850,10 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
     }
 }
 
-bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
+bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch)
 {
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
-
-    /// Snapshot the cancel epoch for this whole round; a SYSTEM STOP/CANCEL arriving mid-round advances
-    /// it past this value, which cancels the pipeline and resets the in-flight files for reprocessing.
-    const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
 
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
