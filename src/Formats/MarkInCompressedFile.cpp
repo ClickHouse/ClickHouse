@@ -198,8 +198,8 @@ std::shared_ptr<MarksInCompressedFile> MarksInCompressedFile::Builder::finish()
 
     chassert(marks_flushed == total_marks);
 
-    /// Ensure +1 overallocation element for readBits safety.
-    size_t required_length = (packed_bits + 63) / 64 + 1;
+    /// +1 overallocation element is needed by readBits, but only for non-empty marks.
+    size_t required_length = total_marks == 0 ? 0 : (packed_bits + 63) / 64 + 1;
     if (packed.size() < required_length)
         packed.resize_fill(required_length);
 
@@ -208,7 +208,8 @@ std::shared_ptr<MarksInCompressedFile> MarksInCompressedFile::Builder::finish()
     PODArray<UInt64, 4096, JemallocCacheAllocator> exact_packed;
     exact_packed.reserve_exact(required_length);
     exact_packed.resize_fill(required_length);
-    memcpy(exact_packed.data(), packed.data(), required_length * sizeof(UInt64));
+    if (required_length > 0)
+        memcpy(exact_packed.data(), packed.data(), required_length * sizeof(UInt64));
     packed = std::move(exact_packed);
 
     return std::shared_ptr<MarksInCompressedFile>(
