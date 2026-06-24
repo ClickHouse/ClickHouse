@@ -152,5 +152,8 @@ INSERT INTO t_insert_returning (id, name) RETURNING (SELECT (SELECT 1 SETTINGS m
 -- Rejected setting inside a CTE must also be caught
 INSERT INTO t_insert_returning (id, name) RETURNING (WITH cte AS (SELECT 1 SETTINGS max_memory_usage=1000000) SELECT * FROM cte) VALUES (203, 'cte'); -- { serverError NOT_IMPLEMENTED }
 
+-- `profile` is rejected because it can expand into any of the rejected query-global settings
+INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 SETTINGS profile='default') VALUES (204, 'profile'); -- { serverError NOT_IMPLEMENTED }
+
 DROP TABLE t_insert_returning_other;
 DROP TABLE t_insert_returning;

@@ -81,6 +81,10 @@ namespace
             "temporary_files_codec",
             "temporary_files_buffer_size",
             "use_concurrency_control",
+            /// `profile` expands (via `Context::setSetting`) into an arbitrary set of setting changes
+            /// that may include any of the above. Rejecting the profile name itself fail-closes that
+            /// indirection without having to expand it here.
+            "profile",
         };
 
         /// A SETTINGS clause attached to any SELECT in the subquery is applied to the query context
