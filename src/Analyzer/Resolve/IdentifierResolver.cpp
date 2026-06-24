@@ -361,7 +361,8 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     if (!storage_lock)
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     storage->updateExternalDynamicMetadataIfExists(context);
-    auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(context, false), context);
+    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+    auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
     /// Pass the user-requested storage_id explicitly instead of letting the
     /// TableNode ctor read storage->getStorageID(), which can be mutated by
     /// a concurrent renameInMemory between tryGetTable and this point.
@@ -1301,10 +1302,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         auto current_type = resolved_column.getColumnType();
         auto result_type = using_column_node_it->second->getColumnType();
 
-        /// If current column is Nullable because it comes from previous OUTER JOIN, keep nullability,
-        /// even if USING column itself is not Nullable (for LEFT/RIGHT JOIN).
+        /// Current column is Nullable from a previous OUTER JOIN but the USING supertype is not:
+        /// keep the supertype's value type and re-apply nullability. Safe variant leaves a type
+        /// that cannot be inside Nullable (e.g. Dynamic) as-is instead of throwing.
         if (isNullableOrLowCardinalityNullable(current_type) && !isNullableOrLowCardinalityNullable(result_type))
-            result_type = makeNullableOrLowCardinalityNullable(current_type);
+            result_type = makeNullableOrLowCardinalityNullableSafe(result_type);
 
         if (!result_type->equals(*current_type))
         {

@@ -937,7 +937,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         merge_tree_settings,
         global_ctx->metadata_snapshot,
         global_ctx->merging_columns,
-        MergeTreeIndexFactory::instance().getMany(global_ctx->merging_skip_indexes, *global_ctx->data_settings),
+        MergeTreeIndexFactory::instance().getMany(global_ctx->metadata_snapshot, global_ctx->merging_skip_indexes, *global_ctx->data_settings),
         global_ctx->compression_codec,
         std::move(index_granularity_ptr),
         global_ctx->txn ? global_ctx->txn->tid : Tx::NonTransactionalTID,
@@ -1762,7 +1762,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
 
     if (indexes_it != global_ctx->skip_indexes_by_column.end())
     {
-        indexes_to_recalc = MergeTreeIndexFactory::instance().getMany(indexes_it->second, *global_ctx->data_settings);
+        indexes_to_recalc = MergeTreeIndexFactory::instance().getMany(global_ctx->metadata_snapshot, indexes_it->second, *global_ctx->data_settings);
         addSkipIndexesExpressionSteps(merge_column_query_plan, indexes_it->second, global_ctx);
     }
 
@@ -2237,7 +2237,7 @@ bool MergeTask::MergeTextIndexStage::prepare() const
 
     for (const auto & index : global_ctx->text_indexes_to_merge)
     {
-        auto index_ptr = MergeTreeIndexFactory::instance().get(index, *global_ctx->data_settings);
+        auto index_ptr = MergeTreeIndexFactory::instance().get(global_ctx->metadata_snapshot, index, *global_ctx->data_settings);
         std::vector<TextIndexSegment> segments;
 
         if (global_ctx->merge_may_reduce_rows)
@@ -2269,6 +2269,7 @@ bool MergeTask::MergeTextIndexStage::prepare() const
         auto task = std::make_unique<MergeTextIndexesTask>(
             std::move(segments),
             global_ctx->new_data_part,
+            global_ctx->rows_written,
             index_ptr,
             global_ctx->merged_part_offsets,
             reader_settings,
@@ -2823,7 +2824,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
         if (!read_any_required_column)
             continue;
 
-        auto index_ptr = MergeTreeIndexFactory::instance().get(index, *global_ctx->data_settings);
+        auto index_ptr = MergeTreeIndexFactory::instance().get(global_ctx->metadata_snapshot, index, *global_ctx->data_settings);
 
         /// Rebuild index if merge may reduce rows because we cannot adjust parts offsets in that case.
         /// Build index if it is not materialized in the data part.
