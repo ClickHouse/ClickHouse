@@ -122,6 +122,16 @@ static std::string buildScannConfigString(
     size_t num_blocks,
     bool use_residual)
 {
+    /// num_clusters_per_block MUST be 16 here. The proto default is 256, but lookup_type
+    /// INT8_LUT16 packs two 4-bit codes per byte (CreatePackedDataset: u1 * 16 + u0), so it
+    /// can only address 16 centers per subspace. Leaving the default 256 trains a 256-center
+    /// codebook whose codes (0..255) overflow the 4-bit packing and silently corrupt the
+    /// asymmetric-hashing scores, which collapses candidate ranking: recall@100 then needs a
+    /// ~100x larger exact-reordering pool (e.g. 0.40 vs 0.98 at pool=2000 on LAION 1M).
+    ///
+    /// noise_shaping_threshold enables anisotropic vector quantization (AVQ), ScaNN's standard
+    /// technique for biasing per-block quantization error orthogonal to the datapoint direction
+    /// to better preserve inner products. 0.2 is the long-standing ScaNN default.
     return fmt::format(
         "num_neighbors: 100\n"
         "distance_measure {{ distance_measure: \"{}\" }}\n"
@@ -138,7 +148,9 @@ static std::string buildScannConfigString(
         "hash {{\n"
         "  asymmetric_hash {{\n"
         "    lookup_type: INT8_LUT16\n"
+        "    num_clusters_per_block: 16\n"
         "    use_residual_quantization: {}\n"
+        "    noise_shaping_threshold: 0.2\n"
         "    projection {{ projection_type: CHUNK num_blocks: {} num_dims_per_block: 2 input_dim: {} }}\n"
         "  }}\n"
         "}}\n"
