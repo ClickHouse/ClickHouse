@@ -233,7 +233,7 @@ def test_async_load_system_database(started_cluster):
             assert (
                 int(
                     node2.query(
-                        f"select count() from system.asynchronous_loader where job ilike '%_log_%_test' and execution_pool = 'BackgroundLoad'"
+                        "select count() from system.asynchronous_loader where job ilike '%_log_%_test' and execution_pool = 'BackgroundLoad'"
                     )
                 )
                 > 0
@@ -416,7 +416,7 @@ def test_materialized_views_replicated(started_cluster):
                 f"INSERT INTO test_mv.test_table_H VALUES({i})", timeout=60
             )
             logging.debug(f"{i} inserted")
-        except (QueryRuntimeException, QueryTimeoutExceedException) as e:
+        except (QueryRuntimeException, QueryTimeoutExceedException):
             # CH is not started yet
             logging.debug(f"{i} is not inserted - skip")
             time.sleep(0.2)
@@ -443,7 +443,7 @@ def test_materialized_views_replicated(started_cluster):
 
     for node in [node1, node2]:
         node.query(
-            f"""
+            """
             DROP TABLE test_mv.test_table_H SYNC;
             DROP TABLE test_mv.test_table_S SYNC;
             DROP VIEW test_mv.test_mv SYNC;

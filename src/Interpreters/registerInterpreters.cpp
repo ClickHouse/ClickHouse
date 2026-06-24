@@ -68,6 +68,7 @@ void registerInterpreterAlterClusterQuery(InterpreterFactory & factory);
 void registerInterpreterDropClusterCatalogQuery(InterpreterFactory & factory);
 void registerInterpreterShowCreateClusterCatalogQuery(InterpreterFactory & factory);
 void registerInterpreterDropIndexQuery(InterpreterFactory & factory);
+void registerInterpreterHypotheticalIndexQuery(InterpreterFactory & factory);
 void registerInterpreterBackupQuery(InterpreterFactory & factory);
 void registerInterpreterDeleteQuery(InterpreterFactory & factory);
 void registerInterpreterUpdateQuery(InterpreterFactory & factory);
@@ -144,6 +145,7 @@ void registerInterpreters()
     registerInterpreterDropClusterCatalogQuery(factory);
     registerInterpreterShowCreateClusterCatalogQuery(factory);
     registerInterpreterDropIndexQuery(factory);
+    registerInterpreterHypotheticalIndexQuery(factory);
     registerInterpreterBackupQuery(factory);
     registerInterpreterDeleteQuery(factory);
     registerInterpreterUpdateQuery(factory);
