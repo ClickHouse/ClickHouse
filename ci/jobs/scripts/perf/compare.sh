@@ -31,6 +31,7 @@ export MALLOC_CONF="abort_conf:true,abort:true,narenas:$(nproc --all)"
 # samples) for the per-query profiler used in the dedicated profile runs.
 # Lower than the 512 KiB (19) default: we profile single queries in isolation,
 # so we need a denser profile to get useful JemallocSample flamegraphs.
+# Must match CHServer.JEMALLOC_PROFILER_SAMPLING_RATE in performance_tests.py.
 JEMALLOC_PROFILER_SAMPLING_RATE=16
 
 function wait_for_server # port, pid

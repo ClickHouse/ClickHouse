@@ -693,6 +693,12 @@ class CHServer:
     RIGHT_SERVER_KEEPER_RAFT_PORT = 19234
     RIGHT_SERVER_INTERSERVER_PORT = 19009
 
+    # lg2 of the average byte interval between jemalloc allocation samples.
+    # Denser than the 512 KiB (19) default: we profile single queries in
+    # isolation, so the profile needs to be dense to yield useful
+    # JemallocSample flamegraphs. Must match compare.sh.
+    JEMALLOC_PROFILER_SAMPLING_RATE = 16
+
     def __init__(self, is_left=False):
         if is_left:
             server_port = self.LEFT_SERVER_PORT
@@ -721,7 +727,8 @@ class CHServer:
             --top_level_domains_path {serever_path}/top_level_domains --tcp_port {server_port} \
             --keeper_server.tcp_port {keeper_port} --keeper_server.raft_configuration.server.port {raft_port} \
             --keeper_server.storage_path {serever_path}/coordination --zookeeper.node.port {keeper_port} \
-            --interserver_http_port {inter_server_port}"
+            --interserver_http_port {inter_server_port} \
+            --jemalloc_profiler_sampling_rate {self.JEMALLOC_PROFILER_SAMPLING_RATE}"
 
     def start_preconfig(self):
         print("Starting ClickHouse server")
