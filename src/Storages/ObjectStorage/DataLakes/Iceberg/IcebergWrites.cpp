@@ -1,3 +1,4 @@
+#include <limits>
 #include <Analyzer/FunctionNode.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
@@ -133,28 +134,63 @@ void writePartitionRecord(
         if (i >= partition_values.size())
             break;
 
-        /// Build the Avro datum that holds the actual partition value (without
-        /// the surrounding union). Throws on an unsupported value type.
+        /// Build the Avro datum that holds the actual partition value (without the surrounding union).
+        /// The Avro width is chosen from the partition column type, mirroring `getAvroType`, NOT from the
+        /// `Field` tag: ClickHouse stores `UInt8/16/32` (and `Date`) as `Field::UInt64`, so keying on the
+        /// tag would emit an Avro `long` for a field declared `int` and corrupt the survivor manifest.
+        auto read_int = [&]() -> Int64
+        {
+            const Field & value = partition_values[i];
+            if (value.getType() == Field::Types::UInt64)
+                return static_cast<Int64>(value.safeGet<UInt64>());
+            return value.safeGet<Int64>();
+        };
+
         auto make_value_datum = [&]() -> avro::GenericDatum
         {
-            switch (partition_values[i].getType())
+            switch (removeNullable(partition_types[i])->getTypeId())
             {
-                case Field::Types::Int64:
-                case Field::Types::UInt64:
-                    return avro::GenericDatum(partition_values[i].safeGet<Int64>());
-                case Field::Types::String:
-                    return avro::GenericDatum(partition_values[i].safeGet<String>());
-                case Field::Types::Float64:
+                /// Avro `int` (32-bit) — see `getAvroType`.
+                case TypeIndex::UInt8:
+                case TypeIndex::Int8:
+                case TypeIndex::UInt16:
+                case TypeIndex::Int16:
+                case TypeIndex::UInt32:
+                case TypeIndex::Int32:
+                case TypeIndex::Date:
+                case TypeIndex::Date32:
+                case TypeIndex::Time:
+                {
+                    const Int64 value = read_int();
+                    if (value < std::numeric_limits<Int32>::min() || value > std::numeric_limits<Int32>::max())
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Partition value {} of column {} does not fit into an Avro int field",
+                            value,
+                            partition_columns[i]);
+                    return avro::GenericDatum(static_cast<int32_t>(value));
+                }
+                /// Avro `long` (64-bit).
+                case TypeIndex::UInt64:
+                case TypeIndex::Int64:
+                case TypeIndex::DateTime:
+                case TypeIndex::DateTime64:
+                    return avro::GenericDatum(read_int());
+                case TypeIndex::Float32:
+                    return avro::GenericDatum(static_cast<float>(partition_values[i].safeGet<Float64>()));
+                case TypeIndex::Float64:
                     return avro::GenericDatum(partition_values[i].safeGet<Float64>());
-                case Field::Types::Decimal32:
+                case TypeIndex::String:
+                    return avro::GenericDatum(partition_values[i].safeGet<String>());
+                case TypeIndex::Decimal32:
                     return avro::GenericDatum(partition_values[i].safeGet<Decimal32>().getValue());
-                case Field::Types::Decimal64:
+                case TypeIndex::Decimal64:
                     return avro::GenericDatum(partition_values[i].safeGet<Decimal64>().getValue());
                 default:
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "Unsupported type to write into avro file {}",
-                        partition_values[i].getType());
+                        partition_types[i]->getName());
             }
         };
 
