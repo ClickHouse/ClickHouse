@@ -144,7 +144,19 @@ VectorWithMemoryTracking<std::pair<String, Documentation>> CompressionCodecFacto
     result.reserve(family_name_with_codec.size());
     for (const auto & [name, creator] : family_name_with_codec)
     {
-        CompressionCodecPtr codec = creator({}, nullptr);
+        CompressionCodecPtr codec;
+        try
+        {
+            codec = creator({}, nullptr);
+        }
+        catch (...)
+        {
+            /// Some codecs cannot be instantiated in this build configuration (for example the encryption codecs
+            /// when the server is built without SSL support register a creator that throws). They have no
+            /// documentation to expose, so skip them rather than failing the whole `system.documentation` query.
+            continue;
+        }
+
         Documentation documentation;
         documentation.description = codec->getDescription();
         /// The codec carries its description through `getDescription` rather than a `Documentation` object, so the
