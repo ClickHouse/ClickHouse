@@ -382,8 +382,8 @@ class JobNames:
 
 
 class ToolSet:
-    COMPILER_C = "clang-21"
-    COMPILER_CPP = "clang++-21"
+    COMPILER_C = "clang-22"
+    COMPILER_CPP = "clang++-22"
 
     COMPILER_CACHE = "sccache"
     COMPILER_CACHE_LEGACY = "sccache"
