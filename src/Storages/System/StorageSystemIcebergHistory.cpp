@@ -140,12 +140,30 @@ void StorageSystemIcebergHistory::fillData(
 
     };
 
-    MutableColumnPtr database_column = ColumnString::create();
-    MutableColumnPtr table_column = ColumnString::create();
+    /// Filter databases first: listing tables of a remote database (PostgreSQL/MySQL/...)
+    /// opens a connection, which a query filtering by database should not need to do.
+    MutableColumnPtr database_name_column = ColumnString::create();
 
     auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true});
     for (const auto & [database_name, database] : databases)
+        database_name_column->insert(database_name);
+
+    Block databases_block{
+        {std::move(database_name_column), std::make_shared<DataTypeString>(), "database"},
+    };
+    VirtualColumnUtils::filterBlockWithPredicate(predicate, databases_block, context_copy);
+    const ColumnString & filtered_databases = assert_cast<const ColumnString &>(*databases_block.getByName("database").column);
+
+    MutableColumnPtr database_column = ColumnString::create();
+    MutableColumnPtr table_column = ColumnString::create();
+
+    for (size_t i = 0; i < filtered_databases.size(); ++i)
     {
+        const String database_name{filtered_databases.getDataAt(i)};
+        DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+        if (!database)
+            continue;
+
         for (auto iterator = database->getTablesIterator(context_copy, {}, true); iterator->isValid(); iterator->next())
         {
             database_column->insert(database_name);
