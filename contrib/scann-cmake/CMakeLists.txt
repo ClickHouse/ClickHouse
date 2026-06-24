@@ -422,6 +422,32 @@ file(WRITE "${_tahr_dst}" "${_tahr_content}")
 list(REMOVE_ITEM SCANN_SOURCES "${_tahr_src}")
 list(APPEND SCANN_SOURCES "${_tahr_dst}")
 
+# scann_cpu_info.cc: the x86 CPUID detection block is guarded by PLATFORM_IS_X86, which is
+# defined for the _scann target below. That block was copied from TensorFlow and uses TF
+# platform names (`string`, `uint32`, `uint64`, `CHECK`) that ClickHouse's TF-free build does
+# not provide, so it never compiled before (and runtime SIMD detection silently fell back to
+# SSE4). Inject the missing aliases so the detection actually compiles and enables AVX2/AVX-512.
+set(_ci_cc_src "${SCANN_SOURCE_DIR}/scann/oss_wrappers/scann_cpu_info.cc")
+set(_ci_cc_dst "${CMAKE_CURRENT_BINARY_DIR}/scann_cpu_info.cc")
+configure_file("${_ci_cc_src}" "${_ci_cc_dst}" COPYONLY)
+file(READ "${_ci_cc_dst}" _ci_cc_content)
+string(REPLACE
+[==[#include "scann/oss_wrappers/scann_cpu_info.h"]==]
+[==[#include "scann/oss_wrappers/scann_cpu_info.h"
+
+#include <cstdint>
+#include <string>
+#include "absl/log/check.h"
+namespace research_scann {
+using std::string;
+using uint32 = uint32_t;
+using uint64 = uint64_t;
+}  // namespace research_scann]==]
+    _ci_cc_content "${_ci_cc_content}")
+file(WRITE "${_ci_cc_dst}" "${_ci_cc_content}")
+list(REMOVE_ITEM SCANN_SOURCES "${_ci_cc_src}")
+list(APPEND SCANN_SOURCES "${_ci_cc_dst}")
+
 # ---------------------------------------------------------------------------
 # 4. Build the library
 # ---------------------------------------------------------------------------
@@ -440,6 +466,17 @@ target_include_directories(_scann SYSTEM PUBLIC
 
 # Required by ScaNN to skip Bazel-only code paths.
 target_compile_definitions(_scann PUBLIC SCANN_CMAKE_MODE=1)
+
+# PLATFORM_IS_X86 / PLATFORM_IS_ARM64 are normally supplied by TensorFlow's platform
+# headers, which ClickHouse does not use. Without them, scann_cpu_info.cc compiles out all
+# CPUID detection and TestCPUFeature() returns false for every feature, so the runtime SIMD
+# dispatch (e.g. the LUT16 asymmetric-hashing kernels) silently falls back to SSE4 even on
+# AVX2/AVX-512 hardware. Define them here so ScaNN actually detects and uses AVX2/AVX-512.
+if (ARCH_AMD64)
+    target_compile_definitions(_scann PRIVATE PLATFORM_IS_X86)
+elseif (ARCH_AARCH64)
+    target_compile_definitions(_scann PRIVATE PLATFORM_IS_ARM64)
+endif()
 
 # On ppc64le, ClickHouse defines -D__SSE2__=1 for SSE2 emulation via AltiVec.
 # Eigen detects __SSE2__ and includes its SSE PacketMath, which calls
