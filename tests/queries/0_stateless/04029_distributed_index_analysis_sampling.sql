@@ -29,6 +29,22 @@ SET allow_experimental_analyzer = 1;
 SELECT count() FROM t_dia_sampling SAMPLE 0.1 SETTINGS distributed_index_analysis = 0;
 SELECT count() FROM t_dia_sampling SAMPLE 0.1 SETTINGS distributed_index_analysis = 1;
 
+-- SAMPLE + WHERE: exercises the AND-combination branch in DistributedIndexAnalyzer
+-- (filter_ast && sampling_filter → makeASTForLogicalAnd). Without a WHERE clause the
+-- else-if branch fires; with WHERE both filters must be combined before sending to replicas.
+SELECT count() FROM t_dia_sampling SAMPLE 0.1 WHERE value < 50000 SETTINGS distributed_index_analysis = 0;
+SELECT count() FROM t_dia_sampling SAMPLE 0.1 WHERE value < 50000 SETTINGS distributed_index_analysis = 1;
+
+-- Verify the combined filter is propagated to replicas: the EXPLAIN must contain a
+-- "Distributed" section (meaning distributed_index_analysis ran), proving that the
+-- SAMPLE + WHERE combination reaches the distributed analysis path.
+SELECT countIf(explain LIKE '%Distributed%') > 0 AS has_distributed_analysis
+FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM t_dia_sampling SAMPLE 0.1 WHERE value < 50000
+    SETTINGS distributed_index_analysis = 1
+);
+
 -- { echo }
 EXPLAIN indexes = 1 SELECT * FROM t_dia_sampling SAMPLE 0.1 SETTINGS distributed_index_analysis = 0;
 EXPLAIN indexes = 1 SELECT * FROM t_dia_sampling SAMPLE 0.1 SETTINGS distributed_index_analysis = 1;
