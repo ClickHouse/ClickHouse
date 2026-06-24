@@ -916,7 +916,8 @@ void alter(
 namespace DB
 {
 
-Pipe IcebergMetadata::alterPartition(const PartitionCommands & commands, ContextPtr context)
+Pipe IcebergMetadata::alterPartition(
+    const PartitionCommands & commands, ContextPtr context, std::shared_ptr<DataLake::ICatalog> catalog, StorageID storage_id)
 {
     if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg].value)
     {
@@ -939,7 +940,7 @@ Pipe IcebergMetadata::alterPartition(const PartitionCommands & commands, Context
             if (command.part || command.detach)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported by Iceberg", command.typeToString());
 
-            alterPartitionDropImpl(command, context);
+            alterPartitionDropImpl(command, context, std::move(catalog), std::move(storage_id));
             break;
         }
         default:
@@ -951,7 +952,8 @@ Pipe IcebergMetadata::alterPartition(const PartitionCommands & commands, Context
 }
 
 
-void IcebergMetadata::alterPartitionDropImpl(const PartitionCommand & command, ContextPtr context)
+void IcebergMetadata::alterPartitionDropImpl(
+    const PartitionCommand & command, ContextPtr context, std::shared_ptr<DataLake::ICatalog> catalog, StorageID storage_id)
 {
     Iceberg::AlterDropPartitionExecutor executor(
         command,
@@ -961,7 +963,9 @@ void IcebergMetadata::alterPartitionDropImpl(const PartitionCommand & command, C
         data_lake_settings,
         write_format,
         log,
-        [this, context]() { return getRelevantState(context, /*force_fetch_latest_metadata=*/true, /*ignore_explicit_metadata_file_path=*/true); });
+        [this, context]() { return getRelevantState(context, /*force_fetch_latest_metadata=*/true, /*ignore_explicit_metadata_file_path=*/true); },
+        std::move(catalog),
+        std::move(storage_id));
     executor.run();
 }
 

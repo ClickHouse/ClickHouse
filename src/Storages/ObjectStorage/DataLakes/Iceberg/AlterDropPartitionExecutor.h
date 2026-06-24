@@ -17,6 +17,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/PartitionCommands.h>
+#include <Interpreters/StorageID.h>
 #include <Common/Logger.h>
 
 #include <Poco/JSON/Object.h>
@@ -25,6 +26,11 @@
 #include <optional>
 #include <unordered_set>
 #include <vector>
+
+namespace DataLake
+{
+class ICatalog;
+}
 
 namespace DB
 {
@@ -45,7 +51,9 @@ public:
         const DataLakeStorageSettings & data_lake_settings_,
         String write_format_,
         LoggerPtr log_,
-        std::function<std::pair<IcebergDataSnapshotPtr, TableStateSnapshot>()> fetch_latest_state_);
+        std::function<std::pair<IcebergDataSnapshotPtr, TableStateSnapshot>()> fetch_latest_state_,
+        std::shared_ptr<DataLake::ICatalog> catalog_,
+        StorageID storage_id_);
 
     void run();
 
@@ -123,7 +131,14 @@ private:
         FileNamesGenerator & filename_generator,
         std::vector<String> & files_for_cleanup);
 
-    GeneratedMetadataFileWithInfo writeManifestList(
+    struct ManifestListWriteResult
+    {
+        GeneratedMetadataFileWithInfo metadata_info;
+        /// The newly committed snapshot, needed for the catalog commit of catalog-backed tables.
+        Poco::JSON::Object::Ptr new_snapshot;
+    };
+
+    ManifestListWriteResult writeManifestList(
         SnapshotState & state,
         const DropPlan & plan,
         const std::vector<ReplacementManifestWrite> & replacements,
@@ -133,7 +148,8 @@ private:
     bool commitMetadataJSON(
         SnapshotState & state,
         FileNamesGenerator & filename_generator,
-        const GeneratedMetadataFileWithInfo & metadata_info);
+        const GeneratedMetadataFileWithInfo & metadata_info,
+        const Poco::JSON::Object::Ptr & new_snapshot);
 
     void cleanupNotCommited(std::vector<std::string> files);
 
@@ -145,6 +161,10 @@ private:
     String write_format;
     LoggerPtr log;
     std::function<std::pair<IcebergDataSnapshotPtr, TableStateSnapshot>()> fetch_latest_state;
+    /// Set for catalog-backed (DatabaseDataLake) tables; the new metadata location must also be
+    /// committed to the catalog (the shared source of truth), like the INSERT/DELETE write paths do.
+    std::shared_ptr<DataLake::ICatalog> catalog;
+    StorageID storage_id;
 };
 
 }

@@ -186,10 +186,14 @@ public:
         current_metadata->checkAlterPartitionIsPossible(commands);
     }
 
-    Pipe alterPartition(const PartitionCommands & commands, ContextPtr context) override
+    Pipe alterPartition(
+        const PartitionCommands & commands,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        StorageID storage_id) override
     {
         assertInitialized();
-        return current_metadata->alterPartition(commands, context);
+        return current_metadata->alterPartition(commands, context, std::move(catalog), std::move(storage_id));
     }
 
     void alter(

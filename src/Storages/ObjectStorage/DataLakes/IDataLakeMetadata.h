@@ -166,7 +166,11 @@ public:
         ContextPtr /*context*/,
         const StorageID & /*storage_id*/,
         std::shared_ptr<DataLake::ICatalog> /*catalog*/) { throwNotImplemented("alter"); }
-    virtual Pipe alterPartition(const PartitionCommands & /* commands */, ContextPtr /* context */) { throwNotImplemented("alterPartition"); }
+    virtual Pipe alterPartition(
+        const PartitionCommands & /* commands */,
+        ContextPtr /* context */,
+        std::shared_ptr<DataLake::ICatalog> /* catalog */,
+        StorageID /* storage_id */) { throwNotImplemented("alterPartition"); }
 
     virtual Pipe executeCommand(
         const String & command_name,

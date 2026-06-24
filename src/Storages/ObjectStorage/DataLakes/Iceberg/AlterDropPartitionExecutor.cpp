@@ -7,6 +7,8 @@
 /// consist only of AVRO_RECORDS
 
 #include <Core/Block.h>
+#include <Databases/DataLake/Common.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
@@ -213,7 +215,9 @@ AlterDropPartitionExecutor::AlterDropPartitionExecutor(
     const DataLakeStorageSettings & data_lake_settings_,
     String write_format_,
     LoggerPtr log_,
-    std::function<std::pair<IcebergDataSnapshotPtr, TableStateSnapshot>()> fetch_latest_state_)
+    std::function<std::pair<IcebergDataSnapshotPtr, TableStateSnapshot>()> fetch_latest_state_,
+    std::shared_ptr<DataLake::ICatalog> catalog_,
+    StorageID storage_id_)
     : command(command_)
     , context(context_)
     , object_storage(std::move(object_storage_))
@@ -222,6 +226,8 @@ AlterDropPartitionExecutor::AlterDropPartitionExecutor(
     , write_format(std::move(write_format_))
     , log(std::move(log_))
     , fetch_latest_state(std::move(fetch_latest_state_))
+    , catalog(std::move(catalog_))
+    , storage_id(std::move(storage_id_))
 {
 }
 
@@ -604,7 +610,7 @@ namespace
     };
 }
 
-GeneratedMetadataFileWithInfo AlterDropPartitionExecutor::writeManifestList(
+AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::writeManifestList(
     SnapshotState & state,
     const DropPlan & plan,
     const std::vector<ReplacementManifestWrite> & replacements,
@@ -691,25 +697,49 @@ GeneratedMetadataFileWithInfo AlterDropPartitionExecutor::writeManifestList(
 
     buf->finalize();
 
-    return metadata_info;
+    return ManifestListWriteResult{.metadata_info = metadata_info, .new_snapshot = new_snapshot};
 }
 
 bool AlterDropPartitionExecutor::commitMetadataJSON(
-    SnapshotState & state, FileNamesGenerator & filename_generator, const GeneratedMetadataFileWithInfo & metadata_info)
+    SnapshotState & state,
+    FileNamesGenerator & filename_generator,
+    const GeneratedMetadataFileWithInfo & metadata_info,
+    const Poco::JSON::Object::Ptr & new_snapshot)
 {
     std::string json_representation = stringifyJSON(state.metadata_object, 4);
 
     fiu_do_on(FailPoints::iceberg_writes_cleanup, { throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for cleanup enabled"); });
 
     auto hint_path = filename_generator.generateVersionHint();
-    return writeMetadataFileAndVersionHint(
-        components.path_resolver,
-        metadata_info,
-        json_representation,
-        hint_path,
-        object_storage,
-        context,
-        data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]);
+
+    /// A transactional catalog (e.g. REST) writes the metadata file itself and is the sole commit
+    /// authority, so we must not also write it locally or advance version-hint.text — doing both
+    /// would make the local version-hint and the catalog diverge. For non-transactional catalogs (and
+    /// non-catalog tables) we write the metadata file and version hint ourselves; that local write is
+    /// also the optimistic-concurrency check.
+    const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
+    if (!catalog_writes_metadata_file
+        && !writeMetadataFileAndVersionHint(
+            components.path_resolver,
+            metadata_info,
+            json_representation,
+            hint_path,
+            object_storage,
+            context,
+            data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+        return false;
+
+    /// Commit the new metadata location to the catalog (the shared source of truth). This is the
+    /// optimistic commit for catalog-backed tables; a lost race returns false and the caller retries.
+    if (catalog)
+    {
+        auto catalog_filename = components.path_resolver.resolveForCatalog(metadata_info.path);
+        const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
+        if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
+            return false;
+    }
+
+    return true;
 }
 
 void AlterDropPartitionExecutor::cleanupNotCommited(std::vector<std::string> files)
@@ -746,9 +776,9 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, DropPlan plan)
     if (!plan.target_manifests.partially_matched.empty())
         replacements = writeReplacementManifests(state, plan, filename_generator, files_for_cleanup);
 
-    auto metadata_info = writeManifestList(state, plan, replacements, filename_generator, files_for_cleanup);
+    auto [metadata_info, new_snapshot] = writeManifestList(state, plan, replacements, filename_generator, files_for_cleanup);
 
-    committed = commitMetadataJSON(state, filename_generator, metadata_info);
+    committed = commitMetadataJSON(state, filename_generator, metadata_info, new_snapshot);
     if (!committed)
         return false;
 
@@ -769,7 +799,6 @@ void AlterDropPartitionExecutor::run()
 
     TargetFilePaths targets;
 
-    /// TODO: do not rewrite all files on failed CAS
     for (int attempt = 0; attempt < MAX_TRANSACTION_RETRIES; ++attempt)
     {
         auto state_opt = fetchSnapshotState();
