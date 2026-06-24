@@ -106,6 +106,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char zk_send_thread_request_window_throw[];
+    extern const char zk_send_thread_operations_insert_throw[];
 }
 
 }
@@ -917,11 +918,18 @@ void ZooKeeper::sendThread()
                     /// Insert into operations AFTER mutating the request (has_watch, addRootPath)
                     /// to avoid a data race: receiveThread reads from operations concurrently,
                     /// and the request object is shared via shared_ptr.
+                    ///
+                    /// Register in `operations` before bumping the in-flight metric: if the insert
+                    /// throws (e.g. allocation failure), the metric was never added, so finalize()'s
+                    /// subtraction of operations.size() stays balanced and the request is not counted
+                    /// forever. Each add corresponds 1:1 with an entry that lives in `operations`.
                     if (info.request->xid != close_xid)
                     {
-                        CurrentMetrics::add(CurrentMetrics::ZooKeeperRequest);
                         std::lock_guard lock(operations_mutex);
-                        operations[info.request->xid] = info;
+                        fiu_do_on(FailPoints::zk_send_thread_operations_insert_throw,
+                            { throw Exception::fromMessage(Error::ZBADARGUMENTS, "Injected fault at sendThread operations insert"); });
+                        if (operations.insert_or_assign(info.request->xid, info).second)
+                            CurrentMetrics::add(CurrentMetrics::ZooKeeperRequest);
                     }
 
                     /// Ownership of the callback is now with `operations` (or the request is a close
