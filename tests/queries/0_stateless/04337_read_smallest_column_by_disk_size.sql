@@ -246,20 +246,26 @@ SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, enable
 DROP TABLE t_smallest_column_bucket;
 
 -- A bucket can also trim mark RANGES inside a single surviving part (not just drop whole parts).
--- getColumnSize() is a whole-part figure, so the carrier scales it by the selected mark fraction
--- (selected / total marks of the part) to rank over the marks this worker actually reads. A single
--- many-mark part read under a bucket plan exercises that scaling: every column's per-part cost is
--- de-weighted by the same fraction, so a worker bucketed onto a mark subset still ranks the column
--- that is cheap on disk. Small index_granularity so one part has many marks for the bucket filter to
--- split. Same observability limit as above (the distributed worker pipeline does not surface
--- ReadCompressedBytes), so assert the bucketed no-columns read stays correct.
+-- getColumnSize() is a whole-part figure with no per-mark-range breakdown, so it cannot say which
+-- column is cheapest in the marks one worker keeps (a column cheap over the whole part can be the
+-- expensive one in this bucket's marks). Scaling the whole-part size by the read mark fraction does
+-- not help: within a part the fraction is the same constant for every candidate, so it cannot
+-- reorder them. When any selected part is read with trimmed ranges the carrier therefore distrusts
+-- the on-disk sizes and falls back to the in-memory heuristic. This scenario builds the case the
+-- whole-part size gets wrong: a single many-mark part where 'a' is heavy only in the early marks and
+-- 'b' is heavy only in the late marks, so whichever column looks cheaper over the whole part is the
+-- expensive one in some bucket's marks. Small index_granularity so one part has many marks for the
+-- bucket filter to split. Same observability limit as above (the distributed worker pipeline does not
+-- surface ReadCompressedBytes), so assert the bucketed no-columns read stays correct.
 DROP TABLE IF EXISTS t_smallest_column_bucket_ranges;
 
-CREATE TABLE t_smallest_column_bucket_ranges (a String, lc LowCardinality(Nullable(String)))
+CREATE TABLE t_smallest_column_bucket_ranges (a String, b String)
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 1024;
 
-INSERT INTO t_smallest_column_bucket_ranges SELECT randomString(200), toString(number % 10) FROM numbers(100000);
+INSERT INTO t_smallest_column_bucket_ranges
+    SELECT if(number < 25600, randomString(900), 'x'), if(number >= 76800, randomString(900), 'y')
+    FROM numbers(102400);
 
 SELECT count() FROM t_smallest_column_bucket_ranges
 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, enable_parallel_replicas = 0,
