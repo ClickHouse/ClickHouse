@@ -47,12 +47,7 @@ void SettingsProfilesCache::ensureAllProfilesRead()
                 else
                     profileRemoved(change.id);
             }
-            if (need_merge_settings_and_constraints)
-            {
-                /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.
-                mergeSettingsAndConstraints();
-                need_merge_settings_and_constraints = false;
-            }
+            mergeSettingsAndConstraintsIfNeeded();
         });
 
     for (const UUID & id : access_control.findAll<SettingsProfile>())
@@ -118,6 +113,17 @@ void SettingsProfilesCache::setDefaultProfileName(const String & default_profile
         throw Exception(ErrorCodes::THERE_IS_NO_PROFILE, "Settings profile {} not found", backQuote(default_profile_name));
 
     default_profile_id = it->second;
+}
+
+
+void SettingsProfilesCache::mergeSettingsAndConstraintsIfNeeded()
+{
+    /// `mutex` is already locked.
+    if (!need_merge_settings_and_constraints)
+        return;
+    /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.
+    mergeSettingsAndConstraints();
+    need_merge_settings_and_constraints = false;
 }
 
 

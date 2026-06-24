@@ -39,8 +39,9 @@ private:
     void ensureAllRowPoliciesRead();
     void rowPolicyAddedOrChanged(const UUID & policy_id, const RowPolicyPtr & new_policy) TSA_REQUIRES(mutex);
     void rowPolicyRemoved(const UUID & policy_id) TSA_REQUIRES(mutex);
-    void mixFilters();
-    void mixFiltersFor(EnabledRowPolicies & enabled);
+    void mixFiltersIfNeeded() TSA_REQUIRES(mutex);
+    void mixFilters() TSA_REQUIRES(mutex);
+    void mixFiltersFor(EnabledRowPolicies & enabled) TSA_REQUIRES(mutex);
 
     const AccessControl & access_control;
     std::unordered_map<UUID, PolicyInfo> all_policies;

@@ -134,13 +134,19 @@ void RoleCache::ensureSubscribed()
                 else
                     roleRemoved(change.id);
             }
-            if (need_collect_enabled_roles)
-            {
-                /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.
-                collectEnabledRoles(&notifications);
-                need_collect_enabled_roles = false;
-            }
+            collectEnabledRolesIfNeeded(&notifications);
         });
+}
+
+
+void RoleCache::collectEnabledRolesIfNeeded(scope_guard * notifications)
+{
+    /// `mutex` is already locked.
+    if (!need_collect_enabled_roles)
+        return;
+    /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.
+    collectEnabledRoles(notifications);
+    need_collect_enabled_roles = false;
 }
 
 

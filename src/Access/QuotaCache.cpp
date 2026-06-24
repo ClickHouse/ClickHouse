@@ -302,12 +302,7 @@ void QuotaCache::ensureAllQuotasRead()
                 else
                     quotaRemoved(change.id);
             }
-            if (need_choose_quota)
-            {
-                /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.
-                chooseQuotaToConsume();
-                need_choose_quota = false;
-            }
+            chooseQuotaToConsumeIfNeeded();
         });
 
     for (const UUID & quota_id : access_control.findAll<Quota>())
@@ -344,6 +339,17 @@ void QuotaCache::quotaRemoved(const UUID & quota_id)
     /// `mutex` is already locked.
     all_quotas.erase(quota_id);
     need_choose_quota = true;
+}
+
+
+void QuotaCache::chooseQuotaToConsumeIfNeeded()
+{
+    /// `mutex` is already locked.
+    if (!need_choose_quota)
+        return;
+    /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.
+    chooseQuotaToConsume();
+    need_choose_quota = false;
 }
 
 

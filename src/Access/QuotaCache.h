@@ -58,8 +58,9 @@ private:
     void ensureAllQuotasRead();
     void quotaAddedOrChanged(const UUID & quota_id, const std::shared_ptr<const Quota> & new_quota) TSA_REQUIRES(mutex);
     void quotaRemoved(const UUID & quota_id) TSA_REQUIRES(mutex);
-    void chooseQuotaToConsume();
-    void chooseQuotaToConsumeFor(EnabledQuota & enabled_quota, bool throw_if_client_key_empty);
+    void chooseQuotaToConsumeIfNeeded() TSA_REQUIRES(mutex);
+    void chooseQuotaToConsume() TSA_REQUIRES(mutex);
+    void chooseQuotaToConsumeFor(EnabledQuota & enabled_quota, bool throw_if_client_key_empty) TSA_REQUIRES(mutex);
 
     const AccessControl & access_control;
     mutable std::mutex mutex;

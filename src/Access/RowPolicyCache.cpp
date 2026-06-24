@@ -159,12 +159,7 @@ void RowPolicyCache::ensureAllRowPoliciesRead()
                 else
                     rowPolicyRemoved(change.id);
             }
-            if (need_mix_filters)
-            {
-                /// Clear the flag only after a successful rebuild, so a throwing mixFilters() is retried next batch.
-                mixFilters();
-                need_mix_filters = false;
-            }
+            mixFiltersIfNeeded();
         });
 
     for (const UUID & id : access_control.findAll<RowPolicy>())
@@ -203,6 +198,17 @@ void RowPolicyCache::rowPolicyRemoved(const UUID & policy_id)
     /// `mutex` is already locked.
     all_policies.erase(policy_id);
     need_mix_filters = true;
+}
+
+
+void RowPolicyCache::mixFiltersIfNeeded()
+{
+    /// `mutex` is already locked.
+    if (!need_mix_filters)
+        return;
+    /// Clear the flag only after a successful rebuild, so a throwing mixFilters() is retried next batch.
+    mixFilters();
+    need_mix_filters = false;
 }
 
 

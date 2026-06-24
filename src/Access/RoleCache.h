@@ -29,6 +29,7 @@ public:
 
 private:
     void ensureSubscribed() TSA_REQUIRES(mutex);
+    void collectEnabledRolesIfNeeded(scope_guard * notifications) TSA_REQUIRES(mutex);
     void collectEnabledRoles(scope_guard * notifications) TSA_REQUIRES(mutex);
     void collectEnabledRoles(EnabledRoles & enabled_roles, scope_guard * notifications) TSA_REQUIRES(mutex);
     RolePtr getRole(const UUID & role_id) TSA_REQUIRES(mutex);

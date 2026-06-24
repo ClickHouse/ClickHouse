@@ -35,8 +35,9 @@ private:
     void ensureAllProfilesRead();
     void profileAddedOrChanged(const UUID & profile_id, const SettingsProfilePtr & new_profile) TSA_REQUIRES(mutex);
     void profileRemoved(const UUID & profile_id) TSA_REQUIRES(mutex);
-    void mergeSettingsAndConstraints();
-    void mergeSettingsAndConstraintsFor(EnabledSettings & enabled) const;
+    void mergeSettingsAndConstraintsIfNeeded() TSA_REQUIRES(mutex);
+    void mergeSettingsAndConstraints() TSA_REQUIRES(mutex);
+    void mergeSettingsAndConstraintsFor(EnabledSettings & enabled) const TSA_REQUIRES(mutex);
 
     void substituteProfiles(SettingsProfileElements & elements,
         std::vector<UUID> & profiles,
