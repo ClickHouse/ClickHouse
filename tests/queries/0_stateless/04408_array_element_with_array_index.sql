@@ -46,5 +46,39 @@ SELECT [(1,'a'), (2,'b'), (3,'c')][[2, 1]];
 SELECT []::Array(Int32)[[1, 2]];
 SELECT arrayElementOrNull([]::Array(Int32), [1, 2]);
 
+-- Float types
+SELECT [1.5, 2.5, 3.5]::Array(Float32)[[2, 3, 1]];
+SELECT [1.5, 2.5, 3.5]::Array(Float64)[[3, 1]];
+
+-- Wide integer types
+SELECT [toInt128(100), toInt128(200), toInt128(300)][[1, 3]];
+SELECT [toUInt128(100), toUInt128(200)][[2, 1]];
+SELECT [toInt256(1000), toInt256(2000)][[2]];
+SELECT [toUInt256(1000), toUInt256(2000)][[1, 2]];
+
+-- UUID
+SELECT [toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'), toUUID('79f0c404-5cb3-11e7-907b-a6006ad3dba0')][[2, 1]];
+
+-- IPv4 / IPv6
+SELECT [toIPv4('192.168.1.1'), toIPv4('10.0.0.1'), toIPv4('127.0.0.1')][[3, 1]];
+SELECT [toIPv6('::1'), toIPv6('fe80::1')][[2, 1]];
+
+-- Date / DateTime types (stored as UInt16 / UInt32 / Int32)
+SELECT [toDate('2024-01-01'), toDate('2024-06-15'), toDate('2024-12-31')][[3, 1]];
+SELECT [toDate32('2024-01-01'), toDate32('2024-06-15')][[2, 1]];
+SELECT [toDateTime('2024-01-01 00:00:00'), toDateTime('2024-06-15 12:00:00')][[2]];
+SELECT [toDateTime64('2024-01-01 00:00:00.000', 3), toDateTime64('2024-06-15 12:00:00.123', 3)][[2, 1]];
+
+-- Decimal types
+SELECT [toDecimal32(1.23, 2), toDecimal32(4.56, 2), toDecimal32(7.89, 2)][[2, 3]];
+SELECT [toDecimal64(1.23, 2), toDecimal64(4.56, 2)][[1, 2, 1]];
+SELECT [toDecimal128(1.23, 2), toDecimal128(4.56, 2)][[2]];
+
+-- FixedString
+SELECT [toFixedString('ab', 2), toFixedString('cd', 2), toFixedString('ef', 2)][[3, 1]];
+
+-- Map type inside array
+SELECT [map('a', 1, 'b', 2), map('c', 3, 'd', 4)][[2, 1]];
+
 -- Equivalence with arrayMap
 SELECT [10, 20, 30, 40][[2, 4, 1]] = arrayMap(i -> [10, 20, 30, 40][i], [2, 4, 1]);

@@ -2109,9 +2109,6 @@ template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
-    if (input_rows_count == 0)
-        return result_type->createColumn();
-
     const auto * result_array_type = checkAndGetDataType<DataTypeArray>(result_type.get());
     chassert(result_array_type);
     const auto & result_element_type = result_array_type->getNestedType();
@@ -2154,89 +2151,212 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
     const NullMap * source_null_map = nullable_data ? &nullable_data->getNullMapData() : nullptr;
 
     bool result_is_nullable = result_element_type->isNullable();
-    auto result_nested_col = removeNullable(result_element_type)->createColumn();
-    MutableColumnPtr result_null_map_col = result_is_nullable ? ColumnUInt8::create() : nullptr;
+    size_t total_indices = index_offsets[input_rows_count - 1];
+
+    /// Result offsets are identical to index offsets
     auto result_offsets_col = ColumnArray::ColumnOffsets::create();
     auto & result_offsets = result_offsets_col->getData();
-    result_offsets.resize(input_rows_count);
+    result_offsets.assign(index_offsets.begin(), index_offsets.begin() + input_rows_count);
 
-    size_t total_indices = index_offsets[input_rows_count - 1];
-    result_nested_col->reserve(total_indices);
-    if (result_null_map_col)
-        assert_cast<ColumnUInt8 &>(*result_null_map_col).getData().reserve(total_indices);
-
-    auto process = [&]<typename IndexType>(const PaddedPODArray<IndexType> & indices)
+    /// Index resolution: converts 1-based/negative index to 0-based offset within the row's array slice.
+    /// Returns array_size (sentinel) for out-of-bounds.
+    auto resolve_index = []<typename IndexType>(IndexType idx, size_t array_size) -> size_t
     {
+        if constexpr (std::is_signed_v<IndexType>)
+        {
+            if (idx > 0 && static_cast<size_t>(idx) <= array_size)
+                return static_cast<size_t>(idx) - 1;
+            if (idx < 0 && static_cast<size_t>(-static_cast<Int64>(idx)) <= array_size)
+                return array_size + static_cast<size_t>(static_cast<Int64>(idx));
+        }
+        else
+        {
+            if (idx > 0 && static_cast<size_t>(idx) <= array_size)
+                return static_cast<size_t>(idx) - 1;
+        }
+        return array_size;
+    };
+
+    /// Try numeric fast paths: direct PODArray access, no virtual calls
+    ColumnPtr fast_result_data;
+    auto try_numeric = [&](const auto * col_numeric) -> bool
+    {
+        if (!col_numeric)
+            return false;
+
+        using ColVecType = std::decay_t<decltype(*col_numeric)>;
+        using DataType = typename ColVecType::ValueType;
+
+        const auto & src_data = col_numeric->getData();
+        typename ColVecType::MutablePtr result_col;
+        if constexpr (is_decimal<DataType>)
+            result_col = ColVecType::create(0, col_numeric->getScale());
+        else
+            result_col = ColVecType::create();
+        auto & result_vec = result_col->getData();
+        result_vec.resize(total_indices);
+
+        NullMap * result_null_map = nullptr;
+        MutableColumnPtr null_map_holder;
+        if (result_is_nullable)
+        {
+            null_map_holder = ColumnUInt8::create(total_indices, UInt8(0));
+            result_null_map = &assert_cast<ColumnUInt8 &>(*null_map_holder).getData();
+        }
+
+        auto fill = [&]<typename IndexType>(const PaddedPODArray<IndexType> & indices)
+        {
+            size_t out = 0;
+            for (size_t row = 0; row < input_rows_count; ++row)
+            {
+                size_t data_start = row > 0 ? data_offsets[row - 1] : 0;
+                size_t array_size = data_offsets[row] - data_start;
+                size_t idx_start = row > 0 ? index_offsets[row - 1] : 0;
+                size_t idx_end = index_offsets[row];
+
+                for (size_t k = idx_start; k < idx_end; ++k, ++out)
+                {
+                    size_t resolved = resolve_index(indices[k], array_size);
+                    if (resolved < array_size)
+                    {
+                        size_t source_pos = data_start + resolved;
+                        if (source_null_map && (*source_null_map)[source_pos])
+                        {
+                            result_vec[out] = DataType();
+                            if (result_null_map)
+                                (*result_null_map)[out] = UInt8(1);
+                        }
+                        else
+                        {
+                            result_vec[out] = src_data[source_pos];
+                        }
+                    }
+                    else
+                    {
+                        result_vec[out] = DataType();
+                        if (result_null_map && is_null_mode)
+                            (*result_null_map)[out] = UInt8(1);
+                    }
+                }
+            }
+        };
+
+        auto dispatch_fill = [&](const auto * idx_col) -> bool
+        {
+            if (!idx_col)
+                return false;
+            fill(idx_col->getData());
+            return true;
+        };
+
+        if (!dispatch_fill(checkAndGetColumn<ColumnVector<UInt8>>(&index_data_col))
+            && !dispatch_fill(checkAndGetColumn<ColumnVector<UInt16>>(&index_data_col))
+            && !dispatch_fill(checkAndGetColumn<ColumnVector<UInt32>>(&index_data_col))
+            && !dispatch_fill(checkAndGetColumn<ColumnVector<UInt64>>(&index_data_col))
+            && !dispatch_fill(checkAndGetColumn<ColumnVector<Int8>>(&index_data_col))
+            && !dispatch_fill(checkAndGetColumn<ColumnVector<Int16>>(&index_data_col))
+            && !dispatch_fill(checkAndGetColumn<ColumnVector<Int32>>(&index_data_col))
+            && !dispatch_fill(checkAndGetColumn<ColumnVector<Int64>>(&index_data_col)))
+            return false;
+
+        if (null_map_holder)
+            fast_result_data = ColumnNullable::create(std::move(result_col), std::move(null_map_holder));
+        else
+            fast_result_data = std::move(result_col);
+        return true;
+    };
+
+    if (try_numeric(checkAndGetColumn<ColumnVector<UInt8>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<UInt16>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<UInt32>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<UInt64>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<UInt128>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<UInt256>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<Int8>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<Int16>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<Int32>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<Int64>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<Int128>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<Int256>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<Float32>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<Float64>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<UUID>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<IPv4>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnVector<IPv6>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnDecimal<Decimal32>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnDecimal<Decimal64>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnDecimal<Decimal128>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnDecimal<Decimal256>>(&inner_data))
+        || try_numeric(checkAndGetColumn<ColumnDecimal<DateTime64>>(&inner_data)))
+    {
+        return ColumnArray::create(fast_result_data, std::move(result_offsets_col));
+    }
+
+    /// Generic fallback path using insertFrom (handles String, Array, Tuple, etc.)
+    auto result_nested_col = removeNullable(result_element_type)->createColumn();
+    result_nested_col->reserve(total_indices);
+
+    NullMap * result_null_map = nullptr;
+    MutableColumnPtr null_map_holder;
+    if (result_is_nullable)
+    {
+        null_map_holder = ColumnUInt8::create(total_indices, UInt8(0));
+        result_null_map = &assert_cast<ColumnUInt8 &>(*null_map_holder).getData();
+    }
+
+    auto generic_process = [&]<typename IndexType>(const PaddedPODArray<IndexType> & indices)
+    {
+        size_t out = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             size_t data_start = row > 0 ? data_offsets[row - 1] : 0;
             size_t array_size = data_offsets[row] - data_start;
-
             size_t idx_start = row > 0 ? index_offsets[row - 1] : 0;
             size_t idx_end = index_offsets[row];
 
-            for (size_t k = idx_start; k < idx_end; ++k)
+            for (size_t k = idx_start; k < idx_end; ++k, ++out)
             {
-                IndexType idx = indices[k];
-                size_t resolved = array_size;
-
-                if constexpr (std::is_signed_v<IndexType>)
-                {
-                    if (idx > 0 && static_cast<size_t>(idx) <= array_size)
-                        resolved = static_cast<size_t>(idx) - 1;
-                    else if (idx < 0 && static_cast<size_t>(-static_cast<Int64>(idx)) <= array_size)
-                        resolved = array_size + static_cast<size_t>(static_cast<Int64>(idx));
-                }
-                else
-                {
-                    if (idx > 0 && static_cast<size_t>(idx) <= array_size)
-                        resolved = static_cast<size_t>(idx) - 1;
-                }
-
+                size_t resolved = resolve_index(indices[k], array_size);
                 if (resolved < array_size)
                 {
                     size_t source_pos = data_start + resolved;
                     if (source_null_map && (*source_null_map)[source_pos])
                     {
                         result_nested_col->insertDefault();
-                        if (result_null_map_col)
-                            assert_cast<ColumnUInt8 &>(*result_null_map_col).getData().push_back(UInt8(1));
+                        if (result_null_map)
+                            (*result_null_map)[out] = UInt8(1);
                     }
                     else
                     {
                         result_nested_col->insertFrom(inner_data, source_pos);
-                        if (result_null_map_col)
-                            assert_cast<ColumnUInt8 &>(*result_null_map_col).getData().push_back(UInt8(0));
                     }
                 }
                 else
                 {
                     result_nested_col->insertDefault();
-                    if (result_null_map_col)
-                        assert_cast<ColumnUInt8 &>(*result_null_map_col).getData().push_back(is_null_mode ? UInt8(1) : UInt8(0));
+                    if (result_null_map && is_null_mode)
+                        (*result_null_map)[out] = UInt8(1);
                 }
             }
-
-            result_offsets[row] = idx_end;
         }
     };
 
-    auto try_dispatch = [&](const auto * col) -> bool
+    auto try_dispatch_generic = [&](const auto * col) -> bool
     {
         if (!col)
             return false;
-        process(col->getData());
+        generic_process(col->getData());
         return true;
     };
 
-    if (!try_dispatch(checkAndGetColumn<ColumnVector<UInt8>>(&index_data_col))
-        && !try_dispatch(checkAndGetColumn<ColumnVector<UInt16>>(&index_data_col))
-        && !try_dispatch(checkAndGetColumn<ColumnVector<UInt32>>(&index_data_col))
-        && !try_dispatch(checkAndGetColumn<ColumnVector<UInt64>>(&index_data_col))
-        && !try_dispatch(checkAndGetColumn<ColumnVector<Int8>>(&index_data_col))
-        && !try_dispatch(checkAndGetColumn<ColumnVector<Int16>>(&index_data_col))
-        && !try_dispatch(checkAndGetColumn<ColumnVector<Int32>>(&index_data_col))
-        && !try_dispatch(checkAndGetColumn<ColumnVector<Int64>>(&index_data_col)))
+    if (!try_dispatch_generic(checkAndGetColumn<ColumnVector<UInt8>>(&index_data_col))
+        && !try_dispatch_generic(checkAndGetColumn<ColumnVector<UInt16>>(&index_data_col))
+        && !try_dispatch_generic(checkAndGetColumn<ColumnVector<UInt32>>(&index_data_col))
+        && !try_dispatch_generic(checkAndGetColumn<ColumnVector<UInt64>>(&index_data_col))
+        && !try_dispatch_generic(checkAndGetColumn<ColumnVector<Int8>>(&index_data_col))
+        && !try_dispatch_generic(checkAndGetColumn<ColumnVector<Int16>>(&index_data_col))
+        && !try_dispatch_generic(checkAndGetColumn<ColumnVector<Int32>>(&index_data_col))
+        && !try_dispatch_generic(checkAndGetColumn<ColumnVector<Int64>>(&index_data_col)))
     {
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN,
@@ -2246,12 +2366,12 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
     }
 
     ColumnPtr result_data;
-    if (result_null_map_col)
-        result_data = ColumnNullable::create(std::move(result_nested_col), std::move(result_null_map_col));
+    if (null_map_holder)
+        result_data = ColumnNullable::create(std::move(result_nested_col), std::move(null_map_holder));
     else
         result_data = std::move(result_nested_col);
 
-    return ColumnArray::create(std::move(result_data), std::move(result_offsets_col));
+    return ColumnArray::create(result_data, std::move(result_offsets_col));
 }
 
 template <ArrayElementExceptionMode mode>
