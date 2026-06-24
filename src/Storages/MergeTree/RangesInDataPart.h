@@ -125,12 +125,7 @@ struct RangesInDataPart
     /// `IBitmapStore::readBitmap`). Non-null on UK tables (empty bitmap when
     /// the part has no deletions visible at `snapshot_csn`); nullptr when the
     /// table has no unique key.
-    ///
-    /// `pinned_bitmap_csn` carries the snapshot's csn (an upper bound on the
-    /// chosen bitmap's csn). Informational only — no read-path branch inspects
-    /// its exact value.
     UniqueKeyTxn::ConstDeleteBitmapPtr delete_bitmap;
-    UInt64 pinned_bitmap_csn = 0;
 
     RangesInDataPart(
         const DataPartPtr & data_part_,

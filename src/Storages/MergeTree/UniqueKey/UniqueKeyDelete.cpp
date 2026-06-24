@@ -25,6 +25,7 @@
 namespace ProfileEvents
 {
     extern const Event UniqueKeyDeleteRows;
+    extern const Event UniqueKeyMutexHoldMicroseconds;
 }
 
 
@@ -244,7 +245,8 @@ void executeUniqueKeyDelete(
             storage, partition_id, parts_in_partition, log, skipped_outdated_parts,
             std::move(marker_block_holder));
 
-        recordUniqueKeyMutexHold(mutex_hold_watch.elapsedMicroseconds());
+        ProfileEvents::increment(
+            ProfileEvents::UniqueKeyMutexHoldMicroseconds, mutex_hold_watch.elapsedMicroseconds());
     }
 
     ProfileEvents::increment(ProfileEvents::UniqueKeyDeleteRows, total_committed_rows);

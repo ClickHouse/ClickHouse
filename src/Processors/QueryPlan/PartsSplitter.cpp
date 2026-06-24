@@ -261,8 +261,6 @@ public:
             /// UNIQUE KEY — the 6-arg ctor doesn't carry the pinned delete
             /// bitmap; propagate it onto the rebuilt range.
             ranges_in_data_parts.back().delete_bitmap = initial_ranges_in_data_parts[part_index].delete_bitmap;
-            ranges_in_data_parts.back().pinned_bitmap_csn
-                = initial_ranges_in_data_parts[part_index].pinned_bitmap_csn;
             part_index_to_initial_ranges_in_data_parts_index[it->second] = part_index;
             return;
         }

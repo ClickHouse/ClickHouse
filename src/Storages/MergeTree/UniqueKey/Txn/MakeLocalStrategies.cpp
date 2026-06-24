@@ -66,7 +66,7 @@ std::unique_ptr<PartitionTxnController> MakeLocalStrategies(
     /// `MergeTreeBitmapStore` doubles as the Local `IBitmapStore`: the
     /// resolution-context ctor lets its `PartName`-keyed overrides resolve
     /// over `data` + `partition_id`.
-    auto bitmap_store = std::make_unique<MergeTreeBitmapStore>(data, partition_id, bitmap_cache);
+    auto bitmap_store = std::make_unique<MergeTreeBitmapStore>(data, bitmap_cache);
     auto pin_registry = std::make_unique<LocalPinRegistry>();
 
     return std::make_unique<PartitionTxnController>(

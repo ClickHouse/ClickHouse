@@ -146,7 +146,6 @@ std::shared_ptr<std::vector<QuerySnapshot>> applyUniqueKeyDeleteBitmaps(
         ConstDeleteBitmapPtr bitmap =
             snapshot->bitmap_at ? snapshot->bitmap_at(data_part->name) : std::make_shared<DeleteBitmap>();
         part_with_ranges.delete_bitmap = bitmap;
-        part_with_ranges.pinned_bitmap_csn = pinned_csn;
 
         if (bitmap->empty())
         {

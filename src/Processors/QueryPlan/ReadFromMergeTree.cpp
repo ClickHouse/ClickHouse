@@ -1459,7 +1459,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                 /// UNIQUE KEY — the 6-arg ctor doesn't carry the pinned
                 /// delete bitmap; propagate it onto the rebuilt range.
                 new_parts.back().delete_bitmap = part.delete_bitmap;
-                new_parts.back().pinned_bitmap_csn = part.pinned_bitmap_csn;
             }
 
             split_parts_and_ranges.emplace_back(std::move(new_parts));
@@ -1807,7 +1806,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 /// UNIQUE KEY — the 6-arg ctor doesn't carry the pinned
                 /// delete bitmap; propagate it onto the rebuilt range.
                 new_parts.back().delete_bitmap = part_it->delete_bitmap;
-                new_parts.back().pinned_bitmap_csn = part_it->pinned_bitmap_csn;
                 current_ranges_marks += part_it->getMarksCount();
             }
 

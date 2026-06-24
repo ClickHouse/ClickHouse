@@ -35,10 +35,9 @@ MergeTreeBitmapStore::MergeTreeBitmapStore(DeleteBitmapCachePtr cache_)
 }
 
 MergeTreeBitmapStore::MergeTreeBitmapStore(
-    const MergeTreeData & data, String partition_id, DeleteBitmapCachePtr cache_)
+    const MergeTreeData & data, DeleteBitmapCachePtr cache_)
     : cache(std::move(cache_))
     , resolution_data(&data)
-    , resolution_partition_id(std::move(partition_id))
 {
 }
 

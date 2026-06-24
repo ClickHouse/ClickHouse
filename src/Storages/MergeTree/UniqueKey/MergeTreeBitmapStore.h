@@ -38,9 +38,9 @@ public:
     explicit MergeTreeBitmapStore(DeleteBitmapCachePtr cache_ = nullptr);
 
     /// Resolution-context ctor: the `PartName`-keyed `IBitmapStore` overrides
-    /// resolve names over `data`'s active+outdated parts in `partition_id`.
-    /// `data` must outlive the store.
-    MergeTreeBitmapStore(const MergeTreeData & data, String partition_id, DeleteBitmapCachePtr cache_);
+    /// resolve names over `data`'s active+outdated parts. `data` must outlive
+    /// the store.
+    MergeTreeBitmapStore(const MergeTreeData & data, DeleteBitmapCachePtr cache_);
 
     /// `IBitmapStore` (txn seam). Resolve `part`/`target` to its
     /// `(storage, cache_identity)` over the resolution context, then forward
@@ -110,7 +110,6 @@ private:
     /// Non-owning — the resolution-context ctor's caller keeps `data` alive
     /// longer than the store.
     const MergeTreeData * resolution_data = nullptr;
-    String resolution_partition_id;
 
     /// Per-part handle a `PartName` resolves to over `resolution_data`:
     /// `storage` (null when the part is gone) + the part's

@@ -2,19 +2,12 @@
 
 #include <base/types.h>
 
-#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
 
 namespace DB
 {
-
-/// Record one UNIQUE KEY mutex hold-time sample (microseconds): increments the
-/// `UniqueKeyMutexHoldMicroseconds` sum by `hold_us`. Implemented in the .cpp
-/// so callers don't pull in the ProfileEvents header here.
-void recordUniqueKeyMutexHold(std::uint64_t hold_us);
-
 
 /// UNIQUE KEY — per-partition mutex registry.
 ///
