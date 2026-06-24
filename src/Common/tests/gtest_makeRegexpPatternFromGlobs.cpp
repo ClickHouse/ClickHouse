@@ -627,39 +627,32 @@ TEST(Common, GlobASTRangeOverflow)
     EXPECT_TRUE(large_range.matches("12345"));
 }
 
-/// Differential fuzzer prototype: the AST matcher (use_glob_ast_parser = 1) is compared
-/// against the legacy regex matcher (makeRegexpPatternFromGlobs + re2::RE2::FullMatch)
-/// on every (pattern, candidate) pair. Patterns and candidates are drawn from a small
-/// alphabet rich in glob metacharacters, with a fixed seed for reproducibility.
-/// Divergences are deduplicated by pattern and reported in bulk so a single run surfaces
-/// every distinct disagreement at once.
+/// Differential fuzzer: the AST matcher (use_glob_ast_parser = 1) must agree with the
+/// legacy regex matcher (makeRegexpPatternFromGlobs + re2::RE2::FullMatch) on every
+/// (pattern, candidate) pair. Patterns and candidates are drawn from a small alphabet
+/// rich in glob metacharacters, with a fixed seed for reproducibility. Divergences are
+/// deduplicated by pattern and reported in bulk so a single run surfaces every distinct
+/// disagreement at once.
 ///
-/// Disabled by default because it still *fails* on two buckets of legacy quirks. Run it
-/// explicitly with
-///   unit_tests_dbms --gtest_also_run_disabled_tests --gtest_filter='*GlobASTLegacyMatchFuzz'
-///
-/// A seeded run found 40 distinct diverging patterns in five buckets. Three were genuine
-/// AST bugs and are now FIXED in GlobString::parse (the run is down to 24 divergences):
-///   1. (fixed) Empty leading/trailing enum alternative ("{,0}", "{a?0,}") — was an enum
-///      with an empty edge; legacy enum_regex requires non-comma edges -> now literal.
-///   2. (fixed) Nested '{' in an enum body ("{b{,1}", "{0b{}}") — legacy enum_regex
-///      excludes '{' -> now literal.
-///   3. (fixed) Malformed range edge ("{..1}", "{0..}") — tryReadIntText accepts an empty
-///      side as 0; the range parser now requires digits on both sides, so these fall
-///      through to the enum path (matching legacy's literal-body enum).
-///
-/// The two remaining buckets are cases where legacy is arguably buggy and the AST follows
-/// the formal grammar instead (the parity policy here is still to be decided):
-///   4. Single-char body of an escaped char ("{-}") — legacy escapes '-' -> "\-" before
-///      enum detection, inflating the body to two chars, so legacy treats "{-}" as an enum
-///      matching '-'; AST treats it as the literal "{-}". Legacy quirk; AST is cleaner.
-///   5. Wildcard runs ("***", "*?*") — legacy maps every '*' after a '*' to "[^{}]" and
-///      '?' to "[^/]", giving odd run semantics; AST uses '**'+'*'. Legacy quirk.
-TEST(Common, DISABLED_GlobASTLegacyMatchFuzz)
+/// The fuzzer runs over the input domain where the legacy parser is *correct*. An earlier
+/// (unrestricted) run found 40 diverging patterns; three were genuine AST bugs now fixed
+/// in GlobString::parse (empty enum edges "{,0}", nested '{' in enum "{b{,1}", empty-sided
+/// ranges "{..1}"). The remaining divergences are all cases where legacy is buggy relative
+/// to POSIX shell semantics and the AST is correct, so they are excluded from the domain
+/// rather than asserted (each is covered by explicit cases in GlobASTMatchTest):
+///   * Brace body of a legacy-escaped char (e.g. "{-}"): legacy escapes '-' -> "\-" before
+///     enum detection, inflating the body to two chars, so it matches '-' instead of the
+///     literal "{-}". Excluded by dropping '-' from the pattern alphabet.
+///   * Wildcard runs ("**", "***", "*?*"): legacy's makeRegexpPatternFromGlobs mis-tracks
+///     its 'previous' char after a '?' and turns a '*' following a '*' into "[^{}]", so its
+///     wildcard runs wrongly cross '/' or stop at braces. Excluded by skipping patterns
+///     with two adjacent wildcard characters (which also drops the recursive "**").
+TEST(Common, GlobASTLegacyMatchFuzz)
 {
-    /// Pattern alphabet includes the glob metacharacters and a few literals that the
-    /// legacy escaper treats specially ('.', '-').
-    static const std::string PATTERN_ALPHABET = "ab01{},*?./-";
+    /// Pattern alphabet of glob metacharacters plus a literal the legacy escaper treats
+    /// specially ('.'). '-' is intentionally omitted: legacy escapes it before enum
+    /// detection, so a brace body like "{-}" wrongly becomes an enum (see comment above).
+    static const std::string PATTERN_ALPHABET = "ab01{},*?./";
     /// Candidate alphabet includes braces and slashes to probe enum/wildcard edges.
     static const std::string CANDIDATE_ALPHABET = "ab01/.{}";
 
@@ -681,14 +674,35 @@ TEST(Common, DISABLED_GlobASTLegacyMatchFuzz)
         return s;
     };
 
+    /// Two adjacent wildcard characters trigger the legacy wildcard-run bug (including the
+    /// recursive "**"), where legacy diverges from POSIX and the AST. Skip such patterns.
+    auto has_adjacent_wildcards = [](const std::string & s)
+    {
+        for (size_t i = 0; i + 1 < s.size(); ++i)
+        {
+            const bool a = s[i] == '*' || s[i] == '?';
+            const bool b = s[i + 1] == '*' || s[i + 1] == '?';
+            if (a && b)
+                return true;
+        }
+        return false;
+    };
+
     std::map<std::string, std::string> divergences;   // pattern -> first disagreeing sample
     size_t compared = 0;
+    size_t skipped = 0;
 
     for (int p = 0; p < num_patterns && divergences.size() < max_reported; ++p)
     {
         /// Patterns are at least one character long.
         std::string pattern = random_string(PATTERN_ALPHABET, max_pattern_len - 1);
         pattern += PATTERN_ALPHABET[rng() % PATTERN_ALPHABET.size()];
+
+        if (has_adjacent_wildcards(pattern))
+        {
+            ++skipped;
+            continue;
+        }
 
         bool legacy_ok = true;
         bool ast_ok = true;
@@ -729,7 +743,8 @@ TEST(Common, DISABLED_GlobASTLegacyMatchFuzz)
     if (!divergences.empty())
     {
         std::string report = "AST vs legacy matcher diverged on " + std::to_string(divergences.size())
-            + " distinct pattern(s) (compared " + std::to_string(compared) + " pairs):\n";
+            + " distinct pattern(s) (compared " + std::to_string(compared) + " pairs, skipped "
+            + std::to_string(skipped) + " wildcard-run patterns):\n";
         for (const auto & [pattern, sample] : divergences)
             report += "  pattern=[" + pattern + "] " + sample + "\n";
         ADD_FAILURE() << report;

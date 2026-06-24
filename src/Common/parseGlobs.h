@@ -70,10 +70,11 @@ namespace DB
   *                    subject to the zero-padding width rules.
   *   enum           - one alternative matches at the current position.
   *
-  * The differential fuzzer DISABLED_GlobASTLegacyMatchFuzz in
-  * gtest_makeRegexpPatternFromGlobs.cpp enumerates the remaining divergences from the
-  * legacy oracle (each one a documented legacy quirk where this grammar is the cleaner
-  * behavior).
+  * The differential fuzzer GlobASTLegacyMatchFuzz in
+  * gtest_makeRegexpPatternFromGlobs.cpp guards parity with the legacy oracle over the
+  * input domain where legacy is correct; it excludes by construct the classes where
+  * legacy is buggy relative to POSIX and this grammar is the cleaner behavior (brace
+  * bodies of a legacy-escaped char such as "{-}", and wildcard runs such as "**"/"*?*").
   */
 namespace GlobAST
 {
