@@ -130,7 +130,10 @@ String makeRepoRelative(const char * source)
         return {};
 
     std::string_view path(source);
-    if (!prefix.empty() && path.starts_with(prefix))
+    /// Strip the source-root prefix if present. No `prefix.empty()` guard: an empty prefix (when the build already
+    /// maps source paths to be repository-relative) is a prefix of everything and `remove_prefix(0)` is a no-op, and
+    /// the guard would be provably dead code in such a build (`prefix` is a compile-time constant) — see -Wunreachable-code.
+    if (path.starts_with(prefix))
         path.remove_prefix(prefix.size());
 
     /// A `Documentation`/`FunctionDocumentation` that was default-initialized without braces (`FunctionDocumentation
