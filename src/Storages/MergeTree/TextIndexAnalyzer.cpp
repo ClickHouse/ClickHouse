@@ -86,7 +86,7 @@ void TextIndexAnalyzer::QueryBuilder::addMissingToken(std::string_view token)
 {
     tokens.erase(token);
 
-    if (query->search_mode == TextSearchMode::All)
+    if (query->search_mode == TextSearchMode::All || query->search_mode == TextSearchMode::Phrase)
     {
         markFailed();
         return;
@@ -126,7 +126,7 @@ void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range)
     {
         rows_range = rows_range->unionWith(token_rows_range);
     }
-    else if (query->search_mode == TextSearchMode::All)
+    else if (query->search_mode == TextSearchMode::All || query->search_mode == TextSearchMode::Phrase)
     {
         rows_range = rows_range->intersectWith(token_rows_range);
 
@@ -327,6 +327,8 @@ double TextIndexAnalyzer::estimateQueryCardinality(const QueryBuilder & query_bu
     switch (query.search_mode)
     {
         case TextSearchMode::All:
+        /// A phrase requires all its tokens to be present.
+        case TextSearchMode::Phrase:
         {
             /// |intersection| ≈ |C_read| * prod(|Ai|/n) over tokens whose postings are still unread.
             /// When no postings have been read yet, treat the read intersection as the universe (n).
