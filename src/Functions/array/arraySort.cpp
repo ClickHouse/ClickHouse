@@ -6,11 +6,14 @@
 #include <Functions/array/arraySort.h>
 #include <Common/iota.h>
 
+#include <limits>
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -93,6 +96,8 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
     /// The limit (how many elements to partially sort) may differ from row to row when it is passed
     /// as a non-constant column, so it is read per-row inside the loop below.
     [[maybe_unused]] const IColumn * limit_column = nullptr;
+    [[maybe_unused]] bool limit_is_signed = false;
+    [[maybe_unused]] const char * function_name = positive ? "arrayPartialSort" : "arrayPartialReverseSort";
     if constexpr (is_partial)
     {
         if (!fixed_arguments)
@@ -101,6 +106,7 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
                 "Expected fixed arguments to get the limit for partial array sort");
 
         limit_column = fixed_arguments[0].column.get();
+        limit_is_signed = isNativeInt(*fixed_arguments[0].type);
     }
 
     const ColumnArray::Offsets & offsets = array.getOffsets();
@@ -118,14 +124,22 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
         auto next_offset = offsets[i]; \
         if constexpr (is_partial) \
         { \
-            const size_t limit = limit_column->getUInt(i); \
+            const UInt64 raw_limit = limit_column->getUInt(i); \
+            /* For a signed limit column a negative value is reinterpreted as a huge UInt64 with the */ \
+            /* high bit set; detect that and throw, like arrayTopK does for its K argument. */ \
+            if (limit_is_signed && raw_limit > static_cast<UInt64>(std::numeric_limits<Int64>::max())) \
+                throw Exception( \
+                    ErrorCodes::BAD_ARGUMENTS, \
+                    "Argument limit of function {} must be non-negative, got {}", \
+                    function_name, \
+                    static_cast<Int64>(raw_limit)); \
+            const size_t limit = raw_limit; \
+            /* With limit == 0 there is nothing to sort, the row keeps its original order. */ \
             if (limit) \
             { \
                 const auto effective_limit = std::min<size_t>(limit, next_offset - current_offset); \
                 ::partial_sort(&permutation[current_offset], &permutation[current_offset + effective_limit], &permutation[next_offset], CMP); \
             } \
-            else \
-                ::sort(&permutation[current_offset], &permutation[next_offset], CMP); \
         } \
         else \
             ::sort(&permutation[current_offset], &permutation[next_offset], CMP); \
@@ -278,6 +292,9 @@ it returns an array sorted according to the logic of the provided lambda functio
     description = R"(
 This function is the same as `arraySort` but with an additional `limit` argument allowing partial sorting.
 
+If `limit` is `0`, the source array is returned unchanged (no sorting is performed).
+A negative `limit` raises an exception.
+
 :::tip
 To retain only the sorted elements use `arrayResize`.
 :::
@@ -285,7 +302,7 @@ To retain only the sorted elements use `arrayResize`.
     syntax = "arrayPartialSort([f,] limit, arr [, arr1, ... ,arrN])";
     arguments = {
         {"f(arr[, arr1, ... ,arrN])", "The lambda function to apply to elements of array `x`.", {"Lambda function"}},
-        {"limit", "Index value up until which sorting will occur.", {"(U)Int*"}},
+        {"limit", "Number of elements to sort. A `limit` of `0` leaves the array unchanged, a negative `limit` is not allowed.", {"(U)Int*"}},
         {"arr", "Array to be sorted.", {"Array(T)"}},
         {"arr1, ... ,arrN", "N additional arrays, in the case when `f` accepts multiple arguments.", {"Array(T)"}}
     };
@@ -307,6 +324,9 @@ in ascending order. The remaining elements `(limit..N]` are in an unspecified or
 
     description = R"(
 This function is the same as `arrayReverseSort` but with an additional `limit` argument allowing partial sorting.
+
+If `limit` is `0`, the source array is returned unchanged (no sorting is performed).
+A negative `limit` raises an exception.
 
 :::tip
 To retain only the sorted elements use `arrayResize`.
