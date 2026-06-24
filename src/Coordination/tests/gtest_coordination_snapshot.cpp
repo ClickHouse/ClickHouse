@@ -438,17 +438,15 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
     EXPECT_EQ(world.getApproximateDataSize(), 0);
 }
 
-TEST_P(CoordinationTest, TestStorageSnapshotSimple)
+TEST_P(CoordinationTestWithCompression, TestStorageSnapshotSimple)
 {
     ChangelogDirTest test("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
     DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
 
-    Storage storage(500, "", this->keeper_context);
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
 
     /// Set ACLs on nodes to verify acl_id round-trips through V7 snapshots
     auto acl_id1 = storage.acl_map.convertACLs({{31, "world", "anyone"}});
@@ -456,8 +454,10 @@ TEST_P(CoordinationTest, TestStorageSnapshotSimple)
 
     addNode(storage, "/hello1", "world", 1, acl_id1);
     addNode(storage, "/hello2", "somedata", 3, acl_id2);
+    /// A non-ephemeral node carrying a large seq_num to verify int64 seq_num round-trips through V7
+    /// snapshots (ephemeral nodes always report seq_num 0, so this can't reuse /hello1 or /hello2).
     const int64_t large_seq_num = static_cast<int64_t>(std::numeric_limits<int32_t>::max()) + 100;
-    storage.nodes.container.updateValue("/", [&](typename Storage::Node & node) { node.stats.setSeqNum(large_seq_num); });
+    addNode(storage, "/hello3", "", /*ephemeral_owner=*/0, /*acl_id=*/0, large_seq_num);
     storage.session_id_counter = 5;
     TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 2;
     storage.committed_ephemerals[3] = {"/hello2"};
@@ -469,7 +469,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotSimple)
 
     EXPECT_EQ(snapshot.snapshot_meta->get_last_log_idx(), 2);
     EXPECT_EQ(snapshot.session_id, 7);
-    EXPECT_EQ(snapshot.node_stream->node_count, 6);
+    EXPECT_EQ(snapshot.node_stream->node_count, 7);
     EXPECT_EQ(snapshot.session_and_timeout.size(), 2);
 
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
@@ -478,17 +478,24 @@ TEST_P(CoordinationTest, TestStorageSnapshotSimple)
 
     auto debuf = manager.deserializeSnapshotBufferFromDisk(2);
 
-    auto restored_storage = std::make_unique<Storage>(500, "", this->keeper_context);
+    auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/false);
     manager.deserializeSnapshotFromBuffer(debuf, *restored_storage);
 
-    EXPECT_EQ(restored_storage->nodes.container.size(), 6);
-    EXPECT_EQ(restored_storage->nodes.container.getValue("/").getChildren().size(), 3);
-    EXPECT_EQ(restored_storage->nodes.container.getValue("/hello1").getChildren().size(), 0);
-    EXPECT_EQ(restored_storage->nodes.container.getValue("/hello2").getChildren().size(), 0);
+    const auto committed_stats = [&](std::string_view p)
+    {
+        DB::KeeperNodeStats stats;
+        EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple(p, &stats));
+        return stats;
+    };
 
-    EXPECT_EQ(restored_storage->nodes.container.getValue("/").getData(), "");
-    EXPECT_EQ(restored_storage->nodes.container.getValue("/hello1").getData(), "world");
-    EXPECT_EQ(restored_storage->nodes.container.getValue("/hello2").getData(), "somedata");
+    EXPECT_EQ(restored_storage->getStorageStats().nodes_count, 7);
+    EXPECT_EQ(restored_storage->nodes_storage->listCommittedChildrenNames("/").size(), 4);
+    EXPECT_EQ(restored_storage->nodes_storage->listCommittedChildrenNames("/hello1").size(), 0);
+    EXPECT_EQ(restored_storage->nodes_storage->listCommittedChildrenNames("/hello2").size(), 0);
+
+    EXPECT_EQ(committedNodeData(*restored_storage, "/"), "");
+    EXPECT_EQ(committedNodeData(*restored_storage, "/hello1"), "world");
+    EXPECT_EQ(committedNodeData(*restored_storage, "/hello2"), "somedata");
     EXPECT_EQ(restored_storage->session_id_counter, 7);
     EXPECT_EQ(restored_storage->getZXID(), 2);
     EXPECT_EQ(restored_storage->committed_ephemerals.size(), 2);
@@ -497,28 +504,26 @@ TEST_P(CoordinationTest, TestStorageSnapshotSimple)
     EXPECT_EQ(restored_storage->session_and_timeout.size(), 2);
 
     /// Verify ACL round-trip
-    EXPECT_EQ(restored_storage->nodes.container.getValue("/hello1").stats.acl_id, acl_id1);
-    EXPECT_EQ(restored_storage->nodes.container.getValue("/hello2").stats.acl_id, acl_id2);
+    EXPECT_EQ(committed_stats("/hello1").acl_id, acl_id1);
+    EXPECT_EQ(committed_stats("/hello2").acl_id, acl_id2);
     auto restored_acls = restored_storage->acl_map.convertNumber(acl_id2);
     EXPECT_EQ(restored_acls.size(), 1);
     EXPECT_EQ(restored_acls[0].scheme, "digest");
 
     /// Verify seq_num round-trip (int64_t, value > INT32_MAX)
-    EXPECT_EQ(restored_storage->nodes.container.find("/")->value.stats.getSeqNum(), large_seq_num);
+    EXPECT_EQ(committed_stats("/hello3").getSeqNum(), large_seq_num);
 }
 
-TEST_P(CoordinationTest, TestStorageSnapshotMoreWrites)
+TEST_P(CoordinationTestWithCompression, TestStorageSnapshotMoreWrites)
 {
 
     ChangelogDirTest test("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
     DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
 
-    Storage storage(500, "", this->keeper_context);
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
     storage.getSessionID(130);
 
     for (size_t i = 0; i < 50; ++i)
@@ -535,36 +540,34 @@ TEST_P(CoordinationTest, TestStorageSnapshotMoreWrites)
         addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
     }
 
-    EXPECT_EQ(storage.nodes.container.size(), 104);
+    EXPECT_EQ(storage.getStorageStats().nodes_count, 104);
 
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
     manager.serializeSnapshotBufferToDisk(*buf, 50);
     EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin" + this->extension));
 
     auto debuf = manager.deserializeSnapshotBufferFromDisk(50);
-    auto restored_storage = std::make_unique<Storage>(500, "", this->keeper_context);
+    auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/false);
     manager.deserializeSnapshotFromBuffer(debuf, *restored_storage);
 
-    EXPECT_EQ(restored_storage->nodes.container.size(), 54);
+    EXPECT_EQ(restored_storage->getStorageStats().nodes_count, 54);
     for (size_t i = 0; i < 50; ++i)
     {
-        EXPECT_EQ(restored_storage->nodes.container.getValue("/hello_" + std::to_string(i)).getData(), "world_" + std::to_string(i));
+        EXPECT_EQ(committedNodeData(*restored_storage, "/hello_" + std::to_string(i)), "world_" + std::to_string(i));
     }
 }
 
 
-TEST_P(CoordinationTest, TestStorageSnapshotManySnapshots)
+TEST_P(CoordinationTestWithCompression, TestStorageSnapshotManySnapshots)
 {
 
     ChangelogDirTest test("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
     DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
 
-    Storage storage(500, "", this->keeper_context);
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
     storage.getSessionID(130);
 
     for (size_t j = 1; j <= 5; ++j)
@@ -587,28 +590,30 @@ TEST_P(CoordinationTest, TestStorageSnapshotManySnapshots)
     EXPECT_TRUE(fs::exists("./snapshots/snapshot_250.bin" + this->extension));
 
 
-    auto restored_storage = std::make_unique<Storage>(500, "", this->keeper_context);
+    auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/false);
     manager.restoreFromLatestSnapshot(*restored_storage);
 
-    EXPECT_EQ(restored_storage->nodes.container.size(), 254);
+    EXPECT_EQ(restored_storage->getStorageStats().nodes_count, 254);
 
     for (size_t i = 0; i < 250; ++i)
     {
-        EXPECT_EQ(restored_storage->nodes.container.getValue("/hello_" + std::to_string(i)).getData(), "world_" + std::to_string(i));
+        EXPECT_EQ(committedNodeData(*restored_storage, "/hello_" + std::to_string(i)), "world_" + std::to_string(i));
     }
 }
 
-TEST_P(CoordinationTest, TestStorageSnapshotMode)
+TEST_P(CoordinationTestWithCompression, TestStorageSnapshotMode)
 {
 
     ChangelogDirTest test("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
+    /// This test stays on KeeperMemoryStorage on purpose: it inspects copy-on-write snapshot
+    /// internals of the in-memory container (updateValue/erase/size/snapshotSizeWithVersion while
+    /// a snapshot is open) that have no equivalent in the implementation-agnostic KeeperNodesStorage
+    /// interface.
     DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
-    Storage storage(500, "", this->keeper_context);
+    DB::KeeperMemoryStorage storage(500, "", this->keeper_context);
+    storage.initializeSystemNodes();
 
     for (size_t i = 0; i < 50; ++i)
     {
@@ -646,7 +651,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotMode)
             EXPECT_FALSE(storage.nodes.container.contains(fmt::format("/hello_{}", i)));
     }
 
-    auto restored_storage = std::make_unique<Storage>(500, "", this->keeper_context);
+    auto restored_storage = std::make_unique<DB::KeeperMemoryStorage>(500, "", this->keeper_context);
     manager.restoreFromLatestSnapshot(*restored_storage);
 
     for (size_t i = 0; i < 50; ++i)
@@ -655,17 +660,15 @@ TEST_P(CoordinationTest, TestStorageSnapshotMode)
     }
 }
 
-TEST_P(CoordinationTest, TestStorageSnapshotBroken)
+TEST_P(CoordinationTestWithCompression, TestStorageSnapshotBroken)
 {
 
     ChangelogDirTest test("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
     DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
-    Storage storage(500, "", this->keeper_context);
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
     for (size_t i = 0; i < 50; ++i)
     {
         addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
@@ -683,21 +686,19 @@ TEST_P(CoordinationTest, TestStorageSnapshotBroken)
     plain_buf.truncate(34);
     plain_buf.finalize();
 
-    Storage restored_storage(500, "", this->keeper_context);
-    EXPECT_THROW(manager.restoreFromLatestSnapshot(restored_storage), DB::Exception);
+    auto restored_storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/false);
+    EXPECT_THROW(manager.restoreFromLatestSnapshot(*restored_storage_ptr), DB::Exception);
 }
 
-TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
+TEST_P(CoordinationTestWithCompression, TestStorageSnapshotDifferentCompressions)
 {
     ChangelogDirTest test("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
     DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
 
-    Storage storage(500, "", this->keeper_context);
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
     addNode(storage, "/hello1", "world", 1);
     addNode(storage, "/hello2", "somedata", 3);
     storage.session_id_counter = 5;
@@ -717,17 +718,17 @@ TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
 
     auto debuf = new_manager.deserializeSnapshotBufferFromDisk(2);
 
-    auto restored_storage = std::make_unique<Storage>(500, "", this->keeper_context);
+    auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/false);
     new_manager.deserializeSnapshotFromBuffer(debuf, *restored_storage);
 
-    EXPECT_EQ(restored_storage->nodes.container.size(), 6);
-    EXPECT_EQ(restored_storage->nodes.container.getValue("/").getChildren().size(), 3);
-    EXPECT_EQ(restored_storage->nodes.container.getValue("/hello1").getChildren().size(), 0);
-    EXPECT_EQ(restored_storage->nodes.container.getValue("/hello2").getChildren().size(), 0);
+    EXPECT_EQ(restored_storage->getStorageStats().nodes_count, 6);
+    EXPECT_EQ(restored_storage->nodes_storage->listCommittedChildrenNames("/").size(), 3);
+    EXPECT_EQ(restored_storage->nodes_storage->listCommittedChildrenNames("/hello1").size(), 0);
+    EXPECT_EQ(restored_storage->nodes_storage->listCommittedChildrenNames("/hello2").size(), 0);
 
-    EXPECT_EQ(restored_storage->nodes.container.getValue("/").getData(), "");
-    EXPECT_EQ(restored_storage->nodes.container.getValue("/hello1").getData(), "world");
-    EXPECT_EQ(restored_storage->nodes.container.getValue("/hello2").getData(), "somedata");
+    EXPECT_EQ(committedNodeData(*restored_storage, "/"), "");
+    EXPECT_EQ(committedNodeData(*restored_storage, "/hello1"), "world");
+    EXPECT_EQ(committedNodeData(*restored_storage, "/hello2"), "somedata");
     EXPECT_EQ(restored_storage->session_id_counter, 7);
     EXPECT_EQ(restored_storage->getZXID(), 2);
     EXPECT_EQ(restored_storage->committed_ephemerals.size(), 2);
@@ -736,20 +737,18 @@ TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     EXPECT_EQ(restored_storage->session_and_timeout.size(), 2);
 }
 
-TEST_P(CoordinationTest, TestStorageSnapshotEqual)
+TEST_P(CoordinationTestWithCompression, TestStorageSnapshotEqual)
 {
     ChangelogDirTest test("./snapshots");
     this->setSnapshotDirectory("./snapshots");
-
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
 
     std::optional<UInt128> snapshot_hash;
     for (size_t i = 0; i < 15; ++i)
     {
         DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
 
-        Storage storage(500, "", this->keeper_context);
+        auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+        auto & storage = *storage_ptr;
         addNode(storage, "/hello", "");
         for (size_t j = 0; j < 5000; ++j)
         {
@@ -781,17 +780,15 @@ TEST_P(CoordinationTest, TestStorageSnapshotEqual)
     }
 }
 
-TEST_P(CoordinationTest, TestStorageSnapshotBlockACL)
+TEST_P(CoordinationTestWithCompression, TestStorageSnapshotBlockACL)
 {
     ChangelogDirTest test("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
     DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
 
-    Storage storage(500, "", this->keeper_context);
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
     static constexpr std::string_view path = "/hello";
     DB::ACLId acl_id = storage.acl_map.convertACLs({{1, "digest", "user1:pwd"}});
     EXPECT_NE(acl_id, 0);
@@ -803,42 +800,45 @@ TEST_P(CoordinationTest, TestStorageSnapshotBlockACL)
     EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin" + this->extension));
     {
         auto debuf = manager.deserializeSnapshotBufferFromDisk(50);
-        auto restored_storage = std::make_unique<Storage>(500, "", this->keeper_context);
+        auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/false);
         manager.deserializeSnapshotFromBuffer(debuf, *restored_storage);
 
-        EXPECT_EQ(restored_storage->nodes.container.size(), 5);
-        EXPECT_EQ(restored_storage->nodes.container.getValue(path).stats.acl_id, acl_id);
+        EXPECT_EQ(restored_storage->getStorageStats().nodes_count, 5);
+        DB::KeeperNodeStats stats;
+        ASSERT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple(path, &stats));
+        EXPECT_EQ(stats.acl_id, acl_id);
     }
 
     {
         this->keeper_context->setBlockACL(true);
         auto debuf = manager.deserializeSnapshotBufferFromDisk(50);
-        auto restored_storage = std::make_unique<Storage>(500, "", this->keeper_context);
+        auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/false);
         manager.deserializeSnapshotFromBuffer(debuf, *restored_storage);
 
-        EXPECT_EQ(restored_storage->nodes.container.size(), 5);
-        EXPECT_EQ(restored_storage->nodes.container.getValue(path).stats.acl_id, 0);
+        EXPECT_EQ(restored_storage->getStorageStats().nodes_count, 5);
+        DB::KeeperNodeStats stats;
+        ASSERT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple(path, &stats));
+        EXPECT_EQ(stats.acl_id, 0);
     }
 }
 
-static DB::KeeperContextPtr makeFollowerContext(int idx)
+static DB::KeeperContextPtr makeFollowerContext(int idx, bool use_lsmt_storage)
 {
-    auto settings = std::make_shared<DB::CoordinationSettings>();
-    auto ctx = std::make_shared<DB::KeeperContext>(true, settings);
+    auto ctx = makeKeeperContext(use_lsmt_storage);
     ctx->setLocalLogsPreprocessed();
     ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>(
         fmt::format("SnapshotDisk_{}", idx), fmt::format("./snapshots_{}", idx)));
     return ctx;
 }
 
-static std::string runFollower(int idx, DB::KeeperStateMachine & leader, nuraft::snapshot & s)
+static std::string runFollower(int idx, DB::KeeperStateMachine & leader, nuraft::snapshot & s, bool use_lsmt_storage)
 {
     fs::create_directory(fmt::format("./snapshots_{}", idx));
     SCOPE_EXIT({
         fs::remove_all(fmt::format("./snapshots_{}", idx));
     });
 
-    auto ctx = makeFollowerContext(idx);
+    auto ctx = makeFollowerContext(idx, use_lsmt_storage);
     DB::SnapshotsQueue snapshots_queue{1};
     auto follower = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
     follower->init();
@@ -861,11 +861,11 @@ static std::string runFollower(int idx, DB::KeeperStateMachine & leader, nuraft:
     return std::string(committedNodeData(follower->getStorageUnsafe(), "/hello"));
 }
 
-static DB::KeeperContextPtr makeMemoryContextForSnapshotApply(const std::string & snapshots_path, const std::string & log_path = "")
+static DB::KeeperContextPtr makeContextForSnapshotApply(bool use_lsmt_storage, const std::string & snapshots_path, const std::string & log_path = "")
 {
     auto settings = std::make_shared<DB::CoordinationSettings>();
     (*settings)[DB::CoordinationSetting::compress_snapshots_with_zstd_format] = true;
-    auto ctx = std::make_shared<DB::KeeperContext>(true, settings);
+    auto ctx = makeKeeperContext(use_lsmt_storage, settings);
     ctx->setLocalLogsPreprocessed();
     ctx->setDigestEnabled(true);
     ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", snapshots_path));
@@ -951,11 +951,11 @@ static DB::SnapshotFileInfoPtr executeCreateSnapshotTask(
     return snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/false);
 }
 
-TEST(KeeperMemorySnapshotApplyTest, ApplySnapshotReplacesCommittedState)
+TEST_P(CoordinationTest, ApplySnapshotReplacesCommittedState)
 {
     ChangelogDirTest snapshots("./snapshots");
 
-    auto ctx = makeMemoryContextForSnapshotApply("./snapshots");
+    auto ctx = makeContextForSnapshotApply(GetParam(), "./snapshots");
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
     state_machine->init();
@@ -964,12 +964,12 @@ TEST(KeeperMemorySnapshotApplyTest, ApplySnapshotReplacesCommittedState)
     state_machine->pre_commit(1, old_entry->get_buf());
     state_machine->commit(1, old_entry->get_buf());
 
-    DB::KeeperMemoryStorage snapshot_storage(500, "", ctx);
-    addNode(snapshot_storage, "/committed", "from_snapshot");
-    TSA_SUPPRESS_WARNING_FOR_WRITE(snapshot_storage.zxid) = 1;
+    auto snapshot_storage = DB::KeeperStorage::create(500, "", ctx);
+    addNode(*snapshot_storage,"/committed", "from_snapshot");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(snapshot_storage->zxid) = 1;
 
     nuraft::snapshot snapshot(1, 0, std::make_shared<nuraft::cluster_config>());
-    auto snapshot_buf = makeSnapshotBufferFromStorage(snapshot_storage, 1, ctx);
+    auto snapshot_buf = makeSnapshotBufferFromStorage(*snapshot_storage, 1, ctx);
     saveSingleObjectSnapshot(*state_machine, snapshot, snapshot_buf);
 
     EXPECT_TRUE(state_machine->apply_snapshot(snapshot));
@@ -981,12 +981,12 @@ TEST(KeeperMemorySnapshotApplyTest, ApplySnapshotReplacesCommittedState)
     EXPECT_EQ(state_machine->last_commit_index(), 1);
 }
 
-TEST(KeeperMemorySnapshotApplyTest, ApplySnapshotPreservesPreprocessedTailAboveSnapshotIndex)
+TEST_P(CoordinationTest, ApplySnapshotPreservesPreprocessedTailAboveSnapshotIndex)
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest test("./logs");
 
-    auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./logs");
+    auto ctx = makeContextForSnapshotApply(GetParam(), "./snapshots", "./logs");
     DB::KeeperLogStore changelog({}, {}, ctx);
     changelog.init(0, 1000);
     DB::SnapshotsQueue snapshots_queue{1};
@@ -1009,12 +1009,12 @@ TEST(KeeperMemorySnapshotApplyTest, ApplySnapshotPreservesPreprocessedTailAboveS
 
     changelog.end_of_append_batch(0, 0);
 
-    DB::KeeperMemoryStorage snapshot_storage(500, "", ctx);
-    addNode(snapshot_storage, "/committed", "base");
-    TSA_SUPPRESS_WARNING_FOR_WRITE(snapshot_storage.zxid) = 1;
+    auto snapshot_storage = DB::KeeperStorage::create(500, "", ctx);
+    addNode(*snapshot_storage,"/committed", "base");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(snapshot_storage->zxid) = 1;
 
     nuraft::snapshot snapshot(1, 0, std::make_shared<nuraft::cluster_config>());
-    auto snapshot_buf = makeSnapshotBufferFromStorage(snapshot_storage, 1, ctx);
+    auto snapshot_buf = makeSnapshotBufferFromStorage(*snapshot_storage, 1, ctx);
     saveSingleObjectSnapshot(*state_machine, snapshot, snapshot_buf);
 
     EXPECT_TRUE(state_machine->apply_snapshot(snapshot));
@@ -1031,12 +1031,12 @@ TEST(KeeperMemorySnapshotApplyTest, ApplySnapshotPreservesPreprocessedTailAboveS
     EXPECT_EQ(state_machine->last_commit_index(), 3);
 }
 
-TEST(KeeperMemorySnapshotApplyTest, ApplySnapshotPreservesEphemeralTailForClosePreprocess)
+TEST_P(CoordinationTest, ApplySnapshotPreservesEphemeralTailForClosePreprocess)
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest test("./logs");
 
-    auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./logs");
+    auto ctx = makeContextForSnapshotApply(GetParam(), "./snapshots", "./logs");
     DB::KeeperLogStore changelog({}, {}, ctx);
     changelog.init(0, 1000);
     DB::SnapshotsQueue snapshots_queue{1};
@@ -1056,12 +1056,12 @@ TEST(KeeperMemorySnapshotApplyTest, ApplySnapshotPreservesEphemeralTailForCloseP
 
     changelog.end_of_append_batch(0, 0);
 
-    DB::KeeperMemoryStorage snapshot_storage(500, "", ctx);
-    addNode(snapshot_storage, "/base", "base");
-    TSA_SUPPRESS_WARNING_FOR_WRITE(snapshot_storage.zxid) = 1;
+    auto snapshot_storage = DB::KeeperStorage::create(500, "", ctx);
+    addNode(*snapshot_storage,"/base", "base");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(snapshot_storage->zxid) = 1;
 
     nuraft::snapshot snapshot(1, 0, std::make_shared<nuraft::cluster_config>());
-    auto snapshot_buf = makeSnapshotBufferFromStorage(snapshot_storage, 1, ctx);
+    auto snapshot_buf = makeSnapshotBufferFromStorage(*snapshot_storage, 1, ctx);
     saveSingleObjectSnapshot(*state_machine, snapshot, snapshot_buf);
 
     EXPECT_TRUE(state_machine->apply_snapshot(snapshot));
@@ -1078,11 +1078,11 @@ TEST(KeeperMemorySnapshotApplyTest, ApplySnapshotPreservesEphemeralTailForCloseP
     EXPECT_EQ(state_machine->last_commit_index(), 3);
 }
 
-TEST(KeeperMemorySnapshotApplyTest, CorruptSnapshotPrefixFailsBeforeDroppingStorage)
+TEST_P(CoordinationTest, CorruptSnapshotPrefixFailsBeforeDroppingStorage)
 {
     ChangelogDirTest snapshots("./snapshots");
 
-    auto ctx = makeMemoryContextForSnapshotApply("./snapshots");
+    auto ctx = makeContextForSnapshotApply(GetParam(), "./snapshots");
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
     state_machine->init();
@@ -1091,12 +1091,12 @@ TEST(KeeperMemorySnapshotApplyTest, CorruptSnapshotPrefixFailsBeforeDroppingStor
     state_machine->pre_commit(1, old_entry->get_buf());
     state_machine->commit(1, old_entry->get_buf());
 
-    DB::KeeperMemoryStorage snapshot_storage(500, "", ctx);
-    addNode(snapshot_storage, "/replacement", "replacement");
-    TSA_SUPPRESS_WARNING_FOR_WRITE(snapshot_storage.zxid) = 1;
+    auto snapshot_storage = DB::KeeperStorage::create(500, "", ctx);
+    addNode(*snapshot_storage,"/replacement", "replacement");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(snapshot_storage->zxid) = 1;
 
     nuraft::snapshot snapshot(1, 0, std::make_shared<nuraft::cluster_config>());
-    auto snapshot_buf = makeSnapshotBufferFromStorage(snapshot_storage, 1, ctx);
+    auto snapshot_buf = makeSnapshotBufferFromStorage(*snapshot_storage, 1, ctx);
     saveSingleObjectSnapshot(*state_machine, snapshot, snapshot_buf);
 
     DB::WriteBufferFromFile plain_buf(
@@ -1149,11 +1149,11 @@ void saveInstallSnapshot(
     uint64_t idx,
     const std::string & marker)
 {
-    DB::KeeperMemoryStorage storage(500, "", ctx);
-    addNode(storage, marker, marker);
-    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = idx;
+    auto storage = DB::KeeperStorage::create(500, "", ctx);
+    addNode(*storage, marker, marker);
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage->zxid) = idx;
     nuraft::snapshot snap(idx, 0, std::make_shared<nuraft::cluster_config>());
-    auto buf = makeInstallBuffer(storage, idx, ctx);
+    auto buf = makeInstallBuffer(*storage, idx, ctx);
     saveSingleObjectSnapshot(state_machine, snap, buf);
 }
 }
@@ -1161,11 +1161,11 @@ void saveInstallSnapshot(
 /// HARD CONSTRAINT: snapshot 5 saved but never applied (leader died), then a new leader installs
 /// the older snapshot 3 — must converge. A naive "only stamp the mark if monotonic" guard would
 /// skip the apply of 3 and silently diverge.
-TEST(KeeperMemorySnapshotApplyTest, InterruptedInstallThenOlderReinstallConverges)
+TEST_P(CoordinationTest, InterruptedInstallThenOlderReinstallConverges)
 {
     ChangelogDirTest snapshots("./snapshots");
 
-    auto ctx = makeMemoryContextForSnapshotApply("./snapshots");
+    auto ctx = makeContextForSnapshotApply(GetParam(), "./snapshots");
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
     state_machine->init();
@@ -1213,11 +1213,11 @@ TEST(KeeperMemorySnapshotApplyTest, InterruptedInstallThenOlderReinstallConverge
 
 /// A stale duplicate install at a lower index must not regress the high-water mark or clobber the
 /// cached snapshot size.
-TEST(KeeperMemorySnapshotApplyTest, StaleDuplicateInstallKeepsHighWaterMarkAndSize)
+TEST_P(CoordinationTest, StaleDuplicateInstallKeepsHighWaterMarkAndSize)
 {
     ChangelogDirTest snapshots("./snapshots");
 
-    auto ctx = makeMemoryContextForSnapshotApply("./snapshots");
+    auto ctx = makeContextForSnapshotApply(GetParam(), "./snapshots");
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
     state_machine->init();
@@ -1258,12 +1258,12 @@ TEST(KeeperMemorySnapshotApplyTest, StaleDuplicateInstallKeepsHighWaterMarkAndSi
 
 /// After a restart, a snapshot that was saved but never applied is the newest disk snapshot and
 /// `init` recovers from it (a fully saved snapshot is a valid committed prefix).
-TEST(KeeperMemorySnapshotApplyTest, RestartAfterSavedButNotAppliedRecoversNewestDiskSnapshot)
+TEST_P(CoordinationTest, RestartAfterSavedButNotAppliedRecoversNewestDiskSnapshot)
 {
     ChangelogDirTest snapshots("./snapshots");
 
     {
-        auto ctx = makeMemoryContextForSnapshotApply("./snapshots");
+        auto ctx = makeContextForSnapshotApply(GetParam(), "./snapshots");
         DB::SnapshotsQueue snapshots_queue{1};
         auto sm1 = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
         sm1->init();
@@ -1278,7 +1278,7 @@ TEST(KeeperMemorySnapshotApplyTest, RestartAfterSavedButNotAppliedRecoversNewest
     }
 
     {
-        auto ctx2 = makeMemoryContextForSnapshotApply("./snapshots");
+        auto ctx2 = makeContextForSnapshotApply(GetParam(), "./snapshots");
         DB::SnapshotsQueue snapshots_queue2{1};
         auto sm2 = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue2, ctx2, nullptr);
         sm2->init();
@@ -1298,11 +1298,11 @@ TEST(KeeperMemorySnapshotApplyTest, RestartAfterSavedButNotAppliedRecoversNewest
 
 /// The high-water mark's backing file stays servable (protected from retention) and the mark never
 /// regresses under a sequence of saved-but-not-applied installs.
-TEST(KeeperMemorySnapshotApplyTest, HighWaterMarkStaysServableAndNeverRegressesUnderReceiveSequences)
+TEST_P(CoordinationTest, HighWaterMarkStaysServableAndNeverRegressesUnderReceiveSequences)
 {
     ChangelogDirTest snapshots("./snapshots");
 
-    auto ctx = makeMemoryContextForSnapshotApply("./snapshots");
+    auto ctx = makeContextForSnapshotApply(GetParam(), "./snapshots");
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
     state_machine->init();
@@ -1365,11 +1365,11 @@ TEST(KeeperMemorySnapshotApplyTest, HighWaterMarkStaysServableAndNeverRegressesU
 
 /// A covered stale apply (s.idx < pending, but local commits already cover s.idx) skips without
 /// divergence and leaves the pending intact for its own apply.
-TEST(KeeperMemorySnapshotApplyTest, CoveredStaleApplySkipsWithoutDivergence)
+TEST_P(CoordinationTest, CoveredStaleApplySkipsWithoutDivergence)
 {
     ChangelogDirTest snapshots("./snapshots");
 
-    auto ctx = makeMemoryContextForSnapshotApply("./snapshots");
+    auto ctx = makeContextForSnapshotApply(GetParam(), "./snapshots");
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
     state_machine->init();
@@ -1404,14 +1404,14 @@ TEST(KeeperMemorySnapshotApplyTest, CoveredStaleApplySkipsWithoutDivergence)
 /// A queued same-index create that drains after a stale duplicate install at the same index was
 /// saved (but not applied) adopts the registered file instead of rewriting it in place. The armed
 /// disk is the discriminator: a regression to rewrite behavior would writeFile and throw.
-TEST(KeeperMemorySnapshotApplyTest, QueuedSameIndexCreateAdoptsRegisteredInstallSnapshot)
+TEST_P(CoordinationTest, QueuedSameIndexCreateAdoptsRegisteredInstallSnapshot)
 {
     ChangelogDirTest snapshots("./snapshots");
 
     {
         auto settings = std::make_shared<DB::CoordinationSettings>();
         (*settings)[DB::CoordinationSetting::compress_snapshots_with_zstd_format] = true;
-        auto ctx = std::make_shared<DB::KeeperContext>(true, settings);
+        auto ctx = ::makeKeeperContext(GetParam(), settings);
         ctx->setLocalLogsPreprocessed();
         ctx->setDigestEnabled(true);
         auto throwing_disk = std::make_shared<ThrowingSnapshotDisk>(
@@ -1440,12 +1440,12 @@ TEST(KeeperMemorySnapshotApplyTest, QueuedSameIndexCreateAdoptsRegisteredInstall
         EXPECT_EQ(sm1->last_snapshot()->get_last_log_idx(), 1);
 
         /// Save a state-equivalent install of 5 (committed prefix /n1../n5); no apply (NuRaft covered skip).
-        DB::KeeperMemoryStorage install5(500, "", ctx);
+        auto install5 = DB::KeeperStorage::create(500, "", ctx);
         for (uint64_t idx = 1; idx <= 5; ++idx)
-            addNode(install5, fmt::format("/n{}", idx), "v");
-        TSA_SUPPRESS_WARNING_FOR_WRITE(install5.zxid) = 5;
+            addNode(*install5, fmt::format("/n{}", idx), "v");
+        TSA_SUPPRESS_WARNING_FOR_WRITE(install5->zxid) = 5;
         nuraft::snapshot s5_save(5, 0, std::make_shared<nuraft::cluster_config>());
-        auto buf5 = makeInstallBuffer(install5, 5, ctx);
+        auto buf5 = makeInstallBuffer(*install5, 5, ctx);
         saveSingleObjectSnapshot(*sm1, s5_save, buf5);
         EXPECT_EQ(sm1->last_snapshot()->get_last_log_idx(), 1); /// mark still 1, pending 5
 
@@ -1465,7 +1465,7 @@ TEST(KeeperMemorySnapshotApplyTest, QueuedSameIndexCreateAdoptsRegisteredInstall
 
     /// Restart with a plain disk: the adopted snapshot 5 is the newest and recovers cleanly.
     {
-        auto ctx2 = makeMemoryContextForSnapshotApply("./snapshots");
+        auto ctx2 = makeContextForSnapshotApply(GetParam(), "./snapshots");
         DB::SnapshotsQueue snapshots_queue2{1};
         auto sm2 = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue2, ctx2, nullptr);
         sm2->init();
@@ -1479,11 +1479,11 @@ TEST(KeeperMemorySnapshotApplyTest, QueuedSameIndexCreateAdoptsRegisteredInstall
 
 /// A registered same-index entry whose file cannot be confirmed present makes the create fail
 /// closed (nullptr) without advancing the mark, rewriting bytes, or recreating the file.
-TEST(KeeperMemorySnapshotApplyTest, SameIndexCreateFailsClosedOnMissingRegisteredFile)
+TEST_P(CoordinationTest, SameIndexCreateFailsClosedOnMissingRegisteredFile)
 {
     ChangelogDirTest snapshots("./snapshots");
 
-    auto ctx = makeMemoryContextForSnapshotApply("./snapshots");
+    auto ctx = makeContextForSnapshotApply(GetParam(), "./snapshots");
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
     state_machine->init();
@@ -1549,11 +1549,11 @@ TEST(KeeperMemorySnapshotApplyTest, SameIndexCreateFailsClosedOnMissingRegistere
 
 /// A create at or below the mark returns the file backing the high-water mark, not the manager's
 /// map max (which may be a saved-but-not-applied install feeding S3/shutdown uploads).
-TEST(KeeperMemorySnapshotApplyTest, CreateSkipReturnsHighWaterMarkFileNotMapMax)
+TEST_P(CoordinationTest, CreateSkipReturnsHighWaterMarkFileNotMapMax)
 {
     ChangelogDirTest snapshots("./snapshots");
 
-    auto ctx = makeMemoryContextForSnapshotApply("./snapshots");
+    auto ctx = makeContextForSnapshotApply(GetParam(), "./snapshots");
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
     state_machine->init();
@@ -1586,11 +1586,11 @@ TEST(KeeperMemorySnapshotApplyTest, CreateSkipReturnsHighWaterMarkFileNotMapMax)
 
 /// A local create below saved-but-not-applied installs survives its own retention pass (the
 /// just-written pin) and does not clobber the size cache (map-max guard).
-TEST(KeeperMemorySnapshotApplyTest, LocalCreateBelowSavedInstallsSurvivesRetention)
+TEST_P(CoordinationTest, LocalCreateBelowSavedInstallsSurvivesRetention)
 {
     ChangelogDirTest snapshots("./snapshots");
 
-    auto ctx = makeMemoryContextForSnapshotApply("./snapshots");
+    auto ctx = makeContextForSnapshotApply(GetParam(), "./snapshots");
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
     state_machine->init();
@@ -1656,12 +1656,12 @@ TEST(KeeperMemorySnapshotApplyTest, LocalCreateBelowSavedInstallsSurvivesRetenti
 /// A same-index re-receive whose file lands on a different disk than the registered (moved) entry
 /// repoints the registry at the just-written file and retires the stale one, so the matching apply
 /// lands the just-written bytes.
-TEST(KeeperMemorySnapshotApplyTest, SameIndexReReceiveReplacesStaleRegistryEntryAcrossDisks)
+TEST_P(CoordinationTest, SameIndexReReceiveReplacesStaleRegistryEntryAcrossDisks)
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest snapshots_latest("./snapshots_latest");
 
-    auto ctx = makeMemoryContextForSnapshotApply("./snapshots");
+    auto ctx = makeContextForSnapshotApply(GetParam(), "./snapshots");
     /// setSnapshotDisk overwrites both storages, so set the distinct latest disk afterwards.
     ctx->setLatestSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotLatestDisk", "./snapshots_latest"));
 
@@ -1703,25 +1703,23 @@ TEST(KeeperMemorySnapshotApplyTest, SameIndexReReceiveReplacesStaleRegistryEntry
 /// A remote disk causes `RemoteSnapshotLoader` to be used, which loads the snapshot into memory once
 /// and serves all concurrent followers from the same buffer. The test checks that all followers
 /// receive correct data and that the snapshot file is read from disk exactly once.
-TEST_P(CoordinationTest, TestReadSnapshotParallelMultiChunk)
+TEST_P(CoordinationTestWithCompression, TestReadSnapshotParallelMultiChunk)
 {
     getContext(); /// needed for DiskObjectStorage background threads
 
     ChangelogDirTest snap_meta("./snapshots");
     ChangelogDirTest snap_obj("./snapshots_obj");
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
     auto leader_settings = std::make_shared<DB::CoordinationSettings>();
     (*leader_settings)[DB::CoordinationSetting::snapshot_transfer_chunk_size] = 10;
-    auto leader_ctx = std::make_shared<DB::KeeperContext>(true, leader_settings);
-    leader_ctx->setLocalLogsPreprocessed();
+    auto leader_ctx = this->makeKeeperContext(leader_settings);
 
     auto [snap_disk, obj_storage] = createLocalObjectStorageDisk("./snapshots", "./snapshots_obj/");
     leader_ctx->setSnapshotDisk(snap_disk);
 
     DB::KeeperSnapshotManager manager(3, leader_ctx, this->enable_compression);
-    Storage storage(500, "", leader_ctx);
+    auto storage_ptr = DB::KeeperStorage::create(500, "", leader_ctx);
+    auto & storage = *storage_ptr;
     addNode(storage, "/hello", "world");
     DB::KeeperStorageSnapshot snap(&storage, 50, nullptr, leader_ctx->getWriteSnapshotVersion());
     auto snap_buf = manager.serializeSnapshotToBuffer(snap);
@@ -1739,10 +1737,11 @@ TEST_P(CoordinationTest, TestReadSnapshotParallelMultiChunk)
     constexpr int num_threads = 10;
     std::vector<std::string> loaded_data(num_threads);
     {
+        const bool use_lsmt_storage = GetParam().use_lsmt_storage;
         std::vector<std::thread> threads;
         threads.reserve(num_threads);
         for (int i = 0; i < num_threads; ++i)
-            threads.emplace_back([&, i] { loaded_data[i] = runFollower(i, *leader, s); });
+            threads.emplace_back([&, i] { loaded_data[i] = runFollower(i, *leader, s, use_lsmt_storage); });
         for (auto & t : threads)
             t.join();
     }
@@ -1754,18 +1753,17 @@ TEST_P(CoordinationTest, TestReadSnapshotParallelMultiChunk)
     snap_disk->shutdown();
 }
 
-TEST_P(CoordinationTest, SerializeSnapshotToDiskCleansPartialFilesOnOpenException)
+TEST_P(CoordinationTestWithCompression, SerializeSnapshotToDiskCleansPartialFilesOnOpenException)
 {
     ChangelogDirTest snapshots("./snapshots");
-
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
     const std::string snapshot_file_name = "snapshot_50.bin" + this->extension;
     this->keeper_context->setSnapshotDisk(std::make_shared<ThrowingSnapshotDisk>(
         "SnapshotDisk", "./snapshots", snapshot_file_name, SnapshotDiskFailureMode::OpenFileAfterCreate));
 
     DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
-    Storage storage(500, "", this->keeper_context);
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
     addNode(storage, "/hello", "world");
     DB::KeeperStorageSnapshot snapshot(&storage, 50, nullptr, this->keeper_context->getWriteSnapshotVersion());
 
@@ -1774,18 +1772,17 @@ TEST_P(CoordinationTest, SerializeSnapshotToDiskCleansPartialFilesOnOpenExceptio
         manager, "./snapshots/" + snapshot_file_name, "./snapshots/tmp_" + snapshot_file_name);
 }
 
-TEST_P(CoordinationTest, SerializeSnapshotBufferToDiskCleansPartialFilesOnSyncException)
+TEST_P(CoordinationTestWithCompression, SerializeSnapshotBufferToDiskCleansPartialFilesOnSyncException)
 {
     ChangelogDirTest snapshots("./snapshots");
-
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
     const std::string snapshot_file_name = "snapshot_51.bin" + this->extension;
     this->keeper_context->setSnapshotDisk(std::make_shared<ThrowingSnapshotDisk>(
         "SnapshotDisk", "./snapshots", snapshot_file_name, SnapshotDiskFailureMode::SyncFile));
 
     DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
-    Storage storage(500, "", this->keeper_context);
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
     addNode(storage, "/hello", "world");
     DB::KeeperStorageSnapshot snapshot(&storage, 51, nullptr, this->keeper_context->getWriteSnapshotVersion());
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
@@ -1795,11 +1792,9 @@ TEST_P(CoordinationTest, SerializeSnapshotBufferToDiskCleansPartialFilesOnSyncEx
         manager, "./snapshots/" + snapshot_file_name, "./snapshots/tmp_" + snapshot_file_name);
 }
 
-TEST_P(CoordinationTest, SerializeSnapshotBufferToDiskKeepsMarkerWhenCleanupCannotRemoveDataFile)
+TEST_P(CoordinationTestWithCompression, SerializeSnapshotBufferToDiskKeepsMarkerWhenCleanupCannotRemoveDataFile)
 {
     ChangelogDirTest snapshots("./snapshots");
-
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
     const std::string snapshot_file_name = "snapshot_56.bin" + this->extension;
     const std::string tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
@@ -1807,7 +1802,8 @@ TEST_P(CoordinationTest, SerializeSnapshotBufferToDiskKeepsMarkerWhenCleanupCann
         "SnapshotDisk", "./snapshots", snapshot_file_name, SnapshotDiskFailureMode::SyncFileAndCleanupDataFileRemoveFailure));
 
     DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
-    Storage storage(500, "", this->keeper_context);
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
     addNode(storage, "/hello", "world");
     DB::KeeperStorageSnapshot snapshot(&storage, 56, nullptr, this->keeper_context->getWriteSnapshotVersion());
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
@@ -1820,11 +1816,9 @@ TEST_P(CoordinationTest, SerializeSnapshotBufferToDiskKeepsMarkerWhenCleanupCann
     EXPECT_EQ(manager.getLatestSnapshotInfo(), nullptr);
 }
 
-TEST_P(CoordinationTest, SerializeSnapshotBufferToDiskCleansMarkerWhenMarkerCreationFails)
+TEST_P(CoordinationTestWithCompression, SerializeSnapshotBufferToDiskCleansMarkerWhenMarkerCreationFails)
 {
     ChangelogDirTest snapshots("./snapshots");
-
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
     const std::string snapshot_file_name = "snapshot_52.bin" + this->extension;
     const std::string tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
@@ -1832,7 +1826,8 @@ TEST_P(CoordinationTest, SerializeSnapshotBufferToDiskCleansMarkerWhenMarkerCrea
         "SnapshotDisk", "./snapshots", tmp_snapshot_file_name, SnapshotDiskFailureMode::OpenFileAfterCreate));
 
     DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
-    Storage storage(500, "", this->keeper_context);
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
     addNode(storage, "/hello", "world");
     DB::KeeperStorageSnapshot snapshot(&storage, 52, nullptr, this->keeper_context->getWriteSnapshotVersion());
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
@@ -1842,11 +1837,9 @@ TEST_P(CoordinationTest, SerializeSnapshotBufferToDiskCleansMarkerWhenMarkerCrea
         manager, "./snapshots/" + snapshot_file_name, "./snapshots/" + tmp_snapshot_file_name);
 }
 
-TEST_P(CoordinationTest, SerializeSnapshotBufferToDiskRemovesDataFileWhenMarkerRemovalFails)
+TEST_P(CoordinationTestWithCompression, SerializeSnapshotBufferToDiskRemovesDataFileWhenMarkerRemovalFails)
 {
     ChangelogDirTest snapshots("./snapshots");
-
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
     const std::string snapshot_file_name = "snapshot_53.bin" + this->extension;
     const std::string tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
@@ -1854,7 +1847,8 @@ TEST_P(CoordinationTest, SerializeSnapshotBufferToDiskRemovesDataFileWhenMarkerR
         "SnapshotDisk", "./snapshots", tmp_snapshot_file_name, SnapshotDiskFailureMode::RemoveFileOnce));
 
     DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
-    Storage storage(500, "", this->keeper_context);
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
     addNode(storage, "/hello", "world");
     DB::KeeperStorageSnapshot snapshot(&storage, 53, nullptr, this->keeper_context->getWriteSnapshotVersion());
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
@@ -1864,11 +1858,9 @@ TEST_P(CoordinationTest, SerializeSnapshotBufferToDiskRemovesDataFileWhenMarkerR
         manager, "./snapshots/" + snapshot_file_name, "./snapshots/" + tmp_snapshot_file_name);
 }
 
-TEST_P(CoordinationTest, BeginSnapshotReceiveToDiskCleansPartialFilesOnOpenException)
+TEST_P(CoordinationTestWithCompression, BeginSnapshotReceiveToDiskCleansPartialFilesOnOpenException)
 {
     ChangelogDirTest snapshots("./snapshots");
-
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
     const std::string snapshot_file_name = "snapshot_54.bin" + this->extension;
     this->keeper_context->setSnapshotDisk(std::make_shared<ThrowingSnapshotDisk>(
@@ -1881,11 +1873,9 @@ TEST_P(CoordinationTest, BeginSnapshotReceiveToDiskCleansPartialFilesOnOpenExcep
         manager, "./snapshots/" + snapshot_file_name, "./snapshots/tmp_" + snapshot_file_name);
 }
 
-TEST_P(CoordinationTest, FinalizeSnapshotReceiveToDiskCleansPartialFilesOnSyncException)
+TEST_P(CoordinationTestWithCompression, FinalizeSnapshotReceiveToDiskCleansPartialFilesOnSyncException)
 {
     ChangelogDirTest snapshots("./snapshots");
-
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
     const std::string snapshot_file_name = "snapshot_55.bin" + this->extension;
     this->keeper_context->setSnapshotDisk(std::make_shared<ThrowingSnapshotDisk>(

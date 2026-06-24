@@ -52,48 +52,32 @@ struct ChangelogDirTest
     }
 };
 
-/// Test parameter for the value-parametrized CoordinationTest suite.
-/// TODO: Add a field selecting the KeeperStorage implementation; makeKeeperContext should then
-///       translate it into a CoordinationSettings option that KeeperStorage::create reads.
-struct TestParam
-{
-    bool enable_compression;
-};
+DB::KeeperContextPtr makeKeeperContext(bool use_lsmt_storage, std::shared_ptr<DB::CoordinationSettings> settings = nullptr);
 
-class CoordinationTest : public ::testing::TestWithParam<TestParam>
+/// Shared fixture logic. Not instantiated directly: the concrete fixtures below pick the parameter
+/// set (storage implementation, optionally times compression).
+class CoordinationTestBase
 {
 public:
-    bool enable_compression = false;
-    std::string extension;
-
     DB::KeeperContextPtr keeper_context;
     LoggerPtr log{getLogger("CoordinationTest")};
+    bool use_lsmt_storage = false;
 
-    /// Single place that creates a KeeperContext for tests. In the future the test parameter will
-    /// be translated here into a CoordinationSettings option that selects which KeeperStorage
-    /// implementation KeeperStorage::create constructs. Tests that need custom settings (e.g. a
-    /// specific rotate interval or chunk size) pass their own `settings` object and this method
-    /// augments it with the parameter-derived options.
+    /// A fully-operational fixture context (logs already preprocessed).
     DB::KeeperContextPtr makeKeeperContext(std::shared_ptr<DB::CoordinationSettings> settings = nullptr) const
     {
-        if (!settings)
-            settings = std::make_shared<DB::CoordinationSettings>();
-        /// TODO: apply TestParam-derived options to `settings` here.
-        auto context = std::make_shared<DB::KeeperContext>(true, settings);
+        auto context = ::makeKeeperContext(use_lsmt_storage, std::move(settings));
         context->setLocalLogsPreprocessed();
         return context;
     }
 
-    void SetUp() override
+    void commonSetup()
     {
         Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
         Poco::Logger::root().setChannel(channel);
         const char * log_level = std::getenv("TEST_LOG_LEVEL"); // NOLINT(concurrency-mt-unsafe)
         Poco::Logger::root().setLevel(log_level ? log_level : "none");
-
-        enable_compression = GetParam().enable_compression;
         keeper_context = makeKeeperContext();
-        extension = enable_compression ? ".zstd" : "";
     }
 
     void setLogDirectory(const std::string & path) const { keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", path)); }
@@ -109,8 +93,42 @@ public:
     }
 };
 
+/// Parametrized by storage implementation.
+class CoordinationTest : public CoordinationTestBase, public ::testing::TestWithParam</*use_lsmt_storage*/ bool>
+{
+    void SetUp() override
+    {
+        use_lsmt_storage = GetParam();
+        commonSetup();
+    }
+};
+
+struct StorageTypeAndCompression
+{
+    bool use_lsmt_storage = false;
+    bool enable_compression = false;
+};
+
+/// Parametrized by storage implementation times snapshot/log compression. Use for tests that read
+/// `enable_compression` / `extension`.
+class CoordinationTestWithCompression : public CoordinationTestBase, public ::testing::TestWithParam<StorageTypeAndCompression>
+{
+public:
+    bool enable_compression = false;
+    std::string extension;
+
+private:
+    void SetUp() override
+    {
+        use_lsmt_storage = GetParam().use_lsmt_storage;
+        enable_compression = GetParam().enable_compression;
+        extension = enable_compression ? ".zstd" : "";
+        commonSetup();
+    }
+};
+
 /// Creates a committed node.
-void addNode(DB::KeeperStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner = 0, DB::ACLId acl_id = 0);
+void addNode(DB::KeeperStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner = 0, DB::ACLId acl_id = 0, int64_t seq_num = 0);
 
 Coordination::ACLs getUncommittedACLs(DB::KeeperStorage & storage, std::string_view path);
 

@@ -253,11 +253,10 @@ TEST_P(CoordinationTest, TestSummingRaft1)
     s1.launcher.shutdown(5);
 }
 
-template<typename Storage>
-void testLogAndStateMachine(
+static void testLogAndStateMachine(
     DB::CoordinationSettingsPtr settings,
     uint64_t total_logs,
-    bool enable_compression)
+    const StorageTypeAndCompression & param)
 {
     using namespace Coordination;
     using namespace DB;
@@ -267,7 +266,7 @@ void testLogAndStateMachine(
 
     auto get_keeper_context = [&]
     {
-        auto local_keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+        auto local_keeper_context = makeKeeperContext(param.use_lsmt_storage, settings);
         local_keeper_context->setSnapshotDisk(std::make_shared<DiskLocal>("SnapshotDisk", "./snapshots"));
         local_keeper_context->setLogDisk(std::make_shared<DiskLocal>("LogDisk", "./logs"));
         return local_keeper_context;
@@ -281,7 +280,7 @@ void testLogAndStateMachine(
     state_machine->init();
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{
-            .force_sync = true, .compress_logs = enable_compression, .rotate_interval = (*settings)[DB::CoordinationSetting::rotate_log_storage_interval]},
+            .force_sync = true, .compress_logs = param.enable_compression, .rotate_interval = (*settings)[DB::CoordinationSetting::rotate_log_storage_interval]},
         DB::FlushSettings(),
         keeper_context);
     changelog.init(state_machine->last_commit_index(), (*settings)[DB::CoordinationSetting::reserved_log_items]);
@@ -329,7 +328,7 @@ void testLogAndStateMachine(
 
     DB::KeeperLogStore restore_changelog(
         DB::LogFileSettings{
-            .force_sync = true, .compress_logs = enable_compression, .rotate_interval = (*settings)[DB::CoordinationSetting::rotate_log_storage_interval]},
+            .force_sync = true, .compress_logs = param.enable_compression, .rotate_interval = (*settings)[DB::CoordinationSetting::rotate_log_storage_interval]},
         DB::FlushSettings(),
         keeper_context);
     restore_changelog.init(restore_machine->last_commit_index(), (*settings)[DB::CoordinationSetting::reserved_log_items]);
@@ -359,76 +358,74 @@ void testLogAndStateMachine(
     }
 }
 
-TEST_P(CoordinationTest, TestStateMachineAndLogStore)
+TEST_P(CoordinationTestWithCompression, TestStateMachineAndLogStore)
 {
     using namespace Coordination;
     using namespace DB;
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         (*settings)[DB::CoordinationSetting::snapshot_distance] = 10;
         (*settings)[DB::CoordinationSetting::reserved_log_items] = 10;
         (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 10;
 
-        testLogAndStateMachine<Storage>(settings, 37, this->enable_compression);
+        testLogAndStateMachine(settings, 37, GetParam());
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         (*settings)[DB::CoordinationSetting::snapshot_distance] = 10;
         (*settings)[DB::CoordinationSetting::reserved_log_items] = 10;
         (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 10;
-        testLogAndStateMachine<Storage>(settings, 11, this->enable_compression);
+        testLogAndStateMachine(settings, 11, GetParam());
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         (*settings)[DB::CoordinationSetting::snapshot_distance] = 10;
         (*settings)[DB::CoordinationSetting::reserved_log_items] = 10;
         (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 10;
-        testLogAndStateMachine<Storage>(settings, 40, this->enable_compression);
+        testLogAndStateMachine(settings, 40, GetParam());
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         (*settings)[DB::CoordinationSetting::snapshot_distance] = 10;
         (*settings)[DB::CoordinationSetting::reserved_log_items] = 20;
         (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 30;
-        testLogAndStateMachine<Storage>(settings, 40, this->enable_compression);
+        testLogAndStateMachine(settings, 40, GetParam());
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         (*settings)[DB::CoordinationSetting::snapshot_distance] = 10;
         (*settings)[DB::CoordinationSetting::reserved_log_items] = 0;
         (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 10;
-        testLogAndStateMachine<Storage>(settings, 40, this->enable_compression);
+        testLogAndStateMachine(settings, 40, GetParam());
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         (*settings)[DB::CoordinationSetting::snapshot_distance] = 1;
         (*settings)[DB::CoordinationSetting::reserved_log_items] = 1;
         (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 32;
-        testLogAndStateMachine<Storage>(settings, 32, this->enable_compression);
+        testLogAndStateMachine(settings, 32, GetParam());
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         (*settings)[DB::CoordinationSetting::snapshot_distance] = 10;
         (*settings)[DB::CoordinationSetting::reserved_log_items] = 7;
         (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 1;
-        testLogAndStateMachine<Storage>(settings, 33, this->enable_compression);
+        testLogAndStateMachine(settings, 33, GetParam());
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         (*settings)[DB::CoordinationSetting::snapshot_distance] = 37;
         (*settings)[DB::CoordinationSetting::reserved_log_items] = 1000;
         (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 5000;
-        testLogAndStateMachine<Storage>(settings, 33, this->enable_compression);
+        testLogAndStateMachine(settings, 33, GetParam());
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         (*settings)[DB::CoordinationSetting::snapshot_distance] = 37;
         (*settings)[DB::CoordinationSetting::reserved_log_items] = 1000;
         (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 5000;
-        testLogAndStateMachine<Storage>(settings, 45, this->enable_compression);
+        testLogAndStateMachine(settings, 45, GetParam());
     }
 }
 
@@ -439,9 +436,6 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
 
     ChangelogDirTest snapshots("./snapshots");
     this->setSnapshotDirectory("./snapshots");
-
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
 
     SnapshotsQueue snapshots_queue{1};
 
@@ -476,9 +470,6 @@ TEST_P(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecommitte
     ChangelogDirTest snapshots("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
     SnapshotsQueue snapshots_queue{1};
 
     auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, this->keeper_context, nullptr);
@@ -505,15 +496,14 @@ TEST_P(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecommitte
     auto create_entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), create_req);
     state_machine->pre_commit(2, create_entry->get_buf());
 
-    auto & storage = static_cast<Storage &>(state_machine->getStorageUnsafe());
-    ASSERT_TRUE(storage.nodes.uncommitted_nodes.contains(node_path));
+    auto & storage = state_machine->getStorageUnsafe();
+    ASSERT_TRUE(storage.nodes_storage->getUncommittedNodeSimple(node_path));
 
     // commit log entries
     state_machine->commit(1, auth_entry->get_buf());
     state_machine->commit(2, create_entry->get_buf());
 
-    const auto * node = storage.nodes.getUncommittedNode(node_path).get();
-    ASSERT_NE(node, nullptr);
+    ASSERT_TRUE(storage.nodes_storage->getUncommittedNodeSimple(node_path));
     auto acls = getUncommittedACLs(storage, node_path);
     ASSERT_EQ(acls.size(), 1);
     EXPECT_EQ(acls[0].scheme, "digest");
@@ -710,8 +700,6 @@ TEST_P(CoordinationTest, TestMultiRequestWithNoAuth)
     ChangelogDirTest snapshots("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
     SnapshotsQueue snapshots_queue{1};
     int64_t session_without_auth = 1;
     int64_t session_with_auth = 2;
@@ -720,7 +708,7 @@ TEST_P(CoordinationTest, TestMultiRequestWithNoAuth)
     auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, this->keeper_context, nullptr);
     state_machine->init();
 
-    auto & storage = static_cast<Storage &>(state_machine->getStorageUnsafe());
+    auto & storage = state_machine->getStorageUnsafe();
 
     auto auth_req = std::make_shared<ZooKeeperAuthRequest>();
     auth_req->scheme = "digest";
@@ -740,7 +728,7 @@ TEST_P(CoordinationTest, TestMultiRequestWithNoAuth)
         auto create_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), create_req);
         state_machine->pre_commit(3, create_entry->get_buf());
         state_machine->commit(3, create_entry->get_buf());
-        ASSERT_TRUE(storage.nodes.container.contains(node_with_acl));
+        ASSERT_TRUE(committedNodeExists(storage, node_with_acl));
     }
     Requests ops;
     ops.push_back(zkutil::makeSetRequest(node_with_acl, "modified", -1));
@@ -750,9 +738,8 @@ TEST_P(CoordinationTest, TestMultiRequestWithNoAuth)
     state_machine->pre_commit(4, multi_entry->get_buf());
     state_machine->commit(4, multi_entry->get_buf());
 
-    auto node_it = storage.nodes.container.find(node_with_acl);
-    ASSERT_FALSE(node_it == storage.nodes.container.end());
-    ASSERT_TRUE(node_it->value.getData() == "notmodified");
+    ASSERT_TRUE(committedNodeExists(storage, node_with_acl));
+    ASSERT_EQ(committedNodeData(storage, node_with_acl), "notmodified");
 }
 
 TEST_P(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitted)
@@ -766,7 +753,6 @@ TEST_P(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitted)
 
     SnapshotsQueue snapshots_queue{1};
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
     auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, this->keeper_context, nullptr);
     state_machine->init();
 
@@ -802,10 +788,9 @@ TEST_P(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitted)
     state_machine->commit(2, create_entry->get_buf());
     state_machine->commit(3, set_acl_entry->get_buf());
 
-    auto & storage = static_cast<Storage &>(state_machine->getStorageUnsafe());
-    const auto * node = storage.nodes.getUncommittedNode(node_path).get();
+    auto & storage = state_machine->getStorageUnsafe();
+    ASSERT_TRUE(storage.nodes_storage->getUncommittedNodeSimple(node_path));
 
-    ASSERT_NE(node, nullptr);
     auto acls = getUncommittedACLs(storage, node_path);
     ASSERT_EQ(acls.size(), 1);
     EXPECT_EQ(acls[0].scheme, "digest");
@@ -907,10 +892,9 @@ TEST_P(CoordinationTest, TestDurableState)
 TEST_P(CoordinationTest, TestFeatureFlags)
 {
     using namespace Coordination;
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
 
-
-    Storage storage{500, "", this->keeper_context};
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
     auto request = std::make_shared<ZooKeeperGetRequest>();
     request->path = DB::keeper_api_feature_flags_path;
     KeeperRequestsForSessions requests {KeeperRequestForSession {.session_id = 0, .request = request}};

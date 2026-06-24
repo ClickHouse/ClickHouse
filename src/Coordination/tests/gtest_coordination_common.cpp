@@ -5,13 +5,34 @@
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Coordination/KeeperStateMachine.h>
 
-/// Single instantiation of the value-parametrized CoordinationTest suite. All TEST_P(CoordinationTest, ...)
-/// across the gtest_coordination*.cpp files belong to this suite and run once per parameter.
+DB::KeeperContextPtr makeKeeperContext(bool /*use_lsmt_storage*/, std::shared_ptr<DB::CoordinationSettings> settings)
+{
+    if (!settings)
+        settings = std::make_shared<DB::CoordinationSettings>();
+    /// TODO: translate use_lsmt_storage into a CoordinationSettings option here so
+    ///       KeeperStorage::create picks the right implementation.
+    /// Intentionally minimal: callers add setLocalLogsPreprocessed/disks/digest as they need them.
+    return std::make_shared<DB::KeeperContext>(true, settings);
+}
+
 INSTANTIATE_TEST_SUITE_P(
-    Compression,
+    Storage,
     CoordinationTest,
-    ::testing::Values(TestParam{.enable_compression = true}, TestParam{.enable_compression = false}),
-    [](const ::testing::TestParamInfo<TestParam> & param_info) { return param_info.param.enable_compression ? "Compressed" : "Uncompressed"; });
+    ::testing::Values(
+        /*use_lsmt_storage*/ false
+        /// TODO: Add `true` when LSMT storage is integrated.
+    ),
+    [](const ::testing::TestParamInfo<bool> & param_info) { return param_info.param ? "LSMT" : "Mem"; });
+
+INSTANTIATE_TEST_SUITE_P(
+    Storage,
+    CoordinationTestWithCompression,
+    ::testing::Values(
+        StorageTypeAndCompression{.use_lsmt_storage = false, .enable_compression = false},
+        StorageTypeAndCompression{.use_lsmt_storage = false, .enable_compression = true}
+        /// TODO: StorageTypeAndCompression{.use_lsmt_storage = true, .enable_compression = true}
+    ),
+    [](const ::testing::TestParamInfo<StorageTypeAndCompression> & param_info) { return std::string(param_info.param.use_lsmt_storage ? "LSMT" : "Mem") + (param_info.param.enable_compression ? "Compressed" : "Uncompressed"); });
 
 LogEntryPtr getLogEntry(const std::string & s, size_t term)
 {
@@ -50,11 +71,13 @@ getLogEntryFromZKRequest(size_t term, int64_t session_id, int64_t zxid, const Co
     return nuraft::cs_new<nuraft::log_entry>(term, buffer);
 }
 
-void addNode(DB::KeeperStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner, DB::ACLId acl_id)
+void addNode(DB::KeeperStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner, DB::ACLId acl_id, int64_t seq_num)
 {
     DB::KeeperNodeStats stats;
     if (ephemeral_owner)
         stats.setEphemeralOwner(ephemeral_owner);
+    if (seq_num)
+        stats.setSeqNum(seq_num);
     stats.acl_id = acl_id;
     storage.nodes_storage->addCommittedNodeIfNotExists(path, stats, data, /*update_parent_num_children=*/true, /*out_digest=*/nullptr);
 }

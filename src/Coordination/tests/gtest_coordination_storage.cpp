@@ -15,12 +15,10 @@ TEST_P(CoordinationTest, TestSystemNodeModify)
     using namespace Coordination;
     int64_t zxid{0};
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
     // On INIT we abort when a system path is modified
     this->keeper_context->setServerState(KeeperContext::Phase::RUNNING);
-    Storage storage{500, "", this->keeper_context};
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
     const auto assert_create = [&](const std::string_view path, const auto expected_code)
     {
         auto request = std::make_shared<ZooKeeperCreateRequest>();
@@ -50,10 +48,8 @@ TEST_P(CoordinationTest, TestCheckNotExistsRequest)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
 
     int32_t zxid = 0;
 
@@ -84,9 +80,9 @@ TEST_P(CoordinationTest, TestCheckNotExistsRequest)
     }
 
     create_path("/test_node");
-    auto node_it = storage.nodes.container.find("/test_node");
-    ASSERT_NE(node_it, storage.nodes.container.end());
-    auto node_version = node_it->value.stats.version;
+    DB::KeeperNodeStats node_stats;
+    ASSERT_TRUE(storage.nodes_storage->getCommittedNodeSimple("/test_node", &node_stats));
+    auto node_version = node_stats.version;
 
     {
         SCOPED_TRACE("CheckNotExists returns ZNODEEXISTS");
@@ -126,16 +122,13 @@ TEST_P(CoordinationTest, TestDeterministicPreprocess)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
     static constexpr int64_t initial_zxid = 100;
 
     const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
     create_request->path = "/test/data";
     create_request->is_sequential = true;
 
-    const auto process_create = [](Storage & storage, const auto & request, int64_t zxid)
+    const auto process_create = [](KeeperStorage & storage, const auto & request, int64_t zxid)
     {
         storage.preprocessRequest(request, 1, 0, zxid);
         auto responses = storage.processRequest(request, 1, zxid);
@@ -156,14 +149,16 @@ TEST_P(CoordinationTest, TestDeterministicPreprocess)
             process_create(storage, create_request, zxid);
     };
 
-    Storage storage1{500, "", this->keeper_context};
+    auto storage1_ptr = KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage1 = *storage1_ptr;
     commit_initial_data(storage1);
 
     for (int64_t zxid = initial_zxid + 1; zxid < initial_zxid + 50; ++zxid)
         storage1.preprocessRequest(create_request, 1, 0, zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/zxid);
 
     /// create identical new storage
-    Storage storage2{500, "", this->keeper_context};
+    auto storage2_ptr = KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage2 = *storage2_ptr;
     commit_initial_data(storage2);
 
     /// preprocess the same requests, expect same results
@@ -172,7 +167,7 @@ TEST_P(CoordinationTest, TestDeterministicPreprocess)
     for (int64_t zxid = initial_zxid + 1; zxid < initial_zxid + 50; ++zxid)
         storage2.preprocessRequest(create_request, 1, 0, zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/zxid);
 
-    const auto commit_unprocessed = [&](Storage & storage)
+    const auto commit_unprocessed = [&](KeeperStorage & storage)
     {
         for (int64_t zxid = initial_zxid + 1; zxid < initial_zxid + 50; ++zxid)
         {
@@ -185,7 +180,7 @@ TEST_P(CoordinationTest, TestDeterministicPreprocess)
     commit_unprocessed(storage1);
     commit_unprocessed(storage2);
 
-    const auto get_children = [&](Storage & storage)
+    const auto get_children = [&](KeeperStorage & storage)
     {
         const auto list_request = std::make_shared<ZooKeeperListRequest>();
         list_request->path = "/test";
@@ -211,10 +206,8 @@ TEST_P(CoordinationTest, TestRemoveRecursiveRequest)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
 
     int32_t zxid = 0;
 
@@ -382,10 +375,8 @@ TEST_P(CoordinationTest, TestRemoveRecursiveInMultiRequest)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
     int zxid = 0;
 
     auto prepare_create_tree = []()
@@ -592,10 +583,8 @@ TEST_P(CoordinationTest, TestRemoveRecursiveWatches)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
     int zxid = 0;
 
     const auto create = [&](const String & path, int create_mode)
@@ -698,10 +687,8 @@ TEST_P(CoordinationTest, TestRemoveRecursiveAcls)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
     int zxid = 0;
 
     {
@@ -760,10 +747,8 @@ TEST_P(CoordinationTest, TestListRequestTypes)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
 
     int32_t zxid = 0;
 
@@ -847,10 +832,8 @@ TEST_P(CoordinationTest, TestGetChildrenWithStatsAndData)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
 
     int32_t zxid = 0;
 
@@ -1047,10 +1030,8 @@ TEST_P(CoordinationTest, TestUncommittedStateBasicCrud)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
 
     constexpr std::string_view path = "/test";
 
@@ -1168,10 +1149,8 @@ TEST_P(CoordinationTest, TestBlockACL)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
 
     int64_t zxid = 1;
 
@@ -1180,6 +1159,13 @@ TEST_P(CoordinationTest, TestBlockACL)
 
     static constexpr int64_t session_id = 42;
     storage.committed_session_and_auth[session_id].push_back(KeeperStorage::AuthID{.scheme = "digest", .id = std::string{digest}});
+
+    const auto committed_acl_id = [&](std::string_view node_path)
+    {
+        DB::KeeperNodeStats stats;
+        EXPECT_TRUE(storage.nodes_storage->getCommittedNodeSimple(node_path, &stats));
+        return stats.acl_id;
+    };
     {
         static constexpr std::string_view path = "/test";
 
@@ -1192,7 +1178,7 @@ TEST_P(CoordinationTest, TestBlockACL)
         ASSERT_EQ(acls.size(), 1);
         ASSERT_EQ(acls[0].id, digest);
         storage.processRequest(create_request, session_id, req_zxid);
-        ASSERT_NE(storage.nodes.container.getValue(path).stats.acl_id, 0);
+        ASSERT_NE(committed_acl_id(path), 0);
 
         req_zxid = zxid++;
         const auto set_acl_request = std::make_shared<ZooKeeperSetACLRequest>();
@@ -1203,7 +1189,7 @@ TEST_P(CoordinationTest, TestBlockACL)
         ASSERT_EQ(acls.size(), 1);
         ASSERT_EQ(acls[0].id, new_digest);
         storage.processRequest(set_acl_request, session_id, req_zxid);
-        ASSERT_NE(storage.nodes.container.getValue(path).stats.acl_id, 0);
+        ASSERT_NE(committed_acl_id(path), 0);
     }
 
     {
@@ -1218,7 +1204,7 @@ TEST_P(CoordinationTest, TestBlockACL)
         auto acls = getUncommittedACLs(storage, path);
         ASSERT_EQ(acls.size(), 0);
         storage.processRequest(create_request, session_id, req_zxid);
-        ASSERT_EQ(storage.nodes.container.getValue(path).stats.acl_id, 0);
+        ASSERT_EQ(committed_acl_id(path), 0);
 
         req_zxid = zxid++;
         const auto set_acl_request = std::make_shared<ZooKeeperSetACLRequest>();
@@ -1228,7 +1214,7 @@ TEST_P(CoordinationTest, TestBlockACL)
         acls = getUncommittedACLs(storage, path);
         ASSERT_EQ(acls.size(), 0);
         storage.processRequest(set_acl_request, session_id, req_zxid);
-        ASSERT_EQ(storage.nodes.container.getValue(path).stats.acl_id, 0);
+        ASSERT_EQ(committed_acl_id(path), 0);
     }
 }
 
@@ -1237,10 +1223,8 @@ TEST_P(CoordinationTest, TestMultiWatches)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
 
     int32_t zxid = 0;
     auto wait_event = std::make_shared<Poco::Event>();
@@ -1335,10 +1319,8 @@ TEST_P(CoordinationTest, TestCheckStat)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
 
     int32_t zxid = 0;
     auto wait_event = std::make_shared<Poco::Event>();
@@ -1420,10 +1402,8 @@ TEST_P(CoordinationTest, TestTryRemove)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
 
     int32_t zxid = 0;
 
@@ -1523,10 +1503,8 @@ TEST_P(CoordinationTest, TestListRecursiveRequest)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
 
     int32_t zxid = 0;
 
@@ -1709,10 +1687,8 @@ TEST_P(CoordinationTest, TestListRecursiveInMultiRequest)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
     int zxid = 0;
 
     const auto exists = [&](const String & path)
@@ -1779,10 +1755,8 @@ TEST_P(CoordinationTest, TestListRecursiveAcls)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperMemoryStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    auto & storage = *storage_ptr;
     int zxid = 0;
 
     {
