@@ -4,6 +4,7 @@
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/PODArray.h>
 
+#include <algorithm>
 #include <limits>
 #include <tuple>
 #include <vector>
@@ -79,20 +80,45 @@ public:
         if (!entries.empty() && entries.back().sameBucket(entry))
         {
             entries.back().mergeBitmap(entry);
+            return;
         }
-        else
+
+        /// Array/Map columns restart positions per element, so a later add() can go backwards.
+        if (!entries.empty() && entry.key() < entries.back().key())
+            sorted = false;
+
+        entries.push_back(entry);
+    }
+
+    void finalizeOrdering()
+    {
+        if (sorted)
+            return;
+
+        std::sort(entries.begin(), entries.end(),
+            [](const RoaringishEntry & a, const RoaringishEntry & b) { return a.key() < b.key(); });
+
+        size_t write = 0;
+        for (size_t read = 1; read < entries.size(); ++read)
         {
-            entries.push_back(entry);
+            if (entries[write].sameBucket(entries[read]))
+                entries[write].mergeBitmap(entries[read]);
+            else
+                entries[++write] = entries[read];
         }
+        entries.resize(write + 1);
+        sorted = true;
     }
 
     size_t size() const { return entries.size(); }
     bool empty() const { return entries.empty(); }
+    size_t allocatedBytes() const { return entries.capacity() * sizeof(RoaringishEntry); }
     std::vector<RoaringishEntry> & getEntries() { return entries; }
     const std::vector<RoaringishEntry> & getEntries() const { return entries; }
 
 private:
     std::vector<RoaringishEntry> entries;
+    bool sorted = true;
 };
 
 using TokenToPositionListMap = StringHashMap<PositionListBuilder>;

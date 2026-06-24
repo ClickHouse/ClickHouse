@@ -1,6 +1,8 @@
 -- Tags: no-parallel-replicas
 
 SET enable_analyzer = 1;
+SET use_skip_indexes = 1;
+SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS tab;
 
@@ -346,5 +348,25 @@ SELECT trimLeft(explain) AS explain FROM (
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
+
+DROP TABLE tab;
+
+SELECT 'Map support';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab
+(
+    id UInt32,
+    m Map(String, String),
+    INDEX idx mapValues(m) TYPE text(tokenizer = splitByNonAlpha, positions = 1)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS allow_experimental_text_index_positions = 1;
+
+INSERT INTO tab SELECT 1, map('k1', concat(arrayStringConcat(arrayMap(x -> 'w', range(40)), ' '), ' a'), 'k2', 'a b');
+INSERT INTO tab SELECT 2, map('k1', concat(arrayStringConcat(arrayMap(x -> 'w', range(40)), ' '), ' a'), 'k2', 'b a');
+
+SELECT id FROM tab WHERE hasPhrase(m['k2'], 'a b') ORDER BY id;
 
 DROP TABLE tab;
