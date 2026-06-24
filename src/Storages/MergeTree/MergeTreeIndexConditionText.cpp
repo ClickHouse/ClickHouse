@@ -799,6 +799,16 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "equals")
     {
+        /// Special case: Don't use the index if the needle is empty.
+        /// - Reason 1: The index doesn't index empty values (regardless of the tokenizer). So this needle
+        ///   is invalid.
+        /// - Reason 2: We also end up here if optimizer rule `optimize_empty_string_comparisons` (default: 1)
+        ///   is disabled, i.e. `col = ''` is _not_ rewritten into `empty(col)`. The latter doesn't
+        ///   use the index (because it doesn't support `empty`). For consistency, make sure `equals('')`
+        ///   behaves the same.
+        if (value_field.safeGet<String>().empty())
+            return false;
+
         auto tokens = stringToTokens(value_field);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
@@ -914,6 +924,16 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
+        /// A needle containing a token separator is invalid for hasToken and raises BAD_ARGUMENTS during a
+        /// brute-force scan. hasToken uses Exact direct read, so the index would tokenize the needle and
+        /// silently replace the predicate (or prune the granule that would have thrown), hiding the exception;
+        /// bypass the index so the row-level function runs. hasTokenOrNull is not affected: it returns NULL
+        /// instead of throwing and only uses the index for granule pruning, which never changes its result.
+        /// A separator is any ASCII non-alphanumeric character, matching HasTokenImpl.
+        if (function_name == "hasToken"
+            && std::ranges::any_of(value_field.safeGet<String>(), [](unsigned char c) { return isASCII(c) && !isAlphaNumericASCII(c); }))
+            return false;
+
         auto tokens = stringToTokens(value_field);
         if (tokens.empty())
         {
