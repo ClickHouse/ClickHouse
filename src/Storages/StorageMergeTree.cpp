@@ -207,22 +207,25 @@ StorageMergeTree::StorageMergeTree(
 
     loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
 
-    /// UNIQUE KEY txn-state recovery. Runs here, AFTER loadDataParts releases
-    /// the exclusive DataPartsLock: recovery's csn-seed path takes a shared
-    /// parts lock, which would self-deadlock under that exclusive lock.
-    if (!isStaticStorage())
-    {
-        auto uk_metadata = getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/false);
-        if (uk_metadata && uk_metadata->hasUniqueKey())
-            runUniqueKeyTxnRecovery();
-    }
-
     if (mode < LoadingStrictnessLevel::ATTACH && !getDataPartsForInternalUsage().empty() && !isStaticStorage())
         throw Exception(ErrorCodes::INCORRECT_DATA,
                         "Data directory for table already containing data parts - probably "
                         "it was unclean DROP table or manual intervention. "
                         "You must either clear directory by hand or use ATTACH TABLE instead "
                         "of CREATE TABLE if you need to use those parts");
+
+    /// UNIQUE KEY txn-state recovery. Runs AFTER the stale-data guard above so a
+    /// plain CREATE pointing at an existing data directory is rejected before
+    /// recovery can mutate it (recovery unlinks delete-bitmap sidecars and removes
+    /// tmp_ marker dirs — it is not read-only). Also runs AFTER loadDataParts
+    /// releases the exclusive DataPartsLock: recovery's csn-seed path takes a
+    /// shared parts lock, which would self-deadlock under that exclusive lock.
+    if (!isStaticStorage())
+    {
+        auto uk_metadata = getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/false);
+        if (uk_metadata && uk_metadata->hasUniqueKey())
+            runUniqueKeyTxnRecovery();
+    }
 
     increment.set(getMaxBlockNumber());
 

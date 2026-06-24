@@ -103,6 +103,17 @@ UniqueKeyDeleteRowFinder::Result UniqueKeyDeleteRowFinder::find(
     select_context->makeQueryContext();
     select_context->setCurrentQueryId("");
 
+    /// Force the internal scan onto the local single-replica read path. It returns
+    /// (_part, _part_offset) pairs that are converted straight into local delete
+    /// bitmaps, so a part name / offset collected from another replica or a
+    /// distributed fragment would target the wrong rows. Mirror MutationsInterpreter,
+    /// which disables parallel replicas on its synthetic mutation read.
+    /// (`enable_parallel_replicas` is the alias of
+    /// `allow_experimental_parallel_reading_from_replicas`, so this also neutralizes
+    /// `parallel_replicas_for_non_replicated_merge_tree`.)
+    select_context->setSetting("enable_parallel_replicas", Field(0));
+    select_context->setSetting("make_distributed_plan", false);
+
     /// Neutralize result/read size limits on the internal scan. This is the
     /// DELETE's row-finder machinery, not a user-bounded result, so a user-set
     /// max_result_rows / max_rows_to_read (under overflow_mode='break') must not
