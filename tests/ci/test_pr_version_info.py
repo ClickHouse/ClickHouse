@@ -15,6 +15,7 @@ from pr_version_info import (
     SECTION_START,
     MergedPR,
     has_backport_label,
+    has_ignore_label,
     original_pr_number_from_backport_ref,
     partition_merged_prs,
     render_section,
@@ -159,6 +160,31 @@ class TestPartitionMergedPRs(unittest.TestCase):
         prs = [MergedPR(300, "some-fix", "25.12", [])]
         backports, originals, need_scan = partition_merged_prs(prs, "master")
         self.assertEqual((backports, originals, need_scan), (set(), set(), set()))
+
+    def test_ignore_label_pr_is_dropped(self):
+        # The automated periodic upstream-sync PR merges to master but must not
+        # get a version-info section.
+        prs = [
+            MergedPR(
+                400, "sync-upstream/master", "master", ["pr-periodic-sync-upstream"]
+            ),
+            MergedPR(401, "feature-branch", "master", ["pr-must-backport"]),
+        ]
+        backports, originals, need_scan = partition_merged_prs(prs, "master")
+        self.assertEqual(backports, set())
+        self.assertEqual(originals, {401})
+        self.assertEqual(need_scan, {401})
+
+
+class TestHasIgnoreLabel(unittest.TestCase):
+    def test_periodic_sync_label(self):
+        self.assertTrue(has_ignore_label(["pr-periodic-sync-upstream"]))
+
+    def test_other_labels(self):
+        self.assertFalse(has_ignore_label(["pr-sync-upstream", "pr-backport"]))
+
+    def test_no_labels(self):
+        self.assertFalse(has_ignore_label([]))
 
 
 if __name__ == "__main__":

@@ -90,6 +90,16 @@ BACKPORT_LABELS = {
 }
 VERSION_BACKPORT_LABEL_RE = re.compile(r"^v\d+\.\d+-must-backport$")
 
+# PRs carrying any of these labels are skipped entirely. These are the
+# automated periodic upstream-sync PRs in the private fork ("Automatic
+# synchronization with upstream"); they are not real changes that ship in a
+# release, so they get no version-info section.
+IGNORE_LABELS = {"pr-periodic-sync-upstream"}
+
+
+def has_ignore_label(label_names: List[str]) -> bool:
+    return any(name in IGNORE_LABELS for name in label_names)
+
 
 def version_key(version: str) -> Tuple[int, ...]:
     """Sort key for version strings like ``26.6.1.1``."""
@@ -162,11 +172,15 @@ def partition_merged_prs(
       * ``need_scan`` -- originals worth scanning the release branches for
         backports: any original referenced by a backport, plus originals that
         carry a backport label.
+
+    PRs carrying an ignore label (see ``IGNORE_LABELS``) are dropped entirely.
     """
     backport_numbers: Set[int] = set()
     original_numbers: Set[int] = set()
     need_scan: Set[int] = set()
     for pr in prs:
+        if has_ignore_label(pr.label_names):
+            continue
         original_number = original_pr_number_from_backport_ref(pr.head_ref)
         if original_number is not None:
             backport_numbers.add(pr.number)
@@ -429,6 +443,10 @@ def main() -> int:
         info = infos_by_number.get(number)
         if info is None:
             logging.error("Could not fetch PR #%s, skipping", number)
+            continue
+        if has_ignore_label(info.label_names):
+            # An on-demand original (pulled in by a backport) may still carry an
+            # ignore label; `partition_merged_prs` only saw the in-window PRs.
             continue
         if number in scan_failed:
             logging.error("Skipping PR #%s: backport scan incomplete", number)
