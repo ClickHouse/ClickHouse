@@ -107,7 +107,9 @@ When using `--dump-sessions`, the output includes the following information for 
 
 ### 2. snapshot-analyzer
 
-Analyze Keeper snapshots and print basic information.
+Analyze Keeper snapshots and print summary information and statistics.
+
+The snapshot is streamed from disk without copying node data, so the analysis runs in O(1) memory regardless of snapshot size. It prints metadata (format version, last log index/term, ZXID, digest), node and session counts, data-size and path-length statistics, a children-count histogram, a random sample of nodes, and a predicted `KeeperMemoryStorage` memory usage breakdown. Both zstd-compressed and `CompressedWriteBuffer`-compressed snapshots are detected and decompressed automatically.
 
 #### Usage
 ```bash
@@ -115,14 +117,15 @@ clickhouse-keeper-utils snapshot-analyzer [options]
 ```
 
 #### Options
-- `--snapshot-path <path>`: Path to the snapshots directory or a specific snapshot file (`.bin` or `.bin.zstd`). This is a required argument.
-- `--full-storage`: If specified, the full storage (including node data) is loaded from the snapshot. This provides more detailed information like node count and digest but is slower. By default, only the node paths are loaded.
-- `--with-node-stats`: If specified (and `--full-storage` is not), it calculates and displays statistics about the biggest subtrees, such as the top 10 nodes with the most descendants.
+- `--snapshot-path <path>` (required): Path to the snapshots directory or a specific snapshot file (`.bin` or `.bin.zstd`). When a directory is given, every `snapshot_*.bin`/`snapshot_*.bin.zstd` file in it is analyzed (newest first).
+- `--with-node-stats`: Additionally compute and show the biggest subtrees (the nodes with the most descendants). This keeps all node paths in memory (O(number of nodes)), which is the only part of the analysis that is not O(1) memory.
+- `--subtrees-limit <N>`: Show the top N biggest subtrees (default: 10). Only has an effect together with `--with-node-stats`.
+- `--sample-size <N>`: Show N randomly chosen nodes with their data sizes (default: 20). Set to 0 to disable the random sample.
 - `--help, -h`: Displays the help message.
 
 #### Examples
 
-1.  **Analyze all snapshots in a directory (basic info):**
+1.  **Analyze all snapshots in a directory:**
     ```bash
     clickhouse-keeper-utils snapshot-analyzer --snapshot-path /var/lib/clickhouse/coordination/snapshots/
     ```
@@ -132,9 +135,10 @@ clickhouse-keeper-utils snapshot-analyzer [options]
     clickhouse-keeper-utils snapshot-analyzer --snapshot-path /var/lib/clickhouse/coordination/snapshots/snapshot_123.bin --with-node-stats
     ```
 
-3.  **Analyze a snapshot with full storage loaded:**
+3.  **Show the top 20 biggest subtrees and a sample of 100 nodes:**
     ```bash
-    clickhouse-keeper-utils snapshot-analyzer --snapshot-path /var/lib/clickhouse/coordination/snapshots/snapshot_123.bin --full-storage
+    clickhouse-keeper-utils snapshot-analyzer --snapshot-path /var/lib/clickhouse/coordination/snapshots/snapshot_123.bin \
+        --with-node-stats --subtrees-limit 20 --sample-size 100
     ```
 
 ### 3. changelog-analyzer
