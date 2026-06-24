@@ -150,6 +150,48 @@ def test_drop_partition_multi_column_transform(started_cluster_iceberg_no_spark,
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "local"])
+def test_drop_partition_preserves_statistics(started_cluster_iceberg_no_spark, storage_type):
+    """A partial-manifest DROP PARTITION rewrites the surviving entries as EXISTING; their
+    per-column statistics (column_sizes / value_counts / null_value_counts) must be carried
+    over verbatim, not dropped."""
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    table = f"t_stats_{storage_type}_{get_uuid_str()}"
+    create_iceberg_table(
+        storage_type, instance, table, started_cluster_iceberg_no_spark,
+        schema="(id Int64, k String, v Int64)", partition_by="(identity(id))",
+        format_version=2,
+    )
+    # Several partitions written by a single INSERT share one manifest, so dropping one of
+    # them forces a partial rewrite of the survivors (the path that re-emits statistics).
+    instance.query(
+        f"INSERT INTO {table} VALUES (1, 'a', 10), (2, 'b', 20), (3, 'c', 30)",
+        settings=INSERT_SETTINGS,
+    )
+
+    def stats_by_path():
+        rows = instance.query(
+            "SELECT file_path, length(column_sizes), length(value_counts), length(null_value_counts) "
+            f"FROM system.iceberg_files WHERE table = '{table}' AND content = 'DATA' ORDER BY file_path"
+        ).strip().splitlines()
+        return {r.split("\t")[0]: r.split("\t")[1:] for r in rows}
+
+    before = stats_by_path()
+    assert before, "no data files reported"
+    # Sanity: every file actually carries the statistics ClickHouse writes (column_sizes and
+    # null_value_counts; value_counts is not emitted on the INSERT path, so it stays empty).
+    assert all(int(stats[0]) > 0 and int(stats[2]) > 0 for stats in before.values()), before
+
+    instance.query(f"ALTER TABLE {table} DROP PARTITION 1", settings=INSERT_SETTINGS)
+
+    after = stats_by_path()
+    assert len(after) == len(before) - 1, f"{len(before)} -> {len(after)} data files"
+    for path, stats in after.items():
+        assert stats == before[path], f"{path}: {before[path]} -> {stats}"
+
+    drop_iceberg_table(instance, table)
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "local"])
 def test_drop_partition_arity_mismatch(started_cluster_iceberg_no_spark, storage_type):
     instance = started_cluster_iceberg_no_spark.instances["node1"]
     table = f"t_arity_{storage_type}_{get_uuid_str()}"
