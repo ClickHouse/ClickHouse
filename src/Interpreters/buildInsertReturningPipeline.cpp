@@ -79,6 +79,7 @@ namespace
             "reserve_memory",
             "temporary_files_codec",
             "temporary_files_buffer_size",
+            "use_concurrency_control",
         };
 
         /// Walk every SELECT branch in the UNION tree: each branch's SETTINGS are applied by

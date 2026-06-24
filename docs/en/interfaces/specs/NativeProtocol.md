@@ -453,9 +453,11 @@ Steps 1–5 are identical to the plain INSERT phase. After the end-of-input term
 | Execution time | `max_execution_time`, `timeout_overflow_mode` |
 | Temporary data on disk | `max_temporary_data_on_disk_size_for_query`, `max_temporary_data_on_disk_size_for_user`, `temporary_files_codec`, `temporary_files_buffer_size` |
 | Network bandwidth | `max_network_bandwidth_for_user`, `max_network_bandwidth_for_all_users`, `max_remote_read_network_bandwidth`, `max_remote_write_network_bandwidth`, `max_local_read_bandwidth`, `max_local_write_bandwidth` |
-| Concurrency / admission | `max_concurrent_queries_for_user`, `max_concurrent_queries_for_all_users`, `queue_max_wait_ms`, `replace_running_query`, `replace_running_query_max_wait_ms`, `priority`, `low_priority_query_wait_time_ms`, `workload`, `reserve_memory` |
+| Concurrency / admission | `max_concurrent_queries_for_user`, `max_concurrent_queries_for_all_users`, `queue_max_wait_ms`, `replace_running_query`, `replace_running_query_max_wait_ms`, `priority`, `low_priority_query_wait_time_ms`, `workload`, `reserve_memory`, `use_concurrency_control` |
 
 Result-shaping limits (`max_result_rows`, `max_result_bytes`, `result_overflow_mode`) are fully supported, as they operate only on the result pipeline.
+
+Output format settings (e.g. `output_format_json_quote_64bit_integers`) supplied in the `RETURNING` subquery `SETTINGS` are accepted but silently ignored — the result is serialized using the output format established by the outer query context and the client transport.
 
 ## Message reference {#message-reference}
 
