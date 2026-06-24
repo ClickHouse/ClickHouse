@@ -52,6 +52,7 @@ public:
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
+    std::vector<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;

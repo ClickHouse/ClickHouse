@@ -78,6 +78,7 @@ public:
     bool isOptimized() const { return optimized; }
     void setOptimized() { optimized = true; }
 
+    std::vector<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
 private:

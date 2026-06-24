@@ -191,12 +191,19 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     if (!use_new_analyzer)
         return joined_pipeline;
 
+    const auto tail_stage = join->pipelineType() == JoinPipelineType::YShaped ? JoinStage::Default : JoinStage::Probe;
+    auto tag_tail = [this, tail_stage](ProcessorPtr processor)
+    {
+        processor->setQueryPlanStep(this, static_cast<size_t>(tail_stage));
+        return processor;
+    };
+
     auto column_permutation = getPermutationForBlock(joined_pipeline->getHeader(), lhs_header, rhs_header, required_output);
     if (!column_permutation.empty())
     {
-        joined_pipeline->addSimpleTransform([&column_permutation](const SharedHeader & header)
+        joined_pipeline->addSimpleTransform([&](const SharedHeader & header)
         {
-            return std::make_shared<ColumnPermuteTransform>(header, column_permutation);
+            return tag_tail(std::make_shared<ColumnPermuteTransform>(header, column_permutation));
         });
     }
 
@@ -204,7 +211,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     {
         joined_pipeline->addSimpleTransform(
             [&](const SharedHeader & header)
-            { return std::make_shared<SimpleSquashingChunksTransform>(header, min_block_size_rows, min_block_size_bytes); });
+            { return tag_tail(std::make_shared<SimpleSquashingChunksTransform>(header, min_block_size_rows, min_block_size_bytes)); });
     }
 
     const auto & pipeline_output_header = joined_pipeline->getHeader();
@@ -234,6 +241,15 @@ void JoinStep::keepLeftPipelineInOrder(bool disable_squashing)
     join->keepLeftPipelineInOrder();
 }
 
+std::vector<size_t> JoinStep::getStepGroups() const
+{
+    return {
+        static_cast<size_t>(JoinStage::Default),
+        static_cast<size_t>(JoinStage::Probe),
+        static_cast<size_t>(JoinStage::Build) 
+    };
+}
+
 String JoinStep::getStepGroupName(size_t group) const
 {
     switch (static_cast<JoinStage>(group))
@@ -242,7 +258,7 @@ String JoinStep::getStepGroupName(size_t group) const
         case JoinStage::Probe: return "probe";
         case JoinStage::Build: return "build";
     }
-    return {};
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JoinStageA group {}", group);
 }
 
 void JoinStep::describePipeline(FormatSettings & settings) const

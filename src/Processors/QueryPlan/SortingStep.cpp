@@ -746,6 +746,15 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
         ctx.input_headers.front(), std::move(result_description), 0, std::move(sort_settings));
 }
 
+std::vector<size_t> SortingStep::getStepGroups() const
+{
+    return { static_cast<size_t>(SortingStage::Scatter),
+        static_cast<size_t>(SortingStage::Sort),
+        static_cast<size_t>(SortingStage::MergeStreams),
+        static_cast<size_t>(SortingStage::FinishSort)
+    };
+}
+
 String SortingStep::getStepGroupName(size_t group) const
 {
     switch (static_cast<SortingStage>(group))
@@ -755,6 +764,7 @@ String SortingStep::getStepGroupName(size_t group) const
         case SortingStage::MergeStreams: return "merge sorted streams";
         case SortingStage::FinishSort: return "finish sort";
     }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown SortingStage group {}", group);
 }
 
 void SortingStep::describePipeline(FormatSettings & settings) const
