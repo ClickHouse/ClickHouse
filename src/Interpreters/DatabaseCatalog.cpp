@@ -299,6 +299,13 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
     /// Because some databases might use them until their shutdown is called, but calling shutdown
     /// on temporary database means clearing its set of tables, which will lead to unnecessary errors like "table not found".
     std::vector<DatabasePtr> databases_with_delayed_shutdown;
+    /// A database shutdown() can throw (e.g. a table flushAndShutdown hitting a ZooKeeper timeout).
+    /// It must not skip the steps below: shutdown_system_logs() joins the system log flush threads,
+    /// and if one stays alive into the static thread pool teardown in `main` its lazy backing-table
+    /// (re)creation hits an already-reset pool and aborts. So log and continue, keeping the ordering
+    /// user databases -> system logs -> system / temporary databases. The throwing shutdown() still
+    /// releases that database's table references (see DatabaseWithOwnTablesBase::shutdown), so the
+    /// UUID mappings below are emptied as usual.
     for (auto & database : current_databases)
     {
         if (database.first == TEMPORARY_DATABASE || database.first == SYSTEM_DATABASE)
@@ -307,7 +314,14 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
             continue;
         }
         LOG_TRACE(log, "Shutting down database {}", database.first);
-        database.second->shutdown();
+        try
+        {
+            database.second->shutdown();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("Failed to shut down database {}", backQuoteIfNeed(database.first)));
+        }
     }
 
     LOG_TRACE(log, "Shutting down system logs");
