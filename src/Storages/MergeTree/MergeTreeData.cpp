@@ -11197,12 +11197,14 @@ MergeTreeData::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata
 
 bool MergeTreeData::hasLookupSetIndex() const
 {
-    return hasLookupIndexType(getInMemoryMetadataPtr(getContext(), false)->getLookupIndices(), TABLE_SET_INDEX_TYPE);
+    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    return hasLookupIndexType(metadata_snapshot->getLookupIndices(), TABLE_SET_INDEX_TYPE);
 }
 
 bool MergeTreeData::hasLookupJoinIndex() const
 {
-    return hasLookupIndexType(getInMemoryMetadataPtr(getContext(), false)->getLookupIndices(), TABLE_JOIN_INDEX_TYPE);
+    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    return hasLookupIndexType(metadata_snapshot->getLookupIndices(), TABLE_JOIN_INDEX_TYPE);
 }
 
 SetPtr MergeTreeData::tryGetLookupSet(const Names & key_names, const ContextPtr & query_context) const
