@@ -3,6 +3,8 @@
 #include <Common/Stopwatch.h>
 #include <atomic>
 
+namespace DB
+{
 class StepWallClock
 {
 public:
@@ -43,7 +45,7 @@ public:
         }
     }
 
-    UInt64 getStepWallTime() { return wall_clock_time.load(std::memory_order_acquire); }
+    UInt64 getStepWallTime() const { return wall_clock_time.load(std::memory_order_acquire); }
 
 private:
 
@@ -54,3 +56,4 @@ private:
     const UInt64 query_start_time = 0;
     constexpr static UInt64 MASK_16_BIT = 0xFFFF;
 };
+}

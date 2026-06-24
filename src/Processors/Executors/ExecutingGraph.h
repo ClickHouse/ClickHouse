@@ -11,7 +11,6 @@
 #include <unordered_set>
 
 #include <boost/container/devector.hpp>
-#include <boost/container_hash/hash.hpp>
 
 namespace DB
 {
@@ -131,7 +130,7 @@ public:
     using ProcessorsMap = std::unordered_map<const IProcessor *, Node *>;
     ProcessorsMap processors_map;
 
-    explicit ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_, bool measure_step_wall_clock_ = false, UInt64 query_start_ns = 0);
+    explicit ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_);
 
     const Processors & getProcessors() const { return *processors; }
 
@@ -188,15 +187,6 @@ private:
 
     const bool profile_processors;
     IProcessor::CancelReason cancel_reason = IProcessor::CancelReason::NotCancelled;
-
-    /// Explain Analyze step to clocks map
-    using StepAndGroup = std::pair<IQueryPlanStep *, size_t>;
-    using Hash = boost::hash<std::pair<const IQueryPlanStep *, size_t>>;
-    using MapStepToWallClock = std::unordered_map<StepAndGroup, std::shared_ptr<StepWallClock>, Hash>;
-
-    bool measure_step_wall_clock = false;
-    UInt64 query_start_ns = 0;
-    MapStepToWallClock clocks;
 };
 
 }

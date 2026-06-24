@@ -10,6 +10,8 @@
 namespace DB
 {
 
+class StepWallClockRegistry;
+
 /// Manage tasks which are ready for execution. Used in PipelineExecutor.
 class ExecutorTasks
 {
@@ -98,7 +100,7 @@ public:
     // If non-local tasks were added, wake up one thread to process them.
     SpawnStatus pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
 
-    void init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, bool measure_step_wall_clock, ReadProgressCallback * callback);
+    void init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, const StepWallClockRegistry * step_to_wall_clock_registry, ReadProgressCallback * callback);
     void fill(Queue & queue, Queue & async_queue);
 
     /// Release CPU slots

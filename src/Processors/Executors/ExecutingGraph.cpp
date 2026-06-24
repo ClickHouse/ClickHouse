@@ -1,4 +1,5 @@
 #include <Processors/Executors/ExecutingGraph.h>
+#include <Processors/Executors/ExecutorTasks.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
@@ -22,11 +23,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ExecutingGraph::ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_, bool measure_step_wall_clock_, UInt64 query_start_ns_)
+ExecutingGraph::ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_)
     : processors(std::move(processors_))
     , profile_processors(profile_processors_)
-    , measure_step_wall_clock(measure_step_wall_clock_)
-    , query_start_ns(query_start_ns_)
 {
     /// Create nodes for every processor.
     for (auto it = processors->begin(); it != processors->end(); ++it)
@@ -46,15 +45,6 @@ ExecutingGraph::Node & ExecutingGraph::addNode(Processors::iterator processor_it
     const auto [_, inserted] = processors_map.emplace(processor, &new_node);
     if (!inserted)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} was already added to pipeline", processor->getName());
-
-    if (measure_step_wall_clock)
-    {
-        auto key = std::make_pair(processor->getQueryPlanStep(), processor->getQueryPlanStepGroup());
-        auto & clock = clocks[key];   // inserts a null shared_ptr if absent
-        if (!clock)
-            clock = std::make_shared<StepWallClock>(query_start_ns);
-        processor->setStepWallClock(clock);
-    }
 
     return new_node;
 }

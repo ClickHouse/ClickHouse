@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/Executors/ExecutingGraph.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Executors/ExecutorTasks.h>
 #include <Common/EventCounter.h>
@@ -25,6 +26,7 @@ using ExecutingGraphPtr = std::unique_ptr<ExecutingGraph>;
 class ReadProgressCallback;
 using ReadProgressCallbackPtr = std::unique_ptr<ReadProgressCallback>;
 
+class StepWallClockRegistry;
 
 /// Executes query pipeline.
 class PipelineExecutor
@@ -39,7 +41,7 @@ public:
     /// PipelineExecutor must be destroyed before the corresponding QueryPipeline, because
     /// QueryPlanResourceHolder may hold some resources referenced by processors and used in
     /// processor destructors.
-    explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem, bool measure_step_wall_clock_ = false);
+    explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem, const StepWallClockRegistry * step_wall_clock_registry = nullptr);
     ~PipelineExecutor();
 
     /// Execute pipeline in multiple threads. Must be called once.
@@ -99,7 +101,7 @@ private:
     bool trace_processors = false;
     bool trace_cpu_scheduling = false;
     /// EXPLAIN ANALYZE
-    bool measure_step_wall_clock = false;
+    const StepWallClockRegistry * step_wall_clock_registry = nullptr;
 
     std::atomic<ExecutionStatus> execution_status = ExecutionStatus::NotStarted;
     std::atomic_bool cancelled_reading = false;
