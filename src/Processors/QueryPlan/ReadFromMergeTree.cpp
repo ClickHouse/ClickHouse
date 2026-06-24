@@ -4674,7 +4674,10 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
         }
     }
 
-    storage_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, std::move(new_metadata));
+    /// Preserve `data`: it carries the UNIQUE KEY per-partition snapshot pins (and parts)
+    /// that must stay alive across this virtual-column rebuild; the 2-arg ctor would drop
+    /// them and the read would apply no delete bitmaps.
+    storage_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, std::move(new_metadata), std::move(storage_snapshot->data));
 
     if (output_header != nullptr)
     {
