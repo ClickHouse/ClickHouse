@@ -45,6 +45,11 @@ class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 class ProcessListEntry;
 
+/// Forward-declare to avoid pulling the whole scheduler stack into every TU that includes this header.
+/// The unique_ptr destructor is instantiated only in ProcessList.cpp where MemoryReservation.h is included.
+struct MemoryReservation;
+using MemoryReservationPtr = std::unique_ptr<MemoryReservation>;
+
 enum CancelReason
 {
     UNDEFINED,
@@ -102,8 +107,9 @@ protected:
     UInt64 normalized_query_hash;
     ClientInfo client_info;
 
-    /// Query slot scheduling for workloads
+    /// Acquired workload resources
     QuerySlotPtr query_slot;
+    MemoryReservationPtr memory_reservation;
 
     /// Whether this query holds an admission slot (for early release).
     /// Compound updates (e.g. transferring the slot to a FIFO waiter) happen under `ProcessList::mutex`,
@@ -218,6 +224,7 @@ public:
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_,
         QuerySlotPtr && query_slot_,
+        MemoryReservationPtr && memory_reservation_,
         bool holds_admission_slot_,
         ThreadGroupPtr && thread_group_,
         IAST::QueryKind query_kind_,
@@ -245,6 +252,11 @@ public:
     ThrottlerPtr getUserNetworkThrottler();
 
     MemoryTracker * getMemoryTracker() const;
+
+    MemoryReservation * getMemoryReservation() const
+    {
+        return memory_reservation.get();
+    }
 
     bool hasThreadGroup() const
     {
@@ -295,8 +307,8 @@ public:
         return is_internal;
     }
 
-    /// Manually release query slot (if any).
-    void releaseQuerySlot() { query_slot.reset(); }
+    /// Manually release all acquired workload resources.
+    void releaseWorkloadResources();
 
     /// Manually release admission slot (if any). Acquires ProcessList::mutex.
     void releaseAdmissionSlot();

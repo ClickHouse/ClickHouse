@@ -966,7 +966,10 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
 
     for (const auto & [header_name, regex] : header_name_with_capture_regexp)
     {
-        const auto & header_value = request.get(header_name);
+        /// Use a defaulted lookup like `headersFilter` does: a missing header is treated as an empty string.
+        /// A header regex can match the empty string, so the rule may match a request without that header,
+        /// and reading it here without a default would raise an exception after the rule has already matched.
+        const auto header_value = request.get(header_name, "");
         set_query_params(header_value.data(), header_value.data() + header_value.size(), regex);
     }
 

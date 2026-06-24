@@ -2599,7 +2599,7 @@ void executeQuery(
     }
 
     /// We release query slot here to make sure client can safely reuse the slot with his next query, otherwise it will be released too late by BlockIO.
-    context->releaseQuerySlot();
+    context->releaseWorkloadResources();
 
     /// Release admission slot early (same timing as QuerySlot) to reduce slot hold time.
     /// Without this, the admission slot is held until ProcessListEntry destructor,

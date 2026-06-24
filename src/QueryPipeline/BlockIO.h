@@ -89,7 +89,7 @@ struct BlockIO
     void setAllDataSent() const;
 
     /// Release query slot early to allow client to reuse it for his next query.
-    void releaseQuerySlot() const;
+    void releaseWorkloadResources() const;
 
     /// Release the admission slot at the same timing as the query slot, so that protocols
     /// going through `BlockIO` (native TCP, Arrow Flight, ...) do not keep the slot until

@@ -393,6 +393,7 @@
     M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequests, "Number of outstanding requests") \
+    M(KeeperTTLNodes, "Number of nodes with a TTL set currently stored in Keeper.") \
     M(ThreadsInOvercommitTracker, "Number of waiting threads inside of OvercommitTracker") \
     M(IOUringPendingEvents, "Number of io_uring SQEs waiting to be submitted") \
     M(IOUringInFlightEvents, "Number of io_uring SQEs in flight") \
@@ -474,6 +475,9 @@
     \
     M(ConcurrentQueryScheduled, "Total number of query slot requests are being scheduled currently") \
     M(ConcurrentQueryAcquired, "Total number of acquired query slots") \
+    \
+    M(MemoryReservationApproved, "Total number of currently allocated (approved) bytes for memory reservations") \
+    M(MemoryReservationDemand, "Total number of outstanding increase request bytes for memory reservations") \
     \
     M(DiskS3NoSuchKeyErrors, "The number of `NoSuchKey` errors that occur when reading data from S3 cloud storage through ClickHouse disks.") \
     \
