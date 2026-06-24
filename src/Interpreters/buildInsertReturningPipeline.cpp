@@ -77,28 +77,31 @@ namespace
             "low_priority_query_wait_time_ms",
             "workload",
             "reserve_memory",
+            "temporary_files_codec",
+            "temporary_files_buffer_size",
         };
 
+        /// Walk every SELECT branch in the UNION tree: each branch's SETTINGS are applied by
+        /// InterpreterSelectQuery::initSettings / the analyzer QueryTreeBuilder, so a restriction
+        /// limited to only the last branch can be bypassed via earlier UNION branches.
         const auto * select_with_union = returning_select->as<ASTSelectWithUnionQuery>();
         if (!select_with_union || !select_with_union->list_of_selects)
             return;
 
-        const auto & selects = select_with_union->list_of_selects->children;
-        if (selects.empty())
-            return;
-
-        /// Only the last `SELECT`'s `SETTINGS` are applied to the subquery context (see `applySettingsFromQuery`).
-        const auto * last_select = selects.back()->as<ASTSelectQuery>();
-        if (!last_select || !last_select->settings())
-            return;
-
-        for (const auto & change : last_select->settings()->as<ASTSetQuery &>().changes)
+        for (const auto & child : select_with_union->list_of_selects->children)
         {
-            if (unsupported_settings.contains(change.name))
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Setting '{}' is not supported in the SETTINGS clause of an INSERT ... RETURNING subquery",
-                    change.name);
+            const auto * select = child->as<ASTSelectQuery>();
+            if (!select || !select->settings())
+                continue;
+
+            for (const auto & change : select->settings()->as<ASTSetQuery &>().changes)
+            {
+                if (unsupported_settings.contains(change.name))
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Setting '{}' is not supported in the SETTINGS clause of an INSERT ... RETURNING subquery",
+                        change.name);
+            }
         }
     }
 }
