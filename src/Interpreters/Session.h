@@ -2,6 +2,7 @@
 
 #include <Common/SettingsChanges.h>
 #include <Access/AuthenticationData.h>
+#include <Interpreters/ClientCertificateInfo.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/SessionTracker.h>
@@ -24,6 +25,7 @@ class NamedSessionsStorage;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
 class SessionLog;
+class X509Certificate;
 
 /** Represents user-session from the server perspective,
  *  basically it is just a smaller subset of Context API, simplifies Context management.
@@ -64,6 +66,10 @@ public:
 
     /// Writes a row about login failure into session log (if enabled)
     void onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e);
+
+    /// Remembers the TLS client certificate presented on this connection (if any), so that
+    /// session_log records it for the login/logout events of this session.
+    void setClientCertificate(const X509Certificate & certificate);
 
     /// Returns a reference to the session's ClientInfo.
     const ClientInfo & getClientInfo() const;
@@ -120,6 +126,9 @@ private:
     std::optional<UUID> user_id;
     std::vector<UUID> external_roles;
     AuthenticationData user_authenticated_with;
+
+    /// TLS client certificate presented on this connection, if any.
+    std::optional<ClientCertificateInfo> certificate_info;
 
     ContextMutablePtr session_context;
     mutable bool query_context_created = false;

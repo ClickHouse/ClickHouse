@@ -14,6 +14,7 @@
 #include <Poco/Util/JSONConfiguration.h>
 #include <Coordination/KeeperConstants.h>
 #include <Server/CloudPlacementInfo.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Disks/DiskSelector.h>
 #include <Common/logger_useful.h>
@@ -23,6 +24,7 @@
 #include <boost/algorithm/string.hpp>
 
 #include "config.h"
+#include <Core/UUID.h>
 #if USE_ROCKSDB
 #include <rocksdb/table.h>
 #include <rocksdb/convenience.h>
@@ -45,6 +47,7 @@ extern const int ROCKSDB_ERROR;
 namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 write_snapshot_version;
+    extern const CoordinationSettingsMilliseconds ttl_gc_period_ms;
 }
 
 struct CachedCoordinationSettings
@@ -385,6 +388,11 @@ void KeeperContext::setSnapshotDisk(DiskPtr disk)
     latest_snapshot_storage = snapshot_storage;
 }
 
+void KeeperContext::setLatestSnapshotDisk(DiskPtr disk)
+{
+    latest_snapshot_storage = std::move(disk);
+}
+
 DiskPtr KeeperContext::getStateFileDisk() const
 {
     return getDisk(state_file_storage);
@@ -590,33 +598,50 @@ void KeeperContext::initializeFeatureFlags(const Poco::Util::AbstractConfigurati
 
     }
 
+    /// TTL metadata (destroy_time/ttl) is only serialized starting with snapshot
+    /// V8. Enabling CREATE_TTL with an older write version would silently turn
+    /// TTL nodes into permanent persistent nodes on the next snapshot.
+    if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL))
+    {
+        const uint64_t write_version = getCoordinationSettings()[CoordinationSetting::write_snapshot_version];
+        if (write_version < SnapshotVersion::V8)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Feature flag CREATE_TTL requires write_snapshot_version >= {}, but it is set to {}. "
+                "Bump write_snapshot_version after every replica has been upgraded.",
+                static_cast<int>(SnapshotVersion::V8), write_version);
+
+        const auto ttl_gc_period_ms = getCoordinationSettings()[CoordinationSetting::ttl_gc_period_ms].totalMilliseconds();
+        if (ttl_gc_period_ms <= 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ttl_gc_period_ms must be greater than 0 when TTL nodes are enabled, got {}", ttl_gc_period_ms);
+    }
+
     feature_flags.logFlags(getLogger("KeeperContext"));
+}
+
+static UInt64 calculateMemorySoftLimit(const Poco::Util::AbstractConfiguration & config)
+{
+    if (config.hasProperty("keeper_server.max_memory_usage_soft_limit"))
+    {
+        UInt64 explicit_value = config.getUInt64("keeper_server.max_memory_usage_soft_limit");
+        // 0 falls through to ratio-based calculation for backward compatibility.
+        if (explicit_value > 0)
+            return explicit_value;
+    }
+
+    Float64 ratio = config.getDouble("keeper_server.max_memory_usage_soft_limit_ratio", 0.9);
+    size_t physical_server_memory = getMemoryAmount();
+    if (ratio > 0 && physical_server_memory > 0)
+        return static_cast<UInt64>(static_cast<Float64>(physical_server_memory) * ratio);
+
+    return 0;
 }
 
 void KeeperContext::updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfiguration & config)
 {
-    if (config.hasProperty("keeper_server.max_memory_usage_soft_limit"))
-        memory_soft_limit = config.getUInt64("keeper_server.max_memory_usage_soft_limit");
-}
-
-void KeeperContext::initializeKeeperMemorySoftLimit(Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
-{
-    UInt64 memory_soft_limit = 0;
-    if (config.has("keeper_server.max_memory_usage_soft_limit"))
-        memory_soft_limit = config.getUInt64("keeper_server.max_memory_usage_soft_limit");
-
-    if (memory_soft_limit == 0)
-    {
-        Float64 ratio = config.getDouble("keeper_server.max_memory_usage_soft_limit_ratio", 0.9);
-        size_t physical_server_memory = getMemoryAmount();
-        if (ratio > 0 && physical_server_memory > 0)
-        {
-            memory_soft_limit = static_cast<UInt64>(static_cast<Float64>(physical_server_memory) * ratio);
-            config.setUInt64("keeper_server.max_memory_usage_soft_limit", memory_soft_limit);
-        }
-    }
-
-    LOG_INFO(log, "keeper_server.max_memory_usage_soft_limit is set to {}", formatReadableSizeWithBinarySuffix(memory_soft_limit));
+    const auto limit = calculateMemorySoftLimit(config);
+    memory_soft_limit = limit;
+    LOG_INFO(getLogger("KeeperContext"), "keeper_server.max_memory_usage_soft_limit is set to {}", formatReadableSizeWithBinarySuffix(limit));
 }
 
 void KeeperContext::updateSettings(CoordinationSettingsPtr new_settings)
@@ -739,6 +764,8 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
             return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_STAT);
         case Coordination::OpNum::Create2:
             return feature_flags.isEnabled(KeeperFeatureFlag::CREATE_WITH_STATS);
+        case Coordination::OpNum::CreateTTL:
+            return feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL);
         case Coordination::OpNum::TryRemove:
             return feature_flags.isEnabled(KeeperFeatureFlag::TRY_REMOVE);
         case Coordination::OpNum::SetWatch:
@@ -776,7 +803,7 @@ uint64_t KeeperContext::lastCommittedIndex() const
 
 void KeeperContext::setLastCommitIndex(uint64_t commit_index)
 {
-    bool should_notify;
+    bool should_notify = false;
     {
         std::lock_guard lock(last_committed_log_idx_cv_mutex);
         last_committed_log_idx.store(commit_index, std::memory_order_relaxed);

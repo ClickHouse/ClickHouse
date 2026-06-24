@@ -1,5 +1,6 @@
--- Tags: long, no-asan, no-msan
+-- Tags: long, no-asan, no-msan, no-tsan
 
+SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 SET use_statistics = 0;
 drop table if exists tab_l;
 drop table if exists tab_m;

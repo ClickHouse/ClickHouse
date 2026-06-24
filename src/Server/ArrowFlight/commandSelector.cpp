@@ -348,6 +348,11 @@ const static std::vector<std::pair<std::string, std::string>> engine_to_type =
     {"IcebergHDFS", "REMOTE TABLE"},
     {"IcebergLocal", "REMOTE TABLE"},
     {"IcebergS3", "REMOTE TABLE"},
+    {"Paimon", "REMOTE TABLE"},
+    {"PaimonAzure", "REMOTE TABLE"},
+    {"PaimonHDFS", "REMOTE TABLE"},
+    {"PaimonLocal", "REMOTE TABLE"},
+    {"PaimonS3", "REMOTE TABLE"},
     {"JDBC", "REMOTE TABLE"},
     {"Kafka", "REMOTE TABLE"},
     {"MaterializedPostgreSQL", "REMOTE TABLE"},
@@ -407,6 +412,7 @@ const static std::vector<std::pair<std::string, std::string>> engine_to_type =
     {"SQLite", "TABLE"},
     {"File", "TABLE"},
     {"FileLog", "TABLE"},
+    {"Filesystem", "TABLE"},
     {"GenerateRandom", "TABLE"},
     {"FuzzJSON", "TABLE"},
     {"FuzzQuery", "TABLE"},
@@ -561,6 +567,8 @@ static SQLSet commandGetTableTypes()
 
 static CommandSelectorResult commandStatementQuery(const arrow::flight::protocol::sql::CommandStatementQuery & command)
 {
+    if (command.has_transaction_id())
+        return arrow::Status::NotImplemented("CommandStatementQuery: transaction_id is not supported");
     if (command.query().empty())
         return arrow::Status::Invalid("CommandStatementQuery: query must not be empty");
     return SQLSet{command.query(), {}, {}};
@@ -568,6 +576,8 @@ static CommandSelectorResult commandStatementQuery(const arrow::flight::protocol
 
 static CommandSelectorResult commandStatementUpdate(const arrow::flight::protocol::sql::CommandStatementUpdate & command)
 {
+    if (command.has_transaction_id())
+        return arrow::Status::NotImplemented("CommandStatementUpdate: transaction_id is not supported");
     if (command.query().empty())
         return arrow::Status::Invalid("CommandStatementUpdate: query must not be empty");
     return SQLSet{command.query(), {}, {}};
@@ -592,6 +602,9 @@ static CommandSelectorResult commandStatementIngest(const arrow::flight::protoco
 
     if (command.temporary())
         return arrow::Status::NotImplemented("Implicit temporary tables are not supported.");
+
+    if (command.has_transaction_id())
+        return arrow::Status::NotImplemented("CommandStatementIngest: transaction_id is not supported");
 
     std::string schema_string;
     if (command.has_schema())
@@ -678,6 +691,24 @@ static std::optional<CommandSelectorResult> commandSelectorImpl(const google::pr
         if (!any_msg.UnpackTo(&command))
             return arrow::Status::SerializationError("Deserialization of sql::CommandStatementIngest failed.");
         return commandStatementIngest(command);
+    }
+    else if (any_msg.Is<arrow::flight::protocol::sql::CommandPreparedStatementQuery>())
+    {
+        arrow::flight::protocol::sql::CommandPreparedStatementQuery command;
+        if (!any_msg.UnpackTo(&command))
+            return arrow::Status::SerializationError("Deserialization of sql::CommandPreparedStatementQuery failed.");
+        if (command.prepared_statement_handle().empty())
+            return arrow::Status::Invalid("CommandPreparedStatementQuery: prepared_statement_handle must not be empty");
+        return SQLSet{command.prepared_statement_handle(), {}, {}};
+    }
+    else if (any_msg.Is<arrow::flight::protocol::sql::CommandPreparedStatementUpdate>())
+    {
+        arrow::flight::protocol::sql::CommandPreparedStatementUpdate command;
+        if (!any_msg.UnpackTo(&command))
+            return arrow::Status::SerializationError("Deserialization of sql::CommandPreparedStatementUpdate failed.");
+        if (command.prepared_statement_handle().empty())
+            return arrow::Status::Invalid("CommandPreparedStatementUpdate: prepared_statement_handle must not be empty");
+        return SQLSet{command.prepared_statement_handle(), {}, {}};
     }
     else
     {

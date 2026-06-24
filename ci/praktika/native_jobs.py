@@ -2,10 +2,10 @@ import dataclasses
 import hashlib
 import json
 import platform
+import shlex
 import sys
 import traceback
 from pathlib import Path
-from typing import Dict
 
 from . import Job, Workflow
 from ._environment import _Environment
@@ -32,7 +32,7 @@ def _GH_Auth(force=False):
         return
     from .gh_auth import GHAuth
 
-    if force or not Shell.check(f"gh auth status", verbose=True):
+    if force or not Shell.check("gh auth status", verbose=True):
         GHAuth.auth_from_settings()
 
 
@@ -284,21 +284,251 @@ def _prepare_submodule_cache(workflow_config: RunConfig) -> Result:
     )
 
 
+def _filter_unaffected_jobs(jobs, workflow_config, changed_files, affected_dockers=()):
+    """
+    Update workflow_config.filtered_jobs for jobs unaffected by changed_files.
+
+    Two fixes relative to the original inline algorithm:
+
+    Fix 1 (Bug 2) — jobs already filtered by workflow_filter_hooks are skipped.
+    They will not run, so their 'requires' must not keep their dependencies alive.
+
+    Fix 2 (Bug 3) — all_required_artifacts is propagated to a fixed point after
+    the initial sweep.  When an unaffected job is rescued because an affected job
+    requires it, that rescued job's own dependencies are also rescued.
+    """
+    affected_artifacts = []
+    unaffected_jobs = {}  # name → job
+    all_required_artifacts = set()
+
+    for job in jobs:
+        if _is_praktika_job(job.name):
+            continue
+        if job.name in workflow_config.filtered_jobs:
+            continue  # Already filtered by workflow_filter_hooks — skip entirely
+
+        is_affected = False
+
+        if any(dep in affected_artifacts for dep in job.requires):
+            print(f"Job [{job.name}] requires affected artifacts")
+            is_affected = True
+        elif job.get_docker_image_name() in affected_dockers:
+            print(
+                f"Job [{job.name}] runs in affected Docker image [{job.run_in_docker}]"
+            )
+            is_affected = True
+        elif job.is_affected_by(changed_files):
+            print(f"Job [{job.name}] is directly affected by changed files")
+            is_affected = True
+
+        if is_affected:
+            affected_artifacts.extend(job.provides)
+            # Propagate the job name so downstream jobs requiring it by name
+            # are marked as affected.
+            affected_artifacts.append(job.name)
+            for req in job.requires:
+                all_required_artifacts.add(req)
+        else:
+            print(f"Job [{job.name}] is not affected by the change")
+            unaffected_jobs[job.name] = job
+
+    print(f"All required artifacts [{all_required_artifacts}]")
+    print(f"Affected artifacts [{affected_artifacts}]")
+
+    # Propagate all_required_artifacts transitively: when an unaffected job is
+    # rescued (because an affected job requires it), add its own requirements so
+    # the jobs that produce its inputs are also rescued.
+    changed = True
+    while changed:
+        changed = False
+        for job in unaffected_jobs.values():
+            if (
+                any(a in all_required_artifacts for a in job.provides)
+                or job.name in all_required_artifacts
+            ):
+                for req in job.requires:
+                    if req not in all_required_artifacts:
+                        all_required_artifacts.add(req)
+                        changed = True
+
+    for job_name, job in unaffected_jobs.items():
+        if (
+            any(a in all_required_artifacts for a in job.provides)
+            or job_name in all_required_artifacts
+        ):
+            print(
+                f"NOTE: Job [{job_name}] is required by affected jobs - cannot be skipped"
+            )
+        else:
+            workflow_config.set_job_as_filtered(
+                job_name,
+                "Not affected by the changed files and not required",
+            )
+
+
 def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     # debug info
     GH.print_log_in_group("GITHUB envs", Shell.get_output("env | grep GITHUB"))
 
     def _check_yaml_up_to_date():
+        # Workflow YAML files under .github/workflows are generated from the
+        # Python definitions in ci/workflows by `praktika yaml`. They must never
+        # be edited by hand. Here we regenerate them and check whether the result
+        # differs from what is committed. A difference means the source definitions
+        # (or the generator itself) changed without the generated YAML being
+        # updated - or the YAML was edited manually.
+        #
+        # When that happens on a pull request, the robot commits the regenerated
+        # files and pushes them back to the PR head branch. That push starts a fresh
+        # CI run which picks up the new workflows, so the current (now stale) run is
+        # stopped by reporting this check as failed. This works for internal PRs and
+        # for fork PRs whose author allowed edits from maintainers; when the push is
+        # not permitted we fall back to failing the check and asking the contributor
+        # to regenerate and commit the files themselves.
         print("Check workflows are up to date")
-        commands = [
-            f"{Settings.PYTHON_INTERPRETER} -m praktika yaml",
-            f'sh -c \'changed=$(git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}); if [ -n "$changed" ]; then echo "ERROR: workflows are outdated. Changed files:"; printf "%s\\n" "$changed"; exit 1; fi\'',
-        ]
+        stop_watch = Utils.Stopwatch()
 
-        return Result.from_commands_run(
-            name="Check Workflows",
-            command=commands,
-            fail_fast=True,
+        Shell.check(
+            f"{Settings.PYTHON_INTERPRETER} -m praktika yaml",
+            verbose=True,
+            strict=True,
+        )
+
+        changed = Shell.get_output(
+            f"git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}",
+            verbose=True,
+        ).strip()
+
+        def _result(status, info):
+            return Result(
+                name="Check Workflows",
+                status=status,
+                start_time=stop_watch.start_time,
+                duration=stop_watch.duration,
+                info=info,
+            )
+
+        if not changed:
+            return _result(Result.Status.OK, "")
+
+        print("Workflows are outdated. Changed files:")
+        print(changed)
+
+        info = Info()
+        is_pr = info.pr_number and info.pr_number > 0
+        is_fork = info.repo_name != info.fork_name
+        branch = info.git_branch
+
+        if not (is_pr and branch):
+            # Not a pull request - nothing to push back to.
+            return _result(
+                Result.Status.FAIL,
+                f"Workflows are outdated - regenerate ('{Settings.PYTHON_INTERPRETER} -m praktika yaml'), "
+                f"commit and push the following files:\n{changed}",
+            )
+
+        if is_fork:
+            # We can only push to a fork's branch if its author allowed edits from
+            # maintainers; otherwise the contributor has to regenerate themselves.
+            maintainer_can_modify = (
+                Shell.get_output(
+                    f"gh pr view {info.pr_number} --json maintainerCanModify --jq .maintainerCanModify",
+                    verbose=True,
+                ).strip()
+                == "true"
+            )
+            if not maintainer_can_modify:
+                return _result(
+                    Result.Status.FAIL,
+                    f"Workflows are outdated and the fork does not allow edits from maintainers - "
+                    f"regenerate ('{Settings.PYTHON_INTERPRETER} -m praktika yaml'), commit and push "
+                    f"the following files:\n{changed}",
+                )
+
+        # The branch name comes from the PR event and is attacker-controlled for fork
+        # PRs. Git accepts ref names such as `foo$(id)`, so interpolating it into the
+        # push command below - where the GitHub App token is in scope - would allow a
+        # fork PR to execute arbitrary shell. Validate it as a real ref before use, and
+        # additionally quote it (and the repository) as data in the command itself.
+        if not Shell.check(
+            f"git check-ref-format {shlex.quote('refs/heads/' + branch)}",
+            verbose=True,
+        ):
+            return _result(
+                Result.Status.FAIL,
+                f"Workflows are outdated and the branch name is not a valid git ref - "
+                f"regenerate ('{Settings.PYTHON_INTERPRETER} -m praktika yaml'), commit "
+                f"and push the following files:\n{changed}",
+            )
+
+        head_sha = info.sha
+        # The head branch lives in the head repository, which is the fork for fork PRs
+        # and the base repository (== fork_name here) for internal PRs.
+        repo = info.fork_name
+        temp_index = f"{Settings.TEMP_DIR}/regenerate_workflows.index"
+        commit_message = "Automatically regenerate workflow YAML files"
+
+        # Assemble the fixup commit on top of the real PR head SHA (env.SHA) through a
+        # temporary index, so neither HEAD nor the working tree of this job is disturbed
+        # and the ephemeral PR merge commit (the checked-out ref by default) is never
+        # pushed to the branch. Only the regenerated workflow files are taken from the
+        # working tree; everything else comes from the head tree.
+        build_commit = [
+            "git config user.name 'robot-clickhouse'",
+            "git config user.email 'robot-clickhouse@users.noreply.github.com'",
+            f"git fetch --no-recurse-submodules origin {head_sha} ||:",
+            f"rm -f {temp_index}",
+            f"GIT_INDEX_FILE={temp_index} git read-tree {head_sha}",
+            f"GIT_INDEX_FILE={temp_index} git add -A {Settings.WORKFLOW_PATH_PREFIX}",
+        ]
+        new_commit = ""
+        if Shell.check(" && ".join(build_commit), verbose=True):
+            new_tree = Shell.get_output(
+                f"GIT_INDEX_FILE={temp_index} git write-tree", verbose=True
+            ).strip()
+            if new_tree:
+                new_commit = Shell.get_output(
+                    f"git commit-tree {new_tree} -p {head_sha} -m '{commit_message}'",
+                    verbose=True,
+                ).strip()
+        Shell.check(f"rm -f {temp_index}", verbose=True)
+
+        pushed = False
+        if new_commit:
+            # Push with the GitHub App token rather than the default GITHUB_TOKEN that
+            # the checkout action persists: only a push authenticated as the App (or a
+            # PAT) re-triggers workflows, so the regenerated YAML is actually picked up
+            # by a fresh CI run. The token is read from the gh auth session and kept out
+            # of the logs (verbose=False), and the inherited http extraheader is cleared
+            # so the tokenized URL is the one that authenticates.
+            # `repo` and `branch` are attacker-controlled on fork PRs, so pass them as
+            # shell-quoted data. The token expands at runtime, so its literal `${token}`
+            # is kept outside the f-string and the URL is assembled by concatenation.
+            repo_url = (
+                "https://x-access-token:${token}@github.com/"
+                + shlex.quote(repo)
+                + ".git"
+            )
+            refspec = shlex.quote(f"{new_commit}:refs/heads/{branch}")
+            push_cmd = (
+                'token="$(gh auth token)" && '
+                "git -c http.https://github.com/.extraheader= push "
+                f"{repo_url} {refspec}"
+            )
+            pushed = Shell.check(push_cmd, verbose=False)
+
+        if pushed:
+            return _result(
+                Result.Status.FAIL,
+                f"Workflows were outdated. Regenerated them and pushed a commit to branch "
+                f"'{branch}'. A new CI run will start on that commit. Changed files:\n{changed}",
+            )
+
+        return _result(
+            Result.Status.FAIL,
+            f"Workflows are outdated and could not be pushed automatically to branch "
+            f"'{branch}' - regenerate ('{Settings.PYTHON_INTERPRETER} -m praktika yaml'), "
+            f"commit and push the following files:\n{changed}",
         )
 
     def _check_secrets(secrets):
@@ -345,7 +575,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     # - all authors who contributed to the PR
     # - the original commit messages before GitHub's ephemeral merge commit
     commands = [
-        f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin HEAD ||:",
+        "git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin HEAD ||:",
     ]
     if env.BASE_BRANCH and env.PR_NUMBER:
         commands.append(
@@ -447,7 +677,10 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     if not results or results[-1].is_ok():
         result_ = _check_yaml_up_to_date()
         if result_.status != Result.Status.OK:
-            print("ERROR: yaml files are outdated - regenerate, commit and push")
+            print(
+                "ERROR: yaml files are outdated - the robot regenerates and pushes "
+                "them on internal PRs; on fork PRs regenerate, commit and push manually"
+            )
         results.append(result_)
 
     # TODO: commented out to decrease risk of throttling:
@@ -489,17 +722,23 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     if results[-1].is_ok() and workflow.workflow_filter_hooks:
         sw_ = Utils.Stopwatch()
         try:
-            for job in workflow.jobs:
-                if _is_praktika_job(job.name):
-                    continue
-                for hook in workflow.workflow_filter_hooks:
-                    should_skip, reason = hook(job.name)
-                    if should_skip:
-                        print(
-                            f"Job [{job.name}] set to skipped by custom hook [{hook.__name__}], reason [{reason}]"
-                        )
-                        workflow_config.set_job_as_filtered(job.name, reason)
+            pr_labels = Info().pr_labels
+            if Settings.CI_FORCE_ALL_LABEL in pr_labels:
+                print(
+                    f"NOTE: Workflow filter hooks bypassed (label '{Settings.CI_FORCE_ALL_LABEL}')"
+                )
+            else:
+                for job in workflow.jobs:
+                    if _is_praktika_job(job.name):
                         continue
+                    for hook in workflow.workflow_filter_hooks:
+                        should_skip, reason = hook(job.name)
+                        if should_skip:
+                            print(
+                                f"Job [{job.name}] set to skipped by custom hook [{hook.__name__}], reason [{reason}]"
+                            )
+                            workflow_config.set_job_as_filtered(job.name, reason)
+                            continue
             status = Result.Status.OK
             workflow_config.dump()
             info = ""
@@ -518,6 +757,13 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         print("Filter not affected jobs")
 
         def check_affected_jobs():
+            pr_labels = Info().pr_labels
+            if Settings.CI_FORCE_ALL_LABEL in pr_labels:
+                print(
+                    f"NOTE: Job filtering by changed files is bypassed (label '{Settings.CI_FORCE_ALL_LABEL}')"
+                )
+                return
+
             changed_files = Info().get_changed_files()
             if changed_files is None:
                 print(
@@ -530,59 +776,9 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             if all_affected_dockers:
                 print(f"Affected docker images [{all_affected_dockers}]")
 
-            affected_artifacts = []
-            unaffected_jobs_with_artifacts = {}
-            all_required_artifacts = set()
-
-            # Build set of all job names for quick lookup
-            job_names = {j.name for j in workflow.jobs}
-
-            for job in workflow.jobs:
-                # Skip native Praktika jobs
-                if _is_praktika_job(job.name):
-                    continue
-
-                is_affected = False
-
-                if any(dep in affected_artifacts for dep in job.requires):
-                    print(f"Job [{job.name}] requires affected artifacts")
-                    is_affected = True
-                elif job.get_docker_image_name() in all_affected_dockers:
-                    print(
-                        f"Job [{job.name}] runs in affected Docker image [{job.run_in_docker}]"
-                    )
-                    is_affected = True
-                elif job.is_affected_by(changed_files):
-                    print(f"Job [{job.name}] is directly affected by changed files")
-                    is_affected = True
-
-                if is_affected:
-                    affected_artifacts.extend(job.provides)
-                    # Propagate the job name so that downstream jobs
-                    # requiring this job by name are marked as affected
-                    affected_artifacts.append(job.name)
-                    # All items in requires are hard dependencies
-                    for req in job.requires:
-                        all_required_artifacts.add(req)
-                else:
-                    print(f"Job [{job.name}] is not affected by the change")
-                    unaffected_jobs_with_artifacts[job.name] = job.provides
-
-            print(f"All required artifacts [{all_required_artifacts}]")
-            print(f"Affected artifacts [{affected_artifacts}]")
-            for job_name, artifacts in unaffected_jobs_with_artifacts.items():
-                if (
-                    any(a in all_required_artifacts for a in artifacts)
-                    or job_name in all_required_artifacts
-                ):
-                    print(
-                        f"NOTE: Job [{job_name}] is required by affected jobs - cannot be skipped"
-                    )
-                else:
-                    workflow_config.set_job_as_filtered(
-                        job_name,
-                        "Not affected by the changed files and not required",
-                    )
+            _filter_unaffected_jobs(
+                workflow.jobs, workflow_config, changed_files, all_affected_dockers
+            )
 
             workflow_config.dump()
 
@@ -598,10 +794,17 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         stop_watch = Utils.Stopwatch()
         info = ""
         try:
-            workflow_config = CacheRunnerHooks.configure(workflow)
+            pr_labels = Info().pr_labels
+            skip_lookup = Settings.CI_FORCE_ALL_LABEL in pr_labels
+            if not skip_lookup:
+                # Fail loud on missing S3 read access. Otherwise CacheRunnerHooks
+                # silently treats every fetch as a cache miss, hiding the real
+                # cause (e.g. AccessDenied from a misconfigured runner fleet).
+                S3.assert_read_access(f"{Settings.CACHE_S3_PATH}/_read_probe")
+            workflow_config = CacheRunnerHooks.configure(workflow, skip_lookup=skip_lookup)
             files.append(RunConfig.file_name_static(workflow.name))
             res = True
-        except Exception as e:
+        except Exception:
             res = False
             traceback.print_exc()
             info = traceback.format_exc()
@@ -863,13 +1066,14 @@ def _finish_workflow(workflow, job_name):
                 result.status = Result.Status.ERROR
                 # dump workflow result after update - to have an updated result in post
                 workflow_result.dump()
-                # add error into env - should appear in the report on the main page
-                env.add_info(f"{result.name}: {ResultInfo.NOT_FINALIZED}")
-                # add error info to job info as well
-                result.set_info(ResultInfo.NOT_FINALIZED)
+                # Attribute the error to the failed job (not Finish Workflow)
+                # so it appears under the correct source on the workflow report page.
+                env.add_workflow_error(
+                    ResultInfo.NOT_FINALIZED, source=result.name
+                )
                 update_final_report = True
         job = workflow.get_job(result.name)
-        if not job or not job.allow_merge_on_failure:
+        if not job or not job.allow_failure:
             print(
                 f"NOTE: Result for [{result.name}] has not ok status [{result.status}]"
             )
@@ -892,7 +1096,7 @@ def _finish_workflow(workflow, job_name):
         )
         if not fast_test_failed and ready_for_merge_status != Result.Status.OK:
             print(
-                f"NOTE: Revert PR detected - setting merge status to success despite failures"
+                "NOTE: Revert PR detected - setting merge status to success despite failures"
             )
             ready_for_merge_status = Result.Status.OK
             ready_for_merge_description = "Revert PR"
@@ -905,8 +1109,8 @@ def _finish_workflow(workflow, job_name):
             description=ready_for_merge_description,
             url="",
         ):
-            print(f"ERROR: failed to set ReadyForMerge status")
-            env.add_info(ResultInfo.GH_STATUS_ERROR)
+            print("ERROR: failed to set ReadyForMerge status")
+            env.add_workflow_error(ResultInfo.GH_STATUS_ERROR)
 
     if update_final_report:
         _ResultS3.copy_result_to_s3_with_version(workflow_result, version + 1)
@@ -940,7 +1144,7 @@ if __name__ == "__main__":
             result = _finish_workflow(workflow, job_name)
         else:
             assert False, f"BUG, job name [{job_name}]"
-    except Exception as e:
+    except Exception:
         error_traceback = traceback.format_exc()
         print("Failed with Exception:")
         print(error_traceback)
