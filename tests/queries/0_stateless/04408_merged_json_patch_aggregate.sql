@@ -102,4 +102,3 @@ ORDER BY id;
 
 DROP TABLE merged_json_patch_states;
 
--- Made with Bob
