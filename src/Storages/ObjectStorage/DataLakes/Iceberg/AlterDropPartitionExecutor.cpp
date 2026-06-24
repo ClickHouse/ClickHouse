@@ -712,6 +712,21 @@ bool AlterDropPartitionExecutor::commitMetadataJSON(
         data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]);
 }
 
+void AlterDropPartitionExecutor::cleanupNotCommited(std::vector<std::string> files)
+{
+    for (const auto & path : files)
+    {
+        try
+        {
+            object_storage->removeObjectIfExists(StoredObject(path));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("Failed to clean up partially-written manifest {}", path));
+        }
+    }
+}
+
 bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, DropPlan plan)
 {
     FileNamesGenerator filename_generator(
@@ -719,24 +734,12 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, DropPlan plan)
     filename_generator.setVersion(state.table_state.metadata_version + 1);
     filename_generator.setCompressionMethod(components.metadata_compression_method);
 
-    std::vector<String> files_for_cleanup;
+    std::vector<std::string> files_for_cleanup;
     bool committed = false;
 
     SCOPE_EXIT({
         if (!committed)
-        {
-            for (const auto & path : files_for_cleanup)
-            {
-                try
-                {
-                    object_storage->removeObjectIfExists(StoredObject(path));
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(log, fmt::format("Failed to clean up partially-written manifest {}", path));
-                }
-            }
-        }
+            cleanupNotCommited(std::move(files_for_cleanup));
     });
 
     auto replacements = writeReplacementManifests(state, plan, filename_generator, files_for_cleanup);

@@ -140,6 +140,8 @@ private:
         FileNamesGenerator & filename_generator,
         const GeneratedMetadataFileWithInfo & metadata_info);
 
+    void cleanupNotCommited(std::vector<std::string> files);
+
     const PartitionCommand & command;
     ContextPtr context;
     ObjectStoragePtr object_storage;
