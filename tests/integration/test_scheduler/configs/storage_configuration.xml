@@ -81,6 +81,17 @@
                     </dst>
                 </volumes>
             </s3_no_fake_tx_move>
+            <s3_tiered>
+                <volumes>
+                    <hot>
+                        <disk>s3_no_fake_tx</disk>
+                    </hot>
+                    <cold>
+                        <disk>s3_no_fake_tx_2</disk>
+                        <perform_ttl_move_on_insert>0</perform_ttl_move_on_insert>
+                    </cold>
+                </volumes>
+            </s3_tiered>
         </policies>
     </storage_configuration>
 </clickhouse>
