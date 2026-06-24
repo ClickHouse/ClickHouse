@@ -34,6 +34,9 @@ namespace S3AuthSetting
 {
     extern const S3AuthSettingsString access_key_id;
     extern const S3AuthSettingsString secret_access_key;
+    extern const S3AuthSettingsString role_arn;
+    extern const S3AuthSettingsString role_session_name;
+    extern const S3AuthSettingsString external_id;
 }
 
 #endif
@@ -298,6 +301,12 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             );
             s3_settings->auth_settings[S3AuthSetting::access_key_id] = move_access_key_id;
             s3_settings->auth_settings[S3AuthSetting::secret_access_key] = move_secret_access_key;
+            /// The move destination authenticates with its own explicit keys (required above). Drop any
+            /// `role_arn`/STS settings inherited from the server `<s3>` config so the move never assumes the
+            /// server's role on top of those keys; the move settings have no way to request a role explicitly.
+            s3_settings->auth_settings[S3AuthSetting::role_arn] = "";
+            s3_settings->auth_settings[S3AuthSetting::role_session_name] = "";
+            s3_settings->auth_settings[S3AuthSetting::external_id] = "";
             std::shared_ptr<S3::Client> dst_client = getClient(
                 move_uri,
                 *s3_settings,
