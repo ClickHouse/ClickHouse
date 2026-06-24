@@ -220,8 +220,15 @@ PRIMARY KEY ngram SOURCE(CLICKHOUSE(QUERY '
 SELECT dictGet('nb_bad', 'class_id', 'v1'); -- { serverError BAD_ARGUMENTS }
 DROP DICTIONARY nb_bad;
 
--- ---------- n-gram size out of range (does not fit in 32 bits) ----------
+-- ---------- n-gram size out of range ----------
 
+-- n above the supported maximum (1024) is rejected, because query-time work is quadratic in n.
+CREATE DICTIONARY nb_bad (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_bad_src')) LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1025 mode 'token')) LIFETIME(0);
+SELECT dictGet('nb_bad', 'class_id', 'good'); -- { serverError BAD_ARGUMENTS }
+DROP DICTIONARY nb_bad;
+
+-- A value above 2^32 must be read in full, not truncated to a valid small n, so it is still rejected.
 CREATE DICTIONARY nb_bad (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
 PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_bad_src')) LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 4294967297 mode 'token')) LIFETIME(0);
 SELECT dictGet('nb_bad', 'class_id', 'good'); -- { serverError BAD_ARGUMENTS }
