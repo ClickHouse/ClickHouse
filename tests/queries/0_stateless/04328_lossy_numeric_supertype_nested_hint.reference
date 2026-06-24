@@ -1,21 +1,14 @@
-if/multiIf/coalesce/array
-if/multiIf/coalesce/array
-if/multiIf/coalesce/array
-if/multiIf/coalesce/array
-if/multiIf/coalesce/array
+1
+1
+1
+1
+1
 0
 0
 0
-0
-0
-0
-Variant(Array(Decimal(18, 2)), Array(Float64))
-numeric map key
-numeric map key
-numeric map key
-numeric map key
 0
 0
 [1,0]	Array(Float64)
 {'a':1,'b':0}	Map(String, Float64)
 {1:1,0:2}	Map(Float64, UInt8)
+1

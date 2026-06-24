@@ -1,11 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/SingleValueData.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/getLeastSupertype.h>
 
 
@@ -21,48 +16,6 @@ extern const int NOT_IMPLEMENTED;
 
 namespace
 {
-
-/// Reject Variant/Dynamic found anywhere inside the min/max argument type and, where it helps,
-/// point the user at allow_lossy_numeric_supertype. `in_map_key` is true once we descend into a
-/// Map key: a Map key cannot be Nullable, so the resolved type is identical for nullable and
-/// non-nullable numeric keys, leaving position as the only signal. The setting still helps a
-/// non-nullable numeric key (FunctionMap resolves it to Float64) but not a nullable one (the key
-/// stays a Variant), so under a Map key the hint is worded to say so rather than suppressed or
-/// claiming the setting always works. Recurses via immediate children (not forEachChild, which is
-/// a position-blind deep walk).
-void checkNoVariantOrDynamic(
-    const IDataType & type, bool in_map_key, const String & function_name, const String & argument_type_name)
-{
-    if (isVariant(type) || isDynamic(type))
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal type {} of argument of aggregate function {} because the values of that data type can contain values with "
-            "different data types. Consider using typed subcolumns or cast column to a specific data type{}",
-            argument_type_name,
-            function_name,
-            getNumericVariantSupertypeHint(type.getPtr(), in_map_key));
-
-    auto recurse = [&](const IDataType & child, bool child_in_map_key)
-    { checkNoVariantOrDynamic(child, child_in_map_key, function_name, argument_type_name); };
-
-    if (const auto * map_type = typeid_cast<const DataTypeMap *>(&type))
-    {
-        recurse(*map_type->getKeyType(), /*child_in_map_key=*/true);
-        recurse(*map_type->getValueType(), in_map_key);
-    }
-    else if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
-        recurse(*array_type->getNestedType(), in_map_key);
-    else if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
-        recurse(*nullable_type->getNestedType(), in_map_key);
-    else if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&type))
-        recurse(*low_cardinality_type->getDictionaryType(), in_map_key);
-    else if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type))
-        for (const auto & element : tuple_type->getElements())
-            recurse(*element, in_map_key);
-    else
-        /// Other composite types (e.g. Object) carry no Map-key context; a flat deep scan suffices.
-        type.forEachChild([&](const IDataType & child) { recurse(child, in_map_key); });
-}
 
 template <typename Data, bool isMin>
 class AggregateFunctionMinMax final : public IAggregateFunctionDataHelper<Data, AggregateFunctionMinMax<Data, isMin>>
@@ -82,7 +35,19 @@ public:
                 this->result_type->getName(),
                 getName());
 
-        checkNoVariantOrDynamic(*this->result_type, /*in_map_key=*/false, getName(), this->result_type->getName());
+        auto check_not_dynamic_or_variant = [&](const IDataType & type)
+        {
+            if (isDynamic(type) || isVariant(type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of aggregate function {} because the values of that data type can contain values with "
+                    "different data types. Consider using typed subcolumns or cast column to a specific data type{}",
+                    this->result_type->getName(),
+                    getName(),
+                    getNumericVariantSupertypeHint(type.getPtr()));
+        };
+        check_not_dynamic_or_variant(*this->result_type);
+        this->result_type->forEachChild(check_not_dynamic_or_variant);
     }
 
     String getName() const override

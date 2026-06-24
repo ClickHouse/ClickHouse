@@ -16,8 +16,7 @@ SELECT toTypeName([toDecimal64(1, 2), 0.]);
 SELECT toTypeName(coalesce(materialize(toNullable(toDecimal64(1, 2))), 0.));
 SELECT toTypeName(ifNull(materialize(toNullable(toDecimal64(1, 2))), 0.));
 SELECT toTypeName(map('a', toDecimal64(1, 2), 'b', 0.));
--- A Map key cannot be Nullable; the Variant builder drops the Nullable wrapper, so a nullable
--- numeric key resolves to a valid (non-nullable) Variant key.
+-- A nullable numeric Map key resolves to a (non-nullable) Variant key: the Variant builder drops Nullable.
 SELECT toTypeName(map(materialize(toNullable(toDecimal64(1, 2))), 1, 0., 2));
 SELECT sum(if(materialize(1), toDecimal64(1, 2), 0.)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT avg(multiIf(materialize(1), toInt64(1), 0.)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
@@ -35,12 +34,10 @@ SELECT toTypeName(map('a', toDecimal64(1, 2), 'b', 0.));
 -- NULL-only branches are dropped while nullability is tracked, so a normal conditional
 -- shape with a NULL branch resolves to Nullable(Float64) instead of falling to a Variant.
 SELECT toTypeName(multiIf(materialize(toUInt8(0)), NULL, materialize(toUInt8(1)), toDecimal64(1, 2), 0.));
--- A Map key cannot be Nullable, so the lossy fallback (which preserves nullability) is not
--- applied to a nullable numeric key: it keeps the valid Variant key instead of throwing. A
--- non-nullable numeric key still resolves to the lossy Float64 supertype.
-SELECT toTypeName(map(materialize(toNullable(toDecimal64(1, 2))), 1, 0., 2));
-SELECT map(materialize(toNullable(toDecimal64(1, 2))), 1, 0., 2);
+-- A non-nullable numeric Map key resolves to the lossy Float64 supertype.
 SELECT toTypeName(map(toDecimal64(1, 2), 'x', 0., 'y'));
+-- A nullable numeric Map key resolves to Nullable(Float64), which is an invalid Map key, so it throws.
+SELECT toTypeName(map(materialize(toNullable(toDecimal64(1, 2))), 1, 0., 2)); -- { serverError BAD_ARGUMENTS }
 
 -- End-to-end values: the resolved numeric supertype actually aggregates.
 SELECT sum(if(materialize(1), toDecimal64(1, 2), 0.));
