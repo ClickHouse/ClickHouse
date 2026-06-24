@@ -170,7 +170,12 @@ protected:
     /// Virtual so storage subclasses where skp_idx.packed isn't a standalone file on disk can
     /// override the probe path. The default implementation does a disk->existsFile against the
     /// part-relative path and constructs a PackedFilesReader from there if it exists.
-    virtual const PackedFilesReader * getSkipIndicesPackedReader() const;
+    ///
+    /// Returns a shared owning handle, not a raw pointer: callers dereference the reader after the
+    /// internal mutex is released, while a concurrent resetReader/seed can replace or drop the
+    /// cached reader. Holding a shared_ptr for the duration of use keeps the object alive and
+    /// avoids a use-after-free on the cached archive index.
+    virtual std::shared_ptr<const PackedFilesReader> getSkipIndicesPackedReader() const;
 
 public:
     /// Pre-populate the cached PackedFilesReader from an in-memory index produced by the
@@ -199,7 +204,7 @@ protected:
     /// probed=true with reader=null means we checked and the archive isn't present.
     mutable std::mutex skip_indices_packed_mutex;
     mutable bool skip_indices_packed_probed TSA_GUARDED_BY(skip_indices_packed_mutex) = false;
-    mutable std::unique_ptr<PackedFilesReader> skip_indices_packed_reader TSA_GUARDED_BY(skip_indices_packed_mutex);
+    mutable std::shared_ptr<const PackedFilesReader> skip_indices_packed_reader TSA_GUARDED_BY(skip_indices_packed_mutex);
 
     template <typename Op>
     void executeWriteOperation(Op && op)
