@@ -15,7 +15,7 @@ src/Storages/MergeTree/MergeTreeSettings.cpp
 src/Core/ServerSettings.cpp
 src/Common/ProfileEvents.cpp
 src/Common/CurrentMetrics.cpp
-src/Common/AsynchronousMetrics.cpp
+0
 0
 src/Storages/System/StorageSystemEvents.cpp
 src/Functions/moduloOrNull.cpp

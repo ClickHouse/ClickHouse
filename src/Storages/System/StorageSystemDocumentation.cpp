@@ -108,8 +108,6 @@ constexpr std::string_view MERGE_TREE_SETTINGS_SOURCE = "src/Storages/MergeTree/
 constexpr std::string_view SERVER_SETTINGS_SOURCE = "src/Core/ServerSettings.cpp";
 constexpr std::string_view PROFILE_EVENTS_SOURCE = "src/Common/ProfileEvents.cpp";
 constexpr std::string_view CURRENT_METRICS_SOURCE = "src/Common/CurrentMetrics.cpp";
-/// The base implementation; some asynchronous metrics are also defined in `ServerAsynchronousMetrics.cpp`.
-constexpr std::string_view ASYNCHRONOUS_METRICS_SOURCE = "src/Common/AsynchronousMetrics.cpp";
 
 /// The source paths captured by `std::source_location` (in `Documentation`/`FunctionDocumentation`) are produced by
 /// the compiler: relative to the repository root when the build remaps source paths (`ENABLE_BUILD_PATH_MAPPING`,
@@ -134,6 +132,13 @@ String makeRepoRelative(const char * source)
     std::string_view path(source);
     if (!prefix.empty() && path.starts_with(prefix))
         path.remove_prefix(prefix.size());
+
+    /// A `Documentation`/`FunctionDocumentation` that was default-initialized without braces (`FunctionDocumentation
+    /// doc;`) records the header of its `source` field instead of the construction site. Treat that as unknown rather
+    /// than reporting a misleading path; the documented entity should be built with braced initialization.
+    if (path == "src/Common/FunctionDocumentation.h" || path == "src/Common/Documentation.h")
+        return {};
+
     return String(path);
 }
 
@@ -501,7 +506,8 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
     {
         for (const auto & [name, value] : asynchronous_metrics->getValues())
             addRow(res_columns, EntityType::AsynchronousMetric, name,
-                value.documentation ? boost::algorithm::trim_copy(String(value.documentation)) : String{}, ASYNCHRONOUS_METRICS_SOURCE);
+                value.documentation ? boost::algorithm::trim_copy(String(value.documentation)) : String{},
+                makeRepoRelative(value.source));
     }
 
     /// System tables document themselves with their table comment, authored at the attachment site.

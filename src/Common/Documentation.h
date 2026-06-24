@@ -65,6 +65,10 @@ struct Documentation
 
     /// The source file where this documentation is defined. Captured automatically at the construction site;
     /// do not set it explicitly. See the note in the class comment above.
+    /// NOTE: this only works when the object is initialized at its construction site, i.e. with aggregate/designated
+    /// initialization (`Documentation doc{...}`) or value-initialization (`Documentation doc{}`). A default-initialized
+    /// object (`Documentation doc;`, without braces) records this header instead, so always use braces when building
+    /// the documentation field by field afterwards (or set `source` explicitly).
     const char * source = std::source_location::current().file_name();
 
     String syntaxAsString() const;

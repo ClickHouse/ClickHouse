@@ -41,7 +41,7 @@ The following kinds of entities are collected (the value of the `type` column is
 
 For settings (of any kind), the documentation is the setting's description, together with its type and default value; obsolete settings are not exposed. For system tables, the documentation is the table comment together with the list of its columns (the name, type and description of each).
 
-The `source` column holds the path of the source file where the entity's documentation is defined, relative to the repository root. For most entities it is captured automatically at the place where the documentation object is constructed (the registration site of the component); for the kinds that are documented in a single source file each (such as settings, profile events and error codes), it is that file.
+The `source` column holds the path of the source file where the entity's documentation is defined, relative to the repository root. For most entities it is captured automatically at the place where the documentation object is constructed (the registration site of the component); for the kinds that are documented in a single source file each (such as settings, profile events and current metrics), it is that file.
 
 ## Columns {#columns}
 
