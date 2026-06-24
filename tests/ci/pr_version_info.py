@@ -49,8 +49,15 @@ from __future__ import annotations
 import argparse
 import logging
 import re
+import threading
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import Dict, Iterable, List, NamedTuple, Optional, Set, Tuple
+
+# How many release-branch backport lookups to run concurrently. These are the
+# only per-PR REST requests left after the lightweight GraphQL window fetch.
+DEFAULT_SCAN_THREADS = 12
 
 # Heavy imports (github, clickhouse_helper, ...) are done lazily inside main() so
 # that the pure helpers below stay importable for unit tests without PyGithub.
@@ -177,12 +184,18 @@ class VersionHistory:
     def __init__(self, ch_helper) -> None:
         self.ch = ch_helper
         self._cache: Dict[str, Optional[str]] = {}
+        # Guards `_cache` so the lookup can be shared by parallel backport scans.
+        self._lock = threading.Lock()
 
     def version_for_commit(self, sha: Optional[str]) -> Optional[str]:
         if not sha:
             return None
-        if sha in self._cache:
-            return self._cache[sha]
+        with self._lock:
+            if sha in self._cache:
+                return self._cache[sha]
+        # The query runs outside the lock so concurrent lookups for different
+        # commits do not serialize; a duplicate query for the same sha is rare
+        # and harmless.
         rows = self.ch.select_json_each_row(
             CIDB_DATABASE,
             "SELECT version FROM version_history "
@@ -191,7 +204,8 @@ class VersionHistory:
             query_params={"sha": sha},
         )
         version = rows[0]["version"] if rows else None
-        self._cache[sha] = version
+        with self._lock:
+            self._cache[sha] = version
         return version
 
 
@@ -205,56 +219,92 @@ def get_backport_pr(repo, owner: str, release: str, number: int):
     return candidates[0] if candidates else None
 
 
-def apply_section(pr, section_body: str, dry_run: bool) -> bool:
-    """Write the section into ``pr`` if it changed. Returns True if changed."""
-    new_body = upsert_section(pr.body, section_body)
-    if new_body == (pr.body or ""):
+def apply_section(gh, repo, info, section_body: str, dry_run: bool) -> bool:
+    """Write the section into the PR if it changed. Returns True if changed.
+
+    ``info`` is the lightweight GraphQL record; a full ``PullRequest`` (needed to
+    call ``edit``) is fetched only when an edit is actually performed.
+    """
+    new_body = upsert_section(info.body, section_body)
+    if new_body == (info.body or ""):
         return False
     if dry_run:
-        print(f"DRY RUN: would update PR #{pr.number} version info:\n{section_body}\n")
+        print(
+            f"DRY RUN: would update PR #{info.number} version info:\n{section_body}\n"
+        )
         return True
+    pr = gh.get_pull_cached(repo, info.number)
     pr.edit(body=new_body)
-    logging.info("Updated PR #%s version info", pr.number)
+    logging.info("Updated PR #%s version info", info.number)
     return True
 
 
-def update_backport_pr(pr, version_history: VersionHistory, dry_run: bool) -> bool:
+def update_backport_pr(
+    gh, repo, info, version_history: VersionHistory, dry_run: bool
+) -> bool:
     """Set the `Merged into` line on a merged backport PR."""
-    version = version_history.version_for_commit(pr.merge_commit_sha)
+    version = version_history.version_for_commit(info.merge_commit_sha)
     if not version:
         return False
-    return apply_section(pr, render_section(version, []), dry_run)
+    return apply_section(gh, repo, info, render_section(version, []), dry_run)
+
+
+def scan_backport_versions(
+    repo,
+    owner: str,
+    numbers: List[int],
+    release_branches: List[str],
+    version_history: VersionHistory,
+    threads: int,
+) -> Dict[int, List[str]]:
+    """Resolve, for each original PR number, the versions its merged backports
+    shipped in by scanning every active release branch.
+
+    Each ``(number, release)`` pair is an independent REST lookup, so they run
+    concurrently. Returns ``{number: [versions, newest first]}``.
+    """
+    tasks = [(number, release) for number in numbers for release in release_branches]
+    by_number: Dict[int, List[str]] = defaultdict(list)
+    if not tasks:
+        return {}
+
+    def work(task: Tuple[int, str]) -> Tuple[int, Optional[str]]:
+        number, release = task
+        backport_pr = get_backport_pr(repo, owner, release, number)
+        if backport_pr is None or backport_pr.merged_at is None:
+            return number, None
+        return number, version_history.version_for_commit(backport_pr.merge_commit_sha)
+
+    with ThreadPoolExecutor(max_workers=max(1, threads)) as executor:
+        for number, version in executor.map(work, tasks):
+            if version:
+                by_number[number].append(version)
+
+    return {
+        number: sorted(set(versions), key=version_key, reverse=True)
+        for number, versions in by_number.items()
+    }
 
 
 def update_original_pr(
-    pr,
+    gh,
     repo,
-    owner: str,
+    info,
     version_history: VersionHistory,
-    release_branches: List[str],
-    scan_backports: bool,
+    backported: List[str],
     dry_run: bool,
 ) -> bool:
     """Set `Merged into` and `Backported to` on a merged original PR."""
-    if pr.merged_at is None:
+    if not info.merged:
         return False
-    merged_into = version_history.version_for_commit(pr.merge_commit_sha)
-
-    backported: List[str] = []
-    if scan_backports:
-        for release in release_branches:
-            backport_pr = get_backport_pr(repo, owner, release, pr.number)
-            if backport_pr is None or backport_pr.merged_at is None:
-                continue
-            version = version_history.version_for_commit(backport_pr.merge_commit_sha)
-            if version:
-                backported.append(version)
-        backported = sorted(set(backported), key=version_key, reverse=True)
+    merged_into = version_history.version_for_commit(info.merge_commit_sha)
 
     if not merged_into and not backported:
         # Nothing known yet -- the post-merge build has likely not finished.
         return False
-    return apply_section(pr, render_section(merged_into, backported), dry_run)
+    return apply_section(
+        gh, repo, info, render_section(merged_into, backported), dry_run
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -274,6 +324,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--dry-run", action="store_true", help="do not edit any PR, only print"
+    )
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=DEFAULT_SCAN_THREADS,
+        help="concurrent backport-branch lookups",
     )
     return parser.parse_args()
 
@@ -295,46 +351,58 @@ def main() -> None:
 
     now = datetime.now()
     since = now - timedelta(days=args.days)
-    merged_prs = gh.get_pulls_from_search(
+    # Lightweight GraphQL fetch: a few batched requests for the whole window,
+    # instead of one REST request per merged PR.
+    merged_infos = gh.get_pulls_lightweight(
         query=f"type:pr repo:{args.repo} is:merged",
         merged=[since, now],
     )
-    logging.info("Found %s merged PRs in the last %s days", len(merged_prs), args.days)
+    logging.info(
+        "Found %s merged PRs in the last %s days", len(merged_infos), args.days
+    )
 
-    prs_by_number = {pr.number: pr for pr in merged_prs}
+    infos_by_number = {info.number: info for info in merged_infos}
     backport_numbers, original_numbers, need_scan = partition_merged_prs(
         (
-            MergedPR(
-                pr.number,
-                pr.head.ref,
-                pr.base.ref,
-                [label.name for label in pr.labels],
-            )
-            for pr in merged_prs
+            MergedPR(info.number, info.head_ref, info.base_ref, info.label_names)
+            for info in merged_infos
         ),
         repo.default_branch,
     )
 
+    # Originals referenced only by a backport (merged later, after the original
+    # left the lookback window) are not in the window result; fetch them in one
+    # batched GraphQL request.
+    missing = [n for n in original_numbers if n not in infos_by_number]
+    if missing:
+        infos_by_number.update(gh.get_pulls_lightweight_by_numbers(args.repo, missing))
+
+    # Resolve every scanned original's backports up front, in parallel -- the
+    # only remaining per-PR REST traffic.
+    backported_by_number = scan_backport_versions(
+        repo, owner, sorted(need_scan), release_branches, version_history, args.threads
+    )
+
     updated = 0
     for number in sorted(backport_numbers):
-        pr = prs_by_number[number]
+        info = infos_by_number[number]
         try:
-            updated += update_backport_pr(pr, version_history, args.dry_run)
+            updated += update_backport_pr(gh, repo, info, version_history, args.dry_run)
         except Exception as ex:  # pylint: disable=broad-except
             logging.error("Failed to process backport PR #%s: %s", number, ex)
 
     for number in sorted(original_numbers):
+        info = infos_by_number.get(number)
+        if info is None:
+            logging.error("Could not fetch PR #%s, skipping", number)
+            continue
         try:
-            # An original referenced only by a backport (merged later, after the
-            # original left the lookback window) is fetched on demand.
-            pr = prs_by_number.get(number) or gh.get_pull_cached(repo, number)
             updated += update_original_pr(
-                pr,
+                gh,
                 repo,
-                owner,
+                info,
                 version_history,
-                release_branches,
-                number in need_scan,
+                backported_by_number.get(number, []),
                 args.dry_run,
             )
         except Exception as ex:  # pylint: disable=broad-except
