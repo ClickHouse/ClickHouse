@@ -1,91 +1,79 @@
 #include <memory>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/WindowFunction.h>
+#include <AggregateFunctions/parseAggregateFunctionParameters.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/IColumn.h>
 #include <Core/Block.h>
+#include <Core/ColumnNumbers.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Joins.h>
+#include <Core/Names.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
-
+#include <Core/SettingsEnums.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/validateGroupByKeyType.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Functions/FunctionsExternalDictionaries.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/ActionsVisitor.h>
+#include <Interpreters/Aggregator.h>
+#include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/ConcurrentHashJoin.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/CrossJoin.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DirectJoin.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/FullSortingMergeJoin.h>
+#include <Interpreters/GetAggregatesVisitor.h>
+#include <Interpreters/GlobalSubqueriesVisitor.h>
+#include <Interpreters/GraceHashJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/JoinSwitcher.h>
+#include <Interpreters/JoinUtils.h>
+#include <Interpreters/MergeJoin.h>
+#include <Interpreters/PasteJoin.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/Set.h>
+#include <Interpreters/SpillingHashJoin.h>
+#include <Interpreters/TableJoin.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/interpretSubquery.h>
+#include <Interpreters/misc.h>
+#include <Interpreters/replaceForPositionalArguments.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/DumpASTNode.h>
-#include <Parsers/ASTInterpolateElement.h>
-
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/validateGroupByKeyType.h>
-#include <Columns/IColumn.h>
-
-#include <Interpreters/Aggregator.h>
-#include <Interpreters/ArrayJoinAction.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/ConcurrentHashJoin.h>
-#include <Interpreters/CrossJoin.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/GraceHashJoin.h>
-#include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/JoinSwitcher.h>
-#include <Interpreters/SpillingHashJoin.h>
-#include <Interpreters/MergeJoin.h>
-#include <Interpreters/DirectJoin.h>
-#include <Interpreters/Set.h>
-#include <Interpreters/TableJoin.h>
-#include <Interpreters/FullSortingMergeJoin.h>
-#include <Interpreters/replaceForPositionalArguments.h>
-#include <Interpreters/createSubcolumnsExtractionActions.h>
-
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/AggregatingStep.h>
-
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/parseAggregateFunctionParameters.h>
-#include <AggregateFunctions/WindowFunction.h>
-
-#include <Storages/StorageDistributed.h>
-#include <Storages/StorageDictionary.h>
-#include <Storages/StorageJoin.h>
-#include <Functions/FunctionsExternalDictionaries.h>
-
-#include <Dictionaries/DictionaryStructure.h>
-
-#include <Common/typeid_cast.h>
-#include <Common/StringUtils.h>
-#include <Columns/ColumnNullable.h>
-#include <Core/ColumnsWithTypeAndName.h>
-#include <DataTypes/IDataType.h>
-#include <Core/SettingsEnums.h>
-#include <Core/ColumnNumbers.h>
-#include <Core/Names.h>
-#include <Core/NamesAndTypes.h>
-#include <Common/logger_useful.h>
-#include <Interpreters/PasteJoin.h>
-#include <QueryPipeline/SizeLimits.h>
-
-
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
-
-#include <Interpreters/ActionsVisitor.h>
-#include <Interpreters/GetAggregatesVisitor.h>
-#include <Interpreters/GlobalSubqueriesVisitor.h>
-#include <Interpreters/interpretSubquery.h>
-#include <Interpreters/JoinUtils.h>
-#include <Interpreters/misc.h>
-#include <Interpreters/PreparedSets.h>
-
-#include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
-
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/QueryParameterVisitor.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <QueryPipeline/SizeLimits.h>
+#include <Storages/StorageDictionary.h>
+#include <Storages/StorageDistributed.h>
+#include <Storages/StorageJoin.h>
+#include <Common/StringUtils.h>
+#include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -1018,7 +1006,12 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     if (analyzed_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(analyzed_join, right_sample_block);
 
-    if (isCrossOrComma(analyzed_join->kind()))
+    /// Historically cross join was handled by HashJoin, so let's keep the same behavior for backward compatibility.
+    const auto is_cross_join_compatible = algorithm == JoinAlgorithm::DEFAULT || algorithm == JoinAlgorithm::AUTO
+        || algorithm == JoinAlgorithm::HASH || algorithm == JoinAlgorithm::PARALLEL_HASH
+        || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE;
+
+    if (is_cross_join_compatible && isCrossOrComma(analyzed_join->kind()))
         return std::make_shared<CrossJoin>(analyzed_join, right_sample_block);
 
     if (algorithm == JoinAlgorithm::DIRECT || algorithm == JoinAlgorithm::DEFAULT)
