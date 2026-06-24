@@ -20,6 +20,8 @@ namespace
 /// Serialize the prefix of a ClientInfo wire payload up to and including the initial_address string,
 /// using the given address bytes verbatim. ClientInfo::read consumes: query_kind (1 byte),
 /// initial_user (string), initial_query_id (string), initial_address (string).
+/// Callers must feed the result to ReadBufferFromOwnString: ReadBufferFromString is non-owning, so
+/// reading from a temporary returned here would dangle.
 String makeClientInfoPrefix(const String & address_string)
 {
     WriteBufferFromOwnString buf;
@@ -40,7 +42,7 @@ TEST(ClientInfoRead, MalformedAddressNonNumericPortThrows)
     for (const String & bad : {"host:http", "127.0.0.1:notaport", "example.com:80x", "[::1]:abc"})
     {
         ClientInfo info;
-        ReadBufferFromString in(makeClientInfoPrefix(bad));
+        ReadBufferFromOwnString in(makeClientInfoPrefix(bad));
         try
         {
             info.read(in, DBMS_TCP_PROTOCOL_VERSION);
@@ -58,7 +60,7 @@ TEST(ClientInfoRead, MalformedAddressMissingPortThrows)
     for (const String & bad : {"hostonly", "127.0.0.1:", "[::1]"})
     {
         ClientInfo info;
-        ReadBufferFromString in(makeClientInfoPrefix(bad));
+        ReadBufferFromOwnString in(makeClientInfoPrefix(bad));
         EXPECT_THROW(info.read(in, DBMS_TCP_PROTOCOL_VERSION), Exception) << "address: " << bad;
     }
 }
@@ -66,7 +68,7 @@ TEST(ClientInfoRead, MalformedAddressMissingPortThrows)
 TEST(ClientInfoRead, PortOutOfRangeThrows)
 {
     ClientInfo info;
-    ReadBufferFromString in(makeClientInfoPrefix("127.0.0.1:70000"));
+    ReadBufferFromOwnString in(makeClientInfoPrefix("127.0.0.1:70000"));
     try
     {
         info.read(in, DBMS_TCP_PROTOCOL_VERSION);
@@ -86,7 +88,7 @@ TEST(ClientInfoRead, NonIpHostThrows)
     for (const String & bad : {"host:9000", ":9000", "example.com:80", "localhost:9000", "[notipv6]:9000"})
     {
         ClientInfo info;
-        ReadBufferFromString in(makeClientInfoPrefix(bad));
+        ReadBufferFromOwnString in(makeClientInfoPrefix(bad));
         try
         {
             info.read(in, DBMS_TCP_PROTOCOL_VERSION);
