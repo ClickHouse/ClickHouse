@@ -5,6 +5,8 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Arena.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/logger_useful.h>
@@ -833,20 +835,55 @@ void ColumnObject::deserializeValueFromSharedData(const ColumnString * shared_da
 
 void ColumnObject::insertDefault()
 {
-    for (auto & [_, column] : typed_paths)
-        column->insertDefault();
-    for (auto & [_, column] : dynamic_paths_ptrs)
-        column->insertDefault();
-    shared_data->insertDefault();
+    /// Exception-safe: if some sub-column's insertDefault throws (e.g. on a memory limit),
+    /// roll back the sub-columns that were already modified, otherwise the object is left
+    /// with sub-columns of different sizes and popBack would over-pop the shorter ones.
+    size_t prev_size = size();
+    try
+    {
+        for (auto & [_, column] : typed_paths)
+            column->insertDefault();
+        for (auto & [_, column] : dynamic_paths_ptrs)
+            column->insertDefault();
+        shared_data->insertDefault();
+    }
+    catch (...)
+    {
+        for (auto & [_, column] : typed_paths)
+            if (column->size() > prev_size)
+                column->popBack(column->size() - prev_size);
+        for (auto & [_, column] : dynamic_paths_ptrs)
+            if (column->size() > prev_size)
+                column->popBack(column->size() - prev_size);
+        if (shared_data->size() > prev_size)
+            shared_data->popBack(shared_data->size() - prev_size);
+        throw;
+    }
 }
 
 void ColumnObject::insertManyDefaults(size_t length)
 {
-    for (auto & [_, column] : typed_paths)
-        column->insertManyDefaults(length);
-    for (auto & [_, column] : dynamic_paths_ptrs)
-        column->insertManyDefaults(length);
-    shared_data->insertManyDefaults(length);
+    size_t prev_size = size();
+    try
+    {
+        for (auto & [_, column] : typed_paths)
+            column->insertManyDefaults(length);
+        for (auto & [_, column] : dynamic_paths_ptrs)
+            column->insertManyDefaults(length);
+        shared_data->insertManyDefaults(length);
+    }
+    catch (...)
+    {
+        for (auto & [_, column] : typed_paths)
+            if (column->size() > prev_size)
+                column->popBack(column->size() - prev_size);
+        for (auto & [_, column] : dynamic_paths_ptrs)
+            if (column->size() > prev_size)
+                column->popBack(column->size() - prev_size);
+        if (shared_data->size() > prev_size)
+            shared_data->popBack(shared_data->size() - prev_size);
+        throw;
+    }
 }
 
 void ColumnObject::popBack(size_t n)
@@ -1159,15 +1196,46 @@ void ColumnObject::updateHashWithValueRange(size_t begin, size_t end, SipHash & 
     shared_data->updateHashWithValueRange(begin, end, hash);
 }
 
-WeakHash32 ColumnObject::getWeakHash32() const
+void ColumnObject::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    WeakHash32 hash(size());
-    for (const auto & [_, column] : typed_paths)
-        hash.update(column->getWeakHash32());
-    for (const auto & [_, column] : dynamic_paths_ptrs)
-        hash.update(column->getWeakHash32());
-    hash.update(shared_data->getWeakHash32());
-    return hash;
+    /// Like `updateHashWithValueRange`, this hashes the physical path layout: it does NOT guarantee
+    /// equal hashes for a logically equal object whose paths are split differently between dynamic
+    /// columns and `shared_data` across blocks; the in-memory scatter consumers only need fast
+    /// per-query partitioning.
+    ///
+    /// Build the finalized per-row object hash by chaining the sub-objects in the existing
+    /// typed paths → dynamic paths → shared data order. `shared_data` always exists, so the
+    /// buffer is always seeded (no empty-object special case needed).
+    auto computeFinalizedInto = [&](UInt32 * out)
+    {
+        bool first = true;
+        for (const auto & [_, column] : typed_paths)
+        {
+            column->computeHashInto(row_begin, row_end, out, first);
+            first = false;
+        }
+        for (const auto & [_, column] : dynamic_paths_ptrs)
+        {
+            column->computeHashInto(row_begin, row_end, out, first);
+            first = false;
+        }
+        shared_data->computeHashInto(row_begin, row_end, out, first);
+    };
+
+    if (initial)
+    {
+        computeFinalizedInto(hash_out);
+        return;
+    }
+
+    /// Non-initial: build the finalized object hash in a scratch buffer, then combine that single
+    /// value into the prior key columns' hash (rather than streaming sub-objects straight into
+    /// `hash_out`) so composition stays representation-independent. See IColumn::computeHashInto.
+    const size_t n = row_end - row_begin;
+    PaddedPODArray<UInt32> object_hash(n);
+    computeFinalizedInto(object_hash.data());
+    for (size_t i = 0; i < n; ++i)
+        hash_out[i] = combineWeakHash32(object_hash[i], hash_out[i]);
 }
 
 void ColumnObject::updateHashFast(SipHash & hash) const

@@ -5,7 +5,10 @@ from helpers.cluster import ClickHouseCluster
 from helpers.database_disk import get_database_disk_name, write_metadata
 
 from helpers.test_tools import TSV
-from .prometheus_test_utils import *
+from .prometheus_test_utils import (
+    convert_time_series_to_protobuf,
+    send_protobuf_to_remote_write,
+)
 
 
 cluster = ClickHouseCluster(__file__)
