@@ -42,8 +42,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.7",
         {
             {"use_streaming_marks_compression", false, true, "New setting to compress marks into in-memory representation one block at a time (streaming) instead of materializing the full plain marks array, reducing peak memory during marks loading for compact parts with many substreams."},
-        });
-        
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
         });
 

@@ -27,6 +27,7 @@
 #include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
