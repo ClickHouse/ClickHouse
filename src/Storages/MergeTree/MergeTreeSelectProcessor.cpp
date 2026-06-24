@@ -205,6 +205,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
             .remove_filter_column = row_level_filter->do_remove_column,
             .need_filter = true,
             .perform_alter_conversions = true,
+            .columns_overwritten_by_chain = {},
             .mutation_version = std::nullopt,
         };
 
@@ -233,6 +234,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
             .remove_filter_column = prewhere_info->remove_prewhere_column,
             .need_filter = prewhere_info->need_filter,
             .perform_alter_conversions = true,
+            .columns_overwritten_by_chain = {},
             .mutation_version = std::nullopt,
         };
 
@@ -269,14 +271,30 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
 
         if (reader_settings.use_query_condition_cache)
         {
-            String part_name
-                = data_part->isProjectionPart() ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name) : data_part->name;
-            chunk.getChunkInfos().add(std::make_shared<MarkRangesInfo>(
-                data_part->storage.getStorageID().uuid,
-                part_name,
-                data_part->index_granularity->getMarksCount(),
-                data_part->index_granularity->hasFinalMark(),
-                res.read_mark_ranges));
+            /// The attached marks let the downstream FilterTransform record WHERE-filtered marks
+            /// into the QueryConditionCache. Skip attaching them when on-fly mutations run ahead of
+            /// the filter, otherwise a mutation-filtered mark would poison the cache for a later
+            /// apply_mutations_on_fly = 0 query.
+            if (!current_task.appliesMutationsBeforePrewhere())
+            {
+                String part_name
+                    = data_part->isProjectionPart() ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name) : data_part->name;
+                chunk.getChunkInfos().add(std::make_shared<MarkRangesInfo>(
+                    data_part->storage.getStorageID().uuid,
+                    part_name,
+                    data_part->index_granularity->getMarksCount(),
+                    data_part->index_granularity->hasFinalMark(),
+                    res.read_mark_ranges));
+            }
+
+            /// Some rows survived PREWHERE, but individual granules within this batch may
+            /// still have been fully filtered out. Record those granules immediately so that
+            /// future queries can skip them without waiting for an entire batch to be zero.
+            if (prewhere_info && !res.unmatched_mark_ranges.empty()
+                && !current_task.readersChainCanSkipMarksBeforePrewhere()
+                && !current_task.appliesMutationsBeforePrewhere()
+                && !row_level_filter)
+                current_task.addPrewhereUnmatchedMarks(res.unmatched_mark_ranges);
         }
 
         return ChunkAndProgress{
@@ -284,7 +302,19 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
             .is_finished = false, .read_mark_ranges = std::move(res.read_mark_ranges)};
     }
 
-    if (reader_settings.use_query_condition_cache && prewhere_info)
+    /// Suppress PREWHERE attribution when a reader earlier in the chain (skip-index or projection-index)
+    /// can skip whole marks before PREWHERE evaluates them. In that case `res.read_mark_ranges` may
+    /// include marks that were filtered by the index, and recording them under the PREWHERE predicate's
+    /// hash would poison the QueryConditionCache: later queries that share the same PREWHERE predicate
+    /// hash would skip those marks even though the predicate alone matches their rows. See Issue #104781.
+    /// On-fly mutations and patch parts filter rows ahead of PREWHERE for the same reason. A row-level
+    /// security filter is also prepended before PREWHERE (getPrewhereActions), yet this write keys only
+    /// on the query PREWHERE hash, so a mark hidden by a row policy would be wrongly attributed to the
+    /// PREWHERE predicate and read by a later query without that policy.
+    if (reader_settings.use_query_condition_cache && prewhere_info
+        && !current_task.readersChainCanSkipMarksBeforePrewhere()
+        && !current_task.appliesMutationsBeforePrewhere()
+        && !row_level_filter)
         current_task.addPrewhereUnmatchedMarks(res.read_mark_ranges);
 
     return {Chunk(), res.num_read_rows, res.num_read_bytes, false, std::move(res.read_mark_ranges)};
@@ -361,8 +391,18 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         {
             if (!task || algorithm->needNewTask(*task))
             {
-                /// Update the query condition cache for filters in PREWHERE stage
-                if (reader_settings.use_query_condition_cache && task && prewhere_info)
+                /// Update the query condition cache for filters in PREWHERE stage.
+                /// Skip the write when a reader earlier in the chain (skip-index or projection-index)
+                /// could have filtered marks before PREWHERE saw them, to avoid attributing those
+                /// marks to the PREWHERE predicate hash. See Issue #104781.
+                /// On-fly mutations and patch parts filter rows ahead of PREWHERE for the same reason.
+                /// A row-level security filter is also prepended before PREWHERE, yet this write keys
+                /// only on the query PREWHERE hash, so a mark hidden by a row policy must not be attributed
+                /// to the PREWHERE predicate (a later query without the policy would skip rows it should see).
+                if (reader_settings.use_query_condition_cache && task && prewhere_info
+                    && !task->readersChainCanSkipMarksBeforePrewhere()
+                    && !task->appliesMutationsBeforePrewhere()
+                    && !row_level_filter)
                 {
                     for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
                     {

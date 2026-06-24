@@ -364,7 +364,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         IMergeTreeDataPart::Checksums projection_checksums;
         try
         {
-            bool noop;
+            bool noop = false;
             projection_checksums = checkDataPart(
                 projection, *data_part_storage.getProjection(projection_file),
                 projection->getColumns(), projection->getType(),
@@ -480,15 +480,9 @@ IMergeTreeDataPart::Checksums checkDataPart(
         }
 
         ReadSettings read_settings;
-        read_settings.read_through_distributed_cache = false;
-        read_settings.enable_filesystem_cache = false;
-        read_settings.enable_filesystem_cache_log = false;
-        read_settings.enable_filesystem_read_prefetches_log = false;
-        read_settings.page_cache = nullptr;
-        read_settings.remote_fs_prefetch = false;
-        read_settings.page_cache_inject_eviction = false;
-        read_settings.use_page_cache_for_disks_without_file_cache = false;
-        read_settings.local_fs_method = LocalFSReadMethod::pread;
+        read_settings.disableCaches();
+        read_settings.remote_fs_settings.prefetch = false;
+        read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
 
         try
         {

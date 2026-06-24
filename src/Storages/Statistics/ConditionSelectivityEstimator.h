@@ -34,6 +34,7 @@ class ConditionSelectivityEstimator : public WithContext
 {
     struct ColumnEstimator;
     using ColumnEstimators = std::unordered_map<String, ColumnEstimator>;
+
     /// Selectivity of a SQL boolean predicate under three-valued logic (TRUE / NULL / FALSE).
     /// `true_sel` is the fraction of rows where the predicate is TRUE (the usual "selectivity").
     /// `null_sel` is the fraction of rows where the predicate is NULL (input column is NULL).
@@ -51,7 +52,6 @@ class ConditionSelectivityEstimator : public WithContext
         Selectivity applyAnd(const Selectivity & other) const;
     };
 
-
     friend class ConditionSelectivityEstimatorBuilder;
 public:
     explicit ConditionSelectivityEstimator(ContextPtr context_) : WithContext(context_) {}
@@ -59,6 +59,7 @@ public:
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const;
+    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
     RelationProfile estimateRelationProfile() const;
 
     bool isStale(const std::vector<DataPartPtr> & data_parts) const;

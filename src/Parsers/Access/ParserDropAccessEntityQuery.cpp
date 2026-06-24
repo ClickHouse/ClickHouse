@@ -77,7 +77,7 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     if (!ParserKeyword{Keyword::DROP}.ignore(pos, expected))
         return false;
 
-    AccessEntityType type;
+    AccessEntityType type = {};
     if (!parseEntityType(pos, expected, type))
         return false;
 

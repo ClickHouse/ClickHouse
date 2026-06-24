@@ -13,21 +13,8 @@ endif()
 
 if (ENABLE_LLVM_LIBC_MATH)
     link_directories("${CMAKE_BINARY_DIR}/contrib/libllvmlibc-cmake")
-
-    if (ARCH_AMD64)
-        if (X86_ARCH_LEVEL VERSION_LESS 2)
-            # Compat mode: single library, no dispatch
-            target_link_libraries(global-libs INTERFACE libllvmlibc)
-            set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
-        else()
-            # Dispatch mode: v2/v3 variants with runtime CPU detection
-            target_link_libraries(global-libs INTERFACE llvmlibc_dispatch libllvmlibc_x86_64_v2 libllvmlibc_x86_64_v3)
-            set (DEFAULT_LIBS "${DEFAULT_LIBS} -lllvmlibc_dispatch -llibllvmlibc_x86_64_v2 -llibllvmlibc_x86_64_v3")
-        endif()
-    elseif (ARCH_AARCH64)
-        target_link_libraries(global-libs INTERFACE libllvmlibc)
-        set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
-    endif()
+    target_link_libraries(global-libs INTERFACE libllvmlibc)
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
 endif()
 
 if (OS_ANDROID)

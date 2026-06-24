@@ -4,6 +4,7 @@
 #include <Core/Defines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/DatabaseFactory.h>
@@ -363,7 +364,7 @@ void DatabaseOrdinary::loadTableFromMetadata(
     const ASTPtr & ast,
     LoadingStrictnessLevel mode)
 {
-    assert(name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name));
+    chassert(name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name));
     const auto & query = ast->as<const ASTCreateQuery &>();
 
     if (shouldLazyLoad(query, mode))
@@ -424,6 +425,11 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, LoadingStric
 
     if (query.is_ordinary_view || query.is_materialized_view || query.is_dictionary
         || query.isParameterizedView() || query.is_window_view)
+        return false;
+
+    /// A lazy proxy would hide the TimeSeries type from the cross-database rename guard, so its
+    /// inner tables could be orphaned by a cross-database move. Load it eagerly, as for views.
+    if (query.is_time_series_table)
         return false;
 
     /// Already handled by `StorageTableFunctionProxy`.
@@ -767,6 +773,7 @@ void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_
     }
 }
 
+void registerDatabaseOrdinary(DatabaseFactory & factory);
 void registerDatabaseOrdinary(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -794,6 +801,9 @@ void registerDatabaseOrdinary(DatabaseFactory & factory)
 
         return make_shared<DatabaseOrdinary>(args.database_name, args.metadata_path, args.context, database_metadata_disk_settings);
     };
-    factory.registerDatabase("Ordinary", create_fn, /*features=*/{.supports_settings = true});
+    factory.registerDatabase("Ordinary", create_fn, /*features=*/{.supports_settings = true}, Documentation{
+        .description = "The legacy, deprecated default database engine. It stores each table in its own metadata file and has been superseded by the `Atomic` engine.",
+        .syntax = "ENGINE = Ordinary",
+        .related = {"Atomic"}});
 }
 }
