@@ -42,11 +42,14 @@ static constexpr UInt64 MAX_RUNTIME_BLOOM_FILTER_BYTES = 16 * 1024 * 1024;
 static constexpr UInt64 MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS = 10;
 static constexpr UInt64 DEFAULT_RUNTIME_BLOOM_FILTER_BYTES = 512 * 1024;
 static constexpr UInt64 DEFAULT_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS = 3;
-static constexpr Float64 RUNTIME_BLOOM_FILTER_FALSE_POSITIVE_RATE = 0.03;
+/// Max size up to which the bloom filter grows before the false positive rate starts degrading
+static constexpr UInt64 MAX_STATS_SIZED_BLOOM_FILTER_BYTES = 4 * 1024 * 1024;
+/// At 3 hash functions keeps a 50% fill rate
+static constexpr Float64 RUNTIME_BLOOM_FILTER_FALSE_POSITIVE_RATE = 0.125;
 
-/// Compute the needed bytes for a bloom filter holding `num_distinct_keys` keys to achieve the target false positive rate using
+/// Grow the bloom filter bytes to achieve the target false positive rate for `num_distinct_keys` keys using
 /// `num_hash_functions` hash functions: m = -k * n / ln(1 - p^(1/k)) bits.
-static UInt64 computeBloomFilterBytes(std::optional<UInt64> num_distinct_keys, UInt64 num_hash_functions, UInt64 default_bloom_filter_bytes)
+static UInt64 growBloomFilterBytes(std::optional<UInt64> num_distinct_keys, UInt64 num_hash_functions, UInt64 default_bloom_filter_bytes)
 {
     if (!num_distinct_keys)
         return default_bloom_filter_bytes;
@@ -54,8 +57,9 @@ static UInt64 computeBloomFilterBytes(std::optional<UInt64> num_distinct_keys, U
     const double k = static_cast<double>(num_hash_functions);
     const double n = static_cast<double>(*num_distinct_keys);
     const double bits = -k * n / std::log1p(-std::pow(RUNTIME_BLOOM_FILTER_FALSE_POSITIVE_RATE, 1.0 / k));
-    const UInt64 ideal_bloom_filter_size = static_cast<UInt64>(std::ceil(bits / 8.0));
-    return std::min(ideal_bloom_filter_size, MAX_RUNTIME_BLOOM_FILTER_BYTES);
+    const UInt64 ideal_bloom_filter_bytes = static_cast<UInt64>(std::ceil(bits / 8.0));
+    /// Stats are only used to grow the filter, not to shrink it
+    return std::max(std::min(ideal_bloom_filter_bytes, MAX_STATS_SIZED_BLOOM_FILTER_BYTES), default_bloom_filter_bytes);
 }
 
 
@@ -131,7 +135,7 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
     if (filter_key.empty())
         return;
 
-    const UInt64 bloom_filter_bytes = computeBloomFilterBytes(distinct_keys_hint, bloom_filter_hash_functions, default_bloom_filter_bytes);
+    const UInt64 bloom_filter_bytes = growBloomFilterBytes(distinct_keys_hint, bloom_filter_hash_functions, default_bloom_filter_bytes);
 
     auto streams = pipeline.getNumStreams();
     auto query_context = CurrentThread::get().tryGetQueryContext();
