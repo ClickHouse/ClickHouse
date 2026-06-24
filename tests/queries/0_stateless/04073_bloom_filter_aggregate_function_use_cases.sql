@@ -4,6 +4,14 @@
 WITH (SELECT groupBloomFilterState(1000)(number) FROM numbers(100)) AS bf
 SELECT bloomFilterContains(bf, toUInt64(42)) AS result;
 
+-- Const String bloom state from WITH clause
+WITH (SELECT groupBloomFilterState(1000)(toString(number)) FROM numbers(100)) AS bf
+SELECT bloomFilterContains(bf, '42') AS result;
+
+-- Const DateTime64 bloom state from WITH clause
+WITH (SELECT groupBloomFilterState(1000)(toDateTime64('2023-01-01 12:00:00.123', 3)) FROM numbers(1)) AS bf
+SELECT bloomFilterContains(bf, toDateTime64('2023-01-01 12:00:00.123', 3)) AS result;
+
 -- Bloom is column, value is column (per-row check)
 SELECT bloomFilterContains(bf, val) AS result
 FROM (
@@ -21,7 +29,7 @@ WITH (
 SELECT count() AS new_values_count
 FROM numbers(200)
 WHERE number >= 100
-  AND NOT bloomFilterContains(old_bloom, number);
+  AND NOT (bloomFilterContains(old_bloom, number));
 
 -- All 100 values from 100..199 must be found as new (no false negatives)
 WITH (
@@ -31,7 +39,7 @@ WITH (
 SELECT count() = 100 AS all_new_values_found
 FROM numbers(200)
 WHERE number >= 100
-  AND NOT bloomFilterContains(old_bloom, number);
+  AND NOT (bloomFilterContains(old_bloom, number));
 
 -- No values from 0..99 must appear as new (no false negatives)
 WITH (
@@ -40,4 +48,14 @@ WITH (
 ) AS old_bloom
 SELECT count() = 0 AS no_false_negatives
 FROM numbers(100)
-WHERE NOT bloomFilterContains(old_bloom, number);
+WHERE NOT (bloomFilterContains(old_bloom, number));
+
+-- Bloom states built per group and then probed per group.
+SELECT key, bloomFilterContains(bf, toUInt64(key + 4)) AS result
+FROM
+(
+    SELECT number % 2 AS key, groupBloomFilterState(1000)(number) AS bf
+    FROM numbers(10)
+    GROUP BY key
+)
+ORDER BY key;

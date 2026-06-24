@@ -36,6 +36,22 @@ FROM numbers(100);
 SELECT bloomFilterContains(groupBloomFilterState(1000)(toUInt16(number)), toUInt16(42)) AS result
 FROM numbers(100);
 
+-- UInt32: value present
+SELECT bloomFilterContains(groupBloomFilterState(4096, 5)(toUInt32(number)), toUInt32(42)) AS result
+FROM numbers(100);
+
+-- UInt32: value absent
+SELECT bloomFilterContains(groupBloomFilterState(4096, 5)(toUInt32(number)), toUInt32(100000)) AS result
+FROM numbers(100);
+
+-- Int16: value present
+SELECT bloomFilterContains(groupBloomFilterState(4096, 5)(toInt16(number - 50)), toInt16(-10)) AS result
+FROM numbers(100);
+
+-- Int16: value absent
+SELECT bloomFilterContains(groupBloomFilterState(4096, 5)(toInt16(number - 50)), toInt16(1000)) AS result
+FROM numbers(100);
+
 -- Int32
 SELECT bloomFilterContains(groupBloomFilterState(1000)(toInt32(number - 50)), toInt32(-10)) AS result
 FROM numbers(100);
