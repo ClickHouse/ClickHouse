@@ -1,0 +1,6 @@
+--- rows before OPTIMIZE (expect 2: x, z) ---
+2
+--- OPTIMIZE must be rejected (expect NOT_IMPLEMENTED) ---
+NOT_IMPLEMENTED
+--- rows after OPTIMIZE (must still be 2; partition 2 not resurrected) ---
+2
