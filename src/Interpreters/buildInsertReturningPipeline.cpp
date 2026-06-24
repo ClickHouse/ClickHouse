@@ -82,28 +82,34 @@ namespace
             "use_concurrency_control",
         };
 
-        /// Walk every SELECT branch in the UNION tree: each branch's SETTINGS are applied by
-        /// InterpreterSelectQuery::initSettings / the analyzer QueryTreeBuilder, so a restriction
-        /// limited to only the last branch can be bypassed via earlier UNION branches.
-        const auto * select_with_union = returning_select->as<ASTSelectWithUnionQuery>();
-        if (!select_with_union || !select_with_union->list_of_selects)
-            return;
-
-        for (const auto & child : select_with_union->list_of_selects->children)
+        /// Walk every SELECT branch in the UNION tree recursively. Each branch's SETTINGS are
+        /// applied by InterpreterSelectQuery::initSettings / the analyzer QueryTreeBuilder.
+        /// Parenthesised sub-unions produce nested ASTSelectWithUnionQuery children, so the scan
+        /// must recurse to avoid bypassing this check via a nested union branch.
+        std::function<void(const ASTPtr &)> walk = [&](const ASTPtr & node)
         {
-            const auto * select = child->as<ASTSelectQuery>();
-            if (!select || !select->settings())
-                continue;
-
-            for (const auto & change : select->settings()->as<ASTSetQuery &>().changes)
+            if (const auto * union_node = node->as<ASTSelectWithUnionQuery>())
             {
-                if (unsupported_settings.contains(change.name))
-                    throw Exception(
-                        ErrorCodes::NOT_IMPLEMENTED,
-                        "Setting '{}' is not supported in the SETTINGS clause of an INSERT ... RETURNING subquery",
-                        change.name);
+                if (union_node->list_of_selects)
+                    for (const auto & child : union_node->list_of_selects->children)
+                        walk(child);
             }
-        }
+            else if (const auto * select = node->as<ASTSelectQuery>())
+            {
+                if (!select->settings())
+                    return;
+                for (const auto & change : select->settings()->as<ASTSetQuery &>().changes)
+                {
+                    if (unsupported_settings.contains(change.name))
+                        throw Exception(
+                            ErrorCodes::NOT_IMPLEMENTED,
+                            "Setting '{}' is not supported in the SETTINGS clause of an INSERT ... RETURNING subquery",
+                            change.name);
+                }
+            }
+        };
+
+        walk(returning_select);
     }
 }
 

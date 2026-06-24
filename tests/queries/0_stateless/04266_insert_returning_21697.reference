@@ -44,3 +44,4 @@ returning union_default_mode
 1
 1
 async insert rejection
+nested union settings rejection

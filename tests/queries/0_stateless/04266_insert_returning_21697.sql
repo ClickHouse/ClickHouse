@@ -139,5 +139,9 @@ SET async_insert = 1;
 INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 AS x) VALUES (4, 'async'); -- { serverError NOT_IMPLEMENTED }
 SET async_insert = 0;
 
+-- Rejected setting inside a nested (parenthesised) UNION branch must also be caught
+SELECT 'nested union settings rejection';
+INSERT INTO t_insert_returning (id, name) RETURNING ((SELECT 1 SETTINGS max_memory_usage=1000000) UNION ALL SELECT 2) VALUES (200, 'nested'); -- { serverError NOT_IMPLEMENTED }
+
 DROP TABLE t_insert_returning_other;
 DROP TABLE t_insert_returning;
