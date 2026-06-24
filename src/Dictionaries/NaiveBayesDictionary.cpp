@@ -444,12 +444,18 @@ void registerDictionaryNaiveBayes(DictionaryFactory & factory)
         if (!config.has(layout_prefix + ".mode"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary layout requires 'mode' parameter (byte/codepoint/token)");
 
+        /// Query-time tokenization pads the input with (n - 1) boundary tokens at each end and scans a window of
+        /// n units per n-gram, so one classification costs O(n^2) time and O(n) memory no matter how short the
+        /// input is. Real n-gram sizes are tiny, so cap n well above any realistic use to keep a misconfigured
+        /// model from making every query allocate enormous buffers or run effectively forever.
+        static constexpr UInt64 max_ngram_size = 1024;
         const UInt64 n_raw = config.getUInt64(layout_prefix + ".n");
-        if (n_raw == 0 || n_raw > std::numeric_limits<UInt32>::max())
+        if (n_raw == 0 || n_raw > max_ngram_size)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "NaiveBayes dictionary: n-gram size 'n' must be between 1 and {}, got {}",
-                std::numeric_limits<UInt32>::max(), n_raw);
+                max_ngram_size,
+                n_raw);
         const auto n = static_cast<UInt32>(n_raw);
 
         const String mode = config.getString(layout_prefix + ".mode");
