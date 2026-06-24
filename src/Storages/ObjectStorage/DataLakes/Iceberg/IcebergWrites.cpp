@@ -546,6 +546,65 @@ void generateManifestFile(
     writer.close();
 }
 
+avro::GenericDatum copyManifestListEntry(
+    const avro::GenericRecord & old_entry,
+    const avro::ValidSchema & schema,
+    Int32 version,
+    const String & manifest_list_path)
+{
+    /// Re-emit an entry read from a (possibly externally-written) manifest list into a fresh datum of
+    /// `schema`. We must not write the source datum directly: external tables can use a compatible but
+    /// different Avro schema (e.g. `added_snapshot_id` as `["null","long"]` instead of `long`, see
+    /// https://github.com/apache/iceberg/pull/11626), and writing it into a writer compiled with our
+    /// schema would fail or emit an invalid manifest list. Copying field by field normalizes it.
+    avro::GenericDatum new_datum(schema.root());
+    avro::GenericRecord & new_entry = new_datum.value<avro::GenericRecord>();
+
+    new_entry.field(Iceberg::f_manifest_path) = old_entry.field(Iceberg::f_manifest_path);
+    new_entry.field(Iceberg::f_manifest_length) = old_entry.field(Iceberg::f_manifest_length);
+    new_entry.field(Iceberg::f_partition_spec_id) = old_entry.field(Iceberg::f_partition_spec_id);
+
+    if (old_entry.hasField(Iceberg::f_added_snapshot_id))
+    {
+        const avro::GenericDatum & old_added_snapshot_id_entry = old_entry.field(Iceberg::f_added_snapshot_id);
+        if (old_added_snapshot_id_entry.isUnion() && old_added_snapshot_id_entry.unionBranch() == 0)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Manifest list {} has null value for field '{}', but it is required",
+                manifest_list_path,
+                Iceberg::f_added_snapshot_id);
+        new_entry.field(Iceberg::f_added_snapshot_id) = old_added_snapshot_id_entry.value<Int64>();
+    }
+    else
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Manifest list {} has null value for field '{}', but it is required",
+            manifest_list_path,
+            Iceberg::f_added_snapshot_id);
+
+    auto add_field_to_datum = [&](const String & field)
+    {
+        if (old_entry.hasField(field))
+            new_entry.field(field) = old_entry.field(field);
+    };
+    add_field_to_datum(Iceberg::f_added_files_count);
+    add_field_to_datum(Iceberg::f_existing_files_count);
+    add_field_to_datum(Iceberg::f_deleted_files_count);
+    add_field_to_datum(Iceberg::f_partitions);
+    add_field_to_datum(Iceberg::f_added_rows_count);
+    add_field_to_datum(Iceberg::f_existing_rows_count);
+    add_field_to_datum(Iceberg::f_deleted_rows_count);
+    add_field_to_datum(Iceberg::f_key_metadata);
+    if (version > 1)
+    {
+        add_field_to_datum(Iceberg::f_content);
+        add_field_to_datum(Iceberg::f_sequence_number);
+        add_field_to_datum(Iceberg::f_min_sequence_number);
+    }
+
+    return new_datum;
+}
+
 void generateManifestList(
     const Iceberg::IcebergPathResolver & path_resolver,
     Poco::JSON::Object::Ptr metadata,
@@ -642,60 +701,8 @@ void generateManifestList(
                 forEachAvroEntry(resolved_manifest_list_path, object_storage, context, "IcebergWrites",
                     [&](const avro::GenericDatum & datum)
                     {
-                        const avro::GenericRecord & old_entry = datum.value<avro::GenericRecord>();
-                        avro::GenericDatum new_datum(schema.root());
-                        avro::GenericRecord & new_entry = new_datum.value<avro::GenericRecord>();
-                        new_entry.field(f_manifest_path) = old_entry.field(Iceberg::f_manifest_path);
-                        new_entry.field(f_manifest_length) = old_entry.field(Iceberg::f_manifest_length);
-                        new_entry.field(f_partition_spec_id) = old_entry.field(Iceberg::f_partition_spec_id);
-                        /// In some version, iceberg-spark has changed the type of field `f_added_snapshot_id`
-                        /// from 'null, long' to 'long'. See https://github.com/apache/iceberg/pull/11626.
-                        /// Just in case that we read the old type 'null, long', we do this conversion: read every field
-                        /// and write it again with new, correct schema.
-                        if (old_entry.hasField(Iceberg::f_added_snapshot_id))
-                        {
-                            const avro::GenericDatum & old_added_snapshot_id_entry = old_entry.field(Iceberg::f_added_snapshot_id);
-                            if (old_added_snapshot_id_entry.isUnion())
-                            {
-                                if (old_added_snapshot_id_entry.unionBranch() == 0) /// it means add_snapshot_id is null
-                                {
-                                    /// This only happens when we read data written by a old version of iceberg, which violates the spec of iceberg.
-                                    throw Exception(
-                                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                                        "Manifest list {} has null value for field '{}', but it is required",
-                                        resolved_manifest_list_path,
-                                        Iceberg::f_added_snapshot_id);
-                                }
-                            }
-                            new_entry.field(f_added_snapshot_id) = old_added_snapshot_id_entry.value<Int64>();
-                        }
-                        else
-                            /// This only happens when we read data written by a old version of iceberg, which violates the spec of iceberg.
-                            throw Exception(
-                                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                                "Manifest list {} has null value for field '{}', but it is required",
-                                resolved_manifest_list_path,
-                                Iceberg::f_added_snapshot_id);
-                        auto add_field_to_datum = [&](const String & field)
-                        {
-                            if (old_entry.hasField(field))
-                                new_entry.field(field) = old_entry.field(field);
-                        };
-                        add_field_to_datum(Iceberg::f_added_files_count);
-                        add_field_to_datum(Iceberg::f_existing_files_count);
-                        add_field_to_datum(Iceberg::f_deleted_files_count);
-                        add_field_to_datum(Iceberg::f_partitions);
-                        add_field_to_datum(Iceberg::f_added_rows_count);
-                        add_field_to_datum(Iceberg::f_existing_rows_count);
-                        add_field_to_datum(Iceberg::f_deleted_rows_count);
-                        add_field_to_datum(Iceberg::f_key_metadata);
-                        if (version == 2)
-                        {
-                            add_field_to_datum(Iceberg::f_content);
-                            add_field_to_datum(Iceberg::f_sequence_number);
-                            add_field_to_datum(Iceberg::f_min_sequence_number);
-                        }
-                        writer.write(new_datum);
+                        writer.write(copyManifestListEntry(
+                            datum.value<avro::GenericRecord>(), schema, version, resolved_manifest_list_path));
                     });
                 break;
             }

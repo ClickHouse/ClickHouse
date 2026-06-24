@@ -650,6 +650,7 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
     {
         auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(*buf);
         auto schema = compileAvroSchema(manifest_list_v2_schema);
+        const Int32 version = state.metadata_object->getValue<Int32>(Iceberg::f_format_version);
 
         avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
 
@@ -691,7 +692,7 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
                 const auto & manifest_path     = checkAndGetValue<std::string>(old_manifest_path);
 
                 if (!skip_manifest_paths.contains(manifest_path))
-                    writer.write(datum);
+                    writer.write(copyManifestListEntry(old_entry, schema, version, parent_manifest_list_path));
             });
     }
 
