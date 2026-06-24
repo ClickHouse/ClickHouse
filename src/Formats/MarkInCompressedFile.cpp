@@ -203,6 +203,14 @@ std::shared_ptr<MarksInCompressedFile> MarksInCompressedFile::Builder::finish()
     if (packed.size() < required_length)
         packed.resize_fill(required_length);
 
+    /// Shrink packed to exact size so approximateMemoryUsage reports the true
+    /// compressed size without power-of-two slack from incremental growth.
+    PODArray<UInt64, 4096, JemallocCacheAllocator> exact_packed;
+    exact_packed.reserve_exact(required_length);
+    exact_packed.resize_fill(required_length);
+    memcpy(exact_packed.data(), packed.data(), required_length * sizeof(UInt64));
+    packed = std::move(exact_packed);
+
     return std::shared_ptr<MarksInCompressedFile>(
         new MarksInCompressedFile(total_marks, std::move(blocks), std::move(packed)));
 }
