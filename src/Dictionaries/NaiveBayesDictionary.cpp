@@ -14,6 +14,7 @@
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 
+#include <charconv>
 #include <cmath>
 #include <limits>
 #include <unordered_set>
@@ -44,7 +45,6 @@ String trim(std::string_view s)
 }
 
 /// Parses an explicit priors specification of the form "0=0.6,1=0.4" into a map from class to probability.
-/// Whitespace around tokens is ignored, and any malformed input raises a bad arguments error.
 std::map<UInt32, double> parseExplicitPriors(const String & priors_str)
 {
     if (priors_str.empty())
@@ -53,8 +53,7 @@ std::map<UInt32, double> parseExplicitPriors(const String & priors_str)
     std::map<UInt32, double> priors;
     double total = 0.0;
 
-    /// Iterate over every comma-separated entry, including the one after a trailing comma (which is empty
-    /// and rejected below), so that a malformed `0=0.5,1=0.5,` is not silently accepted.
+    /// Iterate over every comma-separated entry from input like `0=0.5,1=0.5`.
     size_t pos = 0;
     while (true)
     {
@@ -64,26 +63,54 @@ std::map<UInt32, double> parseExplicitPriors(const String & priors_str)
 
         const size_t eq = entry.find('=');
         if (eq == std::string_view::npos)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary: invalid priors entry '{}', expected 'class=probability'", String(entry));
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary: invalid priors entry '{}', expected 'class=probability'", String(entry));
 
         const String class_str = trim(entry.substr(0, eq));
         const String prob_str = trim(entry.substr(eq + 1));
 
-        UInt32 class_id = 0;
         double prob = 0.0;
+
+        /// Parse the class id directly into UInt32 with overflow checking. parse<>/readIntText silently wraps a
+        /// value past the type's range onto a different valid class, so use from_chars, which reports overflow
+        /// and rejects any non-digit input. The model represents class ids as 32-bit values.
+        UInt32 class_id = 0;
+        const char * const class_begin = class_str.data();
+        const char * const class_end = class_begin + class_str.size();
+        const auto [class_ptr, class_ec] = std::from_chars(class_begin, class_end, class_id);
+        if (class_ec == std::errc::result_out_of_range)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "NaiveBayes dictionary: invalid priors entry '{}': the class id '{}' exceeds the supported maximum of {}",
+                String(entry),
+                class_str,
+                std::numeric_limits<UInt32>::max());
+        if (class_ec != std::errc{} || class_ptr != class_end)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "NaiveBayes dictionary: invalid priors entry '{}': the class id '{}' is not a non-negative integer",
+                String(entry),
+                class_str);
+
         try
         {
-            class_id = parse<UInt32>(class_str);
             prob = parse<Float64>(prob_str);
         }
         catch (const Exception &)
         {
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary: invalid priors entry '{}', could not parse the class id or probability", String(entry));
+                ErrorCodes::BAD_ARGUMENTS,
+                "NaiveBayes dictionary: invalid priors entry '{}': the probability '{}' is not a number",
+                String(entry),
+                prob_str);
         }
 
         if (!std::isfinite(prob) || prob <= 0.0 || prob > 1.0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary: the prior probability for class {} must be a finite number in (0, 1], got {}", class_id, prob);
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "NaiveBayes dictionary: the prior probability for class {} must be a finite number in (0, 1], got {}",
+                class_id,
+                prob);
 
         if (!priors.emplace(class_id, prob).second)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary: duplicate prior for class {}", class_id);
