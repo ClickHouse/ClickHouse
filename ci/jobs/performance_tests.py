@@ -1028,6 +1028,16 @@ def main():
             f"cp -r ./tests/config/top_level_domains {perf_wd}",
             f"rm {perf_right_config}/config.d/storage_conf_local.xml",  # Avoid conflicts on the filesystem cache dirs
             f"chmod +x {ch_path}/clickhouse",
+            # The reference build (left) is downloaded as a bare `clickhouse`
+            # binary, but the patched build (right) was only symlinked under its
+            # subcommand names below. Shell-script perf queries
+            # (<query type="shell">) invoke the multi-call binary directly via
+            # $CLICKHOUSE_BINARY / $CLICKHOUSE_LOCAL / $CLICKHOUSE_CLIENT, which
+            # compare.sh builds from `right/clickhouse`; without this symlink
+            # `right/clickhouse local` fails with "No such file or directory" and
+            # the query is dropped from the comparison. Mirror the reference
+            # layout so `right/clickhouse` exists too.
+            f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse",
             f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse-server",
             f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse-local",
             f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse-client",
