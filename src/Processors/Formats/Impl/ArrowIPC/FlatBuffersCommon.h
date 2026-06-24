@@ -16,16 +16,31 @@
 /// CMake interface target, so `<generated/Message_generated.h>` resolves here and the headers'
 /// own relative includes (e.g. `"Schema_generated.h"`) resolve next to them.
 
+/// The FlatBuffers runtime stays at global scope (`::flatbuffers`): it is included first so the
+/// re-includes inside the generated headers below are guarded no-ops, and the generated headers
+/// reference it as `::flatbuffers` regardless.
 #include <flatbuffers/flatbuffers.h>
+
+/// Apache Arrow's generated metadata headers declare everything in `org::apache::arrow::flatbuf` and
+/// define inline accessor/verifier functions as weak symbols. The Apache Arrow C++ library (linked
+/// into the same binary for the library-based formats and Arrow Flight) defines the exact same
+/// symbols. Compiling them at their canonical scope here would let the linker select our copies for
+/// Arrow's own code paths. Wrapping the generated headers in a private namespace gives our copies
+/// distinct mangled names, so they cannot interpose on Arrow's. Only the generated layer is wrapped;
+/// the `::flatbuffers` runtime it calls is global (and its scalar reads are inlined into each side's
+/// own functions, so nothing is shared across the boundary).
+namespace DB::ArrowIPC::arrow_fb
+{
 #include <generated/Message_generated.h>
 #include <generated/Schema_generated.h>
 #include <generated/File_generated.h>
+}
 
 namespace DB::ArrowIPC
 {
 
 /// Short alias for the generated FlatBuffers namespace used throughout the native implementation.
-namespace flatbuf = org::apache::arrow::flatbuf;
+namespace flatbuf = arrow_fb::org::apache::arrow::flatbuf;
 
 }
 
