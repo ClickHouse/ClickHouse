@@ -44,6 +44,8 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
+#include <Storages/MaterializedView/RefreshSet.h>
+#include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -2268,6 +2270,26 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
         if (mode <= LoadingStrictnessLevel::CREATE)
             database->checkTableNameLength(table_to_replace_name);
+    }
+
+    /// A non-APPEND refreshable materialized view exclusively owns its target table. The replacement is
+    /// built while the view being replaced still owns it, so reject only when a different view owns it.
+    if (create.is_materialized_view)
+    {
+        auto target_table_id = create.getTargetTableID(ViewTarget::To);
+        if (!target_table_id.empty())
+        {
+            if (target_table_id.database_name.empty())
+                target_table_id.database_name = create.getDatabase();
+            if (auto task = getContext()->getRefreshSet().tryGetTaskForInnerTable(target_table_id))
+            {
+                auto owner_view_id = task->getInfo().view_id;
+                if (owner_view_id != StorageID{create.getDatabase(), table_to_replace_name})
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Table {} is already a target of another refreshable materialized view: {}",
+                        target_table_id.getFullTableName(), owner_view_id.getFullTableName());
+            }
+        }
     }
 
     {
