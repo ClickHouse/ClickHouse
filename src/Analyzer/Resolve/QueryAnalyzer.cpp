@@ -3349,11 +3349,6 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
                             ctes_in_resolve_process.erase(resolved_identifier_node);
 
-                            /// A MATERIALIZED CTE used as the right-hand side of `IN` reaches this path.
-                            /// It materializes once and cannot depend on outer-scope columns, so its body
-                            /// cannot be a correlated subquery — mirror the same check the join-tree
-                            /// resolution path performs, otherwise we abort the server with a
-                            /// "Column ... does not have valid source node" LOGICAL_ERROR (04322).
                             const bool mat_subquery_is_correlated = mat_subquery->as<QueryNode>()
                                 ? mat_subquery->as<QueryNode>()->isCorrelated()
                                 : mat_subquery->as<UnionNode>()->isCorrelated();
