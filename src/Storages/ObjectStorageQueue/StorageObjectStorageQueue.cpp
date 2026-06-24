@@ -10,6 +10,7 @@
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Databases/DatabasesCommon.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -1386,6 +1387,10 @@ void StorageObjectStorageQueue::alter(
         /// settings_changes will be cloned.
         StorageInMemoryMetadata new_metadata(old_metadata);
         alter_commands.apply(new_metadata, local_context);
+
+        /// Check that the resulting metadata does not exceed max_query_size before mutating any state.
+        checkMetadataDoesNotExceedMaxQuerySize(table_id, new_metadata, local_context);
+
         auto & new_settings = new_metadata.settings_changes->as<ASTSetQuery &>().changes;
 
         if (old_settings)
