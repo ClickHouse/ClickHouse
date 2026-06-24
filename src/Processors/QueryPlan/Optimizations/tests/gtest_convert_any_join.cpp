@@ -85,19 +85,17 @@ ActionsDAG makePreActionsDagWithNotReadySetFunction(const FunctionOverloadResolv
 {
     ActionsDAG dag;
 
-    ColumnWithTypeAndName lhs_col;
-    lhs_col.name = "lhs";
-    lhs_col.type = std::make_shared<DataTypeUInt32>();
-    lhs_col.column = ColumnConst::create(ColumnUInt32::create(1, 1), 1);
-    const auto & lhs_node = dag.addColumn(lhs_col);
+    const auto & lhs_node = dag.addColumn(
+        ColumnConst::create(ColumnUInt32::create(1, 1), 0),
+        std::make_shared<DataTypeUInt32>(),
+        "lhs");
 
-    ColumnWithTypeAndName set_column;
-    set_column.name = set_column_name;
-    set_column.type = std::make_shared<DataTypeSet>();
-    set_column.column = ColumnSet::create(
-        1,
-        std::make_shared<MockNotReadyFutureSet>(DataTypes{std::make_shared<DataTypeUInt32>()}));
-    const auto & set_node = dag.addColumn(set_column);
+    const auto & set_node = dag.addColumn(
+        ColumnConst::create(
+            ColumnSet::create(1, std::make_shared<MockNotReadyFutureSet>(DataTypes{std::make_shared<DataTypeUInt32>()})),
+            0),
+        std::make_shared<DataTypeSet>(),
+        set_column_name);
 
     ActionsDAG::NodeRawConstPtrs children = {&lhs_node, &set_node};
     const auto & flag_node = dag.addFunction(function, children, "flag");
