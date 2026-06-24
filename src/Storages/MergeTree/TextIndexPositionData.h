@@ -112,6 +112,7 @@ public:
 
     size_t size() const { return entries.size(); }
     bool empty() const { return entries.empty(); }
+    size_t allocatedBytes() const { return entries.capacity() * sizeof(RoaringishEntry); }
     std::vector<RoaringishEntry> & getEntries() { return entries; }
     const std::vector<RoaringishEntry> & getEntries() const { return entries; }
 
