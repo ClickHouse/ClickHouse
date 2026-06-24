@@ -402,4 +402,3 @@
 [submodule "contrib/simdutf"]
 	path = contrib/simdutf
 	url = https://github.com/ClickHouse/simdutf
-	branch = master
