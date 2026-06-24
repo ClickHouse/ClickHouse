@@ -7,10 +7,12 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/ConcurrentHashJoin.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
@@ -953,14 +955,28 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
         for (const auto & hash_join : hash_joins)
             global_total_rows += hash_join->buffered_rows;
 
+        /// The replay below pushes a slot's entire buffered right side through one pool task. The old
+        /// streaming build inserted block-by-block across separate processor work calls, so it was
+        /// interruptible between blocks; here we must poll the query status ourselves, otherwise a
+        /// large cold build would reserve and replay to completion before `KILL QUERY` (or an expired
+        /// `max_execution_time`) is observed. `checkTimeLimit` throws on kill/timeout and the exception
+        /// is re-raised from `pool->wait()` below; under `timeout_overflow_mode = 'break'` it just
+        /// returns and the build completes normally (a half-replayed map would be incorrect).
+        QueryStatusPtr query_status;
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            query_status = query_context->getProcessListElement();
+
         for (size_t i = 0; i < slots; ++i)
         {
             pool->scheduleOrThrow(
-                [&, i, thread_group = CurrentThread::getGroup()]()
+                [&, i, query_status, thread_group = CurrentThread::getGroup()]()
                 {
                     ThreadGroupSwitcher switcher(thread_group, ThreadName::CONCURRENT_JOIN);
 
                     auto & hash_join = hash_joins[i];
+                    if (query_status)
+                        query_status->checkTimeLimit();
+
                     if (global_total_rows && hash_join->data->twoLevelMapIsUsed())
                         reserveBucketsBySize(
                             *hash_join->data,
@@ -972,6 +988,8 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
 
                     for (auto & scattered_block : hash_join->buffered_blocks)
                     {
+                        if (query_status)
+                            query_status->checkTimeLimit();
                         auto [block, selector] = std::move(scattered_block).detachData();
                         hash_join->data->addBlockToJoin(block, std::move(selector), /*check_limits=*/false);
                     }
