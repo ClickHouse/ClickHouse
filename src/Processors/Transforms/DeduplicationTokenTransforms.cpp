@@ -145,15 +145,4 @@ void AddDeduplicationInfoTransform::transform(Chunk & chunk)
     }
     info->updateOriginalBlock(chunk, getInputPort().getSharedHeader());
 }
-
-RedefineDeduplicationInfoWithDataHashTransform::RedefineDeduplicationInfoWithDataHashTransform(SharedHeader header_)
-    : ISimpleTransform(header_, header_, true)
-{
-}
-
-void RedefineDeduplicationInfoWithDataHashTransform::transform(Chunk & chunk)
-{
-    auto info = chunk.getChunkInfos().getSafe<DeduplicationInfo>();
-    info->redefineTokensWithDataHash(getOutputPort().getSharedHeader()->cloneWithColumns(chunk.getColumns()));
-}
 }

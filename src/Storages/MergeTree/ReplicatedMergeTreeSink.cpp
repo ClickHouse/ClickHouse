@@ -299,8 +299,6 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
     size_t total_streams = 0;
     bool support_parallel_write = false;
 
-    std::vector<UInt128> all_partitions_block_ids;
-
     for (auto & current_block : part_blocks)
     {
         Stopwatch watch;
@@ -344,17 +342,12 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
         if (!support_parallel_write && temp_part->part->getDataPartStorage().supportParallelWrite())
             support_parallel_write = true;
 
-        auto hash = temp_part->part->getPartBlockIDHash();
-        current_deduplication_info->setPartWriterHashForPartition(hash, current_block.block->rows());
-
         LOG_DEBUG(
             log,
             "Wrote block with {} rows{} and deduplication blocks: {}, deduplication info: {}",
             current_block.block->rows(), quorumLogMessage(),
             fmt::join(getDeduplicationBlockIds(current_deduplication_info->getDeduplicationHashes(current_block.partition_id, deduplicate)), ", "),
             current_deduplication_info->debug());
-
-        all_partitions_block_ids.push_back(hash);
 
         profile_events_scope.reset();
         UInt64 elapsed_ns = watch.elapsed();
@@ -395,8 +388,6 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
 
         total_streams += current_streams;
     }
-
-    deduplication_info->setPartWriterHashes(all_partitions_block_ids, chunk.getNumRows());
 
     finishDelayed(zookeeper);
 

@@ -47,17 +47,6 @@ public:
 };
 
 
-class RedefineDeduplicationInfoWithDataHashTransform final : public ISimpleTransform
-{
-public:
-    explicit RedefineDeduplicationInfoWithDataHashTransform(SharedHeader header_);
-
-    String getName() const override { return "RedefineDeduplicationInfoWithDataHashTransform"; }
-
-    void transform(Chunk & chunk) override;
-};
-
-
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
