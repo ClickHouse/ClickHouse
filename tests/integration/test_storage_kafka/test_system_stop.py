@@ -790,7 +790,16 @@ def test_multi_consumer_refresh_while_stopped_covers_all(kafka_cluster):
             """
         )
 
-        # Warm up both partitions so both consumers join the group and each is assigned a partition.
+        # Wait until both consumers have joined and each owns exactly one partition
+        instance.query_with_retry(
+            f"SELECT count() FROM system.kafka_consumers WHERE database = 'test' "
+            f"AND table = '{table}' AND length(assignments.partition_id) = 1",
+            check_callback=lambda res: int(res) == 2,
+            retry_count=120,
+            sleep_time=0.5,
+        )
+
+        # Warm up both partitions; each consumer drains and commits its own partition.
         produce_to_partition(kafka_cluster, table, 0, 0, 3)
         produce_to_partition(kafka_cluster, table, 1, 1000, 3)
         wait_dst_count(table, 6)
