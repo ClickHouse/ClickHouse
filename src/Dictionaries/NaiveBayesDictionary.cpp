@@ -46,7 +46,7 @@ String trim(std::string_view s)
 std::map<UInt32, double> parseExplicitPriors(const String & priors_str)
 {
     if (priors_str.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Explicit priors specification is empty");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary: the explicit priors specification is empty");
 
     std::map<UInt32, double> priors;
     double total = 0.0;
@@ -62,7 +62,7 @@ std::map<UInt32, double> parseExplicitPriors(const String & priors_str)
 
         const size_t eq = entry.find('=');
         if (eq == std::string_view::npos)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid priors entry '{}': expected 'class=probability'", String(entry));
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary: invalid priors entry '{}', expected 'class=probability'", String(entry));
 
         const String class_str = trim(entry.substr(0, eq));
         const String prob_str = trim(entry.substr(eq + 1));
@@ -77,14 +77,14 @@ std::map<UInt32, double> parseExplicitPriors(const String & priors_str)
         catch (const Exception &)
         {
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Invalid priors entry '{}': could not parse class id or probability", String(entry));
+                ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary: invalid priors entry '{}', could not parse the class id or probability", String(entry));
         }
 
         if (!std::isfinite(prob) || prob <= 0.0 || prob > 1.0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prior probability for class {} must be a finite number in (0, 1], got {}", class_id, prob);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary: the prior probability for class {} must be a finite number in (0, 1], got {}", class_id, prob);
 
         if (!priors.emplace(class_id, prob).second)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate prior for class {}", class_id);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary: duplicate prior for class {}", class_id);
 
         total += prob;
 
@@ -94,7 +94,7 @@ std::map<UInt32, double> parseExplicitPriors(const String & priors_str)
     }
 
     if (std::fabs(total - 1.0) > 1e-6)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sum of prior probabilities must equal 1.0, got {}", total);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary: the prior probabilities must sum to 1.0, got {}", total);
 
     return priors;
 }
@@ -134,7 +134,7 @@ void NaiveBayesDictionary::loadData()
             return Trainer{std::in_place_type<NaiveBayesTrainer<TokenPolicy>>, configuration.n, configuration.alpha};
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Invalid mode '{}' for NaiveBayes dictionary. Must be 'byte', 'codepoint', or 'token'",
+            "NaiveBayes dictionary: invalid mode '{}'; must be 'byte', 'codepoint', or 'token'",
             configuration.mode);
     }();
 

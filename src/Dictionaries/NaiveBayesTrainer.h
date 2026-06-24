@@ -65,8 +65,9 @@ public:
     }
 
     /// Computes the class priors according to the given mode, compiles the accumulated counts into the flat CSR
-    /// arrays (reusing the existing n-gram index and arena), frees the per-n-gram count maps, and returns the
-    /// finished model. The explicit priors are consulted, and required, only when the mode is explicit.
+    /// arrays (reusing the existing n-gram index and arena), frees the accumulation buffers (`entries` and
+    /// `class_totals`), and returns the finished model. The explicit priors are consulted, and required, only
+    /// when the mode is explicit.
     NaiveBayesModel<Tok> finalize(PriorsMode mode, const std::map<UInt32, double> & explicit_priors = {})
     {
         if (data->ngram_to_index.empty())
@@ -190,7 +191,7 @@ private:
         if (priors.size() != data->class_totals.size())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Number of classes in priors ({}) does not match the number of classes in the model ({})",
+                "NaiveBayes dictionary: the number of classes in priors ({}) does not match the number of classes in the model ({})",
                 priors.size(),
                 data->class_totals.size());
 
@@ -205,7 +206,7 @@ private:
 
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Class {} from priors not found in the model. Available classes: {}",
+                    "NaiveBayes dictionary: class {} from priors is not in the model; available classes: {}",
                     class_id,
                     fmt::join(available_classes, ", "));
             }
