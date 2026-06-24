@@ -102,7 +102,7 @@ using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
 class AggregatingTransform final : public IProcessor
 {
 public:
-    AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_, size_t expanded_group_ = 0);
+    AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
 
     /// For Parallel aggregating.
     AggregatingTransform(
@@ -114,8 +114,7 @@ public:
         size_t temporary_data_merge_threads,
         bool should_produce_results_in_order_of_bucket_number_ = true,
         bool skip_merging_ = false,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr,
-        size_t expanded_group_ = 0);
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
 
     ~AggregatingTransform() override;
 
@@ -129,6 +128,9 @@ protected:
     void consume(Chunk chunk);
 
 private:
+
+    void finishConsume();
+
     /// To read the data that was flushed into the temporary data file.
     Processors processors;
 
@@ -173,8 +175,6 @@ private:
     std::list<TemporaryBlockStreamHolder> tmp_files;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
-
-    size_t expanded_group = 0;
 
     void initGenerate();
 };
