@@ -61,6 +61,7 @@ private:
 
     NodeCTimeAndVersionCache cached_stats_for_insert_deduplication_hashes;
     NodeCTimeAndVersionCache cached_block_stats_for_sync_inserts;
+    NodeCTimeAndVersionCache cached_block_stats_for_async_inserts;
 
     struct NodeWithStat;
     /// Returns list of blocks (with their stat) sorted by ctime in descending order.

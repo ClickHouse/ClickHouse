@@ -1161,6 +1161,20 @@ namespace ErrorCodes
     The time is relative to the time of the most recent record, not to the wall
     time. If it's the only record it will be stored forever.
     )", 0) \
+    DECLARE(UInt64, replicated_deduplication_window_for_async_inserts, 10000, R"(
+    Legacy setting retained for mixed-version rolling upgrades. New inserts deduplicate with the
+    unified hash governed by `replicated_deduplication_window`; this setting now only bounds how many
+    legacy async-insert hashes are kept in the `async_blocks` directory in ClickHouse Keeper, which is
+    still written by older replicas during a rolling upgrade and cleaned up by the current leader.
+    A value of `0` disables that cleanup.
+    )", 0) \
+    DECLARE(UInt64, replicated_deduplication_window_seconds_for_async_inserts, 7 * 24 * 60 * 60 /* one week */, R"(
+    Legacy setting retained for mixed-version rolling upgrades. Together with
+    `replicated_deduplication_window_for_async_inserts` it bounds how long legacy async-insert hashes
+    are kept in the `async_blocks` directory in ClickHouse Keeper (written by older replicas during a
+    rolling upgrade and cleaned up by the current leader). New inserts use
+    `replicated_deduplication_window_seconds`.
+    )", 0) \
     DECLARE(Milliseconds, async_block_ids_cache_update_wait_ms, 100, R"(
     How long each insert iteration will wait for async_block_ids_cache update
     )", 0) \
@@ -2232,8 +2246,6 @@ namespace ErrorCodes
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_threads, 128) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, cleanup_threads, 128) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, allow_experimental_reverse_key, false) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, replicated_deduplication_window_for_async_inserts, 10000) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, replicated_deduplication_window_seconds_for_async_inserts, 7 * 24 * 60 * 60) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, use_async_block_ids_cache, true) \
 
     /// Settings that should not change after the creation of a table.

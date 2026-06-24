@@ -15,7 +15,9 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_replicated_logs_to_keep;
     extern const MergeTreeSettingsUInt64 min_replicated_logs_to_keep;
     extern const MergeTreeSettingsUInt64 replicated_deduplication_window;
+    extern const MergeTreeSettingsUInt64 replicated_deduplication_window_for_async_inserts;
     extern const MergeTreeSettingsUInt64 replicated_deduplication_window_seconds;
+    extern const MergeTreeSettingsUInt64 replicated_deduplication_window_seconds_for_async_inserts;
     extern const MergeTreeSettingsSeconds temporary_directories_lifetime;
 }
 
@@ -72,7 +74,19 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
             cached_block_stats_for_sync_inserts,
             log);
 
-        cleaned_blocks = (static_cast<Float32>(deduplication_blocks) + static_cast<Float32>(normal_blocks)) / 2;
+        // Old replicas (pre-unified-hash) still write the legacy async-insert ids to /async_blocks
+        // during a rolling upgrade; the current leader keeps draining that directory with the legacy
+        // window settings until the minimum supported version no longer uses it.
+        size_t async_blocks = clearOldBlocks(storage.zookeeper_path, "async_blocks", *zookeeper,
+            (*storage_settings)[MergeTreeSetting::replicated_deduplication_window_seconds_for_async_inserts],
+            (*storage_settings)[MergeTreeSetting::replicated_deduplication_window_for_async_inserts],
+            cached_block_stats_for_async_inserts,
+            log);
+
+        /// Many async blocks are transformed into one ordinary block
+        Float32 async_blocks_per_block = static_cast<Float32>((*storage_settings)[MergeTreeSetting::replicated_deduplication_window]) /
+            static_cast<Float32>((*storage_settings)[MergeTreeSetting::replicated_deduplication_window_for_async_inserts] + 1);
+        cleaned_blocks = (static_cast<Float32>(deduplication_blocks) + static_cast<Float32>(normal_blocks) + static_cast<Float32>(async_blocks) * async_blocks_per_block) / 2;
 
         cleaned_other += clearOldMutations();
         cleaned_part_like += storage.clearEmptyParts();
