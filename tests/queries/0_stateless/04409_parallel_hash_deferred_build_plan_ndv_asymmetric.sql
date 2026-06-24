@@ -1,3 +1,9 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- The regression guard below asserts a tight preallocation range and the streaming-vs-deferred build
+-- decision, which depend on the planner consulting the uniq statistics; the stateless-test settings
+-- randomizer perturbs the statistics toggles and the join-order path through unpinned side channels
+-- (see 04146_spilling_hash_join_low_threshold.sql for the same class of test).
+--
 -- Regression for the follow-up to #108129: the planner NDV used to size the parallel_hash build hash
 -- map must be the right (build) input relation's distinct-key count, NOT the post-join result-key NDV.
 -- The join-order DP clamps both equi-key NDVs to min(left, right) (see `DPJoinEntry` in joinOrder.cpp),

@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# Tags: no-random-settings, no-random-merge-tree-settings
+# The build-duration baseline D and the timing thresholds derived from it assume a steady-state warm
+# build; randomized session settings (e.g. a small max_threads, statistics toggles) perturb the
+# warm-up measurement and the build path, so the settings are pinned and randomization is disabled.
+#
 # Cancellation / timeout of the deferred (exact-size) parallel_hash build replay.
 # https://github.com/ClickHouse/ClickHouse/pull/108129#discussion_r3457832007
 #

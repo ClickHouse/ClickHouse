@@ -1,3 +1,9 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- The regression guards below assert exact spill decisions and tight reserve/preallocation ranges, so
+-- they must run with the settings this test pins (the build path, the spill cap, max_threads); the
+-- stateless-test settings randomizer perturbs the spill decision and the map sizing through unpinned
+-- side channels (see 04146_spilling_hash_join_low_threshold.sql for the same class of test).
+--
 -- Part 2 of the follow-up to #108129: the deferred (exact-size) parallel_hash build reserves the
 -- hash maps by the estimated number of distinct keys (a per-slot HyperLogLog over the scatter
 -- hashes), not by the source-row count. For a duplicate-heavy build side this avoids over-allocating

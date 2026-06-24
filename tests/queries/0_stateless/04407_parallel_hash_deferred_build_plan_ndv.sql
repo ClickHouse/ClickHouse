@@ -1,3 +1,9 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- The regression guards below assert tight preallocation ranges and the streaming-vs-deferred build
+-- decision, which depend on the planner consulting the uniq statistics; the stateless-test settings
+-- randomizer perturbs the statistics toggles and the join-order path through unpinned side channels
+-- (see 04146_spilling_hash_join_low_threshold.sql for the same class of test).
+--
 -- Part 4 of the follow-up to #108129: when the planner has a trustworthy (uniq-backed) distinct-key
 -- estimate for the right join key, the exact-size parallel_hash build skips the deferred build and
 -- preallocates the maps to that distinct-key count on the streaming path (like the warm ht_size
