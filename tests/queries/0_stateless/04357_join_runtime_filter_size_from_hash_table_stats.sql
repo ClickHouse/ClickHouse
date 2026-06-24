@@ -11,6 +11,7 @@ SET enable_join_runtime_filters = 1;
 SET collect_hash_table_stats_during_joins = 1;
 SET join_runtime_bloom_filter_bytes = 256;
 SET join_runtime_filter_from_fixed_hash_table = 0; -- runtime filter from fixed hash table overrides bloom filter.
+SET join_runtime_filter_pass_ratio_threshold_for_disabling = 1; -- avoid disabling because of pass rate.
 
 CREATE TABLE rf_build (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE rf_probe (k UInt64) ENGINE = MergeTree ORDER BY tuple();
