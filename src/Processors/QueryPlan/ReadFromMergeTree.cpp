@@ -4716,6 +4716,11 @@ void ReadFromMergeTree::setDistributedRead(size_t bucket_count)
 
 size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, size_t max_total_buckets)
 {
+    /// A bucketed read is pinned to the coordinator's marks and cannot reproduce these features on the
+    /// worker, so fall back to a serial read instead of bucketing and then failing when the fragment ships.
+    if (hasUnsupportedBucketedReadCarrier())
+        return 0;
+
     /// A non-FINAL read needs no merge, so its marks can be split arbitrarily: cut the analyzed marks into
     /// contiguous mark-balanced slices, one bucket each. FINAL needs primary-key-range layers (handled
     /// below) so a deduplication group stays within one bucket.
@@ -4914,6 +4919,16 @@ Strings ReadFromMergeTree::getShardsForDistributedRead() const
         list_of_shards.push_back(std::to_string(i));
 
     return list_of_shards;
+}
+
+
+bool ReadFromMergeTree::hasUnsupportedBucketedReadCarrier() const
+{
+    return query_info.input_order_info
+        || deferred_row_level_filter
+        || deferred_prewhere_info
+        || (analyzed_result_ptr && analyzed_result_ptr->readFromProjection())
+        || !index_read_tasks.empty();
 }
 
 

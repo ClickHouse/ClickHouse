@@ -431,6 +431,11 @@ public:
     /// marks (read-in-order, deferred FINAL filters, a projection, or direct text index tasks).
     void verifyBucketedReadSupported() const;
 
+    /// True if this read uses a feature a bucketed distributed read cannot reproduce on the worker
+    /// (read-in-order, deferred FINAL filters, a projection, or direct text index tasks), so it must
+    /// fall back to a serial read instead of being split into buckets.
+    bool hasUnsupportedBucketedReadCarrier() const;
+
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
