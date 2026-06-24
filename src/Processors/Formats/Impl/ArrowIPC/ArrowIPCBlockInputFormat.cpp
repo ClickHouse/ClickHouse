@@ -96,7 +96,7 @@ ArrowIPCBlockInputFormat::ArrowIPCBlockInputFormat(
 
 ArrowIPCBlockInputFormat::~ArrowIPCBlockInputFormat() = default;
 
-void ArrowIPCBlockInputFormat::collectDictionaryFields(const std::vector<ArrowIPC::ArrowField> & fields)
+void ArrowIPCBlockInputFormat::collectDictionaryFields(const ArrowIPC::ArrowFields & fields)
 {
     for (const auto & field : fields)
     {
@@ -181,7 +181,7 @@ DataTypePtr alignStructFieldNamesCaseInsensitive(const DataTypePtr & from, const
         const auto & to_elems = to_tuple->getElements();
         const auto & to_names = to_tuple->getElementNames();
 
-        std::unordered_map<String, size_t> to_by_lower;
+        UnorderedMapWithMemoryTracking<String, size_t> to_by_lower;
         to_by_lower.reserve(to_names.size());
         for (size_t i = 0; i < to_names.size(); ++i)
             to_by_lower.emplace(boost::to_lower_copy(to_names[i]), i); /// first occurrence wins on duplicates
@@ -224,7 +224,7 @@ void checkDictionaryUnique(const ColumnPtr & values)
     if (!(inner->isFixedAndContiguous() || typeid_cast<const ColumnString *>(inner)))
         return;
 
-    std::unordered_set<std::string_view> seen;
+    UnorderedSetWithMemoryTracking<std::string_view> seen;
     seen.reserve(values->size());
     bool null_seen = false;
     for (size_t i = 0; i < values->size(); ++i)
@@ -245,7 +245,7 @@ void checkDictionaryUnique(const ColumnPtr & values)
 /// Collects every Arrow dictionary id used anywhere in `field`'s type subtree (the field itself or a
 /// dictionary nested inside its Array/Map/Tuple/Union children). Used to decide which DictionaryBatch
 /// bodies a subset read actually needs.
-void collectDictionaryIdsInSubtree(const ArrowIPC::ArrowField & field, std::unordered_set<int64_t> & out)
+void collectDictionaryIdsInSubtree(const ArrowIPC::ArrowField & field, UnorderedSetWithMemoryTracking<int64_t> & out)
 {
     if (field.dictionary)
         out.insert(field.dictionary->id);
@@ -297,7 +297,7 @@ void ArrowIPCBlockInputFormat::prepareReader()
     }
 
     /// Reject duplicate column names, matching the Apache Arrow library based reader.
-    std::unordered_set<String> seen_names;
+    UnorderedSetWithMemoryTracking<String> seen_names;
     for (const auto & field : arrow_schema->fields)
         if (!seen_names.insert(field.name).second)
             throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Duplicate column '{}' in the Arrow schema", field.name);
@@ -577,7 +577,7 @@ ColumnPtr ArrowIPCBlockInputFormat::decodeGeoColumn(const ColumnPtr & source, co
     return column;
 }
 
-Chunk ArrowIPCBlockInputFormat::buildChunk(std::vector<ArrowIPC::RecordBatchDecoder::DecodedColumn> & decoded, size_t num_rows)
+Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::DecodedColumns & decoded, size_t num_rows)
 {
     const Block & header = getPort().getHeader();
 
@@ -585,7 +585,7 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(std::vector<ArrowIPC::RecordBatchDeco
     const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
     BlockMissingValues * block_missing_values_ptr
         = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
-    std::unordered_map<String, size_t> name_to_index;
+    UnorderedMapWithMemoryTracking<String, size_t> name_to_index;
     name_to_index.reserve(decoded.size());
     for (size_t i = 0; i < decoded.size(); ++i)
     {
@@ -600,7 +600,7 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(std::vector<ArrowIPC::RecordBatchDeco
 
     /// Cache of `Nested`/struct table extractors keyed by the (possibly lower-cased) nested table name.
     /// The backing block must outlive the extractor (it holds a reference into it), so keep both.
-    std::unordered_map<String, std::pair<std::shared_ptr<Block>, std::shared_ptr<NestedColumnExtractHelper>>> nested_extractors;
+    UnorderedMapWithMemoryTracking<String, std::pair<std::shared_ptr<Block>, std::shared_ptr<NestedColumnExtractHelper>>> nested_extractors;
 
     Columns columns;
     columns.reserve(header.columns());

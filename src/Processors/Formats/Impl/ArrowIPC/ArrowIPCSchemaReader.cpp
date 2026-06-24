@@ -112,7 +112,7 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
     }
 
     /// GeoParquet geometry columns are inferred as their geo type (when the parser is enabled).
-    std::unordered_map<String, GeoColumnMetadata> geo_columns;
+    std::unordered_map<String, GeoColumnMetadata> geo_columns; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     if (format_settings.parquet.allow_geoparquet_parser)
     {
         auto geo_it = schema.custom_metadata.find("geo");

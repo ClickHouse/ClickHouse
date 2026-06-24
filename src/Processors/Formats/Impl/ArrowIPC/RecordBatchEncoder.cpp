@@ -503,10 +503,10 @@ RecordBatchEncoder::EncodedBatch RecordBatchEncoder::encode(const Columns & colu
         /// then assembled sequentially (each buffer: an 8-byte little-endian uncompressed length, then
         /// the compressed bytes; or, if compression does not shrink it, the raw bytes with a -1 prefix).
         const size_t n = buffers.size();
-        std::vector<std::pair<const char *, size_t>> inputs(n);
+        VectorWithMemoryTracking<std::pair<const char *, size_t>> inputs(n);
         for (size_t i = 0; i < n; ++i)
             inputs[i] = {body.data() + buffers[i].offset(), static_cast<size_t>(buffers[i].length())};
-        std::vector<PODArray<char>> compressed(n);
+        VectorWithMemoryTracking<PODArray<char>> compressed(n);
         compressBuffersParallel(codec, level, inputs, compressed);
 
         for (size_t i = 0; i < n; ++i)

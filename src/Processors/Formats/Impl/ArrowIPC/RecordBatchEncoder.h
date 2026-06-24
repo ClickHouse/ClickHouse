@@ -10,6 +10,7 @@
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
 #include <Common/PODArray.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <optional>
 
@@ -27,8 +28,8 @@ public:
 
     struct EncodedBatch
     {
-        std::vector<flatbuf::FieldNode> nodes;
-        std::vector<flatbuf::Buffer> buffers;
+        VectorWithMemoryTracking<flatbuf::FieldNode> nodes;
+        VectorWithMemoryTracking<flatbuf::Buffer> buffers;
         PODArray<char> body;
         int64_t num_rows = 0;
         /// Set when the body buffers were compressed; the writer then adds a BodyCompression to the batch.
@@ -61,8 +62,8 @@ private:
     void appendOffsets(const IColumn::Offsets & ch_offsets, size_t num_rows);
 
     const FormatSettings & settings;
-    std::vector<flatbuf::FieldNode> nodes;
-    std::vector<flatbuf::Buffer> buffers;
+    VectorWithMemoryTracking<flatbuf::FieldNode> nodes;
+    VectorWithMemoryTracking<flatbuf::Buffer> buffers;
     PODArray<char> body;
 };
 

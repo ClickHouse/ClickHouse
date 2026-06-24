@@ -5,6 +5,7 @@
 #if USE_ARROW
 
 #include <Common/PODArray.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <cstdint>
 #include <utility>
 #include <vector>
@@ -51,7 +52,7 @@ private:
 /// Arrow writer, whose codec is multi-threaded; compression CPU is the dominant cost here.
 void compressBuffersParallel(
     CompressionCodec codec, int level,
-    const std::vector<std::pair<const char *, size_t>> & inputs, std::vector<PODArray<char>> & out);
+    const VectorWithMemoryTracking<std::pair<const char *, size_t>> & inputs, VectorWithMemoryTracking<PODArray<char>> & out);
 
 /// One buffer to decompress into a pre-sized destination slot.
 struct DecompressJob
@@ -64,7 +65,7 @@ struct DecompressJob
 
 /// Decompresses each job into its destination, in parallel across the shared format thread pool when
 /// the work is large enough. Destinations must be non-overlapping.
-void decompressBuffersParallel(CompressionCodec codec, const std::vector<DecompressJob> & jobs);
+void decompressBuffersParallel(CompressionCodec codec, const VectorWithMemoryTracking<DecompressJob> & jobs);
 
 }
 

@@ -8,6 +8,9 @@
 #include <Processors/Formats/Impl/ArrowIPC/SchemaConverter.h>
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <unordered_map>
 #include <unordered_set>
@@ -27,7 +30,7 @@ public:
     void clear() { dictionaries.clear(); }
 
 private:
-    std::unordered_map<int64_t, ColumnPtr> dictionaries;
+    UnorderedMapWithMemoryTracking<int64_t, ColumnPtr> dictionaries;
 };
 
 /// Decodes Arrow IPC record batches directly into ClickHouse columns, without the Apache Arrow library.
@@ -50,6 +53,8 @@ public:
         ColumnPtr column;
     };
 
+    using DecodedColumns = VectorWithMemoryTracking<DecodedColumn>;
+
     /// A bounds-checked view of one buffer inside the message body.
     struct Slice
     {
@@ -67,16 +72,16 @@ public:
     /// target as the raw `Int32` day number without the `Date32` range/overflow check — recursively, so a
     /// `date32` nested in an Array/Tuple/Map or addressed as a subcolumn is handled too — matching the
     /// Apache Arrow library reader's recursive numeric type-hint behavior.
-    std::vector<DecodedColumn> decodeBatch(
+    DecodedColumns decodeBatch(
         const flatbuf::RecordBatch & batch, const PODArray<char> & body,
-        const std::unordered_set<String> * keep_top_level_fields = nullptr,
-        const std::unordered_map<String, DataTypePtr> * target_types = nullptr);
+        const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields = nullptr,
+        const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr);
 
     /// Decodes an explicit list of fields (used for dictionary batches, which carry one value column).
-    std::vector<DecodedColumn> decodeColumns(
-        const flatbuf::RecordBatch & batch, const PODArray<char> & body, const std::vector<ArrowField> & fields,
-        const std::unordered_set<String> * keep_top_level_fields = nullptr,
-        const std::unordered_map<String, DataTypePtr> * target_types = nullptr);
+    DecodedColumns decodeColumns(
+        const flatbuf::RecordBatch & batch, const PODArray<char> & body, const ArrowFields & fields,
+        const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields = nullptr,
+        const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr);
 
 private:
     Slice nextBuffer();
@@ -117,14 +122,14 @@ private:
     const flatbuf::RecordBatch * current_batch = nullptr;
     /// Requested column types by normalized (dotted) name, for the recursive `date32` numeric type hint;
     /// null when the caller did not provide them. Points at the caller's map for the call's duration.
-    const std::unordered_map<String, DataTypePtr> * target_types = nullptr;
+    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr;
     /// The buffers to decode from: either views into the message body, or into `decompressed_body`.
-    std::vector<Slice> buffer_slices;
+    VectorWithMemoryTracking<Slice> buffer_slices;
     PODArray<char> decompressed_body;
     size_t node_index = 0;
     size_t buffer_index = 0;
     /// For BinaryView/Utf8View columns: the per-field count of variadic data buffers.
-    std::vector<int64_t> variadic_counts;
+    VectorWithMemoryTracking<int64_t> variadic_counts;
     size_t variadic_index = 0;
 };
 

@@ -11,6 +11,8 @@
 #include <Processors/Formats/Impl/ArrowIPC/SchemaConverter.h>
 #include <Core/Names.h>
 #include <Columns/IColumn.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <memory>
 #include <optional>
@@ -67,8 +69,8 @@ private:
     std::optional<ArrowIPC::MessageWriter> message_writer;
     std::unique_ptr<ArrowIPC::RecordBatchEncoder> encoder;
     bool schema_written = false;
-    std::vector<ArrowIPC::ArrowFileBlock> dictionary_blocks;
-    std::vector<ArrowIPC::ArrowFileBlock> record_blocks;
+    ArrowIPC::ArrowFileBlocks dictionary_blocks;
+    ArrowIPC::ArrowFileBlocks record_blocks;
 
     /// Dictionary-encoded output (`output_format_arrow_low_cardinality_as_dictionary`): the per-column
     /// plan of which `LowCardinality` nodes (top-level or nested) are dictionary-encoded, and the per-id
@@ -76,11 +78,11 @@ private:
     struct DictionaryColumnState
     {
         MutableColumnPtr values;                              /// accumulated dictionary values (full nested type)
-        std::unordered_map<std::string, Int64> value_to_index;
+        UnorderedMapWithMemoryTracking<std::string, Int64> value_to_index;
         bool emitted = false;
     };
-    std::vector<ArrowIPC::DictPlan> column_dict_plans;
-    std::vector<DictionaryColumnState> dictionary_states;
+    ArrowIPC::DictPlans column_dict_plans;
+    VectorWithMemoryTracking<DictionaryColumnState> dictionary_states;
 };
 
 }

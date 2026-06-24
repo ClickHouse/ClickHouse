@@ -481,7 +481,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
                     ErrorCodes::INCORRECT_DATA,
                     "Arrow IPC binary view column declares {} data buffers but only {} remain",
                     num_data, buffer_slices.size() - buffer_index);
-            std::vector<Slice> data_buffers;
+            VectorWithMemoryTracking<Slice> data_buffers;
             data_buffers.reserve(static_cast<size_t>(num_data));
             for (int64_t i = 0; i < num_data; ++i)
                 data_buffers.push_back(nextBuffer());
@@ -804,13 +804,13 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
     /// stored column. Keep a pointer to it (per local element, nullptr if the child is not nullable) so
     /// rows that reference a null child value can be translated to the Variant NULL discriminator below,
     /// instead of silently becoming the nested column's default value.
-    std::vector<const NullMap *> child_null_maps;
+    VectorWithMemoryTracking<const NullMap *> child_null_maps;
     /// Each `child_null_maps` entry points into the null-map column of a `ColumnNullable`. The owning
     /// `ColumnNullable` is dropped below (only its nested column is kept as the Variant element), so keep
     /// the null-map columns alive here for the lifetime of the decode; otherwise the pointers dangle.
-    std::vector<ColumnPtr> child_null_map_holders;
+    VectorWithMemoryTracking<ColumnPtr> child_null_map_holders;
     /// Maps an Arrow union type id to a local Variant element index, or -1 for the NULL placeholder.
-    std::unordered_map<int, int> type_id_to_local;
+    UnorderedMapWithMemoryTracking<int, int> type_id_to_local;
     for (size_t child_idx = 0; child_idx < type.children.size(); ++child_idx)
     {
         const ArrowField & child = type.children[child_idx];
@@ -856,7 +856,7 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Arrow IPC union has multiple children mapping to the same ClickHouse type, which Variant cannot represent");
-    std::unordered_map<String, ColumnVariant::Discriminator> name_to_global;
+    UnorderedMapWithMemoryTracking<String, ColumnVariant::Discriminator> name_to_global;
     for (size_t g = 0; g < variant_data_type->getVariants().size(); ++g)
         name_to_global[variant_data_type->getVariants()[g]->getName()] = static_cast<ColumnVariant::Discriminator>(g);
     VectorWithMemoryTracking<ColumnVariant::Discriminator> local_to_global(variant_columns.size());
@@ -1146,9 +1146,10 @@ void RecordBatchDecoder::skipField(const ArrowField & field)
     }
 }
 
-std::vector<RecordBatchDecoder::DecodedColumn> RecordBatchDecoder::decodeColumns(
-    const flatbuf::RecordBatch & batch, const PODArray<char> & body, const std::vector<ArrowField> & fields,
-    const std::unordered_set<String> * keep_top_level_fields, const std::unordered_map<String, DataTypePtr> * target_types_)
+RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeColumns(
+    const flatbuf::RecordBatch & batch, const PODArray<char> & body, const ArrowFields & fields,
+    const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields,
+    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_)
 {
     target_types = target_types_;
     current_batch = &batch;
@@ -1176,7 +1177,7 @@ std::vector<RecordBatchDecoder::DecodedColumn> RecordBatchDecoder::decodeColumns
     const bool case_insensitive = settings.arrow.case_insensitive_column_matching;
     bool pruned = false;
 
-    std::vector<DecodedColumn> result;
+    DecodedColumns result;
     result.reserve(fields.size());
     for (const ArrowField & field : fields)
     {
@@ -1299,7 +1300,7 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
     /// First pass: lay out each buffer's decompressed slot (8-byte aligned) without touching the data,
     /// so the destination buffer can be allocated once and the buffers decompressed in parallel.
     struct Placement { size_t offset; size_t length; const char * src; size_t src_size; bool raw; };
-    std::vector<Placement> placements(num_buffers);
+    VectorWithMemoryTracking<Placement> placements(num_buffers);
     size_t pos = 0;
     for (size_t i = 0; i < num_buffers; ++i)
     {
@@ -1350,7 +1351,7 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
 
     decompressed_body.resize(pos);
 
-    std::vector<DecompressJob> jobs;
+    VectorWithMemoryTracking<DecompressJob> jobs;
     jobs.reserve(num_buffers);
     for (const auto & p : placements)
     {
@@ -1374,10 +1375,11 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
         buffer_slices.push_back(Slice{decompressed_body.data() + p.offset, static_cast<int64_t>(p.length)});
 }
 
-std::vector<RecordBatchDecoder::DecodedColumn>
+RecordBatchDecoder::DecodedColumns
 RecordBatchDecoder::decodeBatch(
-    const flatbuf::RecordBatch & batch, const PODArray<char> & body, const std::unordered_set<String> * keep_top_level_fields,
-    const std::unordered_map<String, DataTypePtr> * target_types_)
+    const flatbuf::RecordBatch & batch, const PODArray<char> & body,
+    const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields,
+    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_)
 {
     return decodeColumns(batch, body, schema.fields, keep_top_level_fields, target_types_);
 }

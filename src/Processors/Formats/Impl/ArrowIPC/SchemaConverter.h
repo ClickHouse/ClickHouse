@@ -8,6 +8,8 @@
 #include <DataTypes/IDataType.h>
 #include <Core/Names.h>
 #include <Formats/FormatSettings.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <map>
 #include <optional>
@@ -85,10 +87,10 @@ struct ArrowType
 
     /// Union
     int union_mode = 0;
-    std::vector<int> union_type_ids;
+    VectorWithMemoryTracking<int> union_type_ids;
 
     /// Children (List/LargeList/FixedSizeList element, Struct/Union fields, Map's key_value struct).
-    std::vector<ArrowField> children;
+    VectorWithMemoryTracking<ArrowField> children;
 
     /// The Arrow type name for a `TypeKind::Unsupported` placeholder (used in the error message).
     std::string unsupported_type_name;
@@ -114,7 +116,7 @@ struct DictionaryEncoding
     bool is_ordered = false;
 };
 
-using KeyValueMetadata = std::map<std::string, std::string>;
+using KeyValueMetadata = MapWithMemoryTracking<std::string, std::string>;
 
 struct ArrowField
 {
@@ -125,9 +127,11 @@ struct ArrowField
     KeyValueMetadata custom_metadata;
 };
 
+using ArrowFields = VectorWithMemoryTracking<ArrowField>;
+
 struct ArrowSchema
 {
-    std::vector<ArrowField> fields;
+    ArrowFields fields;
     KeyValueMetadata custom_metadata;
     bool little_endian = true;
 };
@@ -146,12 +150,14 @@ struct ArrowFileBlock
     int64_t body_length = 0;
 };
 
+using ArrowFileBlocks = VectorWithMemoryTracking<ArrowFileBlock>;
+
 /// The parsed footer of an Arrow file: schema plus the locations of all dictionary and record batches.
 struct ArrowFileFooter
 {
     ArrowSchema schema;
-    std::vector<ArrowFileBlock> dictionary_blocks;
-    std::vector<ArrowFileBlock> record_batch_blocks;
+    ArrowFileBlocks dictionary_blocks;
+    ArrowFileBlocks record_batch_blocks;
 };
 
 /// Verifies the Arrow file magic and reads its footer. `file_size` is the total input size (the
@@ -164,8 +170,8 @@ void buildFooter(
     const Names & names,
     const DataTypes & types,
     const FormatSettings & settings,
-    const std::vector<ArrowFileBlock> & dictionary_blocks,
-    const std::vector<ArrowFileBlock> & record_blocks);
+    const ArrowFileBlocks & dictionary_blocks,
+    const ArrowFileBlocks & record_blocks);
 
 /// Maps a parsed Arrow field to the ClickHouse data type used for schema inference / the natural
 /// decode type. `make_nullable` forces a Nullable wrapper (used for schema_inference_make_columns_nullable).
@@ -199,15 +205,17 @@ struct OutputDictionary
 struct DictPlan
 {
     std::optional<OutputDictionary> here; /// set when this type node is a dictionary-encoded `LowCardinality`
-    std::vector<DictPlan> children;
+    VectorWithMemoryTracking<DictPlan> children;
 
     /// True if this node or any descendant is dictionary-encoded (lets the writer skip untouched columns).
     bool hasAnyDictionary() const;
 };
 
+using DictPlans = VectorWithMemoryTracking<DictPlan>;
+
 /// Builds the dictionary plan (see `DictPlan`) for each top-level column, with ids assigned sequentially
 /// across all columns in DFS order. Both the schema builder and the output format use this.
-std::vector<DictPlan> assignOutputDictionaries(const DataTypes & types, const FormatSettings & settings);
+DictPlans assignOutputDictionaries(const DataTypes & types, const FormatSettings & settings);
 
 }
 

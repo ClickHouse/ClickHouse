@@ -186,7 +186,7 @@ void runInGroups(size_t count, size_t total_bytes, F && body)
 
 void compressBuffersParallel(
     CompressionCodec codec, int level,
-    const std::vector<std::pair<const char *, size_t>> & inputs, std::vector<PODArray<char>> & out)
+    const VectorWithMemoryTracking<std::pair<const char *, size_t>> & inputs, VectorWithMemoryTracking<PODArray<char>> & out)
 {
     out.resize(inputs.size());
     size_t total_bytes = 0;
@@ -202,7 +202,7 @@ void compressBuffersParallel(
     });
 }
 
-void decompressBuffersParallel(CompressionCodec codec, const std::vector<DecompressJob> & jobs)
+void decompressBuffersParallel(CompressionCodec codec, const VectorWithMemoryTracking<DecompressJob> & jobs)
 {
     size_t total_bytes = 0;
     for (const auto & job : jobs)

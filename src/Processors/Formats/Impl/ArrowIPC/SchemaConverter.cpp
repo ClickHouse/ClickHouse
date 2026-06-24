@@ -67,9 +67,9 @@ void requireSingleChild(const ArrowType & type, const char * what)
             "Arrow IPC {} type must have exactly one child, got {}", what, type.children.size());
 }
 
-std::vector<ArrowField> parseChildren(const flatbuffers::Vector<flatbuffers::Offset<flatbuf::Field>> * children)
+ArrowFields parseChildren(const flatbuffers::Vector<flatbuffers::Offset<flatbuf::Field>> * children)
 {
-    std::vector<ArrowField> result;
+    ArrowFields result;
     if (!children)
         return result;
     result.reserve(children->size());
@@ -408,10 +408,10 @@ buildField(
 flatbuffers::Offset<flatbuf::Field>
 buildMapEntriesField(
     flatbuffers::FlatBufferBuilder & b, const DataTypeMap & map_type, const FormatSettings & settings,
-    const std::vector<DictPlan> & kv_plans)
+    const DictPlans & kv_plans)
 {
     /// Arrow map child: a non-nullable struct "entries" with children "key" (non-nullable) and "value".
-    std::vector<flatbuffers::Offset<flatbuf::Field>> kv;
+    VectorWithMemoryTracking<flatbuffers::Offset<flatbuf::Field>> kv;
     kv.push_back(buildField(b, "key", removeNullable(map_type.getKeyType()), settings, kv_plans.at(0)));
     kv.push_back(buildField(b, "value", map_type.getValueType(), settings, kv_plans.at(1)));
     auto kv_vec = b.CreateVector(kv);
@@ -440,7 +440,7 @@ buildField(
 
     flatbuf::Type type_type = flatbuf::Type_NONE;
     flatbuffers::Offset<void> type_offset;
-    std::vector<flatbuffers::Offset<flatbuf::Field>> children;
+    VectorWithMemoryTracking<flatbuffers::Offset<flatbuf::Field>> children;
 
     auto make_int = [&](int bits, bool is_signed)
     {
@@ -611,7 +611,7 @@ buildField(
                 children.push_back(flatbuf::CreateField(
                     b, b.CreateString("NULL"), false, flatbuf::Type_Null, flatbuf::CreateNull(b).Union(), 0, 0));
 
-                std::vector<int32_t> type_id_list(variants.size() + 1);
+                VectorWithMemoryTracking<int32_t> type_id_list(variants.size() + 1);
                 for (size_t i = 0; i < type_id_list.size(); ++i)
                     type_id_list[i] = static_cast<int32_t>(i);
                 auto type_ids_off = b.CreateVector(type_id_list);
@@ -630,7 +630,7 @@ buildField(
     flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuf::KeyValue>>> custom_metadata_off = 0;
     if (isUUID(t))
     {
-        std::vector<flatbuffers::Offset<flatbuf::KeyValue>> kvs;
+        VectorWithMemoryTracking<flatbuffers::Offset<flatbuf::KeyValue>> kvs;
         kvs.push_back(flatbuf::CreateKeyValue(b, b.CreateString("ARROW:extension:name"), b.CreateString("arrow.uuid")));
         kvs.push_back(flatbuf::CreateKeyValue(b, b.CreateString("ARROW:extension:metadata"), b.CreateString("")));
         custom_metadata_off = b.CreateVector(kvs);
@@ -648,7 +648,7 @@ flatbuffers::Offset<flatbuf::Schema> buildSchemaTable(
 {
     const auto plans = assignOutputDictionaries(types, settings);
 
-    std::vector<flatbuffers::Offset<flatbuf::Field>> field_offsets;
+    VectorWithMemoryTracking<flatbuffers::Offset<flatbuf::Field>> field_offsets;
     field_offsets.reserve(names.size());
     for (size_t i = 0; i < names.size(); ++i)
         field_offsets.push_back(buildField(builder, names[i], types[i], settings, plans[i]));
@@ -657,7 +657,7 @@ flatbuffers::Offset<flatbuf::Schema> buildSchemaTable(
     flatbuffers::Offset<flatbuffers::Vector<int64_t>> features = 0;
     if (settings.arrow.output_compression_method != FormatSettings::ArrowCompression::NONE)
     {
-        const std::vector<int64_t> feature_list{flatbuf::Feature_COMPRESSED_BODY};
+        const VectorWithMemoryTracking<int64_t> feature_list{flatbuf::Feature_COMPRESSED_BODY};
         features = builder.CreateVector(feature_list);
     }
     return flatbuf::CreateSchema(builder, flatbuf::Endianness_Little, fields_vec, 0, features);
@@ -720,9 +720,9 @@ bool DictPlan::hasAnyDictionary() const
     return false;
 }
 
-std::vector<DictPlan> assignOutputDictionaries(const DataTypes & types, const FormatSettings & settings)
+DictPlans assignOutputDictionaries(const DataTypes & types, const FormatSettings & settings)
 {
-    std::vector<DictPlan> plans;
+    DictPlans plans;
     plans.reserve(types.size());
     int64_t next_id = 0;
     for (const auto & type : types)
@@ -735,18 +735,18 @@ void buildFooter(
     const Names & names,
     const DataTypes & types,
     const FormatSettings & settings,
-    const std::vector<ArrowFileBlock> & dictionary_blocks,
-    const std::vector<ArrowFileBlock> & record_blocks)
+    const ArrowFileBlocks & dictionary_blocks,
+    const ArrowFileBlocks & record_blocks)
 {
     auto schema = buildSchemaTable(builder, names, types, settings);
 
-    std::vector<flatbuf::Block> dict_blocks;
+    VectorWithMemoryTracking<flatbuf::Block> dict_blocks;
     dict_blocks.reserve(dictionary_blocks.size());
     for (const auto & b : dictionary_blocks)
         dict_blocks.emplace_back(b.offset, b.metadata_length, b.body_length);
     auto dictionaries = builder.CreateVectorOfStructs(dict_blocks);
 
-    std::vector<flatbuf::Block> blocks;
+    VectorWithMemoryTracking<flatbuf::Block> blocks;
     blocks.reserve(record_blocks.size());
     for (const auto & b : record_blocks)
         blocks.emplace_back(b.offset, b.metadata_length, b.body_length);
@@ -809,7 +809,7 @@ ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size_)
     /// oversized allocation.) Reject both here so a malformed footer fails cleanly. The bound is checked
     /// incrementally against `footer_offset` so the sum cannot overflow.
     const int64_t data_region_end = footer_offset;
-    auto add_block = [data_region_end](std::vector<ArrowFileBlock> & blocks, const flatbuf::Block * block)
+    auto add_block = [data_region_end](ArrowFileBlocks & blocks, const flatbuf::Block * block)
     {
         const int64_t offset = block->offset();
         const int32_t metadata_length = block->metaDataLength();
