@@ -25,6 +25,15 @@ public:
     /// for validating `buildSchedule` against the live walk.
     std::shared_ptr<const CoverageMap> planGeometry() const { return ex.read_plan.geometry(); }
 
+    /// The plan's serve horizon and pin horizon. `pinnedEnd() >= planEnd()`; they
+    /// are equal until the generalized plan-window extension is enabled.
+    size_t planEnd() const { return ex.read_plan.geometry() ? ex.read_plan.geometry()->plan_end : 0; }
+    size_t pinnedEnd() const { return ex.read_plan.geometry() ? ex.read_plan.geometry()->pinned_end : 0; }
+
+    /// Number of plan (re)builds so far -- one per `observeAndSchedule`. Lets a
+    /// test assert the plan is REUSED across read-extent advances (count flat).
+    UInt64 observationCount() const { return ex.stats.get(ReaderExecutor::Stats::Observations); }
+
     /// The per-job status sidecar, allocated 1:1 with the schedule's jobs.
     bool retrieveStatusMatchesSchedule() const
     {

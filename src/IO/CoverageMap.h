@@ -80,7 +80,13 @@ struct CoverageMap
     size_t streamReach(size_t from, size_t min_gap) const;
 
     size_t plan_start = 0;  /// physical (header-inclusive) coords
-    size_t plan_end = 0;    /// [plan_start, plan_end)
+    size_t plan_end = 0;    /// [plan_start, plan_end) -- the serve/schedule horizon
+    /// The pin horizon: the rightmost byte of any pinned cache state (folded hit
+    /// segments plus aligned-miss cells), always `>= plan_end`. The serve/schedule
+    /// queries (`covers`/`residentAt`/`gapEnd`/`nextGapStart`/`fetchWindowAt`/
+    /// `streamReach`) use `plan_end`; only the plan-reuse gate reads `pinned_end`.
+    /// Equal to `plan_end` unless the generalized plan-window extension is enabled.
+    size_t pinned_end = 0;
     VectorWithMemoryTracking<GeometryEntry> entries;
 
     /// `MemoryPressureMonitor` level sampled ONCE at plan build; reads within

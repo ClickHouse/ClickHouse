@@ -2620,6 +2620,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     auto geom = std::make_shared<CoverageMap>();
     geom->plan_start = physical_start;
     geom->plan_end = physical_start;
+    geom->pinned_end = geom->plan_end;
     /// Sample memory pressure ONCE here, per plan. Every read within this plan (cache
     /// and remote, foreground and the prefetch worker via `job->pressure_level`) sizes
     /// off this cached level instead of re-querying the global monitor per call.
@@ -2636,6 +2637,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
         return;
     }
     geom->plan_end = plan_range.end();
+    geom->pinned_end = geom->plan_end;
     ReadPlan plan;
 
     /// One read-only residency probe (`planResidencyView`) per cache tier per object-piece,

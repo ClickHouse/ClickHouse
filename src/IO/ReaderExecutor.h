@@ -70,6 +70,11 @@ public:
     /// amortising cache discovery across many windows. Planning is disabled
     /// when this is below `window_size`.
     static constexpr size_t DEFAULT_PLAN_LOOK_AHEAD = 64 * 1024 * 1024; /// 64 MiB
+    /// Hard upper bound on the whole plan span once it is extended rightward to
+    /// fold in all affected cache segments (generalized plan window). Bounds the
+    /// pinned cache footprint per executor; applied snapped DOWN to a cache-cell
+    /// boundary so no cell is truncated mid-way.
+    static constexpr size_t DEFAULT_PLAN_CAP = 32 * 1024 * 1024; /// 32 MiB
 
     /// Everything configurable beyond the data path itself: the executor is
     /// fully wired at construction, there are no post-construction setters.
@@ -85,6 +90,14 @@ public:
         /// (`reader_executor_lookahead_window`); decouples the held cache readers
         /// from the per-mark-range read-until bound.
         size_t lookahead_window = 16 * 1024 * 1024;
+        /// Generalize plan-window construction: extend the plan rightward to fold
+        /// ALL affected cache segments (hits as well as misses) on every tier into
+        /// the geometry, pin them, and reuse the plan across read-extent advances
+        /// while the cursor stays inside the pinned span. OFF preserves the legacy
+        /// miss-only widening (every query stays bounded by `plan_end`).
+        bool generalized_plan_window = false;
+        /// Hard cap on the generalized plan span (see `DEFAULT_PLAN_CAP`).
+        size_t plan_cap = DEFAULT_PLAN_CAP;
         /// Decrypt prefetched bytes on the read-ahead worker instead of at the serve
         /// boundary (encrypted sources, prefetch path only). See `decryptFetchedAhead`.
         bool decrypt_ahead = false;
