@@ -139,15 +139,27 @@ private:
         const Settings & global_settings = context->getGlobalContext()->getSettingsRef();
         const Settings & local_settings = context->getSettingsRef();
 
-        /// The passed-in role_arn is the one supplied by the backup query or its named collection. Only fall
-        /// back to the server `<s3>` configuration's role_arn when server-managed credentials are allowed:
-        /// a restricted user backup must not assume a server-configured role (it would gain the server's
-        /// identity), so it is left without a role unless the query supplied one explicitly.
-        if (role_arn.empty() && !context->shouldRestrictUserQueryS3Credentials())
+        /// The passed-in role_arn is the one supplied by the backup query or its named collection; if empty,
+        /// fall back to the server `<s3>` configuration's role_arn.
+        const bool role_arn_supplied_by_query = !role_arn.empty();
+        if (role_arn.empty())
         {
             role_arn = settings.auth_settings[S3AuthSetting::role_arn];
             role_session_name = settings.auth_settings[S3AuthSetting::role_session_name];
             external_id = settings.auth_settings[S3AuthSetting::external_id];
+        }
+
+        /// Under the restriction, a user backup must not assume a server-configured role (one inherited from
+        /// the `<s3>` config rather than supplied by the query/named collection) on top of its own explicit
+        /// keys -- that would use the keys merely as the STS base for the server's role. Drop the inherited
+        /// role so the explicit keys are used directly. With no explicit keys, the inherited role_arn is left
+        /// in place and `getCredentialsProvider` refuses it as a server-managed credential.
+        if (!role_arn_supplied_by_query && !role_arn.empty() && !credentials.IsEmpty()
+            && context->shouldRestrictUserQueryS3Credentials())
+        {
+            role_arn.clear();
+            role_session_name.clear();
+            external_id.clear();
         }
 
 
