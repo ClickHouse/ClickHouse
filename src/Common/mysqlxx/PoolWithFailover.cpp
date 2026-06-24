@@ -13,6 +13,7 @@
 namespace DB::ErrorCodes
 {
     extern const int ALL_CONNECTION_TRIES_FAILED;
+    extern const int BAD_ARGUMENTS;
 }
 
 using namespace mysqlxx;
@@ -70,6 +71,13 @@ PoolWithFailover::PoolWithFailover(
     /// SYSTEM RELOAD DICTIONARIES once all connections were in use, instead of failing with a clear error.
     /// See https://github.com/ClickHouse/ClickHouse/issues/22048
     const unsigned max_connections = config_.getUInt(config_name_ + ".connection_pool_size", max_connections_);
+
+    /// Match the named-collection / DDL path (createMySQLPoolWithFailover), which rejects a zero-sized
+    /// pool: with max_connections = 0 the pool could still hand out the default start connection (it is
+    /// allocated before max_connections is enforced), so a "zero-sized" pool is neither rejected nor truly
+    /// empty. Fail with a clear error instead.
+    if (max_connections == 0)
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Connection pool cannot have zero size");
 
     if (config_.has(config_name_ + ".replica"))
     {
