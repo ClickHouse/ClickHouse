@@ -218,7 +218,7 @@ Expression ((Project names + Projection))
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test)
         Indexes:
-          Partition Min-Max
+          Min-Max
             Keys:
               d
             Condition: (d in (-Inf, 16435])
@@ -240,7 +240,7 @@ Expression ((Project names + Projection))
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test)
         Indexes:
-          Partition Min-Max
+          Min-Max
             Keys:
               d
             Condition: (d in [0, 0])
