@@ -48,6 +48,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.6",
         {
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
+        });
+
+        addSettingsChanges(settings_changes_history, "26.6",
+        {
             {"output_format_image_width", 1024, 1024, "New setting controlling the width of the output image for image output formats such as PNG."},
             {"output_format_image_height", 1024, 1024, "New setting controlling the height of the output image for image output formats such as PNG."},
             {"output_format_image_terminal_mode", "", "", "New setting controlling whether image output formats such as PNG are rendered directly to the terminal using an inline image protocol."},
@@ -1263,6 +1267,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
             {"compute_exact_num_defaults_for_sparse_columns", false, false, "New setting gating exact per-column num_defaults computation for sparsity-based pruning and trivial-count rewrite"},
+
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",
