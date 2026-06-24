@@ -6,6 +6,7 @@
 #include <base/getFQDNOrHostName.h>
 #include <Common/StringUtils.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
 
 #include <Common/config_version.h>
@@ -31,13 +32,15 @@ namespace
 {
 
 /// Build a SocketAddress from a string read off the native protocol wire.
-/// ClientInfo::write always serializes the address as a numeric "host:port" (SocketAddress::toString),
-/// but the value is attacker-controlled and may be corrupted or desynced. Poco's SocketAddress(String)
-/// constructor resolves a non-numeric port via getservbyname(), which is a non-reentrant libc function
-/// trapped by base/harmful in debug/sanitizer builds (an uncatchable SIGILL, not an exception).
-/// Reject anything but a numeric port (<= 65535) up front so malformed input is a catchable error.
-/// The port substring is located exactly as Poco::Net::SocketAddress::init() does, so the token we
-/// validate is the same one Poco would otherwise pass to getservbyname().
+/// ClientInfo::write always serializes the address as an IP literal plus a numeric port
+/// ("ip:port" or "[ipv6]:port", via SocketAddress::toString), but the value is attacker-controlled
+/// and may be corrupted or desynced. Poco's SocketAddress(String) constructor would resolve a
+/// non-numeric port via getservbyname() and a non-IP host via DNS::hostByName() - both reach a
+/// non-reentrant libc resolver family that base/harmful traps to an uncatchable SIGILL in
+/// debug/sanitizer builds. Validate both parts here (numeric port <= 65535, host parseable as an
+/// IP literal) and construct the address directly from the parsed IPAddress, so malformed input
+/// such as "host:9000" or ":9000" becomes a catchable error instead of a resolver call.
+/// The host and port substrings are split exactly as Poco::Net::SocketAddress::init() does.
 Poco::Net::SocketAddress makeSocketAddressFromWire(const String & host_and_port)
 {
     if (host_and_port.empty())
@@ -49,13 +52,16 @@ Poco::Net::SocketAddress makeSocketAddressFromWire(const String & host_and_port)
         return Poco::Net::SocketAddress(host_and_port);
 #endif
 
+    std::string_view host;
     size_t port_pos = String::npos;
     if (host_and_port.front() == '[')
     {
-        /// "[ipv6]:port" - Poco requires ':' immediately after the closing ']'.
+        /// "[ipv6]:port" - Poco requires ':' immediately after the closing ']'. The host token
+        /// for IPAddress::tryParse is the address between the brackets (unbracketed).
         const auto closing_bracket = host_and_port.find(']');
         if (closing_bracket == String::npos)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed IPv6 address received over the network");
+        host = std::string_view(host_and_port).substr(1, closing_bracket - 1);
         if (closing_bracket + 1 < host_and_port.size() && host_and_port[closing_bracket + 1] == ':')
             port_pos = closing_bracket + 2;
     }
@@ -64,7 +70,10 @@ Poco::Net::SocketAddress makeSocketAddressFromWire(const String & host_and_port)
         /// "host:port" - Poco splits on the first ':'.
         const auto colon = host_and_port.find(':');
         if (colon != String::npos)
+        {
+            host = std::string_view(host_and_port).substr(0, colon);
             port_pos = colon + 1;
+        }
     }
 
     const std::string_view port
@@ -82,7 +91,13 @@ Poco::Net::SocketAddress makeSocketAddressFromWire(const String & host_and_port)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed address received over the network: port number out of range");
     }
 
-    return Poco::Net::SocketAddress(host_and_port);
+    /// The host must be an IP literal. ClientInfo::write only ever emits one (SocketAddress::host()),
+    /// so a non-IP host means corrupted/desynced input - reject it instead of letting Poco resolve it.
+    Poco::Net::IPAddress ip;
+    if (!Poco::Net::IPAddress::tryParse(std::string(host), ip))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed address received over the network: host is not an IP literal");
+
+    return Poco::Net::SocketAddress(ip, static_cast<UInt16>(port_number));
 }
 
 /// Detect whether the client (clickhouse-client or clickhouse-local) is being invoked under a known

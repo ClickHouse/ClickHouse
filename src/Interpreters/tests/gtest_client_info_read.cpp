@@ -78,11 +78,32 @@ TEST(ClientInfoRead, PortOutOfRangeThrows)
     }
 }
 
-/// A well-formed numeric "host:port" (the only form ClientInfo::write ever produces) must still
-/// parse: a full write -> read round-trip preserves the initial address.
+/// A numeric port is not enough: a non-IP host (e.g. "host:9000" or ":9000") must NOT reach
+/// Poco's DNS::hostByName() / gethostbyname() family (also trapped to SIGILL). ClientInfo::write
+/// only ever emits an IP literal, so a non-IP host is corrupted input and must be a catchable error.
+TEST(ClientInfoRead, NonIpHostThrows)
+{
+    for (const String & bad : {"host:9000", ":9000", "example.com:80", "localhost:9000", "[notipv6]:9000"})
+    {
+        ClientInfo info;
+        ReadBufferFromString in(makeClientInfoPrefix(bad));
+        try
+        {
+            info.read(in, DBMS_TCP_PROTOCOL_VERSION);
+            FAIL() << "Expected an exception for address: " << bad;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA) << "address: " << bad;
+        }
+    }
+}
+
+/// A well-formed IP literal plus numeric port (the only form ClientInfo::write ever produces) must
+/// still parse: a full write -> read round-trip preserves the initial address.
 TEST(ClientInfoRead, ValidNumericAddressRoundTrips)
 {
-    for (const String & good : {"127.0.0.1:9000", "[::1]:9000", "8.8.8.8:0"})
+    for (const String & good : {"127.0.0.1:9000", "[::1]:9000", "8.8.8.8:0", "0.0.0.0:65535", "[2001:db8::1]:443"})
     {
         ClientInfo out;
         out.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
