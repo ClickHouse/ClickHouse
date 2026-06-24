@@ -54,6 +54,16 @@ String stringifyJSON(const Poco::Dynamic::Var & json, unsigned indent = 0);
 /// kept here so the call lives in a single place.
 avro::ValidSchema compileAvroSchema(const String & schema_json);
 
+/// Re-emits a manifest-list entry read from a (possibly externally-written) manifest list into a fresh
+/// datum of `schema`, copying field by field so a compatible-but-different source Avro schema (e.g.
+/// `added_snapshot_id` as `["null","long"]` vs `long`) is normalized. `manifest_list_path` is used only
+/// for error messages.
+avro::GenericDatum copyManifestListEntry(
+    const avro::GenericRecord & old_entry,
+    const avro::ValidSchema & schema,
+    Int32 version,
+    const String & manifest_list_path);
+
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
