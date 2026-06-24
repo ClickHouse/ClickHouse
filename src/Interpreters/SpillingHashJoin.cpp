@@ -130,14 +130,14 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
     /// the switch the live buffer (already at half) plus the conversion peak still fit under the
     /// configured cap.
     ///
-    /// The projected byte count covers the deferred build of `ConcurrentHashJoin`: while the right
-    /// blocks are only buffered, the maps are still empty, so the plain byte count would let the
-    /// build pass this check and the replay at build finish would then overshoot the cap with no
-    /// spill opportunity left. The projection sizes the would-be hash-table buffers the same way
-    /// the replay reserves them.
+    /// For `ConcurrentHashJoin` the live byte count is enough here: a deferred build has no hash
+    /// maps yet (only buffered blocks, so no doubling race), and a non-deferred build has no
+    /// buffered rows so `getProjectedTotalByteCount` equals `getTotalByteCount` anyway. The
+    /// projection-based spill decision for a pending deferred build lives in `onBuildPhaseFinish`,
+    /// right before the replay would allocate the maps.
     if (concurrent_join)
     {
-        if (concurrent_join->getProjectedTotalByteCount() * SPILL_TRIGGER_HEADROOM_FACTOR >= max_bytes_before_external_join)
+        if (concurrent_join->getTotalByteCount() * SPILL_TRIGGER_HEADROOM_FACTOR >= max_bytes_before_external_join)
             switchToGraceHashJoin();
     }
     else
