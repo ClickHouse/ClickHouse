@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block_fwd.h>
+#include <Processors/StepWallClock.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/StreamLocalLimits.h>
@@ -10,6 +11,7 @@
 #include <functional>
 
 #include <list>
+#include <memory>
 
 namespace DB
 {
@@ -20,6 +22,9 @@ class OutputPort;
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::list<ProcessorPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+
+class StepWallClockRegistry;
+using StepWallClockRegistryPtr = std::unique_ptr<StepWallClockRegistry>;
 
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
@@ -120,7 +125,8 @@ public:
     void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota_);
     bool tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const;
 
-    void setMeasureStepWallClock(bool measure_step_wall_clock_) { measure_step_wall_clock = measure_step_wall_clock_; }
+    void setStepWallClocksRegistry(StepWallClockRegistryPtr step_wall_clock_registry_);
+    StepWallClockRegistry * getStepClocks() const { return step_wall_clock_registry.get(); }
 
     void writeResultIntoQueryResultCache(std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer);
     void finalizeWriteInQueryResultCache();
@@ -162,7 +168,7 @@ private:
     ProgressCallback progress_callback;
     std::shared_ptr<const EnabledQuota> quota;
     bool update_profile_events = true;
-    bool measure_step_wall_clock = false;
+    StepWallClockRegistryPtr step_wall_clock_registry;
 
     std::shared_ptr<Processors> processors;
 
