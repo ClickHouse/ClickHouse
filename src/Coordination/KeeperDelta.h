@@ -13,6 +13,7 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Coordination/ACLMap.h>
 #include <Coordination/KeeperCommon.h>
+#include <Coordination/Storage/Node.h>
 
 namespace DB
 {
@@ -27,6 +28,24 @@ namespace DB
 //    state of that same object from the storage and applying the deltas
 //    in the same order as they are defined
 //  - quickly commit the changes to the storage
+
+struct LSMTDelta
+{
+    /// Pin new_node's block to keep the data pointer valid.
+    /// (Probably not strictly necessary because the data lives in an uncommitted memtable, so
+    ///  shouldn't be invalidated anyway, but feels less sketchy this way.)
+    Coordination::Storage::NodeRef new_node_ref;
+    /// Deserialized node corresponding to new_node_ref.
+    /// Has path depth and hash (even if action is Remove), but the path string is invalid and needs
+    /// to be taken from Delta before use.
+    Coordination::Storage::FullNode new_node;
+    /// (In contrast, rollback speed is not important, so not wasting bytes on FullNode here.)
+    Coordination::Storage::NodeRef old_node_ref;
+    uint64_t old_digest = 0;
+
+    ACLId old_acl_id = 0;
+    int64_t ephemeral_owner = 0;
+};
 
 struct CreateNodeDelta
 {
@@ -87,7 +106,10 @@ struct CloseSessionDelta
 struct KeeperDelta
 {
     using Operation = std::variant<
-        /// Node-related deltas are handled by KeeperStorageImpl.
+        /// KeeperLSMTNodesStorage delta (just one type: overwrite whole node).
+        LSMTDelta,
+
+        /// KeeperMemNodesStorage deltas.
         CreateNodeDelta,
         RemoveNodeDelta,
         UpdateNodeStatDelta,

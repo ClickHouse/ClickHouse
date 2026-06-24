@@ -33,6 +33,7 @@
 #include <Coordination/KeeperStorage.h>
 #include <Coordination/KeeperStorageImpl.h>
 #include <Coordination/KeeperMemNodesStorage.h>
+#include <Coordination/KeeperLSMTNodesStorage.h>
 
 #include <limits>
 #include <shared_mutex>
@@ -71,6 +72,7 @@ namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 log_slow_cpu_threshold_ms;
     extern const CoordinationSettingsBool check_node_acl_on_remove;
+    extern const CoordinationSettingsBool use_new_storage;
 }
 
 namespace ErrorCodes
@@ -278,7 +280,11 @@ KeeperStorage::KeeperStorage(
 
 std::unique_ptr<KeeperStorage> KeeperStorage::create(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes)
 {
-    std::unique_ptr<KeeperStorage> res = std::make_unique<KeeperMemoryStorage>(tick_time_ms, superdigest_, keeper_context_);
+    std::unique_ptr<KeeperStorage> res;
+    if (keeper_context_->getCoordinationSettings()[CoordinationSetting::use_new_storage])
+        res = std::make_unique<KeeperLSMTStorage>(tick_time_ms, superdigest_, keeper_context_);
+    else
+        res = std::make_unique<KeeperMemoryStorage>(tick_time_ms, superdigest_, keeper_context_);
     if (initialize_system_nodes)
         res->initializeSystemNodes();
     return res;
@@ -437,6 +443,8 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
 
 void KeeperStorage::UncommittedState::rollback(std::list<Delta> rollback_deltas)
 {
+    using NodeAction = Coordination::Storage::NodeAction;
+
     // we need to undo ephemeral mapping modifications
     // CreateNodeDelta added ephemeral for session id -> we need to remove it
     // RemoveNodeDelta removed ephemeral for session id -> we need to add it back
@@ -466,6 +474,25 @@ void KeeperStorage::UncommittedState::rollback(std::list<Delta> rollback_deltas)
                     {
                         if (operation.stat.getEphemeralOwner() != 0)
                             storage.uncommitted_state.ephemerals[operation.stat.getEphemeralOwner()].emplace(delta.path);
+                    }
+                    else if constexpr (std::same_as<DeltaType, LSMTDelta>)
+                    {
+                        switch (operation.new_node.action)
+                        {
+                            case NodeAction::Create:
+                                if (operation.ephemeral_owner != 0)
+                                    unregisterEphemeralPath(storage.uncommitted_state.ephemerals, operation.ephemeral_owner, delta.path, /*throw_if_missing=*/false);
+                                storage.acl_map.removeUsage(operation.new_node.stats.acl_id);
+                                break;
+                            case NodeAction::Update:
+                                if (operation.old_acl_id != operation.new_node.stats.acl_id)
+                                    storage.acl_map.removeUsage(operation.new_node.stats.acl_id);
+                                break;
+                            case NodeAction::Remove:
+                                if (operation.ephemeral_owner != 0)
+                                    storage.uncommitted_state.ephemerals[operation.ephemeral_owner].emplace(delta.path);
+                                break;
+                        }
                     }
                 },
                 delta.operation);
@@ -568,6 +595,8 @@ uint64_t KeeperStorage::getLastUncommittedLogIdx() const
 
 Coordination::Error KeeperStorage::commit(KeeperStorage::DeltaRange deltas)
 {
+    using NodeAction = Coordination::Storage::NodeAction;
+
     auto digest_on_commit = keeper_context->digestEnabled() && keeper_context->digestEnabledOnCommit();
     uint64_t digest_change = 0;
     uint64_t * digest = digest_on_commit ? &digest_change : nullptr;
@@ -601,6 +630,35 @@ Coordination::Error KeeperStorage::commit(KeeperStorage::DeltaRange deltas)
                         --committed_ephemeral_nodes;
                         std::lock_guard lock(ephemeral_mutex);
                         unregisterEphemeralPath(committed_ephemerals, operation.stat.getEphemeralOwner(), path, /*throw_if_missing=*/true);
+                    }
+                    return Coordination::Error::ZOK;
+                }
+                else if constexpr (std::same_as<DeltaType, LSMTDelta>)
+                {
+                    switch (operation.new_node.action)
+                    {
+                        case NodeAction::Create:
+                            if (operation.ephemeral_owner != 0)
+                            {
+                                ++committed_ephemeral_nodes;
+                                std::lock_guard lock(ephemeral_mutex);
+                                committed_ephemerals[operation.ephemeral_owner].emplace(path);
+                            }
+                            break;
+                        case NodeAction::Update:
+                            if (operation.old_acl_id != operation.new_node.stats.acl_id)
+                                acl_map.removeUsage(operation.old_acl_id);
+                            break;
+                        case NodeAction::Remove:
+                            acl_map.removeUsage(operation.old_acl_id);
+                            if (operation.ephemeral_owner != 0)
+                            {
+                                chassert(committed_ephemeral_nodes != 0);
+                                --committed_ephemeral_nodes;
+                                std::lock_guard lock(ephemeral_mutex);
+                                unregisterEphemeralPath(committed_ephemerals, operation.ephemeral_owner, path, /*throw_if_missing=*/true);
+                            }
+                            break;
                     }
                     return Coordination::Error::ZOK;
                 }
