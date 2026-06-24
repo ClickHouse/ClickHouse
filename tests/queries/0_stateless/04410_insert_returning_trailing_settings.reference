@@ -1,0 +1,9 @@
+select returning trailing settings
+rows after insert
+1
+2
+3
+select returning trailing settings pushed down
+5
+values returning with settings
+10

@@ -1,0 +1,40 @@
+-- A trailing query-level SETTINGS clause after the RETURNING subquery of an INSERT ... SELECT must be
+-- accepted. Previously the source SELECT parser stopped at RETURNING and the trailing SETTINGS was never
+-- consumed, producing a SYNTAX_ERROR.
+
+SET async_insert = 0;
+
+DROP TABLE IF EXISTS t_ret_settings;
+DROP TABLE IF EXISTS t_ret_settings_src;
+
+CREATE TABLE t_ret_settings (id UInt64) ENGINE = Memory;
+CREATE TABLE t_ret_settings_src (id UInt64) ENGINE = Memory;
+INSERT INTO t_ret_settings_src VALUES (1), (2), (3);
+
+-- INSERT ... SELECT ... RETURNING (...) SETTINGS ...
+SELECT 'select returning trailing settings';
+INSERT INTO t_ret_settings SELECT id FROM t_ret_settings_src
+RETURNING (SELECT count() FROM t_ret_settings)
+SETTINGS parallel_distributed_insert_select = 1;
+
+SELECT 'rows after insert';
+SELECT id FROM t_ret_settings ORDER BY id;
+
+-- The trailing SETTINGS is pushed into the source SELECT, just like for a plain INSERT ... SELECT ... SETTINGS.
+SELECT 'select returning trailing settings pushed down';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings SELECT number FROM numbers(5)
+RETURNING (SELECT count() FROM t_ret_settings)
+SETTINGS max_threads = 1;
+
+SELECT count() FROM t_ret_settings;
+
+-- INSERT VALUES + RETURNING with a query-level SETTINGS before the data clause still works.
+SELECT 'values returning with settings';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings SETTINGS max_threads = 1 RETURNING (SELECT count() FROM t_ret_settings) VALUES (10);
+
+SELECT id FROM t_ret_settings ORDER BY id;
+
+DROP TABLE t_ret_settings_src;
+DROP TABLE t_ret_settings;

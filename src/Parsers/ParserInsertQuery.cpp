@@ -266,7 +266,23 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         tryGetIdentifierNameInto(format, format_str);
 
         /// For INSERT SELECT, RETURNING appears after the source SELECT.
-        try_parse_returning_subquery();
+        const bool has_returning = try_parse_returning_subquery();
+
+        /// A query-level SETTINGS clause normally trails the source SELECT and is absorbed by
+        /// `ParserSelectWithUnionQuery` as the SELECT's own settings. When RETURNING is present the
+        /// SELECT parser stops at RETURNING, so the trailing `SETTINGS` (e.g. `parallel_distributed_insert_select`)
+        /// would never be consumed. Parse it here and attach it to the INSERT; the push-down visitor
+        /// below propagates it into the source SELECT exactly as in the non-RETURNING case.
+        if (has_returning && s_settings.ignore(pos, expected))
+        {
+            if (settings_ast)
+                throw Exception(ErrorCodes::SYNTAX_ERROR,
+                                "You have SETTINGS both before and after the source SELECT, this is not allowed.");
+
+            ParserSetQuery parser_settings(true);
+            if (!parser_settings.parse(pos, settings_ast, expected))
+                return false;
+        }
     }
     else if (!infile)
     {
