@@ -11,6 +11,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/CurrentThread.h>
 #include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 
 namespace DB
