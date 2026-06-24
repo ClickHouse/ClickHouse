@@ -1,5 +1,6 @@
 #pragma once
 
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -332,6 +333,9 @@ struct RowRefList
 
         bool ok() const { return cur != nullptr || range_remaining != 0; }
 
+        /// Lets `refsOf(word)` drive a range-based for loop against a default sentinel end.
+        bool operator != (std::default_sentinel_t) const { return ok(); }
+
     private:
         /// Run mode (eviction list): `cur` walks the current contiguous run bounded by `run_end`,
         /// `next_node` is the next overflow node (newest-first). `cur == nullptr` => range mode or done.
@@ -360,6 +364,32 @@ private:
 
 static_assert(sizeof(RowRefList) == 8, "RowRefList must stay 8 bytes: it is the hash map cell payload");
 static_assert(sizeof(RowRefList::Batch) == 64, "RowRefList::Batch must stay one cache line");
+
+/// Number of rows an encoded cell / LazyOutput word represents (singleton = 1, list = its count,
+/// range = its length), without spelling out a RowRefList at the call site. A zero word yields 0.
+inline UInt32 refWordRows(UInt64 word)
+{
+    RowRefList list;
+    list.word = word;
+    return list.rows();
+}
+
+/// Iterable view over the encoded refs of a cell / LazyOutput word, so a call site can write
+/// `for (UInt64 ref_word : refsOf(word))` instead of materializing a RowRefList and driving its
+/// ForwardIterator by hand. Covers singleton, list, and range words alike.
+struct RowRefsRange
+{
+    RowRefList list;
+    RowRefList::ForwardIterator begin() const { return list.begin(); }
+    std::default_sentinel_t end() const { return {}; }
+};
+
+inline RowRefsRange refsOf(UInt64 word)
+{
+    RowRefList list;
+    list.word = word;
+    return RowRefsRange{list};
+}
 
 /// Encoded ref word of a key's first row: the "any row of the key" semantics used by ANY/RightAny/Semi
 /// matches and by `StorageJoin` fills, on both MapsOne (RowRef) and MapsAll (RowRefList) cells.

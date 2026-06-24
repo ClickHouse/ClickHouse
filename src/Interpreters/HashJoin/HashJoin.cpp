@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <base/getL2CacheSize.h>
+#include <base/scope_guard.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
@@ -965,6 +966,13 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
         ReadableSize(query_memory_usage_delta),
         max_total_bytes_for_query ? fmt::format("/ {}", ReadableSize(max_total_bytes_for_query)) : "");
 
+    /// Each cloneResized below replaces a stored column object in place, so any emit table built by a
+    /// prior query (a persistent StorageJoin builds one per SELECT, then OPTIMIZE/insert runs this) is
+    /// left with dangling `const IColumn *`. Bump the generation on every exit - including the exception
+    /// paths, where some columns were already replaced - so the next probe rebuilds it against the new
+    /// columns. invalidateEmitTable only takes a mutex and increments a counter, so it is unwind-safe.
+    SCOPE_EXIT({ data->stored_columns_index->invalidateEmitTable(); });
+
     for (auto & stored_columns : data->columns)
     {
         doDebugAsserts();
@@ -1016,11 +1024,6 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
 
         doDebugAsserts();
     }
-
-    /// Every stored column object was replaced in place (cloneResized), so any emit table built by a
-    /// prior query (StorageJoin OPTIMIZE runs this after queries) now holds dangling `const IColumn *`.
-    /// Bump the generation so the next probe rebuilds it against the new columns.
-    data->stored_columns_index->invalidateEmitTable();
 
     auto new_total_bytes_in_join = getTotalByteCount();
 

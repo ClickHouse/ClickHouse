@@ -81,9 +81,7 @@ struct LazyOutput
     {
         chassert(ref_word != 0);
         row_refs.emplace_back(ref_word);
-        RowRefList list;
-        list.word = ref_word;
-        row_count += list.rows();
+        row_count += refWordRows(ref_word);
     }
 
     void addDefault()

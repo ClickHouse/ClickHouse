@@ -117,17 +117,17 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
     {
         if (*row_ref_i)
         {
-            RowRefList ref_list;
-            ref_list.word = *row_ref_i;
-            for (auto it = ref_list.begin(); rows_limit > 0 && it.ok(); ++it)
+            for (const UInt64 ref_word : refsOf(*row_ref_i))
             {
+                if (rows_limit == 0)
+                    break;
+
                 if (row_idx < rows_offset)
                 {
                     ++row_idx;
                     continue;
                 }
 
-                const UInt64 ref_word = *it;
                 const auto * block = stored_columns[refWordBlockNo(ref_word)];
                 const size_t row_num = refWordRowNo(ref_word);
 
@@ -194,11 +194,8 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
         {
             if constexpr (from_row_list)
             {
-                RowRefList ref_list;
-                ref_list.word = *row_ref_i;
-                for (auto it = ref_list.begin(); it.ok(); ++it)
+                for (const UInt64 ref_word : refsOf(*row_ref_i))
                 {
-                    const UInt64 ref_word = *it;
                     many_columns.emplace_back(stored_columns[refWordBlockNo(ref_word)]);
                     row_nums.emplace_back(refWordRowNo(ref_word));
                 }

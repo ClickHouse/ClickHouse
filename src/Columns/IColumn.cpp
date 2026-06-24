@@ -577,10 +577,10 @@ static void fillColumnFromRowRefs(
     {
         if (*row_ref)
         {
-            RowRefList ref_list;
-            ref_list.word = *row_ref;
             if constexpr (row_refs_are_ranges)
             {
+                RowRefList ref_list;
+                ref_list.word = *row_ref;
                 /// A range entry is either a single inline ref (the rerange optimization stores
                 /// single-row keys that way) or a range node; firstWord()/rows() resolve both. The
                 /// chassert keeps the debug-only invariant that a non-range list node never reaches
@@ -636,9 +636,8 @@ static void fillColumnFromRowRefs(
                     run_length = 0;
                 };
 
-                for (auto it = ref_list.begin(); it.ok(); ++it)
+                for (const UInt64 ref_word : refsOf(*row_ref))
                 {
-                    const UInt64 ref_word = *it;
                     const UInt32 block_no = refWordBlockNo(ref_word);
                     const UInt32 row_num = refWordRowNo(ref_word);
                     if (run_length && block_no == run_block_no && row_num == run_start_row + run_length)
