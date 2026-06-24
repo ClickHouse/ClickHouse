@@ -23,8 +23,11 @@ function run() {
     local qid="04409_${CLICKHOUSE_DATABASE}_${suffix}"
 
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS $table"
+    # Tiny compress blocks make the cache-on-write flushes (and thus reservations)
+    # much smaller than a file segment, so without reserve-ahead each segment is
+    # reserved many times. Large file segments amplify the difference.
     $CLICKHOUSE_CLIENT -q "
-        CREATE TABLE $table (key UInt64, value String CODEC(NONE))
+        CREATE TABLE $table (key UInt64, value String)
         ENGINE = MergeTree() ORDER BY key
         SETTINGS disk = disk(
             type = cache,
@@ -32,12 +35,14 @@ function run() {
             path = '$cache_path',
             disk = 'local_disk',
             max_size = '10Gi',
-            max_file_segment_size = '1Mi',
+            max_file_segment_size = '8Mi',
             boundary_alignment = '1Mi',
             background_download_threads = 0,
             cache_on_write_operations = 1,
             reserve_granularity = '$granule'),
-        min_bytes_for_wide_part = 0"
+        min_bytes_for_wide_part = 0,
+        min_compress_block_size = 4096,
+        max_compress_block_size = 4096"
 
     $CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES $table"
 
@@ -45,10 +50,9 @@ function run() {
     cache_name=$($CLICKHOUSE_CLIENT -q "SELECT name FROM system.disks WHERE cache_path LIKE '%$cache_path%'")
     drop_filesystem_cache "$cache_name" > /dev/null
 
-    # Uncompressed (CODEC(NONE)) deterministic value, so the data spans many 1Mi
-    # file segments and both runs produce an identical layout.
+    # Incompressible value so the data really spans many file segments.
     $CLICKHOUSE_CLIENT --query_id "$qid" --enable_filesystem_cache_on_write_operations=1 -q "
-        INSERT INTO $table SELECT number, repeat('x', 1000) FROM numbers(20000)"
+        INSERT INTO $table SELECT number, randomString(2000) FROM numbers(20000)"
 
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
