@@ -299,6 +299,7 @@ std_cerr_cout_excludes=(
     src/Processors/IProcessor.cpp
     src/Client/ClientApplicationBase.cpp
     src/Common/ProgressIndication.h
+    src/Common/Scheduler/Debug.h
     src/Client/LineReader.h
     src/Client/ReplxxLineReader.h
     src/Client/Suggest.cpp
