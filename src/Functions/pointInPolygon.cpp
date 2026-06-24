@@ -19,7 +19,6 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocCacheArena.h>
-#include <Common/ProfileEvents.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <base/arithmeticOverflow.h>
@@ -34,12 +33,6 @@
 #include <memory>
 #include <variant>
 
-
-namespace ProfileEvents
-{
-    extern const Event PolygonsAddedToPool;
-    extern const Event PolygonsInPoolAllocatedBytes;
-}
 
 namespace CurrentMetrics
 {
@@ -390,10 +383,6 @@ public:
 
                     auto ptr = std::make_shared<typename Cache::Mapped>(std::in_place_type<PointInConstMultiPolygonImpl>, multi_polygon);
 
-                    ProfileEvents::increment(ProfileEvents::PolygonsAddedToPool);
-                    ProfileEvents::increment(
-                        ProfileEvents::PolygonsInPoolAllocatedBytes, std::get<PointInConstMultiPolygonImpl>(*ptr).getAllocatedBytes());
-
                     return ptr;
                 };
 
@@ -421,10 +410,6 @@ public:
                     ScopedJemallocThreadArena arena_scope(JemallocCacheArena::getArenaIndex());
 
                     auto ptr = std::make_shared<typename Cache::Mapped>(std::in_place_type<PointInConstPolygonImpl>, polygon);
-
-                    ProfileEvents::increment(ProfileEvents::PolygonsAddedToPool);
-                    ProfileEvents::increment(
-                        ProfileEvents::PolygonsInPoolAllocatedBytes, std::get<PointInConstPolygonImpl>(*ptr).getAllocatedBytes());
 
                     return ptr;
                 };
