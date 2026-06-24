@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.7",
         {
+            {"query_plan_lift_predicate_across_join", false, true, "New setting that lifts filter conjuncts across equi-join keys so primary-key pruning fires on both sides."},
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
         });
 

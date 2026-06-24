@@ -56,12 +56,20 @@ bool targetReachesIndexedSource(const QueryPlan::Node * node)
     }) != nullptr;
 }
 
-/// `tryPushDownOverJoinStep` already lifts a filter above the JOIN to both sides via
-/// equivalence sets, so a target side that already has a FilterStep has (or is about to have)
-/// the equivalent predicate. Lifting on top would be redundant
-bool targetAlreadyHasFilter(const QueryPlan::Node * target_root)
+/// result_names of conjunct atoms already present in target filter, for dedup against lift candidates
+std::unordered_set<std::string> collectTargetAtoms(const QueryPlan::Node * target_root)
 {
-    return findFilterBelow(target_root) != nullptr;
+    std::unordered_set<std::string> result;
+    const auto * target_filter = findFilterBelow(target_root);
+    if (!target_filter)
+        return result;
+    const auto & dag = target_filter->getExpression();
+    const auto * filter_root = dag.tryFindInOutputs(target_filter->getFilterColumnName());
+    if (!filter_root)
+        return result;
+    for (const auto * atom : ActionsDAG::extractConjunctionAtoms(filter_root))
+        result.insert(atom->result_name);
+    return result;
 }
 
 bool atomSubstitutable(const ActionsDAG::Node * node, const SubstitutionMap & sub)
@@ -117,7 +125,7 @@ size_t tryLiftSide(
     auto * source_root = join_node->children[source_idx];
     auto * target_root = join_node->children[target_idx];
 
-    if (!targetReachesIndexedSource(target_root) || targetAlreadyHasFilter(target_root))
+    if (!targetReachesIndexedSource(target_root))
         return 0;
 
     const auto * source_filter = findFilterBelow(source_root);
@@ -149,6 +157,25 @@ size_t tryLiftSide(
     /// addFilterOnTop requires exactly one output (filter column)
     if (lifted_dag->getOutputs().size() != 1)
         return 0;
+
+    /// drop conjuncts the target already has. result_name is computed deterministically from structure, so structurally equivalent atoms match
+    auto existing_target_atoms = collectTargetAtoms(target_root);
+    if (!existing_target_atoms.empty())
+    {
+        const auto * lifted_root = lifted_dag->getOutputs().front();
+        ActionsDAG::NodeRawConstPtrs novel_atoms;
+        for (const auto * atom : ActionsDAG::extractConjunctionAtoms(lifted_root))
+        {
+            if (!existing_target_atoms.contains(atom->result_name))
+                novel_atoms.push_back(atom);
+        }
+        if (novel_atoms.empty())
+            return 0;
+        auto novel_dag = ActionsDAG::buildFilterActionsDAG(novel_atoms, /*node_name_to_input_node_column=*/{}, /*single_output_condition_node=*/true);
+        if (!novel_dag || novel_dag->getOutputs().size() != 1)
+            return 0;
+        lifted_dag = std::move(novel_dag);
+    }
 
     addFilterOnTop(*join_node, target_idx, nodes, std::move(*lifted_dag));
     join_node->children[target_idx]->step->setStepDescription("Lifted equi-join filter");

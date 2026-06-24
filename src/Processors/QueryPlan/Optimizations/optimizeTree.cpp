@@ -255,6 +255,8 @@ void optimizeTreeSecondPass(
     }
 
     bool join_runtime_filters_were_added = false;
+    /// Track lifted-filter target subtrees so we can re-run PK condition analysis only there
+    std::vector<QueryPlan::Node *> lifted_target_roots;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
@@ -267,7 +269,15 @@ void optimizeTreeSecondPass(
             if (optimization_settings.enable_join_runtime_filters)
                 join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
             if (optimization_settings.lift_predicate_across_join)
-                join_runtime_filters_were_added |= (tryLiftPredicateAcrossEquiJoin(&frame_node, nodes, extra_settings) > 0);
+            {
+                size_t lifts = tryLiftPredicateAcrossEquiJoin(&frame_node, nodes, extra_settings);
+                if (lifts > 0)
+                {
+                    join_runtime_filters_were_added = true;
+                    for (auto * child : frame_node.children)
+                        lifted_target_roots.push_back(child);
+                }
+            }
             convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
         });
 
@@ -290,20 +300,11 @@ void optimizeTreeSecondPass(
                         break;
                 }
             });
-    }
 
-    /// Run after runtime filter push-down so that chains of joins are detected correctly.
-    if (optimization_settings.min_columns_for_join_lazy_indexing > 0)
-    {
-        traverseQueryPlan(stack, root,
-            [&](auto & frame_node)
-            {
-                optimizeJoinLazyIndexing(frame_node, nodes, optimization_settings);
-            });
-
-        /// Re-run PK condition analysis so the lifted/runtime filter reaches MergeTree
+        /// Re-run PK condition analysis only on subtrees that got a lifted filter
         if (optimization_settings.query_plan_optimize_primary_key)
-            traverseQueryPlan(stack, root, [&](auto &) { optimizePrimaryKeyConditionAndLimit(stack); });
+            for (auto * lifted_root : lifted_target_roots)
+                traverseQueryPlan(stack, *lifted_root, [&](auto &) { optimizePrimaryKeyConditionAndLimit(stack); });
     }
 
     /// Do PREWHERE optimization after all possible filters including JOIN runtime filters were pushed down
