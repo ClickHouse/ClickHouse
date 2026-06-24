@@ -68,6 +68,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     /// See Context::shouldRestrictUserQueryS3Credentials.
     bool is_s3_disk = false;
     bool type_is_indirect = false;
+    bool has_explicit_type = false;
     bool has_include = false;
     bool has_indirect_auth_field = false;
     bool has_access_key_id = false;
@@ -132,6 +133,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         {
             is_s3_disk |= (value_str == "s3" || value_str.starts_with("s3_"));
             type_is_indirect |= indirect;
+            has_explicit_type |= !indirect;
         }
         else if (key == "access_key_id")
             has_access_key_id = !value_str.empty() && !indirect;
@@ -199,10 +201,13 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     /// forced anonymous on load (it becomes inaccessible for a private bucket) rather than throwing, governed by
     /// the server setting `s3_load_table_anonymously_if_credentials_restricted`.
     ///
-    /// `include` could pull S3 fields from server config, and a `from_env`/`from_zk` substitution on the
-    /// disk type or on a credential/auth field could hide an S3 disk or resolve a server-side value, so any
-    /// of those is treated as potentially-S3 and rejected.
-    const bool maybe_s3_disk = is_s3_disk || type_is_indirect || has_include;
+    /// A `from_env`/`from_zk` substitution on the disk type or on a credential/auth field could hide an S3
+    /// disk or resolve a server-side value, so an indirect type is treated as potentially-S3. An `include`
+    /// could pull S3 fields (including the type) from server config, so it is also potentially-S3 -- unless
+    /// the type is explicitly a literal non-S3 type (e.g. `encrypted`, `cache`), in which case the include
+    /// cannot turn it into an S3 disk and the check must not break that unrelated dynamic-disk feature.
+    const bool type_explicitly_non_s3 = has_explicit_type && !is_s3_disk && !type_is_indirect;
+    const bool maybe_s3_disk = is_s3_disk || type_is_indirect || (has_include && !type_explicitly_non_s3);
     if (maybe_s3_disk && context->shouldRestrictUserQueryS3Credentials())
     {
         const bool has_explicit_credentials = has_access_key_id && has_secret_access_key;
