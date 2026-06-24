@@ -68,7 +68,11 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     /// See Context::shouldRestrictUserQueryS3Credentials.
     bool is_s3_disk = false;
     bool type_is_indirect = false;
-    bool has_explicit_type = false;
+    /// A literal, concrete non-S3 `type` (e.g. `encrypted`, `cache`, `local`) -- but NOT `object_storage`,
+    /// which is only a wrapper whose backend is chosen by `object_storage_type`.
+    bool has_concrete_non_s3_type = false;
+    bool type_is_object_storage = false;
+    bool has_explicit_non_s3_object_storage_type = false;
     bool has_include = false;
     bool has_indirect_auth_field = false;
     bool has_access_key_id = false;
@@ -131,9 +135,19 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             has_include = true;
         else if (key == "type" || key == "object_storage_type")
         {
-            is_s3_disk |= (value_str == "s3" || value_str.starts_with("s3_"));
+            const bool is_s3_value = (value_str == "s3" || value_str.starts_with("s3_"));
+            is_s3_disk |= is_s3_value;
             type_is_indirect |= indirect;
-            has_explicit_type |= !indirect;
+
+            if (key == "type")
+            {
+                if (!indirect && value_str == "object_storage")
+                    type_is_object_storage = true;
+                else if (!indirect && !is_s3_value)
+                    has_concrete_non_s3_type = true;
+            }
+            else if (!indirect && !is_s3_value) /// object_storage_type
+                has_explicit_non_s3_object_storage_type = true;
         }
         else if (key == "access_key_id")
             has_access_key_id = !value_str.empty() && !indirect;
@@ -204,9 +218,12 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     /// A `from_env`/`from_zk` substitution on the disk type or on a credential/auth field could hide an S3
     /// disk or resolve a server-side value, so an indirect type is treated as potentially-S3. An `include`
     /// could pull S3 fields (including the type) from server config, so it is also potentially-S3 -- unless
-    /// the type is explicitly a literal non-S3 type (e.g. `encrypted`, `cache`), in which case the include
-    /// cannot turn it into an S3 disk and the check must not break that unrelated dynamic-disk feature.
-    const bool type_explicitly_non_s3 = has_explicit_type && !is_s3_disk && !type_is_indirect;
+    /// the disk's backend is explicitly a literal non-S3 type, in which case the include cannot turn it into
+    /// an S3 disk and the check must not break that unrelated dynamic-disk feature. `type = object_storage`
+    /// is only a wrapper: its backend comes from `object_storage_type` (which an `include` could inject as
+    /// `s3`), so it is non-S3 only when an explicit literal non-S3 `object_storage_type` is also present.
+    const bool type_explicitly_non_s3
+        = has_concrete_non_s3_type || (type_is_object_storage && has_explicit_non_s3_object_storage_type);
     const bool maybe_s3_disk = is_s3_disk || type_is_indirect || (has_include && !type_explicitly_non_s3);
     if (maybe_s3_disk && context->shouldRestrictUserQueryS3Credentials())
     {
