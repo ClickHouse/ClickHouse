@@ -40,8 +40,10 @@ the private repo's `release/<x.y>` head refs (and the resulting
 `backport/release/<x.y>/<number>` branches) are matched the same way as the
 public repo's bare `<x.y>` names. Versions are matched by `commit_sha`, which is
 unique per merge commit per repo, so there is no cross-repo mismatch. It does
-require that the repo's CI populates `version_history` in the CIDB reachable via
-the `clickhouse-test-stat-*` SSM parameters.
+require that the repo's CI populates `version_history` in the CIDB; reads use
+`CIDBCluster`, which resolves the same `Settings.SECRET_CI_DB_*` credentials
+that `version_log.py` writes with (the public `clickhouse-test-stat-*` params
+or the private `PRIVATE_CI_DB_*` secrets), so the workflow must declare them.
 """
 
 from __future__ import annotations
@@ -180,14 +182,21 @@ def partition_merged_prs(
 class VersionHistory:
     """Reads versions from the CIDB `version_history` table, with a SHA cache."""
 
-    def __init__(self, ch_helper) -> None:
-        self.ch = ch_helper
+    def __init__(self, cidb) -> None:
+        # `cidb` is a CIDBCluster; it resolves the CIDB credentials from the
+        # workflow secrets (Settings.SECRET_CI_DB_*), which map to the public
+        # `clickhouse-test-stat-*` params or the private `PRIVATE_CI_DB_*`
+        # secrets -- the same cluster `version_log.py` writes `version_history`
+        # to, so reads and writes always agree.
+        self.cidb = cidb
         self._cache: Dict[str, Optional[str]] = {}
         # Guards `_cache` so the lookup can be shared by parallel backport scans.
         self._lock = threading.Lock()
 
     def version_for_commit(self, sha: Optional[str]) -> Optional[str]:
-        if not sha:
+        # `do_select_query` does not bind parameters, so only a real git oid
+        # (hex) is ever interpolated into the query text.
+        if not sha or not re.fullmatch(r"[0-9a-fA-F]+", sha):
             return None
         with self._lock:
             if sha in self._cache:
@@ -195,14 +204,14 @@ class VersionHistory:
         # The query runs outside the lock so concurrent lookups for different
         # commits do not serialize; a duplicate query for the same sha is rare
         # and harmless.
-        rows = self.ch.select_json_each_row(
-            CIDB_DATABASE,
+        text = self.cidb.do_select_query(
             "SELECT version FROM version_history "
-            "WHERE commit_sha = {sha:String} "
-            "ORDER BY check_start_time DESC LIMIT 1",
-            query_params={"sha": sha},
+            f"WHERE commit_sha = '{sha}' "
+            "ORDER BY check_start_time DESC LIMIT 1 "
+            "FORMAT TabSeparated",
+            db_name=CIDB_DATABASE,
         )
-        version = rows[0]["version"] if rows else None
+        version = (text or "").strip() or None
         with self._lock:
             self._cache[sha] = version
         return version
@@ -348,7 +357,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
-    from clickhouse_helper import ClickHouseHelper
+    from ci.jobs.scripts.cidb_cluster import CIDBCluster
     from get_robot_token import get_best_robot_token
     from github_helper import GitHub
 
@@ -358,7 +367,7 @@ def main() -> int:
 
     gh = GitHub(token, per_page=100)
     repo = gh.get_repo(args.repo)
-    version_history = VersionHistory(ClickHouseHelper())
+    version_history = VersionHistory(CIDBCluster())
     release_branches = [pr.head.ref for pr in gh.get_release_pulls(args.repo)]
     logging.info("Active release branches: %s", release_branches)
 
