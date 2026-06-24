@@ -18,20 +18,6 @@ APPEND	1	1			11	11
 DELETE			1	1	10	10
 --- final SELECT vs total-* summary ---
 10	10	10	10	1
---- operation sequence ---
-APPEND
-APPEND
-APPEND
-APPEND
-APPEND
-APPEND
-APPEND
-APPEND
-APPEND
-APPEND
-APPEND
-DELETE
-DELETE
-DELETE
-APPEND
-DELETE
+--- operation counts ---
+APPEND	12
+DELETE	4
