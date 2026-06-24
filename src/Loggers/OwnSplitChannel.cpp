@@ -358,7 +358,7 @@ void OwnAsyncSplitChannel::enqueueMessage(LogQueue & queue, AsyncLogMessagePtr m
 {
     ProfileEvents::incrementNoTrace(queue.event_on_passed_message);
 
-    if (unlikely(!queue.messages.tryPush(std::move(message))))
+    if (unlikely(!queue.messages.tryPush(message)))
     {
         /// The queue is full: the consumer doesn't keep up. Drop the message and remember the fact;
         /// the consumer will report the dropped messages with a warning once it catches up.
