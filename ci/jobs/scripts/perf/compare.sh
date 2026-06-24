@@ -1021,14 +1021,26 @@ create table unstable_run_metrics_2 engine File(TSVWithNamesAndTypes,
 create view trace_log as select *
     from file('$version-trace-log.tsv', TSVWithNamesAndTypes);
 
-create view addresses_src as select addr,
-        -- Some functions change name between builds, e.g. '__clone' or 'clone' or
-        -- even '__GI__clone@@GLIBC_2.32'. This breaks differential flame graphs, so
-        -- filter them out here.
-        [name, 'clone.S (filtered by script)', 'pthread_cond_timedwait (filtered by script)']
-            -- this line is a subscript operator of the above array
-            [1 + multiSearchFirstIndex(name, ['clone.S', 'pthread_cond_timedwait'])] name
-    from file('$version-addresses.tsv', TSVWithNamesAndTypes);
+create view addresses_src as
+    -- Keep only the demangled symbol, dropping the 'file:line#'/'clickhouse#'
+    -- prefix. PR builds use -g0 (DISABLE_ALL_DEBUG_SYMBOLS), so addressToLine has
+    -- no DWARF and the prefix degrades to the binary basename ('clickhouse#...'),
+    -- while master keeps 'file:line#'. A symbol-only name is identical on both,
+    -- so per-side and differential flamegraphs stay comparable. A name has at most
+    -- one '#' (demangled C++ symbols contain none). The clone.S filter runs first
+    -- because it matches on the file part: the symbol itself ('__clone'/'clone')
+    -- varies between builds, while dozens of unrelated symbols contain 'clone'.
+    select addr, splitByChar('#', name)[-1] name
+    from (
+        select addr,
+            -- Some functions change name between builds, e.g. '__clone' or 'clone'
+            -- or even '__GI__clone@@GLIBC_2.32'. This breaks differential flame
+            -- graphs, so filter them out here.
+            [name, 'clone.S (filtered by script)', 'pthread_cond_timedwait (filtered by script)']
+                -- this line is a subscript operator of the above array
+                [1 + multiSearchFirstIndex(name, ['clone.S', 'pthread_cond_timedwait'])] name
+        from file('$version-addresses.tsv', TSVWithNamesAndTypes)
+    );
 
 create table addresses_join_$version engine Join(any, left, address) as
     select addr address, name from addresses_src;
@@ -1112,20 +1124,13 @@ done
 wait
 unset IFS
 
-# Create differential flamegraphs.
-#
-# Frames are 'file:line#symbol' (see the addresses query above), but PR builds
-# compile with -g0 (DISABLE_ALL_DEBUG_SYMBOLS), so addressToLine has no DWARF and
-# the prefix degrades to the binary basename ('clickhouse#...'), while master
-# keeps 'file:line#'. difffolded.pl matches frames by exact string, so the two
-# sides never line up. -g0 keeps the symbol table, so strip the prefix here and
-# diff by demangled symbol. A frame holds at most one '#' (demangled C++ symbols
-# contain none), so '[^;]*#' removes exactly the prefix per frame.
+# Create differential flamegraphs. Frames are symbol-only (addresses_src strips
+# the file:line/clickhouse prefix), so the two sides line up despite the PR side
+# lacking DWARF.
 while IFS=$'\t' read -r query_file trace_type
 do
-    difffolded.pl \
-            <(sed 's/[^;]*#//g' "report/tmp/$query_file.stacks.left.tsv") \
-            <(sed 's/[^;]*#//g' "report/tmp/$query_file.stacks.right.tsv") \
+    difffolded.pl "report/tmp/$query_file.stacks.left.tsv" \
+            "report/tmp/$query_file.stacks.right.tsv" \
         | tee "report/tmp/$query_file.stacks.diff.tsv" \
         | flamegraph.pl $(flamegraph_opts "$trace_type") > "$query_file.diff.svg" &
 done < report/query-files.txt
