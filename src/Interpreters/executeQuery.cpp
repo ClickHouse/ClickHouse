@@ -1347,11 +1347,18 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
                 continue;
         }
 
-        /// DETACH TABLE requires DROP TABLE privilege, and ATTACH TABLE requires CREATE TABLE.
-        /// Skip if the user doesn't have these privileges.
+        /// `DETACH TABLE` requires `DROP TABLE`, and the internal `ATTACH TABLE` below goes through the same
+        /// authorization path as `CREATE`/`ATTACH` (see `InterpreterCreateQuery`): besides `CREATE TABLE` it
+        /// also checks the `TABLE ENGINE` grant for the table's engine when
+        /// `access_control_improvements.table_engines_require_grant` is enabled. Mirror all of these
+        /// requirements here; otherwise the hook could `DETACH` a table and then fail to `ATTACH` it back
+        /// (e.g. with `ACCESS_DENIED` on the engine grant), leaving the table detached and failing later
+        /// statements with `UNKNOWN_TABLE`. Skip the table if the user lacks any of them.
+        /// `isGranted(TABLE_ENGINE, ...)` already accounts for the `table_engines_require_grant` setting.
         auto access = context->getAccess();
         if (!access->isGranted(AccessType::DROP_TABLE, table_id.getDatabaseName(), table_id.getTableName())
-            || !access->isGranted(AccessType::CREATE_TABLE, table_id.getDatabaseName(), table_id.getTableName()))
+            || !access->isGranted(AccessType::CREATE_TABLE, table_id.getDatabaseName(), table_id.getTableName())
+            || !access->isGranted(AccessType::TABLE_ENGINE, table->getName()))
             continue;
 
         table.reset();
