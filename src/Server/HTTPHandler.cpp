@@ -117,13 +117,17 @@ bool tryAddHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco
 /// Process options request. Useful for CORS.
 void processOptionsRequest(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
 {
-    /// If can add some headers from config
-    if (tryAddHTTPOptionHeadersFromConfig(response, config))
-    {
-        response.setKeepAlive(false);
-        response.setStatusAndReason(HTTPResponse::HTTP_NO_CONTENT);
-        response.send();
-    }
+    /// Add extra response headers (e.g. for CORS) when an `http_options_response` section is configured.
+    tryAddHTTPOptionHeadersFromConfig(response, config);
+
+    /// Always answer an OPTIONS request, even when there is nothing to add from the config. Otherwise the
+    /// connection is closed without any HTTP response and the client sees an empty reply. The default
+    /// `clickhouse-server` config ships an `http_options_response` section, but `clickhouse-local` (which
+    /// typically runs without a config) does not, so without this the web UI (`/play`) reports the
+    /// connection as broken — its `OPTIONS` health-check fails — even though queries work.
+    response.setKeepAlive(false);
+    response.setStatusAndReason(HTTPResponse::HTTP_NO_CONTENT);
+    response.send();
 }
 }
 
