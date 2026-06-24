@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 
 namespace DB
