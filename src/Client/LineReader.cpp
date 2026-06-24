@@ -4,7 +4,6 @@
 #include <string_view>
 #include <algorithm>
 
-#include <cassert>
 #include <cstring>
 #include <unistd.h>
 #include <poll.h>
@@ -92,7 +91,7 @@ replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String &
     if (custom_completions_callback)
     {
         auto new_words = custom_completions_callback(prefix, prefix_length);
-        assert(std::is_sorted(new_words.begin(), new_words.end()));
+        chassert(std::is_sorted(new_words.begin(), new_words.end()));
         addNewWords(to_search, new_words, std::less<std::string>{});
     }
 
@@ -126,8 +125,8 @@ void LineReader::Suggest::addWords(Words && new_words) // NOLINT(cppcoreguidelin
         addNewWords(words, new_words, std::less<std::string>{});
         addNewWords(words_no_case, new_words_no_case, NoCaseCompare{});
 
-        assert(std::is_sorted(words.begin(), words.end()));
-        assert(std::is_sorted(words_no_case.begin(), words_no_case.end(), NoCaseCompare{}));
+        chassert(std::is_sorted(words.begin(), words.end()));
+        chassert(std::is_sorted(words_no_case.begin(), words_no_case.end(), NoCaseCompare{}));
     }
 }
 

@@ -95,7 +95,8 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::executeImpl(
 template <ViewTarget::Kind target_kind>
 ColumnsDescription TableFunctionTimeSeriesTarget<target_kind>::getActualTableStructure(ContextPtr context, bool /* is_insert_query */) const
 {
-    return getTargetTable(context)->getInMemoryMetadataPtr(context, false)->columns;
+    auto metadata_snapshot = getTargetTable(context)->getInMemoryMetadataPtr(context, false);
+    return metadata_snapshot->columns;
 }
 
 template <ViewTarget::Kind target_kind>
@@ -105,6 +106,7 @@ const char * TableFunctionTimeSeriesTarget<target_kind>::getStorageEngineName() 
 }
 
 
+void registerTableFunctionTimeSeries(TableFunctionFactory & factory);
 void registerTableFunctionTimeSeries(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Samples>>(

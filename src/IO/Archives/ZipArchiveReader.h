@@ -65,7 +65,7 @@ private:
 
     struct FileInfoImpl : public FileInfo
     {
-        int compression_method;
+        int compression_method{};
     };
 
     HandleHolder acquireHandle();

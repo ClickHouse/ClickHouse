@@ -43,6 +43,7 @@ namespace ProfileEvents
     extern const Event RefreshableViewSyncReplicaSuccess;
     extern const Event RefreshableViewSyncReplicaRetry;
     extern const Event RefreshableViewLockTableRetry;
+    extern const Event ZooKeeperWatchTriggeredMaterializedViewRefresh;
 }
 
 namespace DB
@@ -79,6 +80,28 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int ABORTED;
     extern const int TABLE_UUID_MISMATCH;
+}
+
+namespace
+{
+
+/// Build the dependency StorageIDs, resolving unqualified names against the view's database.
+/// An empty database would later throw from StorageID::getFullTableName() during scheduling.
+std::vector<StorageID> parseRefreshDependencies(const ASTRefreshStrategy & strategy, const String & default_database)
+{
+    std::vector<StorageID> deps;
+    if (!strategy.dependencies)
+        return deps;
+    for (auto && dependency : strategy.dependencies->children)
+    {
+        StorageID id = dependency->as<const ASTTableIdentifier &>();
+        if (id.database_name.empty() && !default_database.empty())
+            id.database_name = default_database;
+        deps.push_back(std::move(id));
+    }
+    return deps;
+}
+
 }
 
 RefreshTask::RefreshTask(
@@ -192,10 +215,7 @@ OwnedRefreshTask RefreshTask::create(
     bool empty,
     bool is_restore_from_backup)
 {
-    std::vector<StorageID> deps;
-    if (strategy.dependencies)
-        for (auto && dependency : strategy.dependencies->children)
-            deps.emplace_back(dependency->as<const ASTTableIdentifier &>());
+    std::vector<StorageID> deps = parseRefreshDependencies(strategy, view->getStorageID().database_name);
 
     auto task = std::make_shared<RefreshTask>(view, context, strategy, std::move(deps), attach, coordinated, empty, is_restore_from_backup);
 
@@ -206,8 +226,6 @@ OwnedRefreshTask RefreshTask::create(
 
     task->watch_callback = std::make_shared<Coordination::WatchCallback>([w = task->coordination.watches, task_waker = task->scheduling_task->getWatchCallback()](const Coordination::WatchResponse & response)
     {
-        w->root_watch_active.store(false);
-        w->children_watch_active.store(false);
         w->should_reread_znodes.store(true);
         (*task_waker)(response);
     });
@@ -379,10 +397,8 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
         std::lock_guard guard(mutex);
 
         refresh_schedule = RefreshSchedule(new_strategy);
-        std::vector<StorageID> deps;
-        if (new_strategy.dependencies)
-            for (auto && dependency : new_strategy.dependencies->children)
-                deps.emplace_back(dependency->as<const ASTTableIdentifier &>());
+        std::vector<StorageID> deps = parseRefreshDependencies(
+            new_strategy, view ? view->getStorageID().database_name : String{});
 
         /// Update dependency graph.
         if (set_handle)
@@ -1208,7 +1224,7 @@ void RefreshTask::syncDependenciesForRefresh(const std::vector<StorageID> & deps
 
 static std::chrono::milliseconds backoff(Int64 retry_idx, const RefreshSettings & refresh_settings)
 {
-    UInt64 delay_ms;
+    UInt64 delay_ms = 0;
     UInt64 multiplier = UInt64(1) << std::min(retry_idx, Int64(62));
     /// Overflow check: a*b <= c iff a <= c/b iff a <= floor(c/b).
     if (refresh_settings[RefreshSetting::refresh_retry_initial_backoff_ms] <= refresh_settings[RefreshSetting::refresh_retry_max_backoff_ms] / multiplier)
@@ -1359,18 +1375,13 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
     if (!zookeeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Keeper server doesn't support multi-reads. Refreshable materialized views won't work.");
 
-    /// Set watches. (This is a lot of code, is there a better way?)
-    if (!coordination.watches->root_watch_active.load())
-    {
-        coordination.watches->root_watch_active.store(true);
-        zookeeper->existsWatch(coordination.path, nullptr, watch_callback);
-    }
-    if (!coordination.watches->children_watch_active.load())
-    {
-        coordination.watches->children_watch_active.store(true);
-        zookeeper->getChildrenWatch(coordination.path, nullptr, watch_callback);
-    }
+    /// Do separate requests just to add watches.
+    Coordination::WatchCallbackPtrOrEventPtr labelled_watch{
+        watch_callback, ProfileEvents::ZooKeeperWatchTriggeredMaterializedViewRefresh};
+    zookeeper->existsWatch(coordination.path, nullptr, labelled_watch);
+    zookeeper->getChildrenWatch(coordination.path, nullptr, labelled_watch);
 
+    /// Do an atomic multi-read.
     Strings paths {coordination.path, coordination.path + "/running", coordination.path + "/paused"};
     auto responses = zookeeper->tryGet(paths.begin(), paths.end());
 
@@ -1683,7 +1694,7 @@ void RefreshTask::AllDependenciesInfo::readText(ReadBuffer & in)
             /// Unquoted int or quoted json string.
             Int64 int_val = 0;
             String string_val;
-            char c;
+            char c = 0;
             if (in.peek(c) && c != '"')
                 in >> int_val;
             else
@@ -1780,19 +1791,19 @@ void RefreshTask::CoordinationZnode::parse(const String & data, bool running_zno
         }
         else if constexpr (std::is_same_v<T, std::chrono::sys_seconds>)
         {
-            Int64 v;
+            Int64 v = 0;
             in >> v;
             out = std::chrono::sys_seconds(std::chrono::seconds(v));
         }
         else if constexpr (std::is_same_v<T, std::chrono::milliseconds>)
         {
-            Int64 v;
+            Int64 v = 0;
             in >> v;
             out = std::chrono::milliseconds(v);
         }
         else if constexpr (std::is_same_v<T, std::chrono::sys_time<std::chrono::nanoseconds>>)
         {
-            Int64 v;
+            Int64 v = 0;
             in >> v;
             out = std::chrono::sys_time<std::chrono::nanoseconds>(std::chrono::nanoseconds(v));
         }

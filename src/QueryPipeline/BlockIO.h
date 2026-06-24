@@ -26,7 +26,9 @@ struct BlockIO
     BlockIO() = default;
     BlockIO(BlockIO &&) = default;
 
-    BlockIO & operator= (BlockIO && rhs) noexcept;
+    /// Not noexcept: moves the QueryPipeline, whose move-assignment appends resources and can
+    /// throw MEMORY_LIMIT_EXCEEDED.
+    BlockIO & operator= (BlockIO && rhs); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
     ~BlockIO();
 
     BlockIO(const BlockIO &) = delete;
@@ -87,7 +89,7 @@ struct BlockIO
     void setAllDataSent() const;
 
     /// Release query slot early to allow client to reuse it for his next query.
-    void releaseQuerySlot() const;
+    void releaseWorkloadResources() const;
 
     void resetPipeline(bool cancel);
 

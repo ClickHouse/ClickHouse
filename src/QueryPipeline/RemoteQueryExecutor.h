@@ -130,10 +130,6 @@ public:
 
     int sendQueryAsync();
 
-    /// Query is resent to a replica, the query itself can be modified.
-    bool resent_query { false };
-    bool recreate_read_context { false };
-
     struct ReadResult
     {
         enum class Type : uint8_t
@@ -158,7 +154,7 @@ public:
         explicit ReadResult(Type type_)
             : type(type_)
         {
-            assert(type != Type::Data && type != Type::FileDescriptor);
+            chassert(type != Type::Data && type != Type::FileDescriptor);
         }
 
         Type getType() const { return type; }
@@ -208,7 +204,7 @@ public:
 
     /// Set the query_id. For now, used by performance test to later find the query
     /// in the server query_log. Must be called before sending the query to the server.
-    void setQueryId(const std::string& query_id_) { assert(!sent_query); query_id = query_id_; }
+    void setQueryId(const std::string& query_id_) { chassert(!sent_query); query_id = query_id_; }
 
     /// Specify how we allocate connections on a shard.
     void setPoolMode(PoolMode pool_mode_) { pool_mode = pool_mode_; }
@@ -309,16 +305,9 @@ private:
       */
     bool got_unknown_packet_from_replica = false;
 
-    /** Got duplicated uuids from replica
-      */
-    bool got_duplicated_part_uuids = false;
-
 #if defined(OS_LINUX)
     bool packet_in_progress = false;
 #endif
-
-    /// Parts uuids, collected from remote replicas
-    UUIDs duplicated_part_uuids;
 
     PoolMode pool_mode = PoolMode::GET_MANY;
     StorageID main_table = StorageID::createEmpty();
@@ -341,18 +330,10 @@ private:
     /// Send all temporary tables to remote servers
     void sendExternalTables();
 
-    /// Set part uuids to a query context, collected from remote replicas.
-    /// Return true if duplicates found.
-    bool setPartUUIDs(const UUIDs & uuids);
-
     void processReadTaskRequest();
 
     void processMergeTreeReadTaskRequest(ParallelReadRequest request);
     void processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement);
-
-    /// Cancel query and restart it with info about duplicate UUIDs
-    /// only for `allow_experimental_query_deduplication`.
-    ReadResult restartQueryWithoutDuplicatedUUIDs();
 
     /// If wasn't sent yet, send request to cancel all connections to replicas
     void cancelUnlocked();

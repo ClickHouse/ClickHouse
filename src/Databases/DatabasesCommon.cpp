@@ -352,30 +352,57 @@ void DatabaseWithAltersOnDiskBase::alterDatabaseComment(const AlterCommand & com
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to obtain database comment from query");
 
     auto component_guard = Coordination::setCurrentComponent("DatabaseWithAltersOnDiskBase::alterDatabaseComment");
+
+    const String & new_comment = command.comment.value();
+
+#if CLICKHOUSE_CLOUD
+    if (SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(getEngineName()))
+    {
+        if (!SharedDatabaseCatalog::isInitialQuery(query_context))
+        {
+            std::lock_guard lock{mutex};
+            comment = new_comment;
+            return;
+        }
+
+        /// Build the create query with the new comment, but leave the in-memory value
+        /// untouched, so concurrent readers never observe an uncommitted comment.
+        ASTPtr create_query;
+        {
+            std::lock_guard lock{mutex};
+            const String old_comment = comment;
+            comment = new_comment;
+            try
+            {
+                create_query = getCreateDatabaseQueryImpl();
+                if (!create_query)
+                    throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
+            }
+            catch (...)
+            {
+                comment = old_comment;
+                throw;
+            }
+            comment = old_comment;
+        }
+
+        auto version_to_wait = SharedDatabaseCatalog::instance().alterDatabase(getUUID(), create_query);
+        query_context->setVersionToWaitSharedCatalog(version_to_wait);
+
+        std::lock_guard lock{mutex};
+        comment = new_comment;
+        return;
+    }
+#endif
+
     std::lock_guard lock{mutex};
-
     const String old_comment = comment;
-    comment = command.comment.value();
-
+    comment = new_comment;
     try
     {
-#if CLICKHOUSE_CLOUD
-        bool managed_by_shared_catalog = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(getEngineName());
-        if (managed_by_shared_catalog && !SharedDatabaseCatalog::isInitialQuery(query_context))
-            return;
-#endif
         const ASTPtr create_query = getCreateDatabaseQueryImpl();
         if (!create_query)
             throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
-#if CLICKHOUSE_CLOUD
-        if (managed_by_shared_catalog)
-        {
-
-            auto version_to_wait = SharedDatabaseCatalog::instance().alterDatabase(getUUID(), create_query);
-            query_context->setVersionToWaitSharedCatalog(version_to_wait);
-            return;
-        }
-#endif
         DatabaseCatalog::instance().updateMetadataFile(database_name, create_query);
     }
     catch (...)
@@ -479,7 +506,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     auto table_id = table_storage->getStorageID();
     if (table_id.hasUUID())
     {
-        assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
+        chassert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
         DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
     }
 
@@ -501,7 +528,7 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
 
     if (table_id.hasUUID())
     {
-        assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
+        chassert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
         DatabaseCatalog::instance().addUUIDMapping(table_id.uuid, shared_from_this(), table);
     }
 
@@ -548,7 +575,7 @@ void DatabaseWithOwnTablesBase::shutdown()
         kv.second->flushAndShutdown();
         if (table_id.hasUUID())
         {
-            assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
+            chassert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
             DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
         }
     }

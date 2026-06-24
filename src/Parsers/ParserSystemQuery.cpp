@@ -637,7 +637,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             String time_str = ast->as<ASTLiteral &>().value.safeGet<String>();
             ReadBufferFromString buf(time_str);
-            time_t time;
+            time_t time = 0;
             readDateTimeText(time, buf);
             res->fake_time_for_view = Int64(time);
 
@@ -700,6 +700,9 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {
                 res->distributed_cache_server_id = ast->as<ASTLiteral>()->value.safeGet<String>();
             }
+
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
 
             break;
         }
@@ -815,7 +818,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return true;
             };
 
-            ServerType::Type base_type;
+            ServerType::Type base_type = {};
             std::string base_custom_name;
 
             ServerType::Types exclude_type;
@@ -831,7 +834,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                     base_type != ServerType::Type::QUERIES_CUSTOM)
                     return false;
 
-                ServerType::Type current_type;
+                ServerType::Type current_type = {};
                 std::string current_custom_name;
 
                 while (true)
