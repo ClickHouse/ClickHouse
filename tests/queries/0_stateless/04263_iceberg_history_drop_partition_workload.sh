@@ -23,6 +23,19 @@ ${CLICKHOUSE_CLIENT} --query "
     PARTITION BY (a)
 "
 
+# The current head snapshot is the unique current ancestor that is not the parent
+# of any other current ancestor (the leaf of the linear commit chain). We identify
+# it structurally rather than by `made_current_at`, whose millisecond resolution can
+# tie for back-to-back commits and make ordering non-deterministic.
+HEAD_SNAPSHOT_PREDICATE="
+    is_current_ancestor
+    AND snapshot_id NOT IN (
+        SELECT parent_id FROM system.iceberg_history
+        WHERE database = currentDatabase() AND table = '${TABLE}'
+          AND is_current_ancestor AND parent_id != 0
+    )
+"
+
 # Helper: print the latest snapshot's operation and key summary counts.
 # Selecting a deterministic subset of the map (counts only, no file sizes)
 # keeps the reference stable across runs.
@@ -40,8 +53,7 @@ latest_snapshot() {
             summary['total-records']
         FROM system.iceberg_history
         WHERE database = currentDatabase() AND table = '${TABLE}'
-        ORDER BY made_current_at DESC
-        LIMIT 1
+          AND ${HEAD_SNAPSHOT_PREDICATE}
         FORMAT TSV
     "
 }
@@ -93,7 +105,7 @@ ${CLICKHOUSE_CLIENT} --query "
         SELECT (toUInt64(summary['total-data-files']), toUInt64(summary['total-records']))
         FROM system.iceberg_history
         WHERE database = currentDatabase() AND table = '${TABLE}'
-        ORDER BY made_current_at DESC LIMIT 1
+          AND ${HEAD_SNAPSHOT_PREDICATE}
     ) AS s
     SELECT count() AS rows, uniqExact(a) AS parts, s.1 AS files_in_summary, s.2 AS rows_in_summary,
            rows = s.2 AS rows_match
@@ -101,13 +113,16 @@ ${CLICKHOUSE_CLIENT} --query "
     FORMAT TSV
 "
 
-# Operation sequence across the whole history.
-echo "--- operation sequence ---"
+# Operation counts across the whole history. We assert per-operation counts rather
+# than the ordered sequence, because `made_current_at` ties (see above) make the row
+# order non-deterministic; the counts do not depend on order.
+echo "--- operation counts ---"
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT operation
+    SELECT operation, count()
     FROM system.iceberg_history
     WHERE database = currentDatabase() AND table = '${TABLE}'
-    ORDER BY made_current_at
+    GROUP BY operation
+    ORDER BY operation
     FORMAT TSV
 "
 
