@@ -932,6 +932,21 @@ private:
         std::exception_ptr last_net_error;
         size_t connect_attempts = 0;
 
+        /// Pessimize the resolved address, swallowing any exception so we don't mask the original failure
+        /// or abort the retry across addresses.
+        auto pessimize = [](HostResolver::Entry & failed_address) noexcept
+        {
+            try
+            {
+                failed_address.setFail();
+            }
+            catch (...)
+            {
+                /// setFail can throw. Log it, since it is not worth throwing.
+                tryLogCurrentException("HTTPConnectionPool", "Ignored exception from setFail during retry");
+            }
+        };
+
         /// Report the cumulative time spent across all connect attempts, including the failed
         /// ones. The accumulated value is written back on every exit from the loop below -
         /// success or failure - by this scope guard. `connect_time == nullptr` callers are
@@ -1031,21 +1046,7 @@ private:
                 /// may itself throw, so the retry loop still has a meaningful error to
                 /// rethrow if every resolved address fails.
                 last_net_error = std::current_exception();
-                try
-                {
-                    /// `Entry::setFail` invokes `HostResolver::setFail`, which calls
-                    /// `HostResolver::update` and can throw on DNS errors (NXDOMAIN,
-                    /// empty result). The per-address failure has already been recorded
-                    /// in the resolver's records before `update` runs, and `Entry`
-                    /// already suppresses its `setSuccess` callback as the first thing
-                    /// `setFail` does - so swallowing the exception here is safe and
-                    /// lets us still try the next already-resolved address.
-                    address.setFail();
-                }
-                catch (...)
-                {
-                    tryLogCurrentException("HTTPConnectionPool", "Ignored exception from setFail during retry");
-                }
+                pessimize(address);
                 continue;
             }
             catch (const Poco::TimeoutException &)
@@ -1062,14 +1063,7 @@ private:
                 if (tcp_connected)
                     throw;
                 last_net_error = std::current_exception();
-                try
-                {
-                    address.setFail();
-                }
-                catch (...)
-                {
-                    tryLogCurrentException("HTTPConnectionPool", "Ignored exception from setFail during retry");
-                }
+                pessimize(address);
                 continue;
             }
             catch (...)
@@ -1086,19 +1080,7 @@ private:
                 const bool tcp_connected = connection->isConnectedToPeer();
                 (*connection).reset();
                 if (!tcp_connected)
-                {
-                    try
-                    {
-                        /// `Entry::setFail` can throw on DNS errors (see `NetException`
-                        /// handler above). Swallow that here so the original (non-network)
-                        /// exception is preserved when this catch-all rethrows.
-                        address.setFail();
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException("HTTPConnectionPool", "Ignored exception from setFail during catch-all rethrow");
-                    }
-                }
+                    pessimize(address);
                 throw;
             }
 
