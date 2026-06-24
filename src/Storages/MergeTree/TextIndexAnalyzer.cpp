@@ -150,7 +150,8 @@ void TextIndexAnalyzer::QueryBuilder::addPostings(const PostingList & token_post
         *postings &= token_postings;
 
     /// `All` mode fails as soon as the running intersection of readable postings becomes empty.
-    if (query->search_mode == TextSearchMode::All && postings->cardinality() == 0)
+    bool need_all_tokens = query->search_mode == TextSearchMode::All || query->search_mode == TextSearchMode::Phrase;
+    if (need_all_tokens && postings->cardinality() == 0)
         markFailed();
 }
 
