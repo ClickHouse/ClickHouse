@@ -1261,7 +1261,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
-
+            {"allow_minmax_index_for_json", true, false, "Forbid creating minmax skip index on JSON columns by default because the index serialization cannot handle heterogeneous Field values"},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",
@@ -1277,11 +1277,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"text_index_posting_list_codec", "none", "none", "New setting"},
             {"materialize_projections_on_insert", true, true, "New setting"},
             {"materialize_projections_on_merge", false, false, "New setting"},
-<<<<<<< fix-json-minmax-index-mixed-array
-            {"allow_minmax_index_for_json", true, false, "Forbid creating minmax skip index on JSON columns by default because the index serialization cannot handle heterogeneous Field values"},
-=======
             {"shared_merge_tree_inactive_replica_cutoff_seconds", 0, 0, "New setting which controls for how long an inactive replica is taken into account by the background cleanup (0 means two ZooKeeper session timeouts)"},
->>>>>>> master
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.5",
         {
