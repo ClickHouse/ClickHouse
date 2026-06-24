@@ -15,6 +15,8 @@
 namespace DB
 {
 
+class QueryStatus;
+
 /// Single unit for writing data to disk. Contains information about
 /// amount of rows to write and marks.
 struct Granule
@@ -86,6 +88,13 @@ protected:
     /// and one skip index granule can contain multiple "normal" marks. So skip indices serialization
     /// require additional state: skip_indices_aggregators and skip_index_accumulated_marks
     void calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write);
+
+    /// Observe query cancellation / time limits while writing column data. Writing a block goes
+    /// granule by granule with no other cancellation point, so a fuzzed/huge block can keep a
+    /// cancelled INSERT running for minutes. Counts rows and only checks every
+    /// `cancellation_check_period_rows` rows, so it stays cheap on the hot write path and never
+    /// degenerates to a per-row check at small index_granularity. No-op outside a query (e.g. merges).
+    void checkWriteCancellation(size_t rows_written);
 
     /// Finishes primary index serialization: write final primary index row (if required) and compute checksums
     void fillPrimaryIndexChecksums(MergeTreeDataPartChecksums & checksums);
@@ -190,6 +199,13 @@ private:
 
     ExecutionStatistics execution_stats;
     LoggerPtr log;
+
+    /// Cancellation token of the running query, lazily fetched on first column write (the writer runs
+    /// on the query/merge thread). Null when there is no query in scope (e.g. background merges).
+    std::shared_ptr<QueryStatus> cancellation_query_status;
+    bool cancellation_query_status_initialized = false;
+    size_t rows_since_cancellation_check = 0;
+    static constexpr size_t cancellation_check_period_rows = 1ULL << 16;
 };
 
 }

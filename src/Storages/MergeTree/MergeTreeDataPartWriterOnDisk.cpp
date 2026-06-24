@@ -6,6 +6,9 @@
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
+#include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/StringUtils.h>
@@ -257,6 +260,26 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
     /// Store block with last index row to write final mark at the end of column
     if (with_final_mark)
         last_index_block = primary_index_block;
+}
+
+void MergeTreeDataPartWriterOnDisk::checkWriteCancellation(size_t rows_written)
+{
+    if (!cancellation_query_status_initialized)
+    {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            cancellation_query_status = query_context->getProcessListElementSafe();
+        cancellation_query_status_initialized = true;
+    }
+
+    if (!cancellation_query_status)
+        return;
+
+    rows_since_cancellation_check += rows_written;
+    if (rows_since_cancellation_check >= cancellation_check_period_rows)
+    {
+        rows_since_cancellation_check = 0;
+        cancellation_query_status->checkTimeLimit();
+    }
 }
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write)

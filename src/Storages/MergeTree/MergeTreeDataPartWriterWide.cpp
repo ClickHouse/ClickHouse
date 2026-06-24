@@ -570,6 +570,8 @@ void MergeTreeDataPartWriterWide::writeColumn(
 
     for (const auto & granule : granules)
     {
+        checkWriteCancellation(granule.rows_to_write);
+
         data_written = true;
 
         if (granule.mark_on_start)
