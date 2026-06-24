@@ -651,7 +651,7 @@ The settings used for `EXPLAIN ANALYZE` are a subset of settings for `EXPLAIN PL
 - `sorting` — see [EXPLAIN PLAN](#explain-plan) section.
 - `input_headers` — see [EXPLAIN PLAN](#explain-plan) section.
 - `column_structure` — see [EXPLAIN PLAN](#explain-plan) section.
-- `processors` — For `EXPLAIN ANALYZE`, prints an additional line per step (and group) with the per-processor elapsed time distribution: `min`, `median`, `max`, and `sum`. Useful to spot load skew across parallel processors. Default: 0.
+- `processors` — For `EXPLAIN ANALYZE`, prints an additional line per stage with the per-processor elapsed time distribution: `min`, `median`, `max`, and `sum`. Useful to spot load skew across parallel processors. Default: 0.
 
 :::note
 The current version of `EXPLAIN ANALYZE` doesn't support queries executed in distributed mode.
@@ -665,27 +665,29 @@ EXPLAIN ANALYZE SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP 
 
 ```text
 Query summary:
-  Time:        10.96 ms (planning 6.63 ms · execution 4.33 ms)
-  Read:        1.00 million rows, 8.00 MB (230.86 million rows/s., 1.85 GB/s.)
-  Peak memory: 32.64 KiB
+  Time:        10.31 ms (planning 6.09 ms · execution 4.21 ms)
+  Read:        1.00 million rows, 8.00 MB (237.35 million rows/s., 1.90 GB/s.)
+  Peak memory: 22.98 KiB
 
-Output: k, count()
+Output: number MOD 10, count()
 
 Expression ((Project names + Projection))
-│  Actual: rows 10.00 → 10.00 · time 27.60 us (0.6%) · 90.00 B → 90.00 B · parallelism 1.00/32
+│  Actual: rows 10.00 → 10.00 · 90.00 B → 90.00 B
+│    time 30.25 us (0.7%) · parallelism 0.99/1
 └──Aggregating
-   │  Keys: modulo(number, 10_UInt8)
+   │  Keys: number MOD 10
    │  Aggregates: count()
    │  Skip merging: 0
-   │  Actual: rows 1.00 million → 10.00 (0.00%) · time 761.80 us (17.6%) · 1.00 MB → 90.00 B · parallelism 4.52/16
+   │  Actual: rows 1.00 million → 10.00 (0.00%) · 1.00 MB → 90.00 B
+   │    grouping: time 521.00 us (12.4%) · parallelism 5.92/12
+   │    merging: time 744.67 us (17.7%) · parallelism 2.31/31
    └──Expression ((Before GROUP BY + Change column names to column identifiers))
-      │  Actual: rows 1.00 million → 1.00 million · time 522.50 us (12.1%) · 8.00 MB → 1.00 MB · parallelism 4.77/15
+      │  Actual: rows 1.00 million → 1.00 million · 8.00 MB → 1.00 MB
+      │    time 625.48 us (14.8%) · parallelism 4.86/12
       └──ReadFromSystemNumbers
             Output: number
-            Actual: rows 0.00 → 1.00 million · time 867.58 us (20.0%) · 0.00 B → 8.00 MB · parallelism 9.40/15
-
-19 rows in set. Elapsed: 0.016 sec. Processed 1.00 million rows, 8.00 MB (63.78 million rows/s., 510.27 MB/s.)
-Peak memory usage: 32.64 KiB.
+            Actual: rows 0.00 → 1.00 million · 0.00 B → 8.00 MB
+              time 986.90 us (23.4%) · parallelism 6.28/15
 ```
 
 Let's examine the output. First let's look at the header.
@@ -704,13 +706,17 @@ Let's examine the output. First let's look at the header.
 Now let's look at the new lines that appear in the query plan.
 
 ```txt
-Actual: rows <in> → <out> (<selectivity>%) · time <t> (<share>%) · <bytes_in> → <bytes_out> · parallelism <avg>/<max>
+Actual: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
+  [<stage>: ]time <t> (<share>%) · parallelism <avg>/<max>
 ```
 
+Rows and bytes are reported once for the whole step (the first line). Time and parallelism are reported per stage of the step on the following indented line(s).
+
 - `rows <in> → <out>` — rows that entered and left the step; (`<selectivity>`%) shows how much the step filtered (`out/in`) or expanded the data, it is hidden when input rows equals output rows and when input rows equals `0`.
-- `time <t> (<share>%)` — wall-clock time the step was active, and its share of  query execution time (i.e. without build time). Note shares can add up to more than 100% because steps run concurrently.
 - `<bytes_in> → <bytes_out>` — uncompressed in-memory bytes flowing through the step (omitted when both are zero).
-- `parallelism <avg>/<max>` — average number of CPU threads working within this step at once, out of the maximum it could use. A value near max means the step was well parallelized; near 1 means it ran mostly serially.
+- `time <t> (<share>%)` — wall-clock time the stage was active, and its share of query execution time (i.e. without build time). Note shares can add up to more than 100% because stages and steps run concurrently.
+- `parallelism <avg>/<max>` — average number of CPU threads working within this stage at once, out of the maximum it could use. A value near max means the stage was well parallelized; near 1 means it ran mostly serially.
+- `<stage>` — the name of the stage. A step with a single, unnamed stage prints the time line without a label. Steps with several stages print one line per stage, e.g. `Aggregating` shows `grouping` and `merging`, and a hash join shows `build` and `probe`.
 
 :::note
 ClickHouse parallelizes not only execution of tasks within a plan step, but also the execution of plan steps. The `parallelism` metric reflects only the work of this step. Other steps may run concurrently, so this number does not show how the step's parallelism compares to the whole query.
@@ -722,13 +728,13 @@ The maximum number in `parallelism` is computed as a minimum between:
 2. The maximum number of query processing threads set in `max_threads`.
 :::
 
-With `processors = 1`, an extra line is printed under each step, showing the distribution of elapsed time across the step's processors:
+With `processors = 1`, an extra line is printed under each stage, showing the distribution of elapsed time across the stage's processors:
 
 ```txt
 Time per processor (<n>): min <t> · median <t> · max <t> · sum <t>
 ```
 
-`<n>` is the number of processors in the step. A large gap between `median` and `max` points to load skew between parallel processors.
+`<n>` is the number of processors in the stage. A large gap between `median` and `max` points to load skew between parallel processors.
 
 ### EXPLAIN ESTIMATE {#explain-estimate}
 
