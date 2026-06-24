@@ -52,7 +52,7 @@ If the class attribute is declared under a different name, use that name in the 
 Two companion functions share the same arguments and dictionary but return probabilities:
 
 - `naiveBayesClassifierWithProb(dictionary_name, input_text)` — returns a `Tuple(class_id UInt32, probability Float64)` for the predicted (most probable) class.
-- `naiveBayesClassifierAllProbs(dictionary_name, input_text)` — returns an `Array(Tuple(class_id UInt32, probability Float64))` of every class with its probability, sorted by probability descending.
+- `naiveBayesClassifierWithAllProbs(dictionary_name, input_text)` — returns an `Array(Tuple(class_id UInt32, probability Float64))` of every class with its probability, ordered from most to least probable.
 
 Probabilities are normalized with a numerically stable softmax and sum to `1.0` across classes.
 

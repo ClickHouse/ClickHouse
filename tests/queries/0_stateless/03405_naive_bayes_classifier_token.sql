@@ -37,8 +37,8 @@ SELECT dictGet('sentiment_token_1', 'class_id', 'The app is awful and barely wor
 SELECT (w.1, round(w.2, 4)) FROM (SELECT naiveBayesClassifierWithProb('sentiment_token_1', 'The interface is beautiful and intuitive') AS w);
 SELECT (w.1, round(w.2, 4)) FROM (SELECT naiveBayesClassifierWithProb('sentiment_token_1', 'The app is awful and barely works') AS w);
 
-SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierAllProbs('sentiment_token_1', 'The interface is beautiful and intuitive'));
-SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierAllProbs('sentiment_token_1', 'The app is awful and barely works'));
+SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('sentiment_token_1', 'The interface is beautiful and intuitive'));
+SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('sentiment_token_1', 'The app is awful and barely works'));
 
 DROP DICTIONARY IF EXISTS sentiment_token_1;
 DROP TABLE IF EXISTS nb_sentiment_data;
@@ -61,7 +61,7 @@ CREATE DICTIONARY nb_ws1_variant_dict (ngram String, class_id UInt32 DEFAULT 0, 
 PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_ws1_variant')) LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token')) LIFETIME(0);
 CREATE DICTIONARY nb_ws1_canonical_dict (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
 PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_ws1_canonical')) LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token')) LIFETIME(0);
-SELECT naiveBayesClassifierAllProbs('nb_ws1_variant_dict', 'good') = naiveBayesClassifierAllProbs('nb_ws1_canonical_dict', 'good');
+SELECT naiveBayesClassifierWithAllProbs('nb_ws1_variant_dict', 'good') = naiveBayesClassifierWithAllProbs('nb_ws1_canonical_dict', 'good');
 SELECT naiveBayesClassifier('nb_ws1_variant_dict', 'good') = naiveBayesClassifier('nb_ws1_canonical_dict', 'good');
 DROP DICTIONARY nb_ws1_variant_dict;
 DROP DICTIONARY nb_ws1_canonical_dict;
@@ -83,7 +83,7 @@ CREATE DICTIONARY nb_ws2_variant_dict (ngram String, class_id UInt32 DEFAULT 0, 
 PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_ws2_variant')) LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'token')) LIFETIME(0);
 CREATE DICTIONARY nb_ws2_canonical_dict (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
 PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_ws2_canonical')) LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'token')) LIFETIME(0);
-SELECT naiveBayesClassifierAllProbs('nb_ws2_variant_dict', 'good word') = naiveBayesClassifierAllProbs('nb_ws2_canonical_dict', 'good word');
+SELECT naiveBayesClassifierWithAllProbs('nb_ws2_variant_dict', 'good word') = naiveBayesClassifierWithAllProbs('nb_ws2_canonical_dict', 'good word');
 SELECT element_count = 2 FROM system.dictionaries WHERE database = currentDatabase() AND name = 'nb_ws2_variant_dict';
 DROP DICTIONARY nb_ws2_variant_dict;
 DROP DICTIONARY nb_ws2_canonical_dict;

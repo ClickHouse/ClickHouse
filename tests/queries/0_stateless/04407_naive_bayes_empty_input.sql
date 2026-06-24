@@ -31,8 +31,8 @@ SELECT countIf(naiveBayesClassifier('nb_empty_uni', t) != dictGet('nb_empty_uni'
 FROM (SELECT arrayJoin(['good', '', 'bad', 'good great']) AS t);
 
 -- The probability entry points accept empty input: every class is returned and the probabilities sum to 1.
-SELECT length(naiveBayesClassifierAllProbs('nb_empty_uni', '')) = 2;
-SELECT round(arraySum(arrayMap(p -> p.2, naiveBayesClassifierAllProbs('nb_empty_uni', ''))), 6) = 1;
+SELECT length(naiveBayesClassifierWithAllProbs('nb_empty_uni', '')) = 2;
+SELECT round(arraySum(arrayMap(p -> p.2, naiveBayesClassifierWithAllProbs('nb_empty_uni', ''))), 6) = 1;
 SELECT (naiveBayesClassifierWithProb('nb_empty_uni', '')).1 = naiveBayesClassifier('nb_empty_uni', '');
 
 DROP DICTIONARY nb_empty_uni;

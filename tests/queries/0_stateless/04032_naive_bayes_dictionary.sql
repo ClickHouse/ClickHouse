@@ -39,13 +39,13 @@ SELECT 'Token mode — positive text';
 SELECT dictGet('nb_token_model', 'class_id', 'good great excellent');
 SELECT naiveBayesClassifier('nb_token_model', 'good great excellent');
 SELECT (w.1, round(w.2, 4)) FROM (SELECT naiveBayesClassifierWithProb('nb_token_model', 'good great excellent') AS w);
-SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierAllProbs('nb_token_model', 'good great excellent'));
+SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('nb_token_model', 'good great excellent'));
 
 SELECT 'Token mode — negative text';
 SELECT dictGet('nb_token_model', 'class_id', 'bad terrible awful');
 SELECT naiveBayesClassifier('nb_token_model', 'bad terrible awful');
 SELECT (w.1, round(w.2, 4)) FROM (SELECT naiveBayesClassifierWithProb('nb_token_model', 'bad terrible awful') AS w);
-SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierAllProbs('nb_token_model', 'bad terrible awful'));
+SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('nb_token_model', 'bad terrible awful'));
 
 -- Byte mode — all four interfaces
 
@@ -78,13 +78,13 @@ SELECT 'Byte mode — English text';
 SELECT dictGet('nb_byte_model', 'class_id', 'the weather is nice');
 SELECT naiveBayesClassifier('nb_byte_model', 'the weather is nice');
 SELECT (w.1, round(w.2, 4)) FROM (SELECT naiveBayesClassifierWithProb('nb_byte_model', 'the weather is nice') AS w);
-SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierAllProbs('nb_byte_model', 'the weather is nice'));
+SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('nb_byte_model', 'the weather is nice'));
 
 SELECT 'Byte mode — Dutch text';
 SELECT dictGet('nb_byte_model', 'class_id', 'ij vind de aardappel');
 SELECT naiveBayesClassifier('nb_byte_model', 'ij vind de aardappel');
 SELECT (w.1, round(w.2, 4)) FROM (SELECT naiveBayesClassifierWithProb('nb_byte_model', 'ij vind de aardappel') AS w);
-SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierAllProbs('nb_byte_model', 'ij vind de aardappel'));
+SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('nb_byte_model', 'ij vind de aardappel'));
 
 -- Codepoint mode — all four interfaces
 
@@ -117,13 +117,13 @@ SELECT 'Codepoint mode — Latin text';
 SELECT dictGet('nb_codepoint_model', 'class_id', 'this is english text');
 SELECT naiveBayesClassifier('nb_codepoint_model', 'this is english text');
 SELECT (w.1, round(w.2, 4)) FROM (SELECT naiveBayesClassifierWithProb('nb_codepoint_model', 'this is english text') AS w);
-SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierAllProbs('nb_codepoint_model', 'this is english text'));
+SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('nb_codepoint_model', 'this is english text'));
 
 SELECT 'Codepoint mode — Cyrillic text';
 SELECT dictGet('nb_codepoint_model', 'class_id', 'это русский текст');
 SELECT naiveBayesClassifier('nb_codepoint_model', 'это русский текст');
 SELECT (w.1, round(w.2, 4)) FROM (SELECT naiveBayesClassifierWithProb('nb_codepoint_model', 'это русский текст') AS w);
-SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierAllProbs('nb_codepoint_model', 'это русский текст'));
+SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('nb_codepoint_model', 'это русский текст'));
 
 -- Explicit priors — all four interfaces
 
@@ -144,12 +144,12 @@ SELECT 'Explicit priors';
 SELECT dictGet('nb_priors_model', 'class_id', 'bad');
 SELECT naiveBayesClassifier('nb_priors_model', 'bad');
 SELECT (w.1, round(w.2, 4)) FROM (SELECT naiveBayesClassifierWithProb('nb_priors_model', 'bad') AS w);
-SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierAllProbs('nb_priors_model', 'bad'));
+SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('nb_priors_model', 'bad'));
 
 SELECT dictGet('nb_priors_model', 'class_id', 'good');
 SELECT naiveBayesClassifier('nb_priors_model', 'good');
 SELECT (w.1, round(w.2, 4)) FROM (SELECT naiveBayesClassifierWithProb('nb_priors_model', 'good') AS w);
-SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierAllProbs('nb_priors_model', 'good'));
+SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('nb_priors_model', 'good'));
 
 -- Proportional priors — all four interfaces
 
@@ -170,12 +170,12 @@ SELECT 'Proportional priors';
 SELECT dictGet('nb_prop_model', 'class_id', 'good great');
 SELECT naiveBayesClassifier('nb_prop_model', 'good great');
 SELECT (w.1, round(w.2, 4)) FROM (SELECT naiveBayesClassifierWithProb('nb_prop_model', 'good great') AS w);
-SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierAllProbs('nb_prop_model', 'good great'));
+SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('nb_prop_model', 'good great'));
 
 SELECT dictGet('nb_prop_model', 'class_id', 'bad terrible');
 SELECT naiveBayesClassifier('nb_prop_model', 'bad terrible');
 SELECT (w.1, round(w.2, 4)) FROM (SELECT naiveBayesClassifierWithProb('nb_prop_model', 'bad terrible') AS w);
-SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierAllProbs('nb_prop_model', 'bad terrible'));
+SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('nb_prop_model', 'bad terrible'));
 
 -- Custom alpha — all four interfaces
 
@@ -196,12 +196,12 @@ SELECT 'Small alpha';
 SELECT dictGet('nb_alpha_model', 'class_id', 'good');
 SELECT naiveBayesClassifier('nb_alpha_model', 'good');
 SELECT (w.1, round(w.2, 4)) FROM (SELECT naiveBayesClassifierWithProb('nb_alpha_model', 'good') AS w);
-SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierAllProbs('nb_alpha_model', 'good'));
+SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('nb_alpha_model', 'good'));
 
 SELECT dictGet('nb_alpha_model', 'class_id', 'bad');
 SELECT naiveBayesClassifier('nb_alpha_model', 'bad');
 SELECT (w.1, round(w.2, 4)) FROM (SELECT naiveBayesClassifierWithProb('nb_alpha_model', 'bad') AS w);
-SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierAllProbs('nb_alpha_model', 'bad'));
+SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('nb_alpha_model', 'bad'));
 
 -- Batch classification from a table — all four interfaces
 
@@ -218,8 +218,8 @@ SELECT text, naiveBayesClassifier('nb_token_model', text) AS class FROM texts_to
 SELECT 'Batch naiveBayesClassifierWithProb';
 SELECT text, (w.1, round(w.2, 4)) AS result FROM (SELECT text, naiveBayesClassifierWithProb('nb_token_model', text) AS w FROM texts_to_classify) ORDER BY text;
 
-SELECT 'Batch naiveBayesClassifierAllProbs';
-SELECT text, arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierAllProbs('nb_token_model', text)) AS result FROM texts_to_classify ORDER BY text;
+SELECT 'Batch naiveBayesClassifierWithAllProbs';
+SELECT text, arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('nb_token_model', text)) AS result FROM texts_to_classify ORDER BY text;
 
 -- SYSTEM RELOAD DICTIONARY — all four interfaces
 
@@ -228,7 +228,7 @@ SYSTEM RELOAD DICTIONARY nb_token_model;
 SELECT dictGet('nb_token_model', 'class_id', 'good great');
 SELECT naiveBayesClassifier('nb_token_model', 'good great');
 SELECT (w.1, round(w.2, 4)) FROM (SELECT naiveBayesClassifierWithProb('nb_token_model', 'good great') AS w);
-SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierAllProbs('nb_token_model', 'good great'));
+SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('nb_token_model', 'good great'));
 
 -- The dictHas function always returns 1
 
@@ -266,7 +266,7 @@ SELECT 'Duplicate ngram accumulation';
 SELECT naiveBayesClassifier('nb_dup_model', 'yes');
 SELECT naiveBayesClassifier('nb_dup_model', 'no');
 SELECT (w.1, round(w.2, 4)) FROM (SELECT naiveBayesClassifierWithProb('nb_dup_model', 'yes') AS w);
-SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierAllProbs('nb_dup_model', 'yes'));
+SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('nb_dup_model', 'yes'));
 
 DROP DICTIONARY IF EXISTS nb_dup_model;
 DROP TABLE IF EXISTS nb_dup_source;
@@ -275,9 +275,9 @@ DROP TABLE IF EXISTS nb_dup_source;
 
 SELECT 'Probability invariants';
 -- Probabilities sum to 1.0
-SELECT round(arraySum(arrayMap(x -> x.probability, naiveBayesClassifierAllProbs('nb_token_model', 'good great excellent'))), 2) AS prob_sum;
+SELECT round(arraySum(arrayMap(x -> x.probability, naiveBayesClassifierWithAllProbs('nb_token_model', 'good great excellent'))), 2) AS prob_sum;
 -- Number of classes equals 2
-SELECT length(naiveBayesClassifierAllProbs('nb_token_model', 'good great excellent')) AS num_classes;
+SELECT length(naiveBayesClassifierWithAllProbs('nb_token_model', 'good great excellent')) AS num_classes;
 -- WithProb class matches plain classify
 SELECT
     naiveBayesClassifier('nb_token_model', 'good great') = (naiveBayesClassifierWithProb('nb_token_model', 'good great')).class_id AS class_matches;
@@ -379,8 +379,8 @@ PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_zero_extra_source')) LAYOUT(NAIVE_
 
 SELECT 'Zero-count rows do not change the model';
 SELECT naiveBayesClassifier('nb_zero_extra', 'x') = naiveBayesClassifier('nb_zero_base', 'x');
-SELECT naiveBayesClassifierAllProbs('nb_zero_extra', 'x') = naiveBayesClassifierAllProbs('nb_zero_base', 'x');
-SELECT naiveBayesClassifierAllProbs('nb_zero_extra', 'z') = naiveBayesClassifierAllProbs('nb_zero_base', 'z');
+SELECT naiveBayesClassifierWithAllProbs('nb_zero_extra', 'x') = naiveBayesClassifierWithAllProbs('nb_zero_base', 'x');
+SELECT naiveBayesClassifierWithAllProbs('nb_zero_extra', 'z') = naiveBayesClassifierWithAllProbs('nb_zero_base', 'z');
 
 DROP DICTIONARY nb_zero_base;
 DROP DICTIONARY nb_zero_extra;

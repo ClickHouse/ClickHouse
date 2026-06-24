@@ -38,7 +38,7 @@ $CLICKHOUSE_CLIENT --query "SELECT naiveBayesClassifier('${dict}', 'good great')
 # Without the dictGet grant, every classifier function (and dictGet) is denied.
 $CLICKHOUSE_CLIENT --user "${user}" --query "SELECT naiveBayesClassifier('${dict}', 'good great')" 2>&1 | grep -o -m1 'ACCESS_DENIED'
 $CLICKHOUSE_CLIENT --user "${user}" --query "SELECT naiveBayesClassifierWithProb('${dict}', 'good great')" 2>&1 | grep -o -m1 'ACCESS_DENIED'
-$CLICKHOUSE_CLIENT --user "${user}" --query "SELECT naiveBayesClassifierAllProbs('${dict}', 'good great')" 2>&1 | grep -o -m1 'ACCESS_DENIED'
+$CLICKHOUSE_CLIENT --user "${user}" --query "SELECT naiveBayesClassifierWithAllProbs('${dict}', 'good great')" 2>&1 | grep -o -m1 'ACCESS_DENIED'
 $CLICKHOUSE_CLIENT --user "${user}" --query "SELECT dictGet('${dict}', 'class_id', 'good great')" 2>&1 | grep -o -m1 'ACCESS_DENIED'
 
 # After granting dictGet on the model, the user can classify.

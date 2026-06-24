@@ -18,50 +18,50 @@ LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'expl
 CREATE DICTIONARY nb_ws_var (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
 PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_ws_source'))
 LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors '0 = 0.9 , 1 = 0.1')) LIFETIME(0);
-SELECT naiveBayesClassifierAllProbs('nb_ws_var', 'good') = naiveBayesClassifierAllProbs('nb_ws_base', 'good')
-   AND naiveBayesClassifierAllProbs('nb_ws_var', 'bad')  = naiveBayesClassifierAllProbs('nb_ws_base', 'bad'); -- spaces around '=' and ','
+SELECT naiveBayesClassifierWithAllProbs('nb_ws_var', 'good') = naiveBayesClassifierWithAllProbs('nb_ws_base', 'good')
+   AND naiveBayesClassifierWithAllProbs('nb_ws_var', 'bad')  = naiveBayesClassifierWithAllProbs('nb_ws_base', 'bad'); -- spaces around '=' and ','
 DROP DICTIONARY nb_ws_var;
 
 CREATE DICTIONARY nb_ws_var (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
 PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_ws_source'))
 LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors '0=0.9, 1=0.1')) LIFETIME(0);
-SELECT naiveBayesClassifierAllProbs('nb_ws_var', 'good') = naiveBayesClassifierAllProbs('nb_ws_base', 'good')
-   AND naiveBayesClassifierAllProbs('nb_ws_var', 'bad')  = naiveBayesClassifierAllProbs('nb_ws_base', 'bad'); -- space after ','
+SELECT naiveBayesClassifierWithAllProbs('nb_ws_var', 'good') = naiveBayesClassifierWithAllProbs('nb_ws_base', 'good')
+   AND naiveBayesClassifierWithAllProbs('nb_ws_var', 'bad')  = naiveBayesClassifierWithAllProbs('nb_ws_base', 'bad'); -- space after ','
 DROP DICTIONARY nb_ws_var;
 
 CREATE DICTIONARY nb_ws_var (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
 PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_ws_source'))
 LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors '  0=0.9,1=0.1  ')) LIFETIME(0);
-SELECT naiveBayesClassifierAllProbs('nb_ws_var', 'good') = naiveBayesClassifierAllProbs('nb_ws_base', 'good')
-   AND naiveBayesClassifierAllProbs('nb_ws_var', 'bad')  = naiveBayesClassifierAllProbs('nb_ws_base', 'bad'); -- leading/trailing spaces
+SELECT naiveBayesClassifierWithAllProbs('nb_ws_var', 'good') = naiveBayesClassifierWithAllProbs('nb_ws_base', 'good')
+   AND naiveBayesClassifierWithAllProbs('nb_ws_var', 'bad')  = naiveBayesClassifierWithAllProbs('nb_ws_base', 'bad'); -- leading/trailing spaces
 DROP DICTIONARY nb_ws_var;
 
 CREATE DICTIONARY nb_ws_var (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
 PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_ws_source'))
 LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors '0=0.9 ,1=0.1')) LIFETIME(0);
-SELECT naiveBayesClassifierAllProbs('nb_ws_var', 'good') = naiveBayesClassifierAllProbs('nb_ws_base', 'good')
-   AND naiveBayesClassifierAllProbs('nb_ws_var', 'bad')  = naiveBayesClassifierAllProbs('nb_ws_base', 'bad'); -- space before ','
+SELECT naiveBayesClassifierWithAllProbs('nb_ws_var', 'good') = naiveBayesClassifierWithAllProbs('nb_ws_base', 'good')
+   AND naiveBayesClassifierWithAllProbs('nb_ws_var', 'bad')  = naiveBayesClassifierWithAllProbs('nb_ws_base', 'bad'); -- space before ','
 DROP DICTIONARY nb_ws_var;
 
 CREATE DICTIONARY nb_ws_var (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
 PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_ws_source'))
 LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors '0=0.9,   1=0.1')) LIFETIME(0);
-SELECT naiveBayesClassifierAllProbs('nb_ws_var', 'good') = naiveBayesClassifierAllProbs('nb_ws_base', 'good')
-   AND naiveBayesClassifierAllProbs('nb_ws_var', 'bad')  = naiveBayesClassifierAllProbs('nb_ws_base', 'bad'); -- multiple spaces after ','
+SELECT naiveBayesClassifierWithAllProbs('nb_ws_var', 'good') = naiveBayesClassifierWithAllProbs('nb_ws_base', 'good')
+   AND naiveBayesClassifierWithAllProbs('nb_ws_var', 'bad')  = naiveBayesClassifierWithAllProbs('nb_ws_base', 'bad'); -- multiple spaces after ','
 DROP DICTIONARY nb_ws_var;
 
 CREATE DICTIONARY nb_ws_var (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
 PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_ws_source'))
 LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors '0\t=\t0.9,1\t=\t0.1')) LIFETIME(0);
-SELECT naiveBayesClassifierAllProbs('nb_ws_var', 'good') = naiveBayesClassifierAllProbs('nb_ws_base', 'good')
-   AND naiveBayesClassifierAllProbs('nb_ws_var', 'bad')  = naiveBayesClassifierAllProbs('nb_ws_base', 'bad'); -- tabs around '='
+SELECT naiveBayesClassifierWithAllProbs('nb_ws_var', 'good') = naiveBayesClassifierWithAllProbs('nb_ws_base', 'good')
+   AND naiveBayesClassifierWithAllProbs('nb_ws_var', 'bad')  = naiveBayesClassifierWithAllProbs('nb_ws_base', 'bad'); -- tabs around '='
 DROP DICTIONARY nb_ws_var;
 
 CREATE DICTIONARY nb_ws_var (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
 PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_ws_source'))
 LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors ' 0 = 0.9 , 1 = 0.1 ')) LIFETIME(0);
-SELECT naiveBayesClassifierAllProbs('nb_ws_var', 'good') = naiveBayesClassifierAllProbs('nb_ws_base', 'good')
-   AND naiveBayesClassifierAllProbs('nb_ws_var', 'bad')  = naiveBayesClassifierAllProbs('nb_ws_base', 'bad'); -- whitespace everywhere
+SELECT naiveBayesClassifierWithAllProbs('nb_ws_var', 'good') = naiveBayesClassifierWithAllProbs('nb_ws_base', 'good')
+   AND naiveBayesClassifierWithAllProbs('nb_ws_var', 'bad')  = naiveBayesClassifierWithAllProbs('nb_ws_base', 'bad'); -- whitespace everywhere
 DROP DICTIONARY nb_ws_var;
 
 DROP DICTIONARY nb_ws_base;

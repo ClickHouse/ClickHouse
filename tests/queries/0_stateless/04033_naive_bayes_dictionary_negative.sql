@@ -309,14 +309,14 @@ SELECT naiveBayesClassifier(123, 'hello');               -- { serverError ILLEGA
 SELECT naiveBayesClassifier('nb_err_dict', 123);         -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT naiveBayesClassifierWithProb(123, 'hello');       -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT naiveBayesClassifierWithProb('nb_err_dict', 123); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT naiveBayesClassifierAllProbs(123, 'hello');       -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT naiveBayesClassifierAllProbs('nb_err_dict', 123); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT naiveBayesClassifierWithAllProbs(123, 'hello');       -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT naiveBayesClassifierWithAllProbs('nb_err_dict', 123); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- Non-constant dictionary name is rejected — all three functions
 
 SELECT naiveBayesClassifier(materialize('nb_err_dict'), 'hello');          -- { serverError ILLEGAL_COLUMN }
 SELECT naiveBayesClassifierWithProb(materialize('nb_err_dict'), 'hello');  -- { serverError ILLEGAL_COLUMN }
-SELECT naiveBayesClassifierAllProbs(materialize('nb_err_dict'), 'hello');  -- { serverError ILLEGAL_COLUMN }
+SELECT naiveBayesClassifierWithAllProbs(materialize('nb_err_dict'), 'hello');  -- { serverError ILLEGAL_COLUMN }
 
 -- Non-NB dictionary passed to naiveBayesClassifier
 
@@ -333,7 +333,7 @@ LIFETIME(0);
 
 SELECT naiveBayesClassifier('nb_flat_dict', 'hello');          -- { serverError BAD_ARGUMENTS }
 SELECT naiveBayesClassifierWithProb('nb_flat_dict', 'hello');  -- { serverError BAD_ARGUMENTS }
-SELECT naiveBayesClassifierAllProbs('nb_flat_dict', 'hello');  -- { serverError BAD_ARGUMENTS }
+SELECT naiveBayesClassifierWithAllProbs('nb_flat_dict', 'hello');  -- { serverError BAD_ARGUMENTS }
 
 DROP DICTIONARY IF EXISTS nb_flat_dict;
 DROP TABLE IF EXISTS nb_flat_source;

@@ -70,7 +70,7 @@ awful worst	(1,0.9767)
 bad terrible hate	(1,0.9987)
 excellent wonderful	(0,0.9655)
 good great love	(0,0.9987)
-Batch naiveBayesClassifierAllProbs
+Batch naiveBayesClassifierWithAllProbs
 awful worst	[(1,0.9767),(0,0.0233)]
 bad terrible hate	[(1,0.9987),(0,0.0013)]
 excellent wonderful	[(0,0.9655),(1,0.0345)]

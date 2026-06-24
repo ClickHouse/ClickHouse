@@ -194,15 +194,15 @@ public:
 };
 
 
-/// Implements `naiveBayesClassifierAllProbs(dictionary_name, input_text)`, returning every class with its
-/// probability as an array of tuples, sorted by probability descending.
-class FunctionNaiveBayesClassifierAllProbs : public FunctionNaiveBayesBase
+/// Implements `naiveBayesClassifierWithAllProbs(dictionary_name, input_text)`, returning every class with its
+/// probability as an array of tuples, ordered from most to least probable.
+class FunctionNaiveBayesClassifierWithAllProbs : public FunctionNaiveBayesBase
 {
 public:
     using FunctionNaiveBayesBase::FunctionNaiveBayesBase;
 
-    static constexpr auto name = "naiveBayesClassifierAllProbs";
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionNaiveBayesClassifierAllProbs>(context_); }
+    static constexpr auto name = "naiveBayesClassifierWithAllProbs";
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionNaiveBayesClassifierWithAllProbs>(context_); }
 
     String getName() const override { return name; }
 
@@ -224,8 +224,8 @@ public:
         executeNaiveBayes(context, access_checked, arguments, input_rows_count,
             [&](const auto & model, NaiveBayesScratch & scratch, std::string_view text, size_t i)
             {
-                model.classifyAllProbs(text, scratch);
-                for (const auto & [class_id, prob] : scratch.probabilities)
+                const auto & probabilities = model.classifyWithAllProbs(text, scratch);
+                for (const auto & [class_id, prob] : probabilities)
                 {
                     class_data.push_back(class_id);
                     prob_data.push_back(prob);
@@ -268,15 +268,15 @@ REGISTER_FUNCTION(NaiveBayesClassifier)
         .introduced_in = {26, 7},
         .category = FunctionDocumentation::Category::MachineLearning});
 
-    factory.registerFunction<FunctionNaiveBayesClassifierAllProbs>(FunctionDocumentation{
+    factory.registerFunction<FunctionNaiveBayesClassifierWithAllProbs>(FunctionDocumentation{
         .description = "Classifies input text using a Naive Bayes dictionary and returns all classes with their probabilities, "
-                       "sorted by probability descending.",
-        .syntax = "naiveBayesClassifierAllProbs(dictionary_name, input_text)",
-        .arguments = {
-            {"dictionary_name", "Name of a dictionary with the NAIVE_BAYES layout.", {"String"}},
-            {"input_text", "Text to classify.", {"String"}}},
-        .returned_value = {"Array of (class_id, probability) tuples sorted by probability descending.", {"Array(Tuple(UInt32, Float64))"}},
-        .examples = {{"All class probabilities", "SELECT naiveBayesClassifierAllProbs('model', 'some text');", "[(0,0.85),(1,0.15)]"}},
+                       "ordered from most to least probable.",
+        .syntax = "naiveBayesClassifierWithAllProbs(dictionary_name, input_text)",
+        .arguments
+        = {{"dictionary_name", "Name of a dictionary with the NAIVE_BAYES layout.", {"String"}},
+           {"input_text", "Text to classify.", {"String"}}},
+        .returned_value = {"Array of (class_id, probability) tuples ordered from most to least probable.", {"Array(Tuple(UInt32, Float64))"}},
+        .examples = {{"All class probabilities", "SELECT naiveBayesClassifierWithAllProbs('model', 'some text');", "[(0,0.85),(1,0.15)]"}},
         .introduced_in = {26, 7},
         .category = FunctionDocumentation::Category::MachineLearning});
 }

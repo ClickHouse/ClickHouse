@@ -403,9 +403,11 @@ public:
         return {data->class_id_of[best], scratch.probabilities[best].second};
     }
 
-    /// Computes every class's normalized probability, leaving them in `scratch.probabilities` sorted by
-    /// probability descending and then by class id ascending so that the order is fully determined.
-    void classifyAllProbs(std::string_view input, NaiveBayesScratch & scratch) const
+    /// Returns every class with its normalized probability, ordered from most to least probable, with ties
+    /// broken by ascending class id so that the order is fully determined. The result is held in `scratch`
+    /// and reused across rows, so the returned reference stays valid only until the next classify call on the
+    /// same scratch.
+    const std::vector<std::pair<UInt32, double>> & classifyWithAllProbs(std::string_view input, NaiveBayesScratch & scratch) const
     {
         computeScores(input, scratch);
         softmaxInto(scratch);
@@ -413,6 +415,7 @@ public:
             scratch.probabilities.begin(),
             scratch.probabilities.end(),
             [](const auto & a, const auto & b) { return a.second != b.second ? a.second > b.second : a.first < b.first; });
+        return scratch.probabilities;
     }
 
     /// Convenience overloads that allocate a private scratch, for callers that classify a single input.
@@ -428,11 +431,10 @@ public:
         return classifyWithProb(input, scratch);
     }
 
-    std::vector<std::pair<UInt32, double>> classifyAllProbs(std::string_view input) const
+    std::vector<std::pair<UInt32, double>> classifyWithAllProbs(std::string_view input) const
     {
         NaiveBayesScratch scratch;
-        classifyAllProbs(input, scratch);
-        return {scratch.probabilities.begin(), scratch.probabilities.end()};
+        return classifyWithAllProbs(input, scratch);
     }
 
     UInt64 getAllocatedBytes() const

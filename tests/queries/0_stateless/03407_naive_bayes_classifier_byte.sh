@@ -48,8 +48,8 @@ $CLICKHOUSE_CLIENT -q "SELECT dictGet('lang_byte_2', 'class_id', 'На кухн�
 $CLICKHOUSE_CLIENT -q "SELECT (w.1, round(w.2, 4)) FROM (SELECT naiveBayesClassifierWithProb('lang_byte_2', 'She painted the wall a bright yellow') AS w)"
 $CLICKHOUSE_CLIENT -q "SELECT (w.1, round(w.2, 4)) FROM (SELECT naiveBayesClassifierWithProb('lang_byte_2', 'На кухне пахнет свежим хлебом.') AS w)"
 
-$CLICKHOUSE_CLIENT -q "SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierAllProbs('lang_byte_2', 'She painted the wall a bright yellow'))"
-$CLICKHOUSE_CLIENT -q "SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierAllProbs('lang_byte_2', 'На кухне пахнет свежим хлебом.'))"
+$CLICKHOUSE_CLIENT -q "SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('lang_byte_2', 'She painted the wall a bright yellow'))"
+$CLICKHOUSE_CLIENT -q "SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('lang_byte_2', 'На кухне пахнет свежим хлебом.'))"
 
 $CLICKHOUSE_CLIENT -q "DROP DICTIONARY IF EXISTS lang_byte_2"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS nb_byte_data"
