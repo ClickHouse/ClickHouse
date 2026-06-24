@@ -353,12 +353,37 @@ bool StorageObjectStorage::canMoveConditionsToPrewhere() const
 
 std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
 {
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    return metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const
 {
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getFakeColumnSizes();
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    return metadata_snapshot->getFakeColumnSizes();
+}
+
+bool StorageObjectStorage::supportsDelete() const
+{
+    /// Defense in depth. `InterpreterDeleteQuery::execute` now calls
+    /// `updateExternalDynamicMetadataIfExists` before `supportsDelete`, so this lazy-init
+    /// is no longer the path preventing `assertInitialized` for the `DELETE FROM` shape.
+    /// Kept to mirror `supportsParallelInsert` below and to protect any other caller that
+    /// reaches `supportsDelete` with `current_metadata == nullptr`.
+    if (configuration->isDataLakeConfiguration())
+        configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
+    return configuration->supportsDelete();
+}
+
+bool StorageObjectStorage::supportsParallelInsert() const
+{
+    /// `InsertDependenciesBuilder` calls this for every non-view sink while building the
+    /// INSERT pipeline. Only the root insert table is pre-initialised by
+    /// `updateExternalDynamicMetadataIfExists`, so a data lake table reached via an MV
+    /// target can arrive here with `current_metadata == nullptr` and hit `assertInitialized`.
+    if (configuration->isDataLakeConfiguration())
+        configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
+    return configuration->supportsParallelInsert();
 }
 
 IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_context)
@@ -385,7 +410,8 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
     if (!state)
         return;
 
-    auto new_metadata = *getInMemoryMetadataPtr(query_context, false);
+    auto current_metadata = getInMemoryMetadataPtr(query_context, false);
+    auto new_metadata = *current_metadata;
     /// Always pin the current snapshot version to prevent logical races between query
     /// analysis (which picks the schema) and query execution (which iterates files).
     new_metadata.setDataLakeTableState(*state);
@@ -445,7 +471,8 @@ void StorageObjectStorage::read(
     size_t num_streams)
 {
     if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
-        num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
+        num_streams = clampClusterFunctionNumStreams(
+            local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions]);
 
     /// For data lake we did update in getExternalDynamicMetadata.
     if (!is_table_function && !configuration->isDataLakeConfiguration())
@@ -790,10 +817,9 @@ void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & comm
     /// analyzer/interpreter for `SELECT` and `INSERT` queries, but `InterpreterAlterQuery`
     /// does not call it before invoking `mutate`.
     updateExternalDynamicMetadataIfExists(context_);
-
     auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
     auto storage = getStorageID();
-    configuration->mutate(commands, context_, storage, metadata_snapshot, catalog, format_settings);
+    configuration->mutate(commands, context_, shared_from_this(), storage, metadata_snapshot, catalog, format_settings);
 }
 
 void StorageObjectStorage::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
@@ -811,10 +837,14 @@ Pipe StorageObjectStorage::executeCommand(const String & command_name, const AST
 
 void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
 {
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
 
-    configuration->alter(object_storage, params, context);
+    configuration->alter(object_storage, params, context, getStorageID(), catalog);
+
+    if (catalog)
+        return;
 
     DatabaseCatalog::instance()
         .getDatabase(storage_id.database_name)

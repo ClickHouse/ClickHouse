@@ -32,7 +32,7 @@ from pyspark.sql.types import (
 )
 
 try:
-    from pyspark.sql.types import VariantType, VariantVal
+    from pyspark.sql.types import VariantType, VariantVal  # noqa: F401  (import probe)
 
     HAS_VARIANT_TYPE = True
 except ImportError:
@@ -556,7 +556,7 @@ class LakeDataGenerator:
             spark,
             f"MERGE INTO {table.get_table_full_path()} AS t USING updates AS s ON t.{next_pick} = s.{next_pick}\
  WHEN MATCHED THEN {random.choice(match_options)}{' WHEN NOT MATCHED BY TARGET THEN INSERT *' if random.randint(1, 4) == 1 else ''}\
-{f' WHEN NOT MATCHED BY SOURCE THEN DELETE' if random.randint(1, 4) == 1 else ''};",
+{' WHEN NOT MATCHED BY SOURCE THEN DELETE' if random.randint(1, 4) == 1 else ''};",
         )
 
     def delete_table(self, spark: SparkSession, table: SparkTable):
@@ -609,17 +609,17 @@ class LakeDataGenerator:
                 next_table_generator = LakeTableGenerator.get_next_generator(
                     table.lake_format
                 )
-                self.run_query(
-                    spark, next_table_generator.generate_extra_statement(spark, table)
-                )
+                stmt = next_table_generator.generate_extra_statement(spark, table)
+                if stmt:
+                    self.run_query(spark, stmt)
             else:
                 # Alter statements
                 next_table_generator = LakeTableGenerator.get_next_generator(
                     table.lake_format
                 )
-                self.run_query(
-                    spark, next_table_generator.generate_alter_table_statements(table)
-                )
+                stmt = next_table_generator.generate_alter_table_statements(spark, table)
+                if stmt:
+                    self.run_query(spark, stmt)
         except Exception as e:
             # If an error happens, ignore it, but log it
             traceback.print_exc()

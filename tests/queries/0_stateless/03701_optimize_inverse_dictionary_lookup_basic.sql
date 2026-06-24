@@ -4,6 +4,7 @@
 
 SET enable_analyzer = 1;
 SET optimize_inverse_dictionary_lookup = 1;
+SET optimize_truncate_order_by_after_group_by_keys = 1; -- CI may inject False; extra ORDER BY keys not truncated → EXPLAIN output differs
 SET optimize_or_like_chain = 0;
 SET optimize_multiif_to_if = 1;
 SET optimize_rewrite_like_perfect_affix = 0;

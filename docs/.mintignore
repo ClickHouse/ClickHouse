@@ -1,0 +1,14 @@
+# Mintlify automatically ignores these files and directories:
+# .git, .github, .claude, .agents, .idea, node_modules,
+# README.md, LICENSE.md, CHANGELOG.md, CONTRIBUTING.md
+
+# Files used by Docusaurus cross-repo setup
+README.md
+changelog_entry_guidelines.md
+en/
+changelogs/
+_includes/
+_description_templates/
+
+# Skill scaffolds (internal docs for Claude Code, not user-facing pages)
+.mintlify/

@@ -1,4 +1,7 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-llvm-coverage
+-- no-llvm-coverage: `Storage FuzzQuery` (gated by `allow_fuzz_query_functions`) drives the
+-- `QueryFuzzer` AST mutator, whose coverage of `QueryFuzzer.cpp` varies run-to-run; this
+-- test is a source of flaky LLVM coverage and is skipped under the coverage build.
 -- Test: exercises `Storage FuzzQuery` engine creation paths registered by `registerStorageFuzzQuery`.
 -- Covers: src/Storages/StorageFuzzQuery.cpp:166-167 (empty-args), :171-173 (non-String column),
 --         and src/Storages/StorageFuzzQuery.cpp:131 (too many args via `getConfiguration`).

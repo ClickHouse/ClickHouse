@@ -28,7 +28,7 @@ namespace
   * of the pair corresponds to the tuple field name and the second one to the
   * tuple value.
   */
-class FunctionTupleToNameValuePairs : public IFunction
+class FunctionTupleToNameValuePairs final : public IFunction
 {
 public:
     static constexpr auto name = "tupleToNameValuePairs";
@@ -123,7 +123,7 @@ public:
             offsets->insertValue(current_offset);
         }
 
-        std::vector<ColumnPtr> tuple_columns = { std::move(keys_column), std::move(values_column) };
+        Columns tuple_columns = { std::move(keys_column), std::move(values_column) };
         auto tuple_column = ColumnTuple::create(std::move(tuple_columns));
         return ColumnArray::create(std::move(tuple_column), std::move(offsets));
     }
