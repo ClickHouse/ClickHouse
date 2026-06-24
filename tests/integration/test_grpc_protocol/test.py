@@ -271,11 +271,13 @@ def test_insert_split_row():
 
 def test_insert_returning():
     query("CREATE TABLE t (a UInt8) ENGINE = Memory")
+    # async_insert=1 is incompatible with INSERT ... RETURNING; disable it explicitly.
+    settings = {"async_insert": "0"}
     # Inline VALUES — RETURNING clause must come before the data clause.
-    assert query("INSERT INTO t RETURNING (SELECT a FROM t ORDER BY a) VALUES (1),(2),(3)") == "1\n2\n3\n"
+    assert query("INSERT INTO t RETURNING (SELECT a FROM t ORDER BY a) VALUES (1),(2),(3)", settings=settings) == "1\n2\n3\n"
     # External input_data push path — this is the path that previously silently discarded the result.
     assert (
-        query("INSERT INTO t RETURNING (SELECT a * 2 AS doubled FROM t ORDER BY doubled) FORMAT TabSeparated", input_data="4\n5\n")
+        query("INSERT INTO t RETURNING (SELECT a * 2 AS doubled FROM t ORDER BY doubled) FORMAT TabSeparated", input_data="4\n5\n", settings=settings)
         == "2\n4\n6\n8\n10\n"
     )
     assert query("SELECT count() FROM t") == "5\n"
