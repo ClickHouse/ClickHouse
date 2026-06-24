@@ -11,6 +11,7 @@
 #    include <libbase64.h>
 
 #    include <cstddef>
+#    include <functional>
 #    include <string_view>
 
 namespace DB
@@ -90,6 +91,9 @@ inline size_t postprocessBase64URL(UInt8 * dst, size_t out_len)
 template<Base64Variant variant>
 struct Base64EncodeTraits
 {
+    /// Base64 conversion is linear, so there is no size limit.
+    static constexpr size_t max_input_size = 0;
+
     template<typename Col>
     static size_t getBufferSize(Col const& src_column)
     {
@@ -98,7 +102,8 @@ struct Base64EncodeTraits
         return ((string_length - string_count) / 3 + string_count) * 4 + string_count;
     }
 
-    static size_t perform(std::string_view src, UInt8 * dst)
+    /// Base64 conversion is linear in the input length, so the cancellation callback is unused.
+    static size_t perform(std::string_view src, UInt8 * dst, const std::function<void()> & = {})
     {
         size_t outlen = 0;
         base64_encode(src.data(), src.size(), reinterpret_cast<char *>(dst), &outlen, 0);
@@ -118,6 +123,8 @@ template<Base64Variant variant>
 struct Base64DecodeTraits
 {
     static constexpr bool has_size_optimization = false;
+    /// Base64 conversion is linear, so there is no size limit.
+    static constexpr size_t max_input_size = 0;
 
     template<typename Col>
     static size_t getBufferSize(Col const& src_column)
@@ -127,7 +134,8 @@ struct Base64DecodeTraits
         return ((string_length - string_count) / 4 + string_count) * 3 + string_count;
     }
 
-    static std::optional<size_t> perform(std::string_view src, UInt8 * dst)
+    /// Base64 conversion is linear in the input length, so the cancellation callback is unused.
+    static std::optional<size_t> perform(std::string_view src, UInt8 * dst, const std::function<void()> & = {})
     {
         int rc = 0;
         size_t outlen = 0;

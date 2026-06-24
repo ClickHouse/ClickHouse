@@ -61,7 +61,13 @@ In these documentation file all mandatory positional arguments are referred as `
   Create a directory. Non-recursive by default.
 * `read (r) <path-from> [--path-to path]`
   Read a file from `path-from` to `path` (`stdout` if not supplied).
+* `read-bitmap <path-from> [--values]`
+  Inspect a delete-bitmap (`.rbm`) sidecar at `path-from`. Prints the magic and version, the CRC validity, the cardinality (number of deleted rows) and the row range. With `--values` it also dumps all set bits (the deleted row offsets) in ascending order.
 * `switch-disk [--path path] <disk>`
   Switch to disk `disk` on path `path` (if `path` is not specified default value is a previous path on disk `disk`).
 * `write (w) [--path-from path] <path-to>`.
   Write a file from `path` (`stdin` if `path` is not supplied, input must finish by Ctrl+D) to `path-to`.
+* `sed <expression> <path>`
+  Apply the `sed` `expression` to the file at `path` on the current disk, in place. Requires `sed` to be installed on the host. Only a single `sed` expression with no options is supported (e.g. `'s/foo/bar/g'`, `'/foo/d'`), not multiple expressions (`-e ... -e ...`) or options combined with an address (e.g. `-n` with `4,10p`).
+* `read-checksums <path>`
+  Read a `checksums.txt` file of a `MergeTree` data part on a current disk and print it to `stdout` as a tab-separated, human-readable table with the columns `name`, `file_size`, `file_hash`, `uncompressed_size`, and `uncompressed_hash`. The last two columns are present only for compressed files.
