@@ -159,6 +159,10 @@ def test_descendant_processes_are_counted(started_cluster):
 
 def test_inflight_executable_invocation_is_visible(started_cluster):
     _skip_msan()
+    # Restart for a clean 0/0 baseline: earlier tests leave idle pool workers
+    # whose resident memory would otherwise contaminate this non-pool delta.
+    node.restart_clickhouse()
+    assert _wait_for(lambda: _memory_resident() is not None)
     mem_before = _memory_resident()
     procs_before = _processes()
 
@@ -198,6 +202,10 @@ def test_timed_out_executable_is_killed_and_leaves_metrics(started_cluster):
     # Covers cleanup after a FAILED invocation: the script hangs after
     # allocating, command_read_timeout (10 s) fails the query, and the error
     # path must tear the stuck process down and release its registry entry.
+    # Restart for a clean 0/0 baseline: earlier tests leave idle pool workers
+    # whose resident memory would otherwise contaminate this non-pool delta.
+    node.restart_clickhouse()
+    assert _wait_for(lambda: _memory_resident() is not None)
     mem_before = _memory_resident()
     procs_before = _processes()
 
@@ -269,6 +277,10 @@ def test_killed_pool_worker_leaves_metrics(started_cluster):
 
 def test_non_udf_shell_commands_are_not_counted(started_cluster):
     _skip_msan()
+    # Restart for a clean 0/0 baseline: earlier tests leave idle pool workers
+    # whose resident memory would otherwise contaminate this delta.
+    node.restart_clickhouse()
+    assert _wait_for(lambda: _memory_resident() is not None)
     mem_before = _memory_resident()
     procs_before = _processes()
 
