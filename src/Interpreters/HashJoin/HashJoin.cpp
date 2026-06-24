@@ -265,7 +265,7 @@ HashJoin::HashJoin(
     /// Detect a single non-nullable LowCardinality key before the keys are materialized below, so it
     /// can use a dictionary-aware map. Restricted to a single disjunct and non-two-level maps for now.
     std::optional<Type> low_cardinality_method;
-    if (table_join->oneDisjunct() && !use_two_level_maps && strictness != JoinStrictness::Asof)
+    if (table_join->oneDisjunct() && !is_concurrent_hash_join && strictness != JoinStrictness::Asof)
     {
         const auto & only_clause_key_names = table_join->getOnlyClause().key_names_right;
         if (only_clause_key_names.size() == 1)
