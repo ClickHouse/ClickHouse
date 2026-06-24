@@ -16,6 +16,14 @@
 namespace DB
 {
 
+struct StepIoStats
+{
+    UInt64 input_rows = 0;
+    UInt64 input_bytes = 0;
+    UInt64 output_rows = 0;
+    UInt64 output_bytes = 0;
+};
+
 struct AnalyzeStats
 {
     UInt64 sum_elapsed_ns = 0;
@@ -24,11 +32,6 @@ struct AnalyzeStats
     UInt64 min_elapsed_ns = 0;
     UInt64 median_elapsed_ns = 0;
     UInt64 max_elapsed_ns = 0;
-
-    UInt64 input_rows = 0;
-    UInt64 input_bytes = 0;
-    UInt64 output_rows = 0;
-    UInt64 output_bytes = 0;
 
     UInt64 wall_clock_time_ns = 0;
 
@@ -54,6 +57,7 @@ public:
 
 private:
 
+    std::map<const IQueryPlanStep *, StepIoStats> step_io;
     std::map<StepAndGroup, AnalyzeStats> steps_to_stats;
 
     UInt64 max_num_threads_per_query = 0;

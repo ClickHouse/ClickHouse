@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/StepWallClock.h>
+#include <Processors/StepWallClockRegistry.h>
 #include <base/defines.h>
 #include <base/types.h>
 
@@ -26,6 +27,11 @@ AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 exec
     using ElapsedTimesPerStep = std::unordered_map<StepAndGroup, ElapsedTimes, boost::hash<StepAndGroup>>;
     ElapsedTimesPerStep elapsed_per_step;
 
+    auto crosses_step_boundary = [](const IProcessor & owner, const IProcessor & neighbour)
+    {
+        return owner.getQueryPlanStep() != neighbour.getQueryPlanStep();
+    };
+
     for (const auto & proc : processors)
     {
         const auto * step_ptr = proc->getQueryPlanStep();
@@ -33,53 +39,52 @@ AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 exec
         if (!step_ptr)
             continue;
 
-        const auto key = std::make_pair(step_ptr, proc->getQueryPlanStepGroup());
-        auto & stats = steps_to_stats[key];
+        auto & step_io_stats = step_io[step_ptr];
 
-        auto is_same_step = [](const IProcessor & lhs, const IProcessor & rhs) -> bool
+        for (const auto & input_port : proc->getInputs())
         {
-            return lhs.getStepUniqID() == rhs.getStepUniqID()
-            && lhs.getQueryPlanStepGroup() == rhs.getQueryPlanStepGroup();
-        };
+            if (!input_port.isConnected())
+                continue;
 
-        auto input_is_boundary = [&](const InputPort & in_port)
-        {
-            return in_port.isConnected() && !is_same_step(*proc, in_port.getOutputPort().getProcessor());
-        };
-
-        auto output_is_boundary = [&](const OutputPort & out_port)
-        {
-            return out_port.isConnected() && !is_same_step(*proc, out_port.getInputPort().getProcessor());
-        };
-
-        for (const auto & in_port : proc->getInputs())
-        {
-            if (input_is_boundary(in_port))
+            if (crosses_step_boundary(*proc, input_port.getOutputPort().getProcessor()))
             {
-                auto port_stats = proc->getPortDataCounters(in_port);
-                stats.input_rows += port_stats.rows;
-                stats.input_bytes += port_stats.bytes;
+                const auto counters = proc->getPortDataCounters(input_port);
+                step_io_stats.input_rows += counters.rows;
+                step_io_stats.input_bytes += counters.bytes;
             }
         }
 
-        for (const auto & out_port : proc->getOutputs())
+        for (const auto & output_port : proc->getOutputs())
         {
-            if (output_is_boundary(out_port))
+            if (!output_port.isConnected())
+                continue;
+
+            if (crosses_step_boundary(*proc, output_port.getInputPort().getProcessor()))
             {
-                auto port_stats = proc->getPortDataCounters(out_port);
-                stats.output_rows += port_stats.rows;
-                stats.output_bytes += port_stats.bytes;
+                const auto counters = proc->getPortDataCounters(output_port);
+                step_io_stats.output_rows += counters.rows;
+                step_io_stats.output_bytes += counters.bytes;
             }
         }
 
-        stats.sum_elapsed_ns += proc->getElapsedNs();
-        ++stats.total_num_processors;
-        elapsed_per_step[key].insert(proc->getElapsedNs());
-
-        if (stats.wall_clock_time_ns == 0)
+        for (size_t group = 0; group < IProcessor::MAX_STEP_GROUPS; ++group)
         {
-            chassert(proc->getStepWallClock().get());
-            stats.wall_clock_time_ns = proc->getStepWallClock()->getStepWallTime();
+            const UInt64 group_elapsed = proc->getElapsedNs(group);
+            if (group_elapsed == 0)
+                continue;
+
+            const auto proc_key = std::make_pair(step_ptr, group);
+            auto & proc_stats = steps_to_stats[proc_key];
+            proc_stats.sum_elapsed_ns += group_elapsed;
+            ++proc_stats.total_num_processors;
+            elapsed_per_step[proc_key].insert(group_elapsed);
+
+            if (proc_stats.wall_clock_time_ns == 0)
+            {
+                if (const auto * registry = pipeline.getStepClocks())
+                    if (const auto * clock = registry->find(step_ptr, group))
+                        proc_stats.wall_clock_time_ns = clock->getStepWallTime();
+            }
         }
     }
 
@@ -107,61 +112,60 @@ void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer 
     if (!step)
         return ;
 
-    for (auto it = steps_to_stats.lower_bound(std::make_pair(step, 0ul)); it != steps_to_stats.end() && it->first.first == step; ++it)
+    StepIoStats io_stats;
+    if (const auto io_it = step_io.find(step); io_it != step_io.end())
+        io_stats = io_it->second;
+
+    const bool empty_io = (io_stats.input_bytes == 0 && io_stats.output_bytes == 0);
+
+    out << prefix << "Actual: rows "
+        << formatReadableQuantity(static_cast<double>(io_stats.input_rows)) << " → "
+        << formatReadableQuantity(static_cast<double>(io_stats.output_rows));
+
+    if (io_stats.input_rows != io_stats.output_rows && io_stats.input_rows != 0)
     {
-        size_t group = it->first.second;
-        auto key = std::make_pair(step, group);
-        const auto it_stats = steps_to_stats.find(key);
-        if (it_stats == steps_to_stats.end())
-            return;
+        const double selectivity = 100.0 * static_cast<double>(io_stats.output_rows) / static_cast<double>(io_stats.input_rows);
+        out << fmt::format(" ({:.2f}%)", selectivity);
+    }
 
-        const auto & stats = it_stats->second;
-        std::string rows_input = formatReadableQuantity(static_cast<double>(stats.input_rows));
-        std::string rows_output = formatReadableQuantity(static_cast<double>(stats.output_rows));
-        bool empty_io = (stats.input_bytes == stats.output_bytes && stats.input_bytes == 0);
-        bool print_selectivity = stats.input_rows != stats.output_rows;
-        std::string in_bytes = empty_io ? "" : formatReadableSizeWithDecimalSuffix(static_cast<double>(stats.input_bytes));
-        std::string out_bytes = empty_io ? "" : formatReadableSizeWithDecimalSuffix(static_cast<double>(stats.output_bytes));
-        std::string time = formatReadableTime(static_cast<double>(stats.wall_clock_time_ns));
-        const double step_time_per_total_time_ns = execution_query_time_ns != 0
-                ? 100.0 * static_cast<double>(stats.wall_clock_time_ns) / static_cast<double>(execution_query_time_ns)
-                : 0.0;
+    if (!empty_io)
+        out << " · " << formatReadableSizeWithDecimalSuffix(static_cast<double>(io_stats.input_bytes))
+            << " → " << formatReadableSizeWithDecimalSuffix(static_cast<double>(io_stats.output_bytes));
 
-        std::string percentage_of_step_time = fmt::format(" ({:.1f}%)", step_time_per_total_time_ns);
+    out << "\n";
 
-        std::string group_name = step->getStepGroupName(group);
+    for (size_t group : step->getStepGroups())
+    {
+        const auto group_it = steps_to_stats.find(std::make_pair(step, group));
+        if (group_it == steps_to_stats.end())
+            continue;
 
-        out << prefix << "Actual";
-        out << (group_name.empty()? ": " : fmt::format(" ({}): ", group_name));
-        out << "rows " << rows_input << " → " << rows_output;
+        const auto & group_stats = group_it->second;
 
-        if (print_selectivity && stats.input_rows != 0)
-        {
-            const double selectivity = 100.0 * static_cast<double>(stats.output_rows) / static_cast<double>(stats.input_rows);
-            out << fmt::format(" ({:.2f}%)", selectivity);
-        }
+        const double share_of_query_time = execution_query_time_ns != 0
+            ? 100.0 * static_cast<double>(group_stats.wall_clock_time_ns) / static_cast<double>(execution_query_time_ns)
+            : 0.0;
+        const double parallelism = group_stats.wall_clock_time_ns
+            ? static_cast<double>(group_stats.sum_elapsed_ns) / static_cast<double>(group_stats.wall_clock_time_ns)
+            : 0.0;
+        const UInt64 max_parallelism = std::min(max_num_threads_per_query, group_stats.total_num_processors);
 
+        const std::string group_name = step->getStepGroupName(group);
 
-        out << " · ";
-        out << "time " << time << percentage_of_step_time;
-        std::string info_about_io = !empty_io ? " · " + in_bytes + " → " + out_bytes : "";
-        out << info_about_io;
-        double parallelism = stats.wall_clock_time_ns
-        ? static_cast<double>(stats.sum_elapsed_ns) / static_cast<double>(stats.wall_clock_time_ns)
-        : 0.0;
-        std::string parallelism_string = stats.wall_clock_time_ns ? fmt::format("{:.2f}", parallelism) : "Unknown";
-        UInt64 max_parallelism_per_step = std::min(max_num_threads_per_query, stats.total_num_processors);
-        std::string max_parallelism_per_step_string = stats.wall_clock_time_ns ? fmt::format("/{}", max_parallelism_per_step) : "";
-        out << " · parallelism " << parallelism_string << max_parallelism_per_step_string << "\n";
+        out << prefix << "  ";
+        if (!group_name.empty())
+            out << group_name << ": ";
+        out << "time " << formatReadableTime(static_cast<double>(group_stats.wall_clock_time_ns))
+            << fmt::format(" ({:.1f}%)", share_of_query_time) << " · parallelism "
+            << (group_stats.wall_clock_time_ns ? fmt::format("{:.2f}/{}", parallelism, max_parallelism) : "Unknown")
+            << "\n";
 
         if (processors_info)
-        {
-            out << prefix << "Time per processor (" << stats.total_num_processors << "): "
-                << "min " << formatReadableTime(static_cast<double>(stats.min_elapsed_ns))
-                << " · median " << formatReadableTime(static_cast<double>(stats.median_elapsed_ns))
-                << " · max " << formatReadableTime(static_cast<double>(stats.max_elapsed_ns))
-                << " · sum " << formatReadableTime(static_cast<double>(stats.sum_elapsed_ns)) << "\n";
-        }
+            out << prefix << "    Time per processor (" << group_stats.total_num_processors << "): "
+                << "min " << formatReadableTime(static_cast<double>(group_stats.min_elapsed_ns))
+                << " · median " << formatReadableTime(static_cast<double>(group_stats.median_elapsed_ns))
+                << " · max " << formatReadableTime(static_cast<double>(group_stats.max_elapsed_ns))
+                << " · sum " << formatReadableTime(static_cast<double>(group_stats.sum_elapsed_ns)) << "\n";
     }
 }
 
