@@ -82,10 +82,13 @@ struct CoverageMap
     size_t plan_start = 0;  /// physical (header-inclusive) coords
     size_t plan_end = 0;    /// [plan_start, plan_end) -- the serve/schedule horizon
     /// The pin horizon: the rightmost byte of any pinned cache state (folded hit
-    /// segments plus aligned-miss cells), always `>= plan_end`. The serve/schedule
-    /// queries (`covers`/`residentAt`/`gapEnd`/`nextGapStart`/`fetchWindowAt`/
-    /// `streamReach`) use `plan_end`; only the plan-reuse gate reads `pinned_end`.
-    /// Equal to `plan_end` unless the generalized plan-window extension is enabled.
+    /// segments plus aligned-miss cells), always `>= plan_end`. Everything -- the
+    /// serve/schedule queries AND the plan-reuse gate -- keys off `plan_end` (the
+    /// serve horizon): keying the reuse gate off `pinned_end` instead would leave a
+    /// dead zone `[plan_end, pinned_end)` where the serve stops but the re-plan never
+    /// fires. `pinned_end` only documents how far the pins reach (for eviction
+    /// reasoning / test observability). Equal to `plan_end` unless the generalized
+    /// plan-window extension is enabled.
     size_t pinned_end = 0;
     VectorWithMemoryTracking<GeometryEntry> entries;
 

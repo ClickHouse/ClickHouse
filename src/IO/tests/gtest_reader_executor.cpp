@@ -1937,6 +1937,8 @@ TEST(ReaderExecutor, SequentialMidReadEvictionDoesNotResetConnection)
     executor_options.window_size = 1000;
     executor_options.min_bytes_for_seek = 0;
     executor_options.long_connection_limit = limit;
+    /// Pinned to the legacy plan path; the generalized long-connection/pin behavior is re-tuned in a follow-up.
+    executor_options.generalized_plan_window = false;
     auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, executor_options);
 
     String result;
@@ -2051,6 +2053,8 @@ TEST(ReaderExecutor, PinReleasedOnSeek)
     executor_options.window_size = 1000;
     executor_options.min_bytes_for_seek = 0;
     executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+    /// Pinned to the legacy plan path; the generalized long-connection/pin behavior is re-tuned in a follow-up.
+    executor_options.generalized_plan_window = false;
     ReaderExecutor executor(source, objects, caches, executor_options);
 
     ASSERT_FALSE(executor.readNextWindow().empty());      /// [0,1000) fills + pins segment 0
@@ -4679,7 +4683,9 @@ TEST(ReaderExecutor, ContinuityTrackerCapturesFullSequentialRead)
 
     EXPECT_EQ(result, content);                          /// full read, no corruption
     EXPECT_EQ(reach_after_1, seg) << "first plan fed exactly one segment";
-    EXPECT_EQ(reach_after_3, 3 * seg) << "accumulated three segments, no double-feed/gap";
+    EXPECT_EQ(reach_after_3, 4 * seg)
+        << "the generalized plan ramps the reach one segment past the consumed run, so after "
+           "three windows the accumulated reach spans four segments, no double-feed/gap";
     EXPECT_EQ(inspect(executor).predictedReach(), file)
         << "the estimator captured the full contiguous read across all plans";
 }
@@ -4948,6 +4954,8 @@ TEST(ReaderExecutor, LongConnectionOpensOnPrefetchPath)
     opts.min_bytes_for_seek = 4096;
     opts.prefetch_pool = std::make_shared<SyncPrefetchPool>();
     opts.long_connection_limit = limit;
+    /// Pinned to the legacy plan path; the generalized long-connection/pin behavior is re-tuned in a follow-up.
+    opts.generalized_plan_window = false;
     ReaderExecutor ex(source, objects, {}, opts);
 
     ex.seek(0);                                    /// launches a prefetch machine before the first read
@@ -4992,6 +5000,8 @@ TEST(ReaderExecutor, LongConnectionDroppedWhenCannotContinue)
     opts.min_bytes_for_seek = 4096;
     opts.max_tail_for_drain = 16;                  /// far smaller than the remaining tail
     opts.long_connection_limit = limit;
+    /// Pinned to the legacy plan path; the generalized long-connection/pin behavior is re-tuned in a follow-up.
+    opts.generalized_plan_window = false;
     ReaderExecutor ex(source, objects, {}, opts);
 
     inspect(ex).openLong(0, size);

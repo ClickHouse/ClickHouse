@@ -77,6 +77,13 @@ public:
     /// Critical). Replaces the legacy `lookahead_window`/`plan_look_ahead_window`
     /// pair on the generalized path; `read_extent_end` does not size the plan.
     static constexpr size_t DEFAULT_PLAN_LOOK_AHEAD_MAX_WINDOW = 32 * 1024 * 1024; /// 32 MiB
+    /// A warranted long connection opens with at least this much range and never streams
+    /// past the cap. The continuous-read prediction may under-predict at the start of a run
+    /// and over-predict at its end; these bound the resulting GET so an over-prediction
+    /// cannot run away into an unbounded over-read. (Re-tuning the prediction itself is
+    /// deferred until the generalized planning + reuse are the default.)
+    static constexpr size_t DEFAULT_LONG_CONNECTION_OPEN_RANGE = 16 * 1024 * 1024; /// 16 MiB
+    static constexpr size_t DEFAULT_LONG_CONNECTION_MAX_BOUND = 128 * 1024 * 1024; /// 128 MiB
 
     /// Everything configurable beyond the data path itself: the executor is
     /// fully wired at construction, there are no post-construction setters.
@@ -97,10 +104,14 @@ public:
         /// the geometry, pin them, and reuse the plan across read-extent advances
         /// while the cursor stays inside the pinned span. OFF preserves the legacy
         /// miss-only widening (every query stays bounded by `plan_end`).
-        bool generalized_plan_window = false;
+        bool generalized_plan_window = true;
         /// Single size ceiling for the generalized plan window, pressure-scaled at
         /// use (see `DEFAULT_PLAN_LOOK_AHEAD_MAX_WINDOW`).
         size_t plan_look_ahead_max_window = DEFAULT_PLAN_LOOK_AHEAD_MAX_WINDOW;
+        /// Long-connection sizing bounds (see `DEFAULT_LONG_CONNECTION_OPEN_RANGE` /
+        /// `DEFAULT_LONG_CONNECTION_MAX_BOUND`).
+        size_t long_connection_open_range = DEFAULT_LONG_CONNECTION_OPEN_RANGE;
+        size_t long_connection_max_bound = DEFAULT_LONG_CONNECTION_MAX_BOUND;
         /// Decrypt prefetched bytes on the read-ahead worker instead of at the serve
         /// boundary (encrypted sources, prefetch path only). See `decryptFetchedAhead`.
         bool decrypt_ahead = false;
@@ -948,6 +959,9 @@ private:
     /// Generalized plan window: gate + single pressure-scaled size ceiling (Options).
     bool generalized_plan_window;
     size_t plan_look_ahead_max_window;
+    /// Long-connection sizing bounds (Options): open range floor and hard cap.
+    size_t long_connection_open_range;
+    size_t long_connection_max_bound;
 
     /// Cursor state.
     size_t position = 0;

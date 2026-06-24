@@ -254,6 +254,8 @@ ReaderExecutor::ReaderExecutor(
     , lookahead_window(options.lookahead_window)
     , generalized_plan_window(options.generalized_plan_window)
     , plan_look_ahead_max_window(std::max(options.plan_look_ahead_max_window, options.window_size))
+    , long_connection_open_range(options.long_connection_open_range)
+    , long_connection_max_bound(options.long_connection_max_bound)
     , prefetch_pool(std::move(options.prefetch_pool))
     , runner(prefetch_pool ? std::make_unique<FetchMachineRunner>(prefetch_pool) : nullptr)
     , long_connection_limit(std::move(options.long_connection_limit))
@@ -1973,6 +1975,11 @@ size_t ReaderExecutor::boundedReach(size_t phys_off) const
         if (res.resident() && res.run_end - wide >= min_bytes_for_seek)
             reach = std::min(reach, wide);
     }
+    /// Cap the long-connection reach so an over-predicted continuous run cannot open or
+    /// extend a GET beyond the bound (generalized path only; legacy reach is already
+    /// bounded by the narrower legacy look-ahead).
+    if (generalized_plan_window)
+        reach = std::min(reach, phys_off + long_connection_max_bound);
     return reach;
 }
 
@@ -2024,7 +2031,20 @@ size_t ReaderExecutor::longConnectionBound(const StoredObject & object, size_t o
         ? std::min<size_t>(*read_extent_end + data_start_offset, object_end)
         : object_end;
     const size_t reach = boundedReach(phys_offset);
-    const size_t phys_bound = std::min(object_end, std::max(extent, reach));
+    size_t phys_bound = std::max(extent, reach);
+    if (generalized_plan_window)
+    {
+        /// A warranted long connection opens with at least `long_connection_open_range`
+        /// and never streams past `long_connection_max_bound`: it bounds an over-predicted
+        /// continuous-read reach so the GET drains within the cap instead of running away.
+        /// The open-range floor is for forward-spanning reads only -- a one-shot `readBigAt`
+        /// transient stays bounded to its request (no continuity, no look-ahead), so flooring
+        /// it would over-read past the requested piece of an object.
+        if (!is_transient)
+            phys_bound = std::max(phys_bound, phys_offset + long_connection_open_range);
+        phys_bound = std::min(phys_bound, phys_offset + long_connection_max_bound);
+    }
+    phys_bound = std::min(phys_bound, object_end);
     return phys_bound - object_base;
 }
 
@@ -2811,16 +2831,32 @@ ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start, MemoryPressureL
 {
     if (generalized_plan_window)
     {
-        /// Unified sizing: a single pressure-scaled ceiling, no extent term. The base
-        /// request is the forward-serve continuity prediction clamped to
-        /// `[window_size, ceiling]` -- `window_size` on a fresh/random read (prediction
-        /// ~0), the prediction itself once a sequential run is established. The plan is
-        /// thus independent of `read_extent_end` (which only clamps the serve), so it
-        /// survives mark-range advances and is reused. Segment folding then extends it
-        /// and the same ceiling caps the result (in `observeAndSchedule`); the file end
-        /// is the only natural bound below the ceiling.
         const size_t ceiling = effectivePlanCeiling(level);
-        size_t want = std::min(std::max(lookup_continuity.predictedReach(), window_size), ceiling);
+        size_t want = 0;
+        if (is_transient)
+        {
+            /// A one-shot `readBigAt` transient: the request span IS the plan base -- no
+            /// continuity, no look-ahead widening (the transient never inherits the
+            /// estimator, so `predictedReach` is 0). Segment folding still expands it so
+            /// the touched cache cells are filled to their boundaries, but the base does
+            /// NOT inflate to `window_size` when the request is smaller.
+            chassert(read_extent_end);
+            const size_t physical_extent_end = *read_extent_end + data_start_offset;
+            if (physical_start >= physical_extent_end)
+                return ByteRange{physical_start, 0};
+            want = std::min(physical_extent_end - physical_start, ceiling);
+        }
+        else
+        {
+            /// Unified sizing: the forward-serve continuity prediction clamped to
+            /// `[window_size, ceiling]` -- `window_size` on a fresh/random read
+            /// (prediction ~0), the prediction itself once a sequential run is
+            /// established. Independent of `read_extent_end` (which only clamps the
+            /// serve), so the plan survives mark-range advances and is reused.
+            want = std::min(std::max(lookup_continuity.predictedReach(), window_size), ceiling);
+        }
+        /// Segment folding then extends `want` (in `observeAndSchedule`) and the same
+        /// ceiling caps the result; the file end is the only natural bound below it.
         if (!offset_map.hasUnknownSize())
         {
             const size_t physical_end = offset_map.totalSize();
