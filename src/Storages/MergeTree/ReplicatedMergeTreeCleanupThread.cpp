@@ -337,9 +337,10 @@ struct ReplicatedMergeTreeCleanupThread::NodeWithStat
 
     /// Sort by (ctime, czxid) rather than (ctime, node_name) to ensure consistent ordering
     /// across different deduplication directories (blocks/, deduplication_hashes/).
-    /// With COMPATIBLE_DOUBLE_HASHES, entries for the same insert exist in both directories
-    /// with different node names but the same czxid (created in the same multi-op).
-    /// Using czxid ensures both directories remove entries for the same logical inserts.
+    /// On instances migrated from the legacy per-insert deduplication hashes, entries for the
+    /// same insert can exist in both directories with different node names but the same czxid
+    /// (created in the same multi-op). Using czxid ensures both directories remove entries for
+    /// the same logical inserts.
     static bool greaterByTime(const NodeWithStat & lhs, const NodeWithStat & rhs)
     {
         return std::forward_as_tuple(lhs.ctime, lhs.czxid) > std::forward_as_tuple(rhs.ctime, rhs.czxid);

@@ -620,9 +620,8 @@ namespace ErrorCodes
     - `0` (disable deduplication).
 
     A deduplication mechanism is used, similar to replicated tables (see
-    [replicated_deduplication_window](#replicated_deduplication_window) setting), including the
-    `insert_deduplication_version` granularity (whole inserted block under the default
-    `new_unified_hash`, per created part under the legacy versions). The hash sums are written to
+    [replicated_deduplication_window](#replicated_deduplication_window) setting): the deduplication
+    hash sum covers the whole inserted block. The hash sums are written to
     a local file on a disk rather than to ClickHouse Keeper.
     )", 0) \
     DECLARE(UInt64, max_parts_to_merge_at_once, 100, R"(
@@ -1140,11 +1139,8 @@ namespace ErrorCodes
     `replicated_deduplication_window` blocks. The oldest hash sums are removed from
     ClickHouse Keeper.
 
-    Under the default `insert_deduplication_version = new_unified_hash` the hash sum covers the
-    whole inserted block, so an insert is deduplicated only when its entire data matches a
-    previous insert (a retry), not per individual part. Under the legacy `old_separate_hashes` /
-    `compatible_double_hashes` the hash sum is instead calculated per created part, from the
-    composition of the field names and types and the data of that part (stream of bytes).
+    The hash sum covers the whole inserted block, so an insert is deduplicated only when its
+    entire data matches a previous insert (a retry), not per individual part.
 
     A large number for `replicated_deduplication_window` slows down `Inserts` because more
     entries need to be compared.
