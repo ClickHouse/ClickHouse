@@ -90,7 +90,6 @@ TEST(LocalSnapshotRegion, WithinSnapshotRegionIsAtomicWithCommit)
     UInt64 final_tick = 0;
     coord.withinSnapshotRegion([&](CSN c) { final_tick = static_cast<UInt64>(c); });
     EXPECT_EQ(final_tick, static_cast<UInt64>(N_COMMITS));
-    EXPECT_EQ(coord.currentCsn(), static_cast<CSN>(N_COMMITS));
     EXPECT_GT(reads, 0u);
 }
 

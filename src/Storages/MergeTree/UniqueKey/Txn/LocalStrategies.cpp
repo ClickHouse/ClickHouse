@@ -34,12 +34,6 @@ CSN LocalCommitCoordinator::attemptCommit(PublishAction staging)
     return tentative;
 }
 
-CSN LocalCommitCoordinator::currentCsn() const
-{
-    std::lock_guard lock(commit_lock);
-    return csn;
-}
-
 void LocalCommitCoordinator::seedCsn(CSN floor)
 {
     std::lock_guard lock(commit_lock);
@@ -88,15 +82,6 @@ CSN LocalPinRegistry::clusterFloor()
     for (const auto & [csn, _] : pins)
         floor = std::min(floor, csn);
     return floor;
-}
-
-size_t LocalPinRegistry::totalPinCount() const
-{
-    std::lock_guard lock(pins_mutex);
-    size_t total = 0;
-    for (const auto & [_, count] : pins)
-        total += count;
-    return total;
 }
 
 }

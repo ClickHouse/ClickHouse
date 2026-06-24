@@ -47,9 +47,6 @@ public:
     /// calls. Creates the mutex on first use for a given partition.
     std::shared_ptr<std::mutex> getOrCreate(const String & partition_id);
 
-    /// Current number of tracked partitions — diagnostic only. O(1).
-    size_t size() const;
-
 private:
     mutable std::mutex map_mutex;
     std::unordered_map<String, std::shared_ptr<std::mutex>> partition_mutexes;

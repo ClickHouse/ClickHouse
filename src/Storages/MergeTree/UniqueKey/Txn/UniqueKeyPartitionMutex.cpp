@@ -29,10 +29,4 @@ std::shared_ptr<std::mutex> UniqueKeyPartitionMutex::getOrCreate(const String & 
     return m;
 }
 
-size_t UniqueKeyPartitionMutex::size() const
-{
-    std::lock_guard lock(map_mutex);
-    return partition_mutexes.size();
-}
-
 }

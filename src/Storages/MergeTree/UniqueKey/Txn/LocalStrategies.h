@@ -28,9 +28,6 @@ public:
     PreparedCommitSnapshot readSnapshot() override;
     CSN attemptCommit(PublishAction staging) override;
 
-    /// Diagnostic — current csn under the mutex. Tests use this.
-    CSN currentCsn() const;
-
     /// Recovery seed: lift `partition.csn` to `max(creation_csn, last
     /// CSN-named bitmap version)` across active parts. Monotone — a `std::max`,
     /// so the seed never lowers the in-memory csn.
@@ -55,9 +52,6 @@ public:
 
     std::shared_ptr<PinHandle> acquire(CSN csn) override;
     CSN  clusterFloor() override;
-
-    /// Diagnostic — active pin count. Tests use this.
-    size_t totalPinCount() const;
 
 private:
     mutable std::mutex pins_mutex;
