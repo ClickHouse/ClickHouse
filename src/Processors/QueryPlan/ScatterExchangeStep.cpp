@@ -5,18 +5,13 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-/// Scatter is a special case of Shuffle where the number of source buckets is 1.
-/// So we can use ShuffleSend and ShuffleReceive steps as sink and source respectively.
+/// Scatter is a special case of Shuffle where the number of source buckets is 1, so it reuses the
+/// ShuffleSend and ShuffleReceive steps. Those steps do not require a single source bucket
+/// (ShuffleSend runs per source bucket, ShuffleReceive reads every source bucket for its destination
+/// bucket), so a multi-bucket source is handled correctly: the pair just repartitions all source
+/// buckets into the requested result buckets, i.e. behaves as a plain shuffle.
 std::pair<QueryPlanStepPtr, QueryPlanStepPtr> ScatterExchangeStep::createSinkAndSourcePair(const String & exchange_id, const Strings & source_shards) const
 {
-    if (source_shards.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ScatterExchangeStep should have one source shard, got {}", source_shards.size());
-
     size_t num_buckets = getResultBucketCount();
     auto sink = std::make_unique<ShuffleSendStep>(input_headers.front(), exchange_id, key_names, num_buckets, hash_cast_types);
 
