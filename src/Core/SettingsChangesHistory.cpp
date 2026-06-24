@@ -39,6 +39,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.7",
+        {
+            {"use_streaming_marks_compression", false, true, "New setting to compress marks into in-memory representation one block at a time (streaming) instead of materializing the full plain marks array, reducing peak memory during marks loading for compact parts with many substreams."},
+        });
+        
         addSettingsChanges(settings_changes_history, "26.6",
         {
             {"output_format_image_width", 1024, 1024, "New setting controlling the width of the output image for image output formats such as PNG."},
@@ -79,7 +84,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"function_base58_max_input_size", 0, 10000, "New setting that limits the input size of `base58Encode`, `base58Decode` and `tryBase58Decode` (whose conversion is quadratic in the input length) to 10 KB by default. The compatibility value `0` disables the limit, restoring the previous behavior of accepting arbitrarily large inputs."},
             {"format_avro_schema_registry_max_retries", 0, 5, "New setting controlling the maximum number of retries for transient failures (transport timeouts, connection refused, DNS errors, HTTP 5xx/408/429) when communicating with the Confluent Schema Registry. Set to 0 to disable retries. Previous behavior (no retries) is preserved by `compatibility = '26.5'`."},
             {"format_avro_schema_registry_retry_initial_backoff_ms", 100, 100, "New setting controlling the initial backoff (in milliseconds) before retrying a failed Confluent Schema Registry request. The backoff doubles on each retry, capped at 10 seconds. Has no effect when `format_avro_schema_registry_max_retries = 0` (the pre-26.6 behavior restored by `compatibility = '26.5'`)."},
-            {"use_streaming_marks_compression", false, true, "New setting to compress marks into in-memory representation one block at a time (streaming) instead of materializing the full plain marks array, reducing peak memory during marks loading for compact parts with many substreams."},
             {"enable_join_transitive_predicates", false, true, "Turn on enable_join_transitive_predicates by default"},
             {"allow_experimental_query_deduplication", false, false, "The setting is obsolete, the feature has been removed."},
             {"query_plan_min_columns_for_join_lazy_indexing", 0, 3, "Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN"},
