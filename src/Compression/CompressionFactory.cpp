@@ -149,11 +149,10 @@ VectorWithMemoryTracking<std::pair<String, Documentation>> CompressionCodecFacto
         {
             codec = creator({}, nullptr);
         }
-        catch (...)
+        catch (...) // Ok: some codecs cannot be instantiated in this build configuration (e.g. the encryption codecs
+                    // register a creator that throws when the server is built without SSL support). They have no
+                    // documentation to expose, so skip them rather than failing the whole system.documentation query.
         {
-            /// Some codecs cannot be instantiated in this build configuration (for example the encryption codecs
-            /// when the server is built without SSL support register a creator that throws). They have no
-            /// documentation to expose, so skip them rather than failing the whole `system.documentation` query.
             continue;
         }
 
