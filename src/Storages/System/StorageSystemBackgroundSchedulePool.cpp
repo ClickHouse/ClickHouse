@@ -54,6 +54,7 @@ void StorageSystemBackgroundSchedulePool::fillData(MutableColumns & res_columns,
     fill_from_pool(context->getBufferFlushSchedulePool(), "buffer_flush");
     fill_from_pool(context->getDistributedSchedulePool(), "distributed");
     fill_from_pool(context->getMessageBrokerSchedulePool(), "message_broker");
+    fill_from_pool(context->getStreamingSchedulePool(), "streaming");
 }
 
 }
