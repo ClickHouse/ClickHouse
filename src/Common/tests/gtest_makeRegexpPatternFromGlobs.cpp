@@ -694,8 +694,9 @@ TEST(Common, DISABLED_GlobASTLegacyMatchFuzz)
         bool ast_ok = true;
         std::optional<GlobMatcher> legacy;
         std::optional<GlobMatcher> ast;
-        try { legacy = GlobMatcher::createLegacy(pattern); } catch (...) { legacy_ok = false; }
-        try { ast = GlobMatcher::createNew(pattern); } catch (...) { ast_ok = false; }
+        /// Ok: a pattern that one engine rejects (throws on) is recorded as a divergence below.
+        try { legacy = GlobMatcher::createLegacy(pattern); } catch (...) { legacy_ok = false; }  /// Ok
+        try { ast = GlobMatcher::createNew(pattern); } catch (...) { ast_ok = false; }  /// Ok
 
         /// One engine accepting a pattern that the other rejects is itself a divergence.
         if (legacy_ok != ast_ok)

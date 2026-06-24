@@ -36,12 +36,12 @@ namespace DB
   *
   *   wildcard     = "**" | "*" | "?" ;
   *
-  *   range        = "{" , integer , ".." , integer , "}" ;
-  *   integer      = digit , { digit } ;
+  *   range        = "{" integer ".." integer "}" ;
+  *   integer      = digit { digit } ;
   *   digit        = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
   *
-  *   enum         = "{" , enum-body , "}" ;
-  *   enum-body    = enum-edge , { enum-mid } , enum-edge ;   (* length >= 2 *)
+  *   enum         = "{" enum-body "}" ;
+  *   enum-body    = enum-edge { enum-mid } enum-edge ;   (* length >= 2 *)
   *   enum-edge    = ? any char except '{' '}' '*' ',' ? ;    (* first and last char *)
   *   enum-mid     = ? any char except '{' '}' '*' ? ;        (* ',' allowed -> empty alternatives *)
   *
