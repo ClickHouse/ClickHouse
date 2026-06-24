@@ -397,8 +397,6 @@
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
     <script>
 
-    const add_http_cors_header = (location.protocol != 'file:');
-
     const $search = document.getElementById('search');
     const $results = document.getElementById('results');
     const $doc = document.getElementById('doc');
@@ -490,10 +488,11 @@
     };
 
     function buildURL() {
-        let url = `${$url.value}?default_format=JSONEachRow&enable_http_compression=1`;
-        if (add_http_cors_header) {
-            url += '&add_http_cors_header=1';
-        }
+        /// Always request CORS headers, exactly like `/play` and `/schema`. When this page is opened
+        /// as a local file (`file://`) and pointed at a remote server, the queries are cross-origin
+        /// (the browser sends `Origin: null`), and ClickHouse only adds `Access-Control-Allow-Origin`
+        /// when `add_http_cors_header=1` is set; without it the searches would be blocked by CORS.
+        let url = `${$url.value}?default_format=JSONEachRow&enable_http_compression=1&add_http_cors_header=1`;
         if ($user.value) {
             url += `&user=${encodeURIComponent($user.value)}`;
         }
