@@ -16,31 +16,31 @@ SET prefer_localhost_replica = 0;
 CREATE DATABASE IF NOT EXISTS shard_0;
 CREATE DATABASE IF NOT EXISTS shard_1;
 
-DROP TABLE IF EXISTS shard_0.t04366;
-DROP TABLE IF EXISTS shard_1.t04366;
-DROP TABLE IF EXISTS t04366_dist;
-DROP VIEW IF EXISTS t04366_view;
+DROP TABLE IF EXISTS shard_0.t04369;
+DROP TABLE IF EXISTS shard_1.t04369;
+DROP TABLE IF EXISTS t04369_dist;
+DROP VIEW IF EXISTS t04369_view;
 
-CREATE TABLE shard_0.t04366 (id UInt32) ENGINE = MergeTree ORDER BY id;
-CREATE TABLE shard_1.t04366 (id UInt32) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE shard_0.t04369 (id UInt32) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE shard_1.t04369 (id UInt32) ENGINE = MergeTree ORDER BY id;
 
 -- raw id = 9 (→ view id = 10) lives only on shard_1; shard_0 (where filter value 10 routes) is empty.
-INSERT INTO shard_1.t04366 VALUES (9);
+INSERT INTO shard_1.t04369 VALUES (9);
 
-CREATE TABLE t04366_dist (id UInt32)
-ENGINE = Distributed(test_cluster_two_shards_different_databases, '', t04366, id);
+CREATE TABLE t04369_dist (id UInt32)
+ENGINE = Distributed(test_cluster_two_shards_different_databases, '', t04369, id);
 
-CREATE VIEW t04366_view AS SELECT id + 1 AS id FROM t04366_dist;
+CREATE VIEW t04369_view AS SELECT id + 1 AS id FROM t04369_dist;
 
 -- Pushdown ON: must read the shard holding raw id = 9 and return 10 (shard pruning must not drop it).
-SELECT id FROM t04366_view WHERE id = 10
+SELECT id FROM t04369_view WHERE id = 10
 SETTINGS optimize_trivial_view_pushdown_to_distributed = 1, optimize_skip_unused_shards = 1;
 
 -- Pushdown OFF: same result (reference).
-SELECT id FROM t04366_view WHERE id = 10
+SELECT id FROM t04369_view WHERE id = 10
 SETTINGS optimize_trivial_view_pushdown_to_distributed = 0, optimize_skip_unused_shards = 1;
 
-DROP VIEW t04366_view;
-DROP TABLE t04366_dist;
-DROP TABLE shard_0.t04366;
-DROP TABLE shard_1.t04366;
+DROP VIEW t04369_view;
+DROP TABLE t04369_dist;
+DROP TABLE shard_0.t04369;
+DROP TABLE shard_1.t04369;
