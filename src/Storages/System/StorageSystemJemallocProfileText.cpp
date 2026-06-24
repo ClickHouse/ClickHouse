@@ -34,8 +34,8 @@ StorageSystemJemallocProfileText::StorageSystemJemallocProfileText(const Storage
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(getColumnsDescription());
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemJemallocProfileText::createVirtuals()
@@ -66,7 +66,7 @@ Pipe StorageSystemJemallocProfileText::read(
 #if USE_JEMALLOC
     storage_snapshot->check(column_names);
 
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(storage_snapshot->virtual_columns->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList());
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
 
     /// Get the last flushed profile filename
     auto last_profile = std::string(Jemalloc::flushProfile("/tmp/jemalloc_clickhouse"));

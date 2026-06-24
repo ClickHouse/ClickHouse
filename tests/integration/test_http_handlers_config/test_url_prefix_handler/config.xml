@@ -1,0 +1,14 @@
+<clickhouse>
+    <http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <url_prefix>/test_prefix</url_prefix>
+            <handler>
+                <type>static</type>
+                <status>200</status>
+                <content_type>text/plain; charset=UTF-8</content_type>
+                <response_content>prefix handler matched</response_content>
+            </handler>
+        </rule>
+    </http_handlers>
+</clickhouse>

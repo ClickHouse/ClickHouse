@@ -10,6 +10,7 @@
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
 #include <Common/SettingsChanges.h>
+#include <Common/SharedMutex.h>
 
 #include <Parsers/IAST.h>
 
@@ -106,8 +107,9 @@ struct ColumnDescription
     ColumnDescription() = default;
     ColumnDescription(const ColumnDescription & other) { *this = other; }
     ColumnDescription & operator=(const ColumnDescription & other);
-    ColumnDescription(ColumnDescription && other) noexcept { *this = std::move(other); }
-    ColumnDescription & operator=(ColumnDescription && other) noexcept;
+    /// Not noexcept: the move-assignment clones the codec/TTL ASTs, which allocates and can throw.
+    ColumnDescription(ColumnDescription && other) { *this = std::move(other); } /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
+    ColumnDescription & operator=(ColumnDescription && other); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 
     ColumnDescription(String name_, DataTypePtr type_);
     ColumnDescription(String name_, DataTypePtr type_, String comment_);
@@ -126,6 +128,15 @@ class ColumnsDescription : public IHints<>
 {
 public:
     ColumnsDescription() = default;
+
+    /// Mutable cache members (`get_cache_mutex`, `get_cache`) are non-copyable; define
+    /// explicit copy / move. Copy discards the cache (it's reproducible); move steals it,
+    /// because the cache content is consistent with the columns being transferred.
+    ColumnsDescription(const ColumnsDescription & other) : IHints<>(other), columns(other.columns), subcolumns(other.subcolumns) {}
+    ColumnsDescription(ColumnsDescription && other) noexcept
+        : columns(std::move(other.columns)), subcolumns(std::move(other.subcolumns)), get_cache(std::move(other.get_cache)) {}
+    ColumnsDescription & operator=(const ColumnsDescription & other);
+    ColumnsDescription & operator=(ColumnsDescription && other) noexcept;
 
     static ColumnsDescription fromNamesAndTypes(NamesAndTypes ordinary);
 
@@ -280,6 +291,30 @@ private:
     void removeSubcolumns(const String & name_in_storage);
 
     std::optional<NameAndTypePair> tryGetDynamicSubcolumn(const String & column_name, const GetColumnsOptions & options) const;
+
+    /// `NamesAndTypesList get(const GetColumnsOptions &) const` is called repeatedly with
+    /// the same options across analyzer and planner of every query, and rebuilding the
+    /// result iterates the columns multi-index plus runs `addSubcolumnsToList` on every row.
+    /// The cache lives on `ColumnsDescription` (which is owned by an immutable
+    /// `StorageInMemoryMetadata` snapshot) so the result is reused across queries on the
+    /// same metadata version. Any method that alters `columns` or `subcolumns` calls
+    /// `invalidateGetCache`.
+    struct GetCacheKey
+    {
+        UInt8 kind;
+        UInt8 virtuals_kind;
+        UInt8 virtuals_place;
+        UInt8 flags; /// bit 0: with_subcolumns, bit 1: with_dynamic_subcolumns
+        bool operator==(const GetCacheKey & other) const = default;
+    };
+    static GetCacheKey makeGetCacheKey(const GetColumnsOptions & options);
+    void invalidateGetCache() const;
+
+    mutable SharedMutex get_cache_mutex;
+    /// `vector` rather than `unordered_map`: distinct `GetCacheKey`s per `ColumnsDescription`
+    /// are bounded by a handful in practice, and a contiguous linear scan over a 4-byte
+    /// trivially-comparable key beats hashing + bucket indirection at this size.
+    mutable std::vector<std::pair<GetCacheKey, std::shared_ptr<const NamesAndTypesList>>> get_cache;
 };
 
 class ASTColumnDeclaration;

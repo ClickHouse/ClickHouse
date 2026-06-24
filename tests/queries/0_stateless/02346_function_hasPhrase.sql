@@ -19,6 +19,8 @@ SELECT hasPhrase(NULL); -- { serverError BAD_ARGUMENTS }
 SELECT hasPhrase(NULL, NULL); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT hasPhrase(NULL, 'quick brown');
 SELECT hasPhrase('the quick brown fox', NULL); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- 2nd arg must be const String, materialize(NULL) should not be accepted
+SELECT hasPhrase('', materialize(NULL)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT 'Constants: hasPhrase should be constant';
 
@@ -150,5 +152,55 @@ INSERT INTO tab VALUES
 
 SELECT id FROM tab WHERE hasPhrase(message, 'abc', 'ngrams(3)') ORDER BY id;
 SELECT id FROM tab WHERE hasPhrase(message, 'cde', 'ngrams(3)') ORDER BY id;
+
+DROP TABLE tab;
+
+SELECT 'matchPhrase alias';
+
+SELECT hasPhrase('the quick brown fox', 'quick brown');
+SELECT matchPhrase('the quick brown fox', 'quick brown');
+
+SELECT 'asciiCJK tokenizer';
+
+SELECT hasPhrase('错误503', '错误', 'asciiCJK');
+SELECT hasPhrase('错误503', '误503', 'asciiCJK');
+SELECT hasPhrase('错误503', '错503', 'asciiCJK');
+SELECT hasPhrase('taichi张三丰in the house', '张三', 'asciiCJK');
+SELECT hasPhrase('taichi张三丰in the house', '丰in', 'asciiCJK');
+SELECT hasPhrase('taichi张三丰in the house', '张in', 'asciiCJK');
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (id UInt64, message String) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO tab VALUES
+    (1, 'hello错误502需要处理kitty'),
+    (2, 'taichi张三丰in the house'),
+    (3, 'hello world'),
+    (4, '错误502需要');
+
+SELECT id FROM tab WHERE hasPhrase(message, '错误502', 'asciiCJK') ORDER BY id;
+SELECT id FROM tab WHERE hasPhrase(message, '需要处理', 'asciiCJK') ORDER BY id;
+SELECT id FROM tab WHERE hasPhrase(message, '三丰in', 'asciiCJK') ORDER BY id;
+SELECT id FROM tab WHERE hasPhrase(message, 'hello world', 'asciiCJK') ORDER BY id;
+
+DROP TABLE tab;
+
+SELECT 'NOT hasPhrase';
+
+SELECT NOT hasPhrase('the quick brown fox', 'quick brown');
+SELECT NOT hasPhrase('the quick brown fox', 'brown quick');
+SELECT NOT hasPhrase('the quick brown fox', 'missing phrase');
+SELECT NOT hasPhrase('hello world', 'hello world');
+SELECT NOT hasPhrase('', 'hello');
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (id UInt64, message String) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO tab VALUES
+    (1, 'the quick brown fox'),
+    (2, 'the slow brown turtle'),
+    (3, 'quick brown dog');
+
+SELECT id FROM tab WHERE NOT hasPhrase(message, 'quick brown') ORDER BY id;
+SELECT id FROM tab WHERE NOT hasPhrase(message, 'brown') ORDER BY id;
+SELECT id FROM tab WHERE NOT hasPhrase(message, 'missing phrase') ORDER BY id;
 
 DROP TABLE tab;

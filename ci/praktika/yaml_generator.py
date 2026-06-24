@@ -168,10 +168,7 @@ jobs:
         id: run
         run: |
           . {ENV_SETUP_SCRIPT}
-          set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run '{JOB_NAME}' --workflow "{WORKFLOW_NAME}" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee {TEMP_DIR}/job.log
+          PYTHONUNBUFFERED=1 python3 -m praktika run '{JOB_NAME}' --workflow "{WORKFLOW_NAME}" --ci --timestamp
 {UPLOADS_GITHUB}\
 """
 
@@ -388,7 +385,6 @@ class PullRequestPushYamlGen:
                 JOB_ADDONS="".join(job_addons),
                 DOWNLOADS_GITHUB="\n".join(downloads_github),
                 UPLOADS_GITHUB="\n".join(uploads_github),
-                RUN_LOG=Settings.RUN_LOG,
                 PYTHON=Settings.PYTHON_INTERPRETER,
                 WORKFLOW_JOB_FILE=Settings.WORKFLOW_JOB_FILE,
                 WORKFLOW_STATUS_FILE=Settings.WORKFLOW_STATUS_FILE,

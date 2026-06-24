@@ -94,8 +94,8 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(description);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemReplicas::createVirtuals()
@@ -184,7 +184,7 @@ void StorageSystemReplicas::readImpl(
 
     /// We collect a set of replicated tables.
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
-    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
     {
         /// Check if database can contain replicated tables
         if (db.second->isExternal())
@@ -230,7 +230,7 @@ void StorageSystemReplicas::readImpl(
     query_plan.addStep(std::move(reading));
 }
 
-class SystemReplicasSource : public ISource
+class SystemReplicasSource final : public ISource
 {
 public:
     SystemReplicasSource(
@@ -388,7 +388,7 @@ Chunk SystemReplicasSource::generate()
             }
         }
 
-        const TStatus * status;
+        const TStatus * status = nullptr;
         try
         {
             status = &futures[i].get();

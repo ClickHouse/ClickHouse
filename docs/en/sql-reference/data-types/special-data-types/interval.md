@@ -7,8 +7,6 @@ title: 'Interval'
 doc_type: 'reference'
 ---
 
-# Interval
-
 The family of data types representing time and date intervals. The resulting types of the [INTERVAL](/sql-reference/operators#interval) operator.
 
 Structure:
