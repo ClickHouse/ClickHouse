@@ -334,7 +334,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
+def main() -> int:
     from clickhouse_helper import ClickHouseHelper
     from get_robot_token import get_best_robot_token
     from github_helper import GitHub
@@ -409,8 +409,23 @@ def main() -> None:
             logging.error("Failed to process PR #%s: %s", number, ex)
 
     logging.info("Done. Updated %s PR(s)", updated)
+    return updated
 
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(level=logging.INFO)
-    main()
+    # Imported here (not at module top) so the pure helpers stay importable for
+    # unit tests without the praktika package on the path.
+    from ci.praktika.result import Result
+
+    status = Result.Status.OK
+    info = ""
+    try:
+        info = f"Updated {main()} PR(s)"
+    except Exception as error:  # pylint: disable=broad-except
+        status = Result.Status.FAIL
+        info = f"ERROR: {error}"
+        logging.exception("pr_version_info failed")
+    # Emit a praktika Result so the job is reported as completed; a plain
+    # command that exits 0 without a Result is otherwise treated as killed.
+    Result.create_from(status=status, info=info).complete_job()
