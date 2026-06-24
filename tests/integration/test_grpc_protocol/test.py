@@ -281,6 +281,11 @@ def test_insert_returning():
         == "2\n4\n6\n8\n10\n"
     )
     assert query("SELECT count() FROM t") == "5\n"
+    # Zero-row insert (FORMAT with no input_data) is still a successful insert and must stream RETURNING.
+    assert (
+        query("INSERT INTO t RETURNING (SELECT count() FROM t) FORMAT TabSeparated", settings={"async_insert": "0", "throw_if_no_data_to_insert": "0"})
+        == "5\n"
+    )
 
 
 def test_output_format():
