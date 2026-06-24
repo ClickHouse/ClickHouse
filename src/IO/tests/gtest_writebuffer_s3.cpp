@@ -1053,6 +1053,46 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmDefaults)
     }
 }
 
+TEST_F(WBS3Test, UploadChecksumAlgorithmRuntimeValidation)
+{
+    S3::S3RequestSettings request_settings;
+
+    getSettings()[Setting::s3_upload_checksum_algorithm] = "MD4";
+    request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ false);
+
+    EXPECT_THROW({
+        try
+        {
+            S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ false, /* checksum_disabled */ false);
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(ErrorCodes::INVALID_SETTING_VALUE, e.code());
+            EXPECT_THAT(e.what(), testing::HasSubstr("only supports CRC32, SHA256 and MD5"));
+            throw;
+        }
+    }, DB::Exception);
+
+    if (DB::OpenSSLInitializer::instance().isFIPSEnabled())
+    {
+        getSettings()[Setting::s3_upload_checksum_algorithm] = "MD5";
+        request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ false);
+
+        EXPECT_THROW({
+            try
+            {
+                S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ false, /* checksum_disabled */ false);
+            }
+            catch (const DB::Exception & e)
+            {
+                ASSERT_EQ(ErrorCodes::INVALID_SETTING_VALUE, e.code());
+                EXPECT_THAT(e.what(), testing::HasSubstr("cannot be MD5 when FIPS mode is enabled"));
+                throw;
+            }
+        }, DB::Exception);
+    }
+}
+
 TEST_F(WBS3Test, UploadChecksumAlgorithmEmptyDefaultSinglepart)
 {
     auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
