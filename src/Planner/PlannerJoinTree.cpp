@@ -88,6 +88,7 @@
 
 #include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/Planner.h>
+#include <Planner/PlannerContext.h>
 #include <Planner/PlannerJoins.h>
 #include <Planner/PlannerJoinsLogical.h>
 #include <Planner/PlannerActionsVisitor.h>
@@ -1650,6 +1651,21 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             read_context->setSetting("max_result_rows", Field(0));
                             read_context->setSetting("max_result_bytes", Field(0));
                             read_context->setSetting("extremes", Field(false));
+
+                            /// StorageDistributed::read rewrites the shard query using
+                            /// table_expression_query_info.planner_context's query context (see
+                            /// buildQueryTreeForShard); rewrites such as ReplaceLongConstWithScalar
+                            /// register scalars there. The distributed read, however, sends scalars from
+                            /// the context it is invoked with (effective_context). Context::createCopy
+                            /// snapshots the scalar map by value, so read_context and the original
+                            /// planner context would diverge — the shard could receive __getScalar('..')
+                            /// without the matching scalar ("Scalar doesn't exist"). Point the planner
+                            /// context at read_context so the rewrite stores scalars into the very
+                            /// context that sends them. The copy ctor keeps the shared
+                            /// GlobalPlannerContext (prepared sets, column identifiers).
+                            table_expression_query_info.planner_context
+                                = std::make_shared<PlannerContext>(read_context, table_expression_query_info.planner_context);
+
                             effective_context = std::move(read_context);
                         }
                     }
