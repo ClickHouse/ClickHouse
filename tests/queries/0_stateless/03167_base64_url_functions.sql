@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest because simdutf library is required
+
 -- incorrect number of arguments
 SELECT base64URLEncode(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT base64URLDecode(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
