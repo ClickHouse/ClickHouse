@@ -218,3 +218,29 @@ SELECT 1 FROM t_evolved_pruned FORMAT Null; -- { serverError NO_SUCH_COLUMN_IN_T
 SELECT count() FROM t_evolved_pruned SETTINGS optimize_trivial_count_query = 1;
 
 DROP TABLE t_evolved_pruned;
+
+-- A bucketed distributed read (make_distributed_plan) trims ranges and can drop whole parts per
+-- worker AFTER analysis, via the distributed_read_bucket_count block. The carrier must therefore be
+-- ranked over the parts the worker actually reads, not over the pre-bucket set. Two single-mark parts
+-- where the globally cheapest column is the expensive one in one part: part1 a tiny / b large, part2
+-- a large / b tiny, so the global aggregate ranks 'a' cheapest while a worker bucketed onto part2
+-- alone must read 'b'. Ranking before the bucket filter reads ~2 MB off part2; ranking after reads a
+-- few hundred bytes (the per-worker byte win is shown in the PR; the distributed worker pipeline does
+-- not surface ReadCompressedBytes, so here we just assert the bucketed no-columns read stays correct).
+DROP TABLE IF EXISTS t_smallest_column_bucket;
+
+CREATE TABLE t_smallest_column_bucket (a String, b String)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_smallest_column_bucket SELECT 'c', randomString(2000) FROM numbers(5000);
+INSERT INTO t_smallest_column_bucket SELECT randomString(400), 'c' FROM numbers(5000);
+
+-- count() over a bucketed distributed read takes the no-columns carrier path on each worker.
+SELECT count() FROM t_smallest_column_bucket
+SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, enable_parallel_replicas = 0,
+    distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
+    optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, optimize_use_projections = 0,
+    max_rows_to_group_by = 0;
+
+DROP TABLE t_smallest_column_bucket;

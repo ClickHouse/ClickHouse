@@ -3653,16 +3653,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 {
     auto & result = getAnalysisResult();
 
-    /// A no-columns query (e.g. SELECT count()) must read one cheap "carrier" column just to learn
-    /// the row count. Choose it here, the last point before the read: the projection optimizations
-    /// (optimizeUseNormalProjection / optimizeUseAggregateProjection) run after analysis and shrink
-    /// result.parts_with_ranges via filterPartsByProjection, so a carrier chosen earlier could be
-    /// ranked over parts that are no longer read. When no part survives, the read becomes a
-    /// NullSource (handled below) that reads nothing, so no carrier is needed.
-    if (result.needs_no_columns_carrier && result.column_names_to_read.empty() && !result.parts_with_ranges.empty())
-        result.column_names_to_read.push_back(
-            chooseColumnToReadForNoColumnsQuery(result.parts_with_ranges, storage_snapshot->metadata));
-
     logPredicateStatistics(result);
 
     /// Filter ranges by 'bucket_id' parameter so that each distributed worker reads only its slice of the parts.
@@ -3708,6 +3698,17 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         /// Cannot cache PREWHERE results when ranges are filtered by bucket_id.
         reader_settings.use_query_condition_cache = false;
     }
+
+    /// A no-columns query (e.g. SELECT count()) must read one cheap "carrier" column just to learn
+    /// the row count. Choose it here, the last point before the read, once parts_with_ranges is
+    /// final: the projection optimizations (optimizeUseNormalProjection / optimizeUseAggregateProjection)
+    /// shrink it via filterPartsByProjection, and the distributed-read bucket filter above drops whole
+    /// parts or trims ranges per worker, so a carrier chosen earlier could be ranked over parts this
+    /// pipeline does not read. When no part survives, the read becomes a NullSource (handled below)
+    /// that reads nothing, so no carrier is needed.
+    if (result.needs_no_columns_carrier && result.column_names_to_read.empty() && !result.parts_with_ranges.empty())
+        result.column_names_to_read.push_back(
+            chooseColumnToReadForNoColumnsQuery(result.parts_with_ranges, storage_snapshot->metadata));
 
     if (enable_remove_parts_from_snapshot_optimization || query_info.isStream())
     {
