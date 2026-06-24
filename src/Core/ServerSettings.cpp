@@ -2048,6 +2048,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "distributed_query",
         "stateless_worker_client",
         "stateless_worker_server",
+        "stateless_worker_discovery_service",
         "_functional_tests_helper_shared_catalog",
         "server_uuid_from_replica_name",
         "cloud",
