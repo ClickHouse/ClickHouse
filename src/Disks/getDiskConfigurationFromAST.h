@@ -41,6 +41,12 @@ DiskConfigurationPtr getDiskConfigurationFromAST(const ASTs & disk_args, Context
 /// Rewrite a dynamic disk configuration so its S3 client is built anonymously (see `getDiskConfigurationFromASTImpl`).
 void forceAnonymousS3DiskConfig(Poco::Util::AbstractConfiguration & config);
 
+/// Re-apply the server-managed S3 credential restriction to a dynamic disk configuration after `include`
+/// (and `from_env`/`from_zk`) are resolved, so an `include` cannot inject an S3 backend with server-managed
+/// auth past the pre-resolution check. Throws `ACCESS_DENIED`, or forces the disk anonymous when loading from
+/// existing metadata (governed by `s3_load_table_anonymously_if_credentials_restricted`).
+void validateResolvedS3DiskCredentials(Poco::Util::AbstractConfiguration & config, ContextPtr context, bool is_loading_from_existing_metadata);
+
 /*
  * A reverse function.
  */

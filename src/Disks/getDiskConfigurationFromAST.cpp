@@ -285,6 +285,60 @@ void forceAnonymousS3DiskConfig(Poco::Util::AbstractConfiguration & config)
     config.setString("no_sign_request", "1");
 }
 
+void validateResolvedS3DiskCredentials(Poco::Util::AbstractConfiguration & config, ContextPtr context, bool is_loading_from_existing_metadata)
+{
+    /// Re-check the credential restriction on the configuration AFTER `include`/`from_env`/`from_zk` are
+    /// resolved. The pre-resolution check in `getDiskConfigurationFromASTImpl` can be evaded by putting a
+    /// literal non-S3 `type` in the AST while an `include` injects `type = s3` (or `object_storage_type = s3`)
+    /// plus server-managed auth; the resulting S3 disk is then built with `for_disk_s3 = true`, so the central
+    /// `getClient` restriction never applies. Here every value is already concrete, so the resolved backend
+    /// and credentials can be inspected directly.
+    if (!context->shouldRestrictUserQueryS3Credentials())
+        return;
+
+    auto is_s3_type = [](const String & t) { return t == "s3" || t.starts_with("s3_"); };
+    if (!is_s3_type(config.getString("type", "")) && !is_s3_type(config.getString("object_storage_type", "")))
+        return;
+
+    const bool has_explicit_credentials
+        = !config.getString("access_key_id", "").empty() && !config.getString("secret_access_key", "").empty();
+    const bool has_no_sign_request = config.getBool("no_sign_request", false);
+    const bool has_role_arn = !config.getString("role_arn", "").empty();
+    const bool use_environment_credentials_off
+        = config.has("use_environment_credentials") && !config.getBool("use_environment_credentials", true);
+    const bool wants_gcp_oauth = boost::iequals(config.getString("http_client", ""), "gcp_oauth");
+    const bool has_explicit_gcp_adc = !config.getString("google_adc_client_id", "").empty()
+        && !config.getString("google_adc_client_secret", "").empty()
+        && !config.getString("google_adc_refresh_token", "").empty();
+    const bool allowed_anonymous = use_environment_credentials_off && !has_role_arn;
+
+    const bool denied = wants_gcp_oauth
+        ? !has_explicit_gcp_adc
+        : (!has_explicit_credentials && !has_no_sign_request && !allowed_anonymous);
+    if (!denied)
+        return;
+
+    if (is_loading_from_existing_metadata
+        && context->getGlobalContext()->getServerSettings()[ServerSetting::s3_load_table_anonymously_if_credentials_restricted])
+    {
+        LOG_WARNING(
+            getLogger("getDiskConfigurationFromAST"),
+            "Loading a dynamic S3 disk anonymously: after resolving `include`, it resolves server-managed "
+            "credentials that are restricted for user queries (s3_allow_server_credentials_in_user_queries = 0). "
+            "The disk will be inaccessible until its credentials resolve to a permitted source. Set the server "
+            "setting s3_load_table_anonymously_if_credentials_restricted = 0 to fail loading instead.");
+        forceAnonymousS3DiskConfig(config);
+    }
+    else
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "A dynamic S3 disk created from user SQL must not resolve the server's own credentials, including "
+            "through an `include` that supplies the S3 type or credentials. Provide a complete explicit "
+            "`access_key_id`/`secret_access_key` pair, `no_sign_request`, or `use_environment_credentials = 0` "
+            "(or, for `http_client = gcp_oauth`, a complete explicit Google ADC triple). Enable the setting "
+            "`s3_allow_server_credentials_in_user_queries` to allow it.");
+}
+
 DiskConfigurationPtr getDiskConfigurationFromAST(const ASTs & disk_args, ContextPtr context)
 {
     bool load_anonymously = false;

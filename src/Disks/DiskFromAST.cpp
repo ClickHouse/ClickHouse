@@ -63,9 +63,14 @@ static std::string getOrCreateCustomDisk(
 
         config->load(xml_document);
 
-        /// Applied after `processIncludes`, so an `include` cannot re-introduce server credentials.
+        /// Applied after `processIncludes`. If the pre-resolution check already decided the disk must load
+        /// anonymously, enforce it now (an `include` cannot re-introduce server credentials). Otherwise
+        /// re-validate the resolved config, so an `include` that injects an S3 backend with server-managed
+        /// auth (past a literal non-S3 `type` in the AST) is still caught.
         if (load_anonymously)
             forceAnonymousS3DiskConfig(*config);
+        else
+            validateResolvedS3DiskCredentials(*config, context, attach);
     }
 
     Poco::Util::AbstractConfiguration::Keys disk_settings_keys;
