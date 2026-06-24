@@ -337,6 +337,31 @@ Columns materializeColumns(const Block & block, const Names & names)
     return materialized;
 }
 
+Columns materializeColumnsKeepLowCardinality(const Block & block, const Names & names)
+{
+    Columns materialized;
+    materialized.reserve(names.size());
+
+    for (const auto & column_name : names)
+    {
+        const auto & column = block.getByName(column_name).column;
+        ColumnPtr prepared = removeSpecialRepresentations(column->convertToFullColumnIfConst());
+
+
+        /// Keep the dictionary only for non-nullable LowCardinality. A LowCardinality(Nullable(T))
+        /// key must be materialized so the join extracts its null map and skips NULL keys:
+        /// extractNestedColumnsAndNullMap does not look inside LowCardinality, and the
+        /// dictionary-aware key getter has no null-key path (a NULL must never join).
+        if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(prepared.get());
+            low_cardinality && low_cardinality->nestedIsNullable())
+            prepared = prepared->convertToFullColumnIfLowCardinality();
+
+        materialized.emplace_back(std::move(prepared));
+    }
+
+    return materialized;
+}
+
 ColumnRawPtrs getRawPointers(const Columns & columns)
 {
     ColumnRawPtrs ptrs;
