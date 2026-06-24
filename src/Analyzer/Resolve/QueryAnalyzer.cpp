@@ -594,8 +594,22 @@ void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_
 void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope)
 {
     const auto & settings = scope.context->getSettingsRef();
-    if (!settings[Setting::enable_positional_arguments] || scope.context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+    if (!settings[Setting::enable_positional_arguments])
         return;
+    const bool is_view_inner = scope.context->isViewInnerQuery();
+    if (!is_view_inner)
+    {
+        /// Skip resolution on distributed/parallel-replicas local plan nodes: the initiator
+        /// already resolved positional arguments in the outer query. View-inner contexts are
+        /// exempt because views are expanded on the local node and were never resolved by the
+        /// initiator.
+        if (scope.context->isPositionalArgumentsAlreadyResolved())
+            return;
+        /// Skip on remote shard execution (SECONDARY_QUERY): same reasoning as above for
+        /// paths not covered by setPositionalArgumentsAlreadyResolved.
+        if (scope.context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+            return;
+    }
 
     auto & node_list_typed = node_list->as<ListNode &>();
 

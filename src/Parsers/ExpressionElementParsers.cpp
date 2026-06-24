@@ -195,6 +195,9 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         /// SQL standard VALUES clause: (VALUES (1, 'a'), (2, 'b'))
         /// Rewrite as SELECT * FROM SQLStandardValues((1, 'a'), (2, 'b'))
+        if (pos->type != TokenType::OpeningRoundBracket)
+            return false;
+
         auto args = make_intrusive<ASTExpressionList>();
         ParserExpression expr_parser;
 

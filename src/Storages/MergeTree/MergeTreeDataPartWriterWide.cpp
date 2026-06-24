@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
@@ -803,10 +804,15 @@ void MergeTreeDataPartWriterWide::fillDataChecksums(MergeTreeDataPartChecksums &
 void MergeTreeDataPartWriterWide::finishDataSerialization(bool sync)
 {
     for (auto & stream : column_streams)
-    {
         stream.second->finalize();
-        if (sync)
-            stream.second->sync();
+
+    if (sync)
+    {
+        std::vector<const MergeTreeWriterStream *> streams_to_sync;
+        streams_to_sync.reserve(column_streams.size());
+        for (const auto & stream : column_streams)
+            streams_to_sync.push_back(stream.second.get());
+        parallelSyncFiles(streams_to_sync);
     }
 
     column_streams.clear();

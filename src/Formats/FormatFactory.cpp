@@ -843,6 +843,14 @@ BucketSplitter FormatFactory::getSplitter(const String & format)
     return creator.bucket_splitter_creator();
 }
 
+bool FormatFactory::checkFormatHasSplitter(const String & format) const
+{
+    auto it = dict.find(boost::to_lower_copy(format));
+    if (it == dict.end())
+        return false;
+    return static_cast<bool>(it->second.bucket_splitter_creator);
+}
+
 void FormatFactory::registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator)
 {
     chassert(input_creator);

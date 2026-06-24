@@ -64,6 +64,7 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_top_k_dynamic_filtering;
+    extern const SettingsBool use_top_k_dynamic_filtering_for_variable_length_types;
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsDecorrelationJoinKind correlated_subqueries_default_join_kind;
@@ -224,6 +225,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     use_index_for_in_with_subqueries_max_values = from[Setting::use_index_for_in_with_subqueries_max_values];
     use_skip_indexes_for_top_k = from[Setting::use_skip_indexes_for_top_k];
     use_top_k_dynamic_filtering = from[Setting::use_top_k_dynamic_filtering];
+    use_top_k_dynamic_filtering_for_variable_length_types = from[Setting::use_top_k_dynamic_filtering_for_variable_length_types];
     max_limit_for_top_k_optimization = from[Setting::query_plan_max_limit_for_top_k_optimization];
     use_skip_indexes_on_data_read = from[Setting::use_skip_indexes_on_data_read];
     prepared_sets_cache = std::move(prepared_sets_cache_);
