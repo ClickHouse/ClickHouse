@@ -1,6 +1,7 @@
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
 #include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
 #include <Core/Field.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -103,11 +104,13 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         throw;
     }
 
+    /// Fire BlockIO finish callbacks so the query is recorded in system.query_log (QueryFinish with
+    /// read_rows/read_bytes). Guarded so it always runs after successful execution, even if the
+    /// response finalization in query_finish_callback throws.
+    SCOPE_EXIT_SAFE(io.onFinish());
+
     if (query_finish_callback)
         query_finish_callback();
-
-    /// Fire BlockIO finish callbacks so the query is recorded in system.query_log (QueryFinish with read_rows/read_bytes).
-    io.onFinish();
 }
 
 void PrometheusHTTPProtocolAPI::writeQueryResponse(
