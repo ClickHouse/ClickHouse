@@ -161,7 +161,11 @@ public:
         ContextPtr context,
         const StorageID & storage_id,
         std::shared_ptr<DataLake::ICatalog> catalog) override;
-    Pipe alterPartition(const PartitionCommands & commands, ContextPtr context) override;
+    Pipe alterPartition(
+        const PartitionCommands & commands,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        StorageID storage_id) override;
 
     Pipe executeCommand(
         const String & command_name,
@@ -211,7 +215,11 @@ private:
 
     void backgroundMetadataPrefetcherThread();
 
-    void alterPartitionDropImpl(const PartitionCommand & command, ContextPtr context);
+    void alterPartitionDropImpl(
+        const PartitionCommand & command,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        StorageID storage_id);
 };
 }
 
