@@ -854,7 +854,7 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
 Pipe StorageObjectStorage::alterPartition(
     const StorageMetadataPtr & /*metadata_snapshot*/, const PartitionCommands & commands, ContextPtr context)
 {
-    return configuration->alterPartition(commands, std::move(context));
+    return configuration->alterPartition(commands, std::move(context), catalog, getStorageID());
 }
 
 

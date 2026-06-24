@@ -273,8 +273,11 @@ public:
         const StorageID & /*storage_id*/,
         std::shared_ptr<DataLake::ICatalog> /*catalog*/) {}
 
-    virtual Pipe
-    alterPartition(const PartitionCommands & /* commands */, ContextPtr /* context */)
+    virtual Pipe alterPartition(
+        const PartitionCommands & /* commands */,
+        ContextPtr /* context */,
+        std::shared_ptr<DataLake::ICatalog> /* catalog */,
+        StorageID /* storage_id */)
     {
         return {};
     }
