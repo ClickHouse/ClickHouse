@@ -16,6 +16,7 @@
 #include <IO/Operators.h>
 
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -198,13 +199,14 @@ UInt32 getDecimalFieldScale(const Field & field)
     }
 }
 
-/// Decimal-backed constants (Decimal*, DateTime64, Time64) have no exact literal syntax in SQL:
-/// a bare numeric literal is re-parsed as Float64 and loses precision, while a quoted string cast
-/// directly to DateTime64 is interpreted as a date-time text and fails for values such as "0"
-/// (https://github.com/ClickHouse/ClickHouse/issues/94612).
+/// Decimal constants have no exact literal syntax in SQL: a bare numeric literal is re-parsed on
+/// the receiving side as Float64 and loses precision for high-scale values.
 /// We serialize the value as its exact textual form cast from a String to a Decimal type with
 /// enough precision, then cast that to the final type. The String -> Decimal conversion parses
 /// the digits exactly, so the constant round-trips without loss.
+/// (DateTime64/Time64 are already serialized exactly as date-time text by
+/// getFieldFromColumnForASTLiteral, see https://github.com/ClickHouse/ClickHouse/issues/94612,
+/// and complex types such as Variant rely on that path, so this is limited to Decimal results.)
 ASTPtr makeExactDecimalConstantAST(const Field & field, const String & result_type_name)
 {
     const String text = applyVisitor(FieldVisitorToString(), field);
@@ -253,10 +255,12 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 
     const auto & constant_value_type = constant_value.getType();
 
-    /// Decimal-backed constants need an exact, precision-safe serialization so they round-trip
-    /// without going through Float64 (precision loss) or string -> DateTime64 parsing (which fails
-    /// for some values). This covers both the cast and no-cast paths below.
-    if (const auto field = getValue(); isDecimalField(field))
+    /// Decimal constants need an exact, precision-safe serialization so they round-trip without
+    /// going through Float64 (which silently rounds high-scale values). This is limited to results
+    /// that are themselves Decimal: DateTime64/Time64 are already serialized exactly as date-time
+    /// text, and wrapper types such as Variant must keep using that representation.
+    if (const auto field = getValue();
+        isDecimalField(field) && WhichDataType(removeNullable(constant_value_type)).isDecimal())
         return makeExactDecimalConstantAST(field, constant_value_type->getName());
 
     // Add cast if constant was created as a result of constant folding.
