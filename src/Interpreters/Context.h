@@ -905,11 +905,13 @@ public:
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
     ClassifierPtr getWorkloadClassifier() const;
-    void releaseQuerySlot() const;
+    void releaseWorkloadResources() const;
     String getMergeWorkload() const;
     void setMergeWorkload(const String & value);
     String getLicenseFile() const;
     void setLicenseFile(const String & value);
+    bool getShowLicenseExpirationWarnings() const;
+    void setShowLicenseExpirationWarnings(bool value);
     String getMutationWorkload() const;
     void setMutationWorkload(const String & value);
     bool getThrowOnUnknownWorkload() const;
