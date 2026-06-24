@@ -43,29 +43,12 @@ TEST(LocalSnapshotRegion, WithinSnapshotRegionIsAtomicWithCommit)
 
     constexpr int N_COMMITS = 200;
 
-    /// Writer thread — commits N_COMMITS times. Inside `attemptCommit`'s
-    /// staging callable (which runs under the same `commit_lock` the
-    /// snapshot region locks), bump `tick` so it advances by one per commit.
-    /// The csn bump and the tick bump are therefore observed together by the
-    /// snapshot region.
-    std::thread writer([&]
-    {
-        for (int i = 0; i < N_COMMITS; ++i)
-        {
-            coord.attemptCommit([&](CSN /*tentative*/)
-            {
-                tick.fetch_add(1, std::memory_order_release);
-            });
-            /// Yield so the reader interleaves even on a fully-loaded host;
-            /// without it the writer can drain all commits before the reader
-            /// is scheduled (`reads == 0`), a CPU-starvation flake unrelated to
-            /// the lock-coupling invariant under test.
-            std::this_thread::yield();
-        }
-    });
-
+    /// Reader thread — repeatedly observes `(tick, csn)` THROUGH the snapshot
+    /// region (the same `commit_lock` the writer commits under). The pair must
+    /// always be consistent: if the csn bump and the tick bump were not
+    /// lock-coupled, the reader could observe `tick = N` paired with `csn = N+1`.
     std::atomic<bool> stop{false};
-    size_t reads = 0;
+    std::atomic<size_t> reads{0};
     std::thread reader([&]
     {
         while (!stop.load(std::memory_order_acquire))
@@ -77,7 +60,30 @@ TEST(LocalSnapshotRegion, WithinSnapshotRegionIsAtomicWithCommit)
                 EXPECT_EQ(t, static_cast<UInt64>(current_csn))
                     << "snapshot region violated: tick=" << t << " csn=" << current_csn;
             });
-            ++reads;
+            reads.fetch_add(1, std::memory_order_release);
+        }
+    });
+
+    /// Writer thread — commits N_COMMITS times, bumping `tick` inside
+    /// `attemptCommit`'s staging callable (run under the same `commit_lock` the
+    /// snapshot region locks), so the csn bump and the tick bump are observed
+    /// together by the reader. Wait until the reader has taken at least one
+    /// observation first: this makes the commits provably overlap a live reader
+    /// and `reads > 0` hold WITHOUT depending on thread scheduling — under slow
+    /// instrumentation (msan / coverage) the reader could otherwise be starved
+    /// until after the writer drained, a flake unrelated to the lock-coupling
+    /// invariant under test.
+    std::thread writer([&]
+    {
+        while (reads.load(std::memory_order_acquire) == 0)
+            std::this_thread::yield();
+        for (int i = 0; i < N_COMMITS; ++i)
+        {
+            coord.attemptCommit([&](CSN /*tentative*/)
+            {
+                tick.fetch_add(1, std::memory_order_release);
+            });
+            std::this_thread::yield();
         }
     });
 
@@ -90,7 +96,7 @@ TEST(LocalSnapshotRegion, WithinSnapshotRegionIsAtomicWithCommit)
     UInt64 final_tick = 0;
     coord.withinSnapshotRegion([&](CSN c) { final_tick = static_cast<UInt64>(c); });
     EXPECT_EQ(final_tick, static_cast<UInt64>(N_COMMITS));
-    EXPECT_GT(reads, 0u);
+    EXPECT_GT(reads.load(), 0u);
 }
 
 /// `takeQuerySnapshot` installs the pin at the captured `view->csn` — same
