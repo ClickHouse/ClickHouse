@@ -74,6 +74,7 @@ struct KeeperNodesStorage
     virtual ~KeeperNodesStorage() = default;
 
     /// Assigns just the fields relevant to node storage. Other fields are set by KeeperStorage.
+    /// Caller must hold storage_mutex (shared_lock is sufficient).
     virtual void getNodeStorageStats(KeeperStorageStats & out) = 0;
 
     /// (A little slower than getCommittedNode/getUncommittedNode, so most request processing should

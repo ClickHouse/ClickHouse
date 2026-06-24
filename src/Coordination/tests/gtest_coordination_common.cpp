@@ -68,7 +68,8 @@ bool committedNodeExists(DB::KeeperStorage & storage, std::string_view path)
 std::string committedNodeData(DB::KeeperStorage & storage, std::string_view path)
 {
     std::string data;
-    EXPECT_TRUE(storage.nodes_storage->getCommittedNodeSimple(path, /*out_stats=*/nullptr, &data));
+    if (!storage.nodes_storage->getCommittedNodeSimple(path, /*out_stats=*/nullptr, &data))
+        data = "<NO NODE>";
     return data;
 }
 

@@ -1832,7 +1832,7 @@ int64_t KeeperStateMachine::getLastProcessedZxid() const
 
 KeeperStorageStats KeeperStateMachine::getStorageStats() const
 {
-    KEEPER_STORAGE_LOCK_SHARED(lock);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getStorageStats();
 }
 

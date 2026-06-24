@@ -183,6 +183,22 @@ auto callOnConcreteRequestType(Coordination::ZooKeeperRequest & zk_request, F fu
     }
 }
 
+bool takeNodeStatsFromUpdateDelta(std::string_view path, const KeeperStorage::DeltaRange & deltas, Coordination::Stat & out_stat)
+{
+    for (auto it = deltas.end(); it != deltas.begin();)
+    {
+        --it;
+        if (it->path != path)
+            continue;
+        if (const auto * update_delta = std::get_if<UpdateNodeStatDelta>(&it->operation))
+        {
+            update_delta->new_stats.setResponseStat(out_stat);
+            return true;
+        }
+    }
+    return false;
+}
+
 }
 
 /// ========== Request implementations ==========
@@ -646,8 +662,9 @@ static Coordination::Error preprocess(
 
     storage.nodes.prepareUpdateNodeStat(parent_path, std::move(parent_node_ref), new_parent_stats, storage.staging);
 
-    for (auto & [path, node] : nodes_to_remove)
-        storage.nodes.prepareRemoveNodeWithoutUpdatingParent(path, std::move(node), storage.staging);
+    /// Remove children before parents (the traversal above is pre-order).
+    for (auto it = nodes_to_remove.rbegin(); it != nodes_to_remove.rend(); ++it)
+        storage.nodes.prepareRemoveNodeWithoutUpdatingParent(it->first, std::move(it->second), storage.staging);
 
     return Coordination::Error::ZOK;
 }
@@ -814,23 +831,13 @@ static Coordination::Error preprocess(
     return Coordination::Error::ZOK;
 }
 
-static Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperSetRequest & /*zk_request*/, KeeperStorage & storage, KeeperStorage::DeltaRange deltas, int64_t /*session_id*/)
+static Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperSetRequest & zk_request, KeeperStorage & storage, KeeperStorage::DeltaRange deltas, int64_t /*session_id*/)
 {
     ProfileEvents::increment(ProfileEvents::KeeperSetRequest);
 
     auto response = std::make_shared<Coordination::ZooKeeperSetResponse>();
 
-    bool found_delta = false;
-    for (auto it = deltas.end(); it != deltas.begin();)
-    {
-        --it;
-        if (const auto * update_delta = std::get_if<UpdateNodeStatDelta>(&it->operation))
-        {
-            found_delta = true;
-            update_delta->new_stats.setResponseStat(response->stat);
-            break;
-        }
-    }
+    bool found_delta = takeNodeStatsFromUpdateDelta(zk_request.path, deltas, response->stat);
     if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
     {
         response->error = result;
@@ -1345,21 +1352,11 @@ static Coordination::Error preprocess(
 }
 
 static Coordination::ZooKeeperResponsePtr
-process(const Coordination::ZooKeeperSetACLRequest & /*zk_request*/, KeeperStorage & storage, KeeperStorage::DeltaRange deltas, int64_t /*session_id*/)
+process(const Coordination::ZooKeeperSetACLRequest & zk_request, KeeperStorage & storage, KeeperStorage::DeltaRange deltas, int64_t /*session_id*/)
 {
     auto response = std::make_shared<Coordination::ZooKeeperSetACLResponse>();
 
-    bool found_delta = false;
-    for (auto it = deltas.end(); it != deltas.begin();)
-    {
-        --it;
-        if (const auto * update_delta = std::get_if<UpdateNodeStatDelta>(&it->operation))
-        {
-            found_delta = true;
-            update_delta->new_stats.setResponseStat(response->stat);
-            break;
-        }
-    }
+    bool found_delta = takeNodeStatsFromUpdateDelta(zk_request.path, deltas, response->stat);
     if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
     {
         response->error = result;

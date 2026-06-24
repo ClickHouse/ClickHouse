@@ -104,6 +104,7 @@ Coordination::ACLs getUncommittedACLs(DB::KeeperStorage & storage, std::string_v
 
 /// Committed-node helpers that only use the implementation-agnostic KeeperStorage API.
 bool committedNodeExists(DB::KeeperStorage & storage, std::string_view path);
+/// Returns "<NO NODE>" if node doesn't exist.
 std::string committedNodeData(DB::KeeperStorage & storage, std::string_view path);
 
 using Implementation = testing::Types<TestParam<DB::KeeperMemoryStorage, true>, TestParam<DB::KeeperMemoryStorage, false>>;
