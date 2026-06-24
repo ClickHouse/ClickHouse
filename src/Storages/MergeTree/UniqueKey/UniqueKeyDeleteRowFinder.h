@@ -63,8 +63,9 @@ struct UniqueKeyDeleteRowFinderStats
 /// Behaviour:
 ///   - Reuses MergeTree's read-path predicate plumbing (primary-key
 ///     skipping, PREWHERE, skip indexes, delete-bitmap row-level filtering).
-///   - `_part` is decoded as a plain String; `_part_offset` is decoded as
-///     UInt64 with a range check against UInt32 (UNIQUE KEY row-id space).
+///   - `_part` is decoded as a plain String; `_part_offset` is carried as
+///     UInt64 (the part row-id space; `DeleteBitmap` upgrades to 64-bit
+///     roaring as needed).
 ///   - A malformed `_part` (cannot parse partition id) from the read pipeline
 ///     is a should-never-happen; `find()` throws (fail-closed) rather than
 ///     silently under-deleting that part's rows.
@@ -80,12 +81,12 @@ struct UniqueKeyDeleteRowFinder
     };
 
     /// One `(part_name, row_number)` pair from the internal SELECT. Row
-    /// numbers are UInt32 (UNIQUE KEY row-id space); the SELECT pulls them
-    /// as UInt64 and `find()` range-checks before narrowing.
+    /// numbers are carried as UInt64 (the part row-id space; `DeleteBitmap`
+    /// upgrades to 64-bit roaring as needed).
     struct PartRowEntry
     {
         PartName part_name;
-        UInt32   row_number;
+        UInt64   row_number;
     };
 
     /// Pure-function seam: groups already-decoded `(part_name, row_number)`

@@ -13,7 +13,6 @@
 #include <fmt/core.h>
 
 #include <algorithm>
-#include <limits>
 #include <unordered_map>
 
 namespace DB
@@ -36,7 +35,7 @@ UniqueKeyDeleteRowFinder::Result UniqueKeyDeleteRowFinder::group(
 {
     /// Bucket rows by part name first; this keeps Roaring construction off
     /// the per-pair hot loop and lets us sort the per-part vector once.
-    std::unordered_map<PartName, std::vector<UInt32>> rows_by_part_name;
+    std::unordered_map<PartName, std::vector<UInt64>> rows_by_part_name;
     for (const auto & e : pairs)
         rows_by_part_name[e.part_name].push_back(e.row_number);
 
@@ -132,6 +131,13 @@ UniqueKeyDeleteRowFinder::Result UniqueKeyDeleteRowFinder::find(
     /// them via the pure-function seam below.
     std::vector<PartRowEntry> pairs;
 
+    /// TODO(unique-key): the internal row-finder SELECT runs under the caller's
+    /// access, so a UK DELETE currently also requires the SELECT privilege. The
+    /// analyzer's `PlannerJoinTree::checkAccessRights` checks `AccessType::SELECT`
+    /// unconditionally; `SelectQueryOptions::ignore_access_check` is honored only
+    /// by the legacy `InterpreterSelectQuery`. Preserving the historical
+    /// `ALTER DELETE`-without-`SELECT` contract needs this internal read to run
+    /// with full access (as background mutation reads do).
     auto io = executeQuery(select_query, std::move(select_context), QueryFlags{ .internal = true }).second;
     io.executeWithCallbacks([&]()
     {
@@ -155,14 +161,12 @@ UniqueKeyDeleteRowFinder::Result UniqueKeyDeleteRowFinder::find(
                 part_col->get(i, part_field);
                 PartName part_name = part_field.safeGet<String>();
 
+                /// `_part_offset` is carried as UInt64; `DeleteBitmap` upgrades
+                /// to 64-bit roaring for values above the UInt32 range.
                 Field offset_field;
                 offset_col->get(i, offset_field);
                 const UInt64 row_number = offset_field.safeGet<UInt64>();
-                if (row_number > std::numeric_limits<UInt32>::max())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "_part_offset {} exceeds UInt32 range on UNIQUE KEY DELETE", row_number);
-
-                pairs.push_back({std::move(part_name), static_cast<UInt32>(row_number)});
+                pairs.push_back({std::move(part_name), row_number});
             }
         }
     });
