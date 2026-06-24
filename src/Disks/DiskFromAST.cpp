@@ -41,8 +41,8 @@ static std::string getOrCreateCustomDisk(
 
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
     {
-        bool load_anonymously = false;
-        auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context, attach, &load_anonymously);
+        DynamicS3DiskCredentialInfo s3_disk_info;
+        auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context, attach, &s3_disk_info);
 
         Poco::AutoPtr<Poco::XML::NamePool> name_pool(new Poco::XML::NamePool());
         Poco::XML::DOMParser dom_parser(name_pool);
@@ -67,10 +67,10 @@ static std::string getOrCreateCustomDisk(
         /// anonymously, enforce it now (an `include` cannot re-introduce server credentials). Otherwise
         /// re-validate the resolved config, so an `include` that injects an S3 backend with server-managed
         /// auth (past a literal non-S3 `type` in the AST) is still caught.
-        if (load_anonymously)
+        if (s3_disk_info.load_anonymously)
             forceAnonymousS3DiskConfig(*config);
         else
-            validateResolvedS3DiskCredentials(*config, context, attach);
+            validateResolvedS3DiskCredentials(*config, context, attach, s3_disk_info);
     }
 
     Poco::Util::AbstractConfiguration::Keys disk_settings_keys;
