@@ -246,7 +246,7 @@ std::vector<size_t> JoinStep::getStepGroups() const
     return {
         static_cast<size_t>(JoinStage::Default),
         static_cast<size_t>(JoinStage::Probe),
-        static_cast<size_t>(JoinStage::Build) 
+        static_cast<size_t>(JoinStage::Build)
     };
 }
 

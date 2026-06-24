@@ -26,6 +26,6 @@ private:
     using MapStepToWallClock = std::unordered_map<StepAndGroup, StepWallClockPtr, Hash>;
 
     UInt64 query_start_ns = 0;
-    MapStepToWallClock clocks; 
+    MapStepToWallClock clocks;
 };
 }

@@ -178,7 +178,7 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     explicit_sorting_required_for_aggregation_in_order = false;
 }
 
-std::vector<size_t> AggregatingStep::getStepGroups() const 
+std::vector<size_t> AggregatingStep::getStepGroups() const
 {
     return {
         static_cast<size_t>(AggregatingStage::Grouping),

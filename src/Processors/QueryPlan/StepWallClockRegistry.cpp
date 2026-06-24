@@ -61,5 +61,4 @@ const StepWallClock * StepWallClockRegistry::find(const IQueryPlanStep * step_pt
     auto it = clocks.find({step_ptr, group});
     return it != clocks.end() ? it->second.get() : nullptr;
 }
-    
 }
