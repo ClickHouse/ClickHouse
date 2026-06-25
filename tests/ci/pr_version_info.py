@@ -379,12 +379,21 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     from ci.jobs.scripts.cidb_cluster import CIDBCluster
+    from ci.praktika.info import Info
     from get_robot_token import get_best_robot_token
     from github_helper import GitHub
 
     args = parse_args()
     token = args.token or get_best_robot_token()
     owner = args.repo.split("/")[0]
+
+    # A manual run can widen the lookback via the `days` workflow_dispatch input;
+    # it overrides the command's --days. Absent/empty (scheduled runs) -> --days.
+    days = args.days
+    dispatch_days = Info.get_workflow_input_value("days")
+    if dispatch_days and dispatch_days.strip().isdigit():
+        days = int(dispatch_days)
+        logging.info("Using lookback from workflow input: %s days", days)
 
     gh = GitHub(token, per_page=100)
     repo = gh.get_repo(args.repo)
@@ -393,16 +402,14 @@ def main() -> int:
     logging.info("Active release branches: %s", release_branches)
 
     now = datetime.now()
-    since = now - timedelta(days=args.days)
+    since = now - timedelta(days=days)
     # Lightweight GraphQL fetch: a few batched requests for the whole window,
     # instead of one REST request per merged PR.
     merged_infos = gh.get_pulls_lightweight(
         query=f"type:pr repo:{args.repo} is:merged",
         merged=[since, now],
     )
-    logging.info(
-        "Found %s merged PRs in the last %s days", len(merged_infos), args.days
-    )
+    logging.info("Found %s merged PRs in the last %s days", len(merged_infos), days)
 
     infos_by_number = {info.number: info for info in merged_infos}
     backport_numbers, original_numbers, need_scan = partition_merged_prs(
