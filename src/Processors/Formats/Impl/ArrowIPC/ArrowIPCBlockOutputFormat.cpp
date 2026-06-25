@@ -230,11 +230,16 @@ std::pair<ColumnPtr, DataTypePtr> ArrowIPCBlockOutputFormat::encodeDictionaryCol
             local_to_global[e] = -1;
             continue;
         }
-        const std::string key(batch_dictionary->getDataAt(e));
-        auto [it, inserted] = state.value_to_index.try_emplace(key, static_cast<Int64>(state.values->size()));
-        if (inserted)
-            state.values->insertFrom(*batch_dictionary, e);
-        local_to_global[e] = it->second;
+        const std::string_view value = batch_dictionary->getDataAt(e);
+        if (auto it = state.value_to_index.find(value); it != state.value_to_index.end())
+        {
+            local_to_global[e] = it->second;
+            continue;
+        }
+        const auto global_index = static_cast<Int64>(state.values->size());
+        state.value_to_index.emplace(StringWithMemoryTracking(value.data(), value.size()), global_index);
+        state.values->insertFrom(*batch_dictionary, e);
+        local_to_global[e] = global_index;
     }
 
     PaddedPODArray<Int64> indexes(rows);

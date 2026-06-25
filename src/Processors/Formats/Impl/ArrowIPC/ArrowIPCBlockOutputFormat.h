@@ -11,6 +11,8 @@
 #include <Processors/Formats/Impl/ArrowIPC/SchemaConverter.h>
 #include <Core/Names.h>
 #include <Columns/IColumn.h>
+#include <Common/StringHashForHeterogeneousLookup.h>
+#include <Common/StringWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -75,10 +77,19 @@ private:
     /// Dictionary-encoded output (`output_format_arrow_low_cardinality_as_dictionary`): the per-column
     /// plan of which `LowCardinality` nodes (top-level or nested) are dictionary-encoded, and the per-id
     /// accumulated dictionary (extended across batches via Arrow dictionary deltas).
+    /// Compares dictionary keys as `string_view` so a lookup by `string_view` does not allocate a key.
+    struct DictKeyEqual
+    {
+        using is_transparent = void;
+        bool operator()(std::string_view a, std::string_view b) const { return a == b; }
+    };
+
     struct DictionaryColumnState
     {
         MutableColumnPtr values;                              /// accumulated dictionary values (full nested type)
-        UnorderedMapWithMemoryTracking<std::string, Int64> value_to_index;
+        /// The key owns a tracked copy of the value, so the dedup memory is enforced by `max_memory_usage`;
+        /// lookups go through the transparent `string_view` overloads and do not allocate.
+        UnorderedMapWithMemoryTracking<StringWithMemoryTracking, Int64, StringHashForHeterogeneousLookup, DictKeyEqual> value_to_index;
         bool emitted = false;
     };
     ArrowIPC::DictPlans column_dict_plans;
