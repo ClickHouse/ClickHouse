@@ -25,6 +25,7 @@ def cluster():
                 "configs/migration_compatible.xml",
             ],
             with_zookeeper=True,
+            stay_alive=True,
         )
         # The current build, which always uses the unified deduplication hash.
         cluster.add_instance(
@@ -198,11 +199,12 @@ def test_new_unified_async_enable_follows_sync_window(cluster):
 
 def test_legacy_async_blocks_cleanup(cluster):
     # During a rolling upgrade an older replica (here the pinned 26.5 in compatible_double_hashes) keeps
-    # writing legacy async-insert ids under /async_blocks. The current leader must keep trimming that
-    # directory down to replicated_deduplication_window_for_async_inserts; otherwise old replicas would
-    # over-deduplicate past the window or leak Keeper nodes. node_compatible is barred from leadership
-    # (replicated_can_become_leader = 0) so the current binary's restored sweep is what does the
-    # trimming under test: without that sweep the directory would stay at num_inserts instead of window.
+    # writing legacy async-insert ids under /async_blocks. The current leader must trim that directory
+    # down to replicated_deduplication_window_for_async_inserts; otherwise old replicas would
+    # over-deduplicate past the window or leak Keeper nodes. To make the current binary's restored sweep
+    # deterministically the cleaner (cleanup runs on the leader, and which replica leads is otherwise
+    # racy), the 26.5 replica is stopped after it writes, leaving the current replica as the sole leader.
+    # Without the sweep /async_blocks would stay at num_inserts instead of being trimmed to window.
     node_compatible = cluster.instances["node_compatible"]
     node_new = cluster.instances["node_new"]
 
@@ -219,7 +221,6 @@ def test_legacy_async_blocks_cleanup(cluster):
             CREATE TABLE test_legacy_async_blocks_cleanup (k UInt32)
             ENGINE=ReplicatedMergeTree('{zk_path}', '{{replica}}')
             ORDER BY k
-            SETTINGS replicated_can_become_leader = 0
             """
         )
         node_new.query(
@@ -241,14 +242,17 @@ def test_legacy_async_blocks_cleanup(cluster):
                 f"VALUES ({i})"
             )
 
-        # The current leader's restored sweep must trim /async_blocks down to the window.
+        # Stop the 26.5 replica so the current replica is the sole leader; its restored sweep must then
+        # trim /async_blocks down to the window.
+        node_compatible.stop_clickhouse()
         assert_eq_with_retry(
             node_new,
             f"SELECT count() FROM system.zookeeper WHERE path = '{async_blocks_path}'",
             str(window),
-            retry_count=60,
+            retry_count=90,
             sleep_time=1,
         )
     finally:
+        node_compatible.start_clickhouse()
         node_compatible.query(drop_query)
         node_new.query(drop_query)
