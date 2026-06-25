@@ -68,6 +68,97 @@ def test_drop_partition_with_evolved_spec_is_rejected(started_cluster_iceberg_wi
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "local"])
+def test_drop_partition_preserves_data_file_metadata(started_cluster_iceberg_with_spark, storage_type):
+    """A partial-manifest DROP PARTITION re-emits the surviving entries as EXISTING. The optional
+    `data_file` fields Spark wrote (sort_order_id, split_offsets, column statistics) must be carried
+    over verbatim, not dropped. Verified both through ClickHouse (`system.iceberg_files`) and, after
+    shipping the rewritten metadata back, through Spark's canonical `.files` metadata table."""
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    table_name = f"test_drop_partition_meta_{storage_type}_{get_uuid_str()}"
+
+    def spark_query(query):
+        return execute_spark_query_general(
+            spark, started_cluster_iceberg_with_spark, storage_type, table_name, query)
+
+    spark_query(
+        f"""
+            CREATE TABLE {table_name} (tag INT, k STRING, v INT, d DOUBLE)
+            USING iceberg
+            PARTITIONED BY (identity(tag))
+            OPTIONS('format-version'='2')
+        """)
+    # The double column makes Spark emit nan_value_counts (another field the rewrite must carry).
+    # Several partitions written by one INSERT share a manifest, so dropping one of them forces a
+    # partial rewrite of the survivors (tag = 2 and tag = 3).
+    spark_query(
+        f"INSERT INTO {table_name} VALUES "
+        f"(1, 'a', 10, 1.0), (1, 'b', 11, 2.0), (2, 'c', 20, double('NaN')), (3, 'd', 30, 4.0)")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{table_name}/",
+        f"/iceberg_data/default/{table_name}/",
+    )
+
+    create_iceberg_table(storage_type, instance, table_name, started_cluster_iceberg_with_spark)
+    assert instance.query(f"SELECT count() FROM {table_name}") == "4\n"
+
+    def ch_meta_by_path():
+        rows = instance.query(
+            "SELECT file_path, sort_order_id, length(column_sizes), length(null_value_counts) "
+            f"FROM system.iceberg_files WHERE table = '{table_name}' AND content = 'DATA' ORDER BY file_path"
+        ).strip().splitlines()
+        return {r.split("\t")[0]: r.split("\t")[1:] for r in rows}
+
+    ch_before = ch_meta_by_path()
+    # Spark's sort_order_id and statistics are visible to ClickHouse before the drop.
+    assert all(int(m[1]) > 0 and int(m[2]) > 0 for m in ch_before.values()), ch_before
+
+    instance.query(
+        f"ALTER TABLE {table_name} DROP PARTITION 1",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    assert instance.query(f"SELECT count() FROM {table_name}") == "2\n"
+
+    # ClickHouse keeps each survivor's sort_order_id and statistics across the rewrite.
+    ch_after = ch_meta_by_path()
+    assert len(ch_after) == len(ch_before) - 1, f"{len(ch_before)} -> {len(ch_after)}"
+    for path, m in ch_after.items():
+        assert m == ch_before[path], f"{path}: {ch_before[path]} -> {m}"
+
+    # Ship CH's rewritten metadata back so Spark reads the survivors through its own manifest reader.
+    local_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/"
+    default_download_directory(
+        started_cluster_iceberg_with_spark, storage_type, local_dir, local_dir,
+    )
+    metadata_dir = os.path.join(local_dir, "metadata")
+    versions = []
+    for name in os.listdir(metadata_dir):
+        m = re.match(r"v(\d+)(?:[-.].*)?\.metadata\.json$", name)
+        if m:
+            versions.append(int(m.group(1)))
+    assert versions, "ClickHouse should have written a new metadata.json"
+    with open(os.path.join(metadata_dir, "version-hint.text"), "wb") as f:
+        f.write(str(max(versions)).encode())
+
+    # Spark reads split_offsets straight out of the manifest CH rewrote. Spark always writes
+    # split_offsets (Parquet row-group offsets) and the old rewrite dropped them, so a non-empty
+    # value here proves the field survived the partial rewrite, as seen by the canonical reader.
+    spark_after = [
+        list(r["split_offsets"] or [])
+        for r in spark.read.format("iceberg")
+        .load(f"{local_dir.rstrip('/')}#files")
+        .filter("content = 0")
+        .collect()
+    ]
+    assert len(spark_after) == 2, spark_after
+    for split_offsets in spark_after:
+        assert split_offsets, spark_after
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "local"])
 def test_drop_partition_on_spark_table_round_trip(started_cluster_iceberg_with_spark, storage_type):
     """Happy path: a Spark-created partitioned Iceberg table is modified by
     ClickHouse with `ALTER TABLE ... DROP PARTITION`, the resulting metadata
