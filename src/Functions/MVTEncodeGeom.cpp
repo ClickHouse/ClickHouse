@@ -2,10 +2,14 @@
 #include <limits>
 #include <numbers>
 
+#include "config.h"
+
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/box.hpp>
 
+#if USE_WAGYU
 #include <mapbox/geometry/wagyu/wagyu.hpp>
+#endif
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
@@ -26,6 +30,7 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -91,6 +96,7 @@ void roundToGrid(Geometry & geometry)
     });
 }
 
+#if USE_WAGYU
 /// Conversions between the integer-grid Boost polygons and wagyu's integer geometry, used to clip and validate
 /// polygons (wagyu produces MVT-valid output: no self-intersections, correct ring nesting). Coordinates are already
 /// whole integers after roundToGrid, so the Float64 <-> Int64 casts are exact.
@@ -192,6 +198,7 @@ Ring<BPoint> clipRingToBox(const Ring<BPoint> & ring, Float64 lo_x, Float64 lo_y
     roundToGrid(poly);
     return poly;
 }
+#endif
 
 /// Accumulates the per-row tile-space geometries into a `Geometry` (Variant) result column.
 struct GeometryVariantBuilder
@@ -412,15 +419,17 @@ public:
             builder.addMultiLineString(result);
         };
 
-        auto process_polygons = [&](MultiPolygon<BPoint> polygons, const Projection & projection, const BBox & box, bool clip)
+        auto process_polygons = [&](MultiPolygon<BPoint> polygons, const Projection & projection, [[maybe_unused]] const BBox & box, bool clip)
         {
             bg::for_each_point(polygons, projection);
             /// Snap to the integer pixel grid before clipping (clip-vs-snap ordering, matching PostGIS).
             roundToGrid(polygons);
-            bg::correct(polygons);
 
             if (!clip)
             {
+                /// Repair ring orientation and closure of the geometry that is emitted directly; the clip path
+                /// below instead validates through wagyu, which is independent of the input ring winding.
+                bg::correct(polygons);
                 /// A single empty input is wrapped into a Multi container holding one empty element, so the
                 /// container is non-empty despite having no vertices; check the vertex count to map it to NULL.
                 if (bg::num_points(polygons) == 0)
@@ -438,6 +447,7 @@ public:
                 return;
             }
 
+#if USE_WAGYU
             /// Clip and validate with wagyu: unlike bg::intersection it repairs self-intersections and nested rings
             /// into MVT-valid polygons. wagyu removes collinear points using Int64 products of coordinate deltas,
             /// which overflow for geometry far from the tile, so each ring is first bounded to the tile box with a
@@ -482,6 +492,12 @@ public:
             }
             bg::correct(result);
             builder.addMultiPolygon(result);
+#else
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Clipping polygons in MVTEncodeGeom requires the wagyu library, which is disabled in this build; "
+                "pass clip = false to project the polygon without clipping");
+#endif
         };
 
         /// Dispatch a single Boost geometry value (the right overload is chosen by type).

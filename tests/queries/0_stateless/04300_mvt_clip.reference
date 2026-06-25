@@ -54,4 +54,4 @@ MULTIPOLYGON(((4097 -1,-1 -1,-1 4097,4097 4097,4097 -1)))
 -- MVTEncodeGeom: a polygon entirely outside the tile becomes NULL
 1
 -- MVTEncodeGeom: a polygon with a hole keeps the hole through clipping
-MULTIPOLYGON(((3969 -1,-1 -1,-1 4097,3969 4097,3969 -1),(2221 1850,2221 3767,1056 3767,1056 1850,2221 1850)))
+MULTIPOLYGON(((3969 -1,-1 -1,-1 4097,3969 4097,3969 -1),(1056 3767,1056 1850,2221 1850,2221 3767,1056 3767)))

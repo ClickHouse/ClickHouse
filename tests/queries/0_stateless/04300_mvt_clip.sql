@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+-- ^ polygon clipping uses the wagyu contrib, which is disabled in the fast-test (ENABLE_LIBRARIES=0) build.
 -- Tests for MVTEncodeGeom geometry clipping (the buffer and clip arguments) and the tile bounding-box
 -- helpers MVTBoundingBox / MVTBoundingBoxMercator.
 

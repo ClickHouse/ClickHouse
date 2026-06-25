@@ -45,8 +45,6 @@ def clone_submodules():
         "contrib/sparsehash-c11",
         "contrib/croaring",
         "contrib/miniselect",
-        "contrib/wagyu",
-        "contrib/mapbox-geometry",
         "contrib/xz",
         "contrib/zmij",
         "contrib/fast_float",
