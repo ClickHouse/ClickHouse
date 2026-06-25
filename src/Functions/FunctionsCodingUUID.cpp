@@ -140,32 +140,12 @@ public:
 
     String getSignatureString() const override
     {
-        /// Legacy enforces FixedString(16) (uuid_bytes_length) at execution; here we accept
-        /// any FixedString and the executor handles the length check. The optional second
-        /// argument selects the UUID variant — `parseVariant` reads it via `getInt` and
-        /// casts to the enum's underlying type, which silently wraps for wider integers
-        /// (e.g. UInt16(258) becomes 2). Narrow to `Int8 | UInt8` to preserve the
-        /// original validation contract.
-        return "(FixedString, [Int8 | UInt8]) -> String";
-    }
-
-    /// Restore the legacy `FixedString(16)` analyzer-time invariant; the DSL has no width matcher.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        /// The function is variadic, so a zero-argument call reaches this override before the
-        /// base signature path validates arity; guard against an out-of-bounds access and let
-        /// the base path raise NUMBER_OF_ARGUMENTS_DOESNT_MATCH.
-        if (!arguments.empty())
-        {
-            if (const auto * fs = typeid_cast<const DataTypeFixedString *>(arguments[0].type.get()))
-            {
-                if (fs->getN() != uuid_bytes_length)
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Illegal type {} of argument 1 of function {}, expected FixedString({})",
-                        arguments[0].type->getName(), getName(), uuid_bytes_length);
-            }
-        }
-        return IFunction::getReturnTypeImpl(arguments);
+        /// `FixedString(16)` (uuid_bytes_length) is the exact width `executeImpl` reads, so a
+        /// wrong-width FixedString is rejected at analysis time. The optional second argument
+        /// selects the UUID variant — `parseVariant` reads it via `getInt` and casts to the
+        /// enum's underlying type, which silently wraps for wider integers (e.g. UInt16(258)
+        /// becomes 2). Narrow to `Int8 | UInt8` to preserve the original validation contract.
+        return "(FixedString(16), [Int8 | UInt8]) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -231,27 +211,10 @@ public:
 
     String getSignatureString() const override
     {
+        /// `FixedString(36)` (uuid_text_length) is the exact width the parser reads, so a
+        /// wrong-width FixedString is rejected at analysis time.
         /// See `FunctionUUIDNumToString::getSignatureString` for why `[Int8 | UInt8]`.
-        return "(String | FixedString, [Int8 | UInt8]) -> FixedString(16)";
-    }
-
-    /// Restore the legacy `FixedString(36)` analyzer-time invariant; the DSL has no width matcher.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        /// The function is variadic, so a zero-argument call reaches this override before the
-        /// base signature path validates arity; guard against an out-of-bounds access and let
-        /// the base path raise NUMBER_OF_ARGUMENTS_DOESNT_MATCH.
-        if (!arguments.empty())
-        {
-            if (const auto * fs = typeid_cast<const DataTypeFixedString *>(arguments[0].type.get()))
-            {
-                if (fs->getN() != uuid_text_length)
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Illegal type {} of argument 1 of function {}, expected FixedString({})",
-                        arguments[0].type->getName(), getName(), uuid_text_length);
-            }
-        }
-        return IFunction::getReturnTypeImpl(arguments);
+        return "(String | FixedString(36), [Int8 | UInt8]) -> FixedString(16)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

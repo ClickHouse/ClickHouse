@@ -96,12 +96,23 @@ public:
             " OR (T1, ..., E) -> leastSupertype(removeNullable(T1), ..., E)";
     }
 
-    /// Restore the legacy short-circuit semantics for type inference: stop at the first
-    /// non-nullable argument, and ignore trailing arguments for supertype computation.
-    /// The declarative signature `leastSupertype(removeNullable(T1), ..., E)` includes
-    /// all arguments, so a query like `coalesce(non_nullable_int, incompatible_type)`
-    /// previously type-checked (returning Int) but would now fail during analysis.
+    /// The declarative signature is bypassed on both the column and the types-only paths so
+    /// that the legacy short-circuit semantics are preserved: stop at the first non-nullable
+    /// argument and ignore trailing arguments for the supertype. The signature
+    /// `leastSupertype(removeNullable(T1), ..., E)` includes all arguments, so a query like
+    /// `coalesce(non_nullable_int, incompatible_type)` previously type-checked (returning the
+    /// int) but would otherwise fail during analysis. The `ColumnsWithTypeAndName` overload
+    /// forwards to the `DataTypes` one so both analysis paths share this logic.
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes types;
+        types.reserve(arguments.size());
+        for (const auto & arg : arguments)
+            types.push_back(arg.type);
+        return getReturnTypeImpl(types);
+    }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())
             return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
@@ -112,12 +123,12 @@ public:
         /// inherits its nullability (matching the legacy DSL).
         DataTypes filtered_types;
         filtered_types.reserve(arguments.size());
-        for (const auto & arg : arguments)
+        for (const auto & type : arguments)
         {
-            if (arg.type->onlyNull())
+            if (type->onlyNull())
                 continue;
-            filtered_types.push_back(arg.type);
-            if (!canContainNull(*arg.type))
+            filtered_types.push_back(type);
+            if (!canContainNull(*type))
                 break;
         }
 
