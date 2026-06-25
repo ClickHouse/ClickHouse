@@ -6,5 +6,6 @@ SET max_memory_usage='10G';
 
 insert into fat_granularity select number, toString(number) || '_' from numbers(100000) settings max_block_size = 3000, max_insert_threads = 8, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
 
--- Too large sizes of FixedString to deserialize
-select x from fat_granularity prewhere fat like '256\_%' settings max_threads=2;
+-- Too large sizes of FixedString to deserialize.
+-- Keep max_threads=1: it bounds the in-flight oversized-FixedString granule buffers (issue #68619).
+select x from fat_granularity prewhere fat like '256\_%' settings max_threads=1;
