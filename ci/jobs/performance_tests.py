@@ -682,21 +682,34 @@ def insert_flamegraph_stacks(cidb, info, reference_sha, compare_against_release)
 
 
 def match_reference_debug_info():
-    # PR builds use -g0 (DISABLE_ALL_DEBUG_SYMBOLS), so the patched binary has no
-    # DWARF and symbolizes addresses differently from the reference build that
-    # keeps debug info, which breaks flamegraph frame matching. Strip the
-    # reference to match, unless the patched binary keeps debug info too
-    # (merge-to-master). Must match compare.sh::match_reference_debug_info.
+    # addressToLine resolves a frame to "file:line" only where DWARF covers
+    # ClickHouse code. PR builds use -g0 (DISABLE_ALL_DEBUG_SYMBOLS): the symbol
+    # table remains (addressToSymbol works) but there is no line info, so the
+    # patched binary symbolizes differently from the reference (master) build and
+    # flamegraph tooling cannot match the frames. A ".debug_info" section is not a
+    # reliable signal (Rust crates emit one even under -g0), so probe how many
+    # system.stack_trace frames resolve to a line on each binary and strip the
+    # reference only when the patched binary resolves far fewer. Merge-to-master
+    # resolves comparably on both and is left untouched. Must match
+    # compare.sh::match_reference_debug_info.
     left = Shell.get_output(f"readlink -f {perf_left}/clickhouse-server", strict=True)
     right = Shell.get_output(f"readlink -f {perf_right}/clickhouse-server", strict=True)
-    # The binaries are self-extracting; run each once so the on-disk file is the
-    # decompressed ELF that readelf/strip operate on.
-    Shell.check(f"{left} local --query 'select 1'")
-    Shell.check(f"{right} local --query 'select 1'")
-    if Shell.check(f"readelf -S {right} | grep -q '\\.debug_info'"):
-        print("Patched binary keeps debug info, leaving reference as-is")
-        return
-    Shell.check(f"strip --strip-debug {left}", verbose=True)
+    probe = (
+        "select countIf(addressToLine(arrayJoin(trace)) like '%:%') "
+        "from system.stack_trace"
+    )
+
+    def resolved_lines(binary):
+        # Running clickhouse also decompresses the self-extracting binary in place.
+        out = Shell.get_output(
+            f'{binary} local --allow_introspection_functions=1 --query "{probe}"'
+        )
+        return int(out) if out and out.strip().isdigit() else 0
+
+    if resolved_lines(right) * 4 < resolved_lines(left):
+        Shell.check(f"strip --strip-debug {left}", verbose=True)
+    else:
+        print("Patched binary has comparable line info, leaving reference as-is")
 
 
 class CHServer:

@@ -141,24 +141,27 @@ function configure
     fi
 }
 
-# PR builds compile with -g0 (DISABLE_ALL_DEBUG_SYMBOLS), so the patched (right)
-# binary has no DWARF and symbolizes addresses differently from the reference
-# (left, master) build that keeps debug info, which makes flamegraph tooling fail
-# to match the frames. Strip the reference to match. Merge-to-master keeps debug
-# info on both sides; detect it on the patched binary and skip.
+# addressToLine resolves a frame to "file:line" only where DWARF covers
+# ClickHouse code. PR builds use -g0 (DISABLE_ALL_DEBUG_SYMBOLS): the symbol
+# table remains (addressToSymbol works) but there is no line info, so the patched
+# (right) binary symbolizes differently from the reference (left, master) build
+# and flamegraph tooling cannot match the frames. A ".debug_info" section is not
+# a reliable signal (Rust crates emit one even under -g0), so probe how many
+# system.stack_trace frames resolve to a line on each binary and strip the
+# reference only when the patched binary resolves far fewer. Merge-to-master
+# resolves comparably on both and is left untouched.
 function match_reference_debug_info
 {
-    local left right
+    local left right left_lines right_lines
     left=$(readlink -f left/clickhouse-server)
     right=$(readlink -f right/clickhouse-server)
-    # The binaries are self-extracting; run each once so the on-disk file is the
-    # decompressed ELF that readelf/strip below operate on.
-    "$left" local --query "select 1" &>/dev/null ||:
-    "$right" local --query "select 1" &>/dev/null ||:
-    if readelf -S "$right" | grep -q '\.debug_info'; then
-        return
+    # Running clickhouse also decompresses the self-extracting binary in place.
+    local probe="select countIf(addressToLine(arrayJoin(trace)) like '%:%') from system.stack_trace"
+    left_lines=$("$left" local --allow_introspection_functions=1 --query "$probe" 2>/dev/null ||:)
+    right_lines=$("$right" local --allow_introspection_functions=1 --query "$probe" 2>/dev/null ||:)
+    if [ "$(( ${right_lines:-0} * 4 ))" -lt "${left_lines:-0}" ]; then
+        strip --strip-debug "$left"
     fi
-    strip --strip-debug "$left"
 }
 
 function restart
