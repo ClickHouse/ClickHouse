@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- Tag no-parallel: issues `SYSTEM DROP QUERY CACHE`, which the style check requires to run serially.
+
 -- Regression test for a query result cache key collision around `SETTINGS obfuscate_seed = DEFAULT`.
 --
 -- `SETTINGS obfuscate_seed = DEFAULT` is parsed into `ASTSetQuery::default_settings`, not into
@@ -11,7 +14,7 @@
 -- random-seeded query could write an entry that the deterministic session-seeded query then read.
 --
 -- A unique `query_cache_tag` isolates the two entries from any other test sharing the server-global
--- query cache, so the test does not need `no-parallel`.
+-- query cache; the cleanup `SYSTEM DROP QUERY CACHE TAG` keeps the test repeatable across re-runs.
 
 SET allow_experimental_analyzer = 1;
 SET obfuscate_seed = 'stable';
