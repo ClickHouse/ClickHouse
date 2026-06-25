@@ -272,9 +272,10 @@ void BackupInfo::copyS3CredentialsTo(BackupInfo & dest) const
 
 BackupInfo BackupInfo::withoutS3Credentials(ContextPtr context) const
 {
+    if (backup_engine_name != "S3")
+        return *this;
+
     BackupInfo res = *this;
-    if (res.backup_engine_name != "S3")
-        return res;
 
     /// S3('url', 'access_key_id', 'secret_access_key') -> S3('url')
     if (res.id_arg.empty() && res.args.size() == 3)

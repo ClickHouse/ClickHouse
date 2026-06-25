@@ -69,6 +69,7 @@ namespace
     const int INITIAL_BACKUP_VERSION = 1;
     /// We may use lightweight backup in version 2.
     const int CURRENT_BACKUP_VERSION = 2;
+    constexpr auto BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP = "base_backup_copy_s3_credentials_from_backup";
 
     using SizeAndChecksum = IBackup::SizeAndChecksum;
 
@@ -319,7 +320,7 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
         {
             backup_info.copyS3CredentialsTo(effective_base_backup_info);
         }
-        else if (base_backup_use_same_s3_credentials && backup_info.canCopyS3CredentialsTo(effective_base_backup_info))
+        else if (base_backup_copy_s3_credentials_from_backup && backup_info.canCopyS3CredentialsTo(effective_base_backup_info))
         {
             /// Metadata marker asks to copy credentials from this backup locator at restore time.
             backup_info.copyS3CredentialsTo(effective_base_backup_info);
@@ -432,8 +433,8 @@ void BackupImpl::writeBackupMetadata()
         if (base_backup_in_use)
         {
             /// Persist base backup locators without inline `S3` credentials.
-            BackupInfo base_backup_info_for_metadata = base_backup_info->withoutS3Credentials(params.context);
-            bool base_backup_credentials_were_stripped = base_backup_info_for_metadata.toString() != base_backup_info->toString();
+            const BackupInfo base_backup_info_for_metadata = base_backup_info->withoutS3Credentials(params.context);
+            const bool base_backup_credentials_were_stripped = base_backup_info_for_metadata.toString() != base_backup_info->toString();
             bool base_backup_can_use_this_backup_credentials = false;
 
             if (base_backup_credentials_were_stripped && backup_info.canCopyS3CredentialsTo(base_backup_info_for_metadata))
@@ -446,7 +447,8 @@ void BackupImpl::writeBackupMetadata()
             *out << "<base_backup>" << xml << base_backup_info_for_metadata.toString() << "</base_backup>";
             *out << "<base_backup_uuid>" << getBaseBackupUnlocked()->getUUID() << "</base_backup_uuid>";
             if (params.use_same_s3_credentials_for_base_backup || base_backup_can_use_this_backup_credentials)
-                *out << "<use_same_s3_credentials_for_base_backup>true</use_same_s3_credentials_for_base_backup>";
+                *out << "<" << BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP << ">true</"
+                     << BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP << ">";
         }
     }
 
@@ -560,7 +562,7 @@ void BackupImpl::readBackupMetadata()
 
         /// The marker is honored only when the base backup locator itself comes from the metadata:
         /// if the locator was overridden with the `base_backup` setting, the override is used as is.
-        base_backup_use_same_s3_credentials = getBool(config_root, "use_same_s3_credentials_for_base_backup", false);
+        base_backup_copy_s3_credentials_from_backup = getBool(config_root, BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP, false);
     }
 
     if (config_root->getNodeByPath("base_backup_uuid"))

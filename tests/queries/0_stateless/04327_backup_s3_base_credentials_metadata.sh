@@ -27,6 +27,7 @@ function check_base_backup_in_metadata()
     # Match only credential arguments, not the `/test/` URL path segment.
     metadata=$($CLICKHOUSE_CLIENT "${client_opts[@]}" -q "SELECT line FROM s3($(s3_location $name/.backup), 'LineAsString') FORMAT TSVRaw")
     grep -c '<base_backup>' <<< "$metadata"
+    grep -c '<base_backup_copy_s3_credentials_from_backup>' <<< "$metadata" || true
     grep -c '<use_same_s3_credentials_for_base_backup>' <<< "$metadata" || true
     grep -cE ", 'test'|, 'testtest'|, 'clickhouse'|SECRET" <<< "$metadata" || true
 }
@@ -57,7 +58,7 @@ $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "RESTORE TABLE data AS data_1 FROM S3(
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "SELECT count() FROM data_1"
 
 echo 'inc_2: explicit base backup credentials without the setting'
-$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "BACKUP TABLE data TO S3($(s3_location inc_2)) SETTINGS base_backup=S3($(s3_location base))" | cut -f2
+$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "BACKUP TABLE data TO S3($(s3_location inc_2)) SETTINGS base_backup=S3($(s3_location base)), use_same_s3_credentials_for_base_backup=0" | cut -f2
 check_base_backup_in_metadata inc_2
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "RESTORE TABLE data AS data_2 FROM S3($(s3_location inc_2))" | cut -f2
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "SELECT count() FROM data_2"
@@ -71,10 +72,9 @@ $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "SELECT count() FROM data_3"
 echo 'inc_4: backward compatibility with credentials embedded in metadata'
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "BACKUP TABLE data TO S3($(s3_location inc_4)) SETTINGS base_backup=S3($(s3_location base))" | cut -f2
 # Imitate old metadata with embedded credentials and no marker.
+rewrite_backup_metadata inc_4 '<base_backup_copy_s3_credentials_from_backup>true</base_backup_copy_s3_credentials_from_backup>' ''
 rewrite_backup_metadata inc_4 '<use_same_s3_credentials_for_base_backup>true</use_same_s3_credentials_for_base_backup>' ''
-rewrite_backup_metadata inc_4 "S3('$(s3_url base)')" "S3('$(s3_url base)', 'test', 'INVALID_PASSWORD')"
-$CLICKHOUSE_CLIENT "${client_opts[@]}" --format Null -q "RESTORE TABLE data AS data_4_bad FROM S3($(s3_location inc_4))" |& grep -m1 -o 'The request signature we calculated does not match the signature you provided. Check your key and signing method. (S3_ERROR)'
-rewrite_backup_metadata inc_4 'INVALID_PASSWORD' 'testtest'
+rewrite_backup_metadata inc_4 "S3('$(s3_url base)')" "S3('$(s3_url base)', 'test', 'testtest')"
 check_base_backup_in_metadata inc_4
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "RESTORE TABLE data AS data_4 FROM S3($(s3_location inc_4))" | cut -f2
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "SELECT count() FROM data_4"
