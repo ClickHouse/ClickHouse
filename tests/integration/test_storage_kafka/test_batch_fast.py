@@ -3343,6 +3343,7 @@ def test_system_kafka_consumers(kafka_cluster, create_query_generator, consumer_
             f"""
             DROP TABLE IF EXISTS test.{kafka_table} SYNC;
             DROP TABLE IF EXISTS test.{kafka_table}_view SYNC;
+            DROP TABLE IF EXISTS test.{kafka_table}_target SYNC;
 
             {create_query_generator(
                 kafka_table,
@@ -3356,15 +3357,18 @@ def test_system_kafka_consumers(kafka_cluster, create_query_generator, consumer_
                 }
             )};
 
-            CREATE MATERIALIZED VIEW test.{kafka_table}_view ENGINE=MergeTree ORDER BY tuple() AS SELECT * FROM test.{kafka_table};
+            CREATE TABLE test.{kafka_table}_target (a UInt64, b String) ENGINE=MergeTree ORDER BY tuple();
+            CREATE MATERIALIZED VIEW test.{kafka_table}_view TO test.{kafka_table}_target AS SELECT * FROM test.{kafka_table};
             """
         )
         count = instance.query_with_retry(
-            f"SELECT count() FROM test.{kafka_table}_view",
+            f"SELECT count() FROM test.{kafka_table}_target",
             check_callback=lambda res: int(res) == 6,
         )
         assert int(count) == 6
 
+        # Drop only the materialized view (the explicit target table survives) so the
+        # background Kafka streamer can never observe a missing inner table mid-push.
         instance.query_with_retry(f"DROP TABLE test.{kafka_table}_view SYNC")
 
         check_query = f"""
@@ -3414,6 +3418,7 @@ last_used_and_last_poll_time: equal
         )
 
         instance.query(f"DROP TABLE test.{kafka_table}")
+        instance.query(f"DROP TABLE IF EXISTS test.{kafka_table}_target SYNC")
 
 
 def test_system_kafka_consumers_rebalance(kafka_cluster, max_retries=15):

@@ -24,6 +24,17 @@ dépass
 intens
 étudi
 peuvent
+-- Conjugation families: regular forms collapse to one stem, some irregular forms diverge.
+run	run	run
+studi	studi	studi
+collect	collect	collect
+go	go	goe	went	gone
+run	ran
+trabaj	trabaj	trabaj
+habl	habl	habl
+ten	ten	ten	teng	tien	tuv	tuv
+чита	чита	чита	чита
+писа	писа	писа
 -- FixedString input produces String output.
 bless	String
 -- String trailing \\0 bytes are binary-safe (not trimmed, unlike FixedString padding).
