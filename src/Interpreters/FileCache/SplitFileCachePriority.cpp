@@ -192,7 +192,7 @@ IFileCachePriority::IteratorPtr SplitFileCachePriority::add( /// NOLINT
     const CacheStateGuard::Lock * state_lock,
     bool is_initial_load)
 {
-    const auto type = getPriorityType(key_metadata->origin.segment_type);
+    const auto type = getPriorityType(key_metadata->origin->segment_type);
     return getPriority(type).add(
         key_metadata, offset, size, write_lock, state_lock, is_initial_load);
 }
@@ -205,7 +205,7 @@ IFileCachePriority::IteratorPtr SplitFileCachePriority::addForRestore( /// NOLIN
     const CachePriorityGuard::WriteLock & write_lock,
     const CacheStateGuard::Lock * state_lock)
 {
-    const auto type = getPriorityType(key_metadata->origin.segment_type);
+    const auto type = getPriorityType(key_metadata->origin->segment_type);
     return getPriority(type).addForRestore(
         key_metadata, offset, size, original_queue_type, write_lock, state_lock);
 }
@@ -312,7 +312,7 @@ bool SplitFileCachePriority::tryIncreasePriority(
     CachePriorityGuard & queue_guard,
     CacheStateGuard & state_guard)
 {
-    const auto type = getPriorityType(iterator.getEntry()->getKeyMetadata()->origin.segment_type);
+    const auto type = getPriorityType(iterator.getEntry()->getKeyMetadata()->origin->segment_type);
     return getPriority(type).tryIncreasePriority(iterator, is_space_reservation_complete, queue_guard, state_guard);
 }
 

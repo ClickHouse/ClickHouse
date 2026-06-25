@@ -11,7 +11,10 @@
 #include <Common/SharedMutex.h>
 #include <Common/ThreadPool_fwd.h>
 
+#include <map>
 #include <memory>
+#include <optional>
+#include <tuple>
 
 namespace DB
 {
@@ -101,11 +104,12 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
     using Key = FileCacheKey;
     using iterator = iterator;
     using OriginInfo = FileCacheOriginInfo;
+    using OriginInfoPtr = std::shared_ptr<const OriginInfo>;
     using UserID = OriginInfo::UserID;
 
     KeyMetadata(
         const Key & key_,
-        const OriginInfo & origin_,
+        OriginInfoPtr origin_,
         const CacheMetadata * cache_metadata_,
         bool created_base_directory_ = false);
 
@@ -117,7 +121,9 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
     };
 
     const Key key;
-    const OriginInfo origin;
+    /// Shared (deduplicated) across all keys with the same origin, since OriginInfo is immutable
+    /// and distinct origins are very few. See CacheMetadata::getOrCreateSharedOrigin.
+    const OriginInfoPtr origin;
 
     LockedKeyPtr lock();
 
@@ -253,6 +259,12 @@ private:
     };
     using MetadataBuckets = std::vector<MetadataBucket>;
     MetadataBuckets metadata_buckets{buckets_num};
+
+    /// Pool of deduplicated immutable origins, shared by all keys with the same origin.
+    using OriginInfoPtr = KeyMetadata::OriginInfoPtr;
+    OriginInfoPtr getOrCreateSharedOrigin(const OriginInfo & origin);
+    mutable std::mutex origins_mutex;
+    std::map<std::tuple<OriginInfo::UserID, std::optional<OriginInfo::Weight>, FileSegmentKeyType>, OriginInfoPtr> origins;
 
     struct DownloadThread
     {
