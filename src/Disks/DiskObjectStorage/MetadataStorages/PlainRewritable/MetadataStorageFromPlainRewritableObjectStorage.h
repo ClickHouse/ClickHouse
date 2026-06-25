@@ -34,21 +34,6 @@ namespace DB
   * /aaealinyzgdzycgcnpgaapdssrjirnnr/test2.txt
   * /gfkoqxvyhaasroiodbeurnftnwieiihy/test1.txt
   */
-/// A single (logical path -> blob) mapping, as seen in the in-memory metadata tree.
-/// Used by `system.plain_rewritable_data_paths` to expose the local-to-remote layout,
-/// including directories that are not reachable through the regular `store`/`data` namespace
-/// (for example, leftovers of an interrupted recursive removal).
-struct PlainRewritableRemoteObject
-{
-    std::string local_path;             /// Logical directory path the file belongs to.
-    std::string directory_remote_path;  /// Randomly-generated object storage directory backing `local_path`.
-    std::string file_name;              /// File name inside the directory.
-    std::string remote_path;            /// Full blob object key in object storage.
-    uint64_t size = 0;                  /// File size in bytes.
-    time_t last_modified = 0;           /// File last modification time.
-    bool is_ephemeral = false;          /// Whether the blob looks like an ephemeral leftover of an interrupted operation.
-};
-
 class MetadataStorageFromPlainRewritableObjectStorage final : public IMetadataStorage
 {
     friend class MetadataStorageFromPlainRewritableObjectStorageTransaction;
@@ -92,9 +77,6 @@ public:
 
     /// Object storage key prefix common to all blobs of this disk.
     std::string getCommonKeyPrefix() const;
-
-    /// Enumerates every (logical path -> blob) mapping currently known to the in-memory metadata tree.
-    std::vector<PlainRewritableRemoteObject> getAllRemoteObjects() const;
 
 private:
     const std::shared_ptr<IObjectStorage> object_storage;

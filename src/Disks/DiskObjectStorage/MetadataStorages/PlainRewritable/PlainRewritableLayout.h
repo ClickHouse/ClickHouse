@@ -24,7 +24,7 @@ public:
     explicit PlainRewritableLayout(std::string object_storage_common_key_prefix_);
 
     /// Whether `name` looks like an ephemeral temporary name produced during a mutating operation.
-    /// Used to flag leftover blobs of interrupted operations (see `system.plain_rewritable_data_paths`).
+    /// Used to flag leftover blobs of interrupted operations (see `system.remote_data_paths`).
     static bool looksLikeEphemeralName(std::string_view name);
 
     std::string constructMetadataDirectoryKey() const;

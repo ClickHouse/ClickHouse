@@ -105,7 +105,6 @@
 #include <Storages/System/StorageSystemQueryResultCache.h>
 #include <Storages/System/StorageSystemNamedCollections.h>
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
-#include <Storages/System/StorageSystemPlainRewritableDataPaths.h>
 #include <Storages/System/StorageSystemCertificates.h>
 #include <Storages/System/StorageSystemTokenizers.h>
 #include <Storages/System/StorageSystemStemmers.h>
@@ -274,7 +273,6 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attachNoDescription<StorageSystemQueryConditionCache>(context, system_database, "query_condition_cache", "Contains information about all entries inside query condition cache in server's memory.");
     attachNoDescription<StorageSystemQueryResultCache>(context, system_database, "query_cache", "Contains information about all entries inside query cache in server's memory.");
     attachNoDescription<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths", "Contains a mapping from a filename on local filesystem to a blob name inside object storage.");
-    attachNoDescription<StorageSystemPlainRewritableDataPaths>(context, system_database, "plain_rewritable_data_paths", "Contains the local-to-remote path mapping of every plain_rewritable disk, enumerated directly from the in-memory metadata tree.");
     attachNoDescription<StorageSystemTokenizers>(context, system_database, "tokenizers", "Contains a list of the available tokenizers.");
 #if USE_LIBSTEMMER
     attachNoDescription<StorageSystemStemmers>(context, system_database, "stemmers", "Contains a list of the available stemmers.");

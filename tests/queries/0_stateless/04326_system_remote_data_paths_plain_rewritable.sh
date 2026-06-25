@@ -7,10 +7,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 disk_name="04326_disk_${CLICKHOUSE_DATABASE}"
-user="04326_user_${CLICKHOUSE_DATABASE}"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS 04326_t SYNC"
-${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${user}"
 
 ${CLICKHOUSE_CLIENT} --query "
 CREATE TABLE 04326_t (a Int32, b String) ORDER BY a
@@ -24,34 +22,23 @@ SETTINGS disk = disk(
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO 04326_t SELECT number, toString(number) FROM numbers(100)"
 
-echo "-- at least one blob is reported for the disk"
+echo "-- the plain_rewritable disk is reported in system.remote_data_paths with metadata_type"
 ${CLICKHOUSE_CLIENT} --query "
-SELECT count() >= 1 FROM system.plain_rewritable_data_paths WHERE disk_name = '${disk_name}'"
-
-echo "-- remote_path always ends with directory_remote_path/name"
-${CLICKHOUSE_CLIENT} --query "
-SELECT count() FROM system.plain_rewritable_data_paths
-WHERE disk_name = '${disk_name}' AND NOT endsWith(remote_path, concat(directory_remote_path, '/', name))"
+SELECT count() >= 1 FROM system.remote_data_paths WHERE disk_name = '${disk_name}' AND metadata_type = 'PlainRewritable'"
 
 echo "-- remote_path always starts with the common blob prefix"
 ${CLICKHOUSE_CLIENT} --query "
-SELECT count() FROM system.plain_rewritable_data_paths
+SELECT count() FROM system.remote_data_paths
 WHERE disk_name = '${disk_name}' AND NOT startsWith(remote_path, common_prefix_for_blobs)"
 
 echo "-- non-root local data paths are present"
 ${CLICKHOUSE_CLIENT} --query "
-SELECT count() >= 1 FROM system.plain_rewritable_data_paths
+SELECT count() >= 1 FROM system.remote_data_paths
 WHERE disk_name = '${disk_name}' AND local_path != ''"
 
 echo "-- a freshly written table has no ephemeral entries"
 ${CLICKHOUSE_CLIENT} --query "
-SELECT count() FROM system.plain_rewritable_data_paths
+SELECT count() FROM system.remote_data_paths
 WHERE disk_name = '${disk_name}' AND is_ephemeral"
 
-echo "-- a user with SELECT but without SHOW TABLES is denied"
-${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} NOT IDENTIFIED"
-${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON system.plain_rewritable_data_paths TO ${user}"
-${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT count() FROM system.plain_rewritable_data_paths" 2>&1 | grep -qF "ACCESS_DENIED" && echo "1" || echo "0"
-
-${CLICKHOUSE_CLIENT} --query "DROP USER ${user}"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE 04326_t SYNC"

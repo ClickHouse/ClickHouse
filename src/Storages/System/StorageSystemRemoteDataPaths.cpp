@@ -5,11 +5,14 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Disks/DiskType.h>
 #include <Disks/IDisk.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
@@ -51,7 +54,10 @@ public:
     {
         for (const auto & disk : disks_)
         {
-            if (disk.second->isRemote())
+            /// plain_rewritable disks are included even when not "remote" (e.g. local object storage used
+            /// in tests), because their blob layout is enumerated from the in-memory metadata tree below.
+            if (disk.second->isRemote()
+                || disk.second->getDataSourceDescription().metadata_type == MetadataStorageType::PlainRewritable)
                 disks.push_back(disk);
         }
 
@@ -122,6 +128,12 @@ private:
 
     ssize_t current_disk = -1;  /// Start from -1 to move to the first disk on the first call to nextDisk()
     std::vector<DirListingAndPosition> paths_stack; /// Represents the current path for DFS order traversal
+
+    /// plain_rewritable disks are traversed with the same lazy DFS, but starting from the disk root (not
+    /// just store/data/shadow) so that blobs not reachable through the logical tree are surfaced too
+    /// (e.g. leftovers of an interrupted removal). For these disks a few extra columns are filled in.
+    bool current_disk_is_plain_rewritable = false;
+    std::string plain_common_prefix;
 };
 
 class ReadFromSystemRemoteDataPaths final : public SourceStepWithFilter
@@ -168,12 +180,17 @@ StorageSystemRemoteDataPaths::StorageSystemRemoteDataPaths(const StorageID & tab
     {
         {"disk_name", std::make_shared<DataTypeString>(), "Disk name."},
         {"path", std::make_shared<DataTypeString>(), "Disk path."},
+        {"metadata_type", std::make_shared<DataTypeString>(), "Metadata storage type of the disk (e.g. `Local`, `PlainRewritable`)."},
         {"cache_base_path", std::make_shared<DataTypeString>(), "Base directory of cache files."},
         {"local_path", std::make_shared<DataTypeString>(), "Path of ClickHouse file, also used as metadata path."},
         {"remote_path", std::make_shared<DataTypeString>(), "Blob path in object storage, with which ClickHouse file is associated with."},
         {"size", std::make_shared<DataTypeUInt64>(), "Size of the file (compressed)."},
         {"common_prefix_for_blobs", std::make_shared<DataTypeString>(), "Common prefix for blobs in object storage."},
         {"cache_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Cache files for corresponding blob."},
+        {"last_modified", std::make_shared<DataTypeDateTime>(), "Last modification time of the blob. Populated for `PlainRewritable` disks; zero otherwise."},
+        {"is_ephemeral", std::make_shared<DataTypeUInt8>(),
+            "For `PlainRewritable` disks, whether the blob looks like an ephemeral temporary object (also matches in-flight "
+            "operations; only entries persisting across refreshes are leaks). Zero for other metadata types."},
     }));
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
@@ -223,19 +240,40 @@ bool SystemRemoteDataPathsSource::nextDisk()
     while (current_disk < static_cast<ssize_t>(disks.size()))
     {
         paths_stack.clear();
+        current_disk_is_plain_rewritable = false;
+        plain_common_prefix.clear();
         ++current_disk;
 
         if (current_disk >= static_cast<ssize_t>(disks.size()))
             break;
 
+        const auto & disk = disks[current_disk].second;
+
         auto & current = paths_stack.emplace_back();
 
-        /// Add dirs that we want to traverse. It's ok if some of them don't exist because traversal logic handles
-        /// cases when children of a directory get deleted while traversal is running.
-        current.names.push_back({"store", nullptr});
-        current.names.push_back({"data", nullptr});
-        if (context->getSettingsRef()[Setting::traverse_shadow_remote_data_paths])
-            current.names.push_back({"shadow", skipPredicateForShadowDir});
+        if (disk->getDataSourceDescription().metadata_type == MetadataStorageType::PlainRewritable)
+        {
+            /// plain_rewritable disks keep their layout in an in-memory tree without the usual
+            /// store/data/shadow namespace, so traverse from the disk root. This also surfaces blobs
+            /// not reachable through the logical tree (e.g. leftovers of an interrupted removal).
+            current_disk_is_plain_rewritable = true;
+            if (const auto * plain = dynamic_cast<const MetadataStorageFromPlainRewritableObjectStorage *>(disk->getMetadataStorage().get()))
+                plain_common_prefix = plain->getCommonKeyPrefix();
+
+            std::vector<std::string> roots;
+            disk->listFiles("", roots);
+            for (const auto & root : roots)
+                current.names.push_back({root, nullptr});
+        }
+        else
+        {
+            /// Add dirs that we want to traverse. It's ok if some of them don't exist because traversal logic handles
+            /// cases when children of a directory get deleted while traversal is running.
+            current.names.push_back({"store", nullptr});
+            current.names.push_back({"data", nullptr});
+            if (context->getSettingsRef()[Setting::traverse_shadow_remote_data_paths])
+                current.names.push_back({"shadow", skipPredicateForShadowDir});
+        }
 
         /// Start and move to the first file
         current.position = -1;
@@ -344,6 +382,9 @@ Chunk SystemRemoteDataPathsSource::generate()
     MutableColumnPtr col_size = ColumnUInt64::create();
     MutableColumnPtr col_namespace = ColumnString::create();
     MutableColumnPtr col_cache_paths = ColumnArray::create(ColumnString::create());
+    MutableColumnPtr col_metadata_type = ColumnString::create();
+    MutableColumnPtr col_last_modified = ColumnUInt32::create();
+    MutableColumnPtr col_is_ephemeral = ColumnUInt8::create();
 
     QueryStatusPtr query_status = context->getProcessListElement();
 
@@ -364,22 +405,27 @@ Chunk SystemRemoteDataPathsSource::generate()
                 col_remote_path->byteSize() +
                 col_size->byteSize() +
                 col_namespace->byteSize() +
-                col_cache_paths->byteSize();
+                col_cache_paths->byteSize() +
+                col_metadata_type->byteSize() +
+                col_last_modified->byteSize() +
+                col_is_ephemeral->byteSize();
             if (total_size > max_block_size)
                 break;
         }
 
         const auto & [disk_name, disk] = disks[current_disk];
+
+        FileCachePtr cache;
+        if (disk->supportsCache())
+            cache = FileCacheFactory::instance().getByName(disk->getCacheName())->cache;
+
+        const String metadata_type_name{magic_enum::enum_name(disk->getDataSourceDescription().metadata_type)};
+
         auto local_path = getCurrentPath();
 
         const auto & skip_predicate = getCurrentSkipPredicate();
         if (skip_predicate && skip_predicate(local_path))
             continue;
-
-        FileCachePtr cache;
-
-        if (disk->supportsCache())
-            cache = FileCacheFactory::instance().getByName(disk->getCacheName())->cache;
 
         StoredObjects storage_objects;
         try
@@ -400,6 +446,19 @@ Chunk SystemRemoteDataPathsSource::generate()
             throw;
         }
 
+        /// Extra per-file columns for plain_rewritable disks; left at default for other metadata types.
+        time_t last_modified = 0;
+        bool is_ephemeral = false;
+        if (current_disk_is_plain_rewritable)
+        {
+            if (auto ts = disk->getMetadataStorage()->getLastModifiedIfExists(local_path))
+                last_modified = ts->epochTime();
+            const std::string lp = local_path.string();
+            /// A blob is an ephemeral leftover of an interrupted operation when the top component of its
+            /// logical path is a temporary name (the rename target used by move/unlink/removeRecursive).
+            is_ephemeral = PlainRewritableLayout::looksLikeEphemeralName(std::string_view(lp).substr(0, lp.find('/')));
+        }
+
         for (const auto & object : storage_objects)
         {
             ++row_count;
@@ -413,7 +472,10 @@ Chunk SystemRemoteDataPathsSource::generate()
             col_remote_path->insert(object.remote_path);
             col_size->insert(object.bytes_size);
 
-            col_namespace->insertDefault();
+            if (current_disk_is_plain_rewritable)
+                col_namespace->insert(plain_common_prefix);
+            else
+                col_namespace->insertDefault();
 
             if (cache)
             {
@@ -424,6 +486,9 @@ Chunk SystemRemoteDataPathsSource::generate()
             {
                 col_cache_paths->insertDefault();
             }
+            col_metadata_type->insert(metadata_type_name);
+            col_last_modified->insert(static_cast<UInt32>(last_modified));
+            col_is_ephemeral->insert(is_ephemeral);
         }
     }
     while (nextFile() || nextDisk());
@@ -431,12 +496,15 @@ Chunk SystemRemoteDataPathsSource::generate()
     Columns res_columns;
     res_columns.emplace_back(std::move(col_disk_name));
     res_columns.emplace_back(std::move(col_base_path));
+    res_columns.emplace_back(std::move(col_metadata_type));
     res_columns.emplace_back(std::move(col_cache_base_path));
     res_columns.emplace_back(std::move(col_local_path));
     res_columns.emplace_back(std::move(col_remote_path));
     res_columns.emplace_back(std::move(col_size));
     res_columns.emplace_back(std::move(col_namespace));
     res_columns.emplace_back(std::move(col_cache_paths));
+    res_columns.emplace_back(std::move(col_last_modified));
+    res_columns.emplace_back(std::move(col_is_ephemeral));
 
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);

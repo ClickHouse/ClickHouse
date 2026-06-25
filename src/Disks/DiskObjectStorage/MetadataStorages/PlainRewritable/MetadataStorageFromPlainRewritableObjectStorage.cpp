@@ -354,44 +354,6 @@ std::string MetadataStorageFromPlainRewritableObjectStorage::getCommonKeyPrefix(
     return object_storage->getCommonKeyPrefix();
 }
 
-std::vector<PlainRewritableRemoteObject> MetadataStorageFromPlainRewritableObjectStorage::getAllRemoteObjects() const
-{
-    std::vector<PlainRewritableRemoteObject> result;
-
-    for (const auto & [local_path, remote_info] : fs_tree->getSubtreeRemoteInfo(""))
-    {
-        /// Virtual directories are intermediate path placeholders never written to object storage
-        /// (no backing directory, no `prefix.path`, no files), so they have no blobs to report.
-        if (!remote_info.has_value())
-            continue;
-
-        /// A directory is an ephemeral leftover of an interrupted recursive removal when its top-level
-        /// logical component is a temporary name (the rename target `removeRecursive` moves it under).
-        const std::string_view first_component = std::string_view(local_path).substr(0, local_path.find('/'));
-        const bool directory_is_ephemeral = PlainRewritableLayout::looksLikeEphemeralName(first_component);
-
-        for (const auto & [file_name, file_info] : remote_info->files)
-        {
-            /// A file directly at the root is an ephemeral scratch copy of a file move/unlink when its
-            /// own name is a temporary name (created under the `__root` namespace).
-            const bool is_ephemeral = directory_is_ephemeral
-                || (local_path.empty() && PlainRewritableLayout::looksLikeEphemeralName(file_name));
-
-            result.push_back(PlainRewritableRemoteObject{
-                .local_path = local_path,
-                .directory_remote_path = remote_info->remote_path,
-                .file_name = file_name,
-                .remote_path = layout->constructFileObjectKey(remote_info->remote_path, file_name),
-                .size = file_info.bytes_size,
-                .last_modified = file_info.last_modified,
-                .is_ephemeral = is_ephemeral,
-            });
-        }
-    }
-
-    return result;
-}
-
 Poco::Timestamp MetadataStorageFromPlainRewritableObjectStorage::getLastModified(const std::string & path) const
 {
     if (auto last_modified = getLastModifiedIfExists(path))

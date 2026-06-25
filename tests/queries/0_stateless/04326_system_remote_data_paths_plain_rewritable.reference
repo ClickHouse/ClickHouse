@@ -1,0 +1,8 @@
+-- the plain_rewritable disk is reported in system.remote_data_paths with metadata_type
+1
+-- remote_path always starts with the common blob prefix
+0
+-- non-root local data paths are present
+1
+-- a freshly written table has no ephemeral entries
+0
