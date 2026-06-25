@@ -14,6 +14,7 @@
 #include <Poco/Util/JSONConfiguration.h>
 #include <Coordination/KeeperConstants.h>
 #include <Server/CloudPlacementInfo.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Disks/DiskSelector.h>
 #include <Common/logger_useful.h>
@@ -46,6 +47,7 @@ extern const int ROCKSDB_ERROR;
 namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 write_snapshot_version;
+    extern const CoordinationSettingsMilliseconds ttl_gc_period_ms;
 }
 
 struct CachedCoordinationSettings
@@ -386,6 +388,11 @@ void KeeperContext::setSnapshotDisk(DiskPtr disk)
     latest_snapshot_storage = snapshot_storage;
 }
 
+void KeeperContext::setLatestSnapshotDisk(DiskPtr disk)
+{
+    latest_snapshot_storage = std::move(disk);
+}
+
 DiskPtr KeeperContext::getStateFileDisk() const
 {
     return getDisk(state_file_storage);
@@ -591,6 +598,24 @@ void KeeperContext::initializeFeatureFlags(const Poco::Util::AbstractConfigurati
 
     }
 
+    /// TTL metadata (destroy_time/ttl) is only serialized starting with snapshot
+    /// V8. Enabling CREATE_TTL with an older write version would silently turn
+    /// TTL nodes into permanent persistent nodes on the next snapshot.
+    if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL))
+    {
+        const uint64_t write_version = getCoordinationSettings()[CoordinationSetting::write_snapshot_version];
+        if (write_version < SnapshotVersion::V8)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Feature flag CREATE_TTL requires write_snapshot_version >= {}, but it is set to {}. "
+                "Bump write_snapshot_version after every replica has been upgraded.",
+                static_cast<int>(SnapshotVersion::V8), write_version);
+
+        const auto ttl_gc_period_ms = getCoordinationSettings()[CoordinationSetting::ttl_gc_period_ms].totalMilliseconds();
+        if (ttl_gc_period_ms <= 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ttl_gc_period_ms must be greater than 0 when TTL nodes are enabled, got {}", ttl_gc_period_ms);
+    }
+
     feature_flags.logFlags(getLogger("KeeperContext"));
 }
 
@@ -739,6 +764,8 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
             return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_STAT);
         case Coordination::OpNum::Create2:
             return feature_flags.isEnabled(KeeperFeatureFlag::CREATE_WITH_STATS);
+        case Coordination::OpNum::CreateTTL:
+            return feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL);
         case Coordination::OpNum::TryRemove:
             return feature_flags.isEnabled(KeeperFeatureFlag::TRY_REMOVE);
         case Coordination::OpNum::SetWatch:

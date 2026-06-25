@@ -10,7 +10,6 @@
 #include <IO/Operators.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Server/HTTPHandlerFactory.h>
-#include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
@@ -18,6 +17,7 @@
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
 #include <Server/KeeperDashboardRequestHandler.h>
 #include <Server/KeeperHTTPStorageHandler.h>
