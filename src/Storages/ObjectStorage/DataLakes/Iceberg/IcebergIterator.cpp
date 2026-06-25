@@ -178,9 +178,16 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
         if (!prefetched_manifest.has_value())
             return std::nullopt;
 
-        // Get the downloaded manifest file.
-        auto manifest_file_cacheable_part = prefetched_manifest->future.get();
-        const auto & manifest_list_entry = data_snapshot->manifest_list_entries[prefetched_manifest->manifest_list_index];
+        // Get the downloaded manifest file. Call move() and reset()
+        // before future.get() to keep the future in a valid state.
+        auto curr_prefetched = std::move(prefetched_manifest);
+        prefetched_manifest.reset();
+
+        // Start scheduling the next prefetch before we block and parse.
+        schedulePrefetchIfPossible();
+
+        auto manifest_file_cacheable_part = curr_prefetched->future.get();
+        const auto & manifest_list_entry = data_snapshot->manifest_list_entries[curr_prefetched->manifest_list_index];
 
         current_manifest_file_iterator = Iceberg::ManifestFileIterator::create(
             manifest_file_cacheable_part.deserializer,
@@ -192,11 +199,6 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
             local_context,
             filter_dag,
             table_snapshot->schema_id);
-
-        prefetched_manifest.reset();
-
-        /// Start prefetch the next manifest file.
-        schedulePrefetchIfPossible();
     }
 }
 
@@ -226,7 +228,7 @@ void SingleThreadIcebergKeysIterator::schedulePrefetchIfPossible()
 SingleThreadIcebergKeysIterator::~SingleThreadIcebergKeysIterator()
 {
     /// The scheduled task captures `this`, so it must not outlive the iterator.
-    if (prefetched_manifest.has_value())
+    if (prefetched_manifest.has_value() && prefetched_manifest->future.valid())
         prefetched_manifest->future.wait();
 }
 

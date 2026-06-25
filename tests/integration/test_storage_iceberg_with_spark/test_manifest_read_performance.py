@@ -1,7 +1,4 @@
 import logging
-import uuid
-
-import pytest
 
 from helpers.iceberg_utils import (
     default_upload_directory,
