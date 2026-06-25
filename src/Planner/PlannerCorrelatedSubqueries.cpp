@@ -501,7 +501,20 @@ QueryPlan buildLogicalJoin(
 
     const auto & settings = planner_context->getQueryContext()->getSettingsRef();
 
-    if (settings[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::LEFT)
+    /// When the referenced input subplan is buffered in memory, its result flows through a
+    /// producer/consumer buffer: the input stream is the producer (SaveSubqueryResultToBuffer) and the
+    /// subquery side reads it (ReadFromCommonBuffer). The consumer must run only after every producer
+    /// stream finished. With JoinKind::Right the producer (input stream) is on the build side, which
+    /// FillRightFirst fully consumes before the probe side reads, so the ordering holds. With
+    /// JoinKind::Left the input stream becomes the probe side, so when a set operation places the
+    /// consumer on the build side of an enclosing join it reads the buffer before the producer
+    /// finished and the server aborts with "Trying to extract chunk from ChunkBuffer before all
+    /// inputs are finished" (issue #108521). The decorrelation join kind is an internal detail that
+    /// does not affect the result, so keep the Right (no-swap) layout for the buffered case
+    /// regardless of correlated_subqueries_default_join_kind.
+    const bool buffered_input = referenced_input_subplan && settings[Setting::correlated_subqueries_use_in_memory_buffer];
+
+    if (settings[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::LEFT && !buffered_input)
     {
         std::swap(lhs_plan, rhs_plan);
         std::swap(lhs_plan_header, rhs_plan_header);
@@ -522,7 +535,7 @@ QueryPlan buildLogicalJoin(
         predicates.push_back(std::move(eq_node));
     }
 
-    auto join_kind_to_use = settings[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT ? JoinKind::Right : JoinKind::Left;
+    auto join_kind_to_use = (buffered_input || settings[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT) ? JoinKind::Right : JoinKind::Left;
 
     /// Add ANY OUTER JOIN
     auto result_join = std::make_unique<JoinStepLogical>(
@@ -543,7 +556,8 @@ QueryPlan buildLogicalJoin(
     /// In this case, we cannot reorder JOIN to ensure correlated subquery input
     /// is evaluated before the subquery itself.
     /// Do not disable reordering if the input subplan is not referenced (expression substitution happened).
-    if (referenced_input_subplan && settings[Setting::correlated_subqueries_use_in_memory_buffer] && join_kind_to_use == JoinKind::Right)
+    /// buffered_input already forced JoinKind::Right above.
+    if (buffered_input)
     {
         auto & join_algorithms = result_join->getJoinSettings().join_algorithms;
         /// Remove algorithms that are not compatible with in-memory buffering
