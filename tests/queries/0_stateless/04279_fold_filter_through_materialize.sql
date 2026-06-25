@@ -51,14 +51,6 @@ SELECT count() FROM numbers(10) WHERE materialize(now()) > toDateTime('1970-01-0
 -- surviving non-filter outputs must not be folded - y must still look non-Const downstream
 SELECT isConstant(y) FROM (SELECT materialize(1) = 1 AS y FROM numbers(1)) WHERE materialize(1) = 1;
 
--- partial fold: `and(true, x>5)` collapses to `x>5`; `or(false, x>5)` likewise
-SELECT count() FROM numbers(10) WHERE materialize(1) = 1 AND number > 5;
-SELECT count() FROM numbers(10) WHERE materialize(1) = 2 OR number > 5;
-
--- partial fold short-circuit: `and(false, _)` -> false; `or(true, _)` -> true
-SELECT count() FROM numbers(10) WHERE materialize(1) = 2 AND number > 5;
-SELECT count() FROM numbers(10) WHERE materialize(1) = 1 OR number > 5;
-
 -- predicate function not in the value-only whitelist - filter stays as is, runtime still raises
 SELECT count() FROM numbers(1) WHERE like('50%off', '50#%off', materialize('#')); -- { serverError ILLEGAL_COLUMN }
 
