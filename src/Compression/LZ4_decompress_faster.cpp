@@ -394,8 +394,6 @@ template <>
 /// One unconditional `pshufb` writes the first `copy_amount` bytes correctly for ANY
 /// offset (identity for offset >= copy_amount), and advancing `match` by `shift[idx]`
 /// makes the effective offset >= copy_amount, so the remaining copies are non-overlapping.
-/// This removes the `offset < copy_amount` data-dependent branch that dominates
-/// mispredicts on small-offset (low-cardinality) columns.
 template <size_t copy_amount>
 struct BootMasks
 {
@@ -420,12 +418,6 @@ inline constexpr BootMasks<copy_amount> boot_masks{};
 /// The 16-byte small-offset overlap fill, via one unconditional table-lookup shuffle using the
 /// constexpr `boot_masks` table. Here `offset` is the table index: callers on the branchless path
 /// pass `min(real_offset, 16)`, so an index of 16 selects the identity shuffle (a plain copy).
-/// That is what lets the caller drop the highly mispredicted `offset < 16` branch and call this
-/// unconditionally — the only difference from a plain `copyOverlap` is that clamp (one `cmov`),
-/// computed at the call site. `copyOverlap<8>` and `copyOverlap<32>` are the branched-only
-/// variants and index by the real `offset` directly.
-/// (The parameter is named `offset` to match the primary template; on the branchless path it
-/// carries the clamped index `min(real_offset, 16)`.)
 template <>
 [[maybe_unused]] void ALWAYS_INLINE copyOverlap<16>(UInt8 * op, UInt8 *& match, size_t offset)
 {
@@ -668,16 +660,6 @@ bool decompress(
 
         Stopwatch watch;
         bool success = false;
-        /// Variant 1 (16-byte) uses the branchless small-offset match copy: it removes the
-        /// `offset < copy_amount` branch via one unconditional `pshufb` (x86) / `vqtbl1q_u8`
-        /// (NEON), which is highly mispredicted on low-cardinality (small-offset) columns where
-        /// 16-byte copies are optimal (e.g. RegionID). Only the 16-byte variant is made
-        /// branchless: at 8 bytes the unconditional shuffle is pure overhead on the many
-        /// columns whose offsets are regular and well-predicted (RLE / structured states), so
-        /// variant 0 stays branched; columns that want the 8-byte copy keep it branch-free of
-        /// extra work. The bandit routes each column to its best variant; the branchless step
-        /// only changes the match copy, so near-incompressible blocks behave like the branched
-        /// variants — no regression, no special-casing.
         if (best_variant == 0)
             success = decompressImpl<8>(source, dest, source_size, dest_size);
         else if (best_variant == 1)
