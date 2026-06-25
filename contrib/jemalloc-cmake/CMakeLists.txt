@@ -46,12 +46,18 @@ if (OS_LINUX)
     # https://github.com/jemalloc/jemalloc/pull/2842
     set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:67108864,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:true,prof_thread_active_init:false,background_thread:true,lg_extent_max_active_fit:8")
 else()
-    # For non-Linux systems, percpu_arena is not supported (it relies on sched_getcpu, which is
-    # unavailable on e.g. macOS), so the number of arenas is not restricted to the number of CPUs.
+    # For non-Linux systems (macOS, FreeBSD), percpu_arena is not supported (it relies on sched_getcpu,
+    # which is unavailable there), so the number of arenas is not restricted to the number of CPUs.
     #
-    # background_thread, however, *is* supported (jemalloc spawns its purging threads via pthreads on
-    # macOS too). It lets purging happen lazily on a background thread instead of being triggered by the
-    # application's own allocations, which keeps RSS bounded without forcing eager purging.
+    # background_thread *is* enabled here. It lets purging happen lazily on a background thread instead
+    # of being triggered by the application's own allocations, which keeps RSS bounded without forcing
+    # eager purging. On FreeBSD it is supported out of the box. On macOS, upstream jemalloc leaves
+    # JEMALLOC_BACKGROUND_THREAD undefined because Darwin's malloc_mutex_t uses os_unfair_lock, while the
+    # background thread waits on a pthread condition variable bound to that mutex (which needs a real
+    # pthread_mutex_t). We work around this in the Darwin config headers
+    # (contrib/jemalloc-cmake/include_darwin_*/jemalloc/internal/jemalloc_internal_defs.h.in) by defining
+    # JEMALLOC_BACKGROUND_THREAD and switching malloc_mutex_t to pthread_mutex_t (undef
+    # JEMALLOC_OS_UNFAIR_LOCK), as on Linux and FreeBSD.
     #
     # Previously dirty_decay_ms was set to 0 here (immediate purging) to bound RSS, under the assumption
     # that background_thread was unavailable. That assumption was wrong, and immediate purging is very

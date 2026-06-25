@@ -65,8 +65,15 @@
 
 /*
  * Defined if os_unfair_lock_*() functions are available, as provided by Darwin.
+ *
+ * ClickHouse: intentionally left undefined so that malloc_mutex_t uses
+ * pthread_mutex_t (as on Linux and FreeBSD). jemalloc's background thread waits
+ * on a pthread condition variable bound to this mutex
+ * (pthread_cond_wait(&info->cond, &info->mtx.lock)), which requires a real
+ * pthread_mutex_t and does not work with an os_unfair_lock. This is a
+ * prerequisite for enabling JEMALLOC_BACKGROUND_THREAD below on macOS.
  */
-#define JEMALLOC_OS_UNFAIR_LOCK
+/* #undef JEMALLOC_OS_UNFAIR_LOCK */
 
 /* Defined if syscall(2) is usable. */
 /* #undef JEMALLOC_USE_SYSCALL */
@@ -397,8 +404,14 @@
 
 /*
  * If defined, all the features necessary for background threads are present.
+ *
+ * ClickHouse: enabled on macOS. Upstream jemalloc leaves this undefined on
+ * Darwin (abi == macho and os_unfair_lock in use), but background threads work
+ * once malloc_mutex_t uses pthread_mutex_t (see JEMALLOC_OS_UNFAIR_LOCK above).
+ * This lets jemalloc purge dirty pages on a background thread with a finite
+ * dirty_decay_ms instead of purging eagerly (a madvise() per free).
  */
-/* #undef JEMALLOC_BACKGROUND_THREAD */
+#define JEMALLOC_BACKGROUND_THREAD
 
 /*
  * If defined, jemalloc symbols are not exported (doesn't work when
