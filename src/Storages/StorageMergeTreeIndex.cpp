@@ -36,7 +36,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-class MergeTreeIndexSource final : public ISource, WithContext
+class MergeTreeIndexSource : public ISource, WithContext
 {
 public:
     MergeTreeIndexSource(

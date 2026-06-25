@@ -157,7 +157,6 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsBool optimize_group_by_constant_keys;
-    extern const SettingsBool enable_sharding_aggregator;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
@@ -726,8 +725,7 @@ void addAggregationStep(QueryPlan & query_plan,
         std::move(group_by_sort_description),
         query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
-        settings[Setting::force_aggregation_in_order],
-        settings[Setting::enable_sharding_aggregator]);
+        settings[Setting::force_aggregation_in_order]);
     query_plan.addStep(std::move(aggregating_step));
 }
 
@@ -1971,7 +1969,7 @@ void Planner::buildPlanForUnionNode()
 
     if (union_mode == SelectUnionMode::UNION_ALL || union_mode == SelectUnionMode::UNION_DISTINCT)
     {
-        auto union_step = std::make_unique<UnionStep>(std::move(query_plans_headers), max_threads, /* is_sql_union = */ true);
+        auto union_step = std::make_unique<UnionStep>(std::move(query_plans_headers), max_threads, /* allow_narrowing = */ true);
         query_plan.unitePlans(std::move(union_step), std::move(query_plans));
     }
     else if (union_mode == SelectUnionMode::INTERSECT_ALL || union_mode == SelectUnionMode::INTERSECT_DISTINCT

@@ -1666,7 +1666,13 @@ keeper_settings = {
         "nuraft_max_bytes_in_flight_in_stream": threshold_generator(
             0.2, 0.2, 0, 256 * 1024 * 1024
         ),
+        "nuraft_append_entries_backward_probe_throttle_threshold": threshold_generator(
+            0.2, 0.2, 0, 128
+        ),
         "nuraft_max_log_gap_in_stream": threshold_generator(0.2, 0.2, 0, 1024),
+        "nuraft_max_uncommitted_log_entries": threshold_generator(
+            0.2, 0.2, 0, 1000000
+        ),
         "nuraft_streaming_mode": true_false_lambda,
         "parallel_read_chunk_size": threshold_generator(0.2, 0.2, 1, 1024),
         "parallel_read_min_batch": threshold_generator(0.2, 0.2, 0, 4096),

@@ -18,7 +18,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/FieldAccurateComparison.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -496,7 +495,7 @@ public:
 }
 
 template <typename ConcreteAction, typename Name>
-class FunctionArrayIndex final : public IFunction
+class FunctionArrayIndex : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -916,6 +915,15 @@ private:
         arguments_copy[0].type = std::move(array_type);
         arguments_copy[0].name = arguments[0].name;
 
+        /// executeImpl strips LowCardinality before executeArrayImpl, but the Map path bypasses it.
+        /// Strip here too so executeArrayImpl sees a ColumnNullable lookup column and fills null_map_item,
+        /// keeping null-needle semantics identical to the plain array path.
+        for (auto & argument : arguments_copy)
+        {
+            argument.column = recursiveRemoveLowCardinality(argument.column);
+            argument.type = recursiveRemoveLowCardinality(argument.type);
+        }
+
         return executeArrayImpl(arguments_copy, result_type);
     }
 
@@ -1061,7 +1069,7 @@ private:
 
             /// Collect columns from dynamic paths that match exact path or prefix.
             /// These columns need to be checked for non-null values per row.
-            VectorWithMemoryTracking<const IColumn *> relevant_dynamic_columns;
+            std::vector<const IColumn *> relevant_dynamic_columns;
             const auto & dynamic_paths = object_column.getDynamicPathsPtrs();
 
             if (auto it = dynamic_paths.find(path); it != dynamic_paths.end())

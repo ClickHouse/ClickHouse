@@ -257,14 +257,6 @@ static bool canBeDeserializedFromFixed(const DataTypePtr & target_type, size_t f
             return true;
         case TypeIndex::FixedString: [[fallthrough]];
         case TypeIndex::IPv6: [[fallthrough]];
-        case TypeIndex::Int8: [[fallthrough]];
-        case TypeIndex::UInt8: [[fallthrough]];
-        case TypeIndex::Int16: [[fallthrough]];
-        case TypeIndex::UInt16: [[fallthrough]];
-        case TypeIndex::Int32: [[fallthrough]];
-        case TypeIndex::UInt32: [[fallthrough]];
-        case TypeIndex::Int64: [[fallthrough]];
-        case TypeIndex::UInt64: [[fallthrough]];
         case TypeIndex::Int128: [[fallthrough]];
         case TypeIndex::UInt128: [[fallthrough]];
         case TypeIndex::Int256: [[fallthrough]];
@@ -591,6 +583,10 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 return [symbols](IColumn & column, avro::Decoder & decoder)
                 {
                     size_t enum_index = decoder.decodeEnum();
+                    if (enum_index >= symbols.size())
+                    {
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Avro enum index {} is out of range, the schema has {} symbols", enum_index, symbols.size());
+                    }
                     const auto & enum_symbol = symbols[enum_index];
                     column.insertData(enum_symbol.c_str(), enum_symbol.length());
                     return true;
@@ -607,6 +603,10 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 return [symbol_mapping](IColumn & column, avro::Decoder & decoder)
                 {
                     size_t enum_index = decoder.decodeEnum();
+                    if (enum_index >= symbol_mapping.size())
+                    {
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Avro enum index {} is out of range, the schema has {} symbols", enum_index, symbol_mapping.size());
+                    }
                     column.insert(symbol_mapping[enum_index]);
                     return true;
                 };

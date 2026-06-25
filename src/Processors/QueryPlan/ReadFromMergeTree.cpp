@@ -531,7 +531,8 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             actions_settings,
             reader_settings,
             index_build_context,
-            lazy_materializing_rows);
+            lazy_materializing_rows,
+            &storage_snapshot->metadata->getColumns());
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
         pipes.emplace_back(std::move(source));
@@ -641,7 +642,8 @@ Pipe ReadFromMergeTree::readFromPool(
             actions_settings,
             reader_settings,
             index_build_context,
-            lazy_materializing_rows);
+            lazy_materializing_rows,
+            &storage_snapshot->metadata->getColumns());
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
 
@@ -669,6 +671,12 @@ Pipe ReadFromMergeTree::readInOrder(
     /// one range per task to reduce number of read rows.
     const bool has_hard_limit_below_one_block = read_type != ReadType::Default && read_limit && read_limit < block_size.max_block_size_rows;
     const bool has_soft_limit_below_one_block = read_type != ReadType::Default && query_task_size_limit && query_task_size_limit < block_size.max_block_size_rows;
+
+    const bool use_virtual_row = virtual_row_conversion && (read_type == ReadType::InOrder || read_type == ReadType::InReverseOrder);
+    const bool use_virtual_row_per_block = use_virtual_row && context->getSettingsRef()[Setting::read_in_order_use_virtual_row_per_block];
+
+    if (use_virtual_row_per_block && read_type == ReadType::InReverseOrder)
+        reader_settings.force_read_complete_granules = true;
 
     MergeTreeReadPoolPtr pool;
 
@@ -764,12 +772,10 @@ Pipe ReadFromMergeTree::readInOrder(
             actions_settings,
             reader_settings,
             index_build_context,
-            lazy_materializing_rows);
+            lazy_materializing_rows,
+            &storage_snapshot->metadata->getColumns());
 
         processor->addPartLevelToChunk(isQueryWithFinal());
-
-        bool use_virtual_row = virtual_row_conversion && (read_type == ReadType::InOrder || read_type == ReadType::InReverseOrder);
-        bool use_virtual_row_per_block = use_virtual_row && context->getSettingsRef()[Setting::read_in_order_use_virtual_row_per_block];
 
         Block pk_header;
         if (use_virtual_row)
@@ -2344,6 +2350,25 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
                 deferred_prewhere_info != nullptr);
         }
 
+        /// Build indexes before PREWHERE sets. KeyCondition (inside buildIndexes) calls
+        /// buildOrderedSetInplace only for IN sets whose left argument maps to key columns,
+        /// so ordered sets are built only when actually needed for primary key analysis.
+        /// Building indexes first is important because the set is shared between the PREWHERE
+        /// DAG and the index filter DAG via ColumnSet: if we built non-ordered sets for
+        /// PREWHERE first, the set would be created without elements and KeyCondition would
+        /// not be able to use it for index analysis.
+        buildIndexes(
+            indexes,
+            index_filter_dag,
+            data,
+            getParts(),
+            vector_search_parameters,
+            top_k_filter_info,
+            context,
+            query_info,
+            storage_snapshot->metadata,
+            skip_partition_pruning);
+
         /// Build sets for PREWHERE and row_level_filter synchronously during applyFilters.
         /// PREWHERE is evaluated at the storage level during data reading, before the
         /// pipeline-level CreatingSetsStep has a chance to execute. Although CreatingSetsStep
@@ -2356,18 +2381,6 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
             VirtualColumnUtils::buildSetsForDAG(query_info.prewhere_info->prewhere_actions, context);
         if (query_info.row_level_filter)
             VirtualColumnUtils::buildSetsForDAG(query_info.row_level_filter->actions, context);
-
-        buildIndexes(
-            indexes,
-            index_filter_dag,
-            data,
-            getParts(),
-            vector_search_parameters,
-            top_k_filter_info,
-            context,
-            query_info,
-            storage_snapshot->metadata,
-            skip_partition_pruning);
     }
 }
 
@@ -2701,7 +2714,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         }
 
         std::optional<size_t> condition_hash;
-        if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag && !query_info_.isFinal())
+        /// Vector search filters through the ORDER BY, so excluded ranges are not described by the WHERE DAG hash alone.
+        if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag && !query_info_.isFinal()
+                && !vector_search_parameters.has_value())
         {
             const auto & outputs = query_info_.filter_actions_dag->getOutputs();
             if (outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs.front()))
@@ -2976,7 +2991,7 @@ bool ReadFromMergeTree::isVectorColumnReplaced() const
     return std::ranges::find(all_column_names, "_distance") != all_column_names.end();
 }
 
-bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForAggregation()
+bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
 {
     if (isQueryWithFinal())
         return false;
@@ -3039,28 +3054,6 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForAggregat
             return false;
         }
     }
-
-    return output_each_partition_through_separate_port = true;
-}
-
-/// The LIMIT BY version is much more lenient than the GROUP BY alternative. The reason being
-/// is that ordinary LIMIT BY merges all incoming streams into one and the transform happens
-/// in a single stream. We only try to optimize simple cases, SELECT * FROM table [WHERE ...] LIMIT .. BY
-/// key; for such cases, the main cost is in LIMIT BY. As a result, if we can get any parallelism
-/// at all in LIMIT BY, it will be a win.
-bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForLimitBy()
-{
-    if (isQueryWithFinal())
-        return false;
-
-    /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
-    /// With limit-by by partitions optimisation we might create a separate pool for each partition.
-    if (is_parallel_reading_from_replicas)
-        return false;
-
-    /// This becomes no different from ordinary LIMIT BY which is single stream anyway.
-    if (countPartitions(getParts()) == 1)
-        return false;
 
     return output_each_partition_through_separate_port = true;
 }
@@ -3345,14 +3338,14 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     if (!indexes || !indexes->use_skip_indexes || indexes->skip_indexes.empty())
         return false;
 
-    /// Vector similarity indexes are "statically" analyzed; top-k filtering with a threshold tracker needs a reader.
-    const bool will_have_skip_index_reader =
-        indexes->skip_indexes.skip_index_for_top_k_filtering
-        || std::ranges::any_of(indexes->skip_indexes.useful_indices, [](const auto & idx)
-        {
-            return !idx.index->isVectorSimilarityIndex();
-        });
-    if (!will_have_skip_index_reader)
+    /// When a vector similarity index is present, disable the use_skip_indexes_on_data_read path entirely and apply
+    /// all skip indexes during index analysis instead - the vector index runs first (it is the most selective) and the
+    /// remaining skip indexes run after it.
+    const bool has_vector_similarity_index = std::ranges::any_of(indexes->skip_indexes.useful_indices, [](const auto & idx)
+    {
+        return idx.index->isVectorSimilarityIndex();
+    });
+    if (has_vector_similarity_index)
         return false;
 
     const auto & settings = context->getSettingsRef();
@@ -3892,9 +3885,6 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
         format_settings.out << (format_settings.pretty ? "" : prefix) << "Granules: " << result.index_stats.back().num_granules_after << '\n';
     }
 
-    if (output_each_partition_through_separate_port)
-        format_settings.out << prefix << "Read each partition through separate port: 1\n";
-
     if (format_settings.pretty)
         QueryPlanFormat::formatOutputColumns(format_settings.pretty_names, format_settings.out, *this, prefix);
 
@@ -4005,10 +3995,6 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
         map.add("Parts", result.index_stats.back().num_parts_after);
         map.add("Granules", result.index_stats.back().num_granules_after);
     }
-
-    if (output_each_partition_through_separate_port)
-        map.add("Read each partition through separate port", true);
-
     std::unique_ptr<JSONBuilder::JSONMap> prewhere_info_map;
     if (query_info.prewhere_info || query_info.row_level_filter)
     {

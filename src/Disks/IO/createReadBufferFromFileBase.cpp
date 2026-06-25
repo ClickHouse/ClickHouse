@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/MMapReadBufferFromFileWithCache.h>
 #include <IO/AsynchronousReadBufferFromFile.h>
+#include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <Disks/IO/IOUringReader.h>
 #include <Disks/IO/getIOUringReader.h>
 #include <Disks/IO/ThreadPoolReader.h>
@@ -39,7 +40,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size,
     int flags,
-    char * existing_memory)
+    char * existing_memory,
+    bool allow_userspace_page_cache)
 {
     if (file_size.has_value() && !*file_size)
         return std::make_unique<ReadBufferFromEmptyFile>();
@@ -74,6 +76,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         }
     }
 
+    bool use_page_cache = allow_userspace_page_cache && !existing_memory && settings.page_cache != nullptr;
+
     auto get_prefetches_log = [&]()
     {
         return settings.enable_filesystem_read_prefetches_log ? Context::getGlobalContextInstance()->getFilesystemReadPrefetchesLog() : nullptr;
@@ -87,7 +91,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         {
             res = std::make_unique<ReadBufferFromFile>(
                 filename,
-                buffer_size,
+                use_page_cache ? 0 : buffer_size,
                 actual_flags,
                 existing_memory,
                 buffer_alignment,
@@ -98,7 +102,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         {
             res = std::make_unique<ReadBufferFromFilePReadWithDescriptorsCache>(
                 filename,
-                buffer_size,
+                use_page_cache ? 0 : buffer_size,
                 actual_flags,
                 existing_memory,
                 buffer_alignment,
@@ -108,6 +112,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         else if (settings.local_fs_method == LocalFSReadMethod::io_uring)
         {
 #if USE_LIBURING
+            use_page_cache = false;
             auto & reader = getIOUringReaderOrThrow();
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
                 reader,
@@ -126,6 +131,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_fake_async)
         {
+            use_page_cache = false;
             auto & reader = getThreadPoolReader(FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER);
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
                 reader,
@@ -141,6 +147,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_threadpool)
         {
+            use_page_cache = false;
             auto & reader = getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER);
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
                 reader,
@@ -198,6 +205,12 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
             existing_memory = nullptr;  /// Cannot reuse existing memory as it has unaligned offset.
         }
 
+        if (use_page_cache && settings.page_cache_block_size % min_alignment)
+        {
+            LOG_TEST(getLogger("createReadBufferFromFileBase"), "Not using userspace page cache because page cache block size is not divisible by direct IO alignment");
+            use_page_cache = false;
+        }
+
         /// Attempt to open a file with O_DIRECT
         try
         {
@@ -224,6 +237,13 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
             buffer_size = *file_size;
 
         res = create(buffer_size, /*buffer_alignment*/ 0, flags);
+    }
+
+    if (use_page_cache)
+    {
+        PageCacheFile cache_file;
+        cache_file.path = "local:" + filename;
+        res = std::make_unique<CachedInMemoryReadBufferFromFile>(cache_file, settings.page_cache, std::move(res), settings);
     }
 
     return res;

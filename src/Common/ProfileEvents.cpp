@@ -125,17 +125,6 @@
     M(TextIndexUsedEmbeddedPostings, "Number of times a posting list embedded in the dictionary has been used.", ValueType::Number) \
     M(TextIndexUseHint, "Number of index granules where a direct reading from the text index was added as hint and was used.", ValueType::Number) \
     M(TextIndexDiscardHint, "Number of index granules where a direct reading from the text index was added as hint and was discarded due to low selectivity.", ValueType::Number) \
-    M(TextIndexLazyPackedBlocksDecoded, "Number of packed blocks decoded in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazyAdvanceCount, "Number of advance operations performed in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazySegmentsPrepared, "Number of segments prepared (Index Section loaded) in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazyBruteForceIntersections, "Number of brute-force intersections performed in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazyLeapfrogIntersections, "Number of leapfrog intersections performed in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazySegmentsSkippedDense, "Number of segments skipped via dense-memset optimization in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazySegmentsSkippedCovered, "Number of segments skipped because the output region was already all-ones in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazyBlocksSkippedCovered, "Number of packed blocks skipped because the output region was already all-ones in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazyAndSegmentsSkippedZero, "Number of segments skipped because the output region was all-zeros in lazy AND mode.", ValueType::Number) \
-    M(TextIndexLazyAndBlocksSkippedZero, "Number of packed blocks skipped because the output region was all-zeros in lazy AND mode.", ValueType::Number) \
-    M(TextIndexLazyAndSegmentsSkippedDense, "Number of segments skipped via dense-increment optimization in lazy AND mode.", ValueType::Number) \
     M(TextIndexDiscardPatternScan, "Number of times pattern-based dictionary scan in a text index was discarded because the number of posting lists to read exceeded the threshold.", ValueType::Number) \
     M(QueryConditionCacheHits, "Number of times an entry has been found in the query condition cache (and reading of marks can be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     M(QueryConditionCacheMisses, "Number of times an entry has not been found in the query condition cache (and reading of mark cannot be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
@@ -538,6 +527,14 @@
     \
     M(ContextLock, "Number of times the lock of Context was acquired or tried to acquire. This is global lock.", ValueType::Number) \
     M(ContextLockWaitMicroseconds, "Context lock wait time in microseconds", ValueType::Microseconds) \
+    M(RowPolicyCacheRecalculations, "Number of times the row policy cache re-mixed filters for all live enabled sets. Coalesced to once per access entity notification batch.", ValueType::Number) \
+    M(RowPolicyCacheRecalculationMicroseconds, "Total time spent re-mixing row policy filters for all live enabled sets (held under the cache mutex that the ContextAccess build path also takes).", ValueType::Microseconds) \
+    M(RoleCacheRecalculations, "Number of times the role cache recalculated all live enabled sets. Coalesced to once per access entity notification batch.", ValueType::Number) \
+    M(RoleCacheRecalculationMicroseconds, "Total time spent recalculating all live enabled role sets (held under the cache mutex that the ContextAccess build path also takes).", ValueType::Microseconds) \
+    M(SettingsProfileCacheRecalculations, "Number of times the settings profile cache re-merged settings and constraints for all live enabled sets. Coalesced to once per access entity notification batch.", ValueType::Number) \
+    M(SettingsProfileCacheRecalculationMicroseconds, "Total time spent re-merging settings and constraints for all live enabled sets (held under the cache mutex that the ContextAccess build path also takes).", ValueType::Microseconds) \
+    M(QuotaCacheRecalculations, "Number of times the quota cache re-chose quotas for all live enabled sets. Coalesced to once per access entity notification batch.", ValueType::Number) \
+    M(QuotaCacheRecalculationMicroseconds, "Total time spent re-choosing quotas for all live enabled sets (held under the cache mutex that the ContextAccess build path also takes).", ValueType::Microseconds) \
     \
     M(StorageBufferFlush, "Number of times a buffer in a 'Buffer' table was flushed.", ValueType::Number) \
     M(StorageBufferErrorOnFlush, "Number of times a buffer in the 'Buffer' table has not been able to flush due to error writing in the destination table.", ValueType::Number) \
@@ -809,7 +806,7 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache", ValueType::Bytes) \
     M(FilesystemCacheCreatedKeyDirectories, "Number of created key directories", ValueType::Bytes) \
     M(FilesystemCacheEvictedFileSegments, "Number of file segments evicted from filesystem cache", ValueType::Number) \
-    M(FilesystemCacheEvictedFileSegmentsDuringPriorityIncrease, "Number of file segments evicted from filesystem cache when increasing priority of file segments (Applies to SLRU cache policy)", ValueType::Number) \
+    M(FilesystemCacheDowngradedFileSegments, "Number of file segments downgraded (moved) from the protected to the probationary queue in SLRU cache policy. This is an internal move within the cache, not an eviction.", ValueType::Number) \
     M(FilesystemCacheBackgroundDownloadQueuePush, "Number of file segments sent for background download in filesystem cache", ValueType::Number) \
     M(FilesystemCacheEvictionSkippedFileSegments, "Number of file segments skipped for eviction because of being in unreleasable state", ValueType::Number) \
     M(FilesystemCacheEvictionSkippedEvictingFileSegments, "Number of file segments skipped for eviction because of being in evicting state", ValueType::Number) \

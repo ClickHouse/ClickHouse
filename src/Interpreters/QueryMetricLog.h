@@ -4,7 +4,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/ThreadStatus.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/NamesAndAliases.h>
 #include <Interpreters/PeriodicLog.h>

@@ -6,8 +6,6 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
@@ -15,6 +13,7 @@
 #include <Common/PageCache.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadStatus.h>
 #include <Common/TraceSender.h>
 #include <Common/VariableContext.h>
 #include <Common/formatReadable.h>

@@ -44,7 +44,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <DataTypes/validateGroupByKeyType.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -2313,7 +2312,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
     }
 
-    if (!scope.expressions_in_resolve_process_stack.hasAggregateFunction() && !has_aggregate_apply_transformer)
+    if (!scope.nullable_group_by_keys.empty() && !scope.expressions_in_resolve_process_stack.hasAggregateFunction() && !has_aggregate_apply_transformer)
     {
         for (auto & [node, _] : matched_expression_nodes_with_names)
         {
@@ -2742,9 +2741,6 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
         false /*allow_lambda_expression*/,
         false /*allow_table_expression*/);
 
-    for (const auto & partition_by_node : window_node.getPartitionBy().getNodes())
-        validateGroupByKeyType(partition_by_node->getResultType(), scope);
-
     ProjectionNames order_by_projection_names = resolveSortNodeList(window_node.getOrderByNode(), scope);
 
     ProjectionNames frame_begin_offset_projection_names;
@@ -3087,6 +3083,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                                 ? mat_subquery->as<QueryNode>()->getProjectionColumns()
                                 : mat_subquery->as<UnionNode>()->computeProjectionColumns();
 
+
                             NamesAndTypesList columns;
                             for (const auto & col : proj_cols)
                                 columns.emplace_back(col.name, col.type);
@@ -3329,12 +3326,15 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     {
         for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
         {
-            auto it = scope_ptr->nullable_group_by_keys.find(node);
-            if (it != scope_ptr->nullable_group_by_keys.end())
+            if (!scope_ptr->nullable_group_by_keys.empty())
             {
-                node = it->node->clone();
-                node->convertToNullable();
-                break;
+                auto it = scope_ptr->nullable_group_by_keys.find(node);
+                if (it != scope_ptr->nullable_group_by_keys.end())
+                {
+                    node = it->node->clone();
+                    node->convertToNullable();
+                    break;
+                }
             }
 
             /// Check parent scopes until find current query scope.
@@ -3653,7 +3653,22 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
   */
 void QueryAnalyzer::validateGroupByKeyType(const DataTypePtr & group_by_key_type, const IdentifierResolveScope & scope) const
 {
-    DB::validateGroupByKeyType(group_by_key_type, scope.context->getSettingsRef()[Setting::allow_suspicious_types_in_group_by]);
+    if (scope.context->getSettingsRef()[Setting::allow_suspicious_types_in_group_by])
+        return;
+
+    auto check = [](const IDataType & type)
+    {
+        if (isDynamic(type) || isVariant(type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Data types Variant/Dynamic are not allowed in GROUP BY keys, because it can lead to unexpected results. "
+                "Consider using a subcolumn with a specific data type instead (for example 'column.Int64' or 'json.some.path.:Int64' if "
+                "its a JSON path subcolumn) or casting this column to a specific data type. "
+                "Set setting allow_suspicious_types_in_group_by = 1 in order to allow it");
+    };
+
+    check(*group_by_key_type);
+    group_by_key_type->forEachChild(check);
 }
 
 /** Resolve interpolate columns nodes list.

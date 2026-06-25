@@ -39,7 +39,7 @@ LimitTransform::LimitTransform(
     for (auto & input : inputs)
     {
         ports_data[cur_stream].input_port = &input;
-        input_port_to_data[&input] = &ports_data[cur_stream];
+        input_port_to_data[&input] = cur_stream;
         ++cur_stream;
     }
 
@@ -47,7 +47,7 @@ LimitTransform::LimitTransform(
     for (auto & output : outputs)
     {
         ports_data[cur_stream].output_port = &output;
-        output_port_to_data[&output] = &ports_data[cur_stream];
+        output_port_to_data[&output] = cur_stream;
         ++cur_stream;
     }
 
@@ -105,10 +105,10 @@ IProcessor::Status LimitTransform::prepare(
     };
 
     for (const auto * port : updated_input_ports)
-        process_pair(*input_port_to_data.at(port));
+        process_pair(ports_data[input_port_to_data.at(port)]);
 
     for (const auto * port : updated_output_ports)
-        process_pair(*output_port_to_data.at(port));
+        process_pair(ports_data[output_port_to_data.at(port)]);
 
     /// All ports are finished. It may happen even before we reached the limit (has less data then limit).
     if (num_finished_port_pairs == ports_data.size())

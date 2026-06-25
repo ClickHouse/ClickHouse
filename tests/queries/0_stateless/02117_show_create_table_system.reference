@@ -1181,8 +1181,6 @@ CREATE TABLE system.tables
     `loading_dependencies_table` Array(String),
     `loading_dependent_database` Array(String),
     `loading_dependent_table` Array(String),
-    `target_database` String,
-    `target_table` String,
     `definer` String,
     `table` String ALIAS name
 )

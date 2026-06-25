@@ -70,14 +70,10 @@ class GH:
             repo_name = info.repo_name
             sha = info.sha
         else:
-            repo_url = Shell.get_output(
-                "git config --get remote.origin.url", strict=True
+            repo_name = Shell.get_output(
+                rf"git config --get remote.origin.url | sed -E 's#(git@|https://)[^/:]+[:/](.*)\.git#\\2#'",
+                strict=True,
             )
-            repo_name = cls._repo_name_from_git_remote_url(repo_url)
-            if not repo_name:
-                raise RuntimeError(
-                    f"Failed to extract repository name from remote URL [{repo_url}]"
-                )
             sha = Shell.get_output(f"git rev-parse HEAD", strict=True)
 
         assert repo_name
@@ -113,14 +109,6 @@ class GH:
             raise RuntimeError("Failed to get changed files")
 
         return res
-
-    @staticmethod
-    def _repo_name_from_git_remote_url(repo_url: str) -> str:
-        match = re.match(
-            r"^(?:https?://[^/]+/|git@[^:]+:|ssh://git@[^/]+/)([^/\s]+/[^/\s]+?)(?:\.git)?/?$",
-            repo_url,
-        )
-        return match.group(1) if match else ""
 
     @classmethod
     def do_command_with_retries(cls, command, verbose=False):
@@ -352,17 +340,13 @@ class GH:
 
         Each thread carries its node ``id`` (the value to pass to the
         resolve/unresolve mutations), ``isResolved``, ``isOutdated``,
-        ``resolvedBy`` (``{login}`` of the user who most recently
-        resolved the thread, or ``null`` if never resolved -- consumers
-        use this to tell apart bot-resolved from author-resolved
-        threads in stateless CI runs), ``path``, ``line``, and the
-        full list of comments under it (with ``databaseId`` for use as
-        ``in_reply_to`` when replying, and ``createdAt`` for per-comment
-        timestamps). Both the thread list and each thread's comments
-        are paginated, so long PRs do not silently truncate. Raises
-        ``RuntimeError`` on any transport / parse failure: a failure
-        to read prior discussion must not be confused with "no prior
-        discussion".
+        ``path``, ``line``, and the full list of comments under it (with
+        ``databaseId`` for use as ``in_reply_to`` when replying, and
+        ``createdAt`` for per-comment timestamps). Both
+        the thread list and each thread's comments are paginated, so
+        long PRs do not silently truncate. Raises ``RuntimeError`` on
+        any transport / parse failure: a failure to read prior
+        discussion must not be confused with "no prior discussion".
         """
         if not repo:
             repo = _Environment.get().REPOSITORY
@@ -376,7 +360,7 @@ class GH:
             "pullRequest(number:$pr){"
             "reviewThreads(first:100,after:$after){"
             "pageInfo{hasNextPage endCursor}"
-            "nodes{id isResolved isOutdated resolvedBy{login} path line "
+            "nodes{id isResolved isOutdated path line "
             "comments(first:50){"
             "pageInfo{hasNextPage endCursor}"
             "nodes{databaseId createdAt author{login} body path line originalLine}"

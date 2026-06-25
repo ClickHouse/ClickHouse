@@ -2700,10 +2700,13 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
 
         for (const MutationCommand & command : entry.commands)
         {
+            WriteBufferFromOwnString buf;
+            IAST::FormatSettings format_settings(/*one_line=*/true);
+            command.ast->format(buf, format_settings);
             result.push_back(MergeTreeMutationStatus
             {
                 entry.znode_name,
-                command.ast_text,
+                buf.str(),
                 entry.create_time,
                 entry.block_numbers,
                 parts_in_progress,

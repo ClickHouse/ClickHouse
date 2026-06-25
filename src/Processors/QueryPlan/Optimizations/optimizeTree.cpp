@@ -280,16 +280,6 @@ void optimizeTreeSecondPass(
             });
     }
 
-    /// Run after runtime filter push-down so that chains of joins are detected correctly.
-    if (optimization_settings.min_columns_for_join_lazy_indexing > 0)
-    {
-        traverseQueryPlan(stack, root,
-            [&](auto & frame_node)
-            {
-                optimizeJoinLazyIndexing(frame_node, nodes, optimization_settings);
-            });
-    }
-
     /// Do PREWHERE optimization after all possible filters including JOIN runtime filters were pushed down
     if (optimization_settings.optimize_prewhere)
     {
@@ -375,20 +365,11 @@ void optimizeTreeSecondPass(
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
-            if (optimization_settings.aggregate_partitions_independently)
-                optimizeAggregationPerPartition(frame_node, nodes, optimization_settings);
-
-            if (optimization_settings.limit_by_partitions_independently)
-                optimizeLimitByPerPartition(frame_node, nodes, optimization_settings);
-
             if (optimization_settings.read_in_order)
                 optimizeReadInOrder(frame_node, nodes, optimization_settings);
 
             if (optimization_settings.distinct_in_order)
                 optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
-
-            if (optimization_settings.push_limit_by_into_sort)
-                pushLimitByIntoSort(frame_node);
         });
 
     /// Find ReadFromLocalParallelReplicaStep and replace with optimized local plan.

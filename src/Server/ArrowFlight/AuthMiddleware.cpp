@@ -1,7 +1,4 @@
 #include <Server/ArrowFlight/AuthMiddleware.h>
-
-#if USE_ARROWFLIGHT
-
 #include <Server/ArrowFlight/CallsData.h>
 
 #include <IO/ReadBufferFromString.h>
@@ -275,5 +272,3 @@ arrow::Status AuthMiddlewareFactory::StartCall(
 }
 
 }
-
-#endif

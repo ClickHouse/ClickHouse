@@ -3,7 +3,6 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -45,7 +44,7 @@ namespace ErrorCodes
     extern const int INTERNAL_REDIS_ERROR;
 }
 
-class RedisDataSource final : public ISource
+class RedisDataSource : public ISource
 {
 public:
     RedisDataSource(
@@ -154,7 +153,7 @@ private:
 };
 
 
-class RedisSink final : public SinkToStorage
+class RedisSink : public SinkToStorage
 {
 public:
     RedisSink(StorageRedis & storage_, const StorageMetadataPtr & metadata_snapshot_);
@@ -652,8 +651,7 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
     }
 
     assert(commands.front().type == MutationCommand::Type::UPDATE);
-    auto alter = commands.front().ast();
-    if (getColumnToUpdateExpression(*alter).contains(primary_key))
+    if (commands.front().column_to_update_expression.contains(primary_key))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", primary_key);
 
     MutationsInterpreter::Settings settings(true);

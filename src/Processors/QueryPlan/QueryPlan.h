@@ -177,6 +177,7 @@ public:
     static QueryPlan extractSubplan(Node * root, Nodes & nodes);
 
     Node * getRootNode() const { return root; }
+    void replaceRootNode(Node * new_root) { root = new_root; }
     static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);
     void replaceNodeWithPlan(Node * node, QueryPlan plan);
     void replaceNodeWithPlan(Node * node, QueryPlan plan, SharedHeader expected_header);

@@ -439,7 +439,7 @@ void UserDefinedSQLObjectsZooKeeperStorage::refreshObjects(const zkutil::ZooKeep
     static constexpr UInt64 initial_backoff_ms = 200;
     static constexpr UInt64 max_backoff_ms = 5000;
 
-    VectorWithMemoryTracking<std::pair<String, ASTPtr>> function_names_and_asts;
+    std::vector<std::pair<String, ASTPtr>> function_names_and_asts;
     zkutil::ZooKeeperPtr current_zookeeper = zookeeper;
 
     ZooKeeperRetriesControl retries_ctl(

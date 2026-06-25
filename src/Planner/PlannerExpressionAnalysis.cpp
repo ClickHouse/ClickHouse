@@ -1,6 +1,5 @@
 #include <memory>
 #include <optional>
-#include <stack>
 #include <Planner/PlannerExpressionAnalysis.h>
 
 #include <Columns/ColumnNullable.h>

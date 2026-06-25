@@ -152,30 +152,6 @@ void WasmTimeRuntime::setLogLevel(LogsLevel)
 {
 }
 
-class WasmTimeCompartment;
-
-/// Single payload stored in `wasmtime::Store` data slot.
-/// The compartment pointer is null during instantiation (before `Linker::instantiate` returns),
-/// so the host-function trampoline must check it before dereferencing.
-struct WasmTimeStoreData
-{
-    WasmTimeCompartment * compartment = nullptr;
-    std::shared_ptr<std::atomic_bool> stop_requested;
-};
-
-wasmtime::Result<wasmtime::DeadlineKind> epochDeadlineCallback(
-    wasmtime::Store::Context ctx, uint64_t & epoch_deadline_delta)
-{
-    epoch_deadline_delta += 1;
-    const auto & ctx_data = ctx.get_data();
-    if (const auto * data = std::any_cast<WasmTimeStoreData>(&ctx_data))
-    {
-        if (data->stop_requested && data->stop_requested->load())
-            return wasmtime::Error("WASM execution was stopped by request");
-    }
-    return wasmtime::DeadlineKind::Continue;
-}
-
 class WasmTimeCompartment : public WasmCompartment
 {
 public:
@@ -185,10 +161,19 @@ public:
         , instance(std::move(instance_))
         , cfg(std::move(cfg_))
     {
-        store.context().set_data(WasmTimeStoreData{this, stop_requested});
+        store.context().set_data(this);
         store.context().set_epoch_deadline(1);
         store.epoch_deadline_callback(
-            [](wasmtime::Store::Context ctx, uint64_t & epoch_deadline_delta) { return epochDeadlineCallback(ctx, epoch_deadline_delta); });
+            [](wasmtime::Store::Context ctx, uint64_t & epoch_deadline_delta) -> wasmtime::Result<wasmtime::DeadlineKind>
+            {
+                epoch_deadline_delta += 1;
+                const auto & ctx_data = ctx.get_data();
+                const auto * compartment_ptr = ctx_data.has_value() ? std::any_cast<WasmTimeCompartment *>(ctx_data) : nullptr;
+                if (compartment_ptr && compartment_ptr->stop_requested.load())
+                    return wasmtime::Error("WASM execution was stopped by request");
+                return wasmtime::DeadlineKind::Continue;
+            }
+        );
     }
 
     void setLastException(Exception e) { last_exception = std::move(e); }
@@ -206,7 +191,7 @@ public:
         return memory_span.subspan(ptr, size);
     }
 
-    VectorWithMemoryTracking<WasmVal> invokeImpl(std::string_view function_name, const VectorWithMemoryTracking<WasmVal> & params, StopToken stop_token) override
+    std::vector<WasmVal> invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params, StopToken stop_token) override
     {
         {
             auto result = store.context().set_fuel(cfg.fuel_limit ? cfg.fuel_limit : std::numeric_limits<uint64_t>::max());
@@ -242,11 +227,11 @@ public:
         {
             last_exception.reset();
 
-            stop_requested->store(false);
+            stop_requested = false;
             StopCallback stop_callback(stop_token, [this, function_name]
             {
                 LOG_DEBUG(log, "Stop requested for function '{}'", function_name);
-                stop_requested->store(true);
+                stop_requested = true;
                 engine.increment_epoch();
             });
 
@@ -264,7 +249,7 @@ public:
         }
 
         __msan_unpoison(returns_values.data(), returns_values.size() * sizeof(wasmtime::Val));
-        return std::ranges::to<VectorWithMemoryTracking<WasmVal>>(returns_values | std::views::transform(fromWasmTimeValue));
+        return std::ranges::to<std::vector>(returns_values | std::views::transform(fromWasmTimeValue));
     }
 
     wasmtime::Memory getMemory()
@@ -282,7 +267,7 @@ private:
     wasmtime::Store store;
     wasmtime::Instance instance;
 
-    std::shared_ptr<std::atomic_bool> stop_requested = std::make_shared<std::atomic_bool>(false);
+    std::atomic_bool stop_requested{false};
 
     std::optional<Exception> last_exception;
 
@@ -312,7 +297,7 @@ wasmtime::Result<std::monostate, wasmtime::Trap> callHostFunction(
                 params.size(),
                 argument_types.size());
         }
-        VectorWithMemoryTracking<WasmVal> args(argument_types.size());
+        std::vector<WasmVal> args(argument_types.size());
         for (size_t i = 0; i < params.size(); ++i)
         {
             if (fromWasmTimeValKind(params[i].kind()) != argument_types[i])
@@ -399,7 +384,7 @@ public:
 
     }
 
-    std::unique_ptr<WasmCompartment> instantiate(Config cfg, StopToken stop_token) const override
+    std::unique_ptr<WasmCompartment> instantiate(Config cfg) const override
     {
         wasmtime::Store store(engine);
         if (cfg.memory_limit)
@@ -410,24 +395,6 @@ public:
             if (!result)
                 throw Exception(ErrorCodes::WASM_ERROR, "Failed to set fuel for wasm module instantiation: {}", result.err().message());
         }
-
-        /// The module's `(start)` function runs as part of `Linker::instantiate` below, so we set up
-        /// epoch interruption *before* instantiate. The long-lived `WasmTimeCompartment` does not
-        /// exist yet, so we install a `WasmTimeStoreData` with `compartment == nullptr`. The
-        /// `WasmTimeCompartment` constructor will overwrite the data slot with its own pointer
-        /// once it is constructed.
-        store.context().set_epoch_deadline(1);
-        auto stop_requested = std::make_shared<std::atomic_bool>(false);
-        store.context().set_data(WasmTimeStoreData{nullptr, stop_requested});
-        store.epoch_deadline_callback(
-            [](wasmtime::Store::Context ctx, uint64_t & epoch_deadline_delta) { return epochDeadlineCallback(ctx, epoch_deadline_delta); });
-
-        StopCallback stop_callback(stop_token, [this, stop_requested]
-        {
-            LOG_DEBUG(log, "Stop requested for wasm module instantiation");
-            stop_requested->store(true);
-            engine.increment_epoch();
-        });
 
         wasmtime::Linker linker(engine);
         for (const auto & host_function : host_functions)
@@ -446,10 +413,8 @@ public:
                     /// FIXME: try making a small repro
                     /// https://github.com/bytecodealliance/wasmtime/issues/7935#issuecomment-1944027164
                     __msan_unpoison(params.data(), params.size_bytes());
-                    const auto * store_data = std::any_cast<WasmTimeStoreData>(&caller.context().get_data());
-                    if (!store_data || !store_data->compartment)
-                        return wasmtime::Trap("Host function called before WASM compartment is fully initialized");
-                    return callHostFunction(store_data->compartment, host_function_raw_ptr, params, results);
+                    auto * compartment_ptr = std::any_cast<WasmTimeCompartment *>(caller.context().get_data());
+                    return callHostFunction(compartment_ptr, host_function_raw_ptr, params, results);
                 }
             );
             if (!add_host_func_result)
@@ -467,9 +432,9 @@ public:
     }
 
 
-    VectorWithMemoryTracking<WasmFunctionDeclaration> getImports() const override
+    std::vector<WasmFunctionDeclaration> getImports() const override
     {
-        VectorWithMemoryTracking<WasmFunctionDeclaration> result;
+        std::vector<WasmFunctionDeclaration> result;
 
         for (auto import_type : all_imports_list)
         {

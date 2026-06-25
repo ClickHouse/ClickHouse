@@ -304,7 +304,7 @@ private:
 
 
 template <typename Impl, typename Name>
-class FunctionTranslate final : public IFunction
+class FunctionTranslate : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -365,7 +365,7 @@ public:
             map_to_size = map_to.size();
         }
         if (map_from_size < map_to_size)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument of function {} must not be shorter than the third argument. Size of the second argument: {}, size of the third argument: {}", getName(), map_from_size, map_to_size);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument of function {} must not be shorter than the third argument. Size of the second argument: {}, size of the third argument: {}", getName(), map_from.size(), map_to.size());
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_src.get()))
         {

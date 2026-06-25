@@ -16,6 +16,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/UniqueLock.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
@@ -40,8 +41,6 @@ class PipelineExecutor;
 struct ProcessListForUser;
 class QueryStatus;
 class ThreadStatus;
-class ThreadGroup;
-using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 class ProcessListEntry;
 
 enum CancelReason
@@ -230,7 +229,12 @@ public:
 
     ThrottlerPtr getUserNetworkThrottler();
 
-    MemoryTracker * getMemoryTracker() const;
+    MemoryTracker * getMemoryTracker() const
+    {
+        if (!thread_group)
+            return nullptr;
+        return &thread_group->memory_tracker;
+    }
 
     bool hasThreadGroup() const
     {

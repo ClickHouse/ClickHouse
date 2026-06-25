@@ -11,8 +11,6 @@
 #include <base/types.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
-#include <Common/ThreadGroupSwitcher.h>
-#include <Common/ThreadPool.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
