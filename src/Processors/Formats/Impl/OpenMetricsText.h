@@ -3,13 +3,18 @@
 #include <base/types.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/Exception.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/readFloatText.h>
 #include <IO/WriteHelpers.h>
+
+#include <fmt/format.h>
 
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <limits>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -286,6 +291,49 @@ inline bool isStrictRealNumberToken(std::string_view token)
     }
 
     return i == token.size();
+}
+
+/// Single source of truth for the histogram `le` / summary `quantile` boundary-label rule, shared by
+/// the writer (which sorts buckets numerically) and the reader (which ingests them). A histogram `le`
+/// accepts the exact token `+Inf` (the only spelling of the infinity bucket) or any finite `realnumber`
+/// (negative values included); every other infinity spelling (`inf`, `Inf`, `+Infinity`, `Infinity`,
+/// `infinity`), `NaN`, and `-Inf` are rejected so that only the canonical `+Inf` can reach the writer's
+/// `+Inf`/`_count` bucket synthesis. A summary `quantile` never denotes infinity: it must be a finite
+/// `realnumber` in the closed range [0, 1]. A marker row carrying no boundary label (`_sum` / `_count`)
+/// is a no-op. Returns the rejection reason, or `std::nullopt` when the boundary is valid, so each
+/// caller raises its own error code in its own style (writer: BAD_ARGUMENTS, reader: INCORRECT_DATA).
+inline std::optional<String> checkBoundaryLabel(const String & type, const std::map<String, String> & labels)
+{
+    const auto strict_finite = [](const String & token, Float64 & out)
+    {
+        if (!isStrictRealNumberToken(token))
+            return false;
+        ReadBufferFromString buf(token);
+        return tryReadFloatText(out, buf) && buf.eof() && std::isfinite(out);
+    };
+
+    Float64 value = 0;
+    if (type == "histogram")
+    {
+        const auto it = labels.find("le");
+        if (it == labels.end())
+            return std::nullopt;
+        const String & le = it->second;
+        if (le == "+Inf")
+            return std::nullopt;
+        if (!strict_finite(le, value))
+            return fmt::format("Histogram bucket boundary le='{}' (expected '+Inf' or a finite real number)", le);
+    }
+    else if (type == "summary")
+    {
+        const auto it = labels.find("quantile");
+        if (it == labels.end())
+            return std::nullopt;
+        const String & quantile = it->second;
+        if (!strict_finite(quantile, value) || value < 0.0 || value > 1.0)
+            return fmt::format("Summary quantile='{}' (expected a finite real number in [0, 1])", quantile);
+    }
+    return std::nullopt;
 }
 
 /// Writer side of the timestamp contract. The ClickHouse `timestamp` column is Prometheus-compatible

@@ -243,3 +243,37 @@ SELECT 's' AS name, 1.0 AS value, '' AS help, 'summary' AS type, map('quantile',
 SELECT 's' AS name, 1.0 AS value, '' AS help, 'summary' AS type, map('quantile', 'NaN') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
 SELECT 'h' AS name, 1.0 AS value, '' AS help, 'histogram' AS type, map('le', '+Inf') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics;
 SELECT 's' AS name, 1.0 AS value, '' AS help, 'summary' AS type, map('quantile', '0.5') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics;
+
+-- ===== Reviewer findings (round 3): boundary-label validation is strict and symmetric (input + output) =====
+-- One shared validator (`OpenMetricsText::checkBoundaryLabel`) drives both sides. It uses the strict
+-- `realnumber` tokenizer, so malformed tokens that raw `tryReadFloatText` accepts (`.`, `1e+`) are
+-- rejected, and only the exact token `+Inf` denotes the histogram infinity bucket (every other
+-- spelling is rejected, which also prevents a duplicate synthesized `+Inf` bucket).
+
+-- INPUT: invalid histogram `le` / summary `quantile` boundaries are now rejected (was: accepted on
+-- input, asymmetric with the output path). INCORRECT_DATA matches the surrounding input error style.
+SELECT * FROM format(OpenMetrics, concat('# TYPE h histogram', char(10), 'h_bucket{le="NaN"} 1', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, concat('# TYPE s summary', char(10), 's{quantile="2"} 1', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, concat('# TYPE h histogram', char(10), 'h_bucket{le="."} 1', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, concat('# TYPE h histogram', char(10), 'h_bucket{le="1e+"} 1', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+
+-- OUTPUT: the malformed tokens that the old lenient `tryReadFloatText` check accepted (`.`, `1e+`)
+-- are rejected by the strict tokenizer.
+SELECT 'h' AS name, 1.0 AS value, '' AS help, 'histogram' AS type, map('le', '.') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+SELECT 's' AS name, 1.0 AS value, '' AS help, 'summary' AS type, map('quantile', '1e+') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+
+-- Infinity policy: non-canonical infinity spellings (`inf`, `Inf`) are rejected on BOTH input and
+-- output. Previously the output accepted them case-insensitively but `fixupBucketLabels` only
+-- recognized the exact `+Inf`, so a DUPLICATE synthetic `+Inf` bucket was generated.
+SELECT * FROM format(OpenMetrics, concat('# TYPE h histogram', char(10), 'h_bucket{le="inf"} 1', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, concat('# TYPE h histogram', char(10), 'h_bucket{le="Inf"} 1', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+SELECT 'h' AS name, 1.0 AS value, '' AS help, 'histogram' AS type, map('le', 'inf') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+SELECT 'h' AS name, 1.0 AS value, '' AS help, 'histogram' AS type, map('le', 'Inf') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+
+-- A valid `+Inf` bucket round-trips to exactly ONE `+Inf` bucket: the exact-token check recognizes it
+-- as the existing infinity bucket, so the writer synthesizes only the `_count` counterpart (no second `+Inf`).
+SELECT 'h' AS name, 4.0 AS value, '' AS help, 'histogram' AS type, map('le', '+Inf') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics;
+
+-- INPUT positives: a finite `le` (including the canonical `+Inf` bucket) and an in-range `quantile` are accepted.
+SELECT name, value, labels, type FROM format(OpenMetrics, concat('# TYPE h histogram', char(10), 'h_bucket{le="0.5"} 3', char(10), 'h_bucket{le="+Inf"} 9', char(10), '# EOF', char(10))) ORDER BY value FORMAT TSV;
+SELECT name, value, labels, type FROM format(OpenMetrics, concat('# TYPE s summary', char(10), 's{quantile="0.5"} 1', char(10), '# EOF', char(10))) ORDER BY value FORMAT TSV;

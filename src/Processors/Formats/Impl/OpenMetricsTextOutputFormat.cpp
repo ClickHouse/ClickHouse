@@ -49,11 +49,11 @@ namespace
 using OpenMetricsText::FORMAT_NAME;
 using OpenMetricsText::isValidMetricName;
 using OpenMetricsText::isValidLabelName;
-using OpenMetricsText::equalsIgnoreCaseAscii;
 using OpenMetricsText::isEmptyMarker;
 using OpenMetricsText::sampleKindCount;
 using OpenMetricsText::hasReservedMarkerLabelWithValue;
 using OpenMetricsText::histogramSeriesLabels;
+using OpenMetricsText::checkBoundaryLabel;
 using OpenMetricsText::validateLabelValue;
 using OpenMetricsText::writeQuotedLabelValue;
 using OpenMetricsText::millisToSecondsString;
@@ -109,50 +109,6 @@ Float64 tryParseFloat(const String & s)
     ReadBufferFromString buf(s);
     tryReadFloatText(t, buf);
     return t;
-}
-
-/// Validate the histogram `le` / summary `quantile` boundary label before `fixupBucketLabels` sorts
-/// rows numerically. That sort uses the lenient `tryParseFloat`, which silently maps garbage to 0,
-/// so without this check `le='NaN'` or `quantile='bogus'`/`quantile='2'` would be emitted as invalid
-/// OpenMetrics. Uses a strict parse (full-token consumption + finite result): `le` accepts the
-/// canonical `+Inf`/`Inf` bucket (ASCII case-insensitive) or any finite real number; `quantile`
-/// accepts a finite real number in the closed range [0, 1]. No-op for marker rows that carry no
-/// boundary label (`_sum` / `_count`).
-void validateBoundaryLabel(const String & type, const std::map<String, String> & labels)
-{
-    const auto strict_finite = [](const String & s, Float64 & out)
-    {
-        ReadBufferFromString buf(s);
-        return tryReadFloatText(out, buf) && buf.eof() && std::isfinite(out);
-    };
-
-    Float64 v = 0;
-    if (type == "histogram")
-    {
-        const auto it = labels.find("le");
-        if (it == labels.end())
-            return;
-        const String & le = it->second;
-        if (equalsIgnoreCaseAscii(le, "+Inf") || equalsIgnoreCaseAscii(le, "Inf"))
-            return;
-        if (!strict_finite(le, v))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Invalid histogram bucket boundary le='{}' for output format '{}': expected '+Inf' or a finite real number",
-                le, FORMAT_NAME);
-    }
-    else if (type == "summary")
-    {
-        const auto it = labels.find("quantile");
-        if (it == labels.end())
-            return;
-        const String & quantile = it->second;
-        if (!strict_finite(quantile, v) || v < 0.0 || v > 1.0)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Invalid summary quantile='{}' for output format '{}': expected a finite real number in [0, 1]",
-                quantile, FORMAT_NAME);
-    }
 }
 
 void validateOpenMetricsMetricName(const String & name)
@@ -391,8 +347,11 @@ void OpenMetricsTextOutputFormat::flushCurrentMetric()
                     offending_key, FORMAT_NAME);
 
             /// Validate the bucket/quantile boundary before `fixupBucketLabels` sorts numerically;
-            /// the sort's lenient parse would otherwise let `le='NaN'` / `quantile='bogus'` through.
-            validateBoundaryLabel(current_metric.type, val.labels);
+            /// the sort's lenient `tryParseFloat` would otherwise let `le='NaN'` / `quantile='bogus'`
+            /// through. The rule is shared with the reader in `checkBoundaryLabel`; raise the writer's
+            /// own BAD_ARGUMENTS here.
+            if (auto reason = checkBoundaryLabel(current_metric.type, val.labels))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} for output format '{}'", *reason, FORMAT_NAME);
         }
     }
 

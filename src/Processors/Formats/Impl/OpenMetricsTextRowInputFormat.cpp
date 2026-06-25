@@ -44,6 +44,7 @@ using OpenMetricsText::equalsIgnoreCaseAscii;
 using OpenMetricsText::isStrictRealNumberToken;
 using OpenMetricsText::secondsTokenToMillis;
 using OpenMetricsText::sampleKindCount;
+using OpenMetricsText::checkBoundaryLabel;
 
 void skipAsciiSpaces(std::string_view s, size_t & pos)
 {
@@ -537,6 +538,13 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
                         "(a bucket/quantile sample or a '_sum' / '_count' marker), but has {}",
                         logical_name, fm.type, kinds),
                     line);
+
+            /// Validate the bucket/quantile boundary value with the same strict rule the writer
+            /// applies in `checkBoundaryLabel`, so malformed (`le='.'`) or non-canonical-infinity
+            /// (`le='inf'`) and out-of-range (`quantile='2'`) boundaries are rejected symmetrically
+            /// on input. A `_sum` / `_count` marker row carries no boundary label, so this is a no-op.
+            if (auto reason = checkBoundaryLabel(fm.type, labels))
+                throwIncorrect(*reason, line);
         }
 
         ext.read_columns.assign(columns.size(), 0);
