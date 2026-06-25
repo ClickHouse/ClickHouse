@@ -637,11 +637,9 @@ void KeeperStorage::initializeSystemNodes()
     initialized = true;
 }
 
-std::shared_ptr<KeeperStorage::Node> KeeperStorage::UncommittedState::tryGetNodeFromStorage(std::string_view path, bool should_lock_storage) const
+std::shared_ptr<KeeperStorage::Node> KeeperStorage::UncommittedState::tryGetNodeFromStorage(std::string_view path) const
 {
-    std::shared_lock lock(storage.storage_mutex, std::defer_lock);
-    if (should_lock_storage)
-        lock.lock();
+    std::shared_lock lock(storage.storage_mutex);
     if (auto node_it = storage.container.find(path); node_it != storage.container.end())
     {
         const auto & committed_node = node_it->value;
@@ -912,12 +910,12 @@ void KeeperStorage::UncommittedState::rollback(std::list<Delta> rollback_deltas)
 
 }
 
-KeeperStorage::UncommittedNodeRef KeeperStorage::UncommittedState::getNode(std::string_view path, bool should_lock_storage) const
+KeeperStorage::UncommittedNodeRef KeeperStorage::UncommittedState::getNode(std::string_view path) const
 {
     if (auto node_it = nodes.find(path); node_it != nodes.end())
         return {node_it};
 
-    std::shared_ptr<KeeperStorage::Node> node = tryGetNodeFromStorage(path, should_lock_storage);
+    std::shared_ptr<KeeperStorage::Node> node = tryGetNodeFromStorage(path);
 
     if (node)
     {
