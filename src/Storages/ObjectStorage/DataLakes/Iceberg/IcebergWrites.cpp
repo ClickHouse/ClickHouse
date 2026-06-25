@@ -141,6 +141,12 @@ void writePartitionRecord(
         auto read_int = [&]() -> Int64
         {
             const Field & value = partition_values[i];
+            /// `DateTime64`/`Time64` partition values are stored as a `Decimal64` `Field`, but Iceberg
+            /// encodes them as an Avro `long` (the underlying integer ticks), so unwrap the decimal here.
+            if (value.getType() == Field::Types::Decimal64)
+                return value.safeGet<Decimal64>().getValue().value;
+            if (value.getType() == Field::Types::Decimal32)
+                return value.safeGet<Decimal32>().getValue().value;
             if (value.getType() == Field::Types::UInt64)
                 return static_cast<Int64>(value.safeGet<UInt64>());
             return value.safeGet<Int64>();
