@@ -118,3 +118,22 @@ SELECT 'FS host \\2' AS t, id, hex(s) AS s_hex, hex(replaceRegexpAll(s, '^(https
 SELECT 'FS dotall \\1' AS t, id, hex(s) AS s_hex, hex(replaceRegexpAll(s, '(?s)^([^/]+)/.*$', '\\1')) AS all_hex, hex(replaceRegexpOne(s, '(?s)^([^/]+)/.*$', '\\1')) AS one_hex FROM t_anchored_extract_fixed ORDER BY id;
 SELECT 'FS noanchor \\1' AS t, id, hex(s) AS s_hex, hex(replaceRegexpAll(s, '(foo).*$', '\\1')) AS all_hex, hex(replaceRegexpOne(s, '(foo).*$', '\\1')) AS one_hex FROM t_anchored_extract_fixed ORDER BY id;
 DROP TABLE t_anchored_extract_fixed;
+
+-- Part D: a scoped multiline anchor `(?m:…)` in the retained prefix must reject the fast path and fall back
+-- to the full regexp. re2::Regexp::ToString renders `(?m:^)`/`(?m:$)` as bare `^`/`$`, which would reparse
+-- as text anchors under RE2's default one-line mode and corrupt the shortened regexp. These patterns are
+-- dotall (`(?s)`), so replaceRegexp and match()/extractGroups() agree on `.`, which lets the oracle below
+-- cover newline-bearing rows too (unlike Part A). Covers the line anchor at top level and nested in a group.
+DROP TABLE IF EXISTS t_anchored_extract_ml;
+CREATE TABLE t_anchored_extract_ml (id UInt32, s String) ENGINE = Memory;
+INSERT INTO t_anchored_extract_ml VALUES
+    (1, 'a\nb'), (2, 'a\nbZZ'), (3, 'x\na\nb'), (4, 'qqq'), (5, 'a\nb\nc');
+
+-- Oracle: the optimized result must equal if(match(s,P), extractGroups(s,P)[N], s). Each line prints 0.
+SELECT 'ml_end \\1' AS pattern, sum(replaceRegexpAll(s, '(?s)^(a)(?m:$)\\nb.*$', '\\1') != if(match(s, '(?s)^(a)(?m:$)\\nb.*$'), extractGroups(s, '(?s)^(a)(?m:$)\\nb.*$')[1], s)) AS mismatches FROM t_anchored_extract_ml;
+SELECT 'ml_begin \\1' AS pattern, sum(replaceRegexpAll(s, '(?s)^(a)\\n(?m:^)b.*$', '\\1') != if(match(s, '(?s)^(a)\\n(?m:^)b.*$'), extractGroups(s, '(?s)^(a)\\n(?m:^)b.*$')[1], s)) AS mismatches FROM t_anchored_extract_ml;
+SELECT 'ml_nested \\1' AS pattern, sum(replaceRegexpAll(s, '(?s)^(a(?m:$))\\nb.*$', '\\1') != if(match(s, '(?s)^(a(?m:$))\\nb.*$'), extractGroups(s, '(?s)^(a(?m:$))\\nb.*$')[1], s)) AS mismatches FROM t_anchored_extract_ml;
+
+-- Golden: concrete optimized output for the top-level case (hex keeps the newlines readable).
+SELECT 'ml_end \\1' AS t, id, hex(s) AS s_hex, hex(replaceRegexpAll(s, '(?s)^(a)(?m:$)\\nb.*$', '\\1')) AS all_hex, hex(replaceRegexpOne(s, '(?s)^(a)(?m:$)\\nb.*$', '\\1')) AS one_hex FROM t_anchored_extract_ml ORDER BY id;
+DROP TABLE t_anchored_extract_ml;

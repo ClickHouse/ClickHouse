@@ -156,6 +156,23 @@ struct ReplaceRegexpImpl
         bool needs_newline_check = true;
     };
 
+    /// True if the subtree contains a multiline line anchor (`kRegexpBeginLine` / `kRegexpEndLine`, from an
+    /// interior `(?m:…)`). re2::Regexp::ToString renders these as bare `^` / `$`, which reparse as text
+    /// anchors under RE2's default one-line mode, so a round-tripped short pattern would change semantics.
+    static bool containsLineAnchor(re2::Regexp * re)
+    {
+        if (re == nullptr)
+            return false;
+        if (re->op() == re2::kRegexpBeginLine || re->op() == re2::kRegexpEndLine)
+            return true;
+        const int n = re->nsub();
+        re2::Regexp * const * subs = re->sub();
+        for (int i = 0; i < n; ++i)
+            if (containsLineAnchor(subs[i]))
+                return true;
+        return false;
+    }
+
     static std::optional<AnchoredExtract> tryBuildAnchoredExtract(
         const re2::RE2 & searcher, const Instructions & instructions, const re2::RE2::Options & options)
     {
@@ -205,6 +222,15 @@ struct ReplaceRegexpImpl
         }
         else
             return {};
+
+        /// re2::Regexp::ToString does not round-trip scoped multiline anchors: a `(?m:…)` line anchor
+        /// (kRegexpBeginLine / kRegexpEndLine) is rendered as a bare `^` / `$`, which reparses as a text
+        /// anchor under RE2's default one-line mode and changes the match. The outer anchors are already
+        /// required to be BeginText / EndText, so any line anchor must come from an interior `(?m:…)` in the
+        /// retained prefix; reject and let the caller fall back to the full regexp.
+        for (int i = 0; i < nsub - 2; ++i)
+            if (containsLineAnchor(subs[i]))
+                return {};
 
         /// Build the short pattern: concatenation of all nodes except the trailing `.*` and `$`.
         /// The compose helpers consume one reference per sub, so Incref each before passing them in.
