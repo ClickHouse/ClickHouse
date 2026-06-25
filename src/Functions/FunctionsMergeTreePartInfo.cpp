@@ -1,9 +1,4 @@
-#include "config.h"
-
 #include <Storages/MergeTree/MergeTreePartInfo.h>
-#if CLICKHOUSE_CLOUD
-#include <Storages/SharedMergeTree/MergeMutateIntention.h>
-#endif
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
@@ -125,7 +120,7 @@ bool isAnyStringType(const IDataType & data_type)
     return isStringOrFixedString(removeLowCardinality(data_type.getPtr()));
 }
 
-class FunctionMergeTreePartCoverage final : public IFunction
+class FunctionMergeTreePartCoverage : public IFunction
 {
     static MergeTreePartInfo constructCoveringPart(const ColumnPtr & covering_column, size_t row_number)
     {
@@ -172,7 +167,7 @@ public:
     }
 };
 
-class FunctionMergeTreePartInfo final : public IFunction
+class FunctionMergeTreePartInfo : public IFunction
 {
 public:
     static constexpr auto name = "mergeTreePartInfo";

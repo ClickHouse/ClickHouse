@@ -76,7 +76,6 @@ public:
     void onStart() override;
     void consume(Chunk & chunk) override;
     void onFinish() override;
-    void setHasDependentMaterializedViews(bool has_dependent_views) override;
 
     String getName() const override { return "ReplicatedMergeTreeSink"; }
 
@@ -145,7 +144,6 @@ protected:
     bool allow_attach_while_readonly = false;
     bool quorum_parallel = false;
     bool deduplicate = true;
-    bool synchronously_commit_part_for_dependent_views = false;
     UInt64 num_blocks_processed = 0;
 
     LoggerPtr log;
