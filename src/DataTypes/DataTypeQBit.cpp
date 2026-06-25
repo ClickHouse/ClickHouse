@@ -225,11 +225,13 @@ SELECT bin(vec.1) FROM test;
 └───────────────────────────┘
 ```
 
-The number of accessible subcolumns depends on the element type:
+The number of accessible subcolumns depends on the element type (and, when strided, on the number of stride groups):
 
-* `BFloat16`: 16 subcolumns (1-16)
-* `Float32`: 32 subcolumns (1-32)
-* `Float64`: 64 subcolumns (1-64)
+* `BFloat16`: 16 subcolumns per stride group (1-16)
+* `Float32`: 32 subcolumns per stride group (1-32)
+* `Float64`: 64 subcolumns per stride group (1-64)
+
+The subcolumns follow a group-major order: in general `vec.N` reads bit plane `(N-1) % element_size` of stride group `(N-1) / element_size`. For example, with `QBit(BFloat16, 4096, 1024)` the 4096 dimensions are split into 4 groups of 1024, so there are 64 subcolumns: `vec.1` … `vec.16` are the bit planes of the first stride group (dimensions 1–1024), `vec.17` … `vec.32` belong to the second group (dimensions 1025–2048), and so on.
 
 ## Vector search functions {#vector-search-functions}
 
@@ -237,6 +239,8 @@ These are the distance functions for vector similarity search that use `QBit` da
 
 * [`L2DistanceTransposed`](../functions/distance-functions.md#L2DistanceTransposed)
 * [`cosineDistanceTransposed`](../functions/distance-functions.md#cosineDistanceTransposed)
+
+For a strided `QBit`, both functions accept an optional fourth argument `dims` — the number of leading dimensions to read — which reads only the stride groups covering those dimensions. The reference vector must have exactly `dims` elements, and `dims` must be a multiple of `stride`.
 )DOCS_MD",
             .syntax = "QBit(T, dim[, stride])",
             .examples = {},
