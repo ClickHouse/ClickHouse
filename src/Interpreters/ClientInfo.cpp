@@ -46,11 +46,10 @@ Poco::Net::SocketAddress makeSocketAddressFromWire(const String & host_and_port)
     if (host_and_port.empty())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Empty address received over the network");
 
-#if defined(POCO_OS_FAMILY_UNIX)
-    /// A UNIX local socket path: Poco treats it as a filesystem path and never resolves a service.
+    /// A leading '/' makes Poco build a UNIX_LOCAL address, whose host()/port() throw later; every
+    /// initial_address consumer calls those, so reject it here instead of deferring the throw.
     if (host_and_port.front() == '/')
-        return Poco::Net::SocketAddress(host_and_port);
-#endif
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed address received over the network: not an IP endpoint");
 
     std::string_view host;
     size_t port_pos = String::npos;

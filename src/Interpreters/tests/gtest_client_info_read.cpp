@@ -101,6 +101,27 @@ TEST(ClientInfoRead, NonIpHostThrows)
     }
 }
 
+/// A leading-'/' value makes Poco build a UNIX_LOCAL SocketAddress whose host()/port() throw later.
+/// ClientInfo::write never emits this form, and every initial_address consumer calls host()/port(),
+/// so it must be rejected here as INCORRECT_DATA rather than parsed into a UNIX_LOCAL address.
+TEST(ClientInfoRead, UnixLocalPathThrows)
+{
+    for (const String & bad : {"/tmp/ch.sock", "/", "/var/run/clickhouse-server/clickhouse-server.sock"})
+    {
+        ClientInfo info;
+        ReadBufferFromOwnString in(makeClientInfoPrefix(bad));
+        try
+        {
+            info.read(in, DBMS_TCP_PROTOCOL_VERSION);
+            FAIL() << "Expected an exception for address: " << bad;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA) << "address: " << bad;
+        }
+    }
+}
+
 /// A well-formed IP literal plus numeric port (the only form ClientInfo::write ever produces) must
 /// still parse: a full write -> read round-trip preserves the initial address.
 TEST(ClientInfoRead, ValidNumericAddressRoundTrips)
