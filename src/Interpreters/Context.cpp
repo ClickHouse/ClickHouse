@@ -2327,12 +2327,6 @@ void Context::releaseQuerySlot() const
         elem->releaseQuerySlot();
 }
 
-void Context::releaseMemoryReservation() const
-{
-    if (auto elem = getProcessListElementSafe())
-        elem->releaseMemoryReservation();
-}
-
 String Context::getMergeWorkload() const
 {
     SharedLockGuard lock(shared->mutex);

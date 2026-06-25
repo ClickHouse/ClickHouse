@@ -909,9 +909,6 @@ public:
     /// Only the query slot is released, not the memory reservation: pipeline threads still hold raw
     /// pointers to it, so it is released later by `BlockIO::onFinish` after the pipeline is finalized.
     void releaseQuerySlot() const;
-    /// Release the memory reservation. MUST be called only after the query pipeline has been finalized
-    /// (its threads joined), because pipeline threads hold raw pointers to `MemoryReservation`.
-    void releaseMemoryReservation() const;
     String getMergeWorkload() const;
     void setMergeWorkload(const String & value);
     String getLicenseFile() const;

@@ -68,26 +68,22 @@ void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
     /// block the next query. This is safe while the pipeline is still running because pipeline threads do
     /// not touch the query slot.
     /// The memory reservation is different: pipeline threads hold raw pointers to it (see `WorkloadResources`
-    /// in `PipelineExecutor`) and read it until the pipeline is finalized, so releasing it here would be a
-    /// data race. It is released only after the pipeline threads have been joined.
+    /// in `PipelineExecutor`) and read it until the pipeline is finalized below, so releasing it here would
+    /// be a data race. It is released a bit later instead — the extra hold is brief and harmless.
     releaseQuerySlot();
     if (finalize_query_pipeline)
     {
         /// Keep the same teardown order as in resetPipeline:
         query_metadata_cache.reset();
-        /// `finalize_query_pipeline` joins the pipeline threads and then releases the memory reservation
-        /// itself, before performance counters are finalized, so the `MemoryReservationDecreases` profile
-        /// event is recorded in `query_log`.
         const QueryPipelineFinalizedInfo query_pipeline_finalized_info = finalize_query_pipeline(std::move(pipeline));
         for (const auto & callback : finish_callbacks)
             callback(query_pipeline_finalized_info, finish_time);
     }
     else
-    {
         resetPipeline(/*cancel=*/false);
-        /// Safe now: the pipeline (and its threads) have been finalized and joined.
-        releaseMemoryReservation();
-    }
+
+    /// Safe now: the pipeline (and its threads) have been finalized and joined.
+    releaseMemoryReservation();
 }
 
 void BlockIO::onException(bool log_as_error)
