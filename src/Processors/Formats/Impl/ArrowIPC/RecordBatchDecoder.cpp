@@ -1149,7 +1149,8 @@ void RecordBatchDecoder::skipField(const ArrowField & field)
 RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeColumns(
     const flatbuf::RecordBatch & batch, const PODArray<char> & body, const ArrowFields & fields,
     const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields,
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_)
+    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_,
+    const VectorWithMemoryTracking<char> * reachable_buffers)
 {
     target_types = target_types_;
     current_batch = &batch;
@@ -1166,7 +1167,7 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeColumns(
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC variadic buffer count is negative ({})", c);
             variadic_counts.push_back(c);
         }
-    prepareBuffers(batch, body);
+    prepareBuffers(batch, body, reachable_buffers);
 
     /// Every top-level column must decode to the batch's row count; otherwise the returned `Chunk` would
     /// mix columns of different sizes (an internal inconsistency) instead of being rejected as bad data.
@@ -1232,7 +1233,7 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeColumns(
     return result;
 }
 
-void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, const PODArray<char> & body)
+void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, const PODArray<char> & body, const VectorWithMemoryTracking<char> * reachable)
 {
     buffer_slices.clear();
     decompressed_body.clear();
@@ -1257,6 +1258,13 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
         buffer_slices.reserve(num_buffers);
         for (size_t i = 0; i < num_buffers; ++i)
         {
+            /// Unreachable buffer (subset read): it was not read into `body`. Emit a placeholder slice
+            /// without validating it or pointing at its absolute offset; `skipField` consumes it unread.
+            if (reachable && !(*reachable)[i])
+            {
+                buffer_slices.push_back(Slice{nullptr, 0});
+                continue;
+            }
             const auto * buffer = buffers->Get(static_cast<flatbuffers::uoffset_t>(i));
             validate(buffer->offset(), buffer->length());
             /// Typed decoders read int32/int64 values straight from `body.data() + offset` (offsets, list and
@@ -1304,6 +1312,13 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
     size_t pos = 0;
     for (size_t i = 0; i < num_buffers; ++i)
     {
+        /// Unreachable buffer (subset read): not present in `body`. Reserve an empty placement and skip
+        /// reading its length prefix, validating, or decompressing it.
+        if (reachable && !(*reachable)[i])
+        {
+            placements[i] = {pos, 0, nullptr, 0, true};
+            continue;
+        }
         const auto * buffer = buffers->Get(static_cast<flatbuffers::uoffset_t>(i));
         validate(buffer->offset(), buffer->length());
         const int64_t length = buffer->length();
@@ -1379,9 +1394,70 @@ RecordBatchDecoder::DecodedColumns
 RecordBatchDecoder::decodeBatch(
     const flatbuf::RecordBatch & batch, const PODArray<char> & body,
     const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields,
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_)
+    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_,
+    const VectorWithMemoryTracking<char> * reachable_buffers)
 {
-    return decodeColumns(batch, body, schema.fields, keep_top_level_fields, target_types_);
+    return decodeColumns(batch, body, schema.fields, keep_top_level_fields, target_types_, reachable_buffers);
+}
+
+VectorWithMemoryTracking<char> RecordBatchDecoder::reachableTopLevelBuffers(
+    const flatbuf::RecordBatch & batch, const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields)
+{
+    const size_t num_buffers = batch.buffers() ? batch.buffers()->size() : 0;
+    /// No pruning requested: every buffer is reachable (the caller reads the whole body).
+    if (!keep_top_level_fields)
+        return VectorWithMemoryTracking<char>(num_buffers, 1);
+
+    VectorWithMemoryTracking<char> reachable(num_buffers, 0);
+
+    /// Walk the schema with the decoder's own cursor logic (`skipField`) so the buffer spans match decoding
+    /// exactly. No body is needed: buffer counts come from the field types and the batch's variadic counts.
+    /// `buffer_slices` must be addressable for `nextBuffer()` during the walk, but the slices are never read.
+    current_batch = &batch;
+    node_index = 0;
+    buffer_index = 0;
+    variadic_index = 0;
+    variadic_counts.clear();
+    buffer_slices.assign(num_buffers, Slice{});
+
+    try
+    {
+        if (const auto * counts = batch.variadicBufferCounts())
+            for (int64_t c : *counts)
+            {
+                if (c < 0)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC variadic buffer count is negative ({})", c);
+                variadic_counts.push_back(c);
+            }
+
+        const bool case_insensitive = settings.arrow.case_insensitive_column_matching;
+        for (const ArrowField & field : schema.fields)
+        {
+            String normalized_name = field.name;
+            if (case_insensitive)
+                boost::to_lower(normalized_name);
+            const size_t start = buffer_index;
+            skipField(field);
+            const size_t end = buffer_index;
+            if (keep_top_level_fields->contains(normalized_name))
+                for (size_t i = start; i < end && i < num_buffers; ++i)
+                    reachable[i] = 1;
+        }
+    }
+    catch (const Exception &)
+    {
+        /// The layout could not be pre-walked (e.g. an unrequested unsupported column with an unknown
+        /// layout). Fall back to reading the whole body; the decode path then reports the precise error.
+        reachable.assign(num_buffers, 1);
+    }
+
+    current_batch = nullptr;
+    node_index = 0;
+    buffer_index = 0;
+    variadic_index = 0;
+    variadic_counts.clear();
+    buffer_slices.clear();
+    return reachable;
 }
 
 DataTypePtr RecordBatchDecoder::resolveTargetHint(const DataTypePtr & parent_hint, const String & path) const

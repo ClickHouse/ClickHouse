@@ -772,8 +772,11 @@ Chunk ArrowIPCBlockInputFormat::readStream()
                     return getChunkForCount(num_rows);
                 }
 
-                message_reader->readBody(*batch, msg.body_length, body_buffer);
-                auto decoded = decoder->decodeBatch(*batch, body_buffer, &requested_top_level_fields, &requested_field_target_types);
+                /// Subset read: read, validate and decompress only the buffers the requested columns
+                /// reference; unrequested columns' body ranges are skipped (see `readBody`).
+                const auto reachable = decoder->reachableTopLevelBuffers(*batch, &requested_top_level_fields);
+                message_reader->readBody(*batch, msg.body_length, body_buffer, &reachable);
+                auto decoded = decoder->decodeBatch(*batch, body_buffer, &requested_top_level_fields, &requested_field_target_types, &reachable);
                 Chunk chunk = buildChunk(decoded, num_rows);
 
                 const size_t batch_end = in->count();
@@ -853,8 +856,11 @@ Chunk ArrowIPCBlockInputFormat::readFile()
     if (need_only_count)
         return getChunkForCount(num_rows);
 
-    message_reader->readBody(*batch, msg.body_length, body_buffer);
-    auto decoded = decoder->decodeBatch(*batch, body_buffer, &requested_top_level_fields, &requested_field_target_types);
+    /// Subset read: read, validate and decompress only the buffers the requested columns reference;
+    /// unrequested columns' body ranges are skipped (see `readBody`).
+    const auto reachable = decoder->reachableTopLevelBuffers(*batch, &requested_top_level_fields);
+    message_reader->readBody(*batch, msg.body_length, body_buffer, &reachable);
+    auto decoded = decoder->decodeBatch(*batch, body_buffer, &requested_top_level_fields, &requested_field_target_types, &reachable);
     return buildChunk(decoded, num_rows);
 }
 

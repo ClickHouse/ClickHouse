@@ -317,6 +317,7 @@ void registerInputFormatArrow(FormatFactory & factory)
                 return std::make_shared<ArrowIPCBlockInputFormat>(buf, header, true, format_settings);
             return std::make_shared<ArrowBlockInputFormat>(buf, header, true, format_settings);
         });
+    factory.markFormatSupportsSubsetOfColumns("ArrowStream");
 
     factory.setDocumentation("Arrow", Documentation{
         .description = R"DOCS_MD(

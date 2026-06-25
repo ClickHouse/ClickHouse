@@ -3,9 +3,12 @@
 #if USE_ARROW
 
 #include <IO/ReadBuffer.h>
+#include <IO/SeekableReadBuffer.h>
 #include <IO/NetUtils.h>
 
 #include <algorithm>
+#include <cstdio>
+#include <utility>
 
 namespace DB
 {
@@ -127,17 +130,103 @@ int64_t referencedBodyLength(const flatbuf::RecordBatch & batch, int64_t body_le
 
 }
 
-void MessageReader::readBody(const flatbuf::RecordBatch & batch, int64_t body_length, PODArray<char> & body)
+void MessageReader::readBody(
+    const flatbuf::RecordBatch & batch, int64_t body_length, PODArray<char> & body, const VectorWithMemoryTracking<char> * reachable)
 {
-    const int64_t used = referencedBodyLength(batch, body_length);
+    if (reachable == nullptr)
+    {
+        const int64_t used = referencedBodyLength(batch, body_length);
+        body.resize(used);
+        if (used > 0)
+            in.readStrict(body.data(), used);
+        /// Consume the trailing bytes the buffers do not reference (inter-buffer/end padding, or a declared body
+        /// longer than the buffers need) so the stream is positioned at the next message. `skipBody` reads
+        /// through the buffer without allocating, so an over-long declared tail fails cleanly as
+        /// CANNOT_READ_ALL_DATA instead of triggering a large allocation here.
+        skipBody(body_length - used);
+        return;
+    }
+
+    /// Subset read: validate and collect only the buffers the requested columns reference, then read just
+    /// those ranges into their absolute offsets, skipping the gaps left by unrequested columns. Unreachable
+    /// buffers are neither validated nor read, so a corrupt unrequested column cannot fail the read. `body`
+    /// is still sized to the maximum reachable `offset + length` (sparse fill, gaps left unwritten); the
+    /// decoder indexes it by absolute offset. Compacting and remapping offsets would also shrink the
+    /// allocation and is a possible future improvement.
+    const auto * buffers = batch.buffers();
+    const size_t num_buffers = buffers ? buffers->size() : 0;
+    VectorWithMemoryTracking<std::pair<int64_t, int64_t>> ranges;
+    int64_t used = 0;
+    for (size_t i = 0; i < num_buffers; ++i)
+    {
+        if (i >= reachable->size() || !(*reachable)[i])
+            continue;
+        const auto * buffer = buffers->Get(static_cast<flatbuffers::uoffset_t>(i));
+        const int64_t offset = buffer->offset();
+        const int64_t length = buffer->length();
+        /// An empty buffer may carry a placeholder offset (e.g. -1); it references no body bytes.
+        if (length == 0)
+            continue;
+        if (offset < 0 || length < 0 || length > body_length || offset > body_length - length)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow IPC buffer (offset {}, length {}) is out of the message body of size {}",
+                offset, length, body_length);
+        ranges.emplace_back(offset, length);
+        used = std::max(used, offset + length);
+    }
+
     body.resize(used);
-    if (used > 0)
-        in.readStrict(body.data(), used);
-    /// Consume the trailing bytes the buffers do not reference (inter-buffer/end padding, or a declared body
-    /// longer than the buffers need) so the stream is positioned at the next message. `skipBody` reads
-    /// through the buffer without allocating, so an over-long declared tail fails cleanly as
-    /// CANNOT_READ_ALL_DATA instead of triggering a large allocation here.
-    skipBody(body_length - used);
+    std::sort(ranges.begin(), ranges.end());
+
+    auto * seekable = dynamic_cast<SeekableReadBuffer *>(&in);
+    auto skip = [&](int64_t n)
+    {
+        if (n <= 0)
+            return;
+        /// On a seekable input the gap bytes are never read; on a stream they are read and discarded (the
+        /// same short-read-safe path as `skipBody`).
+        if (seekable)
+            seekable->seek(seekable->getPosition() + n, SEEK_SET);
+        else if (in.tryIgnore(n) != static_cast<size_t>(n))
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data from the Arrow IPC message body");
+    };
+
+    int64_t cur = 0;
+    for (const auto & [offset, length] : ranges)
+    {
+        const int64_t end = offset + length;
+        if (end <= cur)
+            continue; /// already covered by a previous (overlapping) range
+        const int64_t start = std::max(offset, cur);
+        if (start > cur)
+            skip(start - cur);
+        in.readStrict(body.data() + start, end - start);
+        cur = end;
+    }
+    /// Skip the present body bytes after the last reachable buffer: unrequested columns whose ranges are
+    /// in-bounds. These exist, so they are `seek`-skipped (never read) and deliberately not validated — a
+    /// corrupt or truncated *unrequested* column must not fail a subset read. An out-of-bounds (corrupt)
+    /// unrequested buffer is ignored here rather than read.
+    int64_t referenced_end = cur;
+    for (size_t i = 0; i < num_buffers; ++i)
+    {
+        const auto * buffer = buffers->Get(static_cast<flatbuffers::uoffset_t>(i));
+        const int64_t offset = buffer->offset();
+        const int64_t length = buffer->length();
+        if (length > 0 && offset >= 0 && length <= body_length && offset <= body_length - length)
+            referenced_end = std::max(referenced_end, offset + length);
+    }
+    if (referenced_end > cur)
+    {
+        skip(referenced_end - cur);
+        cur = referenced_end;
+    }
+
+    /// The declared tail that no buffer references must still be present: validate it with a read-through
+    /// (`skipBody`) rather than a `seek`, so a forged-huge `Message.bodyLength` whose tail is absent fails as
+    /// CANNOT_READ_ALL_DATA instead of being silently `seek`-skipped past end of file.
+    skipBody(body_length - cur);
 }
 
 void MessageReader::skipBody(int64_t body_length)

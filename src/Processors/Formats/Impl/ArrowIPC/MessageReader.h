@@ -6,6 +6,7 @@
 
 #include <Processors/Formats/Impl/ArrowIPC/FlatBuffersCommon.h>
 #include <Common/PODArray.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -48,7 +49,15 @@ public:
     /// padding or over-long declared tail is skipped rather than allocated. This stops a forged-huge
     /// `Message.bodyLength` paired with tiny buffers from driving a large allocation before the buffer
     /// ranges are validated.
-    void readBody(const flatbuf::RecordBatch & batch, int64_t body_length, PODArray<char> & body);
+    ///
+    /// `reachable`, when set, is a 0/1 mask over `batch.buffers()` (see `RecordBatchDecoder::reachable
+    /// TopLevelBuffers`). Only the buffers it marks are validated and read — into their absolute offsets in
+    /// `body`, with the gaps left by unrequested columns skipped (a `seek` on a seekable input, an `ignore`
+    /// on a stream). `body` is still sized to the maximum reachable `offset + length`, so a requested column
+    /// late in the layout keeps the buffer large; compacting the body and remapping buffer offsets to shrink
+    /// the allocation is a possible future improvement.
+    void readBody(const flatbuf::RecordBatch & batch, int64_t body_length, PODArray<char> & body,
+                  const VectorWithMemoryTracking<char> * reachable = nullptr);
 
     /// Skips the message body without materializing it.
     void skipBody(int64_t body_length);

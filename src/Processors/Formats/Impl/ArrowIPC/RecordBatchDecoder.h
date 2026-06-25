@@ -72,16 +72,29 @@ public:
     /// target as the raw `Int32` day number without the `Date32` range/overflow check — recursively, so a
     /// `date32` nested in an Array/Tuple/Map or addressed as a subcolumn is handled too — matching the
     /// Apache Arrow library reader's recursive numeric type-hint behavior.
+    /// `reachable_buffers`, when set, is a 0/1 mask (see `reachableTopLevelBuffers`) marking the buffers the
+    /// requested columns reference; the rest are neither validated nor materialized (they are not in `body`).
     DecodedColumns decodeBatch(
         const flatbuf::RecordBatch & batch, const PODArray<char> & body,
         const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields = nullptr,
-        const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr);
+        const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr,
+        const VectorWithMemoryTracking<char> * reachable_buffers = nullptr);
 
     /// Decodes an explicit list of fields (used for dictionary batches, which carry one value column).
     DecodedColumns decodeColumns(
         const flatbuf::RecordBatch & batch, const PODArray<char> & body, const ArrowFields & fields,
         const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields = nullptr,
-        const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr);
+        const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr,
+        const VectorWithMemoryTracking<char> * reachable_buffers = nullptr);
+
+    /// The buffers (indices into `batch.buffers()`) referenced by the requested top-level fields, as a
+    /// 0/1 mask of length `batch.buffers()->size()`. Computed by the same cursor walk decoding uses
+    /// (`skipField`), so it stays in lockstep with the decoder's per-field buffer consumption. Used to read,
+    /// validate and decompress only the body ranges a subset read actually needs. Returns an all-ones mask
+    /// (everything reachable) when `keep_top_level_fields` is null, or if the layout cannot be pre-walked
+    /// (the decode path then runs its full validation and reports the precise error).
+    VectorWithMemoryTracking<char> reachableTopLevelBuffers(
+        const flatbuf::RecordBatch & batch, const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields);
 
 private:
     Slice nextBuffer();
@@ -112,7 +125,7 @@ private:
     /// looking up `path` (the dotted column name) in `target_types`. Returns null when neither is available.
     DataTypePtr resolveTargetHint(const DataTypePtr & parent_hint, const String & path) const;
 
-    void prepareBuffers(const flatbuf::RecordBatch & batch, const PODArray<char> & body);
+    void prepareBuffers(const flatbuf::RecordBatch & batch, const PODArray<char> & body, const VectorWithMemoryTracking<char> * reachable);
 
     const ArrowSchema & schema;
     const FormatSettings & settings;
