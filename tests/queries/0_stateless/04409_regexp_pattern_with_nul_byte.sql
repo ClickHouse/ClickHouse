@@ -13,3 +13,12 @@ SELECT arrayStringConcat(extractAll('test@x.com', '\0*([a-z]+)'), ',');
 SELECT match('xa\0by', 'a\0b');
 SELECT match('xayb', 'a\0b');
 SELECT hex(extract('za\0bz', '(a\0b)'));
+
+-- Now that the analyzer reports captures placed after a NUL byte, `RegexpFunctionRewritePass`
+-- (`optimize_rewrite_regexp_functions`, on by default) could see them and strip the `^.*` prefix
+-- of an `extract` pattern. That rewrite changes which occurrence is captured for a multi-match
+-- pattern, so it must be skipped for patterns containing a NUL. The greedy `^.*` selects the last
+-- match, so the result must be `second` (not `first`). `materialize` prevents constant folding so
+-- the optimizer pass actually runs on the function.
+SELECT extract(materialize('x\0first y\0second'), '^.*\0([a-z]+).*$')
+SETTINGS enable_analyzer = 1, optimize_rewrite_regexp_functions = 1;
