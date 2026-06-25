@@ -95,11 +95,20 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
         }
     }
 
-    /// Cap all NDVs at the estimated output rows.
+    /// Cap all NDVs at the estimated output rows. When the cap actually lowers an NDV, the value is now
+    /// the join's *estimated* output cardinality, not a real `uniq` count, so it is no longer
+    /// trustworthy for the parallel_hash deferred-build shortcut: clear the provenance flag (the value
+    /// is still fine for the join-order cost model).
     if (cardinality_)
     {
         for (auto & [_, stats] : column_stats)
-            stats.num_distinct_values = std::min(stats.num_distinct_values, *cardinality_);
+        {
+            if (*cardinality_ < stats.num_distinct_values)
+            {
+                stats.num_distinct_values = *cardinality_;
+                stats.num_distinct_values_from_uniq = false;
+            }
+        }
     }
 }
 

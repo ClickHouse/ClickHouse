@@ -162,7 +162,16 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
             continue;
 
         UInt64 cardinality = std::min(result.rows, estimator.estimateCardinality());
-        result.column_stats.emplace(column_name, ColumnStats{.num_distinct_values = cardinality, .num_distinct_values_from_uniq = estimator.hasUniqStatistic()});
+        /// This is the *filtered* relation profile. The key NDV here is not a trustworthy `uniq` count
+        /// even when the column has a `uniq` statistic: the value is clamped by `result.rows` (a
+        /// selectivity estimate that may come from default factors of unrelated predicates), and a
+        /// filter can drop whole keys, so the real distinct count is only bounded above by it. The
+        /// `num_distinct_values_from_uniq` flag gates the parallel_hash deferred-build shortcut, which
+        /// preallocates the build map to this count, so trusting a filtered estimate would defeat the
+        /// exact sizing and risk a spurious spill / MEMORY_LIMIT_EXCEEDED. Only the unfiltered
+        /// `estimateRelationProfile()` overload yields a uniq-backed NDV. (The value is still used for
+        /// the join-order cost model, which does not require provenance.)
+        result.column_stats.emplace(column_name, ColumnStats{.num_distinct_values = cardinality, .num_distinct_values_from_uniq = false});
     }
     return result;
 }

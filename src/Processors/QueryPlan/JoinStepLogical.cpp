@@ -1404,15 +1404,19 @@ static QueryPlanNode buildPhysicalJoinImpl(
     return node;
 }
 
-/// Distinct-key count of the right join key from the planner's column statistics, but only when it is
-/// trustworthy enough to size the build hash map: a single plain-column equi key whose right side is an
-/// INPUT column from one relation, and whose distinct count is backed by a real `uniq` statistic (not
-/// the `default_cardinality_ratio` mock). The count is read from the right (build) input relation stats
-/// (`getRightInputColumnStats`), before this join's `min(left, right)` equi-key clamp: the post-join
-/// result stats would undersize the build map when the probe side has fewer distinct keys, which would
-/// then preallocate the streaming build too small and rehash through the full right key set. Returns
-/// nullopt for composite/expression keys, sources without `uniq` statistics, and anything the optimizer
-/// did not produce reliable column stats for.
+/// Distinct-key count of the right join key from the planner's column statistics, but only in the very
+/// simple, 100%-reliable case where it can size the build hash map exactly:
+///  - a single plain-column equi key whose right side is an INPUT column from one relation, and
+///  - whose distinct count is a real, unfiltered `uniq` statistic of a base relation.
+/// The count is read from `getRightInputColumnStats`, which the optimizer populates only when the build
+/// (right) input is a base relation (a DP leaf), with the stats taken before this join's
+/// `min(left, right)` equi-key clamp (the post-join result stats would undersize the build map when the
+/// probe side has fewer distinct keys). The `num_distinct_values_from_uniq` provenance flag is true only
+/// for an unfiltered base-relation `uniq` value: it is cleared on the filtered relation profile, on the
+/// join-order output-cardinality cap, and is ANDed across the equi-key min. Anything else - composite or
+/// expression keys, filtered or derived/joined inputs, sources without `uniq` statistics, or a value the
+/// optimizer transformed away from a pure `uniq` count - yields nullopt and falls back to the deferred
+/// HLL-sized build.
 static std::optional<UInt64> extractTrustworthyRightKeyNdv(const JoinStepLogical & join_step)
 {
     const auto & column_stats = join_step.getRightInputColumnStats();

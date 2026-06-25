@@ -1292,8 +1292,18 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             join_step->setInputLabels(std::move(left_label), std::move(right_label));
             relation_names[entry->relations] = join_step->getReadableRelationName();
 
+            /// Only expose the right (build) input's column stats to the parallel_hash deferred-build
+            /// NDV shortcut when that input is a base relation (a DP leaf). A join sub-tree's key NDVs
+            /// are estimates (equi-key min-clamp and output-cardinality cap), so they must not size the
+            /// build map even if their provenance flag survived; restricting to leaves keeps the
+            /// shortcut to the very simple, 100%-reliable case (`extractTrustworthyRightKeyNdv` returns
+            /// nullopt for empty stats and falls back to the deferred HLL build).
+            std::unordered_map<String, ColumnStats> right_input_column_stats;
+            if (right_input_entry->isLeaf())
+                right_input_column_stats = right_input_entry->column_stats;
+
             join_step->setOptimized(
-                entry->estimated_rows, lhs_estimation, rhs_estimation, entry->column_stats, right_input_entry->column_stats);
+                entry->estimated_rows, lhs_estimation, rhs_estimation, entry->column_stats, std::move(right_input_column_stats));
 
             auto & new_node = nodes.emplace_back();
 

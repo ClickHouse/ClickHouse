@@ -1,0 +1,6 @@
+filtered	1500000	9965594049962609990
+unfiltered	3000000	4399504766653024203
+filtered	1500000	9965594049962609990
+unfiltered	3000000	4399504766653024203
+filtered right side still defers	1	1	1
+unfiltered right side preallocates	1	1	1

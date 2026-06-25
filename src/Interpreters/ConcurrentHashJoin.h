@@ -226,8 +226,9 @@ private:
     /// from the same frozen shards.
     size_t estimateBufferedDistinctKeys() const;
 
-    /// `out_block_key_hashes`, when non-null, is filled with the raw scatter hashes of all rows of the
-    /// source block (in row order, not split per slot), for the deferred build's distinct-key estimate.
+    /// `out_block_key_hashes`, when non-null, is filled with the raw scatter hashes of the source block's
+    /// insertable rows (those a NULL key or the right-side ON condition would not exclude at insert time;
+    /// see `selectDispatchBlock`), for the deferred build's distinct-key estimate. Not split per slot.
     ScatteredBlocks dispatchBlock(
         const Strings & key_columns_names,
         Block && from_block,

@@ -440,17 +440,18 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
         buffered_key_bytes.fetch_add(key_bytes, std::memory_order_relaxed);
     }
 
-    /// For the deferred build, gather this source block's scatter hashes so they can be fed - once,
-    /// off the per-slot buffering mutex - into a round-robin distinct-key shard. For the streaming
-    /// build this stays empty and dispatch does no extra work.
+    /// For the deferred build, gather the scatter hashes of the rows this block will actually insert
+    /// (non-NULL key, passing the right-side ON condition - see `selectDispatchBlock`) so they can be
+    /// fed - once, off the per-slot buffering mutex - into a round-robin distinct-key shard. For the
+    /// streaming build this stays empty and dispatch does no extra work.
     std::vector<UInt64> block_key_hashes;
     auto dispatched_blocks = dispatchBlock(
         table_join->getOnlyClause().key_names_right, std::move(right_block), deferred_build ? &block_key_hashes : nullptr);
 
     if (deferred_build)
     {
-        /// Update the distinct-key estimate for this whole block under a single shard lock (not the
-        /// per-slot buffering locks, and not once per row), then buffer the per-slot blocks.
+        /// Update the distinct-key estimate from the insertable rows' hashes under a single shard lock
+        /// (not the per-slot buffering locks, and not once per row), then buffer the per-slot blocks.
         feedDistinctKeyEstimator(block_key_hashes);
 
         /// Buffer the per-slot blocks instead of inserting now; they are reserved exactly and replayed
@@ -943,7 +944,13 @@ struct DispatchSelectorAndHashes
 };
 
 static DispatchSelectorAndHashes
-selectDispatchBlock(const HashJoin & join, size_t num_shards, const Strings & key_columns_names, const Block & from_block)
+selectDispatchBlock(
+    const HashJoin & join,
+    size_t num_shards,
+    const Strings & key_columns_names,
+    const Block & from_block,
+    const String & right_filter_condition_column,
+    bool filter_to_insertable_rows)
 {
     const auto shape = getDispatchKeyShape(join, key_columns_names.size());
 
@@ -960,6 +967,42 @@ selectDispatchBlock(const HashJoin & join, size_t num_shards, const Strings & ke
     ConstNullMapPtr null_map{};
     extractNestedColumnsAndNullMap(key_columns, null_map);
 
+    /// The deferred build's distinct-key estimator must count only the keys that are actually inserted
+    /// into the maps. The replay (like the streaming build) skips rows whose key is NULL or that fail
+    /// the right-side ON condition (see `HashJoinMethods::insertFromBlockImplTypeCase`), so the returned
+    /// estimator hashes are filtered the same way: an empty `right_filter_condition_column` (the ON
+    /// clause has no right-side condition) yields an all-pass mask, and `null_map` is computed from the
+    /// same `extractNestedColumnsAndNullMap` the insert path uses. The estimate's null set is always a
+    /// subset of the insert's, so the estimate never drops a row the replay inserts (which would
+    /// under-size and rehash). The only divergence is for an ASOF join with a NULL asof key: the insert
+    /// also drops it but this estimate (which sees only the equality-key prefix) counts it - a bounded
+    /// over-count that can only over-reserve, never rehash.
+    const JoinCommon::JoinMask insert_mask = filter_to_insertable_rows
+        ? JoinCommon::getColumnAsMask(from_block, right_filter_condition_column)
+        : JoinCommon::JoinMask(true, from_block.rows());
+
+    auto keep_insertable_hashes = [&](BlockHashes & hash)
+    {
+        if (!filter_to_insertable_rows)
+            return;
+        /// Fast path for the common build (no NULL keys to drop, no right-side ON condition): every row
+        /// is inserted, so the full hash set is already correct - keep it as-is (no copy). This keeps the
+        /// mostly-unique cold build, the main beneficiary of the exact-size build, free of extra work.
+        if (!null_map && insert_mask.getKind() == JoinCommon::JoinMask::Kind::AllTrue)
+            return;
+        BlockHashes kept;
+        kept.reserve(hash.size());
+        for (size_t i = 0; i < hash.size(); ++i)
+        {
+            if (null_map && (*null_map)[i])
+                continue;
+            if (insert_mask.isRowFiltered(i))
+                continue;
+            kept.push_back(hash[i]);
+        }
+        hash = std::move(kept);
+    };
+
     auto calculate_selector = [&](auto & maps) -> DispatchSelectorAndHashes
     {
         switch (join.getJoinedData()->type)
@@ -970,6 +1013,7 @@ selectDispatchBlock(const HashJoin & join, size_t num_shards, const Strings & ke
                 BlockHashes hash = calculateHashes<typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
                     *maps.TYPE, key_columns, shape.key_sizes);                                                                                \
                 auto selector = hashToSelector(*maps.TYPE, hash, num_shards);                                                                 \
+                keep_insertable_hashes(hash);                                                                                                 \
                 return {std::move(selector), std::move(hash)};                                                                                \
             }
 
@@ -1034,22 +1078,29 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(
     const Strings & key_columns_names, Block && from_block, std::vector<UInt64> * out_block_key_hashes)
 {
     const size_t num_shards = hash_joins.size();
+    /// For the deferred build's distinct-key estimate, the estimator hashes are filtered down to the
+    /// rows the replay will actually insert (non-NULL key, passing the right-side ON condition). The
+    /// right-side condition column is empty when the ON clause has no such condition.
+    const String right_filter_condition_column
+        = out_block_key_hashes ? table_join->getOnlyClause().condColumnNames().second : String{};
     if (num_shards == 1)
     {
-        /// All rows go to the single slot. Still compute the key hashes for the distinct-key estimate
-        /// when the deferred build asked for them (the selector is trivially all-zero and discarded).
+        /// All rows go to the single slot. Still compute the insertable key hashes for the distinct-key
+        /// estimate when the deferred build asked for them (the selector is trivially all-zero and discarded).
         if (out_block_key_hashes)
-            *out_block_key_hashes = selectDispatchBlock(*hash_joins[0]->data, num_shards, key_columns_names, from_block).hashes;
+            *out_block_key_hashes = selectDispatchBlock(
+                *hash_joins[0]->data, num_shards, key_columns_names, from_block, right_filter_condition_column, true).hashes;
         ScatteredBlocks res;
         res.emplace_back(std::move(from_block));
         return res;
     }
 
-    auto [selector, hashes] = selectDispatchBlock(*hash_joins[0]->data, num_shards, key_columns_names, from_block);
+    auto [selector, hashes] = selectDispatchBlock(
+        *hash_joins[0]->data, num_shards, key_columns_names, from_block, right_filter_condition_column, out_block_key_hashes != nullptr);
 
-    /// Hand the raw scatter hashes (whole block, row order) to the caller for the distinct-key
-    /// estimate. They are reused as-is: the HLL's own `intHash32` mixes them, and the estimate is
-    /// global (shards are merged, not partitioned per slot), so no extra finalizer is needed.
+    /// Hand the insertable-row scatter hashes to the caller for the distinct-key estimate. They are
+    /// reused as-is: the HLL's own `intHash32` mixes them, and the estimate is global (shards are
+    /// merged, not partitioned per slot), so no extra finalizer is needed.
     if (out_block_key_hashes)
         *out_block_key_hashes = std::move(hashes);
 
