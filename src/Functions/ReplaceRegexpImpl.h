@@ -9,6 +9,14 @@
 #include <base/types.h>
 #include <re2/regexp.h>
 
+#include "config.h"
+
+#if USE_SIMDJSON
+#    include <simdjson.h>
+#else
+#    include <Common/isValidUTF8.h>
+#endif
+
 namespace DB
 {
 
@@ -348,6 +356,17 @@ struct ReplaceRegexpImpl
         }
     }
 
+    static bool anchoredExtractTailMatches(const char * tail, size_t tail_length, bool needs_newline_check)
+    {
+        if (needs_newline_check && memchr(tail, '\n', tail_length) != nullptr)
+            return false;
+#if USE_SIMDJSON
+        return simdjson::validate_utf8(tail, tail_length);
+#else
+        return DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(tail), tail_length);
+#endif
+    }
+
     /// Process one haystack using the anchored capture-then-truncate fast path (see tryBuildAnchoredExtract).
     static void processStringAnchoredExtract(
         const char * hs_data,
@@ -366,8 +385,7 @@ struct ReplaceRegexpImpl
         {
             const std::string_view & whole = matches[0];
             const size_t match_end = static_cast<size_t>(whole.data() - hs_data) + whole.size();
-            const bool tail_ok = !opt.needs_newline_check
-                || memchr(hs_data + match_end, '\n', hs_length - match_end) == nullptr;
+            const bool tail_ok = anchoredExtractTailMatches(hs_data + match_end, hs_length - match_end, opt.needs_newline_check);
 
             if (tail_ok)
             {

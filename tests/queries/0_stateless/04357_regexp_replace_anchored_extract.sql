@@ -137,3 +137,26 @@ SELECT 'ml_nested \\1' AS pattern, sum(replaceRegexpAll(s, '(?s)^(a(?m:$))\\nb.*
 -- Golden: concrete optimized output for the top-level case (hex keeps the newlines readable).
 SELECT 'ml_end \\1' AS t, id, hex(s) AS s_hex, hex(replaceRegexpAll(s, '(?s)^(a)(?m:$)\\nb.*$', '\\1')) AS all_hex, hex(replaceRegexpOne(s, '(?s)^(a)(?m:$)\\nb.*$', '\\1')) AS one_hex FROM t_anchored_extract_ml ORDER BY id;
 DROP TABLE t_anchored_extract_ml;
+
+-- Part E: an invalid-UTF-8 byte in the discarded suffix must also reject the fast path. RE2 runs in UTF-8
+-- mode, so the original `.*$` only matches a suffix that is valid UTF-8; without this guard the short
+-- pattern would emit the capture for inputs where the full regexp does not match. Covers a lone invalid
+-- byte, a broken multibyte sequence, a surrogate encoding, plus valid ASCII / multibyte controls.
+DROP TABLE IF EXISTS t_anchored_extract_utf8;
+CREATE TABLE t_anchored_extract_utf8 (id UInt32, s String) ENGINE = Memory;
+INSERT INTO t_anchored_extract_utf8 VALUES
+    (1, concat('a/', unhex('FF'))),
+    (2, 'a/b'),
+    (3, concat('a/', unhex('C328'))),
+    (4, concat('a/', unhex('D18F'))),
+    (5, concat('a/', unhex('EDA080'))),
+    (6, 'zzz');
+
+-- Oracle (inputs are newline-free, so non-dotall and dotall agree on `.`): the optimized result must equal
+-- if(match(s,P), extractGroups(s,P)[N], s). Each line prints 0.
+SELECT 'utf8 non-dotall \\1' AS pattern, sum(replaceRegexpAll(s, '^(a)/.*$', '\\1') != if(match(s, '^(a)/.*$'), extractGroups(s, '^(a)/.*$')[1], s)) AS mismatches FROM t_anchored_extract_utf8;
+SELECT 'utf8 dotall \\1' AS pattern, sum(replaceRegexpAll(s, '(?s)^(a)/.*$', '\\1') != if(match(s, '(?s)^(a)/.*$'), extractGroups(s, '(?s)^(a)/.*$')[1], s)) AS mismatches FROM t_anchored_extract_utf8;
+
+-- Golden: concrete optimized output (hex keeps the raw bytes readable). Columns: label, id, hex(s), all, one.
+SELECT 'utf8 non-dotall \\1' AS t, id, hex(s) AS s_hex, hex(replaceRegexpAll(s, '^(a)/.*$', '\\1')) AS all_hex, hex(replaceRegexpOne(s, '^(a)/.*$', '\\1')) AS one_hex FROM t_anchored_extract_utf8 ORDER BY id;
+DROP TABLE t_anchored_extract_utf8;

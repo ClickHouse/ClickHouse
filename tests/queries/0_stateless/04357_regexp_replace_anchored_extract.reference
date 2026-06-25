@@ -706,3 +706,11 @@ ml_end \\1	2	610A625A5A	61	61
 ml_end \\1	3	780A610A62	780A610A62	780A610A62
 ml_end \\1	4	717171	717171	717171
 ml_end \\1	5	610A620A63	61	61
+utf8 non-dotall \\1	0
+utf8 dotall \\1	0
+utf8 non-dotall \\1	1	612FFF	612FFF	612FFF
+utf8 non-dotall \\1	2	612F62	61	61
+utf8 non-dotall \\1	3	612FC328	612FC328	612FC328
+utf8 non-dotall \\1	4	612FD18F	61	61
+utf8 non-dotall \\1	5	612FEDA080	61	61
+utf8 non-dotall \\1	6	7A7A7A	7A7A7A	7A7A7A
