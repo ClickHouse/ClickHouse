@@ -908,7 +908,7 @@ void RemoteQueryExecutor::sendExternalTables()
                 auto materialized_cte = storage_memory->getMaterializedCTE();
                 if (materialized_cte != nullptr && !materialized_cte->isBuilt())
                 {
-                    LOG_DEBUG(log, "Skipping sending CTE '{}' because it has not been materialized yet", materialized_cte->cte_name);
+                    LOG_DEBUG(log ? log : getLogger("RemoteQueryExecutor"), "Skipping sending CTE '{}' because it has not been materialized yet", materialized_cte->cte_name);
                     continue;
                 }
 
