@@ -394,6 +394,20 @@ def test_prepared_statement_no_sql_injection(started_cluster):
     cur.execute("SELECT name FROM inj_users WHERE name = %s;", (payload,), prepare=True)
     assert cur.fetchall() == []
 
+    # Placeholder inside a block comment: $1 there is not a real placeholder, so
+    # the bound value must not be spliced into the comment. Otherwise a value
+    # beginning with "*/ ... --" closes the comment and what follows becomes
+    # executable SQL ahead of the real placeholder. The prepared body keeps a $1
+    # in a leading comment and a real $1 in the WHERE; the secret must stay
+    # unread (pre-fix this leaked TOP_SECRET).
+    payload = "*/ SELECT secret FROM inj_secret -- "
+    cur.execute(
+        "/* $1 */ SELECT name FROM inj_users WHERE name = %s;",
+        (payload,),
+        prepare=True,
+    )
+    assert ("TOP_SECRET",) not in cur.fetchall()
+
     # A parameter with a single quote must round-trip as data.
     cur.execute("SELECT %s AS v;", ("O'Brien",), prepare=True)
     assert cur.fetchall() == [("O'Brien",)]
@@ -502,6 +516,33 @@ def test_copy_no_sql_injection(started_cluster):
     cur.copy_expert("COPY copy_t TO STDOUT", out3)
     assert sorted(out3.getvalue().split()) == ["1", "2"]
 
+    # COPY FROM builds an INSERT INTO from the same client-supplied identifiers.
+    # A malicious column identifier (quoted so it reaches the handler as one
+    # token) must be back-quoted into a single column name. Otherwise it is
+    # spliced raw and turns the INSERT into "INSERT INTO load (s) SELECT s FROM
+    # secret", copying the secret into the load table.
+    cur.execute("DROP TABLE IF EXISTS copy_load;")
+    cur.execute("CREATE TABLE copy_load (s String) ENGINE = Memory;")
+    cur.execute("DROP TABLE IF EXISTS copy_secret_str;")
+    cur.execute("CREATE TABLE copy_secret_str (s String) ENGINE = Memory;")
+    cur.execute("INSERT INTO copy_secret_str VALUES ('TOP_SECRET');")
+
+    with pytest.raises(Exception):
+        cur.copy_expert(
+            'COPY copy_load ("s) SELECT s FROM copy_secret_str -- ") FROM STDIN',
+            StringIO("x\n"),
+        )
+    # The injected SELECT must not have run: the load table stays empty.
+    cur.execute("SELECT count() FROM copy_load WHERE s = 'TOP_SECRET';")
+    assert cur.fetchone()[0] == 0
+
+    # A benign COPY FROM with a legitimate column still works.
+    cur.copy_expert("COPY copy_load (s) FROM STDIN", StringIO("hello\n"))
+    cur.execute("SELECT s FROM copy_load;")
+    assert cur.fetchall() == [("hello",)]
+
+    cur.execute("DROP TABLE copy_load;")
+    cur.execute("DROP TABLE copy_secret_str;")
     cur.execute("DROP TABLE copy_t;")
     cur.execute("DROP TABLE copy_secret;")
 
