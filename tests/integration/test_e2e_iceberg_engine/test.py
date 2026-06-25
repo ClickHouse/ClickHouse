@@ -822,8 +822,6 @@ def test_engine_iceberg_metadata_table_uuid(node, manager, sales_table):
     We extract the actual table UUID from the metadata and verify that
     CREATE TABLE with the correct UUID reads data successfully.
     """
-    import json
-    import os
 
     # Load the iceberg table from the local catalog to get the UUID
     local_catalog = manager._catalog
