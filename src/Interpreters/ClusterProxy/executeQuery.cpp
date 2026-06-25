@@ -880,9 +880,13 @@ void applyParallelReplicasSplit(
     auto modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree_for_ast);
 
     /// (5) The remote fragment is a clone of the read subtree, passed to the remote step which serializes
-    /// and ships it to the replicas.
+    /// and ships it to the replicas. Mark its read as parallel-replicas reading so that, once shipped, each
+    /// replica rebuilds it in parallel-reading mode and coordinates disjoint ranges via the shared
+    /// coordinator (callbacks + replica number are resolved from the replica context, not serialized).
+    auto remote_read = read_step->clone();
+    typeid_cast<ReadFromMergeTree &>(*remote_read).enableParallelReadingFromReplicasForSerialization();
     auto remote_fragment = std::make_shared<QueryPlan>();
-    remote_fragment->addStep(read_step->clone());
+    remote_fragment->addStep(std::move(remote_read));
     if (new_context->getSettingsRef()[Setting::serialize_query_plan])
         remote_fragment->ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
 
