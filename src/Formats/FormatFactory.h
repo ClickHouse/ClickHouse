@@ -1,12 +1,11 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
-#include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context_fwd.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <base/types.h>
-#include <Common/Allocator.h>
+#include <Common/Allocator_fwd.h>
 #include <Common/Documentation.h>
 #include <Common/NamePrompter.h>
 
