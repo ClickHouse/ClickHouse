@@ -965,7 +965,11 @@ selectDispatchBlock(
         key_columns.push_back(key_col_no_lc.get());
     }
     ConstNullMapPtr null_map{};
-    extractNestedColumnsAndNullMap(key_columns, null_map);
+    /// Keep the returned holder alive: when several key columns are nullable, `extractNestedColumnsAndNullMap`
+    /// allocates a fresh combined null map and `null_map` points into it. `key_column_holders` only owns the
+    /// per-column Nullable wrappers, so without this holder the combined null map would be freed and `null_map`
+    /// would dangle - read below in `keep_insertable_hashes` (see the other callers in `HashJoin` and `Set`).
+    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
     /// The deferred build's distinct-key estimator must count only the keys that are actually inserted
     /// into the maps. The replay (like the streaming build) skips rows whose key is NULL or that fail
