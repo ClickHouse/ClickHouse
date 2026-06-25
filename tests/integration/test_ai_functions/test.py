@@ -686,10 +686,9 @@ def test_generate_retries_on_network_error(started_cluster):
     set_flaky(2)
     qid = unique_query_id("gen_retry_net")
     result = instance.query(
-        "SELECT aiGenerate('recover me')",
+        "SELECT aiGenerate('ai_flaky', 'recover me')",
         settings={
             **AI_SETTINGS,
-            "ai_function_credentials": "ai_flaky",
             "ai_function_max_retries": 5,
         },
         query_id=qid,
@@ -706,10 +705,9 @@ def test_generate_network_error_not_retried_when_disabled(started_cluster):
     set_flaky(10)
     try:
         error = instance.query_and_get_error(
-            "SELECT aiGenerate('no retry')",
+            "SELECT aiGenerate('ai_flaky', 'no retry')",
             settings={
                 **AI_SETTINGS,
-                "ai_function_credentials": "ai_flaky",
                 "ai_function_max_retries": 0,
             },
         )
@@ -723,10 +721,9 @@ def test_embed_retries_on_network_error(started_cluster):
     set_flaky(2)
     qid = unique_query_id("embed_retry_net")
     result = instance.query(
-        "SELECT aiEmbed('hello')",
+        "SELECT aiEmbed('ai_embed_flaky', 'hello')",
         settings={
             **AI_SETTINGS,
-            "ai_function_credentials": "ai_embed_flaky",
             "ai_function_max_retries": 5,
         },
         query_id=qid,
@@ -751,10 +748,9 @@ def test_generate_deterministic_http_error_not_retried(started_cluster):
     which never retries 400/401/403/404/405/501. Only a single API call is made."""
     qid = unique_query_id("gen_400_no_retry")
     result = instance.query(
-        "SELECT aiGenerate('bad request')",
+        "SELECT aiGenerate('ai_bad_request', 'bad request')",
         settings={
             **AI_SETTINGS,
-            "ai_function_credentials": "ai_bad_request",
             "ai_function_max_retries": 5,
             "ai_function_throw_on_error": 0,
         },
@@ -772,10 +768,9 @@ def test_generate_deterministic_http_error_throws(started_cluster):
     """With the default `ai_function_throw_on_error = 1`, the deterministic 400 surfaces as
     `RECEIVED_ERROR_FROM_REMOTE_IO_SERVER` rather than being retried away."""
     error = instance.query_and_get_error(
-        "SELECT aiGenerate('bad request')",
+        "SELECT aiGenerate('ai_bad_request', 'bad request')",
         settings={
             **AI_SETTINGS,
-            "ai_function_credentials": "ai_bad_request",
             "ai_function_max_retries": 5,
         },
     )
@@ -787,10 +782,9 @@ def test_generate_server_error_is_retried(started_cluster):
     (1 initial attempt + `ai_function_max_retries` retries), matching the url table function."""
     qid = unique_query_id("gen_500_retried")
     result = instance.query(
-        "SELECT aiGenerate('server error')",
+        "SELECT aiGenerate('ai_error', 'server error')",
         settings={
             **AI_SETTINGS,
-            "ai_function_credentials": "ai_error",
             "ai_function_max_retries": 2,
             "ai_function_retry_initial_delay_ms": 1,  # keep the test fast
             "ai_function_throw_on_error": 0,
@@ -816,10 +810,9 @@ def test_generate_retry_respects_api_call_quota(started_cluster):
     single request is dispatched (the quota stops the retries), not `1 + 5`."""
     qid = unique_query_id("gen_quota_caps_retries")
     result = instance.query(
-        "SELECT aiGenerate('server error')",
+        "SELECT aiGenerate('ai_error', 'server error')",
         settings={
             **AI_SETTINGS,
-            "ai_function_credentials": "ai_error",
             "ai_function_max_retries": 5,
             "ai_function_retry_initial_delay_ms": 1,  # keep the test fast
             "ai_function_max_api_calls_per_query": 1,
@@ -841,10 +834,9 @@ def test_embed_retry_respects_api_call_quota(started_cluster):
     retried past `ai_function_max_api_calls_per_query`."""
     qid = unique_query_id("embed_quota_caps_retries")
     result = instance.query(
-        "SELECT aiEmbed('server error')",
+        "SELECT aiEmbed('ai_embed_error', 'server error')",
         settings={
             **AI_SETTINGS,
-            "ai_function_credentials": "ai_embed_error",
             "ai_function_max_retries": 5,
             "ai_function_retry_initial_delay_ms": 1,  # keep the test fast
             "ai_function_max_api_calls_per_query": 1,
