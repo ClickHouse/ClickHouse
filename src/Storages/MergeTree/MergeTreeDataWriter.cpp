@@ -23,6 +23,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
@@ -69,6 +70,12 @@ namespace ProfileEvents
     extern const Event MergeTreeDataProjectionWriterSortingBlocksMicroseconds;
     extern const Event MergeTreeDataProjectionWriterMergingBlocksMicroseconds;
     extern const Event MergeTreeDataWriterStatisticsCalculationMicroseconds;
+    extern const Event MergeTreeDataWriterInsertStatisticsCalculationMicroseconds;
+    extern const Event MergeTreeDataWriterInsertStatisticsBlocks;
+    extern const Event MergeTreeDataWriterInsertStatisticsRows;
+    extern const Event MergeTreeDataWriterInsertStatisticsColumns;
+    extern const Event MergeTreeDataWriterInsertStatisticsObjects;
+    extern const Event MergeTreeDataWriterInsertStatisticsBytes;
     extern const Event RejectedInserts;
 }
 
@@ -112,6 +119,25 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTS;
     extern const int NOT_ENOUGH_SPACE;
+}
+
+namespace
+{
+
+UInt64 getStatisticsFilesSize(const MergeTreeDataPartChecksums & checksums)
+{
+    UInt64 result = 0;
+    for (const auto & [filename, checksum] : checksums.files)
+    {
+        if (filename == ColumnsStatistics::FILENAME
+            || (filename.starts_with(STATS_FILE_PREFIX) && filename.ends_with(STATS_FILE_SUFFIX)))
+        {
+            result += checksum.file_size;
+        }
+    }
+    return result;
+}
+
 }
 
 void buildScatterSelector(
@@ -802,9 +828,18 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     ColumnsStatistics statistics;
     if (context->getSettingsRef()[Setting::materialize_statistics_on_insert])
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
         statistics = ColumnsStatistics(metadata_snapshot->getColumns());
-        statistics.build(block);
+        if (!statistics.empty())
+        {
+            ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterInsertStatisticsBlocks);
+            ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterInsertStatisticsRows, block.rows());
+            ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterInsertStatisticsColumns, statistics.size());
+            ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterInsertStatisticsObjects, statistics.getStatisticsCount());
+
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
+            ProfileEventTimeIncrement<Microseconds> insert_watch(ProfileEvents::MergeTreeDataWriterInsertStatisticsCalculationMicroseconds);
+            statistics.build(block);
+        }
     }
 
     /// Size of part would not be greater than block.bytes() + epsilon
@@ -1026,6 +1061,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         new_data_part,
         gathered_data,
         (*data_settings)[MergeTreeSetting::fsync_after_insert]);
+
+    if (!gathered_data.statistics.empty())
+        ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterInsertStatisticsBytes, getStatisticsFilesSize(new_data_part->checksums));
 
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
