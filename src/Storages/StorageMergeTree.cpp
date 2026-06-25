@@ -2819,7 +2819,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
     if (replace)
     {
-        block_holder = allocateBlockNumber(CommittingBlock::Op::NewPart);
+        block_holder = allocateBlockNumber(CommittingBlock::Op::NewPart, partition_id);
         drop_range.setPartitionId(partition_id);
         drop_range.min_block = 0;
         drop_range.max_block = block_holder->block.number; // there will be a "hole" in block numbers
@@ -3323,7 +3323,7 @@ void StorageMergeTree::assertNotReadonly() const
 
 std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::fillNewPartName(MutableDataPartPtr & part, DataPartsLock &)
 {
-    auto block_holder = allocateBlockNumber(CommittingBlock::Op::NewPart);
+    auto block_holder = allocateBlockNumber(CommittingBlock::Op::NewPart, part->info.getPartitionId());
 
     part->info.min_block = block_holder->block.number;
     part->info.max_block = block_holder->block.number;
@@ -3334,7 +3334,7 @@ std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::fillNewPartName(Mu
 
 std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::fillNewPartNameAndResetLevel(MutableDataPartPtr & part, DataPartsLock &)
 {
-    auto block_holder = allocateBlockNumber(CommittingBlock::Op::NewPart);
+    auto block_holder = allocateBlockNumber(CommittingBlock::Op::NewPart, part->info.getPartitionId());
 
     part->info.min_block = block_holder->block.number;
     part->info.max_block = block_holder->block.number;
@@ -3354,11 +3354,11 @@ void StorageMergeTree::removeCommittingBlock(CommittingBlock block)
     committing_blocks_cv.notify_one();
 }
 
-std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::allocateBlockNumber(CommittingBlock::Op op)
+std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::allocateBlockNumber(CommittingBlock::Op op, String partition_id)
 {
     std::lock_guard lock(committing_blocks_mutex);
 
-    CommittingBlock block(op, increment.get());
+    CommittingBlock block(op, increment.get(), std::move(partition_id));
     auto block_holder = std::make_unique<PlainCommittingBlockHolder>(std::move(block), *this);
     committing_blocks.insert(block_holder->block);
 

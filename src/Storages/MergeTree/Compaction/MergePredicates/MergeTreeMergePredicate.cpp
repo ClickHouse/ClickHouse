@@ -64,6 +64,13 @@ std::expected<void, PreformattedMessage> MergeTreeMergePredicate::canMergeParts(
                     left.name, right.name, max_possible_level));
     }
 
+    /// Refuse to merge across a gap that a concurrently committing block will fill: it becomes an
+    /// Active part inside the merge output range, which would then intersect it. Mirrors the
+    /// committing_blocks gap check in DistributedMergePredicate.
+    if (hasCommittingBlockInGap(committing_blocks, left.info.getPartitionId(), left.info.max_block, right.info.min_block))
+        return std::unexpected(PreformattedMessage::create(
+                "There is a committing block in a gap between two active parts ({}, {})", left.name, right.name));
+
     return {};
 }
 

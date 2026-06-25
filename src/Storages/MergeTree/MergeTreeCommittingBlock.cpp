@@ -11,6 +11,24 @@ namespace ErrorCodes
     extern const int UNKNOWN_FORMAT_VERSION;
 }
 
+bool hasCommittingBlockInGap(
+    const CommittingBlocksSet & committing_blocks, const String & partition_id, Int64 left_max_block, Int64 right_min_block)
+{
+    if (left_max_block + 1 >= right_min_block)
+        return false;
+
+    /// Block numbers are global across partitions, so scan committing blocks numerically inside the gap
+    /// and match the partition. Only NewPart blocks become an active part that fills the gap;
+    /// Mutation/Update blocks are version bumps that consume the same counter without creating a part.
+    for (auto it = committing_blocks.upper_bound(left_max_block); it != committing_blocks.end() && it->number < right_min_block; ++it)
+    {
+        if (it->op == CommittingBlock::Op::NewPart && it->partition_id == partition_id)
+            return true;
+    }
+
+    return false;
+}
+
 PlainCommittingBlockHolder::PlainCommittingBlockHolder(CommittingBlock block_, StorageMergeTree & storage_)
     : block(std::move(block_)), storage(storage_)
 {

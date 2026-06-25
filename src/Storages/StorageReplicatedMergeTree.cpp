@@ -8521,7 +8521,7 @@ bool StorageReplicatedMergeTree::haveCommittingOps(const CommittingBlocks & comm
 
         Int64 max_block_number = it->second;
 
-        for (const auto block : blocks)
+        for (const auto & block : blocks)
         {
             if (block.number >= max_block_number)
                 break;
