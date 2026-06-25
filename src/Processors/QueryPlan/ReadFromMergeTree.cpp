@@ -2804,8 +2804,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
         std::optional<size_t> condition_hash;
         /// Vector search filters through the ORDER BY, so excluded ranges are not described by the WHERE DAG hash alone.
+        /// Sampling narrows the marks too, but the cache key encodes only the WHERE predicate, so a sampling-narrowed
+        /// mask would poison the entry for a later non-sampled query with the same predicate.
         if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag && !query_info_.isFinal()
-                && !vector_search_parameters.has_value())
+                && !vector_search_parameters.has_value() && !result.sampling.use_sampling)
         {
             const auto & outputs = query_info_.filter_actions_dag->getOutputs();
             /// `isDeterministicAllowingTopKFilter` keeps the previous `COLUMN`-node strictness
@@ -3787,6 +3789,12 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// consult/skip side is gated separately in selectRangesToReadImpl.
     /// TODO(unique-key): re-enable with a CSN/snapshot-aware query-condition cache.
     if (storage_snapshot->metadata->hasUniqueKey())
+        reader_settings.use_query_condition_cache = false;
+
+    /// Sampling restricts which marks are read, but the query condition cache key encodes only the
+    /// WHERE/PREWHERE predicate, not the SAMPLE clause. Writing a sampling-narrowed mask would poison
+    /// the entry so a later non-sampled query with the same predicate skips marks SAMPLE excluded.
+    if (result.sampling.use_sampling)
         reader_settings.use_query_condition_cache = false;
 
     /// Initializing parallel replicas coordinator with empty ranges to read in case of
