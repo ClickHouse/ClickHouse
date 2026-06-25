@@ -1,2 +1,3 @@
 unprivileged: denied
 granted: allowed
+on cluster, cluster-only: denied
