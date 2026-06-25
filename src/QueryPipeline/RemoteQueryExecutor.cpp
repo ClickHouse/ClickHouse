@@ -553,11 +553,19 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
 
     while (true)
     {
+        {
+            LockAndBlocker lock(was_cancelled_mutex);
+            if (was_cancelled)
+                return ReadResult(Block());
+        }
+
+
+        auto packet = connections->receivePacket();
+
         LockAndBlocker lock(was_cancelled_mutex);
         if (was_cancelled)
             return ReadResult(Block());
 
-        auto packet = connections->receivePacket();
         auto anything = processPacket(std::move(packet));
 
         if (anything.getType() == ReadResult::Type::Data || anything.getType() == ReadResult::Type::ParallelReplicasToken)
