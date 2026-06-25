@@ -98,6 +98,17 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
     return hash.get64();
 }
 
+UInt64 calculateJoinStepCacheKeyContributionFromRightKeys(
+    const String & step_serialization_name,
+    const std::vector<const ActionsDAG::Node *> & right_equi_key_nodes)
+{
+    SipHash hash;
+    hash.update(step_serialization_name);
+    for (const auto * node : right_equi_key_nodes)
+        node->updateHash(hash);
+    return hash.get64();
+}
+
 void calculateHashTableCacheKeys(
     const QueryPlan::Node & root,
     std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys,
@@ -128,7 +139,6 @@ void calculateHashTableCacheKeys(
             const bool calculate = allowParallelHashJoin(
                 join_step->getJoinSettings().join_algorithms,
                 join_step->getJoinOperator().kind,
-                join_step->getJoinOperator().strictness,
                 typeid_cast<JoinStepLogicalLookup *>(node.children.back()->step.get()),
                 single_disjunct);
 
@@ -145,9 +155,14 @@ void calculateHashTableCacheKeys(
                 else
                 {
                     /// At this point cache_keys[child_i] holds the child's raw bottom-up hash
-                    /// (set when the child's frame was popped). Apply this join's per-side
-                    /// contribution to produce the child's final cache key, then SipHash-combine
-                    /// the two final-keyed children to derive this join's own raw hash.
+                    /// (set when the child's frame was popped). Stamp the right child's raw
+                    /// hash onto the parent join step BEFORE applying contributions, so the
+                    /// consumer can derive a cache key from the post-demote kept-key set.
+                    join_step->setRightSubtreeRawHash(cache_keys[node.children.at(1)]);
+
+                    /// Apply this join's per-side contribution to produce the child's final
+                    /// cache key, then SipHash-combine the two final-keyed children to derive
+                    /// this join's own raw hash.
                     cache_keys[node.children.at(0)] ^= calculateJoinStepCacheKeyContribution(*join_step, JoinTableSide::Left);
                     cache_keys[node.children.at(1)] ^= calculateJoinStepCacheKeyContribution(*join_step, JoinTableSide::Right);
                     frame.hash.update(cache_keys[node.children.at(0)]);

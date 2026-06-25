@@ -755,6 +755,8 @@ Possible values:
 )", 0) \
     DECLARE(Bool, enable_hdfs_pread, true, R"(
 Enable or disables pread for HDFS files. By default, `hdfsPread` is used. If disabled, `hdfsRead` and `hdfsSeek` will be used to read hdfs files.)", 0) \
+    DECLARE(Bool, use_reader_executor, false, R"(
+Experimental. Route reads through the new pipeline `ReaderExecutor` instead of the legacy matryoshka of read buffers. Falls back to the legacy path for configurations the executor does not yet support.)", EXPERIMENTAL) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(
 Enables or disables skipping empty files in S3 engine.
 
@@ -5759,6 +5761,42 @@ Enable using collected hash table statistics for cardinality estimation during j
     DECLARE(UInt64, max_size_to_preallocate_for_joins, 1'000'000'000'000, R"(
 For how many elements it is allowed to preallocate space in all hash tables in total before join
 )", 0) \
+    DECLARE(Bool, query_plan_join_subset_keys_auto, false, R"(
+Use column statistics to automatically demote high-cardinality JOIN equality keys to a residual filter evaluated at probe time. The hash table is built on the subset of equality keys that hits a target bucket size; the remaining keys become per-row equality checks during probe.
+
+For `t1 JOIN t2 ON t1.user_id = t2.user_id AND t1.request_id = t2.request_id` with many users and few `request_id` values per user, only `user_id` is used as a hash key (small) and `request_id = request_id` is evaluated at probe time. The hash table is built on the user_id space rather than the user_id x request_id space.
+
+Selects the kept-key subset by enumerating candidate subsets of the equality keys and picking
+the one with the smallest NDV that is still at least
+`total_right_rows * query_plan_join_subset_keys_min_kept_selectivity`. Ties prefer fewer kept
+keys (cheaper per-row hashing). Candidate NDVs come from two sources:
+
+1. Storage `STATISTICS(uniq)` on the right-side columns — yields a per-column NDV; contributes
+   size-1 candidates.
+2. The in-process `HashTablesStatistics` cache built up during prior joins — contributes a
+   joint NDV for any subset a previous query on the same right subtree happened to build a
+   hash table on. The cache value is a joint observation, so it captures correlation between
+   keys directly (a pair of correlated keys reports the small actual joint NDV, not the
+   product of per-column NDVs).
+
+When the same subset has a value from both sources, the smaller NDV wins (conservative against
+either source over-stating distinctness).
+
+Filters, limits, projections, and nested joins above the right-side `MergeTree` scan are
+followed transparently; the row count and per-column NDV propagated through `FilterStep`,
+`LimitStep`, `AggregatingStep` and similar steps are used. Falls back to no demotion when no
+candidate reaches the target, when the right side is below `query_plan_join_subset_keys_min_rows`,
+or when none of `hash`, `parallel_hash`, or `grace_hash` is enabled in `join_algorithm` (the
+residual filter is realized as a mixed-condition predicate, which only those algorithms accept).
+)", 0) \
+    DECLARE(UInt64, query_plan_join_subset_keys_min_rows, 1000000, R"(
+Minimum estimated right-side row count for `query_plan_join_subset_keys_auto` to kick in. Joins on small right tables do not benefit from key demotion (the hash table is already small) and the residual probe-time filter would only add overhead.
+)", 0) \
+    DECLARE(Double, query_plan_join_subset_keys_min_kept_selectivity, 0.01, R"(
+Target selectivity of the kept hash keys for `query_plan_join_subset_keys_auto`. Selectivity is approximated as `NDV(kept_keys) / total_right_rows`. The optimization keeps as few keys as possible (smallest hash table) such that this selectivity is still met, so that the residual filter runs over a bounded bucket.
+
+Default `0.01` targets an average bucket of about 100 right-side rows. Lower values are more permissive (allow larger buckets, smaller hash table); higher values demand tighter buckets and so keep more keys.
+)", 0) \
     \
     DECLARE(Bool, kafka_disable_num_consumers_limit, false, R"(
 Disable limit on kafka_num_consumers that depends on the number of available CPU cores.
@@ -7352,6 +7390,9 @@ To re-enable the deprecated functions (e.g., during a transition period), please
     DECLARE(Bool, optimize_distinct_in_order, true, R"(
 Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement
 )", 0) \
+    DECLARE(Bool, optimize_limit_by_in_order, true, R"(
+Optimize `SELECT ... LIMIT N BY <cols>` queries when `<cols>` (in any order) form a prefix of the table's sorting key, or become one after `WHERE col = const` fixes leading columns. With this enabled the source reads data in primary-key order, so rows with equal values of the `BY` columns arrive adjacent to each other within each stream. When the data arrives in a single sorted stream, `LIMIT BY` filters it in streaming mode with O(1) memory, instead of building a hash table of every distinct combination of `BY` columns seen. When the sorted data arrives in multiple streams and the same `BY` values can appear in more than one of them, each stream is first prefiltered in streaming mode down to at most `LIMIT + OFFSET` rows per group, then the streams are combined and a final hash-based `LIMIT BY` deduplicates groups that span several streams. That final pass still keeps an entry for every distinct combination of `BY` columns, but it only processes the prefiltered rows.
+)", 0) \
     DECLARE(Bool, keeper_map_strict_mode, false, R"(
 Enforce additional checks during operations on KeeperMap. E.g. throw an exception on an insert for already existing key
 )", 0) \
@@ -7884,6 +7925,9 @@ Has effect only when `join_algorithm` is `hash`, `parallel_hash`, `default`, or 
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(
 Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
 )", 0) \
+    DECLARE(Bool, enable_join_runtime_filter_shared_fixed_hash_table, true, R"(
+When the hash join build side has been converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that map directly as the runtime filter for the probe side, replacing the Set/BloomFilter that the runtime filter framework otherwise builds for the same join.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
@@ -8110,7 +8154,7 @@ Run all tasks of a distributed query plan locally. Useful for testing and debugg
     DECLARE(NonZeroUInt64, distributed_plan_default_shuffle_join_bucket_count, 8, R"(
 Default number of buckets for distributed shuffle-hash-join.
 )", EXPERIMENTAL) \
-    DECLARE(NonZeroUInt64, distributed_plan_default_reader_bucket_count, 8, R"(
+    DECLARE(UInt64, distributed_plan_default_reader_bucket_count, 8, R"(
 Default number of tasks for parallel reading in distributed query. Tasks are spread across between replicas.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_optimize_exchanges, true, R"(
