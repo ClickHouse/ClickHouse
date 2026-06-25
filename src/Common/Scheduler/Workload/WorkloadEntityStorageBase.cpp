@@ -1004,13 +1004,23 @@ void WorkloadEntityStorageBase::backup(
     WorkloadEntityType entity_type) const
 {
     std::vector<std::pair<String, BackupEntryPtr>> backup_entries;
-    for (const auto & [entity_name, ast] : getAllEntities())
     {
-        if (getEntityType(ast) != entity_type)
-            continue;
-        backup_entries.emplace_back(
-            escapeForFileName(entity_name) + ".sql",
-            std::make_shared<BackupEntryFromMemory>(ast->formatWithSecretsOneLine()));
+        /// Back up only entities defined via SQL and stored in this storage (`local_entities`).
+        /// Entities provided through the server configuration are kept in the next storage in the
+        /// chain (WorkloadEntityConfigStorage) and must NOT be backed up: the configuration is
+        /// assumed to be backed up and restored separately together with all its entities.
+        /// Re-creating a config entity from a backup would persist it as a SQL entity, which is not
+        /// equivalent. Note `getAllEntities()` returns the merged view (including config entities),
+        /// so it must not be used here.
+        std::lock_guard lock{mutex};
+        for (const auto & [entity_name, ast] : local_entities)
+        {
+            if (getEntityType(ast) != entity_type)
+                continue;
+            backup_entries.emplace_back(
+                escapeForFileName(entity_name) + ".sql",
+                std::make_shared<BackupEntryFromMemory>(ast->formatWithSecretsOneLine()));
+        }
     }
 
     if (!isReplicated())

@@ -1,0 +1,23 @@
+--- workloads before backup ---
+all	CREATE WORKLOAD `all` SETTINGS max_io_requests = 100 FOR `04409_io`, max_concurrent_threads = 16
+development	CREATE WORKLOAD development IN `all` SETTINGS priority = 1, weight = 1
+production	CREATE WORKLOAD production IN `all` SETTINGS priority = 1, weight = 9, max_memory = \'1Gi\'
+--- resources before backup ---
+04409_io	CREATE RESOURCE `04409_io` (WRITE DISK `04409_disk`, READ DISK `04409_disk`)
+04409_mem	CREATE RESOURCE `04409_mem` (MEMORY RESERVATION)
+04409_query	CREATE RESOURCE `04409_query` (QUERY)
+--- backup ---
+BACKUP_CREATED
+--- counts after drop (expect 0 and 0) ---
+0
+0
+--- restore ---
+RESTORED
+--- workloads after restore (must match before) ---
+all	CREATE WORKLOAD `all` SETTINGS max_io_requests = 100 FOR `04409_io`, max_concurrent_threads = 16
+development	CREATE WORKLOAD development IN `all` SETTINGS priority = 1, weight = 1
+production	CREATE WORKLOAD production IN `all` SETTINGS priority = 1, weight = 9, max_memory = \'1Gi\'
+--- resources after restore (must match before) ---
+04409_io	CREATE RESOURCE `04409_io` (WRITE DISK `04409_disk`, READ DISK `04409_disk`)
+04409_mem	CREATE RESOURCE `04409_mem` (MEMORY RESERVATION)
+04409_query	CREATE RESOURCE `04409_query` (QUERY)
