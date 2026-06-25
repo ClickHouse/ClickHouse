@@ -6647,7 +6647,7 @@ Load MergeTree marks asynchronously
 
 Cloud default value: `1`.
 )", 0) \
-    DECLARE(Bool, use_streaming_marks_compression, true, R"(
+    DECLARE(Bool, use_streaming_marks_compression, false, R"(
 When loading marks for MergeTree parts, compress them into the in-memory representation one block at a time (streaming) instead of materializing the full plain marks array first. This significantly reduces peak memory usage during marks loading for compact parts with many substreams (e.g. tables with JSON columns and write_marks_for_substreams_in_compact_parts enabled).
 )", 0) \
     DECLARE(Bool, enable_filesystem_read_prefetches_log, false, R"(
