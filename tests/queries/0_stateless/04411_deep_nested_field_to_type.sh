@@ -11,16 +11,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # crashing the server. Each query below must produce an exception, never a crash.
 
 # Queries are piped through stdin because the deep ones are too long for a command-line argument.
+# Each query must report exactly TOO_DEEP_RECURSION (code 306). Matching any "Code: N" would
+# also accept a server death surfacing as a connection-reset error, or an unrelated early
+# parser/AST limit, neither of which proves the recursion was caught on the native stack.
 check() {
     local query="$1"
-    if echo "$query" \
+    echo "$query" \
         | $CLICKHOUSE_CLIENT --max_parser_depth=100000000 --max_query_size=1000000000 2>&1 \
-        | grep -qE "Code: [0-9]+"
-    then
-        echo "exception"
-    else
-        echo "NO EXCEPTION (unexpected success or crash)"
-    fi
+        | grep -oE "Code: [0-9]+" | head -1
 }
 
 # Deep Array/Tuple/Map literals: FieldToDataType / convertFieldToType / getLeastSupertype.
