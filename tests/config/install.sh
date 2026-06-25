@@ -182,7 +182,11 @@ ln -sf $SRC_PATH/config.d/memory_profiler.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/rocksdb.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/process_query_plan_packet.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/storage_conf_03008.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/storage_conf_04145.xml $DEST_SERVER_PATH/config.d/
+# Only used by the no-fasttest test 04151; skip on fast test, where its default
+# cache would otherwise be eagerly created at startup under an unwritable path.
+if [ "$FAST_TEST" != "1" ]; then
+    ln -sf $SRC_PATH/config.d/storage_conf_04145.xml $DEST_SERVER_PATH/config.d/
+fi
 ln -sf $SRC_PATH/config.d/memory_access.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/jemalloc_enable_global_profiler.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/jemalloc_flush_profile.yaml $DEST_SERVER_PATH/config.d/
