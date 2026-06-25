@@ -136,6 +136,49 @@ std::pair<std::shared_ptr<ExpressionActions>, String> createExpressionForIsDelet
 
 }
 
+namespace
+{
+
+/// The sort description for a FINAL merge: the table's sorting key columns, with any per-column descending flag.
+SortDescription buildFinalSortDescription(const StorageMetadataPtr & metadata_snapshot, const Settings & settings)
+{
+    Names sort_columns = metadata_snapshot->getSortingKeyColumns();
+    std::vector<bool> reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
+    SortDescription sort_description;
+    sort_description.compile_sort_description = settings[Setting::compile_sort_description];
+    sort_description.min_count_to_compile_sort_description = settings[Setting::min_count_to_compile_sort_description];
+    sort_description.reserve(sort_columns.size());
+    for (size_t i = 0; i < sort_columns.size(); ++i)
+        sort_description.emplace_back(sort_columns[i], (!reverse_flags.empty() && reverse_flags[i]) ? -1 : 1);
+    return sort_description;
+}
+
+}
+
+Pipe buildFullFinalMergePipe(
+    const StorageMetadataPtr & metadata_snapshot,
+    MergeTreeData::MergingParams merging_params,
+    size_t max_block_size_rows,
+    bool enable_vertical_final,
+    ContextPtr context,
+    std::optional<ActionsDAG> & out_projection,
+    const std::function<Pipe()> & read_all_parts_in_order)
+{
+    auto sorting_expr = metadata_snapshot->getSortingKey().expression;
+    auto sort_description = buildFinalSortDescription(metadata_snapshot, context->getSettingsRef());
+
+    Pipe pipe = read_all_parts_in_order();
+    if (pipe.empty())
+        return pipe;
+
+    pipe.addSimpleTransform([sorting_expr](const SharedHeader & header)
+                            { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
+    if (!out_projection)
+        out_projection = createProjection(pipe.getHeader());
+    addMergingFinal(pipe, sort_description, merging_params, metadata_snapshot, max_block_size_rows, enable_vertical_final);
+    return pipe;
+}
+
 Pipe buildDistributedFinalPipe(
     const std::vector<DistributedReadBucket> & lanes,
     const StorageMetadataPtr & metadata_snapshot,
@@ -153,14 +196,7 @@ Pipe buildDistributedFinalPipe(
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     auto in_reverse_order = deriveReverseOrder(primary_key, metadata_snapshot->getSortingKey());
 
-    Names sort_columns = metadata_snapshot->getSortingKeyColumns();
-    std::vector<bool> reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
-    SortDescription sort_description;
-    sort_description.compile_sort_description = settings[Setting::compile_sort_description];
-    sort_description.min_count_to_compile_sort_description = settings[Setting::min_count_to_compile_sort_description];
-    sort_description.reserve(sort_columns.size());
-    for (size_t i = 0; i < sort_columns.size(); ++i)
-        sort_description.emplace_back(sort_columns[i], (!reverse_flags.empty() && reverse_flags[i]) ? -1 : 1);
+    SortDescription sort_description = buildFinalSortDescription(metadata_snapshot, settings);
 
     /// One merge pipe per intersecting lane; the non-intersecting lanes are read once. Parallelism across lanes.
     Pipes final_merge_pipes;

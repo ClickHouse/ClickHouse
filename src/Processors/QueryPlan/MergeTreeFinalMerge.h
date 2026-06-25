@@ -48,6 +48,20 @@ Pipe readNonIntersectingFinalWithEngineFilter(
     ContextPtr context,
     const std::function<Pipe(const Names & columns)> & read);
 
+/// Builds a single full FINAL merge over all parts: sorts the in-order streams from `read_all_parts_in_order`
+/// by the sorting key and merges them in one group to remove duplicate rows, with no primary-key-range split.
+/// Used when a FINAL read was not split by primary-key range (a distributed read that lands every part on one
+/// node, so a full merge over them matches single-node FINAL). The primary key need not be range-splittable.
+/// `out_projection` maps the merge output (which carries the extra sorting columns) back to the input columns.
+Pipe buildFullFinalMergePipe(
+    const StorageMetadataPtr & metadata_snapshot,
+    MergeTreeData::MergingParams merging_params,
+    size_t max_block_size_rows,
+    bool enable_vertical_final,
+    ContextPtr context,
+    std::optional<ActionsDAG> & out_projection,
+    const std::function<Pipe()> & read_all_parts_in_order);
+
 /// Builds the FINAL read pipe for a distributed task's lanes, like single-node parallel FINAL: one in-order
 /// read + PK-range-layer trim + merge-dedup per intersecting lane, plus one engine-filtered read of the
 /// non-intersecting lanes, all united. `read_lane_in_order` and `read_non_intersecting` turn lane marks into

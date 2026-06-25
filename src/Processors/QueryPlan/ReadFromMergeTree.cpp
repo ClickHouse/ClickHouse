@@ -4804,7 +4804,8 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
     /// already deduplicated, so read without a merge) and intersecting ranges (overlapping across parts,
     /// merged in PK-range layers). Each gets a share of the span's bucket budget proportional to its marks;
     /// `split_parts_ranges_into_intersecting_and_non_intersecting_final` (default on) gates the split. A
-    /// read-in-order bucketed read is rejected in `serialize`, so the split needs no read-in-order guard.
+    /// read-in-order read is caught by `hasUnsupportedBucketedReadCarrier` at the top of this method and
+    /// falls back to a serial read before reaching here, so the split needs no read-in-order guard.
     const bool split_non_intersecting
         = context->getSettingsRef()[Setting::split_parts_ranges_into_intersecting_and_non_intersecting_final];
     std::vector<DistributedReadBucket> buckets;
