@@ -12,6 +12,7 @@
 #include <IO/WriteSettings.h>
 #include <IO/StdIStreamFromMemory.h>
 #include <IO/S3Settings.h>
+#include <IO/S3/Requests.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/BufferAllocationPolicy.h>
@@ -62,6 +63,7 @@ private:
     String getShortLogDetails() const;
 
     struct PartData;
+    std::optional<S3::RequestChecksum::Algorithm> getUploadChecksumAlgorithm() const;
     void hidePartialData();
     void reallocateFirstBuffer();
     void detachBuffer();
@@ -72,7 +74,7 @@ private:
     void writePart(PartData && data);
     void writeMultipartUpload();
     void createMultipartUpload();
-    bool completeMultipartUpload();
+    void completeMultipartUpload();
     void abortMultipartUpload();
     void tryToAbortMultipartUpload() noexcept;
 

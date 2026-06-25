@@ -1015,23 +1015,17 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmDefaults)
 
     /// Empty setting: SHA256 under FIPS (Content-MD5 is unavailable there), otherwise defer to Content-MD5.
     ASSERT_EQ(fips ? Algorithm::SHA256 : Algorithm::MD5,
-        S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ false, /* checksum_disabled */ false));
+        S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ false));
 
-    /// Disabling checksums opts out of the FIPS default.
-    ASSERT_EQ(Algorithm::MD5,
-        S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ false, /* checksum_disabled */ true));
-
-    /// S3Express requires a flexible checksum: an empty (or disabled) setting defaults to CRC32.
+    /// S3Express does not support `Content-MD5`, so the default upload checksum is `CRC32`.
     ASSERT_EQ(Algorithm::CRC32,
-        S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ true, /* checksum_disabled */ false));
-    ASSERT_EQ(Algorithm::CRC32,
-        S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ true, /* checksum_disabled */ true));
+        S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ true));
 
     /// S3Express honors an explicit flexible algorithm instead of forcing CRC32.
     getSettings()[Setting::s3_upload_checksum_algorithm] = "SHA256";
     request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ true);
     ASSERT_EQ(Algorithm::SHA256,
-        S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ true, /* checksum_disabled */ false));
+        S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ true));
 
     /// S3Express cannot use MD5 (no Content-MD5), so an explicit MD5 is rejected rather than silently upgraded.
     if (!DB::OpenSSLInitializer::instance().isFIPSEnabled())
@@ -1041,7 +1035,7 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmDefaults)
         EXPECT_THROW({
             try
             {
-                S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ true, /* checksum_disabled */ false);
+                S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ true);
             }
             catch (const DB::Exception & e)
             {
@@ -1063,7 +1057,7 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmRuntimeValidation)
     EXPECT_THROW({
         try
         {
-            S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ false, /* checksum_disabled */ false);
+            S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ false);
         }
         catch (const DB::Exception & e)
         {
@@ -1081,7 +1075,7 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmRuntimeValidation)
         EXPECT_THROW({
             try
             {
-                S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ false, /* checksum_disabled */ false);
+                S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ false);
             }
             catch (const DB::Exception & e)
             {
@@ -1157,7 +1151,7 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmEmptyDefaultDisabledChecksumSinglepart)
     ASSERT_FALSE(injection->put_object_should_compute_content_md5);
 }
 
-TEST_F(WBS3Test, UploadChecksumAlgorithmTakesPrecedenceOverDisabledChecksum)
+TEST_F(WBS3Test, DisabledChecksumTakesPrecedenceOverUploadChecksumAlgorithm)
 {
     client = MockS3::Client::CreateClient(bucket, /* disable_checksum */ true);
 
@@ -1172,8 +1166,8 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmTakesPrecedenceOverDisabledChecksum)
     getAsyncPolicy().setAutoExecute(true);
     buffer->finalize();
 
-    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::SHA256, injection->put_object_algorithm);
-    ASSERT_TRUE(injection->put_object_request_checksum_required);
+    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->put_object_algorithm);
+    ASSERT_FALSE(injection->put_object_request_checksum_required);
     ASSERT_FALSE(injection->put_object_should_compute_content_md5);
 }
 
@@ -1197,7 +1191,6 @@ TEST_F(WBS3Test, S3ExpressHonorsExplicitUploadChecksumAlgorithm)
     ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::SHA256, injection->put_object_algorithm);
     ASSERT_TRUE(injection->put_object_request_checksum_required);
 }
-
 
 TEST_P(SyncAsync, ExceptionOnCompleteMPU) {
     setInjectionModel(std::make_shared<MockS3::CompleteMPUFailIngection>());

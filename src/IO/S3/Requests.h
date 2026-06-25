@@ -120,7 +120,7 @@ inline std::optional<std::string> calculateFlexibleChecksum(Model::UploadPartReq
     UNREACHABLE();
 }
 
-Algorithm getUploadChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket, bool checksum_disabled);
+Algorithm getUploadChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket);
 
 template <typename R>
 inline void setChecksumAlgorithm(R & request, Algorithm algorithm)

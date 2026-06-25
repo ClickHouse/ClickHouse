@@ -92,9 +92,9 @@ namespace
             , blob_storage_log(blob_storage_log_)
             , log(log_)
             , upload_checksum_algorithm(
-                use_upload_checksum_algorithm_
-                    ? S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, client_ptr->isS3ExpressBucket(), client_ptr->isChecksumDisabled())
-                    : S3::RequestChecksum::Algorithm::MD5)
+                use_upload_checksum_algorithm_ && !client_ptr->isChecksumDisabled()
+                    ? std::make_optional(S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, client_ptr->isS3ExpressBucket()))
+                    : std::nullopt)
             , num_parts(0)
             , normal_part_size(0)
         {
@@ -111,7 +111,7 @@ namespace
         ThreadPoolCallbackRunnerUnsafe<void> schedule;
         BlobStorageLogWriterPtr blob_storage_log;
         const LoggerPtr log;
-        const S3::RequestChecksum::Algorithm upload_checksum_algorithm;
+        const std::optional<S3::RequestChecksum::Algorithm> upload_checksum_algorithm;
 
         /// Represents a task uploading a single part.
         /// Keep this struct small because there can be thousands of parts.
@@ -152,8 +152,8 @@ namespace
             if (!storage_class_name.value.empty())
                 request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
 
-            if (S3::RequestChecksum::usesFlexibleChecksumHeader(upload_checksum_algorithm))
-                request.setUploadChecksumAlgorithm(upload_checksum_algorithm);
+            if (usesFlexibleUploadChecksumHeader())
+                request.setUploadChecksumAlgorithm(*upload_checksum_algorithm);
 
             client_ptr->setKMSHeaders(request);
         }
@@ -208,8 +208,8 @@ namespace
             {
                 Aws::S3::Model::CompletedPart part;
                 part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1));
-                if (S3::RequestChecksum::usesFlexibleChecksumHeader(upload_checksum_algorithm))
-                    S3::RequestChecksum::setPartChecksum(part, upload_checksum_algorithm, multipart_checksums.at(i));
+                if (usesFlexibleUploadChecksumHeader())
+                    S3::RequestChecksum::setPartChecksum(part, *upload_checksum_algorithm, multipart_checksums.at(i));
                 multipart_upload.AddParts(part);
             }
 
@@ -396,21 +396,24 @@ namespace
 
         String prepareUploadPartRequest(Aws::AmazonWebServiceRequest & request) const
         {
-            if (!S3::RequestChecksum::usesFlexibleChecksumHeader(upload_checksum_algorithm))
+            if (!usesFlexibleUploadChecksumHeader())
                 return {};
 
-            auto * upload_part_request = typeid_cast<S3::UploadPartRequest *>(&request);
-            if (!upload_part_request)
-                return {};
+            auto & upload_part_request = typeid_cast<S3::UploadPartRequest &>(request);
 
-            upload_part_request->setUploadChecksumAlgorithm(upload_checksum_algorithm);
+            upload_part_request.setUploadChecksumAlgorithm(*upload_checksum_algorithm);
 
-            auto checksum = S3::RequestChecksum::calculateFlexibleChecksum(*upload_part_request, upload_checksum_algorithm);
+            auto checksum = S3::RequestChecksum::calculateFlexibleChecksum(upload_part_request, *upload_checksum_algorithm);
             if (!checksum)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing flexible checksum for multipart upload request");
 
-            S3::RequestChecksum::setRequestChecksum(*upload_part_request, upload_checksum_algorithm, *checksum);
+            S3::RequestChecksum::setRequestChecksum(upload_part_request, *upload_checksum_algorithm, *checksum);
             return *checksum;
+        }
+
+        bool usesFlexibleUploadChecksumHeader() const
+        {
+            return upload_checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*upload_checksum_algorithm);
         }
 
         void processUploadTask(UploadPartTask & task, String & part_tag, String & part_checksum)
@@ -431,12 +434,8 @@ namespace
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
                 part_tag = std::move(result.tag);
-                if (S3::RequestChecksum::usesFlexibleChecksumHeader(upload_checksum_algorithm))
-                {
+                if (usesFlexibleUploadChecksumHeader())
                     part_checksum = std::move(checksum);
-                    if (part_checksum.empty())
-                        throw Exception(ErrorCodes::S3_ERROR, "Missing checksum for part #{} of multipart upload", task.part_number);
-                }
                 auto finished_count = ++num_finished_parts;
 
                 LOG_TRACE(log, "Finished writing part #{}. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Finished parts: {} of {}",
@@ -481,7 +480,7 @@ namespace
                 schedule_,
                 blob_storage_log_,
                 getLogger("copyDataToS3File"),
-                true)
+                /* use_upload_checksum_algorithm =*/ true)
             , create_read_buffer(create_read_buffer_)
             , offset(offset_)
             , size(size_)
@@ -527,8 +526,8 @@ namespace
             if (!storage_class_name.value.empty())
                 request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
 
-            if (S3::RequestChecksum::usesFlexibleChecksumHeader(upload_checksum_algorithm))
-                request.setUploadChecksumAlgorithm(upload_checksum_algorithm);
+            if (usesFlexibleUploadChecksumHeader())
+                request.setUploadChecksumAlgorithm(*upload_checksum_algorithm);
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
@@ -681,7 +680,7 @@ namespace
                 schedule_,
                 blob_storage_log_,
                 getLogger("copyS3File"),
-                false)
+                /* use_upload_checksum_algorithm =*/ false)
             , src_bucket(src_bucket_)
             , src_key(src_key_)
             , offset(src_offset_)

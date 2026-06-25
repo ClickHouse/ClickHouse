@@ -29,7 +29,7 @@ namespace DB::S3RequestSetting
 namespace DB::S3
 {
 
-RequestChecksum::Algorithm RequestChecksum::getUploadChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket, bool checksum_disabled)
+RequestChecksum::Algorithm RequestChecksum::getUploadChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket)
 {
     /// An explicit setting always wins. `MD5` selects the SDK's `Content-MD5` path, which `S3Express` rejects.
     const auto & name = request_settings[DB::S3RequestSetting::upload_checksum_algorithm].value;
@@ -60,9 +60,8 @@ RequestChecksum::Algorithm RequestChecksum::getUploadChecksumAlgorithm(const S3R
     if (is_s3express_bucket)
         return RequestChecksum::Algorithm::CRC32; /// flexible checksum is mandatory, `Content-MD5` not accepted
 
-    /// Default to the SDK's `Content-MD5` path. Under FIPS that is unavailable and silently dropped, so upgrade
-    /// to `SHA256`, unless the user disabled checksums, in which case we leave it on the suppressed path.
-    if (!checksum_disabled && OpenSSLInitializer::instance().isFIPSEnabled())
+    /// Default to the SDK's `Content-MD5` path. Under FIPS that is unavailable and silently dropped, so upgrade to `SHA256`.
+    if (OpenSSLInitializer::instance().isFIPSEnabled())
         return RequestChecksum::Algorithm::SHA256;
     return RequestChecksum::Algorithm::MD5;
 }
