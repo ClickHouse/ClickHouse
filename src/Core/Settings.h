@@ -64,6 +64,7 @@ class WriteBuffer;
     M(CLASS_NAME, EscapingRule) \
     M(CLASS_NAME, Float) \
     M(CLASS_NAME, FloatAuto) \
+    M(CLASS_NAME, GeoJSONUnsupportedGeometryHandling) \
     M(CLASS_NAME, IcebergMetadataLogLevel) \
     M(CLASS_NAME, IdentifierQuotingRule) \
     M(CLASS_NAME, IdentifierQuotingStyle) \
@@ -140,6 +141,9 @@ struct Settings
     bool has(std::string_view name) const;
     bool isChanged(std::string_view name) const;
     SettingsTierType getTier(std::string_view name) const;
+    std::string_view getDescription(std::string_view name) const;
+    std::string_view getTypeName(std::string_view name) const;
+    String getDefaultValueString(std::string_view name) const;
 
     bool tryGet(std::string_view name, Field & value) const;
     Field get(std::string_view name) const;
