@@ -21,7 +21,7 @@ class SemaphoreConstraint final : public ISchedulerConstraint
     static constexpr Int64 default_max_requests = std::numeric_limits<Int64>::max();
     static constexpr Int64 default_max_cost = std::numeric_limits<Int64>::max();
 public:
-    SemaphoreConstraint(EventQueue & event_queue_, const SchedulerNodeInfo & info_ = {}, Int64 max_requests_ = default_max_requests, Int64 max_cost_ = default_max_cost)
+    explicit SemaphoreConstraint(EventQueue & event_queue_, const SchedulerNodeInfo & info_ = {}, Int64 max_requests_ = default_max_requests, Int64 max_cost_ = default_max_cost)
         : ISchedulerConstraint(event_queue_, info_)
         , max_requests(max_requests_)
         , max_cost(max_cost_)

@@ -20,7 +20,7 @@ class ThrottlerConstraint final : public ISchedulerConstraint
 public:
     static constexpr double default_burst_seconds = 1.0;
 
-    ThrottlerConstraint(EventQueue & event_queue_, const SchedulerNodeInfo & info_ = {}, double max_speed_ = 0.0, double max_burst_ = 0.0)
+    explicit ThrottlerConstraint(EventQueue & event_queue_, const SchedulerNodeInfo & info_ = {}, double max_speed_ = 0.0, double max_burst_ = 0.0)
         : ISchedulerConstraint(event_queue_, info_)
         , max_speed(max_speed_)
         , max_burst(max_burst_)

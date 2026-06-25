@@ -26,7 +26,7 @@ class FifoQueue : public ISchedulerQueue
 {
     static constexpr Int64 default_max_queued = std::numeric_limits<Int64>::max();
 public:
-    FifoQueue(EventQueue & event_queue_, const SchedulerNodeInfo & info_ = {}, Int64 max_queued_ = default_max_queued)
+    explicit FifoQueue(EventQueue & event_queue_, const SchedulerNodeInfo & info_ = {}, Int64 max_queued_ = default_max_queued)
         : ISchedulerQueue(event_queue_, info_)
         , max_queued(max_queued_)
     {}
