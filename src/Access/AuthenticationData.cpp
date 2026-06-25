@@ -126,6 +126,14 @@ namespace
         static BcryptConcurrencyLimiter limiter;
         return limiter;
     }
+
+    /// Thrown out of the cache load function when admission is denied. It escapes getOrSet without
+    /// being cached (the cache only stores values the load function returns), so a later retry under
+    /// lower load is not poisoned by a "wrong" entry. checkPasswordBcrypt catches it and reports a
+    /// failed bcrypt method (see the catch site for why this must not propagate).
+    struct BcryptThrottled
+    {
+    };
 #endif
 }
 
@@ -161,30 +169,41 @@ bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[m
         std::string_view{reinterpret_cast<const char *>(password_digest.data()), password_digest.size()},
         std::string_view{reinterpret_cast<const char *>(password_bcrypt.data()), password_bcrypt.size()});
 
-    auto [result, _] = bcrypt_cache.getOrSet(cache_key, [&] -> std::shared_ptr<bool>
-        {
-            /// Only cache misses reach here (getOrSet runs this under a per-key token), so the limiter
-            /// protects the expensive path while leaving cache hits, including repeated identical
-            /// credentials, completely unthrottled. Admission is fail-fast: exceeding the limit throws
-            /// the generic AUTHENTICATION_FAILED (see AccessControl::authenticate) instead of running
-            /// bcrypt. The throw is not cached, so a legitimate client retrying under lower load succeeds.
-            auto guard = bcryptConcurrencyLimiter().tryAcquire();
-            if (!guard.acquired())
+    try
+    {
+        auto [result, _] = bcrypt_cache.getOrSet(cache_key, [&] -> std::shared_ptr<bool>
             {
-                ProfileEvents::increment(ProfileEvents::BcryptAuthenticationThrottled);
-                throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Too many concurrent bcrypt authentications");
-            }
+                /// Only cache misses reach here (getOrSet runs this under a per-key token), so the limiter
+                /// protects the expensive path while leaving cache hits, including repeated identical
+                /// credentials, completely unthrottled. Admission is fail-fast: exceeding the limit signals
+                /// BcryptThrottled instead of running bcrypt. The signal escapes uncached, so a legitimate
+                /// client retrying under lower load is not poisoned by a "wrong" entry.
+                auto guard = bcryptConcurrencyLimiter().tryAcquire();
+                if (!guard.acquired())
+                {
+                    ProfileEvents::increment(ProfileEvents::BcryptAuthenticationThrottled);
+                    throw BcryptThrottled{};
+                }
 
-            int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
-            /// Before 24.6 we didn't validate hashes on creation, so it could be that the stored hash is invalid
-            /// and it could not be decoded by the library
-            if (ret == -1)
-                throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Internal failure decoding Bcrypt hash");
+                int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+                /// Before 24.6 we didn't validate hashes on creation, so it could be that the stored hash is invalid
+                /// and it could not be decoded by the library
+                if (ret == -1)
+                    throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Internal failure decoding Bcrypt hash");
 
-            return std::make_shared<bool>(ret == 0);
-        });
+                return std::make_shared<bool>(ret == 0);
+            });
 
-    return *result;
+        return *result;
+    }
+    catch (const BcryptThrottled &)
+    {
+        /// Report a failed bcrypt method rather than propagating. A user may list several
+        /// authentication methods as alternatives (e.g. bcrypt_password and plaintext_password);
+        /// IAccessStorage::authenticateImpl tries the next method only when this one returns false.
+        /// Throwing here would abort that loop and reject a login that a later method would accept.
+        return false;
+    }
 #else
     throw Exception(
         ErrorCodes::SUPPORT_IS_DISABLED,
