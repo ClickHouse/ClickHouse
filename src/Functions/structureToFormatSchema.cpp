@@ -56,7 +56,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(String, [String]) -> String";
+        return "(const String, [const String]) -> String";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

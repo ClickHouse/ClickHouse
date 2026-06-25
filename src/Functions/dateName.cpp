@@ -71,7 +71,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(String, DateOrDateTime, [String]) -> String";
+        return "(const String, DateOrDateTime, [const String]) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

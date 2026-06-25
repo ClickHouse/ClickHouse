@@ -320,7 +320,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(T : StringOrFixedString, StringOrFixedString, StringOrFixedString) -> T";
+        return "(T : StringOrFixedString, const StringOrFixedString, const StringOrFixedString) -> T";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

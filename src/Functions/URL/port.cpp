@@ -26,7 +26,7 @@ struct FunctionPortImpl : public IFunction
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override { return "(String, [UInt16]) -> UInt16"; }
+    String getSignatureString() const override { return "(String, [const UInt16]) -> UInt16"; }
 
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

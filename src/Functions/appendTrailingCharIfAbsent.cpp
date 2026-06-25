@@ -44,7 +44,7 @@ private:
 
     String getSignatureString() const override
     {
-        return "(String, String) -> String";
+        return "(String, const String) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

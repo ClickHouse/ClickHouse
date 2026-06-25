@@ -49,7 +49,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(String, NULL) -> Nullable(String) OR (String, [String]) -> String";
+        return "(String, NULL) -> Nullable(String) OR (String, [const String]) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

@@ -35,8 +35,8 @@ public:
     {
         return
             "() -> String"
-            " OR (UInt | Nothing) -> String"
-            " OR (UInt | Nothing, UInt | Nothing) -> String";
+            " OR (const UInt | Nothing) -> String"
+            " OR (const UInt | Nothing, const UInt | Nothing) -> String";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;

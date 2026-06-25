@@ -149,7 +149,7 @@ public:
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument to {} must be a format name", getName());
     }
 
-    String getSignatureString() const override { return "(String, Any, ...) -> String"; }
+    String getSignatureString() const override { return "(const String, Any, ...) -> String"; }
 
 private:
     const char * function_name;

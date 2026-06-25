@@ -51,7 +51,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(Number, Number, Number, [Number]) -> String";
+        return "(Number, Number, Number, [const Number]) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

@@ -52,8 +52,8 @@ public:
     {
         /// `Interval` arguments are accepted in addition to numbers (master added
         /// `formatReadableTimeDelta(INTERVAL ...)`); the value is converted to seconds in `executeImpl`.
-        return "(Number, [StringOrFixedString], [StringOrFixedString]) -> String"
-               " OR (Interval, [StringOrFixedString], [StringOrFixedString]) -> String";
+        return "(Number, [const StringOrFixedString], [const StringOrFixedString]) -> String"
+               " OR (Interval, [const StringOrFixedString], [const StringOrFixedString]) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
