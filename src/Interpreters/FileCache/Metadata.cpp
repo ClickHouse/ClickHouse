@@ -1105,7 +1105,7 @@ KeyMetadata::iterator LockedKey::removeFileSegmentIfExists(size_t offset, bool c
     /// A segment still in use (e.g. being downloaded or read) must not be detached out from
     /// under its holder; only releasable segments can be dropped unless removal is forced.
     if (!can_be_broken && !it->second->releasable())
-        return std::next(it);
+        return {};
 
     auto file_segment = it->second->file_segment;
     return removeFileSegmentImpl(it, file_segment->lock(), can_be_broken, invalidate_queue_entry);
@@ -1120,7 +1120,7 @@ KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, bool can_be_br
     /// A segment still in use (e.g. being downloaded or read) must not be detached out from
     /// under its holder; only releasable segments can be dropped unless removal is forced.
     if (!can_be_broken && !it->second->releasable())
-        return std::next(it);
+        return {};
 
     auto file_segment = it->second->file_segment;
     return removeFileSegmentImpl(it, file_segment->lock(), can_be_broken, invalidate_queue_entry);
