@@ -763,8 +763,6 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     if (downloaded_size == result_size)
     {
         setDownloadState(State::DOWNLOADED, lock);
-        /// Terminal state: free the download-only state so it is not leaked on an
-        /// already-cached segment (and to uphold the `!download_data` invariant).
         resetDownloadDataUnlocked(lock);
     }
     else
