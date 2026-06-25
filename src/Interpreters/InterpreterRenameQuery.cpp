@@ -7,10 +7,17 @@
 #include <Storages/IStorage.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/QueryLog.h>
+#include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/Common/RowPolicyDefs.h>
+#include <Access/RowPolicy.h>
+#include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Databases/DatabaseReplicated.h>
 
 
@@ -26,6 +33,126 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+    /// A single re-keying of a row policy: move the policy identified by `id` so that its
+    /// `(database, table_name)` becomes (`new_database`, `new_table`), keeping its short name.
+    struct RowPolicyRekey
+    {
+        UUID id;
+        String new_database;
+        String new_table; /// RowPolicyName::ANY_TABLE_MARK ("") means a database-wide policy.
+    };
+
+    /// Returns the re-keyings needed so that row policies bound to (`from_db`, `from_table`)
+    /// follow the table to (`to_db`, `to_table`).
+    std::vector<RowPolicyRekey> collectRowPolicyRekeys(
+        const AccessControl & access_control,
+        const String & from_db, const String & from_table,
+        const String & to_db, const String & to_table)
+    {
+        std::vector<RowPolicyRekey> result;
+        for (const auto & id : access_control.findAll<RowPolicy>())
+        {
+            auto policy = access_control.tryRead<RowPolicy>(id);
+            if (policy && (policy->getDatabase() == from_db) && (policy->getTableName() == from_table))
+                result.emplace_back(RowPolicyRekey{id, to_db, to_table});
+        }
+        return result;
+    }
+
+    /// Returns the re-keyings needed when a whole database is renamed from `from_db` to `to_db`:
+    /// every row policy bound to `from_db` (both database-wide `ON from_db.*` and per-table
+    /// `ON from_db.tbl`) must move to `to_db`, keeping its table name.
+    std::vector<RowPolicyRekey> collectRowPolicyRekeysForDatabase(
+        const AccessControl & access_control, const String & from_db, const String & to_db)
+    {
+        std::vector<RowPolicyRekey> result;
+        for (const auto & id : access_control.findAll<RowPolicy>())
+        {
+            auto policy = access_control.tryRead<RowPolicy>(id);
+            if (policy && (policy->getDatabase() == from_db))
+                result.emplace_back(RowPolicyRekey{id, to_db, policy->getTableName()});
+        }
+        return result;
+    }
+
+    /// Applies a set of row-policy re-keyings collision-free by routing every affected policy
+    /// through a unique temporary table name first, then to its final destination. The two-phase
+    /// move is needed for EXCHANGE TABLES, where two policies with the same short name would
+    /// otherwise transiently collide while being swapped between the two table names.
+    /// On any failure the already-applied moves are rolled back to their original names.
+    void applyRowPolicyRekeys(AccessControl & access_control, const std::vector<RowPolicyRekey> & rekeys)
+    {
+        if (rekeys.empty())
+            return;
+
+        /// Remember the original binding of each policy so we can restore it if something throws.
+        std::vector<std::pair<UUID, RowPolicyName>> original_names;
+        original_names.reserve(rekeys.size());
+        for (const auto & rekey : rekeys)
+        {
+            auto policy = access_control.tryRead<RowPolicy>(rekey.id);
+            if (policy)
+                original_names.emplace_back(rekey.id, policy->getFullName());
+        }
+
+        const auto restore = [&]
+        {
+            for (const auto & [id, name] : original_names)
+            {
+                try
+                {
+                    access_control.tryUpdate(id, [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
+                    {
+                        auto updated = typeid_cast<std::shared_ptr<RowPolicy>>(entity->clone());
+                        updated->setFullName(name);
+                        return updated;
+                    });
+                }
+                catch (...)
+                {
+                    /// Best-effort rollback; keep restoring the rest.
+                    tryLogCurrentException(getLogger("InterpreterRenameQuery"), "Failed to restore row policy binding during rename rollback");
+                }
+            }
+        };
+
+        try
+        {
+            /// Phase 1: park every policy under a unique temporary table name to avoid
+            /// transient name collisions during the swap.
+            for (size_t i = 0; i < rekeys.size(); ++i)
+            {
+                const String tmp_table = ".tmp_rename_row_policy_" + toString(rekeys[i].id) + "_" + std::to_string(i);
+                access_control.update(rekeys[i].id, [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
+                {
+                    auto updated = typeid_cast<std::shared_ptr<RowPolicy>>(entity->clone());
+                    updated->setTableName(tmp_table);
+                    return updated;
+                });
+            }
+
+            /// Phase 2: move every policy from its temporary name to the final destination.
+            for (const auto & rekey : rekeys)
+            {
+                access_control.update(rekey.id, [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
+                {
+                    auto updated = typeid_cast<std::shared_ptr<RowPolicy>>(entity->clone());
+                    updated->setDatabase(rekey.new_database);
+                    updated->setTableName(rekey.new_table);
+                    return updated;
+                });
+            }
+        }
+        catch (...)
+        {
+            restore();
+            throw;
+        }
+    }
 }
 
 InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_)
@@ -87,6 +214,12 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
     chassert(!rename.rename_if_cannot_exchange || descriptions.size() == 1);
     chassert(!(rename.rename_if_cannot_exchange && rename.exchange));
     auto & database_catalog = DatabaseCatalog::instance();
+
+    /// `getContext()` is const, but updating row policies (a process-global access entity)
+    /// requires a mutable AccessControl. A copied context shares the same AccessControl
+    /// singleton, so updates through it persist and replicate as usual.
+    auto mutable_context = Context::createCopy(getContext());
+    auto & access_control = mutable_context->getAccessControl();
 
     for (const auto & elem : descriptions)
     {
@@ -159,6 +292,19 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             std::tie(from_ref_dependencies, from_loading_dependencies, from_mv_dependencies) = database_catalog.removeDependencies(from_table_id, check_ref_deps, check_loading_deps, false, /*is_mv*/ true);
             from_dependent_views = database_catalog.takeSourceViewDependencies(from_table_id);
         }
+
+        /// Row policies are keyed by (database, table). They must follow the table on rename,
+        /// otherwise after the rename the policy stays orphaned on the old name and the table
+        /// becomes readable with no filtering under its new name (a row-policy escape).
+        auto row_policy_rekeys = collectRowPolicyRekeys(
+            access_control, elem.from_database_name, elem.from_table_name, elem.to_database_name, elem.to_table_name);
+        if (exchange_tables)
+        {
+            auto to_rekeys = collectRowPolicyRekeys(
+                access_control, elem.to_database_name, elem.to_table_name, elem.from_database_name, elem.from_table_name);
+            row_policy_rekeys.insert(row_policy_rekeys.end(), to_rekeys.begin(), to_rekeys.end());
+        }
+
         try
         {
             database->renameTable(
@@ -194,6 +340,9 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             NamedCollectionFactory::instance().renameDependencies(from_table_id, to_table_id);
             if (exchange_tables)
                 NamedCollectionFactory::instance().renameDependencies(to_table_id, from_table_id);
+
+            /// Re-key row policies last: it has its own rollback, and nothing after it can throw.
+            applyRowPolicyRekeys(access_control, row_policy_rekeys);
         }
         catch (...)
         {
@@ -225,7 +374,17 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
     if (db)
     {
         catalog.assertDatabaseDoesntExist(new_name);
+
+        /// See executeToTables: a copied context shares the same AccessControl singleton.
+        auto mutable_context = Context::createCopy(getContext());
+        auto & access_control = mutable_context->getAccessControl();
+        auto row_policy_rekeys = collectRowPolicyRekeysForDatabase(access_control, old_name, new_name);
+
         db->renameDatabase(getContext(), new_name);
+
+        /// Row policies bound to the database (both `ON db.*` and `ON db.tbl`) must follow it,
+        /// otherwise they are orphaned on the old database name (a row-policy escape).
+        applyRowPolicyRekeys(access_control, row_policy_rekeys);
     }
 
     return {};

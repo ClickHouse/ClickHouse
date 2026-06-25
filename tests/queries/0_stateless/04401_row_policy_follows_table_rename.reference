@@ -1,0 +1,32 @@
+-- RENAME TABLE: policy follows the table
+before (eng only):
+1
+3
+after rename (still eng only, not the fin row):
+1
+3
+rp	data2
+-- EXCHANGE TABLES: each policy follows its data (so protection is preserved)
+before: ea has {1,2} with eng policy -> 1; eb has {10,20} with fin policy -> 20:
+1
+20
+after exchange the policies follow their data: name ea now holds {10,20} guarded by the fin policy -> 20; name eb now holds {1,2} guarded by the eng policy -> 1:
+20
+1
+-- EXCHANGE TABLES with the same policy short name on both tables (no transient name collision)
+after exchange the policies follow their data: name sa holds {10,20} guarded by fin -> 20; name sb holds {1,2} guarded by eng -> 1:
+20
+1
+-- cross-database RENAME: policy follows to the new database and table
+after cross-db rename (eng only):
+1
+default_2	cb
+-- RENAME DATABASE: database-wide and per-table policies follow
+after database rename (db-wide policy still applies -> eng only):
+1
+default_2
+-- failed RENAME: policy binding is preserved
+TABLE_ALREADY_EXISTS
+after failed rename (policy stays, eng only):
+1
+ra
