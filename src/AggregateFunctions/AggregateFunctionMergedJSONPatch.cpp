@@ -624,12 +624,12 @@ later wins the tie. This matches the aggregate implementation and means users sh
 LIMITATIONS (inherited from `ColumnObject`):
 
 1. Null deletion: a patch `{"key": null}` does not remove the key. `ColumnObject` drops
-   null-valued members on insertion, so the function cannot distinguish "key absent" from
-   "key is null".
+    null-valued members on insertion, so the function cannot distinguish "key absent" from
+    "key is null".
 
 2. Empty-object replacement: a patch `{"a": {}}` cannot displace an older scalar or array
-   at path `a`. `ColumnObject` silently drops paths whose value is an empty object `{}`,
-   so the newer patch contributes nothing and the old value survives.
+    at path `a`. `ColumnObject` silently drops paths whose value is an empty object `{}`,
+    so the newer patch contributes nothing and the old value survives.
 )";
 
     FunctionDocumentation::Syntax syntax = "mergedJSONPatch(json[, sort_key])";
