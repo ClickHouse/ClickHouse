@@ -136,7 +136,7 @@ ColumnPtr FunctionArrayRemove::executeImpl(
         auto equals_result = BuildAndExecuteFunction(
             equals_resolver, {{arr_data_col, arr_data_type, "arr"}, {replicated_elem_col, elem_type, "elem"}}, arr_elements_count);
         /// equals() on tuples with nullable components may return ColumnConst(Nullable(UInt8)).
-        /// convertToFullIfNeeded() unwraps ColumnConst so removeNullable can strip the Nullable layer.
+        /// convertToFullIfWrapped() unwraps ColumnConst so removeNullable can strip the Nullable layer.
         auto else_col = removeNullable(equals_result->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality());
         /// equals() returns Nullable(Nothing) when comparison is impossible (a Variant operand
         /// whose alternatives are all incompatible with the other argument, with

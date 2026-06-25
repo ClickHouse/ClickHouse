@@ -1,10 +1,3 @@
--- Regression test: an IN-set built from a subquery that yields a Variant type with a
--- LowCardinality member used to cause a "Bad cast from type DB::ColumnString to
--- DB::ColumnLowCardinality" exception. The root cause was that `convertToFullIfNeeded`
--- (now `convertToFullIfWrapped`) recursively stripped LowCardinality from subcolumns,
--- while the type side preserved it. After the refactoring that separated LowCardinality
--- stripping from wrapper unwrapping, the column/type mismatch no longer occurs.
-
 SET allow_suspicious_low_cardinality_types = 1;
 SET allow_experimental_variant_type = 1;
 SET allow_suspicious_variant_types = 1;
