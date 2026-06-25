@@ -6,6 +6,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/memcpySmall.h>
+#include <base/find_symbols.h>
 
 #include <array>
 
@@ -87,19 +88,32 @@ public:
         if (const ColumnString * col_input_string = checkAndGetColumn<ColumnString>(col_input_full.get()))
         {
             if (custom_trim_characters)
-                vectorCustom(
-                    col_input_string->getChars(), col_input_string->getOffsets(), *custom_trim_characters,
-                    col_res->getChars(), col_res->getOffsets(), input_rows_count);
+            {
+                dispatch([&](auto do_trim_left, auto do_trim_right)
+                {
+                    vectorCustom<do_trim_left, do_trim_right>(
+                        col_input_string->getChars(), col_input_string->getOffsets(), *custom_trim_characters,
+                        col_res->getChars(), col_res->getOffsets(), input_rows_count);
+                });
+            }
             else
-                vectorSpace(
-                    col_input_string->getChars(), col_input_string->getOffsets(),
-                    col_res->getChars(), col_res->getOffsets(), input_rows_count);
+            {
+                dispatch([&](auto do_trim_left, auto do_trim_right)
+                {
+                    vectorSpace<do_trim_left, do_trim_right>(
+                        col_input_string->getChars(), col_input_string->getOffsets(),
+                        col_res->getChars(), col_res->getOffsets(), input_rows_count);
+                });
+            }
         }
         else if (const ColumnFixedString * col_input_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input_full.get()))
         {
-            vectorFixed(
-                col_input_fixed_string->getChars(), col_input_fixed_string->getN(), custom_trim_characters,
-                col_res->getChars(), col_res->getOffsets(), input_rows_count);
+            dispatch([&](auto do_trim_left, auto do_trim_right)
+            {
+                vectorFixed<do_trim_left, do_trim_right>(
+                    col_input_fixed_string->getChars(), col_input_fixed_string->getN(), custom_trim_characters,
+                    col_res->getChars(), col_res->getOffsets(), input_rows_count);
+            });
         }
         else
         {
@@ -115,9 +129,23 @@ private:
     const bool trim_left;
     const bool trim_right;
 
-    /// Default trim strips ASCII spaces only. Rows that need no trimming are flushed in
-    /// one batched memcpy; the batch breaks only at a row that actually needs trimming.
-    /// Output capacity is reserved once and sized at the end (no per-row reallocation).
+    /// Resolve the runtime trim_left/trim_right flags into compile-time template parameters.
+    template <typename Func>
+    void dispatch(Func && func) const
+    {
+        if (trim_left && trim_right)
+            func(std::bool_constant<true>{}, std::bool_constant<true>{});
+        else if (trim_left)
+            func(std::bool_constant<true>{}, std::bool_constant<false>{});
+        else
+            func(std::bool_constant<false>{}, std::bool_constant<true>{});
+    }
+
+    /// Default trim strips ASCII spaces only. Consecutive rows that need no trimming form a
+    /// run that is copied in a single memcpy; the run breaks at the first row that needs
+    /// trimming, which is trimmed with a SIMD space scan. Output capacity is reserved once
+    /// and the size is set at the end (no per-row reallocation).
+    template <bool do_trim_left, bool do_trim_right>
     void vectorSpace(
         const ColumnString::Chars & input_data,
         const ColumnString::Offsets & input_offsets,
@@ -128,77 +156,67 @@ private:
         res_offsets.resize_exact(input_rows_count);
         res_data.reserve_exact(input_data.size());
 
-        const bool do_trim_left = trim_left;
-        const bool do_trim_right = trim_right;
+        const UInt8 * const input_begin = input_data.data();
+        UInt8 * const res_begin = res_data.data();
 
-        const UInt8 * input_begin = input_data.data();
-        UInt8 * res_begin = res_data.data();
-
-        size_t prev_offset = 0;
         size_t res_offset = 0;
-
-        /// A pending run of consecutive rows that need no trimming, copied in one memcpy.
-        bool batch_open = false;
-        size_t batch_input_begin = 0;
-        size_t batch_res_begin = 0;
-
-        for (size_t i = 0; i < input_rows_count; ++i)
+        size_t i = 0;
+        while (i < input_rows_count)
         {
-            const UInt8 * begin = input_begin + prev_offset;
-            const UInt8 * end = input_begin + input_offsets[i];
-            const size_t size = input_offsets[i] - prev_offset;
-
-            const bool trim_this_left = do_trim_left && begin < end && *begin == ' ';
-            const bool trim_this_right = do_trim_right && end > begin && end[-1] == ' ';
-
-            if (!trim_this_left && !trim_this_right)
+            /// i is the start of a run of untrimmed rows; j walks over them with a cheap
+            /// boundary-byte check, copying their offsets verbatim (shifted by the bytes
+            /// trimmed so far). The whole run is flushed in one memcpy when it ends.
+            const size_t batch_input_begin = i == 0 ? 0 : input_offsets[i - 1];
+            size_t row_begin = batch_input_begin;
+            size_t j = i;
+            while (j < input_rows_count)
             {
-                /// Nothing to trim: extend the current run, defer the copy.
-                if (!batch_open)
-                {
-                    batch_open = true;
-                    batch_input_begin = prev_offset;
-                    batch_res_begin = res_offset;
-                }
-                res_offset += size;
-            }
-            else
-            {
-                /// Copy the accumulated run, then trim and copy this row on its own.
-                if (batch_open)
-                {
-                    memcpy(res_begin + batch_res_begin, input_begin + batch_input_begin, res_offset - batch_res_begin);
-                    batch_open = false;
-                }
-
-                if (do_trim_left)
-                {
-                    while (begin < end && *begin == ' ')
-                        ++begin;
-                }
-                if (do_trim_right)
-                {
-                    while (end > begin && end[-1] == ' ')
-                        --end;
-                }
-
-                const size_t length = end - begin;
-                memcpySmallAllowReadWriteOverflow15(res_begin + res_offset, begin, length);
-                res_offset += length;
+                const size_t row_end = input_offsets[j];
+                const bool trim_this_left = do_trim_left && row_end > row_begin && input_begin[row_begin] == ' ';
+                const bool trim_this_right = do_trim_right && row_end > row_begin && input_begin[row_end - 1] == ' ';
+                if (trim_this_left || trim_this_right)
+                    break;
+                res_offsets[j] = res_offset + (row_end - batch_input_begin);
+                row_begin = row_end;
+                ++j;
             }
 
-            res_offsets[i] = res_offset;
-            prev_offset = input_offsets[i];
+            if (j > i)
+            {
+                const size_t batch_size = row_begin - batch_input_begin;
+                memcpy(res_begin + res_offset, input_begin + batch_input_begin, batch_size);
+                res_offset += batch_size;
+            }
+
+            if (j == input_rows_count)
+                break;
+
+            /// row_begin is the start of row j, the row that needs trimming. Skip leading
+            /// and trailing spaces with a SIMD scan, then copy what remains.
+            const char * char_begin = reinterpret_cast<const char *>(input_begin + row_begin);
+            const char * char_end = reinterpret_cast<const char *>(input_begin + input_offsets[j]);
+            if (do_trim_left)
+                char_begin = find_first_not_symbols<' '>(char_begin, char_end);
+            if (do_trim_right)
+            {
+                const char * found = find_last_not_symbols_or_null<' '>(char_begin, char_end);
+                char_end = found ? found + 1 : char_begin;
+            }
+
+            const size_t length = char_end - char_begin;
+            memcpySmallAllowReadWriteOverflow15(res_begin + res_offset, reinterpret_cast<const UInt8 *>(char_begin), length);
+            res_offset += length;
+            res_offsets[j] = res_offset;
+
+            i = j + 1;
         }
-
-        if (batch_open)
-            memcpy(res_begin + batch_res_begin, input_begin + batch_input_begin, res_offset - batch_res_begin);
 
         res_data.resize_exact(res_offset);
     }
 
-    /// Custom trim character set. Same allocate-once skeleton as vectorSpace, with
-    /// O(1) table lookups instead of a space comparison.
+    /// Custom trim character set. Per-row scalar scan with O(1) table lookups. Output
+    /// capacity is reserved once and the size is set at the end.
+    template <bool do_trim_left, bool do_trim_right>
     void vectorCustom(
         const ColumnString::Chars & input_data,
         const ColumnString::Offsets & input_offsets,
@@ -210,16 +228,14 @@ private:
         res_offsets.resize_exact(input_rows_count);
         res_data.reserve_exact(input_data.size());
 
-        const bool do_trim_left = trim_left;
-        const bool do_trim_right = trim_right;
-
-        UInt8 * res_begin = res_data.data();
+        const UInt8 * const input_begin = input_data.data();
+        UInt8 * const res_begin = res_data.data();
         size_t prev_offset = 0;
         size_t res_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const UInt8 * begin = input_data.data() + prev_offset;
-            const UInt8 * end = input_data.data() + input_offsets[i];
+            const UInt8 * begin = input_begin + prev_offset;
+            const UInt8 * end = input_begin + input_offsets[i];
 
             if (do_trim_left)
             {
@@ -243,6 +259,7 @@ private:
         res_data.resize_exact(res_offset);
     }
 
+    template <bool do_trim_left, bool do_trim_right>
     void vectorFixed(
         const ColumnString::Chars & input_data,
         size_t n,
@@ -254,15 +271,13 @@ private:
         res_offsets.resize_exact(input_rows_count);
         res_data.reserve_exact(input_data.size());
 
-        const bool do_trim_left = trim_left;
-        const bool do_trim_right = trim_right;
-
-        UInt8 * res_begin = res_data.data();
+        const UInt8 * const input_begin = input_data.data();
+        UInt8 * const res_begin = res_data.data();
         size_t prev_offset = 0;
         size_t res_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const UInt8 * begin = input_data.data() + prev_offset;
+            const UInt8 * begin = input_begin + prev_offset;
             const UInt8 * end = begin + n;
 
             if (custom_trim_characters)
