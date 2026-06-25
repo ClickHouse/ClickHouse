@@ -818,6 +818,14 @@ private:
     /// pre-decryption.
     void maybePromote(CacheTier from_tier, ByteRange range, const ChainedBuffers & bytes, Stats & out_stats);
 
+    /// Serve-front promote of a FETCHED range: the `Remote` fetch now fills only the bottom
+    /// populatable tier (`writeTargetsFor`), so push its committed bytes UP into the faster
+    /// tiers here, as the serve passes over `window` (physical). Reads the bottom tier's
+    /// committed bytes and `maybePromote`s them; idempotent via the faster tiers' committed
+    /// sets, so re-calling per served window is safe. The pc fill thus trails the serve
+    /// cursor (its own budget) instead of riding the fetch front's lead.
+    void promoteFetchedToUpper(ByteRange window, Stats & out_stats);
+
     // ─── Plan build ──────────────────────────────────────────────────────
 
     /// Query cache residency ONCE over the look-ahead span via the read-only

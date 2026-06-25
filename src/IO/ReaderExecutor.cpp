@@ -2313,6 +2313,45 @@ void ReaderExecutor::maybePromote(CacheTier from_tier, ByteRange range, const Ch
     }
 }
 
+void ReaderExecutor::promoteFetchedToUpper(ByteRange window, Stats & out_stats)
+{
+    /// The fetch fills only the bottom populatable tier; push its committed bytes UP into the
+    /// faster tiers on the serve front. Walk the held writers SLOWEST-first and act on the
+    /// first (bottom) tier holding committed bytes over `window`: read them and `maybePromote`
+    /// (which walks the faster tiers and stops at this one). `maybePromote` is idempotent via
+    /// the faster tiers' committed sets, so re-calling per served window is safe.
+    for (auto it = read_plan.bufs.rbegin(); it != read_plan.bufs.rend(); ++it)
+    {
+        if (!it->provider)
+            continue;
+        bool promoted_any = false;
+        for (auto & w : it->writers)
+        {
+            if (!w.writer)
+                continue;
+            const size_t lo = std::max(w.writer->range().offset, window.offset);
+            const size_t hi = std::min(w.writer->range().end(), window.end());
+            if (lo >= hi)
+                continue;
+            const ByteRange sub{lo, hi - lo};
+            /// Committed sub-ranges of `sub` = `sub` minus the uncommitted gaps.
+            IntervalSet uncommitted;
+            for (const auto & gap : w.writer->committed().subtract(sub))
+                uncommitted.add(gap);
+            for (const auto & part : uncommitted.subtract(sub))
+            {
+                ChainedBuffers chunk = w.writer->read(part);
+                if (!chunk.covers(part))
+                    continue;  /// raced shrink/detach
+                maybePromote(it->provider->tier(), part, chunk, out_stats);
+                promoted_any = true;
+            }
+        }
+        if (promoted_any)
+            return;  /// only the bottom tier that holds `window`
+    }
+}
+
 /// The index of the `schedule.steps` step whose `output` contains `pos_phys` (the live
 /// serve cursor). Clamps to the last step past the materialized span (EOF / extent ceiling).
 size_t ReaderExecutor::findStepContaining(size_t pos_phys) const
@@ -2550,7 +2589,12 @@ ChainedBuffers ReaderExecutor::serveRetrieveForeground(size_t ri, size_t positio
     /// launch skip never-fetched bytes. Advance only if this read extends the frontier.
     st.fetched = std::max(st.fetched, (position_phys - r.range.offset) + want);
     st.phase = RetrievePhase::Ready;
-    return serveStepFromBanked(read_plan.schedule.steps[read_plan.cursor], st, position_phys, to_read);
+    ChainedBuffers out = serveStepFromBanked(read_plan.schedule.steps[read_plan.cursor], st, position_phys, to_read);
+    /// As on the prefetch path: the sync fetch filled only the bottom tier, so push just the
+    /// SERVED window up into the faster tiers on the serve front.
+    if (!out.empty())
+        promoteFetchedToUpper(ByteRange{out.range().offset + data_start_offset, out.range().size}, stats);
+    return out;
 }
 
 ChainedBuffers ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step, size_t ri, size_t position_phys, size_t to_read)
@@ -2571,7 +2615,13 @@ ChainedBuffers ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step
     /// Banked bytes decrypted ahead on the worker are already plaintext, so the serve
     /// boundary must skip `decryptWindow` for this window.
     served_window_is_plaintext = st.ready_bytes_is_plaintext;
-    return serveStepFromBanked(step, st, position_phys, to_read);
+    ChainedBuffers out = serveStepFromBanked(step, st, position_phys, to_read);
+    /// The fetch filled only the bottom tier; push just the SERVED window up into the faster
+    /// tiers here, so the pc fill trails the serve cursor (its own budget) rather than riding
+    /// the fetch front's lead. `out` is logical; shift to physical for the cache coordinates.
+    if (!out.empty())
+        promoteFetchedToUpper(ByteRange{out.range().offset + data_start_offset, out.range().size}, stats);
+    return out;
 }
 
 ChainedBuffers ReaderExecutor::serveHitStep(const PlanSchedule::Step & step, size_t position_phys, size_t to_read)

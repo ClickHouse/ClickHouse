@@ -100,7 +100,26 @@ VectorWithMemoryTracking<PlanSchedule::WriteTarget> writeTargetsFor(
             const bool holds_user = request.size && overlaps(m, request);
             if (holds_user)
             {
-                targets.push_back({ei, m});
+                /// The fetch fills the BOTTOM tier only; the faster tiers are filled by
+                /// promotion on the serve front (`maybePromote`) as the serve reads the
+                /// now-resident bottom cell. Promotion never crosses SAME-tier (`[CF-promote]`),
+                /// so the fetch must still fill a same-tier slower layer directly. Own the
+                /// user cell iff no STRICTLY-SLOWER-tier buffer (a later, different tier - the
+                /// chain is grouped fastest-first) also misses the same bytes.
+                bool is_bottom = true;
+                for (size_t ej = ei + 1; is_bottom && ej < g.entries.size(); ++ej)
+                {
+                    if (g.entries[ej].tier == e.tier)
+                        continue;  /// same-tier slower layer: also a fetch target, never promoted into
+                    for (const auto & m2 : g.entries[ej].aligned_miss)
+                        if (overlaps(m2, m))
+                        {
+                            is_bottom = false;
+                            break;
+                        }
+                }
+                if (is_bottom)
+                    targets.push_back({ei, m});
                 continue;
             }
 
