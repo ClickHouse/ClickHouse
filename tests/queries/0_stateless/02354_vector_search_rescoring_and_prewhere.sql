@@ -47,7 +47,7 @@ FROM tab
 ORDER BY L2Distance(vec, [0.2, 0.3]);
 
 SELECT 'Ensure rescoring optimization works with enabled and disabled PREWHERE';
--- Expect IDs 16 & 19 for next 2 queries
+-- Expect 16 & 19.
 
 SELECT id
 FROM tab
@@ -66,8 +66,7 @@ SETTINGS query_plan_optimize_prewhere = 1,
          optimize_move_to_prewhere = 1;
 
 SELECT 'Test with enabled rescoring';
--- Expect only the exact rows returned by the vector index. The old granule-level
--- rescoring behavior also returned 18 and 17 because they are in the same granules.
+-- Expect 16 & 19.
 
 SELECT id
 FROM tab

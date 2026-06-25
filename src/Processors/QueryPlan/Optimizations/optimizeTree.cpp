@@ -486,7 +486,7 @@ void optimizeTreeSecondPass(
 
     /// Vector search first pass optimization sets up everything for vector index usage.
     /// In the 2nd pass, we optimize further by attempting to do an "index-only scan"
-    /// or by applying the exact row-positioning filter for rescoring queries.
+    /// or by filtering rescoring queries to vector-index candidate rows.
     if (optimization_settings.try_use_vector_search)
     {
         chassert(stack.empty());

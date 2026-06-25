@@ -353,7 +353,7 @@ Skip indexes in ClickHouse generally filter at the granule level, i.e. a lookup 
 This works well for skip indexes in general but in the case of vector similarity indexes, it creates a "granularity mismatch".
 In more detail, the vector similarity index determines the row numbers of the N most similar vectors for a given reference vector.
 With setting `vector_search_with_rescoring = 1`, ClickHouse reads the original full-precision vectors for candidate rows and computes the final distance in the regular SQL pipeline.
-When the query plan allows it, ClickHouse also applies the exact candidate row positions as a filter before the final distance computation.
+When the query plan allows it, ClickHouse filters the scan to the candidate rows returned by the vector index before the final distance computation.
 This step is called rescoring and can improve accuracy, especially with quantized vector indexes, because the final ranking uses the stored vectors instead of index distances.
 If additional filters remove too many candidates or more recall is needed, increase setting `vector_search_index_fetch_multiplier` so the vector index returns more candidate rows for rescoring.
 
@@ -572,7 +572,7 @@ When a user defines a vector similarity index on a column, ClickHouse internally
 The sub-index is "local" in the sense that it only knows about the rows of its containing index block.
 In the previous example and assuming that a column has 65536 rows, we obtain four index blocks (spanning eight granules) and a vector similarity sub-index for each index block.
 A sub-index is theoretically able to return the rows with the N closest points within its index block directly.
-For queries with `vector_search_with_rescoring = 1`, ClickHouse can apply these row positions as an exact filter before computing the final distance from the stored vectors when the query plan allows this optimization.
+For queries with `vector_search_with_rescoring = 1`, ClickHouse can use these row positions to filter rows before computing the final distance from the stored vectors when the query plan allows this optimization.
 Without rescoring, ClickHouse uses the distances from the vector index directly through the virtual column `_distance`.
 Both modes still use the surrounding granule ranges to schedule reads, which is different from regular skipping indexes that skip data at the granularity of index blocks.
 

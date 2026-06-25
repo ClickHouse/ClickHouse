@@ -93,9 +93,10 @@ struct RangesInDataPartReadHints
 {
     /// Currently only information related to vector search
     std::optional<NearestNeighbours> vector_search_results;
-    /// `vector_search_results` can be used only for mark pruning, or also as
-    /// an exact row-position filter. Keep the latter opt-in because some plans
-    /// intentionally disable the row-level optimization.
+    /// If false, `vector_search_results` may still be used for mark pruning or
+    /// to fill `_distance`, but the reader must not filter individual rows by
+    /// these offsets. If true, the reader also keeps only the candidate rows
+    /// from these offsets inside the selected mark ranges.
     bool use_vector_search_result_filter = false;
     /// Pre-computed index granules for indexes that are
     /// created for the whole part. For example, text indexes.

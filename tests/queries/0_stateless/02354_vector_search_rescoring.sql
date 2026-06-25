@@ -50,16 +50,16 @@ SELECT trimLeft(explain) AS explain FROM (
     SETTINGS vector_search_with_rescoring = 1)
 WHERE (explain LIKE '%_distance%');
 
-SELECT 'Test exact row-positioning filters before ExpressionStep';
+SELECT '-- Test that rescoring evaluates the distance only for candidate rows.';
 
-WITH CAST([0.0, 2.0], 'Array(Float32)') AS reference_vec
-SELECT id, throwIf(id = 4, 'Expected exact row-positioning before ExpressionStep')
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, throwIf(id = 4, 'Expected rescoring to skip non-candidate rows')
 FROM tab
 ORDER BY L2Distance(vec, reference_vec)
 LIMIT 1
 SETTINGS vector_search_with_rescoring = 1;
 
-SELECT 'Test exact row-positioning with multiple vector index granules';
+SELECT '-- Test that rescoring preserves candidates from multiple vector index granules.';
 
 DROP TABLE IF EXISTS tab_multi_granule;
 

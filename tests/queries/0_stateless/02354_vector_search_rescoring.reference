@@ -8,9 +8,9 @@ _distance Float32
 6
 7
 -- Dont expect column "_distance" in EXPLAIN.
-Test exact row-positioning filters before ExpressionStep
+-- Test that rescoring evaluates the distance only for candidate rows.
 5	0
-Test exact row-positioning with multiple vector index granules
+-- Test that rescoring preserves candidates from multiple vector index granules.
 2
 3
 4
