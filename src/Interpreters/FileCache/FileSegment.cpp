@@ -132,8 +132,9 @@ const LoggerPtr & FileSegment::getLog() const
 
 FileSegment::State FileSegment::state() const
 {
-    auto lk = lock();
-    return download_state;
+    /// `download_state` is atomic; a lock would only serialize it with other fields,
+    /// which this snapshot getter does not read.
+    return download_state.load();
 }
 
 String FileSegment::getPath() const
@@ -171,8 +172,7 @@ void FileSegment::setDownloadState(State state, const FileSegmentGuard::Lock & l
 
 size_t FileSegment::getReservedSize() const
 {
-    auto lk = lock();
-    return reserved_size;
+    return reserved_size.load();
 }
 
 FileSegment::Priority::IteratorPtr FileSegment::getQueueIterator() const
@@ -220,8 +220,7 @@ size_t FileSegment::getDownloadedSize() const
 
 bool FileSegment::isDownloaded() const
 {
-    auto lk = lock();
-    return download_state == State::DOWNLOADED;
+    return download_state.load() == State::DOWNLOADED;
 }
 
 time_t FileSegment::getFinishedDownloadTime() const
@@ -762,7 +761,12 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
              range().size(), result_size, downloaded_size.load());
 
     if (downloaded_size == result_size)
+    {
         setDownloadState(State::DOWNLOADED, lock);
+        /// Terminal state: free the download-only state so it is not leaked on an
+        /// already-cached segment (and to uphold the `!download_data` invariant).
+        resetDownloadDataUnlocked(lock);
+    }
     else
         setDownloadState(State::PARTIALLY_DOWNLOADED, lock);
 
@@ -1183,8 +1187,7 @@ FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
 
 bool FileSegment::isDetached() const
 {
-    auto lk = lock();
-    return download_state == State::DETACHED;
+    return download_state.load() == State::DETACHED;
 }
 
 bool FileSegment::isCompleted(bool sync) const

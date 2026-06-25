@@ -315,8 +315,8 @@ private:
     LoggerPtr log;
 #endif
 
-    std::atomic<UInt32> hits_count = 0; /// cache hits.
-    std::atomic<UInt32> ref_count = 0; /// Used for getting snapshot state
+    std::atomic<size_t> hits_count = 0; /// cache hits.
+    std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 
     /// Guarded by `segment_guard`. Set while dynamic-resize eviction is pending.
     bool on_delayed_removal = false;
