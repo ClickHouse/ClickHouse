@@ -1030,7 +1030,11 @@ create view addresses_src as
     -- one '#' (demangled C++ symbols contain none). The clone.S filter runs first
     -- because it matches on the file part: the symbol itself ('__clone'/'clone')
     -- varies between builds, while dozens of unrelated symbols contain 'clone'.
-    select addr, splitByChar('#', name)[-1] name
+    --
+    -- Also drop the '.llvm.<hash>' suffix LLVM appends to internalized local
+    -- symbols under LTO: the hash differs between builds, so it would split the
+    -- same function into two frames.
+    select addr, replaceRegexpOne(splitByChar('#', name)[-1], '[.]llvm[.][0-9]+', '') name
     from (
         select addr,
             -- Some functions change name between builds, e.g. '__clone' or 'clone'
