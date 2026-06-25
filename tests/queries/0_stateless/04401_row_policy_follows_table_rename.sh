@@ -22,6 +22,9 @@ DB2="${CLICKHOUSE_DATABASE}_2"
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${USER}"
 ${CLICKHOUSE_CLIENT} --query "CREATE USER ${USER}"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT, INSERT, CREATE TABLE, DROP TABLE, CREATE DATABASE, DROP DATABASE ON *.* TO ${USER}"
+# Needed for the CREATE OR REPLACE / REPLACE TABLE cases below: the default test config enables
+# table_engines_require_grant, so specifying ENGINE = MergeTree requires this explicit grant.
+${CLICKHOUSE_CLIENT} --query "GRANT TABLE ENGINE ON MergeTree TO ${USER}"
 
 run_user() { ${CLICKHOUSE_CLIENT} --user "${USER}" --query "$1"; }
 
