@@ -890,10 +890,8 @@ struct FoldResult
     bool deterministic;
 };
 
-/// Walk a predicate subtree. Accepted: literal const COLUMN leaves, `alias`/`materialize`
-/// walk-through, and FUNCTION nodes that declare `isInvariantToConstness()`. Returns the
-/// folded const if every node fits. Leaves restricted to COLUMN nodes so we don't propagate
-/// `is_deterministic_constant` defaults from `addFunctionImpl`-folded FUNCTION-with-column
+/// Fold a predicate: const COLUMN leaves, walk past alias/materialize, recurse into
+/// `isInvariantToConstness` functions
 std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
 {
     while (node)
@@ -943,15 +941,7 @@ std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
         all_det = all_det && folded->deterministic;
     }
 
-    ColumnPtr result;
-    try
-    {
-        result = node->function->execute(args, node->result_type, 1, true);
-    }
-    catch (...) // NOLINT(bugprone-empty-catch) Ok: speculative fold, throw means "cannot fold"
-    {
-        return std::nullopt;
-    }
+    ColumnPtr result = node->function->execute(args, node->result_type, 1, true);
     if (!result)
         return std::nullopt;
     const auto * column_const = typeid_cast<const ColumnConst *>(result.get());
