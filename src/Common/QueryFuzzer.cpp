@@ -3540,7 +3540,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "exp10", "degrees", "radians", "sqrt",  "cbrt",  "erf",    "erfc",     "tgamma",  "sigmoid"},
         /// Binary math functions (number, number → Float64)
         {"atan2", "hypot", "power"},
-        /// Non-cryptographic hash functions (→ `UInt32`, `UInt64` or `Int64`)
+        /// Non-cryptographic hash functions (→ UInt32/UInt64)
         {"cityHash64",
          "CRC32",
          "CRC32IEEE",
@@ -3558,7 +3558,6 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "wyHash64",
          "xxHash32",
          "xxHash64",
-         "xxHash64Spark",
          "xxh3"},
         /// Non-cryptographic 128-bit hash functions (→ FixedString(16))
         {"sipHash128", "sipHash128Reference", "murmurHash3_128"},

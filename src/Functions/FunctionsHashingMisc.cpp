@@ -552,6 +552,8 @@ For the 32-bit version see [`xxHash32`](#xxHash32)
 Calculates a [xxHash](http://cyan4973.github.io/xxHash/) from a string using the same seed as Spark.
 
 This function is similar to [`xxHash64`](#xxHash64), but uses seed `42` and returns the result as `Int64`.
+Only `String` and `NULL` inputs are supported.
+For `NULL`, the function returns `42`, matching Spark's seed behavior.
 )";
     FunctionDocumentation::Syntax xxHash64Spark_syntax = "xxHash64Spark(arg)";
     FunctionDocumentation::Arguments xxHash64Spark_arguments = {{"arg", "Input string to hash.", {"String"}}};

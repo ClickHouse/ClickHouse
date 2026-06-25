@@ -751,6 +751,10 @@ struct ImplXxHash64Spark
     static constexpr auto name = "xxHash64Spark";
     using ReturnType = Int64;
     using uint128_t = CityHash_v1_0_2::uint128;
+    static constexpr size_t number_of_arguments = 1;
+    static constexpr bool use_default_implementation_for_nulls = false;
+    static constexpr bool only_string_arguments = true;
+    static constexpr Int64 null_hash = 42;
 
     static Int64 apply(const char * s, const size_t len) { return bit_cast<Int64>(XXH_INLINE_XXH64(s, len, 42)); }
 
@@ -956,11 +960,12 @@ public:
     static constexpr auto name = Impl::name;
     static constexpr UInt128 NULL_HASH = UInt128({0xc58ad2da03d9a871ul, 0x5715f196cbea7a40ul});
 
-    /// Keep default implementation of useDefaultImplementationForNulls for compatibility.
-    /// E.g. someHash(NULL) is NULL, but someHash(tuple(NULL)) is not NULL.
+    /// Keep default implementation of `useDefaultImplementationForNulls` for compatibility unless an implementation opts out.
+    /// E.g. `someHash(NULL)` is `NULL`, but `someHash(tuple(NULL))` is not `NULL`.
 
 private:
     using ToType = typename Impl::ReturnType;
+    static constexpr bool has_custom_null_hash = requires { Impl::null_hash; };
 
     template <typename FromType, bool first>
     void executeIntType(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
@@ -1362,7 +1367,10 @@ private:
             }
             else
             {
-                null_hash = static_cast<ToType>(NULL_HASH);
+                if constexpr (has_custom_null_hash)
+                    null_hash = Impl::null_hash;
+                else
+                    null_hash = static_cast<ToType>(NULL_HASH);
             }
 
             typename ColumnVector<ToType>::Container original_vec_to;
@@ -1512,8 +1520,37 @@ public:
         return name;
     }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    static constexpr bool has_fixed_number_of_arguments = requires { Impl::number_of_arguments; };
+    static constexpr bool has_only_string_arguments = []
+    {
+        if constexpr (requires { Impl::only_string_arguments; })
+            return Impl::only_string_arguments;
+        else
+            return false;
+    }();
+    static constexpr bool use_default_implementation_for_nulls = []
+    {
+        if constexpr (requires { Impl::use_default_implementation_for_nulls; })
+            return Impl::use_default_implementation_for_nulls;
+        else
+            return true;
+    }();
+
+    bool isVariadic() const override
+    {
+        return !has_fixed_number_of_arguments;
+    }
+    size_t getNumberOfArguments() const override
+    {
+        if constexpr (has_fixed_number_of_arguments)
+            return Impl::number_of_arguments;
+        else
+            return 0;
+    }
+    bool useDefaultImplementationForNulls() const override
+    {
+        return use_default_implementation_for_nulls;
+    }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -1521,8 +1558,23 @@ public:
     /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
     bool useDefaultImplementationForVariant() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        if constexpr (has_only_string_arguments)
+        {
+            for (const auto & argument : arguments)
+            {
+                const DataTypePtr nested_type = removeNullable(argument);
+                const WhichDataType which(nested_type);
+                if (!which.isString() && !which.isNothing())
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal type {} of argument of function {}. Must be String or NULL",
+                        argument->getName(),
+                        getName());
+            }
+        }
+
         /// backward-compatible
         if constexpr (std::is_same_v<ToType, UInt128> && !Impl::return_bigint_instead_of_fixedstring)
         {
