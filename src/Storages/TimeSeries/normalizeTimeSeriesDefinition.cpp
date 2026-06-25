@@ -29,6 +29,7 @@
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
@@ -715,7 +716,8 @@ namespace
         }
         else if (target_kind == ViewTarget::Tags)
         {
-            std::string_view engine_name = settings[TimeSeriesSetting::aggregate_min_time_and_max_time]
+            const bool aggregate_min_time_and_max_time = settings[TimeSeriesSetting::aggregate_min_time_and_max_time];
+            std::string_view engine_name = aggregate_min_time_and_max_time
                 ? "AggregatingMergeTree"
                 : "ReplacingMergeTree";
             auto engine = makeASTFunction(engine_name);
@@ -727,7 +729,7 @@ namespace
             ASTs order_by_list;
             order_by_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
             order_by_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
-            if (settings[TimeSeriesSetting::store_min_time_and_max_time] && !settings[TimeSeriesSetting::aggregate_min_time_and_max_time])
+            if (settings[TimeSeriesSetting::store_min_time_and_max_time] && !aggregate_min_time_and_max_time)
             {
                 order_by_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MinTime));
                 order_by_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MaxTime));
@@ -738,6 +740,20 @@ namespace
             arguments_list->children = std::move(order_by_list);
             order_by_tuple->arguments = arguments_list;
             storage->set(storage->order_by, order_by_tuple);
+
+            if (aggregate_min_time_and_max_time)
+            {
+                /// The tag columns (and the `tags` Map) are not part of the sorting key, but they are
+                /// functionally dependent on `id`, which is part of the sorting key, so all rows that
+                /// collapse together during a background merge share the same values. Allow this off-key
+                /// layout explicitly; otherwise AggregatingMergeTree rejects it by default (see the
+                /// `allow_dimensions_outside_sorting_key` setting and
+                /// https://github.com/ClickHouse/ClickHouse/issues/751).
+                auto settings_ast = make_intrusive<ASTSetQuery>();
+                settings_ast->is_standalone = false;
+                settings_ast->changes.push_back(SettingChange{"allow_dimensions_outside_sorting_key", Field(static_cast<UInt64>(1))});
+                storage->set(storage->settings, settings_ast);
+            }
         }
         else if (target_kind == ViewTarget::Metrics)
         {
