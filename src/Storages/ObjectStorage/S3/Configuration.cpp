@@ -702,6 +702,19 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         s3_settings->auth_settings[S3AuthSetting::role_arn] = user_role_arn;
         s3_settings->auth_settings[S3AuthSetting::role_session_name] = user_role_session_name;
         s3_settings->auth_settings[S3AuthSetting::external_id] = user_external_id;
+
+        /// Likewise drop any GCP OAuth mechanism inherited from the global or per-endpoint `<s3>` config:
+        /// `http_client = gcp_oauth` would mint a token from the server's GCP metadata service at the HTTP
+        /// layer regardless of the request's own credentials. The bare-URL `s3(...)` form cannot supply these
+        /// fields (they come only from a named collection, handled in `fromNamedCollection`), so a value
+        /// present here is always server-configured and must not survive a restricted user query.
+        s3_settings->auth_settings[S3AuthSetting::http_client] = "";
+        s3_settings->auth_settings[S3AuthSetting::service_account] = "";
+        s3_settings->auth_settings[S3AuthSetting::metadata_service] = "";
+        s3_settings->auth_settings[S3AuthSetting::request_token_path] = "";
+        s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = "";
+        s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = "";
+        s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = "";
     }
 
     /// Re-apply user/profile/query-level settings on top, so they take priority over the global <s3> config section.
