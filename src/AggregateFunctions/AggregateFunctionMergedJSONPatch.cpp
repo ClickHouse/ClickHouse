@@ -8,7 +8,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromStringWithMemoryTracking.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Common/Arena.h>
 #include <Common/FieldBinaryEncoding.h>
@@ -39,10 +38,16 @@ namespace ErrorCodes
   *
   * Arrays are preserved as atomic replacement values, including mixed arrays such as `[42, "x", {"k": 1}]`.
   *
-  * It also inherits one important `ColumnObject` limitation: null-valued object members are dropped
-  * on insertion. As a result, RFC 7396 null deletion semantics such as `{"key": null}` are not
-  * representable here, because `ColumnObject` cannot distinguish between "key is absent" and
-  * "key has null value".
+  * Two `ColumnObject` limitations affect RFC 7396 conformance:
+  *
+  * 1. Null deletion: `ColumnObject` drops null-valued members on insertion, so a patch
+  *    like `{"key": null}` cannot remove a key — `ColumnObject` cannot distinguish between
+  *    "key is absent" and "key has null value".
+  *
+  * 2. Empty-object replacement: `ColumnObject` drops paths whose value is an empty object
+  *    `{}` before the aggregate ever sees them. A newer patch `{"a": {}}` therefore cannot
+  *    displace an older scalar or array at `a`; the old leaf survives unchanged instead of
+  *    being replaced by `{}` as RFC 7396 requires.
   */
 struct AggregateFunctionMergedJSONPatchData
 {
@@ -163,8 +168,6 @@ struct AggregateFunctionMergedJSONPatchData
         SortKey sort_key;
     };
 
-    Arena path_arena;
-    Arena value_arena;
     VectorWithMemoryTracking<Entry> entries;
 
     static StringSlice copyToArena(Arena & arena, std::string_view data)
@@ -177,12 +180,7 @@ struct AggregateFunctionMergedJSONPatchData
         return StringSlice(dst, data.size());
     }
 
-    StringSlice copyPath(std::string_view path)
-    {
-        return copyToArena(path_arena, path);
-    }
-
-    EncodedField encodeFieldToArena(Field value)
+    static EncodedField encodeFieldToArena(Field value, Arena & arena)
     {
         switch (value.getType())
         {
@@ -191,17 +189,17 @@ struct AggregateFunctionMergedJSONPatchData
             case Field::Types::UInt64:
                 return EncodedField(value.safeGet<UInt64>());
             case Field::Types::String:
-                return EncodedField(EncodedField::Kind::String, copyToArena(value_arena, value.safeGet<String>()));
+                return EncodedField(EncodedField::Kind::String, copyToArena(arena, value.safeGet<String>()));
             default:
             {
                 WriteBufferFromOwnString buf;
                 encodeField(value, buf);
-                return EncodedField(EncodedField::Kind::BinaryNonObjectField, copyToArena(value_arena, buf.str()));
+                return EncodedField(EncodedField::Kind::BinaryNonObjectField, copyToArena(arena, buf.str()));
             }
         }
     }
 
-    EncodedField cloneEncodedField(const EncodedField & value)
+    static EncodedField cloneEncodedField(const EncodedField & value, Arena & arena)
     {
         switch (value.kind)
         {
@@ -213,7 +211,7 @@ struct AggregateFunctionMergedJSONPatchData
                 return EncodedField(value.inline_uint64);
             case EncodedField::Kind::String:
             case EncodedField::Kind::BinaryNonObjectField:
-                return EncodedField(value.kind, copyToArena(value_arena, value.data.view()));
+                return EncodedField(value.kind, copyToArena(arena, value.data.view()));
         }
 
         UNREACHABLE();
@@ -272,7 +270,7 @@ struct AggregateFunctionMergedJSONPatchData
             entries.end());
     }
 
-    void insertLeafEntry(std::string_view path, Field value, const SortKey & sort_key)
+    void insertLeafEntry(std::string_view path, Field value, const SortKey & sort_key, Arena & arena)
     {
         if (hasNewerConflictingEntry(path, sort_key))
             return;
@@ -280,19 +278,19 @@ struct AggregateFunctionMergedJSONPatchData
         eraseShadowedEntries(path, sort_key);
 
         Entry entry;
-        entry.path = copyPath(path);
-        entry.value = encodeFieldToArena(std::move(value));
+        entry.path = copyToArena(arena, path);
+        entry.value = encodeFieldToArena(std::move(value), arena);
         entry.sort_key = sort_key;
 
         auto it = findInsertPosition(entries, path);
         entries.insert(it, std::move(entry));
     }
 
-    void insertPathValue(std::string_view path, Field value, const SortKey & sort_key)
+    void insertPathValue(std::string_view path, Field value, const SortKey & sort_key, Arena & arena)
     {
         if (!isObjectField(value))
         {
-            insertLeafEntry(path, std::move(value), sort_key);
+            insertLeafEntry(path, std::move(value), sort_key, arena);
             return;
         }
 
@@ -303,11 +301,11 @@ struct AggregateFunctionMergedJSONPatchData
             if (!child_path.empty())
                 child_path += '.';
             child_path += child_key;
-            insertPathValue(child_path, child_value, sort_key);
+            insertPathValue(child_path, child_value, sort_key, arena);
         }
     }
 
-    static EncodedField readEncodedField(ReadBuffer & buf, AggregateFunctionMergedJSONPatchData & owner)
+    static EncodedField readEncodedField(ReadBuffer & buf, Arena & arena)
     {
         UInt8 encoded_kind = 0;
         readBinary(encoded_kind, buf);
@@ -351,7 +349,7 @@ struct AggregateFunctionMergedJSONPatchData
                 StringSlice stored = {};
                 if (value_size)
                 {
-                    char * dst = owner.value_arena.alloc(value_size);
+                    char * dst = arena.alloc(value_size);
                     buf.readStrict(dst, value_size);
                     stored = StringSlice(dst, value_size);
                 }
@@ -363,25 +361,25 @@ struct AggregateFunctionMergedJSONPatchData
         UNREACHABLE();
     }
 
-    void add(const IColumn & json_column, size_t row_num, Arena * arena)
+    void add(const IColumn & json_column, size_t row_num, Arena & arena)
     {
         const auto & object_column = assert_cast<const ColumnObject &>(json_column);
 
         const char * begin = nullptr;
-        auto serialized = object_column.serializeValueIntoArena(row_num, *arena, begin, nullptr);
+        auto serialized = object_column.serializeValueIntoArena(row_num, arena, begin, nullptr);
         SortKey sort_key = SortKey(Field(String(serialized)));
 
-        addKeyValuePairs(object_column, row_num, sort_key);
+        addKeyValuePairs(object_column, row_num, sort_key, arena);
     }
 
-    void addWithKey(const IColumn & json_column, const IColumn & key_column, size_t row_num, Arena *)
+    void addWithKey(const IColumn & json_column, const IColumn & key_column, size_t row_num, Arena & arena)
     {
         const auto & object_column = assert_cast<const ColumnObject &>(json_column);
         SortKey sort_key = SortKey(key_column[row_num]);
-        addKeyValuePairs(object_column, row_num, sort_key);
+        addKeyValuePairs(object_column, row_num, sort_key, arena);
     }
 
-    void addKeyValuePairs(const ColumnObject & object_column, size_t row_num, const SortKey & sort_key)
+    void addKeyValuePairs(const ColumnObject & object_column, size_t row_num, const SortKey & sort_key, Arena & arena)
     {
         ColumnObject::SortedPathsIterator it(object_column, row_num);
         while (!it.end())
@@ -391,15 +389,15 @@ struct AggregateFunctionMergedJSONPatchData
             Field value;
             path_info.column->get(path_info.row, value);
 
-            insertPathValue(path_info.path, std::move(value), sort_key);
+            insertPathValue(path_info.path, std::move(value), sort_key, arena);
             it.next();
         }
     }
 
-    void merge(const AggregateFunctionMergedJSONPatchData & other, Arena *)
+    void merge(const AggregateFunctionMergedJSONPatchData & other, Arena & arena)
     {
         for (const auto & entry : other.entries)
-            insertPathValue(entry.path.view(), entry.value.get(), entry.sort_key);
+            insertPathValue(entry.path.view(), entry.value.get(), entry.sort_key, arena);
     }
 
     void serialize(WriteBuffer & buf) const
@@ -428,7 +426,7 @@ struct AggregateFunctionMergedJSONPatchData
         }
     }
 
-    void deserialize(ReadBuffer & buf, Arena *)
+    void deserialize(ReadBuffer & buf, Arena & arena)
     {
         entries.clear();
 
@@ -440,9 +438,9 @@ struct AggregateFunctionMergedJSONPatchData
         {
             path.clear();
             readStringBinary(path, buf);
-            EncodedField value = readEncodedField(buf, *this);
+            EncodedField value = readEncodedField(buf, arena);
             SortKey sort_key = SortKey(decodeField(buf));
-            insertPathValue(path, value.get(), sort_key);
+            insertPathValue(path, value.get(), sort_key, arena);
         }
     }
 
@@ -535,14 +533,14 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         if (has_sort_key)
-            data(place).addWithKey(*columns[0], *columns[1], row_num, arena);
+            data(place).addWithKey(*columns[0], *columns[1], row_num, *arena);
         else
-            data(place).add(*columns[0], row_num, arena);
+            data(place).add(*columns[0], row_num, *arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        data(place).merge(data(rhs), arena);
+        data(place).merge(data(rhs), *arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -552,7 +550,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        data(place).deserialize(buf, arena);
+        data(place).deserialize(buf, *arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -610,9 +608,15 @@ If two conflicting patches have equal sort keys, the result is order-dependent: 
 later wins the tie. This matches the aggregate implementation and means users should not rely on
 `ORDER BY` being removed before aggregation to break ties deterministically.
 
-LIMITATION: RFC 7396 null deletion semantics (where `{"key": null}` removes a key) are not supported.
-ColumnObject silently drops null-valued keys during insertion, making it impossible to distinguish
-between absent keys and keys with null values.
+LIMITATIONS (inherited from `ColumnObject`):
+
+1. Null deletion: a patch `{"key": null}` does not remove the key. `ColumnObject` drops
+   null-valued members on insertion, so the function cannot distinguish "key absent" from
+   "key is null".
+
+2. Empty-object replacement: a patch `{"a": {}}` cannot displace an older scalar or array
+   at path `a`. `ColumnObject` silently drops paths whose value is an empty object `{}`,
+   so the newer patch contributes nothing and the old value survives.
 )";
 
     FunctionDocumentation::Syntax syntax = "mergedJSONPatch(json[, sort_key])";
@@ -650,7 +654,7 @@ SELECT mergedJSONPatch(json, sort_key) FROM
         }
     };
 
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 1};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
 
     FunctionDocumentation documentation = {

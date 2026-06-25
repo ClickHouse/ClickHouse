@@ -67,6 +67,16 @@ FROM
     )
 );
 
+-- Known limitation: ColumnObject drops empty-object paths, so {"a":{}} cannot replace an older
+-- scalar at "a". The result is {"a":5} instead of the RFC 7396-correct {"a":{}}.
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM
+(
+    SELECT '{"a":5}'::JSON AS patch, 1 AS version
+    UNION ALL
+    SELECT '{"a":{}}'::JSON, 2
+); -- expected by RFC 7396: {"a":{}}, actual: {"a":5}
+
 DROP TABLE IF EXISTS merged_json_patch_states;
 
 CREATE TABLE merged_json_patch_states
