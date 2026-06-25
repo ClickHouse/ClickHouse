@@ -1260,6 +1260,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
             {"allow_experimental_text_index_positions", false, false, "New setting"},
+            {"allow_dimensions_outside_sorting_key", true, false, "AggregatingMergeTree now rejects, at table creation, schemas where a column is neither part of the sorting key nor an aggregate-state measure; previously such schemas were accepted (the old behavior corresponds to the value 'true')."},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",
