@@ -86,9 +86,6 @@ static const uint32_t QUEUE_SIZE = 100000;
 static const auto MAX_FAILED_READ_ATTEMPTS = 10;
 static const auto RESCHEDULE_MS = 500;
 static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
-/// Timeout for AMQP operations that use a blocking event loop (setup, cleanup, queue removal).
-/// Bounds how long DROP TABLE / server shutdown can block when the broker connection is dead.
-static const auto BLOCKING_LOOP_TIMEOUT_MS = 30000;
 
 namespace ErrorCodes
 {
@@ -768,7 +765,12 @@ void StorageRabbitMQ::unbindExchange()
                 error = fmt::format("Unable to remove exchange. Reason: {}", std::string(message));
             });
 
-            connection->getHandler().startBlockingLoop();
+            /// If the connection is dead the removeExchange callbacks never fire. Bound the wait so
+            /// MV detach / shutdown cannot block forever. The bridge exchange is declared autodelete,
+            /// so the broker reaps it once the dead connection drops — log and continue on timeout.
+            if (!connection->getHandler().startBlockingLoopWithTimeout(BLOCKING_LOOP_TIMEOUT_MS))
+                LOG_WARNING(log, "Timed out waiting for exchange unbind — RabbitMQ connection may be dead. "
+                                 "The bridge exchange will be auto-deleted by the broker.");
             rabbit_channel->close();
             if (!error.empty())
                 throw Exception(ErrorCodes::CANNOT_REMOVE_RABBITMQ_EXCHANGE, "{}", error);

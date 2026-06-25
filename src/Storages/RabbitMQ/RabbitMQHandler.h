@@ -18,6 +18,11 @@ namespace Loop
     static const UInt8 STOP = 2;
 }
 
+/// Default timeout for any blocking AMQP wait that relies on broker callbacks to stop the loop
+/// (table setup, exchange unbind, queue cleanup, producer channel close). Bounds how long
+/// DROP TABLE / INSERT shutdown / server shutdown can block when the broker connection is dead.
+static const uint64_t BLOCKING_LOOP_TIMEOUT_MS = 30000;
+
 using ChannelPtr = std::unique_ptr<AMQP::TcpChannel>;
 
 class RabbitMQHandler : public AMQP::LibUvHandler

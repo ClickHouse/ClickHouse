@@ -287,8 +287,12 @@ void RabbitMQProducer::startProducingTaskLoop()
         connection.getHandler().stopBlockingLoop();
     });
 
-    int active = connection.getHandler().startBlockingLoop();
-    LOG_DEBUG(log, "Producer on channel completed (not finished events: {})", active);
+    /// If the connection is dead the close() callbacks never fire. Bound the wait so that INSERT
+    /// producer shutdown (and therefore server shutdown) cannot block indefinitely.
+    if (!connection.getHandler().startBlockingLoopWithTimeout(BLOCKING_LOOP_TIMEOUT_MS))
+        LOG_WARNING(log, "Timed out waiting for producer channel to close — connection may be dead");
+    else
+        LOG_DEBUG(log, "Producer on channel completed");
 }
 
 
