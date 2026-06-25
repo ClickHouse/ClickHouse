@@ -71,12 +71,22 @@ using KeeperRequestsForSessions = std::vector<KeeperRequestForSession>;
 
 inline static constexpr std::string_view tmp_keeper_file_prefix = "tmp_";
 
+/// Parse the log index out of a snapshot file name/path. Works for both legacy
+/// ("snapshot_100.bin.zstd") and unique ("snapshot_100_<uuid>.bin.zstd") names.
+uint64_t getLogIdxFromSnapshotPath(const std::string & snapshot_path);
+
+/// Canonical S3 key for a snapshot file: strips the unique suffix so every node uploads
+/// the same logical index under the same key, e.g. "snapshot_100_<uuid>.bin.zstd" -> "snapshot_100.bin.zstd".
+std::string getCanonicalSnapshotS3Name(const std::string & snapshot_path);
+
+/// `before_file_remove_op` runs after the copy and before the source removal. Returning
+/// `false` rejects the move: the source is kept, the caller cleans up the copied target.
 void moveFileBetweenDisks(
     DiskPtr disk_from,
     const std::string & path_from,
     DiskPtr disk_to,
     const std::string & path_to,
-    std::function<void()> before_file_remove_op,
+    std::function<bool()> before_file_remove_op,
     LoggerPtr logger,
     const KeeperContextPtr & keeper_context);
 

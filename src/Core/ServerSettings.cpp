@@ -1,6 +1,8 @@
 #include <Access/AccessControl.h>
 #include <Columns/IColumn.h>
 #include <Common/Jemalloc.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/ServerSettings.h>
@@ -1746,7 +1748,7 @@ struct ServerSettingsImpl : public BaseSettings<ServerSettingsTraits>
 void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     // settings which can be loaded from the the default profile, see also MAKE_DEPRECATED_BY_SERVER_CONFIG in src/Core/Settings.h
-    std::unordered_set<std::string> settings_from_profile_allowlist = {
+    UnorderedSetWithMemoryTracking<std::string> settings_from_profile_allowlist = {
         "background_pool_size",
         "background_merges_mutations_concurrency_ratio",
         "background_merges_mutations_scheduling_policy",

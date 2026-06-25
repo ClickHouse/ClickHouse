@@ -68,7 +68,7 @@ public:
     DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
         ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
-    Strings getAllTableNames(ContextPtr context) const override;
+    VectorWithMemoryTracking<String> getAllTableNames(ContextPtr context) const override;
 
     void alterTable(
         ContextPtr context,

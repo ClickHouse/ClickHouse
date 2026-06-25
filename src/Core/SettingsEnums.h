@@ -19,6 +19,7 @@
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/ShellCommandSettings.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 
 namespace DB
@@ -55,8 +56,8 @@ constexpr auto getEnumValues();
 #define IMPLEMENT_SETTING_ENUM_IMPL(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, PAIRS_TYPE, ...) \
     const String & SettingField##NEW_NAME##Traits::toString(typename SettingField##NEW_NAME::EnumType value) \
     { \
-        static const std::unordered_map<EnumType, String> map = [] { \
-            std::unordered_map<EnumType, String> res; \
+        static const UnorderedMapWithMemoryTracking<EnumType, String> map = [] { \
+            UnorderedMapWithMemoryTracking<EnumType, String> res; \
             for (const auto & [name, val] : PAIRS_TYPE __VA_ARGS__) \
                 res.emplace(val, name); \
             return res; \
@@ -70,8 +71,8 @@ constexpr auto getEnumValues();
     \
     typename SettingField##NEW_NAME::EnumType SettingField##NEW_NAME##Traits::fromString(std::string_view str) \
     { \
-        static const std::unordered_map<std::string_view, EnumType> map = [] { \
-            std::unordered_map<std::string_view, EnumType> res; \
+        static const UnorderedMapWithMemoryTracking<std::string_view, EnumType> map = [] { \
+            UnorderedMapWithMemoryTracking<std::string_view, EnumType> res; \
             for (const auto & [name, val] : PAIRS_TYPE __VA_ARGS__) \
                 res.emplace(name, val); \
             return res; \
