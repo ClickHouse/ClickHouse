@@ -312,11 +312,43 @@ if __name__ == "__main__":
 
     def _accum(data: dict,
                lc: set, lt: set, fc: set, ft: set) -> None:
+        """Accumulate without remapping (for primary baseline and PR run)."""
         for _rel, _v in data.items():
             for _ln, _cnt in _v["lines"].items():
                 lt.add((_rel, _ln))
                 if _cnt > 0:
                     lc.add((_rel, _ln))
+            for _fn, _cnt in _v["fns"].items():
+                ft.add((_rel, _fn))
+                if _cnt > 0:
+                    fc.add((_rel, _fn))
+
+    def _accum_with_remap(data: dict, file_hunks: dict,
+                          lc: set, lt: set, fc: set, ft: set) -> None:
+        """Accumulate with line-number remapping for extra baselines.
+
+        Lines from each extra baseline were produced from a different master
+        commit whose source may have shifted relative to the primary. The
+        file_hunks mapping (from git diff <extra_sha>..<primary_sha>) translates
+        each line to its position in the primary baseline's coordinate system so
+        all stable sets share a single consistent coordinate space.
+        Lines deleted between the extra and primary are dropped (new_ln = None).
+        Functions are identified by mangled name — stable across minor source
+        changes — and need no remapping.
+        """
+        for _rel, _v in data.items():
+            hunks = file_hunks.get(_rel, [])
+            for _ln, _cnt in _v["lines"].items():
+                if hunks:
+                    new_ln = _remap_old_to_new(_ln, hunks)
+                    if new_ln is None:
+                        continue  # line deleted between extra and primary
+                    key = (_rel, new_ln)
+                else:
+                    key = (_rel, _ln)  # file unchanged — identity mapping
+                lt.add(key)
+                if _cnt > 0:
+                    lc.add(key)
             for _fn, _cnt in _v["fns"].items():
                 ft.add((_rel, _fn))
                 if _cnt > 0:
@@ -330,36 +362,24 @@ if __name__ == "__main__":
            _stable_pr_line_cov, _stable_pr_line_tot,
            _stable_pr_fn_cov,   _stable_pr_fn_tot)
 
-    # Cross-validation: intersect the zero-coverage sets from all available extra
-    # master baselines (N-of-N). A line passes only if it is uncovered in every
-    # extra baseline. Each extra baseline was built from a different master commit
-    # (different binary), so line numbers may have shifted. We use git diffs to
-    # remap each extra baseline's line numbers to the primary baseline's coordinate
-    # system before intersecting, so the comparison is always apples-to-apples.
-    extra_zero_lines: set[tuple[str, int]] | None = None
-    extra_zero_fns: set[tuple[str, str]] | None = None
+    # Load all extra baselines, accumulate into stable_base with remapping.
+    # Hunks are stored alongside data so stable_pr can reuse them.
     extra_baselines_used = 0
 
-    # Read the commit SHA the primary baseline was built from (written by
-    # generate_diff_coverage_report.sh alongside base_llvm_coverage.info).
     primary_sha_path = f"{temp_dir}/base_llvm_coverage.sha"
     primary_sha = open(primary_sha_path).read().strip() if os.path.exists(primary_sha_path) else ""
 
-    # Accumulate extras into stable_pr as we go, but keep the last extra data
-    # aside so we can exclude it from stable_pr (PR will replace it in the delta).
-    _last_extra_data: dict = {}
     _all_extra_data: list[dict] = []
+    _all_extra_hunks: list[dict] = []   # per-extra file_hunks in primary coords
 
     for extra_path in EXTRA_BASELINE_PATHS:
         if not (os.path.exists(extra_path) and os.path.getsize(extra_path) > 0):
             continue
 
-        # Read the commit SHA this extra baseline was built from.
         extra_sha_path = extra_path.replace(".info", ".sha")
         extra_sha = open(extra_sha_path).read().strip() if os.path.exists(extra_sha_path) else ""
 
         # Compute per-file line-number remapping from extra_sha -> primary_sha.
-        # For unchanged files (not in the diff) the mapping is identity (no remap needed).
         file_hunks: dict[str, list] = {}
         changed_file_count = 0
         if primary_sha and extra_sha and primary_sha != extra_sha:
@@ -383,62 +403,35 @@ if __name__ == "__main__":
         _bx = _parse_info(extra_path)
         print(f"  {len(_bx)} files in {os.path.basename(extra_path)}")
 
-        this_zero_lines: set[tuple[str, int]] = set()
-        this_zero_fns: set[tuple[str, str]] = set()
-        for _rel, _v in _bx.items():
-            hunks = file_hunks.get(_rel, [])
-            for _ln, _cnt in _v["lines"].items():
-                if _cnt != 0:
-                    continue
-                if hunks:
-                    new_ln = _remap_old_to_new(_ln, hunks)
-                    if new_ln is None:
-                        continue  # line deleted in primary — not comparable
-                    this_zero_lines.add((_rel, new_ln))
-                else:
-                    this_zero_lines.add((_rel, _ln))
-            for _fn, _cnt in _v["fns"].items():
-                if _cnt == 0:
-                    this_zero_fns.add((_rel, _fn))
-
-        # Accumulate into stable_base (always).
-        _accum(_bx,
-               _stable_base_line_cov, _stable_base_line_tot,
-               _stable_base_fn_cov,  _stable_base_fn_tot)
-        # Keep a copy so we can build stable_pr = all-but-last + PR after loop.
+        # Accumulate into stable_base with remapping so all baselines share
+        # m1's coordinate system.
+        _accum_with_remap(_bx, file_hunks,
+                          _stable_base_line_cov, _stable_base_line_tot,
+                          _stable_base_fn_cov,   _stable_base_fn_tot)
         _all_extra_data.append(_bx)
+        _all_extra_hunks.append(file_hunks)
         del _bx
-
-        if extra_zero_lines is None:
-            extra_zero_lines = this_zero_lines
-            extra_zero_fns = this_zero_fns
-        else:
-            extra_zero_lines &= this_zero_lines
-            extra_zero_fns &= this_zero_fns
         extra_baselines_used += 1
 
-    # Build stable_pr = Union(primary, extras 2..N-1, PR).
-    # Extras 2..N-1 (all but last) go into stable_pr; the last extra is mN
-    # (the "reference run" that PR replaces in the delta).
-    # If there are no extras, stable_pr = Union(primary, PR) — still useful.
-    for _bx in _all_extra_data[:-1]:   # all but the last extra
-        _accum(_bx,
-               _stable_pr_line_cov, _stable_pr_line_tot,
-               _stable_pr_fn_cov,   _stable_pr_fn_tot)
-    # Add PR (curr_data) to the PR side.
+    # Build stable_pr = Union(m1, m2..mN-1, PR) with remapping.
+    # The last extra (mN) is excluded — PR replaces it in the delta so that
+    # Delta = stable_pr − stable_base = (PR vs mN), filtered through m1..mN-1.
+    for _bx, _hunks in zip(_all_extra_data[:-1], _all_extra_hunks[:-1]):
+        _accum_with_remap(_bx, _hunks,
+                          _stable_pr_line_cov, _stable_pr_line_tot,
+                          _stable_pr_fn_cov,   _stable_pr_fn_tot)
+    # PR side: no remapping needed (same source/binary epoch as m1).
     _accum(curr_data,
            _stable_pr_line_cov, _stable_pr_line_tot,
            _stable_pr_fn_cov,   _stable_pr_fn_tot)
 
-    have_extra = extra_zero_lines is not None
+    have_extra = extra_baselines_used > 0
     if have_extra:
-        assert extra_zero_lines is not None and extra_zero_fns is not None
         total_baselines = 1 + extra_baselines_used
         print(
             f"  cross-validation enabled across {total_baselines} master baselines "
-            f"(line numbers remapped via git diff, requiring uncovered in all of them): "
-            f"{len(extra_zero_lines):,} candidate lines / {len(extra_zero_fns):,} functions "
-            f"survive the {extra_baselines_used}-way intersection"
+            f"(line numbers remapped to primary coordinate system via git diff): "
+            f"{len(_stable_base_line_cov):,} lines covered in at least one master run"
         )
     else:
         print(
@@ -505,20 +498,21 @@ if __name__ == "__main__":
             # to "test newly covers code that existed before". Skip.
             continue
         for ln, cnt in c["lines"].items():
-            if cnt <= 0 or b["lines"].get(ln) != 0:
+            if cnt <= 0:
                 continue
-            # Require the line to be uncovered in ALL extra master baselines
-            # (N-of-N intersection). Lines absent from or covered in any baseline
-            # are treated as flicker and dropped.
-            if have_extra and (rel, ln) not in extra_zero_lines:
+            # Newly covered = PR hits it AND it was cold in every master run
+            # (m1..mN, all in primary coordinate system after remapping).
+            # _stable_base_line_cov is the union of covered lines across all
+            # master baselines, so "not in" means cold in all of them.
+            if (rel, ln) in _stable_base_line_cov:
                 continue
             if _is_noise(rel, ln):
                 continue
             nc_lines[rel].append(ln)
         for fn, cnt in c["fns"].items():
-            if cnt <= 0 or b["fns"].get(fn) != 0:
+            if cnt <= 0:
                 continue
-            if have_extra and (rel, fn) not in extra_zero_fns:
+            if (rel, fn) in _stable_base_fn_cov:
                 continue
             nc_fns[rel].append(fn)
 
@@ -615,21 +609,28 @@ if __name__ == "__main__":
     lbc_lines: dict[str, list[int]] = defaultdict(list)
     lbc_fns: dict[str, list[str]] = defaultdict(list)
 
+    # LBC uses _stable_base_line_cov (union of all master baselines, remapped
+    # to primary coordinates) as the reference. A line is lost only if it was
+    # covered in AT LEAST ONE of the N master runs AND the PR run misses it.
+    # This filters out lines that only flickered into m1 by chance: if a line
+    # is genuinely covered by master it will appear in _stable_base_line_cov.
     for rel, b in base_data.items():
         c = curr_data.get(rel)
         if c is None:
-            continue  # file entirely absent from PR run — skip
+            continue
         for ln, bcnt in b["lines"].items():
-            if bcnt == 0:
+            # Only consider lines that are covered in at least one master run.
+            if (rel, ln) not in _stable_base_line_cov:
                 continue
             if _is_noise(rel, ln):
                 continue
-            # Lost: was covered in stable baseline, not covered in PR run.
             ccnt = c["lines"].get(ln)
             if ccnt is not None and ccnt == 0:
                 lbc_lines[rel].append(ln)
         for fn, bcnt in b["fns"].items():
-            if bcnt > 0 and c["fns"].get(fn, 0) == 0:
+            if (rel, fn) not in _stable_base_fn_cov:
+                continue
+            if c["fns"].get(fn, 0) == 0:
                 lbc_fns[rel].append(fn)
 
     lbc_total_lines = sum(len(v) for v in lbc_lines.values())
