@@ -285,7 +285,8 @@ def main():
         )
 
     if (
-        args.release_type == "patch"
+        ok
+        and args.release_type == "patch"
         and not args.only_repo
         and not args.only_docker
     ):
@@ -322,7 +323,8 @@ def main():
         )
 
     if (
-        args.release_type == "patch"
+        ok
+        and args.release_type == "patch"
         and not args.dry_run
         and not args.only_repo
         and not args.only_docker
@@ -440,7 +442,7 @@ def main():
                 workdir=REPO_PATH,
             )
 
-    if args.release_type == "patch" and not args.dry_run:
+    if ok and args.release_type == "patch" and not args.dry_run:
         with open(RELEASE_INFO_FILE) as f:
             release_info = json.load(f)
         release_tag = release_info["release_tag"]
