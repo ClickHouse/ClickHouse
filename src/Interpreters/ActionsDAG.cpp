@@ -886,12 +886,14 @@ namespace
 
 struct FoldResult
 {
+    /// either folded to a Const, or equivalent to an existing node (passthrough)
     ColumnPtr column;
-    bool deterministic;
+    const ActionsDAG::Node * passthrough = nullptr;
+    bool deterministic = true;
 };
 
 /// Fold a predicate: const COLUMN leaves, walk past alias/materialize, recurse into
-/// `isInvariantToConstness` functions
+/// `isInvariantToConstness` functions. `and`/`or` short-circuit on identity-defeating consts
 std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
 {
     while (node)
@@ -916,7 +918,7 @@ std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
 
     if (node->type == ActionsDAG::ActionType::COLUMN
         && node->column && isColumnConst(*node->column))
-        return FoldResult{node->column, node->is_deterministic_constant};
+        return FoldResult{node->column, nullptr, node->is_deterministic_constant};
 
     if (node->type != ActionsDAG::ActionType::FUNCTION
         || !node->function_base
@@ -925,13 +927,57 @@ std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
         || !node->function_base->isInvariantToConstness())
         return std::nullopt;
 
+    const auto & name = node->function_base->getName();
+    const bool is_and = (name == "and");
+    const bool is_or = (name == "or");
+
+    if (is_and || is_or)
+    {
+        std::vector<const ActionsDAG::Node *> survivors;
+        ColumnPtr short_circuit;
+        bool all_det = true;
+        for (const auto * child : node->children)
+        {
+            auto folded = tryFoldPredicate(child);
+            if (!folded)
+            {
+                survivors.push_back(child);
+                continue;
+            }
+            all_det = all_det && folded->deterministic;
+            if (folded->column)
+            {
+                const auto * cc = typeid_cast<const ColumnConst *>(folded->column.get());
+                if (cc && !cc->isNullAt(0))
+                {
+                    bool truthy = cc->getUInt(0) != 0;
+                    if (is_and && !truthy) { short_circuit = folded->column; break; }
+                    if (is_or && truthy) { short_circuit = folded->column; break; }
+                    /// neutral element (and: true, or: false): drop
+                    continue;
+                }
+                /// NULL or non-bool const: keep the original child node
+                survivors.push_back(child);
+                continue;
+            }
+            survivors.push_back(folded->passthrough ? folded->passthrough : child);
+        }
+        if (short_circuit)
+            return FoldResult{short_circuit, nullptr, all_det};
+        if (survivors.size() == 1)
+            return FoldResult{nullptr, survivors.front(), all_det};
+        /// vacuous (all eliminated) or multi-survivor: defer to runtime
+        return std::nullopt;
+    }
+
+    /// non-and/or invariant function: every child must fold to Const
     ColumnsWithTypeAndName args;
     args.reserve(node->children.size());
     bool all_det = true;
     for (const auto * child : node->children)
     {
         auto folded = tryFoldPredicate(child);
-        if (!folded)
+        if (!folded || !folded->column)
             return std::nullopt;
         ColumnPtr col = folded->column;
         /// DAG consts are size 0, resize to 1 for `execute` (matches `getFunctionArguments`)
@@ -951,7 +997,7 @@ std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
     ColumnPtr canonical = column_const->empty()
         ? result
         : ColumnPtr{ColumnConst::create(column_const->getDataColumnPtr(), 0)};
-    return FoldResult{std::move(canonical), all_det};
+    return FoldResult{std::move(canonical), nullptr, all_det};
 }
 
 /// dummy columns (ColumnSet for IN, ColumnFunction for lambdas) don't have a Field-representable value
@@ -1184,29 +1230,44 @@ void ActionsDAG::foldFilterPredicateThroughMaterialize(const std::string & filte
         return;
 
     auto folded = tryFoldPredicate(filter_node);
-    if (!folded || !folded->column)
-        return;
-    const auto * column_const = typeid_cast<const ColumnConst *>(folded->column.get());
-    if (!column_const)
+    if (!folded)
         return;
 
-    ColumnConstPtr canonical;
-    if (column_const->empty())
-        canonical = column_const->getPtr();
+    const Node * new_filter_node = nullptr;
+    if (folded->column)
+    {
+        const auto * column_const = typeid_cast<const ColumnConst *>(folded->column.get());
+        if (!column_const)
+            return;
+        ColumnConstPtr canonical;
+        if (column_const->empty())
+            canonical = column_const->getPtr();
+        else
+            canonical = ColumnConst::create(column_const->getDataColumnPtr(), 0);
+        new_filter_node = &addColumn(std::move(canonical), filter_node->result_type,
+                                     std::string(filter_column_name), folded->deterministic);
+    }
+    else if (folded->passthrough && folded->passthrough != filter_node)
+    {
+        /// partial fold collapsed and/or to a single existing child - wrap in alias if its
+        /// name differs so `FilterStep` still resolves the filter by name
+        if (folded->passthrough->result_name == filter_column_name)
+            new_filter_node = folded->passthrough;
+        else
+            new_filter_node = &addAlias(*folded->passthrough, std::string(filter_column_name));
+    }
     else
-        canonical = ColumnConst::create(column_const->getDataColumnPtr(), 0);
+    {
+        return;
+    }
 
-    /// add a fresh const COLUMN and re-route the filter output, leave the original predicate
-    /// subtree intact so other parents that may share parts of it are unaffected -
-    /// `removeUnusedActions` prunes the now-orphan subtree later
-    const Node & new_const = addColumn(
-        std::move(canonical), filter_node->result_type,
-        std::string(filter_column_name), folded->deterministic);
+    /// re-route the filter output to the new node, leave the original predicate subtree
+    /// intact (other parents may share parts of it), `removeUnusedActions` prunes orphans later
     for (auto & out : outputs)
     {
         if (out == filter_node)
         {
-            out = &new_const;
+            out = new_filter_node;
             break;
         }
     }
