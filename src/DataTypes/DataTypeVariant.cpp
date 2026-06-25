@@ -257,7 +257,6 @@ because working with values of such types can lead to ambiguity. By default, cre
 Using `Variant` type in table column definition:
 
 ```sql
-SET allow_experimental_variant_type = 1;
 CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
 SELECT v FROM test;
@@ -275,7 +274,6 @@ SELECT v FROM test;
 Using CAST from ordinary columns:
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SELECT toTypeName(variant) AS type_name, 'Hello, World!'::Variant(UInt64, String, Array(UInt64)) as variant;
 ```
 
@@ -288,7 +286,6 @@ SELECT toTypeName(variant) AS type_name, 'Hello, World!'::Variant(UInt64, String
 Using functions `if/multiIf` when arguments don't have common type (setting `use_variant_as_common_type` should be enabled for it):
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SET use_variant_as_common_type = 1;
 SELECT if(number % 2, number, range(number)) as variant FROM numbers(5);
 ```
@@ -304,7 +301,6 @@ SELECT if(number % 2, number, range(number)) as variant FROM numbers(5);
 ```
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SET use_variant_as_common_type = 1;
 SELECT multiIf((number % 4) = 0, 42, (number % 4) = 1, [1, 2, 3], (number % 4) = 2, 'Hello, World!', NULL) AS variant FROM numbers(4);
 ```
@@ -321,7 +317,6 @@ SELECT multiIf((number % 4) = 0, 42, (number % 4) = 1, [1, 2, 3], (number % 4) =
 Using functions 'array/map' if array elements/map values don't have common type (setting `use_variant_as_common_type` should be enabled for it):
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SET use_variant_as_common_type = 1;
 SELECT array(range(number), number, 'str_' || toString(number)) as array_of_variants FROM numbers(3);
 ```
@@ -335,7 +330,6 @@ SELECT array(range(number), number, 'str_' || toString(number)) as array_of_vari
 ```
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SET use_variant_as_common_type = 1;
 SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as map_of_variants FROM numbers(3);
 ```
@@ -361,7 +355,6 @@ Variant subcolumns can be also read using function `variantElement(variant_colum
 Examples:
 
 ```sql
-SET allow_experimental_variant_type = 1;
 CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
 SELECT v, v.String, v.UInt64, v.`Array(UInt64)` FROM test;
@@ -377,7 +370,6 @@ SELECT v, v.String, v.UInt64, v.`Array(UInt64)` FROM test;
 ```
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SELECT toTypeName(v.String), toTypeName(v.UInt64), toTypeName(v.`Array(UInt64)`) FROM test LIMIT 1;
 ```
 
@@ -388,7 +380,6 @@ SELECT toTypeName(v.String), toTypeName(v.UInt64), toTypeName(v.`Array(UInt64)`)
 ```
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SELECT v, variantElement(v, 'String'), variantElement(v, 'UInt64'), variantElement(v, 'Array(UInt64)') FROM test;
 ```
 
@@ -406,7 +397,6 @@ To know what variant is stored in each row function `variantType(variant_column)
 Example:
 
 ```sql
-SET allow_experimental_variant_type = 1;
 CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
 SELECT variantType(v) FROM test;
@@ -422,7 +412,6 @@ SELECT variantType(v) FROM test;
 ```
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SELECT toTypeName(variantType(v)) FROM test LIMIT 1;
 ```
 
@@ -441,7 +430,6 @@ There are 4 possible conversions that can be performed with a column of type `Va
 Conversion from `String` to `Variant` is performed by parsing a value of `Variant` type from the string value:
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SELECT '42'::Variant(String, UInt64) AS variant, variantType(variant) AS variant_type
 ```
 
@@ -452,7 +440,6 @@ SELECT '42'::Variant(String, UInt64) AS variant, variantType(variant) AS variant
 ```
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SELECT '[1, 2, 3]'::Variant(String, Array(UInt64)) as variant, variantType(variant) as variant_type
 ```
 
@@ -463,7 +450,6 @@ SELECT '[1, 2, 3]'::Variant(String, Array(UInt64)) as variant, variantType(varia
 ```
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SELECT CAST(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01'), 'Map(String, Variant(UInt64, Bool, Date))') AS map_of_variants, mapApply((k, v) -> (k, variantType(v)), map_of_variants) AS map_of_variant_types
 ```
 
@@ -476,7 +462,6 @@ SELECT CAST(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01'), 'Map(String
 To disable parsing during conversion from `String` to `Variant` you can disable setting `cast_string_to_dynamic_use_inference`:
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SET cast_string_to_variant_use_inference = 0;
 SELECT '[1, 2, 3]'::Variant(String, Array(UInt64)) as variant, variantType(variant) as variant_type
 ```
@@ -492,7 +477,6 @@ SELECT '[1, 2, 3]'::Variant(String, Array(UInt64)) as variant, variantType(varia
 It is possible to convert an ordinary column with type `T` to a `Variant` column containing this type:
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SELECT toTypeName(variant) AS type_name, [1,2,3]::Array(UInt64)::Variant(UInt64, String, Array(UInt64)) as variant, variantType(variant) as variant_name
 ```
 
@@ -504,7 +488,6 @@ SELECT toTypeName(variant) AS type_name, [1,2,3]::Array(UInt64)::Variant(UInt64,
 
 Note: converting from `String` type is always performed through parsing, if you need to convert `String` column to `String` variant of a `Variant` without parsing, you can do the following:
 ```sql
-SET allow_experimental_variant_type = 1;
 SELECT '[1, 2, 3]'::Variant(String)::Variant(String, Array(UInt64), UInt64) as variant, variantType(variant) as variant_type
 ```
 
@@ -519,7 +502,6 @@ SELECT '[1, 2, 3]'::Variant(String)::Variant(String, Array(UInt64), UInt64) as v
 It is possible to convert a `Variant` column to an ordinary column. In this case all nested variants will be converted to a destination type:
 
 ```sql
-SET allow_experimental_variant_type = 1;
 CREATE TABLE test (v Variant(UInt64, String)) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('42.42');
 SELECT v::Nullable(Float64) FROM test;
@@ -538,7 +520,6 @@ SELECT v::Nullable(Float64) FROM test;
 It is possible to convert a `Variant` column to another `Variant` column, but only if the destination `Variant` column contains all nested types from the original `Variant`:
 
 ```sql
-SET allow_experimental_variant_type = 1;
 CREATE TABLE test (v Variant(UInt64, String)) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('String');
 SELECT v::Variant(UInt64, String, Array(UInt64)) FROM test;
@@ -559,7 +540,6 @@ All text formats (TSV, CSV, CustomSeparated, Values, JSONEachRow, etc) supports 
 Example:
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SELECT
     v,
     variantElement(v, 'String') AS str,
@@ -602,14 +582,12 @@ The result of operator `<` for values `v1` with underlying type `T1` and `v2` wi
 
 Examples:
 ```sql
-SET allow_experimental_variant_type = 1;
 SET allow_suspicious_types_in_order_by = 1;
 CREATE TABLE test (v1 Variant(String, UInt64, Array(UInt32)), v2 Variant(String, UInt64, Array(UInt32))) ENGINE=Memory;
 INSERT INTO test VALUES (42, 42), (42, 43), (42, 'abc'), (42, [1, 2, 3]), (42, []), (42, NULL);
 ```
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SET allow_suspicious_types_in_order_by = 1;
 SELECT v2, variantType(v2) AS v2_type FROM test ORDER BY v2;
 ```
@@ -626,7 +604,6 @@ SELECT v2, variantType(v2) AS v2_type FROM test ORDER BY v2;
 ```
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SET use_variant_default_implementation_for_comparisons = 0;
 SELECT v1, variantType(v1) AS v1_type, v2, variantType(v2) AS v2_type, v1 = v2, v1 < v2, v1 > v2 FROM test;
 ```
@@ -648,7 +625,6 @@ If you need to find the row with specific `Variant` value, you can do one of the
 - Cast value to the corresponding `Variant` type:
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SET use_variant_default_implementation_for_comparisons = 0;
 SELECT * FROM test WHERE v2 == [1,2,3]::Array(UInt32)::Variant(String, UInt64, Array(UInt32));
 ```
@@ -662,7 +638,6 @@ SELECT * FROM test WHERE v2 == [1,2,3]::Array(UInt32)::Variant(String, UInt64, A
 - Compare `Variant` subcolumn with required type:
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SELECT * FROM test WHERE v2.`Array(UInt32)` == [1,2,3] -- or using variantElement(v2, 'Array(UInt32)')
 ```
 
@@ -675,7 +650,6 @@ SELECT * FROM test WHERE v2.`Array(UInt32)` == [1,2,3] -- or using variantElemen
 Sometimes it can be useful to make additional check on variant type as subcolumns with complex types like `Array/Map/Tuple` cannot be inside `Nullable` and will have default values instead of `NULL` on rows with different types:
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SELECT v2, v2.`Array(UInt32)`, variantType(v2) FROM test WHERE v2.`Array(UInt32)` == [];
 ```
 
@@ -690,7 +664,6 @@ SELECT v2, v2.`Array(UInt32)`, variantType(v2) FROM test WHERE v2.`Array(UInt32)
 ```
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SELECT v2, v2.`Array(UInt32)`, variantType(v2) FROM test WHERE variantType(v2) == 'Array(UInt32)' AND v2.`Array(UInt32)` == [];
 ```
 
@@ -705,7 +678,6 @@ SELECT v2, v2.`Array(UInt32)`, variantType(v2) FROM test WHERE variantType(v2) =
 Example:
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SET allow_suspicious_variant_types = 1;
 SET allow_suspicious_types_in_order_by = 1;
 CREATE TABLE test (v Variant(UInt32, Int64)) ENGINE=Memory;
@@ -729,7 +701,6 @@ SELECT v, variantType(v) FROM test ORDER by v;
 All `JSONExtract*` functions support `Variant` type:
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SELECT JSONExtract('{"a" : [1, 2, 3]}', 'a', 'Variant(UInt32, String, Array(UInt32))') AS variant, variantType(variant) AS variant_type;
 ```
 
@@ -740,7 +711,6 @@ SELECT JSONExtract('{"a" : [1, 2, 3]}', 'a', 'Variant(UInt32, String, Array(UInt
 ```
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SELECT JSONExtract('{"obj" : {"a" : 42, "b" : "Hello", "c" : [1,2,3]}}', 'obj', 'Map(String, Variant(UInt32, String, Array(UInt32)))') AS map_of_variants, mapApply((k, v) -> (k, variantType(v)), map_of_variants) AS map_of_variant_types
 ```
 
@@ -751,7 +721,6 @@ SELECT JSONExtract('{"obj" : {"a" : 42, "b" : "Hello", "c" : [1,2,3]}}', 'obj', 
 ```
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Variant(UInt32, String, Array(UInt32))') AS variants, arrayMap(x -> (x.1, variantType(x.2)), variants) AS variant_types
 ```
 
@@ -775,7 +744,6 @@ This allows you to use regular functions with Variant columns without special ha
 **Example:**
 
 ```sql
-SET allow_experimental_variant_type = 1;
 SET variant_throw_on_type_mismatch = 0;
 CREATE TABLE test (v Variant(UInt32, String)) ENGINE = Memory;
 INSERT INTO test VALUES (42), ('hello'), (NULL);
@@ -796,7 +764,6 @@ The result type depends on what the function returns for each variant:
 
 - **Different result types**: `Variant(T1, T2, ...)`
 ```sql
-SET allow_experimental_variant_type = 1;
 SET variant_throw_on_type_mismatch = 0;
 CREATE TABLE test2 (v Variant(UInt64, Float64)) ENGINE = Memory;
 INSERT INTO test2 VALUES (42::UInt64), (42.42);
@@ -812,7 +779,6 @@ SELECT v + 1 AS result, toTypeName(result) FROM test2;
 
 - **Type incompatibility**: `NULL` for incompatible variants
 ```sql
-SET allow_experimental_variant_type = 1;
 SET variant_throw_on_type_mismatch = 0;
 CREATE TABLE test3 (v Variant(Array(UInt32), UInt32)) ENGINE = Memory;
 INSERT INTO test3 VALUES ([1,2,3]), (42);
@@ -842,7 +808,6 @@ The setting `variant_throw_on_type_mismatch` controls what happens when a functi
 **Example:**
 
 ```sql
-SET allow_experimental_variant_type = 1;
 CREATE TABLE test (v Variant(String, UInt64)) ENGINE = Memory;
 INSERT INTO test VALUES ('hello'), (42), ('foo');
 

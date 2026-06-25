@@ -98,7 +98,7 @@ If the key is not found, returns the content of the `<null_value>` element speci
                 R"(
 CREATE TABLE ext_dict_test_source (id UInt32, c1 UInt32, c2 String) ENGINE = Memory;
 INSERT INTO ext_dict_test_source VALUES (1, 1, '1'), (2, 2, '2'), (3, 3, '3');
-CREATE DICTIONARY ext_dict_test (id UInt32, c1 UInt32, c2 String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'ext_dict_test_source' DB 'default')) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0);
+CREATE DICTIONARY ext_dict_test (id UInt32, c1 UInt32, c2 String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'ext_dict_test_source' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0);
 SELECT dictGet('ext_dict_test', 'c1', toUInt64(1)) AS val
 )",
                 "1"
@@ -108,7 +108,7 @@ SELECT dictGet('ext_dict_test', 'c1', toUInt64(1)) AS val
 R"(
 CREATE TABLE dict_mult_source (id UInt32, c1 UInt32, c2 String) ENGINE = Memory;
 INSERT INTO dict_mult_source VALUES (1, 1, '1'), (2, 2, '2'), (3, 3, '3');
-CREATE DICTIONARY ext_dict_mult (id UInt32, c1 UInt32, c2 String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'dict_mult_source' DB 'default')) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0);
+CREATE DICTIONARY ext_dict_mult (id UInt32, c1 UInt32, c2 String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'dict_mult_source' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0);
 SELECT
     dictGet('ext_dict_mult', ('c1','c2'), number + 1) AS val,
     toTypeName(val) AS type
@@ -153,7 +153,7 @@ If the key is not found, returns the `default_value` provided.
         FunctionDocumentation::Examples examples = {{"Get value with default", R"(
 CREATE TABLE dict_mult_source (id UInt32, c1 UInt32, c2 String) ENGINE = Memory;
 INSERT INTO dict_mult_source VALUES (1, 1, '1'), (2, 2, '2'), (3, 3, '3');
-CREATE DICTIONARY ext_dict_mult (id UInt32, c1 UInt32, c2 String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'dict_mult_source' DB 'default')) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0);
+CREATE DICTIONARY ext_dict_mult (id UInt32, c1 UInt32, c2 String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'dict_mult_source' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0);
 SELECT dictGetOrDefault('ext_dict_mult', 'c1', toUInt64(999), 0) AS val
 )", "0"}};
         FunctionDocumentation::IntroducedIn introduced_in = {18, 16};
@@ -180,7 +180,7 @@ CREATE TABLE range_key_dictionary_source_table (key UInt64, start_date Date, end
 INSERT INTO range_key_dictionary_source_table VALUES(1, toDate('2019-05-20'), toDate('2019-05-20'), 'First', 'First');
 INSERT INTO range_key_dictionary_source_table VALUES(2, toDate('2019-05-20'), toDate('2019-05-20'), 'Second', NULL);
 INSERT INTO range_key_dictionary_source_table VALUES(3, toDate('2019-05-20'), toDate('2019-05-20'), 'Third', 'Third');
-CREATE DICTIONARY range_key_dictionary (key UInt64, start_date Date, end_date Date, value String, value_nullable Nullable(String)) PRIMARY KEY key SOURCE(CLICKHOUSE(TABLE 'range_key_dictionary_source_table' DB 'default')) LIFETIME(MIN 1 MAX 1000) LAYOUT(RANGE_HASHED()) RANGE(MIN start_date MAX end_date);
+CREATE DICTIONARY range_key_dictionary (key UInt64, start_date Date, end_date Date, value String, value_nullable Nullable(String)) PRIMARY KEY key SOURCE(CLICKHOUSE(TABLE 'range_key_dictionary_source_table' DB currentDatabase())) LIFETIME(MIN 1 MAX 1000) LAYOUT(RANGE_HASHED()) RANGE(MIN start_date MAX end_date);
 SELECT
     (number, toDate('2019-05-20')),
     dictGetOrNull('range_key_dictionary', 'value', number, toDate('2019-05-20')),
@@ -212,7 +212,7 @@ FROM system.numbers LIMIT 5 FORMAT TabSeparated;
                 R"(
 CREATE TABLE all_types_test (id UInt32, UInt8_value UInt8) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, 100);
-CREATE DICTIONARY all_types_dict (id UInt32, UInt8_value UInt8) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt8_value UInt8) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetUInt8('all_types_dict', 'UInt8_value', 1)
 )",
 R"(
@@ -241,7 +241,7 @@ R"(
 R"(
 CREATE TABLE all_types_test (id UInt32, UInt8_value UInt8) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, 100);
-CREATE DICTIONARY all_types_dict (id UInt32, UInt8_value UInt8) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt8_value UInt8) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetUInt8('all_types_dict', 'UInt8_value', 1);
 
@@ -275,7 +275,7 @@ R"(
             {"Usage example", R"(
 CREATE TABLE all_types_test (id UInt32, UInt16_value UInt16) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, 5000);
-CREATE DICTIONARY all_types_dict (id UInt32, UInt16_value UInt16) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt16_value UInt16) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetUInt16('all_types_dict', 'UInt16_value', 1)
 )",
 R"(
@@ -303,7 +303,7 @@ R"(
 R"(
 CREATE TABLE all_types_test (id UInt32, UInt16_value UInt16) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, 5000);
-CREATE DICTIONARY all_types_dict (id UInt32, UInt16_value UInt16) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt16_value UInt16) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetUInt16('all_types_dict', 'UInt16_value', 1);
 
@@ -337,7 +337,7 @@ R"(
             {"Usage example", R"(
 CREATE TABLE all_types_test (id UInt32, UInt32_value UInt32) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, 1000000);
-CREATE DICTIONARY all_types_dict (id UInt32, UInt32_value UInt32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt32_value UInt32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetUInt32('all_types_dict', 'UInt32_value', 1)
 )",
 R"(
@@ -365,7 +365,7 @@ R"(
 R"(
 CREATE TABLE all_types_test (id UInt32, UInt32_value UInt32) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, 1000000);
-CREATE DICTIONARY all_types_dict (id UInt32, UInt32_value UInt32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt32_value UInt32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetUInt32('all_types_dict', 'UInt32_value', 1);
 
@@ -399,7 +399,7 @@ R"(
             {"Usage example", R"(
 CREATE TABLE all_types_test (id UInt32, UInt64_value UInt64) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, 9223372036854775807);
-CREATE DICTIONARY all_types_dict (id UInt32, UInt64_value UInt64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt64_value UInt64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1)
 )",
 R"(
@@ -427,7 +427,7 @@ R"(
 R"(
 CREATE TABLE all_types_test (id UInt32, UInt64_value UInt64) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, 9223372036854775807);
-CREATE DICTIONARY all_types_dict (id UInt32, UInt64_value UInt64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt64_value UInt64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1);
 
@@ -461,7 +461,7 @@ R"(
             {"Usage example", R"(
 CREATE TABLE all_types_test (id UInt32, Int8_value Int8) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, -100);
-CREATE DICTIONARY all_types_dict (id UInt32, Int8_value Int8) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, Int8_value Int8) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetInt8('all_types_dict', 'Int8_value', 1)
 )",
 R"(
@@ -489,7 +489,7 @@ R"(
 R"(
 CREATE TABLE all_types_test (id UInt32, Int8_value Int8) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, -100);
-CREATE DICTIONARY all_types_dict (id UInt32, Int8_value Int8) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, Int8_value Int8) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetInt8('all_types_dict', 'Int8_value', 1);
 
@@ -523,7 +523,7 @@ R"(
             {"Usage example", R"(
 CREATE TABLE all_types_test (id UInt32, Int16_value Int16) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, -5000);
-CREATE DICTIONARY all_types_dict (id UInt32, Int16_value Int16) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, Int16_value Int16) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetInt16('all_types_dict', 'Int16_value', 1)
 )",
 R"(
@@ -551,7 +551,7 @@ R"(
 R"(
 CREATE TABLE all_types_test (id UInt32, Int16_value Int16) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, -5000);
-CREATE DICTIONARY all_types_dict (id UInt32, Int16_value Int16) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, Int16_value Int16) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetInt16('all_types_dict', 'Int16_value', 1);
 
@@ -584,7 +584,7 @@ R"(
             {"Usage example", R"(
 CREATE TABLE all_types_test (id UInt32, Int32_value Int32) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, -1000000);
-CREATE DICTIONARY all_types_dict (id UInt32, Int32_value Int32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, Int32_value Int32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetInt32('all_types_dict', 'Int32_value', 1)
 )",
 R"(
@@ -612,7 +612,7 @@ R"(
 R"(
 CREATE TABLE all_types_test (id UInt32, Int32_value Int32) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, -1000000);
-CREATE DICTIONARY all_types_dict (id UInt32, Int32_value Int32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, Int32_value Int32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetInt32('all_types_dict', 'Int32_value', 1);
 
@@ -646,7 +646,7 @@ R"(
             {"Usage example", R"(
 CREATE TABLE all_types_test (id UInt32, Int64_value Int64) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, -9223372036854775807);
-CREATE DICTIONARY all_types_dict (id UInt32, Int64_value Int64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, Int64_value Int64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetInt64('all_types_dict', 'Int64_value', 1)
 )",
 R"(
@@ -674,7 +674,7 @@ R"(
 R"(
 CREATE TABLE all_types_test (id UInt32, Int64_value Int64) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, -9223372036854775808);
-CREATE DICTIONARY all_types_dict (id UInt32, Int64_value Int64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, Int64_value Int64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetInt64('all_types_dict', 'Int64_value', 1);
 
@@ -707,7 +707,7 @@ R"(
             {"Usage example", R"(
 CREATE TABLE all_types_test (id UInt32, Float32_value Float32) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, -123.123);
-CREATE DICTIONARY all_types_dict (id UInt32, Float32_value Float32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, Float32_value Float32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetFloat32('all_types_dict', 'Float32_value', 1)
 )",
 R"(
@@ -735,7 +735,7 @@ R"(
 R"(
 CREATE TABLE all_types_test (id UInt32, Float32_value Float32) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, 123.45);
-CREATE DICTIONARY all_types_dict (id UInt32, Float32_value Float32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, Float32_value Float32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetFloat32('all_types_dict', 'Float32_value', 1);
 
@@ -768,7 +768,7 @@ R"(
             {"Usage example", R"(
 CREATE TABLE all_types_test (id UInt32, Float64_value Float64) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, -123.123);
-CREATE DICTIONARY all_types_dict (id UInt32, Float64_value Float64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, Float64_value Float64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetFloat64('all_types_dict', 'Float64_value', 1)
 )",
 R"(
@@ -796,7 +796,7 @@ R"(
 R"(
 CREATE TABLE all_types_test (id UInt32, Float64_value Float64) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, 987654.123456);
-CREATE DICTIONARY all_types_dict (id UInt32, Float64_value Float64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, Float64_value Float64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetFloat64('all_types_dict', 'Float64_value', 1);
 
@@ -830,7 +830,7 @@ R"(
         {"Usage example", R"(
 CREATE TABLE all_types_test (id UInt32, Date_value Date) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, '2020-01-01');
-CREATE DICTIONARY all_types_dict (id UInt32, Date_value Date) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, Date_value Date) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetDate('all_types_dict', 'Date_value', 1)
 )",
 R"(
@@ -858,7 +858,7 @@ R"(
 R"(
 CREATE TABLE all_types_test (id UInt32, Date_value Date) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, '2024-01-15');
-CREATE DICTIONARY all_types_dict (id UInt32, Date_value Date) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, Date_value Date) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetDate('all_types_dict', 'Date_value', 1);
 
@@ -892,7 +892,7 @@ R"(
             {"Usage example", R"(
 CREATE TABLE all_types_test (id UInt32, DateTime_value DateTime) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, '2024-01-15 10:30:00');
-CREATE DICTIONARY all_types_dict (id UInt32, DateTime_value DateTime) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, DateTime_value DateTime) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetDateTime('all_types_dict', 'DateTime_value', 1)
 )",
 R"(
@@ -920,7 +920,7 @@ R"(
 R"(
 CREATE TABLE all_types_test (id UInt32, DateTime_value DateTime) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, '2024-01-15 10:30:00');
-CREATE DICTIONARY all_types_dict (id UInt32, DateTime_value DateTime) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, DateTime_value DateTime) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetDateTime('all_types_dict', 'DateTime_value', 1);
 
@@ -954,7 +954,7 @@ R"(
             {"Usage example", R"(
 CREATE TABLE all_types_test (id UInt32, UUID_value UUID) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, '123e4567-e89b-12d3-a456-426614174000');
-CREATE DICTIONARY all_types_dict (id UInt32, UUID_value UUID) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, UUID_value UUID) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetUUID('all_types_dict', 'UUID_value', 1)
 )",
 R"(
@@ -982,7 +982,7 @@ R"(
 R"(
 CREATE TABLE all_types_test (id UInt32, UUID_value UUID) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, '550e8400-e29b-41d4-a716-446655440000');
-CREATE DICTIONARY all_types_dict (id UInt32, UUID_value UUID) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, UUID_value UUID) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetUUID('all_types_dict', 'UUID_value', 1);
 
@@ -1016,7 +1016,7 @@ R"(
             {"Usage example", R"(
 CREATE TABLE all_types_test (id UInt32, IPv4_value IPv4) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, '192.168.0.1');
-CREATE DICTIONARY all_types_dict (id UInt32, IPv4_value IPv4) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, IPv4_value IPv4) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetIPv4('all_types_dict', 'IPv4_value', 1)
 )",
 R"(
@@ -1044,7 +1044,7 @@ R"(
 R"(
 CREATE TABLE all_types_test (id UInt32, IPv4_value IPv4) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, '192.168.0.1');
-CREATE DICTIONARY all_types_dict (id UInt32, IPv4_value IPv4) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, IPv4_value IPv4) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetIPv4('all_types_dict', 'IPv4_value', 1);
 
@@ -1078,7 +1078,7 @@ R"(
             {"Usage example", R"(
 CREATE TABLE all_types_test (id UInt32, IPv6_value IPv6) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, '2001:db8:85a3::8a2e:370:7334');
-CREATE DICTIONARY all_types_dict (id UInt32, IPv6_value IPv6) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, IPv6_value IPv6) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetIPv6('all_types_dict', 'IPv6_value', 1)
 )",
 R"(
@@ -1106,7 +1106,7 @@ R"(
 R"(
 CREATE TABLE all_types_test (id UInt32, IPv6_value IPv6) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, '2001:db8:85a3::8a2e:370:7334');
-CREATE DICTIONARY all_types_dict (id UInt32, IPv6_value IPv6) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, IPv6_value IPv6) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetIPv6('all_types_dict', 'IPv6_value', 1);
 
@@ -1140,7 +1140,7 @@ R"(
             {"Usage example", R"(
 CREATE TABLE all_types_test (id UInt32, String_value String) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, 'test string');
-CREATE DICTIONARY all_types_dict (id UInt32, String_value String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, String_value String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetString('all_types_dict', 'String_value', 1)
 )",
 R"(
@@ -1168,7 +1168,7 @@ R"(
 R"(
 CREATE TABLE all_types_test (id UInt32, String_value String) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO all_types_test VALUES (1, 'test string');
-CREATE DICTIONARY all_types_dict (id UInt32, String_value String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY all_types_dict (id UInt32, String_value String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetString('all_types_dict', 'String_value', 1);
 
@@ -1221,7 +1221,7 @@ INSERT INTO regexp_os VALUES
     (2, 1, 'Android',    ['os_replacement'], ['Android']),
     (3, 2, 'Android 1',  ['os_replacement'], ['Android']),
     (4, 3, 'Android 12', ['os_replacement'], ['Android']);
-CREATE DICTIONARY regexp_tree (regexp String, os_replacement String DEFAULT 'Other') PRIMARY KEY regexp SOURCE(CLICKHOUSE(TABLE 'regexp_os' DB 'default')) LIFETIME(MIN 0 MAX 0) LAYOUT(REGEXP_TREE);
+CREATE DICTIONARY regexp_tree (regexp String, os_replacement String DEFAULT 'Other') PRIMARY KEY regexp SOURCE(CLICKHOUSE(TABLE 'regexp_os' DB currentDatabase())) LIFETIME(MIN 0 MAX 0) LAYOUT(REGEXP_TREE);
 SELECT
     'Mozilla/5.0 (Linux; Android 12; SM-G998B) Mobile Safari/537.36' AS user_agent,
 
@@ -1260,7 +1260,7 @@ Creates an array, containing all the parents of a key in the [hierarchical dicti
 R"(
 CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
 INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
-CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetHierarchy('hierarchical_dictionary', 5)
 )",
 R"(
@@ -1295,7 +1295,7 @@ Checks the ancestor of a key through the whole hierarchical chain in the diction
 R"(
 CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
 INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
-CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- valid hierarchy
 SELECT dictIsIn('hierarchical_dictionary', 6, 3);
 
@@ -1347,7 +1347,7 @@ Returns first-level children as an array of indexes. It is the inverse transform
 R"(
 CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
 INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
-CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetChildren('hierarchical_dictionary', 2);
 )",
 R"(
@@ -1393,7 +1393,7 @@ Returns all descendants as if the [`dictGetChildren`](#dictGetChildren) function
 R"(
 CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
 INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
-CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- consider the following hierarchical dictionary:
 -- 0 (Root)
 -- └── 1 (Level 1 - Node 1)
@@ -1446,7 +1446,7 @@ R"(
 R"(
 CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
 INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
-CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB 'default')) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- consider the following hierarchical dictionary:
 -- 0 (Root)
 -- └── 1 (Level 1 - Node 1)

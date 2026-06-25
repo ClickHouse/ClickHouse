@@ -1170,28 +1170,34 @@ Supports conversion from String, FixedString, DateTime, or numeric types represe
     {
         "DateTime64 to Time conversion",
         R"(
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
 SELECT toTime(toDateTime64('2025-04-15 14:30:25.123', 3))
         )",
         R"(
-1970-01-02 14:30:25
+14:30:25
         )"
     },
     {
         "DateTime to Time conversion",
         R"(
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
 SELECT toTime(toDateTime('2025-04-15 14:30:25'))
         )",
         R"(
-1970-01-02 14:30:25
+14:30:25
         )"
     },
     {
         "Integer (seconds since epoch) to Time conversion",
         R"(
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
 SELECT toTime(toDateTime(52225))
         )",
         R"(
-1970-01-02 14:30:25
+14:30:25
         )"
     }
     };
@@ -1206,15 +1212,17 @@ Converts an input value to type [Time64](/sql-reference/data-types/time64).
 Supports conversion from String, FixedString, DateTime64, or numeric types representing microseconds since midnight.
 Provides microsecond precision for time values.
     )";
-    FunctionDocumentation::Syntax syntax_toTime64 = "toTime64(x)";
+    FunctionDocumentation::Syntax syntax_toTime64 = "toTime64(x, scale)";
     FunctionDocumentation::Arguments arguments_toTime64 = {
-        {"x", "Input value to convert.", {"String", "FixedString", "DateTime64", "(U)Int*", "Float*"}}
+        {"x", "Input value to convert.", {"String", "FixedString", "DateTime64", "(U)Int*", "Float*"}},
+        {"scale", "Precision (number of fractional digits, `0`–`9`) of the resulting `Time64`.", {"(U)Int*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toTime64 = {"Returns the converted input value with microsecond precision.", {"Time64(6)"}};
     FunctionDocumentation::Examples examples_toTime64 = {
     {
         "String to Time64 conversion",
         R"(
+SET enable_time_time64_type = 1;
 SELECT toTime64('14:30:25.123456', 6)
         )",
         R"(
@@ -1224,6 +1232,7 @@ SELECT toTime64('14:30:25.123456', 6)
     {
         "DateTime64 to Time64 conversion",
         R"(
+SET enable_time_time64_type = 1;
 SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6), 6)
         )",
         R"(
@@ -1233,6 +1242,7 @@ SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6), 6)
     {
         "Float (seconds since midnight) to Time64 conversion",
         R"(
+SET enable_time_time64_type = 1;
 SELECT toTime64(52225.123456, 6)
         )",
         R"(

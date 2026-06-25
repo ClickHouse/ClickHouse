@@ -101,13 +101,15 @@ If the function is used in the context of a distributed query, it returns non-em
         {
             "Usage example",
             R"(
-SET allow_get_client_http_header = 1;
-SELECT getClientHTTPHeader('Content-Type');
+-- `getClientHTTPHeader` reads the headers of the current request, so it returns
+-- a value only when the query is sent over the HTTP interface. Enable the
+-- `allow_get_client_http_header` setting and supply the header with the request:
+
+echo "SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header = 1" | \
+    curl 'http://localhost:8123/' --data-binary @- -H 'Content-Type: application/x-www-form-urlencoded'
             )",
             R"(
-┌─getClientHTTPHeader('Content-Type')─┐
-│ application/x-www-form-urlencoded   │
-└─────────────────────────────────────┘
+application/x-www-form-urlencoded
             )"
         }
     };

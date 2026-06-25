@@ -120,7 +120,6 @@ Where `N` is an optional parameter between `0` and `254` indicating how many dif
 Using `Dynamic` type in table column definition:
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 CREATE TABLE test (d Dynamic) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
 SELECT d, dynamicType(d) FROM test;
@@ -138,7 +137,6 @@ SELECT d, dynamicType(d) FROM test;
 Using CAST from ordinary column:
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SELECT 'Hello, World!'::Dynamic AS d, dynamicType(d);
 ```
 
@@ -151,7 +149,6 @@ SELECT 'Hello, World!'::Dynamic AS d, dynamicType(d);
 Using CAST from `Variant` column:
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SET use_variant_as_common_type = 1;
 SELECT multiIf((number % 3) = 0, number, (number % 3) = 1, range(number + 1), NULL)::Dynamic AS d, dynamicType(d) FROM numbers(3)
 ```
@@ -177,7 +174,6 @@ in all rows in which original `Dynamic` column doesn't have type `T`.
 Examples:
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 CREATE TABLE test (d Dynamic) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
 SELECT d, dynamicType(d), d.String, d.Int64, d.`Array(Int64)`, d.Date, d.`Array(String)` FROM test;
@@ -193,7 +189,6 @@ SELECT d, dynamicType(d), d.String, d.Int64, d.`Array(Int64)`, d.Date, d.`Array(
 ```
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SELECT toTypeName(d.String), toTypeName(d.Int64), toTypeName(d.`Array(Int64)`), toTypeName(d.Date), toTypeName(d.`Array(String)`)  FROM test LIMIT 1;
 ```
 
@@ -204,7 +199,6 @@ SELECT toTypeName(d.String), toTypeName(d.Int64), toTypeName(d.`Array(Int64)`), 
 ```
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SELECT d, dynamicType(d), dynamicElement(d, 'String'), dynamicElement(d, 'Int64'), dynamicElement(d, 'Array(Int64)'), dynamicElement(d, 'Date'), dynamicElement(d, 'Array(String)') FROM test;
 ```
 
@@ -222,7 +216,6 @@ To know what variant is stored in each row function `dynamicType(dynamic_column)
 Example:
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 CREATE TABLE test (d Dynamic) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
 SELECT dynamicType(d) FROM test;
@@ -244,7 +237,6 @@ There are 4 possible conversions that can be performed with `Dynamic` column.
 ### Converting an ordinary column to a Dynamic column {#converting-an-ordinary-column-to-a-dynamic-column}
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SELECT 'Hello, World!'::Dynamic AS d, dynamicType(d);
 ```
 
@@ -259,7 +251,6 @@ SELECT 'Hello, World!'::Dynamic AS d, dynamicType(d);
 To parse `Dynamic` type values from a `String` column you can enable setting `cast_string_to_dynamic_use_inference`:
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SET cast_string_to_dynamic_use_inference = 1;
 SELECT CAST(materialize(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01')), 'Map(String, Dynamic)') as map_of_dynamic, mapApply((k, v) -> (k, dynamicType(v)), map_of_dynamic) as map_of_dynamic_types;
 ```
@@ -275,7 +266,6 @@ SELECT CAST(materialize(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01'))
 It is possible to convert a `Dynamic` column to an ordinary column. In this case all nested types will be converted to a destination type:
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 CREATE TABLE test (d Dynamic) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('42.42'), (true), ('e10');
 SELECT d::Nullable(Float64) FROM test;
@@ -294,8 +284,6 @@ SELECT d::Nullable(Float64) FROM test;
 ### Converting a Variant column to Dynamic column {#converting-a-variant-column-to-dynamic-column}
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
-SET allow_experimental_variant_type = 1;
 CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('String'), ([1, 2, 3]);
 SELECT v::Dynamic AS d, dynamicType(d) FROM test;
@@ -315,7 +303,6 @@ SELECT v::Dynamic AS d, dynamicType(d) FROM test;
 If `K >= N` than during conversion the data doesn't change:
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 CREATE TABLE test (d Dynamic(max_types=3)) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), (43), ('42.42'), (true);
 SELECT d::Dynamic(max_types=5) as d2, dynamicType(d2) FROM test;
@@ -377,7 +364,6 @@ All text formats (TSV, CSV, CustomSeparated, Values, JSONEachRow, etc) supports 
 Example:
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SELECT
     d,
     dynamicType(d),
@@ -413,13 +399,11 @@ When the result type of the function depends on the arguments types, the result 
 Examples:
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 CREATE TABLE test (d Dynamic) ENGINE=Memory;
 INSERT INTO test VALUES (NULL), (1::Int8), (2::Int16), (3::Int32), (4::Int64);
 ```
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SELECT d, dynamicType(d) FROM test;
 ```
 
@@ -434,7 +418,6 @@ SELECT d, dynamicType(d) FROM test;
 ```
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SELECT d, d + 1 AS res, toTypeName(res), dynamicType(res) FROM test;
 ```
 
@@ -449,7 +432,6 @@ SELECT d, d + 1 AS res, toTypeName(res), dynamicType(res) FROM test;
 ```
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SELECT d, d + d AS res, toTypeName(res), dynamicType(res) FROM test;
 ```
 
@@ -464,7 +446,6 @@ SELECT d, d + d AS res, toTypeName(res), dynamicType(res) FROM test;
 ```
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SELECT d, d < 3 AS res, toTypeName(res) FROM test;
 ```
 
@@ -479,7 +460,6 @@ SELECT d, d < 3 AS res, toTypeName(res) FROM test;
 ```
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SELECT d, exp2(d) AS res, toTypeName(res) FROM test;
 ```
 
@@ -494,7 +474,6 @@ SELECT d, exp2(d) AS res, toTypeName(res) FROM test;
 ```
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 TRUNCATE TABLE test;
 INSERT INTO test VALUES (NULL), ('str_1'), ('str_2');
 SELECT d, dynamicType(d) FROM test;
@@ -509,7 +488,6 @@ SELECT d, dynamicType(d) FROM test;
 ```
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SELECT d, upper(d) AS res, toTypeName(res) FROM test;
 ```
 
@@ -522,7 +500,6 @@ SELECT d, upper(d) AS res, toTypeName(res) FROM test;
 ```
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SELECT d, extract(d, '([0-3])') AS res, toTypeName(res) FROM test;
 ```
 
@@ -535,7 +512,6 @@ SELECT d, extract(d, '([0-3])') AS res, toTypeName(res) FROM test;
 ```
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 TRUNCATE TABLE test;
 INSERT INTO test VALUES (NULL), ([1, 2]), ([3, 4]);
 SELECT d, dynamicType(d) FROM test;
@@ -550,7 +526,6 @@ SELECT d, dynamicType(d) FROM test;
 ```
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SELECT d, d[1] AS res, toTypeName(res), dynamicType(res) FROM test;
 ```
 
@@ -565,7 +540,6 @@ SELECT d, d[1] AS res, toTypeName(res), dynamicType(res) FROM test;
 If function cannot be executed on some type inside `Dynamic` column, the exception will be thrown:
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 INSERT INTO test VALUES (42), (43), ('str_1');
 SELECT d, dynamicType(d) FROM test;
 ```
@@ -584,7 +558,6 @@ SELECT d, dynamicType(d) FROM test;
 ```
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SELECT d, d + 1 AS res, toTypeName(res), dynamicType(d) FROM test;
 ```
 
@@ -596,7 +569,6 @@ Code: 43. DB::Exception: Illegal types Array(Int64) and UInt8 of arguments of fu
 We can filter out unneeded types:
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SELECT d, d + 1 AS res, toTypeName(res), dynamicType(res) FROM test WHERE dynamicType(d) NOT IN ('String', 'Array(Int64)', 'None')
 ```
 
@@ -610,7 +582,6 @@ SELECT d, d + 1 AS res, toTypeName(res), dynamicType(res) FROM test WHERE dynami
 Or extract required type as subcolumn:
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SELECT d, d.Int64 + 1 AS res, toTypeName(res) FROM test;
 ```
 
@@ -637,7 +608,6 @@ The setting `dynamic_throw_on_type_mismatch` controls what happens when a functi
 **Example:**
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 CREATE TABLE test (d Dynamic) ENGINE = Memory;
 INSERT INTO test VALUES ('world'), (123), (456);
 
@@ -668,13 +638,11 @@ By default `Dynamic` type is not allowed in `GROUP BY`/`ORDER BY` keys, if you w
 
 Examples:
 ```sql
-SET allow_experimental_dynamic_type = 1;
 CREATE TABLE test (d Dynamic) ENGINE=Memory;
 INSERT INTO test VALUES (42), (43), ('abc'), ('abd'), ([1, 2, 3]), ([]), (NULL);
 ```
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SELECT d, dynamicType(d) FROM test;
 ```
 
@@ -691,7 +659,6 @@ SELECT d, dynamicType(d) FROM test;
 ```
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SELECT d, dynamicType(d) FROM test ORDER BY d SETTINGS allow_suspicious_types_in_order_by=1;
 ```
 
@@ -712,7 +679,6 @@ SELECT d, dynamicType(d) FROM test ORDER BY d SETTINGS allow_suspicious_types_in
 Example:
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 CREATE TABLE test (d Dynamic) ENGINE=Memory;
 INSERT INTO test VALUES (1::UInt32), (1::Int64), (100::UInt32), (100::Int64);
 SELECT d, dynamicType(d) FROM test ORDER BY d SETTINGS allow_suspicious_types_in_order_by=1;
@@ -728,7 +694,6 @@ SELECT d, dynamicType(d) FROM test ORDER BY d SETTINGS allow_suspicious_types_in
 ```
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SELECT d, dynamicType(d) FROM test GROUP BY d SETTINGS allow_suspicious_types_in_group_by=1;
 ```
 
@@ -755,7 +720,6 @@ Let's see what happens when the limit is reached in different scenarios.
 During parsing of `Dynamic` values from the data, when the limit is reached for current block of data, all new values will be inserted into shared data structure:
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SELECT d, dynamicType(d), isDynamicElementInSharedData(d) FROM format(JSONEachRow, 'd Dynamic(max_types=3)', '
 {"d" : 42}
 {"d" : [1, 2, 3]}
@@ -787,7 +751,6 @@ In this case ClickHouse chooses what types will remain as separate subcolumns af
 Let's see an example of such merge. First, let's create a table with `Dynamic` column, set the limit of different data types to `3` and insert values with `5` different types:
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 CREATE TABLE test (id UInt64, d Dynamic(max_types=3)) ENGINE=MergeTree ORDER BY id;
 SYSTEM STOP MERGES test;
 INSERT INTO test SELECT number, number FROM numbers(5);
@@ -799,7 +762,6 @@ INSERT INTO test SELECT number, 'str_' || toString(number) FROM numbers(1);
 
 Each insert will create a separate data pert with `Dynamic` column containing single type:
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SELECT count(), dynamicType(d), isDynamicElementInSharedData(d), _part FROM test GROUP BY _part, dynamicType(d), isDynamicElementInSharedData(d) ORDER BY _part, count();
 ```
 
@@ -816,7 +778,6 @@ SELECT count(), dynamicType(d), isDynamicElementInSharedData(d), _part FROM test
 Now, let's merge all parts into one and see what will happen:
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SYSTEM START MERGES test;
 OPTIMIZE TABLE test FINAL;
 SELECT count(), dynamicType(d), isDynamicElementInSharedData(d), _part FROM test GROUP BY _part, dynamicType(d), isDynamicElementInSharedData(d) ORDER BY _part, count() desc;
@@ -839,7 +800,6 @@ As we can see, ClickHouse kept the most frequent types `UInt64` and `Array(UInt6
 All `JSONExtract*` functions support `Dynamic` type:
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SELECT JSONExtract('{"a" : [1, 2, 3]}', 'a', 'Dynamic') AS dynamic, dynamicType(dynamic) AS dynamic_type;
 ```
 
@@ -850,7 +810,6 @@ SELECT JSONExtract('{"a" : [1, 2, 3]}', 'a', 'Dynamic') AS dynamic, dynamicType(
 ```
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SELECT JSONExtract('{"obj" : {"a" : 42, "b" : "Hello", "c" : [1,2,3]}}', 'obj', 'Map(String, Dynamic)') AS map_of_dynamics, mapApply((k, v) -> (k, dynamicType(v)), map_of_dynamics) AS map_of_dynamic_types
 ```
 
@@ -861,7 +820,6 @@ SELECT JSONExtract('{"obj" : {"a" : 42, "b" : "Hello", "c" : [1,2,3]}}', 'obj', 
 ```
 
 ```sql
-SET allow_experimental_dynamic_type = 1;
 SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Dynamic') AS dynamics, arrayMap(x -> (x.1, dynamicType(x.2)), dynamics) AS dynamic_types
 ```
 
