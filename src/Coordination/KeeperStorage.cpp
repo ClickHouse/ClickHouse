@@ -544,14 +544,7 @@ void KeeperStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader)
         node.stats.data_size = static_cast<uint32_t>(data_size);
         if (data_size != 0)
             node.data = std::unique_ptr<char[]>(new char[node.stats.data_size]);
-        streams[0]->readNodeDataAndStats(node.data.get(), data_size, node.stats);
-
-        switch (streams[0]->checkIfSystemNode(path, node.stats))
-        {
-            case KeeperSnapshotReader::Stream::WhatToDoWithNode::ProcessNormally: break;
-            case KeeperSnapshotReader::Stream::WhatToDoWithNode::Skip: continue;
-            case KeeperSnapshotReader::Stream::WhatToDoWithNode::Clear: node = Node{}; break;
-        }
+        streams[0]->readNodeDataAndStats(path, node.data.get(), data_size, node.stats);
 
         auto ephemeral_owner = node.stats.getEphemeralOwner();
         if (!node.stats.isEphemeral() && node.stats.getNumChildren() > 0)
@@ -1254,23 +1247,6 @@ auto callOnConcreteRequestType(Coordination::ZooKeeperRequest & zk_request, F fu
     }
 }
 
-namespace
-{
-
-void handleSystemNodeModification(const KeeperContext & keeper_context, std::string_view error_msg)
-{
-    if (keeper_context.getServerState() == KeeperContext::Phase::INIT && !keeper_context.ignoreSystemPathOnStartup())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "{}. Ignoring it can lead to data loss. "
-            "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true.",
-            error_msg);
-
-    LOG_ERROR(getLogger("KeeperStorage"), fmt::runtime(error_msg));
-}
-
-}
-
 bool KeeperStorage::checkACL(ACLId acl_id, int32_t permission, int64_t session_id, bool committed) const
 {
     if (acl_id == 0)
@@ -1419,9 +1395,7 @@ static Coordination::Error preprocess(
 
     if (Coordination::matchPath(path_created, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
     {
-        auto error_msg = fmt::format("Trying to create a node inside the internal Keeper path ({}) which is not allowed. Path: {}", keeper_system_path, path_created);
-
-        handleSystemNodeModification(keeper_context, error_msg);
+        LOG_ERROR(getLogger("KeeperStorage"), "Trying to create a node inside the internal Keeper path ({}) which is not allowed. Path: {}", keeper_system_path, path_created);
         return Coordination::Error::ZBADARGUMENTS;
     }
 
@@ -1599,13 +1573,11 @@ static Coordination::Error preprocess(
     int64_t session_id,
     bool check_acl,
     int64_t time,
-    const KeeperContext & keeper_context)
+    const KeeperContext & /*keeper_context*/)
 {
     if (Coordination::matchPath(zk_request.path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
     {
-        auto error_msg = fmt::format("Trying to delete an internal Keeper path ({}) which is not allowed", zk_request.path);
-
-        handleSystemNodeModification(keeper_context, error_msg);
+        LOG_ERROR(getLogger("KeeperStorage"), "Trying to delete an internal Keeper path ({}) which is not allowed", zk_request.path);
         return Coordination::Error::ZBADARGUMENTS;
     }
 
@@ -1901,15 +1873,18 @@ static Coordination::Error preprocess(
     int64_t session_id,
     bool check_acl,
     int64_t /* time */,
-    const KeeperContext & keeper_context)
+    const KeeperContext & /*keeper_context*/)
 {
     if (Coordination::matchPath(zk_request.path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
     {
-        auto error_msg = fmt::format("Trying to delete an internal Keeper path ({}) which is not allowed", zk_request.path);
-
-        handleSystemNodeModification(keeper_context, error_msg);
+        LOG_ERROR(getLogger("KeeperStorage"), "Trying to delete (recursive) an internal Keeper path ({}) which is not allowed", zk_request.path);
         return Coordination::Error::ZBADARGUMENTS;
     }
+
+    if (zk_request.path == "/")
+        /// Refuse to removeRecursive the root node.
+        /// Alternatively, we could allow it but skip removing system nodes and the "/" itself.
+        return Coordination::Error::ZBADARGUMENTS;
 
     auto parent_path = Coordination::parentNodePath(zk_request.path);
     auto parent_node_ref = storage.uncommitted_state.getNode(parent_path);
@@ -2084,13 +2059,11 @@ static Coordination::Error preprocess(
     int64_t session_id,
     bool check_acl,
     int64_t time,
-    const KeeperContext & keeper_context)
+    const KeeperContext & /*keeper_context*/)
 {
     if (zk_request.path == "/" || Coordination::matchPath(zk_request.path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
     {
-        auto error_msg = fmt::format("Trying to update an internal Keeper path ({}) which is not allowed", zk_request.path);
-
-        handleSystemNodeModification(keeper_context, error_msg);
+        LOG_ERROR(getLogger("KeeperStorage"), "Trying to update an internal Keeper path ({}) which is not allowed", zk_request.path);
         return Coordination::Error::ZBADARGUMENTS;
     }
 
@@ -2627,9 +2600,7 @@ static Coordination::Error preprocess(
 {
     if (Coordination::matchPath(zk_request.path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
     {
-        auto error_msg = fmt::format("Trying to update an internal Keeper path ({}) which is not allowed", zk_request.path);
-
-        handleSystemNodeModification(keeper_context, error_msg);
+        LOG_ERROR(getLogger("KeeperStorage"), "Trying to update (ACL) an internal Keeper path ({}) which is not allowed", zk_request.path);
         return Coordination::Error::ZBADARGUMENTS;
     }
 

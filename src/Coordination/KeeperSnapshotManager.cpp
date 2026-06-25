@@ -1227,7 +1227,7 @@ void KeeperSnapshotReader::Stream::readNodePathAndDataSize(char * out_path, size
     readVarUInt(out_data_size, *in);
 }
 
-void KeeperSnapshotReader::Stream::readNodeDataAndStats(char * out_data, size_t data_size, KeeperNodeStats & out_stats)
+void KeeperSnapshotReader::Stream::readNodeDataAndStats(std::string_view path, char * out_data, size_t data_size, KeeperNodeStats & out_stats)
 {
     bool cleanup_acl = parent.keeper_context->shouldBlockACL();
     SnapshotVersion version = parent.current_version;
@@ -1341,50 +1341,17 @@ void KeeperSnapshotReader::Stream::readNodeDataAndStats(char * out_data, size_t 
             out_stats.makeTTL(ttl_ms);
         }
     }
-}
 
-KeeperSnapshotReader::Stream::WhatToDoWithNode KeeperSnapshotReader::Stream::checkIfSystemNode(std::string_view path, const KeeperNodeStats & stats)
-{
-    using enum Coordination::PathMatchResult;
+    /// Refuse to load system nodes from snapshot.
     auto match_result = Coordination::matchPath(path, keeper_system_path);
-
-    const auto get_error_msg = [&]
-    {
-        return fmt::format("Cannot read node on path {} from a snapshot because it is used as a system node", path);
-    };
-
-    if (match_result == IS_CHILD)
-    {
-        if (parent.keeper_context->ignoreSystemPathOnStartup() || parent.keeper_context->getServerState() != KeeperContext::Phase::INIT)
-        {
-            LOG_ERROR(getLogger("KeeperSnapshotManager"), "{}. Ignoring it", get_error_msg());
-            return WhatToDoWithNode::Skip;
-        }
+    if (match_result == Coordination::PathMatchResult::IS_CHILD)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Snapshot contains system node: {}", path);
+    if (match_result == Coordination::PathMatchResult::EXACT &&
+        (out_stats.data_size != 0 || out_stats.mzxid != 0))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "{}. Ignoring it can lead to data loss. "
-            "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
-            get_error_msg());
-    }
-    if (match_result == EXACT)
-    {
-        if (stats.data_size != 0 || stats.mzxid != 0)
-        {
-            if (parent.keeper_context->ignoreSystemPathOnStartup() || parent.keeper_context->getServerState() != KeeperContext::Phase::INIT)
-            {
-                LOG_ERROR(getLogger("KeeperSnapshotManager"), "{}. Ignoring it", get_error_msg());
-                return WhatToDoWithNode::Clear;
-            }
-            else
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "{}. Ignoring it can lead to data loss. "
-                    "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
-                    get_error_msg());
-        }
-    }
-
-    return WhatToDoWithNode::ProcessNormally;
+            "Snapshot contains system root node {} with unexpected data ({} bytes) or stats (mzxid={})",
+            path, out_stats.data_size, out_stats.mzxid);
 }
 
 void KeeperSnapshotReader::finishStreams(std::vector<std::unique_ptr<Stream>> /*streams*/)

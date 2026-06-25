@@ -53,18 +53,7 @@ struct KeeperSnapshotReader
         /// Returns false if there are no more nodes to read.
         bool readNodePathSize(size_t & out_path_size);
         void readNodePathAndDataSize(char * out_path, size_t path_size, size_t & out_data_size);
-        void readNodeDataAndStats(char * out_data, size_t data_size, KeeperNodeStats & out_stats);
-
-        /// Annoying compatibility thing: very old snapshots may have system nodes (/keeper/...),
-        /// and we may need to skip them or clear their stats+data.
-        /// Hopefully we can remove this soon.
-        enum class WhatToDoWithNode
-        {
-            ProcessNormally,
-            Skip,
-            Clear,
-        };
-        WhatToDoWithNode checkIfSystemNode(std::string_view path, const KeeperNodeStats & stats);
+        void readNodeDataAndStats(std::string_view path, char * out_data, size_t data_size, KeeperNodeStats & out_stats);
 
     private:
         friend struct KeeperSnapshotReader;

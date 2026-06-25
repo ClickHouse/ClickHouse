@@ -155,7 +155,7 @@ void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool 
                         stream.readNodePathAndDataSize(path_buf.data(), path_size, data_size);
                         /// Read (and discard) the node's data and stats to advance to the next node.
                         data_buf.resize(data_size);
-                        stream.readNodeDataAndStats(data_buf.data(), data_size, stats);
+                        stream.readNodeDataAndStats(path_buf, data_buf.data(), data_size, stats);
                         paths.push_back(path_buf);
                     }
                     reader->finishStreams(std::move(streams));
