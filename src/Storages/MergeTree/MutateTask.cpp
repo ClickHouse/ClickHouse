@@ -2041,7 +2041,7 @@ private:
             }
         }
 
-        bool is_full_wide_part = is_full_part_storage && isWidePart(ctx->new_data_part);
+        bool is_full_wide_part = is_full_part_storage && isWidePart(ctx->source_part);
         const auto & indices = ctx->metadata_snapshot->getSecondaryIndices();
 
         MergeTreeIndices skip_indices;
@@ -2065,15 +2065,19 @@ private:
             }
             else
             {
-                auto prefix = getIndexFileName(idx.name, idx.escape_filenames) + ".";
-                auto it = ctx->source_part->checksums.files.upper_bound(prefix);
-                while (it != ctx->source_part->checksums.files.end())
+                static const std::array<String, 3> known_substream_suffixes = {"", ".dct", ".pst"};
+                static const std::array<String, 2> known_index_extensions = {".idx2", ".idx"};
+                const String index_file_name = getIndexFileName(idx.name, idx.escape_filenames);
+                for (const auto & suffix : known_substream_suffixes)
                 {
-                    if (!startsWith(it->first, prefix))
-                        break;
-
-                    entries_to_hardlink.insert(it->first);
-                    ++it;
+                    const String stream_name = index_file_name + suffix;
+                    for (const auto & extension : known_index_extensions)
+                    {
+                        if (auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, ctx->source_part->checksums))
+                            entries_to_hardlink.insert(*actual + extension);
+                    }
+                    if (auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, ctx->mrk_extension, ctx->source_part->checksums))
+                        entries_to_hardlink.insert(*actual + ctx->mrk_extension);
                 }
             }
         }

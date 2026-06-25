@@ -1,0 +1,5 @@
+before	['Compact']
+after	['Wide']
+rows	2000
+filtered	1
+1
