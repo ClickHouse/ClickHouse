@@ -238,6 +238,18 @@ SELECT bloomFilterContains(bf, 'hello');
 WITH (SELECT groupBloomFilterState(100)(materialize(CAST('hello', 'Nullable(String)'))) FROM numbers(1)) AS bf
 SELECT bloomFilterContains(bf, CAST(NULL, 'Nullable(String)'));
 
+-- Nullable(UInt64): all-NULL build input has no inserted values
+WITH (SELECT groupBloomFilterState(100)(materialize(CAST(NULL, 'Nullable(UInt64)'))) FROM numbers(1)) AS bf
+SELECT bloomFilterContains(bf, toUInt64(42));
+
+-- Nullable(UInt64): non-NULL value is found through nullable aggregate state layout
+WITH (SELECT groupBloomFilterState(100)(materialize(CAST(42, 'Nullable(UInt64)'))) FROM numbers(1)) AS bf
+SELECT bloomFilterContains(bf, toUInt64(42));
+
+-- Nullable(DateTime64): decimal-backed value is found through nullable aggregate state layout
+WITH (SELECT groupBloomFilterState(100)(materialize(CAST(toDateTime64('2023-01-01 12:00:00.123', 3), 'Nullable(DateTime64(3))'))) FROM numbers(1)) AS bf
+SELECT bloomFilterContains(bf, toDateTime64('2023-01-01 12:00:00.123', 3));
+
 -- bloomFilterContains with incompatible value type must throw instead of reading a wrong column type
 WITH (SELECT groupBloomFilterState(100)(toUUID('550e8400-e29b-41d4-a716-446655440000')) FROM numbers(1)) AS bf
 SELECT bloomFilterContains(bf, toUInt64(42)); -- { serverError NOT_IMPLEMENTED }
