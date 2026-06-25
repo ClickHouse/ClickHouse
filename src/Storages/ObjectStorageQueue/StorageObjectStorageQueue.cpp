@@ -1388,9 +1388,6 @@ void StorageObjectStorageQueue::alter(
         StorageInMemoryMetadata new_metadata(old_metadata);
         alter_commands.apply(new_metadata, local_context);
 
-        /// Check that the resulting metadata does not exceed max_query_size before mutating any state.
-        checkMetadataDoesNotExceedMaxQuerySize(table_id, new_metadata, local_context);
-
         auto & new_settings = new_metadata.settings_changes->as<ASTSetQuery &>().changes;
 
         if (old_settings)
@@ -1428,6 +1425,11 @@ void StorageObjectStorageQueue::alter(
                     new_settings.push_back(SettingChange(name, default_settings.get(name)));
             }
         }
+
+        /// Check that the resulting metadata does not exceed max_query_size before mutating any state.
+        /// This must run after reset settings are re-added with their default values above, because that
+        /// expansion can grow the metadata back over the limit.
+        checkMetadataDoesNotExceedMaxQuerySize(table_id, new_metadata, local_context);
 
         SettingsChanges changed_settings;
         std::set<std::string> new_settings_set;
