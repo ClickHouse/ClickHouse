@@ -15,6 +15,8 @@ namespace DB
 
 class IAST;
 struct Settings;
+class BackupEntriesCollector;
+class RestorerFromBackup;
 
 enum class WorkloadEntityType : uint8_t
 {
@@ -96,6 +98,12 @@ public:
 
     /// Returns the name of resource used for memory reservation
     virtual String getMemoryReservationResourceName() = 0;
+
+    /// Makes backup entries to back up all the workload entities of the specified type.
+    virtual void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, WorkloadEntityType entity_type) const = 0;
+
+    /// Restores workload entities of the specified type from a backup.
+    virtual void restore(RestorerFromBackup & restorer, const String & data_path_in_backup, WorkloadEntityType entity_type) = 0;
 };
 
 }

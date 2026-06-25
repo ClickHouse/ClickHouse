@@ -10,8 +10,18 @@
 #include <Parsers/ASTCreateResourceQuery.h>
 #include <Parsers/ParserCreateWorkloadEntity.h>
 #include <Parsers/parseQuery.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Backups/BackupEntriesCollector.h>
+#include <Backups/BackupEntryFromMemory.h>
+#include <Backups/IBackup.h>
+#include <Backups/IBackupCoordination.h>
+#include <Backups/IRestoreCoordination.h>
+#include <Backups/RestorerFromBackup.h>
+#include <Common/escapeForFileName.h>
+
+#include <filesystem>
 
 #include <boost/container/flat_set.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -23,9 +33,12 @@
 namespace DB
 {
 
+namespace fs = std::filesystem;
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_RESTORE_TABLE;
     extern const int LOGICAL_ERROR;
 }
 
@@ -983,6 +996,143 @@ std::vector<std::pair<String, ASTPtr>> WorkloadEntityStorageBase::parseEntitiesF
     }
 
     return result;
+}
+
+void WorkloadEntityStorageBase::backup(
+    BackupEntriesCollector & backup_entries_collector,
+    const String & data_path_in_backup,
+    WorkloadEntityType entity_type) const
+{
+    std::vector<std::pair<String, BackupEntryPtr>> backup_entries;
+    for (const auto & [entity_name, ast] : getAllEntities())
+    {
+        if (getEntityType(ast) != entity_type)
+            continue;
+        backup_entries.emplace_back(
+            escapeForFileName(entity_name) + ".sql",
+            std::make_shared<BackupEntryFromMemory>(ast->formatWithSecretsOneLine()));
+    }
+
+    if (!isReplicated())
+    {
+        fs::path data_path_in_backup_fs{data_path_in_backup};
+        for (const auto & [file_name, entry] : backup_entries)
+            backup_entries_collector.addBackupEntry(data_path_in_backup_fs / file_name, entry);
+        return;
+    }
+
+    String replication_id = getReplicationID();
+    auto backup_coordination = backup_entries_collector.getBackupCoordination();
+    backup_coordination->addReplicatedWorkloadEntitiesDir(replication_id, entity_type, data_path_in_backup);
+
+    /// On the stage of running post tasks, all directories will already be added to the backup coordination object.
+    /// They will only be returned for one of the hosts below, for the rest an empty list.
+    /// See also BackupCoordinationReplicatedWorkloadEntities class.
+    backup_entries_collector.addPostTask(
+        [my_backup_entries = std::move(backup_entries),
+         my_replication_id = std::move(replication_id),
+         entity_type,
+         &backup_entries_collector,
+         backup_coordination]
+        {
+            auto dirs = backup_coordination->getReplicatedWorkloadEntitiesDirs(my_replication_id, entity_type);
+
+            for (const auto & dir : dirs)
+            {
+                fs::path dir_fs{dir};
+                for (const auto & [file_name, entry] : my_backup_entries)
+                    backup_entries_collector.addBackupEntry(dir_fs / file_name, entry);
+            }
+        });
+}
+
+void WorkloadEntityStorageBase::restore(
+    RestorerFromBackup & restorer,
+    const String & data_path_in_backup,
+    WorkloadEntityType entity_type)
+{
+    if (isReplicated()
+        && !restorer.getRestoreCoordination()->acquireReplicatedWorkloadEntities(getReplicationID(), entity_type))
+        return; /// Other replica is already restoring the workload entities.
+
+    auto backup = restorer.getBackup();
+    fs::path data_path_in_backup_fs{data_path_in_backup};
+
+    Strings filenames = backup->listFiles(data_path_in_backup, /*recursive*/ false);
+    if (filenames.empty())
+        return; /// Nothing to restore.
+
+    for (const auto & filename : filenames)
+    {
+        if (!filename.ends_with(".sql"))
+            throw Exception(
+                ErrorCodes::CANNOT_RESTORE_TABLE,
+                "Cannot restore workload entities: File name {} doesn't have the extension .sql",
+                String{data_path_in_backup_fs / filename});
+    }
+
+    std::vector<std::pair<String, ASTPtr>> parsed_entities;
+    for (const auto & filename : filenames)
+    {
+        String filepath = data_path_in_backup_fs / filename;
+        auto in = backup->readFile(filepath);
+        String statement_def;
+        readStringUntilEOF(statement_def, *in);
+
+        for (auto & name_and_ast : parseEntitiesFromString(statement_def, log))
+            parsed_entities.push_back(std::move(name_and_ast));
+    }
+
+    bool should_add_restore_task = false;
+    {
+        std::lock_guard lock{mutex};
+        for (auto & [name, ast] : parsed_entities)
+            entities_to_restore.emplace(name, ast);
+        if (!restore_task_added)
+        {
+            restore_task_added = true;
+            should_add_restore_task = true;
+        }
+    }
+
+    /// WORKLOADs and RESOURCEs are backed up (and restored) via two separate system tables (system.workloads and
+    /// system.resources), so their restore tasks are scheduled independently. We accumulate the parsed entities of
+    /// both types and create them all together in a single task, in an order that keeps every reference valid
+    /// (resources first, then workloads parent-first). Adding the task only once is enough: by the time data restore
+    /// tasks run, restore() has already been called for both tables.
+    if (should_add_restore_task)
+    {
+        auto restore_context = restorer.getContext();
+        restorer.addDataRestoreTask([this, restore_context] { restoreEntitiesAccumulatedFromBackup(restore_context); });
+    }
+}
+
+void WorkloadEntityStorageBase::restoreEntitiesAccumulatedFromBackup(const ContextMutablePtr & context)
+{
+    std::unordered_map<String, ASTPtr> to_restore;
+    {
+        std::lock_guard lock{mutex};
+        to_restore.swap(entities_to_restore);
+        restore_task_added = false;
+    }
+
+    if (to_restore.empty())
+        return;
+
+    /// orderEntities() returns resources first and then workloads in parent-first order, so that every reference
+    /// (workload parent, FOR resource) is already created by the time it is needed.
+    for (const auto & event : orderEntities(to_restore))
+    {
+        /// Use CREATE-IF-NOT-EXISTS semantics: skip entities that already exist rather than failing the whole RESTORE.
+        storeEntity(
+            context,
+            event.type,
+            event.name,
+            event.entity,
+            /* throw_if_exists = */ false,
+            /* replace_if_exists = */ false,
+            context->getSettingsRef());
+    }
 }
 
 }

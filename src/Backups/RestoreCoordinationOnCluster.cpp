@@ -6,6 +6,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/CreateQueryUUIDs.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
+#include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
 
@@ -66,6 +67,7 @@ void RestoreCoordinationOnCluster::createRootNodes()
             zk->createIfNotExists(zookeeper_path + "/repl_tables_data_acquired", "");
             zk->createIfNotExists(zookeeper_path + "/repl_access_storages_acquired", "");
             zk->createIfNotExists(zookeeper_path + "/repl_sql_objects_acquired", "");
+            zk->createIfNotExists(zookeeper_path + "/repl_workload_entities_acquired", "");
             zk->createIfNotExists(zookeeper_path + "/keeper_map_tables", "");
             zk->createIfNotExists(zookeeper_path + "/table_uuids", "");
 
@@ -262,6 +264,48 @@ bool RestoreCoordinationOnCluster::acquireReplicatedSQLObjects(const String & lo
             {
                 case UserDefinedSQLObjectType::Function:
                     path += "functions";
+                    break;
+            }
+
+            auto code = zk->tryCreate(path, "", zkutil::CreateMode::Persistent);
+            if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
+                throw zkutil::KeeperException::fromPath(code, path);
+
+            if (code == Coordination::Error::ZOK)
+            {
+                result = true;
+                return;
+            }
+
+            /// We need to check who created that node
+            result = zk->get(path) == toString(current_host_index);
+        });
+    return result;
+}
+
+bool RestoreCoordinationOnCluster::acquireReplicatedWorkloadEntities(const String & loader_zk_path, WorkloadEntityType entity_type)
+{
+    auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::acquireReplicatedWorkloadEntities");
+    bool result = false;
+    auto holder = with_retries.createRetriesControlHolder("acquireReplicatedWorkloadEntities");
+    holder.retries_ctl.retryLoop(
+        [&, &zk = holder.faulty_zookeeper]()
+        {
+            with_retries.renewZooKeeper(zk);
+
+            String path = zookeeper_path + "/repl_workload_entities_acquired/" + escapeForFileName(loader_zk_path);
+            zk->createIfNotExists(path, "");
+
+            path += "/";
+            switch (entity_type)
+            {
+                case WorkloadEntityType::Workload:
+                    path += "workloads";
+                    break;
+                case WorkloadEntityType::Resource:
+                    path += "resources";
+                    break;
+                case WorkloadEntityType::MAX:
                     break;
             }
 
