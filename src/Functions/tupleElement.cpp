@@ -154,7 +154,7 @@ public:
 
             auto subcolumn_name = subcolumn_name_col->getValue<String>();
             /// Use combined `@` subcolumn that merges literal value and sub-object.
-            auto combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + subcolumn_name + "`";
+            auto combined_name = DataTypeObject::getCombinedSubcolumnName(subcolumn_name);
             return wrapInArrays(object->getSubcolumnType(combined_name), count_arrays);
         }
 
@@ -385,7 +385,7 @@ private:
         /// Use combined `@` subcolumn that merges literal value and sub-object.
         /// For rows with a literal at requested path we return the literal, for rows with a nested object
         /// we return the nested object as JSON column, so nested `tupleElement` calls can be applied to it.
-        auto combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + element_name + "`";
+        auto combined_name = DataTypeObject::getCombinedSubcolumnName(element_name);
         return object_type.getSubcolumn(combined_name, object_column);
     }
 };

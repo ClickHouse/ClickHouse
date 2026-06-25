@@ -3,6 +3,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/ColumnNumbers.h>
@@ -10,19 +11,27 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
+#include <IO/ReadHelpers.h>
+#include <Core/Settings.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool json_type_escape_dots_in_keys;
+}
 
 namespace ErrorCodes
 {
@@ -59,6 +68,11 @@ public:
     static constexpr auto name = (mode == ArrayElementExceptionMode::Zero) ? "arrayElement" : "arrayElementOrNull";
     static FunctionPtr create(ContextPtr context_);
 
+    explicit FunctionArrayElement(ContextPtr context_)
+        : escape_dots_in_json_keys(context_ && context_->getSettingsRef()[Setting::json_type_escape_dots_in_keys])
+    {
+    }
+
     String getName() const override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -66,6 +80,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
@@ -162,6 +177,10 @@ private:
      */
     ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
 
+    /** For a JSON (Object) column, extract the combined subcolumn for the given key.
+      */
+    ColumnPtr executeJSON(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
+
     using Offsets = ColumnArray::Offsets;
 
     static bool matchKeyToIndexNumber(
@@ -182,6 +201,11 @@ private:
     template <typename Matcher>
     static void
     executeMatchConstKeyToIndex(size_t num_rows, size_t num_values, PaddedPODArray<UInt64> & matched_idxs, const Matcher & matcher);
+
+    /// Escape dots in JSON key if json_type_escape_dots_in_keys setting is enabled.
+    String escapeJSONKeyIfNeeded(const String & key) const;
+
+    bool escape_dots_in_json_keys = false;
 };
 
 
@@ -871,9 +895,9 @@ struct ArrayElementGenericImpl
 }
 
 template <ArrayElementExceptionMode mode>
-FunctionPtr FunctionArrayElement<mode>::create(ContextPtr)
+FunctionPtr FunctionArrayElement<mode>::create(ContextPtr context_)
 {
-    return std::make_shared<FunctionArrayElement>();
+    return std::make_shared<FunctionArrayElement>(std::move(context_));
 }
 
 
@@ -2047,6 +2071,62 @@ bool FunctionArrayElement<mode>::matchKeyToIndexNumber(
 }
 
 template <ArrayElementExceptionMode mode>
+ColumnPtr FunctionArrayElement<mode>::executeJSON(
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
+{
+    String key;
+    if (const auto * key_const = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
+    {
+        key = key_const->getValue<String>();
+    }
+    else if (const auto * key_str = checkAndGetColumn<ColumnString>(arguments[1].column.get()); key_str && arguments[1].column->size() == 1)
+    {
+        key = String(key_str->getDataAt(0));
+    }
+    else
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Second argument of function {} for JSON type must be a constant String, got {}",
+            getName(), arguments[1].column->getName());
+    }
+
+    /// When json_type_escape_dots_in_keys is enabled, dots in individual path
+    /// elements are stored escaped as %2E. Apply the same escaping to the key.
+    key = escapeJSONKeyIfNeeded(key);
+
+    /// Form the combined subcolumn name: @`key`
+    auto subcolumn_name = DataTypeObject::getCombinedSubcolumnName(key);
+
+    /// Use the generic IDataType subcolumn API.
+    /// This calls DataTypeObject::getDynamicSubcolumnData internally,
+    /// handling typed paths, literal+sub-object merging, etc.
+    const auto & object_type = arguments[0].type;
+    ColumnPtr col = arguments[0].column;
+
+    /// Unwrap ColumnConst - getSubcolumn works on the inner column.
+    bool is_const = checkAndGetColumnConst<ColumnObject>(col.get()) != nullptr;
+    if (is_const)
+        col = assert_cast<const ColumnConst &>(*col).getDataColumnPtr();
+
+    auto result_column = object_type->getSubcolumn(subcolumn_name, col);
+
+    /// Re-wrap in ColumnConst if the input was const.
+    if (is_const)
+        result_column = ColumnConst::create(std::move(result_column), input_rows_count);
+
+    return result_column;
+}
+
+template <ArrayElementExceptionMode mode>
+String FunctionArrayElement<mode>::escapeJSONKeyIfNeeded(const String & key) const
+{
+    if (escape_dots_in_json_keys)
+        return escapeDotInJSONKey(key);
+    return key;
+}
+
+template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeMap(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
@@ -2141,9 +2221,46 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
 }
 
 template <ArrayElementExceptionMode mode>
+DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+{
+    if (const auto * object_type = checkAndGetDataType<DataTypeObject>(arguments[0].type.get()))
+    {
+        const auto * key_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+        if (!key_col)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument of function {} with JSON type must be a constant String",
+                getName());
+
+        auto key = key_col->getValue<String>();
+        key = escapeJSONKeyIfNeeded(key);
+
+        /// Form combined subcolumn name: @`key`
+        auto combined_name = DataTypeObject::getCombinedSubcolumnName(key);
+
+        /// getSubcolumnType resolves through getDynamicSubcolumnData:
+        /// - typed path "a UInt32" -> returns UInt32
+        /// - non-typed path -> returns Dynamic
+        return object_type->getSubcolumnType(combined_name);
+    }
+
+    /// Fall through to existing DataTypes-only logic for Array/Map.
+    DataTypes data_types(arguments.size());
+    for (size_t i = 0; i < arguments.size(); ++i)
+        data_types[i] = arguments[i].type;
+    return getReturnTypeImpl(data_types);
+}
+
+template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
+    const auto * col_object = checkAndGetColumn<ColumnObject>(arguments[0].column.get());
+    const auto * col_const_object = checkAndGetColumnConst<ColumnObject>(arguments[0].column.get());
+
+    if (col_object || col_const_object)
+        return executeJSON(arguments, result_type, input_rows_count);
+
     const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
     const auto * col_const_map = checkAndGetColumnConst<ColumnMap>(arguments[0].column.get());
 
@@ -2340,18 +2457,21 @@ Arrays in ClickHouse are one-indexed.
 Negative indexes are supported. In this case, the corresponding element is selected, numbered from the end. For example, `arr[-1]` is the last item in the array.
 
 Operator `[n]` provides the same functionality.
+
+Also supports accessing [`JSON`](/sql-reference/data-types/newjson) columns by a constant string key using bracket syntax `json['key']`. Nested access can be chained: `json['a']['b']`.
     )";
     FunctionDocumentation::Syntax syntax = "arrayElement(arr, n)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "The array to search. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"n", "Position of the element to get. [`(U)Int*`](/sql-reference/data-types/int-uint)."}
+        {"arr", "The array to search. [`Array(T)`](/sql-reference/data-types/array). Or a [`JSON`](/sql-reference/data-types/newjson) column."},
+        {"n", "Position of the element to get. [`(U)Int*`](/sql-reference/data-types/int-uint). Or a constant [`String`](/sql-reference/data-types/string) key for JSON columns."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a single combined array from the provided array arguments", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT arrayElement(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElement(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
         {"Using [n] notation", "SELECT arr[2] FROM (SELECT [1, 2, 3] AS arr)", "2"},
-        {"Index out of array bounds", "SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "0"}
+        {"Index out of array bounds", "SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "0"},
+        {"JSON bracket access", "SELECT json['a'] FROM (SELECT '{\"a\" : 42}'::JSON AS json)", "42"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
