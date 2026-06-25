@@ -42,14 +42,14 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.7",
         {
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
-        });
-
-        addSettingsChanges(settings_changes_history, "26.6",
-        {
             {"count_distinct_optimization", false, true, "Enable `count_distinct_optimization` by default."},
             {"query_plan_rewrite_order_by_limit", false, false, "A new setting to rewrite `ORDER BY ... LIMIT` queries to use a more efficient plan. Off by default until the rewrite's interaction with read-bytes estimation is resolved and the rejection matrix has committed test coverage."},
             {"query_plan_max_limit_for_rewrite_order_by_limit", 1000000, 1000000, "A new setting to control the maximum `LIMIT` value that allows to use the rewrite for `ORDER BY ... LIMIT`. Zero disables the limit."},
             {"query_plan_min_columns_to_use_rewrite_order_by_limit", 50, 50, "A new setting controlling the minimum number of columns required to use the `ORDER BY ... LIMIT` rewrite."},
+        });
+
+        addSettingsChanges(settings_changes_history, "26.6",
+        {
             {"output_format_image_width", 1024, 1024, "New setting controlling the width of the output image for image output formats such as PNG."},
             {"output_format_image_height", 1024, 1024, "New setting controlling the height of the output image for image output formats such as PNG."},
             {"output_format_image_terminal_mode", "", "", "New setting controlling whether image output formats such as PNG are rendered directly to the terminal using an inline image protocol."},
