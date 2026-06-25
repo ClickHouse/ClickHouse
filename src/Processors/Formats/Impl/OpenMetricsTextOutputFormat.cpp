@@ -257,6 +257,19 @@ void OpenMetricsTextOutputFormat::fixupBucketLabels(CurrentMetric & metric)
                 synthetic.labels["count"] = "";
                 metric.values.emplace_back(std::move(synthetic));
             }
+            else if (state.has_count_marker && state.has_inf_bucket
+                && state.count_marker_row && state.inf_bucket_row
+                && tryParseFloat(state.inf_bucket_row->value) != tryParseFloat(state.count_marker_row->value))
+            {
+                /// When a series already exposes both the `+Inf` bucket and the `_count` marker, the
+                /// histogram contract requires them to carry the same value: the `+Inf` bucket is the
+                /// cumulative total, which is exactly `_count`. A mismatch is invalid exposition rather
+                /// than a synthesis opportunity, so reject it.
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Histogram '+Inf' bucket value '{}' must equal the '_count' value '{}' for output format '{}'",
+                    state.inf_bucket_row->value, state.count_marker_row->value, FORMAT_NAME);
+            }
         }
     }
 
@@ -355,6 +368,14 @@ void OpenMetricsTextOutputFormat::flushCurrentMetric()
         }
     }
 
+    /// Synthesize the `+Inf`/`_count` counterparts, order the rows, and validate `+Inf`/`_count`
+    /// consistency before emitting anything, so a rejected histogram/summary family fails without
+    /// leaving a dangling `# HELP`/`# TYPE`/`# UNIT` header in the stream (matching the per-row
+    /// validation above, which also rejects before a byte is written).
+    bool use_buckets = current_metric.type == "histogram" || current_metric.type == "summary";
+    if (use_buckets)
+        fixupBucketLabels(current_metric);
+
     auto write_attribute = [this](const char * marker, const String & value)
     {
         if (value.empty())
@@ -369,10 +390,6 @@ void OpenMetricsTextOutputFormat::flushCurrentMetric()
     write_attribute("# HELP ", current_metric.help);
     write_attribute("# TYPE ", current_metric.type);
     write_attribute("# UNIT ", current_metric.unit);
-
-    bool use_buckets = current_metric.type == "histogram" || current_metric.type == "summary";
-    if (use_buckets)
-        fixupBucketLabels(current_metric);
 
     for (auto & val : current_metric.values)
     {

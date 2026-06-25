@@ -182,6 +182,20 @@ SELECT * FROM (
     SELECT 'req', 20.0, '', 'histogram', map('job', 'web', 'le', '+Inf'), CAST(NULL AS Nullable(Int64)), ''
 ) ORDER BY value FORMAT OpenMetrics;
 
+-- When a series carries BOTH the `+Inf` bucket and the `_count` marker (same series + timestamp), the
+-- histogram contract requires equal values (the `+Inf` bucket is the cumulative total, i.e. `_count`):
+-- equal values coexist and emit as-is, a mismatch is invalid exposition and is rejected.
+SELECT * FROM (
+    SELECT 'h' AS name, 5.0 AS value, '' AS help, 'histogram' AS type, map('le', '+Inf') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
+    UNION ALL
+    SELECT 'h', 5.0, '', 'histogram', map('count', ''), CAST(NULL AS Nullable(Int64)), ''
+) ORDER BY value FORMAT OpenMetrics;
+SELECT * FROM (
+    SELECT 'h' AS name, 5.0 AS value, '' AS help, 'histogram' AS type, map('le', '+Inf') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
+    UNION ALL
+    SELECT 'h', 7.0, '', 'histogram', map('count', ''), CAST(NULL AS Nullable(Int64)), ''
+) ORDER BY value FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+
 -- Output label serialization: only `\\`,`\"`,`\n` escapes; other control chars / duplicate keys / bad names rejected.
 SELECT 'm' AS name, 1.0 AS value, map('k', concat('a', char(10), 'b')) AS labels FORMAT OpenMetrics;
 SELECT 'm' AS name, 1.0 AS value, map('k', concat('a', char(9), 'b')) AS labels FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }

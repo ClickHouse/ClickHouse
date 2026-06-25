@@ -82,6 +82,11 @@ req_count{job="api"} 10
 req_count{job="web"} 20
 
 # EOF
+# TYPE h histogram
+h_bucket{le="+Inf"} 5
+h_count 5
+
+# EOF
 m{k="a\nb"} 1
 
 # EOF
