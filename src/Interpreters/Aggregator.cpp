@@ -192,13 +192,13 @@ DB::DataTypes calculateAggregateStateTypes(const DB::Block & header, const DB::A
     return types;
 }
 
-DB::ColumnNumbersList calculateAggregatesPositions(const DB::Block & header, const DB::Aggregator::Params & params)
+std::vector<DB::ColumnNumbers> calculateAggregatesPositions(const DB::Block & header, const DB::Aggregator::Params & params)
 {
     /// Only used in the execute path.
     if (params.only_merge)
         return {};
 
-    DB::ColumnNumbersList positions;
+    std::vector<DB::ColumnNumbers> positions;
     positions.reserve(params.aggregates_size);
     for (const auto & aggregate : params.aggregates)
     {

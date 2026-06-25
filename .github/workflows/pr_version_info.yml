@@ -5,11 +5,6 @@ on:
   schedule:
     - cron: 0 * * * *
   workflow_dispatch:
-    inputs:
-      days:
-        description: Lookback window in days; overrides the default for a manual run (e.g. 100 to backfill). Leave empty for the scheduled 1-day window.
-        required: false
-        default: ''
 
 concurrency:
   group: ${{ github.workflow }}
@@ -40,9 +35,7 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
-          ${{ toJson(github.event.inputs) }}
-          EOF
+
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -76,9 +69,7 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
-          ${{ toJson(github.event.inputs) }}
-          EOF
+
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF

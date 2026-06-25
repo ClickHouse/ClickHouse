@@ -12,7 +12,6 @@
 #include <base/types.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <IO/ReadBuffer.h>
 
@@ -40,7 +39,7 @@ class IDataType;
 class IWindowFunction;
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = VectorWithMemoryTracking<DataTypePtr>;
+using DataTypes = std::vector<DataTypePtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 struct AggregateFunctionProperties;
 

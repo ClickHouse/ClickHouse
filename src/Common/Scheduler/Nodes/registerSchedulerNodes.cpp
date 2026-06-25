@@ -7,7 +7,6 @@
 namespace DB
 {
 
-// This legacy factory is only used by CustomResourceManager and does not require all nodes to be registered.
 void registerSchedulerNodes()
 {
     auto & factory = SchedulerNodeFactory::instance();
