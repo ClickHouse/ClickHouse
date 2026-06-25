@@ -388,29 +388,41 @@ struct AggregateFunctionMergedJSONPatchData
         addKeyValuePairs(object_column, row_num, sort_key, arena);
     }
 
+    /// A leaf entry used as a staging buffer before atomic batch insertion.
+    /// path is owned (String) so collectLeaves and deserialize can move/copy into it safely.
+    struct LeafRef
+    {
+        String path;
+        Field value;
+        SortKey sort_key;
+    };
+
+    /// Recursively flatten value into (path, scalar-or-array, sort_key) leaf entries.
+    static void collectLeaves(String path, Field value, const SortKey & sort_key, std::vector<LeafRef> & out) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    {
+        if (!isObjectField(value))
+        {
+            out.push_back({std::move(path), std::move(value), sort_key});
+            return;
+        }
+        const auto & object = value.safeGet<Object>();
+        for (const auto & [child_key, child_value] : object)
+        {
+            String child_path = path.empty() ? child_key : path + '.' + child_key;
+            collectLeaves(child_path, child_value, sort_key, out);
+        }
+    }
+
     void addKeyValuePairs(const ColumnObject & object_column, size_t row_num, const SortKey & sort_key, Arena & arena)
     {
-        /// Collect all leaf (path, value) pairs from the row before touching the aggregate state.
+        /// Collect all leaf (path, value) pairs from the row, then insert them atomically.
         ///
-        /// The conflict-resolution helpers (hasNewerConflictingEntry / eraseShadowedEntries) must
-        /// only see the pre-existing state, not siblings from the same row. If we called
-        /// insertPathValue incrementally, a later path like "a.b" could erase an earlier sibling
-        /// "a" even though both come from the same patch and carry the same sort key.  The classic
-        /// example is JSON(a UInt32, `a.b` UInt32) with {"a":42}: ColumnObject stores both a=42
-        /// and a.b=0 in their typed columns; without this two-phase approach, processing "a.b"
-        /// would call eraseShadowedEntries("a.b", K) which erases "a" because its sort_key <= K.
-        ///
-        /// By collecting all leaf paths first and then inserting them against a snapshot of the
-        /// pre-existing state, siblings can never clobber each other.
-        ///
-        /// Note: SortedPathsIterator already skips null-valued dynamic paths (ColumnDynamic
-        /// represents absence as null).  Typed paths have no null/absent representation, so every
-        /// typed path in the schema is always yielded regardless of whether it was written for this
-        /// row.  We therefore pass all typed paths through; the two-phase insert ensures that a
-        /// default-valued path (e.g. a.b=0 when only "a" was written) does not erase a conflicting
-        /// sibling (a=42) from the same row, while still allowing a genuine {"a":0} write to win
-        /// over an older {"a":5} from a different row.
-        std::vector<std::pair<String, Field>> leaves; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        /// insertBatchAtomic scopes all conflict checks and erasures to the pre-existing state,
+        /// so intra-row siblings (e.g. "a" and "a.b" from JSON(a UInt32, `a.b` UInt32)) cannot
+        /// erase each other.  SortedPathsIterator already skips null-valued dynamic paths;
+        /// typed paths with no null representation are passed through unconditionally and rely
+        /// on the batch atomicity to prevent sibling clobbering.
+        std::vector<LeafRef> batch; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
         ColumnObject::SortedPathsIterator it(object_column, row_num);
         while (!it.end())
@@ -418,81 +430,75 @@ struct AggregateFunctionMergedJSONPatchData
             auto path_info = it.getCurrentPathInfo();
             Field value;
             path_info.column->get(path_info.row, value);
-
-            /// Flatten Object fields into child paths, mirroring insertPathValue.
-            collectLeaves(String(path_info.path), std::move(value), leaves);
+            collectLeaves(String(path_info.path), std::move(value), sort_key, batch);
             it.next();
         }
 
-        /// Phase 1: decide which leaves survive against the pre-existing state.
-        /// We snapshot entries.size() so that entries added in phase 2 are never
-        /// consulted while checking later leaves from the same row.
+        insertBatchAtomic(batch, arena);
+    }
+
+    /// Insert a flat list of leaf entries into this state, treating the entire batch as atomic
+    /// with respect to the pre-existing state.
+    ///
+    /// All three call sites (addKeyValuePairs, merge, deserialize) use this path.  A state can
+    /// legitimately contain conflicting-path entries at the same sort key (e.g. both "a" and
+    /// "a.b" from a row of JSON(a UInt32, `a.b` UInt32)). Replaying them one-by-one through
+    /// insertLeafEntry would let a later entry erase an earlier sibling, because
+    /// eraseShadowedEntries uses sort_key <= incoming, which is true for equal keys.
+    ///
+    /// By snapshotting existing_count before the batch starts and scoping all conflict checks
+    /// and erasures to entries[0..existing_count), batch members cannot see or erase each other.
+    void insertBatchAtomic(std::vector<LeafRef> & batch, Arena & arena) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    {
+        /// Snapshot the pre-existing state size. Conflict checks and erasures are scoped to
+        /// entries[0..existing_count), so batch members cannot block or erase each other.
         size_t existing_count = entries.size();
+
+        /// Phase 1: collect indices of batch entries not blocked by a pre-existing newer entry.
         std::vector<size_t> survivors; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        survivors.reserve(leaves.size());
-        for (size_t i = 0; i < leaves.size(); ++i)
+        survivors.reserve(batch.size());
+        for (size_t i = 0; i < batch.size(); ++i)
         {
-            if (!hasNewerConflictingEntryIn(leaves[i].first, sort_key, existing_count))
+            bool blocked = false;
+            for (size_t j = 0; j < existing_count; ++j)
+            {
+                if (pathsConflict(entries[j].path.view(), batch[i].path) && entries[j].sort_key > batch[i].sort_key)
+                {
+                    blocked = true;
+                    break;
+                }
+            }
+            if (!blocked)
                 survivors.push_back(i);
         }
 
-        /// Phase 2: erase shadowed pre-existing entries and insert survivors.
-        /// Use pushLeafEntry (no re-check) because phase 1 already verified each survivor
-        /// against the pre-existing state; using insertLeafEntry here would let a newly
-        /// inserted sibling from this same row interfere with later siblings.
+        /// Phase 2: erase pre-existing entries that are shadowed, then push each survivor.
         for (size_t idx : survivors)
         {
-            eraseShadowedEntriesIn(leaves[idx].first, sort_key, existing_count);
-            pushLeafEntry(leaves[idx].first, std::move(leaves[idx].second), sort_key, arena);
+            /// Erase only within the pre-existing prefix (entries[0..existing_count)).
+            /// Entries added during this phase 2 loop are beyond existing_count and must not
+            /// be touched — they are siblings from the same batch.
+            size_t write = 0;
+            for (size_t j = 0; j < entries.size(); ++j)
+            {
+                bool shadowed = j < existing_count
+                    && pathsConflict(entries[j].path.view(), batch[idx].path)
+                    && entries[j].sort_key <= batch[idx].sort_key;
+                if (!shadowed)
+                    entries[write++] = std::move(entries[j]);
+            }
+            entries.resize(write);
+            pushLeafEntry(batch[idx].path, std::move(batch[idx].value), batch[idx].sort_key, arena);
         }
-    }
-
-    /// Recursively flatten an Object field into (path, scalar-or-array) leaf pairs.
-    static void collectLeaves(String path, Field value, std::vector<std::pair<String, Field>> & out) // STYLE_CHECK_ALLOW_STD_CONTAINERS
-    {
-        if (!isObjectField(value))
-        {
-            out.emplace_back(std::move(path), std::move(value));
-            return;
-        }
-        const auto & object = value.safeGet<Object>();
-        for (const auto & [child_key, child_value] : object)
-        {
-            String child_path = path.empty() ? child_key : path + '.' + child_key;
-            collectLeaves(child_path, child_value, out);
-        }
-    }
-
-    /// Like hasNewerConflictingEntry but only checks the first `limit` entries.
-    bool hasNewerConflictingEntryIn(std::string_view path, const SortKey & sort_key, size_t limit) const
-    {
-        for (size_t i = 0; i < limit && i < entries.size(); ++i)
-        {
-            if (pathsConflict(entries[i].path.view(), path) && entries[i].sort_key > sort_key)
-                return true;
-        }
-        return false;
-    }
-
-    /// Like eraseShadowedEntries but only erases among the first `limit` entries.
-    void eraseShadowedEntriesIn(std::string_view path, const SortKey & sort_key, size_t limit)
-    {
-        size_t write = 0;
-        for (size_t i = 0; i < entries.size(); ++i)
-        {
-            bool shadowed = i < limit
-                && pathsConflict(entries[i].path.view(), path)
-                && entries[i].sort_key <= sort_key;
-            if (!shadowed)
-                entries[write++] = std::move(entries[i]);
-        }
-        entries.resize(write);
     }
 
     void merge(const AggregateFunctionMergedJSONPatchData & other, Arena & arena)
     {
+        std::vector<LeafRef> batch; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        batch.reserve(other.entries.size());
         for (const auto & entry : other.entries)
-            insertPathValue(entry.path.view(), entry.value.get(), entry.sort_key, arena);
+            batch.push_back({String(entry.path.view()), entry.value.get(), entry.sort_key});
+        insertBatchAtomic(batch, arena);
     }
 
     void serialize(WriteBuffer & buf) const
@@ -528,15 +534,22 @@ struct AggregateFunctionMergedJSONPatchData
         size_t size = 0;
         readVarUInt(size, buf);
 
-        String path;
+        /// Read all entries into a batch first, then insert atomically.
+        /// Inserting one-by-one through insertPathValue is incorrect: a state can contain
+        /// conflicting-path siblings (e.g. "a" and "a.b") at the same sort key, and sequential
+        /// insertion would let the second sibling erase the first.
+        std::vector<LeafRef> batch; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        batch.reserve(size);
+
         for (size_t i = 0; i < size; ++i)
         {
-            path.clear();
-            readStringBinary(path, buf);
-            EncodedField value = readEncodedField(buf, arena);
-            SortKey sort_key = SortKey(decodeField(buf));
-            insertPathValue(path, value.get(), sort_key, arena);
+            LeafRef & lv = batch.emplace_back();
+            readStringBinary(lv.path, buf);
+            lv.value = readEncodedField(buf, arena).get();
+            lv.sort_key = SortKey(decodeField(buf));
         }
+
+        insertBatchAtomic(batch, arena);
     }
 
     void insertResultInto(IColumn & to, const DataTypePtr &) const

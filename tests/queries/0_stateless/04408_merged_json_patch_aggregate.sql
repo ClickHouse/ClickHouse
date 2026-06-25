@@ -74,6 +74,16 @@ FROM (
     SELECT '{\"a\":42}'::JSON(a UInt32, `a.b` UInt32) AS patch, 1 AS version
 );
 
+-- Same case via State+Merge: mergedJSONPatchMerge must agree with direct aggregation.
+-- Without the fix, merge() replayed entries one-by-one and a.b=0 erased a=42 in the merged state.
+SELECT toJSONString(mergedJSONPatchMerge(state))
+FROM (
+    SELECT mergedJSONPatchState(patch, version) AS state
+    FROM (
+        SELECT '{\"a\":42}'::JSON(a UInt32, `a.b` UInt32) AS patch, 1 AS version
+    )
+);
+
 -- Typed path at default value (zero) written explicitly must still win over an older non-zero value.
 -- Without the fix, a genuine {"a":0} (newer) was silently dropped and {"a":5} (older) survived.
 SELECT toJSONString(mergedJSONPatch(patch, version))
@@ -81,6 +91,17 @@ FROM (
     SELECT '{\"a\":5}'::JSON(a UInt32) AS patch, 1 AS version
     UNION ALL
     SELECT '{\"a\":0}'::JSON(a UInt32), 2
+);
+
+-- Same case via State+Merge combinator.
+SELECT toJSONString(mergedJSONPatchMerge(state))
+FROM (
+    SELECT mergedJSONPatchState(patch, version) AS state
+    FROM (
+        SELECT '{\"a\":5}'::JSON(a UInt32) AS patch, 1 AS version
+        UNION ALL
+        SELECT '{\"a\":0}'::JSON(a UInt32), 2
+    )
 );
 
 -- Known limitation: ColumnObject drops empty-object paths, so {"a":{}} cannot replace an older
