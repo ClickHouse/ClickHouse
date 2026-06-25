@@ -1417,7 +1417,18 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         const bool has_row_policy = (view_row_policy && !view_row_policy->isAlwaysTrue())
                             || (dist_row_policy && !dist_row_policy->isAlwaysTrue());
 
+                        /// Also suppress when shard pruning is forced. The pushdown ships the outer
+                        /// query's WHERE in the view-output namespace, which cannot be safely mapped to
+                        /// the underlying table's sharding key (the view may rewrite the key column while
+                        /// keeping its name), so it forgoes optimize_skip_unused_shards pruning (see the
+                        /// filter_actions_dag clear below). With force_optimize_skip_unused_shards the
+                        /// inability to prune is a hard error, so fall back to the canonical
+                        /// StorageView::readImpl path, which propagates the outer WHERE to the underlying
+                        /// Distributed table and prunes correctly.
+                        const bool force_skip_unused_shards = settings[Setting::force_optimize_skip_unused_shards] != 0;
+
                         if (has_row_policy
+                            || force_skip_unused_shards
                             || containsNonDeterministicFunction(table_expression_query_info.query_tree)
                             || containsSubqueryNode(table_expression_query_info.query_tree)
                             || astContainsNonDeterministicFunction(table_expression_query_info.additional_filter_ast, query_context)
