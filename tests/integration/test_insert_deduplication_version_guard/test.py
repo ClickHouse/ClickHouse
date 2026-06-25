@@ -43,3 +43,23 @@ def test_unsupported_version_aborts_startup(start_cluster):
     node.replace_in_config(CONFIG_PATH, "compatible_double_hashes", "new_unified_hash")
     node.start_clickhouse()
     assert node.get_process_pid("clickhouse") is not None
+
+
+def test_unsupported_version_rejected_on_reload(start_cluster):
+    # A legacy value arriving through a runtime reload must be rejected too: the guard runs in the
+    # config reloader, so SYSTEM RELOAD CONFIG fails and the reload is dropped, leaving the server up on
+    # the previous valid value rather than silently degrading to unified-only while reporting a legacy
+    # value. This covers the reloader path (Server.cpp), not just the initial startup load.
+    assert node.get_process_pid("clickhouse") is not None
+
+    node.replace_in_config(CONFIG_PATH, "new_unified_hash", "compatible_double_hashes")
+    error = node.query_and_get_error("SYSTEM RELOAD CONFIG")
+    assert "supports only the unified insert deduplication hash" in error
+
+    # Fail closed: rejecting the reload leaves the server running and healthy.
+    assert node.get_process_pid("clickhouse") is not None
+    assert node.query("SELECT 1") == "1\n"
+
+    # Restore the supported value and confirm a valid reload still succeeds.
+    node.replace_in_config(CONFIG_PATH, "compatible_double_hashes", "new_unified_hash")
+    node.query("SYSTEM RELOAD CONFIG")

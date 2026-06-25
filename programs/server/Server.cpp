@@ -1227,18 +1227,25 @@ try
 
     /// Fail closed if an operator is still on a legacy insert deduplication version. This build only
     /// writes the unified deduplication hash, so silently ignoring the setting would break the
-    /// mixed-version deduplication contract; refuse to start and explain how to migrate.
-    const String dedup_version = server_settings[ServerSetting::insert_deduplication_version];
-    if (dedup_version != "new_unified_hash")
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Server setting 'insert_deduplication_version' is set to '{}', but this version of ClickHouse "
-            "supports only the unified insert deduplication hash ('new_unified_hash'). Remove the setting from "
-            "the configuration (or set it to 'new_unified_hash'). To migrate from a version that used "
-            "'old_separate_hashes' or 'compatible_double_hashes', first run on a release that supports "
-            "'compatible_double_hashes' (writing both the legacy and unified hashes) for at least the longest "
-            "deduplication window, then upgrade to this version.",
-            dedup_version);
+    /// mixed-version deduplication contract; refuse to start and explain how to migrate. This must run
+    /// after every server-settings load, not just this first one: the ZooKeeper-include reload below
+    /// and the runtime config reloader re-read the settings, so a legacy value could otherwise slip in
+    /// through a ZK-backed config or a `SYSTEM RELOAD CONFIG`.
+    auto validate_insert_deduplication_version = [](const ServerSettings & settings)
+    {
+        const String dedup_version = settings[ServerSetting::insert_deduplication_version];
+        if (dedup_version != "new_unified_hash")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Server setting 'insert_deduplication_version' is set to '{}', but this version of ClickHouse "
+                "supports only the unified insert deduplication hash ('new_unified_hash'). Remove the setting from "
+                "the configuration (or set it to 'new_unified_hash'). To migrate from a version that used "
+                "'old_separate_hashes' or 'compatible_double_hashes', first run on a release that supports "
+                "'compatible_double_hashes' (writing both the legacy and unified hashes) for at least the longest "
+                "deduplication window, then upgrade to this version.",
+                dedup_version);
+    };
+    validate_insert_deduplication_version(server_settings);
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
@@ -1774,6 +1781,7 @@ try
 
     /// We need to reload server settings because config could be updated via zookeeper.
     server_settings.loadSettingsFromConfig(config());
+    validate_insert_deduplication_version(server_settings);
     global_context->configureServerWideThrottling();
 
 #if defined(OS_LINUX)
@@ -2410,6 +2418,9 @@ try
 
             ServerSettings new_server_settings;
             new_server_settings.loadSettingsFromConfig(config());
+            /// Fail closed on a legacy insert_deduplication_version arriving via a runtime reload too.
+            /// Throwing here makes ConfigReloader reject the reload and keep the previous valid config.
+            validate_insert_deduplication_version(new_server_settings);
 
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
 
