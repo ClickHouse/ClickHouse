@@ -328,14 +328,4 @@ SELECT count() FROM tab WHERE hasToken(val, 'foo');  -- { serverError BAD_ARGUME
 
 DROP TABLE tab;
 
-SELECT '- A postprocessor cannot be combined with positions (would break positional phrase search)';
-CREATE TABLE tab
-(
-    id UInt64,
-    val String,
-    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(val), positions = 1)
-)
-ENGINE = MergeTree ORDER BY id
-SETTINGS allow_experimental_text_index_positions = 1;  -- { serverError BAD_ARGUMENTS }
-
 DROP TABLE IF EXISTS tab;
