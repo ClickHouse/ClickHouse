@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeArray.h>
@@ -111,6 +112,12 @@ void DataTypeObject::insertDefaultInto(IColumn & column) const
     for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
         dynamic_column->insertDefault();
     column_object.getSharedDataColumn().insertDefault();
+}
+
+bool DataTypeObject::isDefaultInsertTrivial() const
+{
+    return std::all_of(typed_paths.begin(), typed_paths.end(),
+        [](const auto & pair) { return pair.second->isDefaultInsertTrivial(); });
 }
 
 bool DataTypeObject::equals(const IDataType & rhs) const

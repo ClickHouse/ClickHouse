@@ -265,6 +265,13 @@ void DataTypeTuple::insertDefaultInto(IColumn & column) const
     });
 }
 
+bool DataTypeTuple::isDefaultInsertTrivial() const
+{
+    return elems.empty()
+        || std::ranges::all_of(elems.begin(), elems.end(),
+            [](const DataTypePtr & elem) { return elem->isDefaultInsertTrivial(); });
+}
+
 bool DataTypeTuple::equals(const IDataType & rhs) const
 {
     if (typeid(rhs) != typeid(*this))

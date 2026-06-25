@@ -194,6 +194,10 @@ public:
 
     void insertManyDefaultsInto(IColumn & column, size_t n) const;
 
+    /// Returns true if insertDefaultInto simply calls column.insertDefault()
+    /// without any type-specific logic (e.g., Enum inserts first enum value instead of zero).
+    virtual bool isDefaultInsertTrivial() const { return true; }
+
     /// Checks that two instances belong to the same type
     virtual bool equals(const IDataType & rhs) const = 0;
 
