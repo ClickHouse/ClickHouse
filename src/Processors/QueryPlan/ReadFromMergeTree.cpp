@@ -4677,10 +4677,22 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
         }
     }
 
-    /// Preserve `data`: it carries the UNIQUE KEY per-partition snapshot pins (and parts)
-    /// that must stay alive across this virtual-column rebuild; the 2-arg ctor would drop
-    /// them and the read would apply no delete bitmaps.
-    storage_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, std::move(new_metadata), std::move(storage_snapshot->data));
+    /// Clone `data` (don't move it): the original `StorageSnapshot` is shared
+    /// (held by `query_info` etc.) and its `data` is dereferenced elsewhere on the
+    /// read path, so moving it out would empty the shared object and null-deref.
+    /// The clone keeps the UNIQUE KEY per-partition pins alive via `.share()`.
+    StorageSnapshot::DataPtr cloned_data;
+    if (const auto * src = dynamic_cast<const MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
+    {
+        auto clone = std::make_unique<MergeTreeData::SnapshotData>();
+        clone->storage = src->storage;
+        clone->parts = src->parts;
+        clone->mutations_snapshot = src->mutations_snapshot;
+        for (const auto & [partition_id, snap] : src->uk_partition_snapshots)
+            clone->uk_partition_snapshots.emplace(partition_id, snap.share());
+        cloned_data = std::move(clone);
+    }
+    storage_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, std::move(new_metadata), std::move(cloned_data));
 
     if (output_header != nullptr)
     {
