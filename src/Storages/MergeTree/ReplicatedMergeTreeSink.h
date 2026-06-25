@@ -87,7 +87,7 @@ protected:
 
     ZooKeeperWithFaultInjectionPtr createKeeper(String name);
 
-    std::vector<DeduplicationHash> detectConflictsInAsyncBlockIDs(const std::vector<DeduplicationHash> & deduplication_hashes);
+    std::vector<DeduplicationHash> detectConflictsInCache(const std::vector<DeduplicationHash> & deduplication_hashes);
 
     /// We can delay processing for previous chunk and start writing a new one.
     std::vector<DelayedPartInPartition> delayed_parts;

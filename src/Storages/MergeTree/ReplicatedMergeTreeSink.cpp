@@ -639,7 +639,7 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     }
 }
 
-std::vector<DeduplicationHash> ReplicatedMergeTreeSink::detectConflictsInAsyncBlockIDs(const std::vector<DeduplicationHash> & deduplication_hashes)
+std::vector<DeduplicationHash> ReplicatedMergeTreeSink::detectConflictsInCache(const std::vector<DeduplicationHash> & deduplication_hashes)
 {
     auto conflict_block_ids = storage.deduplication_hashes_cache.detectConflicts(deduplication_hashes, deduplication_cache_version);
     if (!conflict_block_ids.empty())
@@ -860,7 +860,7 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
         if (is_async_insert)
         {
             /// prefilter by cache
-            auto conflicts = detectConflictsInAsyncBlockIDs(deduplication_hashes);
+            auto conflicts = detectConflictsInCache(deduplication_hashes);
             std::move(conflicts.begin(), conflicts.end(), std::back_inserter(retry_context.conflict_deduplication_hashes));
 
             if (!retry_context.conflict_deduplication_hashes.empty())
