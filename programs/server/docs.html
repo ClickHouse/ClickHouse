@@ -628,6 +628,12 @@
     /// the callers decide whether to push or replace a history entry.
     async function runSearch(term, desired) {
         const seq = ++request_seq;
+        /// Snapshot the connection generation this search belongs to. A response is fetched, parsed,
+        /// and rendered across two `await`s, and during either of them the user may change the server
+        /// URL, user, or password (which bumps `connection_seq` and clears `all_names`). Re-checking
+        /// this snapshot after each `await`, alongside `request_seq`, keeps a response fetched from the
+        /// previous connection from being rendered or mixed into the rebuilt cross-link cache.
+        const conn = connection_seq;
 
         if (!term) {
             current = [];
@@ -647,11 +653,14 @@
             /// exactly as `play.html` does, instead of authenticating as a cached `default` login.
             const response = await fetch(url, { method: 'POST', body: QUERY, headers: { 'Authorization': 'never' } });
 
-            if (seq !== request_seq) {
-                return; /// A newer query has been issued; drop this stale response.
+            if (seq !== request_seq || conn !== connection_seq) {
+                return; /// A newer query or a connection change has superseded this; drop the response.
             }
 
             const text = await response.text();
+            if (seq !== request_seq || conn !== connection_seq) {
+                return; /// Re-check after the body arrives: either could have changed while it streamed.
+            }
             if (!response.ok) {
                 $status.innerText = '';
                 $doc.className = 'empty';
@@ -681,7 +690,7 @@
             $status.innerText = `${current.length} result${current.length == 1 ? '' : 's'}` +
                 (current.length == 200 ? ' (showing first 200)' : '');
         } catch (e) {
-            if (seq !== request_seq) {
+            if (seq !== request_seq || conn !== connection_seq) {
                 return;
             }
             $doc.className = 'empty';
