@@ -430,6 +430,27 @@ if not args.long:
             print("skipped\tTest is tagged as long.")
             sys.exit(0)
 
+# Shell-script queries do not yet carry the connection options that the SQL path
+# honours. SQL queries connect through `clickhouse_driver.Client` with `--user` /
+# `--password` / `--secure`, but the per-server shell environment built by
+# `shell_env_for` always uses an unauthenticated, plaintext `$CLICKHOUSE_CLIENT`
+# and a `http://` `$CLICKHOUSE_URL`. Running shell queries under non-default
+# credentials or TLS would therefore either fail outright or, worse, measure a
+# different (default plaintext) endpoint than the SQL setup/prewarm connected to,
+# silently invalidating the comparison. Until the shell helpers carry these
+# options, fail closed: reject the test up front rather than benchmark the wrong
+# endpoint. (Done after the `--print-queries` / `--print-settings` early exits so
+# those read-only paths are unaffected.)
+if any(q["kind"] == "shell" for q in test_queries) and (
+    args.user != "default" or args.password != "" or args.secure
+):
+    raise Exception(
+        'Shell-script queries (<query type="shell">) do not support the '
+        "--user / --password / --secure connection options yet: the shell "
+        "environment always connects without authentication over plaintext HTTP. "
+        "Remove these options, or run this test without shell-script queries."
+    )
+
 # Print report threshold for the test if it is set.
 ignored_relative_change = 0.05
 if "max_ignored_relative_change" in root.attrib:
