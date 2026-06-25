@@ -2733,9 +2733,9 @@ void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_v
     }
 }
 
-std::vector<std::string_view> MergeTreeSettings::getAllRegisteredNames() const
+VectorWithMemoryTracking<std::string_view> MergeTreeSettings::getAllRegisteredNames() const
 {
-    std::vector<std::string_view> setting_names;
+    VectorWithMemoryTracking<std::string_view> setting_names;
     for (const auto & setting : impl->all())
     {
         setting_names.emplace_back(setting.getName());
@@ -2755,6 +2755,16 @@ std::vector<std::string_view> MergeTreeSettings::getAllAliasNames() const
 std::string_view MergeTreeSettings::getDescription(std::string_view name) const
 {
     return impl->getDescription(name);
+}
+
+std::string_view MergeTreeSettings::getTypeName(std::string_view name) const
+{
+    return impl->getTypeName(name);
+}
+
+String MergeTreeSettings::getDefaultValueString(std::string_view name) const
+{
+    return impl->getDefaultValueString(name);
 }
 
 SettingsTierType MergeTreeSettings::getTier(std::string_view name) const

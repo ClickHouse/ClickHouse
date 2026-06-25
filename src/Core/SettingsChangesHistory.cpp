@@ -57,7 +57,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_cache_allow_scalar_subqueries", false, false, "New setting for the query plan cache"},
             {"query_plan_cache_size_in_bytes_quota", 0, 0, "New setting for the query plan cache"},
             {"enable_nullable_tuple_type", false, false, "Nullable Tuple is now Beta. Added as an alias for 'allow_experimental_nullable_tuple_type'."},
-            {"ai_function_credentials", "", "", "New setting"},
             {"enable_sharding_aggregator", false, false, "New setting to enable sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase; this is efficient for high cardinality keys with evenly distributed data."},
             {"allow_experimental_text_index_lazy_apply", false, false, "New setting to gate experimental lazy posting list apply mode"},
             {"text_index_posting_list_apply_mode", "materialize", "materialize", "New setting for lazy posting list apply mode"},

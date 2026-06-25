@@ -70,6 +70,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <QueryPipeline/printPipeline.h>
 #include <IO/Progress.h>
@@ -122,6 +123,7 @@ namespace ProfileEvents
     extern const Event QueryPlanCacheHits;
     extern const Event QueryPlanCacheValidationMisses;
     extern const Event QueryPlanCacheStaleMisses;
+    extern const Event QueryParseMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -1277,6 +1279,8 @@ static BlockIO executeQueryImpl(
     /// Parse the query from string.
     try
     {
+        ProfileEventTimeIncrement<Microseconds> parse_time_watch(ProfileEvents::QueryParseMicroseconds);
+
         if (stage == QueryProcessingStage::QueryPlan)
         {
             /// Do not parse Query

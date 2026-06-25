@@ -1,6 +1,8 @@
 #include <Access/AccessControl.h>
 #include <Columns/IColumn.h>
 #include <Common/Jemalloc.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/ServerSettings.h>
@@ -45,6 +47,7 @@ extern const Metric BackgroundSchedulePoolSize;
 extern const Metric BackgroundBufferFlushSchedulePoolSize;
 extern const Metric BackgroundDistributedSchedulePoolSize;
 extern const Metric BackgroundMessageBrokerSchedulePoolSize;
+extern const Metric PointInPolygonCacheSizeLimit;
 }
 
 namespace DB
@@ -641,6 +644,15 @@ namespace
     DECLARE(UInt64, compiled_expression_cache_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE, R"(Sets the cache size (in bytes) for [compiled expressions](../../operations/caches.md).)", 0) \
     \
     DECLARE(UInt64, compiled_expression_cache_elements_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES, R"(Sets the cache size (in elements) for [compiled expressions](../../operations/caches.md).)", 0) \
+    DECLARE(UInt64, point_in_polygon_cache_size, DEFAULT_POINT_IN_POLYGON_CACHE_MAX_SIZE, R"(
+    Maximum size in bytes of the cache of preprocessed polygons used by the function `pointInPolygon` with a constant polygon argument.
+    Entries above the limit are evicted in least recently used order.
+    Setting it to `0` disables the cache: all cached polygons are evicted, and every subsequent query preprocesses its constant polygon anew.
+    The cache can also be cleared manually, without changing this limit, with the [`SYSTEM DROP POINT IN POLYGON CACHE`](../../sql-reference/statements/system#drop-point-in-polygon-cache) query.
+    :::note
+    This setting can be modified at runtime and will take effect immediately.
+    :::
+    )", 0) \
     DECLARE(String, query_condition_cache_policy, DEFAULT_QUERY_CONDITION_CACHE_POLICY, "Query condition cache policy name.", 0) \
     DECLARE(UInt64, query_condition_cache_size, DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE, R"(
     Maximum size of the query condition cache.
@@ -1748,7 +1760,7 @@ struct ServerSettingsImpl : public BaseSettings<ServerSettingsTraits>
 void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     // settings which can be loaded from the the default profile, see also MAKE_DEPRECATED_BY_SERVER_CONFIG in src/Core/Settings.h
-    std::unordered_set<std::string> settings_from_profile_allowlist = {
+    UnorderedSetWithMemoryTracking<std::string> settings_from_profile_allowlist = {
         "background_pool_size",
         "background_merges_mutations_concurrency_ratio",
         "background_merges_mutations_scheduling_policy",
@@ -1821,6 +1833,16 @@ std::vector<std::string_view> ServerSettings::getAllRegisteredNames() const
 std::string_view ServerSettings::getDescription(std::string_view name) const
 {
     return impl->getDescription(name);
+}
+
+std::string_view ServerSettings::getTypeName(std::string_view name) const
+{
+    return impl->getTypeName(name);
+}
+
+String ServerSettings::getDefaultValueString(std::string_view name) const
+{
+    return impl->getDefaultValueString(name);
 }
 
 SettingsTierType ServerSettings::getTier(std::string_view name) const
@@ -1897,6 +1919,7 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"text_index_header_cache_size", {std::to_string(context->getTextIndexHeaderCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"text_index_postings_cache_size", {std::to_string(context->getTextIndexPostingsCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"query_cache_max_size_in_bytes", {std::to_string(context->getQueryResultCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"point_in_polygon_cache_size", {std::to_string(CurrentMetrics::get(CurrentMetrics::PointInPolygonCacheSizeLimit)), ChangeableWithoutRestart::Yes}},
             {"unique_key_bitmap_cache_size_bytes",
                 {std::to_string(context->getDeleteBitmapCache() ? context->getDeleteBitmapCache()->maxSizeInBytes() : 0), ChangeableWithoutRestart::Yes}},
 
