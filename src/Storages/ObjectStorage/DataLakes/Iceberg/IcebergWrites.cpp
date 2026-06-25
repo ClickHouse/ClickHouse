@@ -803,6 +803,7 @@ void generateExistingManifestFile(
         std::vector<std::pair<Int32, Int64>> column_sizes;
         std::vector<std::pair<Int32, Int64>> value_counts;
         std::vector<std::pair<Int32, Int64>> null_value_counts;
+        std::vector<std::pair<Int32, Int64>> nan_value_counts;
         for (const auto & [field_id, info] : parsed.columns_infos)
         {
             if (info.bytes_size.has_value())
@@ -811,6 +812,8 @@ void generateExistingManifestFile(
                 value_counts.emplace_back(field_id, *info.rows_count);
             if (info.nulls_count.has_value())
                 null_value_counts.emplace_back(field_id, *info.nulls_count);
+            if (info.nans_count.has_value())
+                nan_value_counts.emplace_back(field_id, *info.nans_count);
         }
 
         std::vector<std::pair<Int32, String>> lower_bounds;
@@ -830,8 +833,26 @@ void generateExistingManifestFile(
         write_stat_array(Iceberg::f_column_sizes, column_sizes, to_long);
         write_stat_array(Iceberg::f_value_counts, value_counts, to_long);
         write_stat_array(Iceberg::f_null_value_counts, null_value_counts, to_long);
+        write_stat_array(Iceberg::f_nan_value_counts, nan_value_counts, to_long);
         write_stat_array(Iceberg::f_lower_bounds, lower_bounds, to_bytes);
         write_stat_array(Iceberg::f_upper_bounds, upper_bounds, to_bytes);
+
+        /// Other optional data_file fields carried over verbatim.
+        if (parsed.split_offsets.has_value() && !parsed.split_offsets->empty())
+        {
+            auto & field = data_file.field(Iceberg::f_split_offsets);
+            field.selectBranch(1);
+            auto & offsets = field.value<avro::GenericArray>();
+            for (Int64 offset : *parsed.split_offsets)
+                offsets.value().push_back(avro::GenericDatum(offset));
+        }
+        if (parsed.key_metadata.has_value())
+            setVersionedField(
+                data_file,
+                std::vector<uint8_t>(parsed.key_metadata->begin(), parsed.key_metadata->end()),
+                Iceberg::f_key_metadata);
+        if (parsed.sort_order_id.has_value())
+            setVersionedField(data_file, static_cast<Int32>(*parsed.sort_order_id), Iceberg::f_sort_order_id);
 
         data_file.field(Iceberg::f_record_count) = avro::GenericDatum(parsed.record_count);
         data_file.field(Iceberg::f_file_size_in_bytes) = avro::GenericDatum(parsed.file_size_in_bytes);
