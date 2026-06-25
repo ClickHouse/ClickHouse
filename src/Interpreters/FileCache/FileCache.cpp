@@ -1729,6 +1729,10 @@ void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
                     IFileCachePriority::removeEntries(batch->invalidated_entries, cache_guard.writeLock());
                     continue;
                 }
+                /// Eviction was required (`eviction_info` was non-null) but nothing could be
+                /// collected: the cache is still above the target with no releasable candidates.
+                /// Report CANNOT_EVICT so the final log line does not claim the target was drained.
+                status = IFileCachePriority::CollectStatus::CANNOT_EVICT;
                 break;
             }
 
