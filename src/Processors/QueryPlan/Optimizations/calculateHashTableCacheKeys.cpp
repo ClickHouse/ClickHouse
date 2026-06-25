@@ -139,6 +139,7 @@ void calculateHashTableCacheKeys(
             const bool calculate = allowParallelHashJoin(
                 join_step->getJoinSettings().join_algorithms,
                 join_step->getJoinOperator().kind,
+                join_step->getJoinOperator().strictness,
                 typeid_cast<JoinStepLogicalLookup *>(node.children.back()->step.get()),
                 single_disjunct);
 
