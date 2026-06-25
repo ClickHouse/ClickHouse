@@ -13,8 +13,11 @@ SELECT finalizeAggregation(CAST(unhex('10270000000000007b14ae47e17a843f000000000
 -- sequenceMatch
 SELECT finalizeAggregation(CAST(unhex('00ffffffff00000000'), 'AggregateFunction(sequenceMatch(\'(?1)\'), DateTime, UInt8, UInt8, UInt8)')); -- { serverError TOO_LARGE_ARRAY_SIZE }
 
--- groupArrayIntersect (generic / string path)
+-- groupArrayIntersect has two independent deserialize paths and both are guarded.
+-- Numeric path: Array(UInt64) -> AggregateFunctionGroupArrayIntersect<T>.
 SELECT finalizeAggregation(CAST(unhex('00ffffffff0f'), 'AggregateFunction(groupArrayIntersect, Array(UInt64))')); -- { serverError TOO_LARGE_ARRAY_SIZE }
+-- Generic path: Array(String) -> AggregateFunctionGroupArrayIntersectGeneric.
+SELECT finalizeAggregation(CAST(unhex('00ffffffff0f'), 'AggregateFunction(groupArrayIntersect, Array(String))')); -- { serverError TOO_LARGE_ARRAY_SIZE }
 
 -- A legitimate state must still round-trip after the guards.
 SELECT mannWhitneyUTestMerge()(s) FROM (SELECT mannWhitneyUTestState(x, y) AS s FROM (SELECT number::Float64 AS x, (number % 2)::UInt8 AS y FROM numbers(100)));
