@@ -111,7 +111,7 @@ static int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, 
             /// Some strange ACL ID during deserialization from ZooKeeper
             if (acl_id_64 == -1)
                 acl_id_64 = 0;
-            node.acl_id = static_cast<ACLId>(acl_id_64);
+            node.stats.acl_id = static_cast<ACLId>(acl_id_64);
         }
 
         /// Deserialize stat
@@ -123,7 +123,7 @@ static int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, 
 
         int64_t ctime = 0;
         Coordination::read(ctime, in);
-        node.stats.setCtime(ctime);
+        node.stats.ctime = ctime;
         Coordination::read(node.stats.mtime, in);
         Coordination::read(node.stats.version, in);
         Coordination::read(node.stats.cversion, in);
@@ -131,7 +131,7 @@ static int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, 
         int64_t ephemeral_owner = 0;
         Coordination::read(ephemeral_owner, in);
         if (ephemeral_owner != 0)
-            node.stats.setEphemeralOwner(ephemeral_owner);
+            node.stats.makeEphemeral(ephemeral_owner);
         Coordination::read(node.stats.pzxid, in);
         if (!path.empty())
         {
@@ -146,7 +146,7 @@ static int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, 
                 ++storage.committed_ephemeral_nodes;
             }
 
-            storage.acl_map.addUsage(node.acl_id);
+            storage.acl_map.addUsage(node.stats.acl_id);
         }
         Coordination::read(path, in);
         count++;
@@ -164,7 +164,7 @@ static int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, 
                 [my_path = itr.key](typename KeeperStorage::Node & value)
                 {
                     value.addChild(Coordination::getBaseNodeName(my_path));
-                    value.increaseNumChildren();
+                    value.stats.increaseNumChildren();
                 });
         }
     }

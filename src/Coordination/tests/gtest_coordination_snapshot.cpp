@@ -627,14 +627,14 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)
     EXPECT_EQ(restored_storage->session_and_timeout.size(), 2);
 
     /// Verify ACL round-trip
-    EXPECT_EQ(restored_storage->container.getValue("/hello1").acl_id, acl_id1);
-    EXPECT_EQ(restored_storage->container.getValue("/hello2").acl_id, acl_id2);
+    EXPECT_EQ(restored_storage->container.getValue("/hello1").stats.acl_id, acl_id1);
+    EXPECT_EQ(restored_storage->container.getValue("/hello2").stats.acl_id, acl_id2);
     auto restored_acls = restored_storage->acl_map.convertNumber(acl_id2);
     EXPECT_EQ(restored_acls.size(), 1);
     EXPECT_EQ(restored_acls[0].scheme, "digest");
 
     /// Verify seq_num round-trip (int64_t, value > INT32_MAX)
-    EXPECT_EQ(restored_storage->container.find("/")->value.stats.seqNum(), large_seq_num);
+    EXPECT_EQ(restored_storage->container.find("/")->value.stats.getSeqNum(), large_seq_num);
 }
 
 TYPED_TEST(CoordinationTest, TestStorageSnapshotMoreWrites)
@@ -938,7 +938,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotBlockACL)
         const auto & restored_storage = deser_result.storage;
 
         EXPECT_EQ(restored_storage->container.size(), 5);
-        EXPECT_EQ(restored_storage->container.getValue(path).acl_id, acl_id);
+        EXPECT_EQ(restored_storage->container.getValue(path).stats.acl_id, acl_id);
     }
 
     {
@@ -948,7 +948,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotBlockACL)
         const auto & restored_storage = deser_result.storage;
 
         EXPECT_EQ(restored_storage->container.size(), 5);
-        EXPECT_EQ(restored_storage->container.getValue(path).acl_id, 0);
+        EXPECT_EQ(restored_storage->container.getValue(path).stats.acl_id, 0);
     }
 }
 

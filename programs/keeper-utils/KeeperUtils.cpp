@@ -523,21 +523,21 @@ void dumpNodes(const DB::KeeperStorage & storage, const std::string & output_fil
             res_columns[i++]->insert(key);
             res_columns[i++]->insert(value.stats.czxid);
             res_columns[i++]->insert(value.stats.mzxid);
-            res_columns[i++]->insert(value.stats.ctime() / 1000);
+            res_columns[i++]->insert(value.stats.ctime / 1000);
             res_columns[i++]->insert(value.stats.mtime / 1000);
             res_columns[i++]->insert(value.stats.version);
             res_columns[i++]->insert(value.stats.cversion);
             res_columns[i++]->insert(value.stats.aversion);
-            res_columns[i++]->insert(value.stats.ephemeralOwner());
+            res_columns[i++]->insert(value.stats.getEphemeralOwner());
             res_columns[i++]->insert(value.stats.data_size);
-            res_columns[i++]->insert(value.numChildren());
+            res_columns[i++]->insert(value.stats.getNumChildren());
             res_columns[i++]->insert(value.stats.pzxid);
             res_columns[i++]->insert(value.getData());
 
             if (with_acl)
             {
                 std::string acl_str;
-                const auto acls = storage.acl_map.convertNumber(value.acl_id);
+                const auto acls = storage.acl_map.convertNumber(value.stats.acl_id);
                 for (const auto & acl : acls)
                 {
                     if (!acl_str.empty())
@@ -564,16 +564,16 @@ void dumpNodes(const DB::KeeperStorage & storage, const std::string & output_fil
             "\tStat: {{version: {}, mtime: {}, emphemeralOwner: {}, czxid: {}, mzxid: {}, numChildren: {}, dataLength: {}}}\n",
             value.stats.version,
             value.stats.mtime,
-            value.stats.ephemeralOwner(),
+            value.stats.getEphemeralOwner(),
             value.stats.czxid,
             value.stats.mzxid,
-            value.numChildren(),
+            value.stats.getNumChildren(),
             value.stats.data_size);
 
         if (with_acl)
         {
             std::string acl_str;
-            const auto acls = storage.acl_map.convertNumber(value.acl_id);
+            const auto acls = storage.acl_map.convertNumber(value.stats.acl_id);
             for (const auto & acl : acls)
             {
                 if (!acl_str.empty())

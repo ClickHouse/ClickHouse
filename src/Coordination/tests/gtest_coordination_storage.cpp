@@ -1192,7 +1192,7 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
         ASSERT_EQ(acls.size(), 1);
         ASSERT_EQ(acls[0].id, digest);
         storage.processRequest(create_request, session_id, req_zxid);
-        ASSERT_NE(storage.container.getValue(path).acl_id, 0);
+        ASSERT_NE(storage.container.getValue(path).stats.acl_id, 0);
 
         req_zxid = zxid++;
         const auto set_acl_request = std::make_shared<ZooKeeperSetACLRequest>();
@@ -1203,7 +1203,7 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
         ASSERT_EQ(acls.size(), 1);
         ASSERT_EQ(acls[0].id, new_digest);
         storage.processRequest(set_acl_request, session_id, req_zxid);
-        ASSERT_NE(storage.container.getValue(path).acl_id, 0);
+        ASSERT_NE(storage.container.getValue(path).stats.acl_id, 0);
     }
 
     {
@@ -1218,7 +1218,7 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
         auto acls = getUncommittedACLs(storage, path);
         ASSERT_EQ(acls.size(), 0);
         storage.processRequest(create_request, session_id, req_zxid);
-        ASSERT_EQ(storage.container.getValue(path).acl_id, 0);
+        ASSERT_EQ(storage.container.getValue(path).stats.acl_id, 0);
 
         req_zxid = zxid++;
         const auto set_acl_request = std::make_shared<ZooKeeperSetACLRequest>();
@@ -1228,7 +1228,7 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
         acls = getUncommittedACLs(storage, path);
         ASSERT_EQ(acls.size(), 0);
         storage.processRequest(set_acl_request, session_id, req_zxid);
-        ASSERT_EQ(storage.container.getValue(path).acl_id, 0);
+        ASSERT_EQ(storage.container.getValue(path).stats.acl_id, 0);
     }
 }
 

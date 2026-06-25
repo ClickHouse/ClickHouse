@@ -25,139 +25,15 @@ class KeeperContext;
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;
 
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
-struct NodeStats
-{
-    int64_t czxid{0};
-    int64_t mzxid{0};
-    int64_t pzxid{0};
-
-    int64_t mtime{0};
-
-    int32_t version{0};
-    int32_t cversion{0};
-    int32_t aversion{0};
-
-    uint32_t data_size{0};
-
-    void copyStats(const Coordination::Stat & stat);
-
-    bool isEphemeral() const
-    {
-        return is_ephemeral_and_ctime.is_ephemeral;
-    }
-
-    int64_t ephemeralOwner() const
-    {
-        if (isEphemeral())
-            return ephemeral_or_seq_num_or_ttl.ephemeral_owner;
-
-        return 0;
-    }
-
-    void setEphemeralOwner(int64_t ephemeral_owner)
-    {
-        is_ephemeral_and_ctime.is_ephemeral = true;
-        ephemeral_or_seq_num_or_ttl.ephemeral_owner = ephemeral_owner;
-    }
-
-    int64_t seqNum() const
-    {
-        if (isEphemeral() || isTTL())
-            return 0;
-
-        return ephemeral_or_seq_num_or_ttl.seq_num;
-    }
-
-    void setSeqNum(int64_t seq_num)
-    {
-        ephemeral_or_seq_num_or_ttl.seq_num = seq_num;
-    }
-
-    void increaseSeqNum()
-    {
-        chassert(!isEphemeral() && !isTTL());
-        ++ephemeral_or_seq_num_or_ttl.seq_num;
-    }
-
-    bool isTTL() const
-    {
-        return is_ephemeral_and_ctime.is_ttl;
-    }
-
-    int64_t ttl() const
-    {
-        chassert(isTTL());
-        return ephemeral_or_seq_num_or_ttl.ttl;
-    }
-
-    void setTTL(int64_t ttl_)
-    {
-        is_ephemeral_and_ctime.is_ttl = true;
-        ephemeral_or_seq_num_or_ttl.ttl = ttl_;
-    }
-
-    int64_t destroyTime() const
-    {
-        chassert(isTTL());
-        return mtime + ttl();
-    }
-
-    int64_t ctime() const
-    {
-        return is_ephemeral_and_ctime.ctime;
-    }
-
-    void setCtime(uint64_t ctime)
-    {
-        is_ephemeral_and_ctime.ctime = ctime;
-    }
-
-private:
-    /// as ctime can't be negative because it stores the timestamp when the
-    /// node was created, we can use the high bits for flags
-    struct
-    {
-        int64_t ctime : 62;
-        int64_t is_ephemeral : 1;
-        int64_t is_ttl : 1;
-    } is_ephemeral_and_ctime{0, false, false};
-
-    /// ephemeral nodes cannot have children, so a node either stores
-    /// ephemeral_owner (the owning session) OR seq_num (the counter
-    /// for generating sequential children names under this node).
-    /// TTL nodes cannot have children either (in this implementation), so for
-    /// them this slot stores the ttl interval instead of seq_num. The active
-    /// member is selected by is_ephemeral / is_ttl.
-    union
-    {
-        int64_t ephemeral_owner;
-        int64_t seq_num;
-        int64_t ttl;
-    } ephemeral_or_seq_num_or_ttl{0};
-};
 
 /// KeeperMemNode should have as minimal size as possible to reduce memory footprint
 /// of stored nodes
 /// New fields should be added to the struct only if it's really necessary
 struct KeeperMemNode
 {
-    NodeStats stats;
+    KeeperNodeStats stats;
     std::unique_ptr<char[]> data{nullptr};
     mutable uint64_t cached_digest = 0;
-
-    ACLId acl_id = 0; /// 0 -- no ACL by default
-    int32_t num_children = 0;
-
-    int32_t numChildren() const
-    {
-        if (stats.isEphemeral())
-            return 0;
-        return num_children;
-    }
-
-    void setNumChildren(int32_t value) { num_children = value; }
-    void increaseNumChildren() { ++num_children; }
-    void decreaseNumChildren() { --num_children; }
 
     KeeperMemNode() = default;
 
@@ -168,10 +44,6 @@ struct KeeperMemNode
     KeeperMemNode(KeeperMemNode && other) noexcept;
 
     bool empty() const;
-
-    void copyStats(const Coordination::Stat & stat);
-
-    void setResponseStat(Coordination::Stat & response_stat) const;
 
     /// Object memory size
     uint64_t sizeInBytes() const;
@@ -688,24 +560,23 @@ public:
     /// Functions that mutate UncommittedState, add corresponding deltas to staging_deltas, and
     /// update staging_digest.
     /// These are public because they're called from the free `preprocess` request handlers.
-    void prepareUpdateNodeStat(std::string_view path, UncommittedNodeRef node, const NodeStats & new_stats, int32_t new_num_children);
-    void prepareUpdateNodeData(std::string_view path, UncommittedNodeRef node, const NodeStats & new_stats, std::string_view new_data);
-    void prepareUpdateNodeACL(std::string_view path, UncommittedNodeRef node, const NodeStats & new_stats, ACLId new_acl_id);
+    void prepareUpdateNodeStat(std::string_view path, UncommittedNodeRef node, const KeeperNodeStats & new_stats);
+    void prepareUpdateNodeData(std::string_view path, UncommittedNodeRef node, const KeeperNodeStats & new_stats, std::string_view new_data);
     void prepareCreateNode(
         std::string_view parent_path, UncommittedNodeRef parent,
-        const NodeStats & new_parent_stats, int32_t new_parent_num_children,
+        const KeeperNodeStats & new_parent_stats,
         std::string_view path, UncommittedNodeRef node, const Coordination::Stat & stat,
-        ACLId acl_id, std::string_view data, std::optional<int64_t> ttl = std::nullopt);
+        ACLId acl_id, std::string_view data, std::optional<int64_t> ttl);
     void prepareRemoveNode(
         std::string_view parent_path, UncommittedNodeRef parent,
-        const NodeStats & new_parent_stats, int32_t new_parent_num_children,
+        const KeeperNodeStats & new_parent_stats,
         std::string_view path, UncommittedNodeRef node);
     /// (`nodes_to_remove` must be a node + the set of all its descendants, not arbitrary set of
     ///  nodes. Because we don't update children stats on parents of removed nodes, expecting those
     ///  parents to also be in the set to be removed, except for the outermost `parent`.)
     void prepareRemoveRecursive(
         std::string_view parent_path, UncommittedNodeRef parent,
-        const NodeStats & new_parent_stats, int32_t new_parent_num_children,
+        const KeeperNodeStats & new_parent_stats,
         std::deque<SubtreeNodeToRemove> nodes_to_remove);
     void prepareRemoveEphemeralNodes(const std::unordered_set<std::string> & paths, int64_t session_id);
     void prepareAddAuth(std::shared_ptr<KeeperStorage::AuthID> new_auth, int64_t session_id);
