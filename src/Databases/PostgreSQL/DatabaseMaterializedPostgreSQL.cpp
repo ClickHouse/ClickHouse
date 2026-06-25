@@ -197,28 +197,48 @@ void DatabaseMaterializedPostgreSQL::stopLoading()
 void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context)
 {
     std::lock_guard lock(handler_mutex);
-    bool need_update_on_disk = false;
 
+    /// Validate the whole list before applying anything. Otherwise a rejected change (an unknown,
+    /// immutable, or not-allowed setting) combined with an accepted one in the same statement could
+    /// leave the database partially modified: the accepted change would already be applied to the live
+    /// `replication_handler` and in-memory `settings` while the rejected change aborts the statement
+    /// before the on-disk metadata is updated, so the live state would diverge from the metadata until
+    /// the next restart. Checking everything first makes the `ALTER DATABASE ... MODIFY SETTING` atomic.
     for (const auto & change : settings_changes)
     {
         if (!settings->has(change.name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} does not support setting `{}`", getEngineName(), change.name);
 
-        if ((change.name == "materialized_postgresql_tables_list"))
+        if (change.name == "materialized_postgresql_tables_list")
         {
             if (!query_context->isInternalQuery())
                 throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Changing setting `{}` is not allowed", change.name);
+        }
+        else if (change.name == "materialized_postgresql_use_extended_date_and_time_types")
+        {
+            throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
+                            "Setting `{}` only controls the column types chosen when the nested tables are created "
+                            "by type inference, and cannot be changed for an existing database: the already created "
+                            "nested tables keep their fixed column types. Recreate the database to change it.", change.name);
+        }
+        else if ((change.name != "materialized_postgresql_allow_automatic_update") && (change.name != "materialized_postgresql_max_block_size"))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown setting");
+        }
+    }
 
+    /// All changes are valid; apply them.
+    bool need_update_on_disk = false;
+    for (const auto & change : settings_changes)
+    {
+        if (change.name == "materialized_postgresql_tables_list")
+        {
             need_update_on_disk = true;
         }
         else if ((change.name == "materialized_postgresql_allow_automatic_update") || (change.name == "materialized_postgresql_max_block_size"))
         {
             replication_handler->setSetting(change);
             need_update_on_disk = true;
-        }
-        else
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown setting");
         }
 
         settings->applyChange(change);
@@ -782,6 +802,13 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 
 Use a unique replication consumer identifier for replication. Default: `0`.
 If set to `1`, allows to setup several `MaterializedPostgreSQL` tables pointing to the same `PostgreSQL` table.
+
+### `materialized_postgresql_use_extended_date_and_time_types` {#materialized-postgresql-use-extended-date-and-time-types}
+
+Map the PostgreSQL `date` and `timestamp`/`timestamptz` types to ClickHouse `Date32` and `DateTime64`, which cover the wider value range of the PostgreSQL types. Default: `1`.
+If set to `0`, the narrower `Date` and `DateTime` types are used instead (values outside their range or with sub-second precision are not representable).
+
+This setting only controls the column types chosen by type inference when the nested tables are created, so it must be specified at `CREATE DATABASE` time. It cannot be changed afterwards with `ALTER DATABASE ... MODIFY SETTING` (the already created nested tables keep their fixed column types, and such a change is rejected); recreate the database to change it. It is not applicable to the `MaterializedPostgreSQL` table engine, where the column types are declared explicitly.
 
 ## Notes {#notes}
 

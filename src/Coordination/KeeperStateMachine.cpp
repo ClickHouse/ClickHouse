@@ -6,6 +6,7 @@
 #include <string>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperCommon.h>
+#include <Coordination/KeeperConstants.h>
 #include <Disks/IDisk.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperReconfiguration.h>
@@ -203,7 +204,7 @@ void KeeperStateMachine<Storage>::init()
         LOG_DEBUG(log, "No existing snapshots, last committed log index {}", last_committed_idx);
 
     if (!storage)
-        storage = std::make_unique<Storage>(
+        storage = std::make_shared<Storage>(
             keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds(), superdigest, keeper_context);
 }
 
@@ -493,7 +494,8 @@ std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
     };
 
     const bool should_cache
-        = min_request_size_to_cache != 0 && request_for_session->session_id != -1 && data.size() >= min_request_size_to_cache
+        = min_request_size_to_cache != 0 && request_for_session->session_id != -1
+        && request_for_session->session_id != keeper_internal_ttl_garbage_collector_session_id && data.size() >= min_request_size_to_cache
         && std::all_of(
               non_cacheable_xids.begin(), non_cacheable_xids.end(), [&](const auto non_cacheable_xid) { return xid != non_cacheable_xid; });
 
@@ -1104,43 +1106,143 @@ nuraft::ptr<nuraft::snapshot> IKeeperStateMachine::last_snapshot()
 }
 
 template<typename Storage>
+SnapshotFileInfoPtr KeeperStateMachine<Storage>::writeSnapshotToDisk(const KeeperStorageSnapshot<Storage> & snapshot)
+{
+    /// Streaming serialization for local disks; buffer-then-write for remote disks.
+    if (isLocalDisk(*keeper_context->getLatestSnapshotDisk()))
+        return snapshot_manager.writeSnapshotFile(snapshot);
+
+    auto snapshot_buf = snapshot_manager.serializeSnapshotToBuffer(snapshot);
+    return snapshot_manager.writeSnapshotBufferToFile(*snapshot_buf, snapshot.snapshot_meta->get_last_log_idx());
+}
+
+template<typename Storage>
+typename KeeperStateMachine<Storage>::LocalSnapshotPublishOutcome KeeperStateMachine<Storage>::publishWrittenSnapshot(
+    const SnapshotFileInfoPtr & written_file_info,
+    const SnapshotMetadataPtr & written_snapshot_meta,
+    std::optional<uint64_t> written_size)
+{
+    LocalSnapshotPublishOutcome outcome;
+    const uint64_t requested_idx = written_snapshot_meta->get_last_log_idx();
+
+    if (latest_snapshot_meta && requested_idx <= latest_snapshot_meta->get_last_log_idx())
+    {
+        /// A concurrent create at the same or higher index won; adopt the mark's entry and retire ours.
+        outcome.published = snapshot_manager.getSnapshotPin(latest_snapshot_meta->get_last_log_idx());
+        chassert(outcome.published);
+        snapshot_manager.retireUnpublishedSnapshotFile(written_file_info);
+        outcome.loser_to_remove = written_file_info;
+        LOG_INFO(
+            log,
+            "Snapshot with last log idx {} was created while writing snapshot {}; reusing it and retiring our file",
+            latest_snapshot_meta->get_last_log_idx(),
+            requested_idx);
+        return outcome;
+    }
+
+    /// Drop the cached loader before maintenance retires snapshots.
+    snapshot_loader_info.reset();
+    snapshot_loader_info_log_idx = 0;
+
+    outcome.published = snapshot_manager.publishSnapshotFile(requested_idx, written_file_info);
+    if (outcome.published != written_file_info)
+    {
+        /// A saved-but-not-applied install already registered this index; validate it is still
+        /// present before retiring our freshly written file (fail-closed: if the registered file
+        /// is gone we must not silently adopt a missing path).
+        bool registered_accessible = false;
+        try
+        {
+            registered_accessible = outcome.published->disk->existsFile(outcome.published->path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to check existence of registered snapshot file");
+        }
+        if (!registered_accessible)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Snapshot with last log idx {} is already registered (file {} on disk {}) but cannot "
+                "be confirmed present; refusing to adopt it",
+                requested_idx,
+                outcome.published->path,
+                outcome.published->disk->getName());
+
+        snapshot_manager.retireUnpublishedSnapshotFile(written_file_info);
+        outcome.loser_to_remove = written_file_info;
+        advanceLatestSnapshotMeta(written_snapshot_meta);
+        LOG_INFO(
+            log,
+            "Snapshot with last log idx {} was already registered at {} while we were writing {}; reusing it and retiring our file",
+            requested_idx,
+            outcome.published->path,
+            written_file_info->path);
+        return outcome;
+    }
+
+    advanceLatestSnapshotMeta(written_snapshot_meta);
+    /// Don't clobber the size cache if a higher-index install is already registered.
+    if (written_size && snapshot_manager.getLatestSnapshotIndex() == requested_idx)
+        latest_snapshot_size.store(*written_size, std::memory_order_relaxed);
+    ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreations);
+    LOG_DEBUG(log, "Created persistent snapshot {} with path {}", requested_idx, outcome.published->path);
+    outcome.won = true;
+    return outcome;
+}
+
+template<typename Storage>
 void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::async_result<bool>::handler_type & when_done)
 {
     LOG_DEBUG(log, "Creating snapshot {}", s.get_last_log_idx());
 
     auto snapshot_meta_copy = cloneSnapshotMeta(s);
     CreateSnapshotTask snapshot_task;
+    std::shared_ptr<Storage> captured_storage;
     { /// lock storage for a short period time to turn on "snapshot mode". After that we can read consistent storage state without locking.
         KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
+        /// `apply_snapshot` may replace (and briefly empty) the member while this task runs;
+        /// all task work and cleanup must use the captured storage.
+        captured_storage = storage;
         snapshot_task.snapshot = std::make_shared<KeeperStorageSnapshot<Storage>>(
-            storage.get(), snapshot_meta_copy, getClusterConfig(), keeper_context->getWriteSnapshotVersion());
+            captured_storage.get(), snapshot_meta_copy, getClusterConfig(), keeper_context->getWriteSnapshotVersion());
     }
 
+    /// Guard snapshot cleanup until responsibility transfers to the task.
+    bool snapshot_cleanup_transferred = false;
+    SCOPE_EXIT({
+        if (!snapshot_cleanup_transferred
+            && std::visit([](const auto & snap) { return snap != nullptr; }, snapshot_task.snapshot))
+        {
+            KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
+            snapshot_task.snapshot = KeeperStorageSnapshotPtr{};
+            captured_storage->clearGarbageAfterSnapshot();
+        }
+    });
+
     /// create snapshot task for background execution (in snapshot thread)
-    snapshot_task.create_snapshot = [this, when_done](KeeperStorageSnapshotPtr && snapshot_, bool execute_only_cleanup)
+    snapshot_task.create_snapshot = [this, when_done, captured_storage](KeeperStorageSnapshotPtr && snapshot_, bool execute_only_cleanup)
     {
         nuraft::ptr<std::exception> exception(nullptr);
-        bool ret = false;
+        bool snapshot_published = false;
         SnapshotFileInfoPtr snapshot_file_info;
         auto && snapshot = std::get<std::shared_ptr<KeeperStorageSnapshot<Storage>>>(std::move(snapshot_));
         if (!execute_only_cleanup)
         {
+            const uint64_t requested_idx = snapshot->snapshot_meta->get_last_log_idx();
+            SnapshotFileInfoPtr written_file_info; /// non-null while unpublished; catch retires it
+            SnapshotFileInfoPtr loser_file_info;   /// unlinked outside the lock
+            std::optional<DetachedSnapshotReceiveFiles> detached_receive_files;
+            SnapshotMaintenanceTasks maintenance_tasks;
             try
             {
-                { /// Read storage data without locks and create snapshot
+                /// Phase 1: pre-check under the lock — reuse the mark's file if already covered.
+                bool already_covered = false;
+                {
                     std::lock_guard lock(snapshots_lock);
-
-                    if (latest_snapshot_meta && snapshot->snapshot_meta->get_last_log_idx() <= latest_snapshot_meta->get_last_log_idx())
+                    if (latest_snapshot_meta && requested_idx <= latest_snapshot_meta->get_last_log_idx())
                     {
-                        /// Return the file backing `latest_snapshot_meta`. The newest registered snapshot
-                        /// may be newer than that: an install can be saved to disk without being applied,
-                        /// and such a snapshot is not reported via `last_snapshot`.
-                        /// Probe existence to keep the old `getLatestSnapshotInfo` contract.
+                        /// Probe existence; the result feeds S3/shutdown upload paths, consumers handle nullptr.
                         snapshot_file_info = getSnapshotPinUnlocked(latest_snapshot_meta->get_last_log_idx());
-                        /// Do not hand out a file that is currently being re-received (truncated in place).
-                        if (snapshot_file_info && snapshot_receive_ctx
-                            && snapshot_receive_ctx->log_idx == latest_snapshot_meta->get_last_log_idx())
-                            snapshot_file_info = nullptr;
                         if (snapshot_file_info)
                         {
                             try
@@ -1156,134 +1258,97 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
                         }
                         LOG_INFO(
                             log,
-                            "Will not create a snapshot with last log idx {} because a snapshot with bigger last log idx ({}) is already "
+                            "Will not create a snapshot with last log idx {} because a snapshot with last log idx >= {} is already "
                             "created",
-                            snapshot->snapshot_meta->get_last_log_idx(),
+                            requested_idx,
                             latest_snapshot_meta->get_last_log_idx());
-                    }
-                    else
-                    {
-                        const auto requested_log_idx = snapshot->snapshot_meta->get_last_log_idx();
-                        auto registered_same_index = getSnapshotPinUnlocked(requested_log_idx);
-                        if (registered_same_index)
-                        {
-                            if (snapshot_receive_ctx && snapshot_receive_ctx->log_idx == requested_log_idx)
-                                throw Exception(
-                                    ErrorCodes::CORRUPTED_DATA,
-                                    "Snapshot with last log idx {} is currently being received; "
-                                    "refusing to adopt the in-progress file",
-                                    requested_log_idx);
-
-                            bool file_exists = false;
-                            try
-                            {
-                                file_exists = registered_same_index->disk->existsFile(registered_same_index->path);
-                            }
-                            catch (...)
-                            {
-                                tryLogCurrentException(log);
-                            }
-
-                            if (!file_exists)
-                            {
-                                /// Fail closed: never rewrite registered bytes in place (transfers stream
-                                /// them outside the lock). NuRaft retries at a later snapshot boundary.
-                                throw Exception(
-                                    ErrorCodes::CORRUPTED_DATA,
-                                    "Snapshot with last log idx {} is already registered (file {}) but the file "
-                                    "cannot be confirmed present; refusing to adopt or rewrite it",
-                                    requested_log_idx,
-                                    registered_same_index->path);
-                            }
-
-                            /// Defensive adopt: a queued create can drain after a stale duplicate install
-                            /// at the same index was saved without being applied. The registered file is
-                            /// state-equivalent by Raft log matching (deliberately not re-read — a genuine
-                            /// mismatch fails closed in `apply_snapshot`); adopt it and re-sync the mark.
-                            LOG_WARNING(
-                                log,
-                                "Snapshot with last log idx {} is already registered (file {}) while the latest "
-                                "snapshot metadata is at {}; adopting the registered snapshot instead of rewriting it",
-                                requested_log_idx,
-                                registered_same_index->path,
-                                latest_snapshot_meta ? std::to_string(latest_snapshot_meta->get_last_log_idx()) : "(none)");
-                            snapshot_file_info = std::move(registered_same_index);
-                            advanceLatestSnapshotMeta(snapshot->snapshot_meta);
-                            /// `latest_snapshot_size` deliberately left as-is: it self-corrects on the next snapshot.
-                        }
-                        else
-                        {
-                            /// Drop the cached loader before retiring snapshots; transfer
-                            /// contexts keep their own loaders alive.
-                            snapshot_loader_info.reset();
-                            snapshot_loader_info_log_idx = 0;
-
-                            /// Write new snapshots to the configured latest snapshot disk.
-                            if (isLocalDisk(*keeper_context->getLatestSnapshotDisk()))
-                            {
-                                snapshot_file_info = snapshot_manager.serializeSnapshotToDisk(*snapshot);
-                            }
-                            else
-                            {
-                                auto snapshot_buf = snapshot_manager.serializeSnapshotToBuffer(*snapshot);
-                                snapshot_file_info = snapshot_manager.serializeSnapshotBufferToDisk(
-                                    *snapshot_buf, snapshot->snapshot_meta->get_last_log_idx());
-                            }
-
-                            advanceLatestSnapshotMeta(snapshot->snapshot_meta);
-                            cancelIfHasUnfinishedSnapshotReceive();
-
-                            ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreations);
-                            LOG_DEBUG(
-                                log,
-                                "Created persistent snapshot {} with path {}",
-                                latest_snapshot_meta->get_last_log_idx(),
-                                snapshot_file_info->path);
-
-                            try
-                            {
-                                /// A create below saved-but-not-applied installs must not clobber the size cache.
-                                if (snapshot_manager.getLatestSnapshotIndex() == snapshot->snapshot_meta->get_last_log_idx())
-                                {
-                                    const auto snp_size = snapshot_file_info->disk->getFileSize(snapshot_file_info->path);
-                                    latest_snapshot_size.store(snp_size, std::memory_order_relaxed);
-                                }
-                            }
-                            catch (...)
-                            {
-                                tryLogCurrentException(log, "Failed to get snapshot size after creation");
-                            }
-                        }
+                        already_covered = true;
                     }
                 }
 
-                ret = true;
+                if (already_covered)
+                {
+                    snapshot_published = true;
+                }
+                else
+                {
+                    /// Phase 2: write + sync under a fresh unique name, outside the lock.
+                    written_file_info = writeSnapshotToDisk(*snapshot);
+
+                    std::optional<uint64_t> written_size;
+                    try
+                    {
+                        written_size = written_file_info->disk->getFileSize(written_file_info->path);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, "Failed to get snapshot size after creation");
+                    }
+
+                    /// Phase 3: metadata-only publication under the lock.
+                    {
+                        std::lock_guard lock(snapshots_lock);
+                        auto outcome = publishWrittenSnapshot(written_file_info, snapshot->snapshot_meta, written_size);
+                        snapshot_file_info = std::move(outcome.published);
+                        loser_file_info = std::move(outcome.loser_to_remove);
+                        written_file_info.reset(); /// ownership transferred; catch must not retire a published file
+                        snapshot_published = true; /// publication decided — later exceptions are post-commit failures
+                        if (outcome.won)
+                        {
+                            /// Cancel any in-flight receive; partial files are deleted outside the lock.
+                            detached_receive_files = detachUnfinishedSnapshotReceiveForCleanup();
+                            maintenance_tasks = snapshot_manager.prepareSnapshotMaintenanceTasks(requested_idx);
+                        }
+                    }
+
+                    /// Phase 4: deferred disk I/O, outside the lock.
+                    loser_file_info.reset(); /// pin deleter unlinks it
+                    if (detached_receive_files)
+                        cleanupDetachedSnapshotReceive(*detached_receive_files);
+                    runSnapshotMaintenance(std::move(maintenance_tasks));
+                }
             }
             catch (...)
             {
-                ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreationsFailed);
-                LOG_TRACE(log, "Exception happened during snapshot");
-                tryLogCurrentException(log);
+                if (written_file_info)
+                {
+                    /// Written but never published — retire and unlink it.
+                    snapshot_manager.retireUnpublishedSnapshotFile(written_file_info);
+                    written_file_info.reset();
+                }
+                loser_file_info.reset();
+                if (snapshot_published)
+                {
+                    if (detached_receive_files)
+                        cleanupDetachedSnapshotReceive(*detached_receive_files);
+                    tryLogCurrentException(log, "Exception happened after snapshot metadata was published: post-commit cleanup or maintenance failed");
+                }
+                else
+                {
+                    ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreationsFailed);
+                    LOG_TRACE(log, "Exception happened during snapshot");
+                    tryLogCurrentException(log);
+                }
             }
         }
         {
-            /// Destroy snapshot with lock
+            /// Destroy snapshot under storage lock against the captured storage (member may differ after `apply_snapshot`).
             KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
             LOG_TRACE(log, "Clearing garbage after snapshot");
-            /// Turn off "snapshot mode" and clear outdate part of storage state
-            snapshot.reset();
-            storage->clearGarbageAfterSnapshot();
+            snapshot.reset(); /// ~KeeperStorageSnapshot -> disableSnapshotMode() on captured storage
+            captured_storage->clearGarbageAfterSnapshot();
             LOG_TRACE(log, "Cleared garbage after snapshot");
         }
 
-        when_done(ret, exception);
+        when_done(snapshot_published, exception);
 
-        return ret ? snapshot_file_info : nullptr;
+        return snapshot_published ? snapshot_file_info : nullptr;
     };
 
     if (keeper_context->getServerState() == KeeperContext::Phase::SHUTDOWN)
     {
         LOG_INFO(log, "Creating a snapshot during shutdown because 'create_snapshot_on_exit' is enabled.");
+        snapshot_cleanup_transferred = true;
         auto snapshot_file_info = snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/false);
 
         if (snapshot_file_info && snapshot_manager_s3)
@@ -1296,9 +1361,32 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
     }
 
     LOG_DEBUG(log, "In memory snapshot {} created, queueing task to flush to disk", s.get_last_log_idx());
-    /// Flush snapshot to disk in a separate thread.
-    if (!snapshots_queue.push(std::move(snapshot_task)))
+    /// Move, not copy: a copy would leave a second `KeeperStorageSnapshot` reference whose
+    /// destruction at function exit could run `~KeeperStorageSnapshot` off the storage lock.
+    /// `push` only consumes the task when it returns true, so the fallback below is safe.
+    bool pushed = false;
+    try
+    {
+        pushed = snapshots_queue.push(std::move(snapshot_task));
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to push snapshot task into queue");
+    }
+
+    if (pushed)
+    {
+        snapshot_cleanup_transferred = true;
+    }
+    else
+    {
         LOG_WARNING(log, "Cannot push snapshot task into queue");
+        /// Run cleanup inline so snapshot mode is disabled and `when_done(false)` fires once.
+        snapshot_cleanup_transferred = true;
+        /// push returned false, so the task was not consumed; the use-after-move is unreachable.
+        /// NOLINTNEXTLINE(bugprone-use-after-move,hicpp-invalid-access-moved)
+        snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/true);
+    }
 }
 
 template<typename Storage>
@@ -1308,10 +1396,12 @@ void KeeperStateMachine<Storage>::save_logical_snp_obj(
     LOG_DEBUG(log, "Saving snapshot {} obj_id {}", s.get_last_log_idx(), obj_id);
 
     std::lock_guard lock(snapshots_lock);
+
+    /// A concurrent local create writes its own unique file — never this receive's path.
+    /// Whoever publishes first owns the map entry; the loser retires its file.
     try
     {
         SnapshotFileInfoPtr snapshot_file_info;
-
         if (is_first_obj && is_last_obj)
         {
             /// If there is non-finalized state from previous call - clean it up.
@@ -1319,6 +1409,8 @@ void KeeperStateMachine<Storage>::save_logical_snp_obj(
             /// Drop the cached loader before `serializeSnapshotBufferToDisk` retires snapshots.
             snapshot_loader_info.reset();
             snapshot_loader_info_log_idx = 0;
+            /// Reuses an already-registered same-index snapshot without rewriting its bytes
+            /// (idempotent leader retries); otherwise writes a fresh unique file and publishes.
             snapshot_file_info = snapshot_manager.serializeSnapshotBufferToDisk(data, s.get_last_log_idx());
             ++obj_id;
         }
@@ -1389,19 +1481,20 @@ void KeeperStateMachine<Storage>::save_logical_snp_obj(
                 snapshot_loader_info.reset();
                 snapshot_loader_info_log_idx = 0;
                 snapshot_file_info = snapshot_manager.finalizeSnapshotReceiveToDisk(*snapshot_receive_ctx);
+                /// Registered now — a later throw must not let the catch's cancel unlink it.
+                snapshot_receive_ctx.reset();
             }
         }
 
         ProfileEvents::increment(ProfileEvents::KeeperSaveSnapshotObject);
         if (is_last_obj)
         {
-            /// NOT `latest_snapshot_meta`: an install may target an index below it
+            /// NOT `latest_snapshot_meta`: an install may target an index below it.
             pending_snapshot_to_apply = cloneSnapshotMeta(s);
-            /// Protect its file from retention until the matching apply consumes it: the
-            /// pending index is not the mark, and a concurrent local create can otherwise
-            /// advance the mark and prune this file before apply reads it.
+            /// Protect its file from retention until the matching apply consumes it: the pending
+            /// index is not the mark, and a concurrent local create can otherwise advance the
+            /// mark and prune this file before apply reads it.
             snapshot_manager.setProtectedPendingSnapshotIndex(s.get_last_log_idx());
-            snapshot_receive_ctx.reset();
 
             uint64_t snp_size = 0;
             try
@@ -2085,16 +2178,86 @@ void KeeperStateMachine<Storage>::cancelIfHasUnfinishedSnapshotReceive()
     try
     {
         const auto tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
-        /// NOTE: this is the FINAL `snapshot_<idx>` name, so for a same-index re-receive
-        /// this can delete an already-registered snapshot.
-        LOG_INFO(log, "Canceling unfinished snapshot receive, removing the in-progress receive file {} and marker {}", snapshot_file_name, tmp_snapshot_file_name);
+        LOG_INFO(log, "Canceling unfinished snapshot receive, removing partial files {} and {}", snapshot_file_name, tmp_snapshot_file_name);
         disk->removeFileIfExists(snapshot_file_name);
         disk->removeFileIfExists(tmp_snapshot_file_name);
     }
     catch (...)
     {
-        tryLogCurrentException(log, "Failed to remove snapshot receive files");
+        tryLogCurrentException(log, "Failed to remove partial snapshot files");
     }
+}
+
+template<typename Storage>
+std::optional<typename KeeperStateMachine<Storage>::DetachedSnapshotReceiveFiles>
+KeeperStateMachine<Storage>::detachUnfinishedSnapshotReceiveForCleanup()
+{
+    if (!snapshot_receive_ctx)
+        return std::nullopt;
+
+    DetachedSnapshotReceiveFiles files{
+        .disk = snapshot_receive_ctx->disk,
+        .snapshot_file_name = snapshot_receive_ctx->snapshot_file_name,
+        .log_idx = snapshot_receive_ctx->log_idx,
+    };
+
+    snapshot_receive_ctx.reset(); /// ~SnapshotReceiveCtx cancels the write buffer
+    return files;
+}
+
+template<typename Storage>
+void KeeperStateMachine<Storage>::cleanupDetachedSnapshotReceive(const DetachedSnapshotReceiveFiles & files)
+{
+    /// No claim: the detached file name is unique, so no restarted receive can be using it.
+    try
+    {
+        const auto tmp_snapshot_file_name = "tmp_" + files.snapshot_file_name;
+        LOG_INFO(
+            log,
+            "Cleaning detached unfinished snapshot receive {}, removing partial files {} and {}",
+            files.log_idx,
+            files.snapshot_file_name,
+            tmp_snapshot_file_name);
+        files.disk->removeFileIfExists(files.snapshot_file_name);
+        files.disk->removeFileIfExists(tmp_snapshot_file_name);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to remove detached partial snapshot files");
+    }
+}
+
+template<typename Storage>
+void KeeperStateMachine<Storage>::runSnapshotMaintenance(SnapshotMaintenanceTasks && tasks)
+{
+    try
+    {
+        /// May overlap save-path inline maintenance: each candidate holds an extra pin, so
+        /// concurrent selection skips it; publication stays serialized by `snapshots_lock`.
+        tasks.retired_snapshots.clear();
+
+        for (const auto & candidate : tasks.move_candidates)
+        {
+            snapshot_manager.moveSnapshotCandidate(candidate, [this](const SnapshotMoveCandidate & move_candidate)
+            {
+                std::lock_guard lock(snapshots_lock);
+                return snapshot_manager.publishMovedSnapshotIfValid(move_candidate);
+            });
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to run snapshot maintenance after local creation");
+    }
+}
+
+template<typename Storage>
+std::vector<std::pair<std::string, Int32>> KeeperStateMachine<Storage>::getExpiredTTLPathsForGarbageCollector(size_t batch_size) const
+{
+    KEEPER_STORAGE_LOCK_SHARED(lock);
+    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    return storage->collectExpiredTTLPaths(now_ms, batch_size);
 }
 
 template<typename Storage>
