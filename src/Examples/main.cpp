@@ -9,6 +9,8 @@
 #include <vector>
 #include <filesystem>
 
+#include <Common/VectorWithMemoryTracking.h>
+
 namespace
 {
 
@@ -130,7 +132,7 @@ void printHelp()
 
 int main(int argc, char ** argv)
 {
-    std::vector<char *> args(argv, argv + argc);
+    DB::VectorWithMemoryTracking<char *> args(argv, argv + argc);
 
     if (args.empty())
     {
