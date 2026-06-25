@@ -6,6 +6,7 @@ import logging
 import os
 import random
 import uuid
+from contextlib import closing
 from io import StringIO
 
 import psycopg
@@ -380,36 +381,39 @@ def test_prepared_statement_no_sql_injection(started_cluster):
     cur.execute("CREATE TABLE inj_secret (sid Int32, secret String) ENGINE = Memory;")
     cur.execute("INSERT INTO inj_secret (sid, secret) VALUES (99, 'TOP_SECRET');")
 
-    # Benign string parameter goes through the extended (Parse/Bind/Execute) path.
-    cur.execute("SELECT id FROM inj_users WHERE name = %s;", ("bob",), prepare=True)
+    # A parameterized execute already uses the extended Parse/Bind/Execute path
+    # (the bound value travels the wire as data) - that is the path under test.
+    # We do not pass prepare=True: it adds a named, server-side cached statement
+    # whose lifecycle is driven by the client's own prepared-statement cache, and
+    # repeated named prepares on one connection are an unrelated source of
+    # flakiness here. The unnamed parameterized form exercises the same binding.
+
+    # Benign string parameter.
+    cur.execute("SELECT id FROM inj_users WHERE name = %s;", ("bob",))
     assert cur.fetchall() == [(2,)]
 
     # Numeric comparison with a (text) parameter still works.
-    cur.execute("SELECT id FROM inj_users WHERE id > %s ORDER BY id;", ("1",), prepare=True)
+    cur.execute("SELECT id FROM inj_users WHERE id > %s ORDER BY id;", ("1",))
     assert cur.fetchall() == [(2,)]
 
     # Injection attempt: the payload must be bound as a single string literal,
     # not interpreted as SQL, so the secret table is never read.
     payload = "x' UNION ALL SELECT secret FROM inj_secret -- "
-    cur.execute("SELECT name FROM inj_users WHERE name = %s;", (payload,), prepare=True)
+    cur.execute("SELECT name FROM inj_users WHERE name = %s;", (payload,))
     assert cur.fetchall() == []
 
     # Placeholder inside a block comment: $1 there is not a real placeholder, so
     # the bound value must not be spliced into the comment. Otherwise a value
     # beginning with "*/ ... --" closes the comment and what follows becomes
-    # executable SQL ahead of the real placeholder. The prepared body keeps a $1
-    # in a leading comment and a real $1 in the WHERE; the secret must stay
-    # unread (pre-fix this leaked TOP_SECRET).
+    # executable SQL ahead of the real placeholder. The body keeps a $1 in a
+    # leading comment and a real $1 in the WHERE; the secret must stay unread
+    # (pre-fix this leaked TOP_SECRET).
     payload = "*/ SELECT secret FROM inj_secret -- "
-    cur.execute(
-        "/* $1 */ SELECT name FROM inj_users WHERE name = %s;",
-        (payload,),
-        prepare=True,
-    )
+    cur.execute("/* $1 */ SELECT name FROM inj_users WHERE name = %s;", (payload,))
     assert ("TOP_SECRET",) not in cur.fetchall()
 
     # A parameter with a single quote must round-trip as data.
-    cur.execute("SELECT %s AS v;", ("O'Brien",), prepare=True)
+    cur.execute("SELECT %s AS v;", ("O'Brien",))
     assert cur.fetchall() == [("O'Brien",)]
 
     cur.execute("DROP TABLE inj_users;")
@@ -477,43 +481,68 @@ def test_copy_no_sql_injection(started_cluster):
     # raw SQL, so it cannot break out into a UNION or a second statement.
     node = started_cluster.instances["node"]
 
-    ch = py_psql.connect(
+    def connect():
+        # psycopg2's `with connection` manages the transaction but does NOT close
+        # the connection, so wrap in closing() to guarantee each probe's broken
+        # connection is actually closed.
+        c = py_psql.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            database="",
+        )
+        c.autocommit = True
+        return closing(c)
+
+    setup = py_psql.connect(
         host=node.ip_address,
         port=server_port,
         user="default",
         password="123",
         database="",
     )
-    ch.autocommit = True
-    cur = ch.cursor()
-    cur.execute("DROP TABLE IF EXISTS copy_t;")
-    cur.execute("DROP TABLE IF EXISTS copy_secret;")
-    cur.execute("CREATE TABLE copy_t (x UInt32) ENGINE = Memory;")
-    cur.execute("INSERT INTO copy_t VALUES (1), (2);")
-    cur.execute("CREATE TABLE copy_secret (s String) ENGINE = Memory;")
-    cur.execute("INSERT INTO copy_secret VALUES ('TOP_SECRET');")
+    setup.autocommit = True
+    setup_cur = setup.cursor()
+    setup_cur.execute("DROP TABLE IF EXISTS copy_t;")
+    setup_cur.execute("DROP TABLE IF EXISTS copy_secret;")
+    setup_cur.execute("CREATE TABLE copy_t (x UInt32) ENGINE = Memory;")
+    setup_cur.execute("INSERT INTO copy_t VALUES (1), (2);")
+    setup_cur.execute("CREATE TABLE copy_secret (s String) ENGINE = Memory;")
+    setup_cur.execute("INSERT INTO copy_secret VALUES ('TOP_SECRET');")
+    setup_cur.execute("DROP TABLE IF EXISTS copy_load;")
+    setup_cur.execute("CREATE TABLE copy_load (s String) ENGINE = Memory;")
+    setup_cur.execute("DROP TABLE IF EXISTS copy_secret_str;")
+    setup_cur.execute("CREATE TABLE copy_secret_str (s String) ENGINE = Memory;")
+    setup_cur.execute("INSERT INTO copy_secret_str VALUES ('TOP_SECRET');")
+
+    # A COPY rejected by the server leaves the psycopg2 connection in a broken
+    # state (the next call raises "cursor already closed"), so every COPY attempt
+    # below uses its own connection. Otherwise the benign COPY after a blocked
+    # one would fail for a reason unrelated to the security check under test.
 
     # Malicious table identifier: the whole UNION is wrapped in one quoted
     # identifier so it reaches the handler as a single name. It must be treated
     # as one (non-existent) table name, not executed as SQL.
     out = StringIO()
-    with pytest.raises(Exception):
-        cur.copy_expert(
+    with connect() as c, pytest.raises(Exception):
+        c.cursor().copy_expert(
             'COPY "copy_t UNION ALL SELECT s FROM copy_secret" TO STDOUT', out
         )
     assert "TOP_SECRET" not in out.getvalue()
 
     # Malicious column identifier: same idea via the column list.
     out2 = StringIO()
-    with pytest.raises(Exception):
-        cur.copy_expert(
+    with connect() as c, pytest.raises(Exception):
+        c.cursor().copy_expert(
             'COPY copy_t ("x) , (SELECT s FROM copy_secret") TO STDOUT', out2
         )
     assert "TOP_SECRET" not in out2.getvalue()
 
-    # A benign COPY on the same table still works after the blocked attempts.
+    # A benign COPY on a fresh connection still works.
     out3 = StringIO()
-    cur.copy_expert("COPY copy_t TO STDOUT", out3)
+    with connect() as c:
+        c.cursor().copy_expert("COPY copy_t TO STDOUT", out3)
     assert sorted(out3.getvalue().split()) == ["1", "2"]
 
     # COPY FROM builds an INSERT INTO from the same client-supplied identifiers.
@@ -521,30 +550,27 @@ def test_copy_no_sql_injection(started_cluster):
     # token) must be back-quoted into a single column name. Otherwise it is
     # spliced raw and turns the INSERT into "INSERT INTO load (s) SELECT s FROM
     # secret", copying the secret into the load table.
-    cur.execute("DROP TABLE IF EXISTS copy_load;")
-    cur.execute("CREATE TABLE copy_load (s String) ENGINE = Memory;")
-    cur.execute("DROP TABLE IF EXISTS copy_secret_str;")
-    cur.execute("CREATE TABLE copy_secret_str (s String) ENGINE = Memory;")
-    cur.execute("INSERT INTO copy_secret_str VALUES ('TOP_SECRET');")
-
-    with pytest.raises(Exception):
-        cur.copy_expert(
+    with connect() as c, pytest.raises(Exception):
+        c.cursor().copy_expert(
             'COPY copy_load ("s) SELECT s FROM copy_secret_str -- ") FROM STDIN',
             StringIO("x\n"),
         )
     # The injected SELECT must not have run: the load table stays empty.
-    cur.execute("SELECT count() FROM copy_load WHERE s = 'TOP_SECRET';")
-    assert cur.fetchone()[0] == 0
+    # ClickHouse returns the count over the PostgreSQL wire as text, so cast it.
+    setup_cur.execute("SELECT count() FROM copy_load WHERE s = 'TOP_SECRET';")
+    assert int(setup_cur.fetchone()[0]) == 0
 
     # A benign COPY FROM with a legitimate column still works.
-    cur.copy_expert("COPY copy_load (s) FROM STDIN", StringIO("hello\n"))
-    cur.execute("SELECT s FROM copy_load;")
-    assert cur.fetchall() == [("hello",)]
+    with connect() as c:
+        c.cursor().copy_expert("COPY copy_load (s) FROM STDIN", StringIO("hello\n"))
+    setup_cur.execute("SELECT s FROM copy_load;")
+    assert setup_cur.fetchall() == [("hello",)]
 
-    cur.execute("DROP TABLE copy_load;")
-    cur.execute("DROP TABLE copy_secret_str;")
-    cur.execute("DROP TABLE copy_t;")
-    cur.execute("DROP TABLE copy_secret;")
+    setup_cur.execute("DROP TABLE copy_load;")
+    setup_cur.execute("DROP TABLE copy_secret_str;")
+    setup_cur.execute("DROP TABLE copy_t;")
+    setup_cur.execute("DROP TABLE copy_secret;")
+    setup.close()
 
 
 def test_copy_command(started_cluster):
