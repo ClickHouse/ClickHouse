@@ -18,14 +18,14 @@ $CLICKHOUSE_CLIENT "${client_opts[@]}" -m -q "
     insert into \`04410_t\` select * from numbers(10);
 "
 
-$CLICKHOUSE_CLIENT --format Null "${client_opts[@]}" -q "BACKUP TABLE \`04410_t\` TO S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/data')"
+$CLICKHOUSE_CLIENT --format Null "${client_opts[@]}" -q "BACKUP TABLE \`04410_t\` TO S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/${CLICKHOUSE_TEST_UNIQUE_NAME}_data')"
 
 # Two restores that differ only in the requested allow_s3_native_copy value.
 rid_native="${CLICKHOUSE_TEST_UNIQUE_NAME}_rn"
 rid_no_native="${CLICKHOUSE_TEST_UNIQUE_NAME}_rnn"
 
-$CLICKHOUSE_CLIENT --format Null "${client_opts[@]}" -q "RESTORE TABLE \`04410_t\` AS \`04410_t_nc\` FROM S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/data') SETTINGS id='$rid_native', allow_s3_native_copy=true"
-$CLICKHOUSE_CLIENT --format Null "${client_opts[@]}" -q "RESTORE TABLE \`04410_t\` AS \`04410_t_nnc\` FROM S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/data') SETTINGS id='$rid_no_native', allow_s3_native_copy=false"
+$CLICKHOUSE_CLIENT --format Null "${client_opts[@]}" -q "RESTORE TABLE \`04410_t\` AS \`04410_t_nc\` FROM S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/${CLICKHOUSE_TEST_UNIQUE_NAME}_data') SETTINGS id='$rid_native', allow_s3_native_copy=true"
+$CLICKHOUSE_CLIENT --format Null "${client_opts[@]}" -q "RESTORE TABLE \`04410_t\` AS \`04410_t_nnc\` FROM S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/${CLICKHOUSE_TEST_UNIQUE_NAME}_data') SETTINGS id='$rid_no_native', allow_s3_native_copy=false"
 
 # For an S3 restore, engine_settings must be populated (not empty) and expose the effective
 # S3 request settings, including \`allow_native_copy\`. The effective value must reflect the

@@ -20,10 +20,10 @@ $CLICKHOUSE_CLIENT "${client_opts[@]}" -m -q "
 
 # Two S3 backups that differ only in the requested allow_s3_native_copy value.
 qid_native=$(random_str 10)
-$CLICKHOUSE_CLIENT --format Null "${client_opts[@]}" --query_id "$qid_native" -q "BACKUP TABLE \`04339_t\` TO S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/data_native') SETTINGS allow_s3_native_copy=true"
+$CLICKHOUSE_CLIENT --format Null "${client_opts[@]}" --query_id "$qid_native" -q "BACKUP TABLE \`04339_t\` TO S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/${CLICKHOUSE_TEST_UNIQUE_NAME}_data_native') SETTINGS allow_s3_native_copy=true"
 
 qid_no_native=$(random_str 10)
-$CLICKHOUSE_CLIENT --format Null "${client_opts[@]}" --query_id "$qid_no_native" -q "BACKUP TABLE \`04339_t\` TO S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/data_no_native') SETTINGS allow_s3_native_copy=false"
+$CLICKHOUSE_CLIENT --format Null "${client_opts[@]}" --query_id "$qid_no_native" -q "BACKUP TABLE \`04339_t\` TO S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/${CLICKHOUSE_TEST_UNIQUE_NAME}_data_no_native') SETTINGS allow_s3_native_copy=false"
 
 # For an S3 backup, engine_settings must be populated (not empty) and expose the effective
 # S3 request settings, including `allow_native_copy`. The effective value must reflect the
