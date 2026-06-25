@@ -1140,12 +1140,22 @@ def test_backup_table_engine(started_cluster):
     backup_name = "Disk('backups', 'mpg_te_backup')"
     instance.query(f"BACKUP TABLE {table} TO {backup_name}")
 
+    # Restoring a standalone MaterializedPostgreSQL table is rejected. The target was just dropped, so RESTORE
+    # would have to (re)create it from the backup definition, again as MaterializedPostgreSQL. That is rejected in
+    # the storage factory *before* the table is created: otherwise the constructor would start replicating from
+    # the live PostgreSQL source and only then fail, leaving a live table behind (RestorerFromBackup does not roll
+    # back the created table on a later failure). Assert both the rejection and that no table was left behind.
     instance.query(f"DROP TABLE {table} SYNC")
     error = instance.query_and_get_error(
         f"RESTORE TABLE {table} FROM {backup_name}",
         settings={"allow_experimental_materialized_postgresql_table": 1},
     )
-    assert "in place is not supported" in error, error
+    assert "from a backup is not supported" in error, error
+    assert "MaterializedPostgreSQL" in error, error
+    assert "0" == instance.query(f"EXISTS TABLE {table}").strip(), (
+        "the rejected restore must fail closed before creating the table, leaving no live "
+        "MaterializedPostgreSQL table replicating from the live PostgreSQL source"
+    )
 
     # The backed-up data (delegated to the nested ReplacingMergeTree by backupData) can be restored
     # into a ReplacingMergeTree created beforehand with the same structure as the nested table

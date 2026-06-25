@@ -329,21 +329,20 @@ void StorageMaterializedPostgreSQL::restoreDataFromBackup(
     /// A MaterializedPostgreSQL table starts replicating from the live PostgreSQL source as soon as it is
     /// created (the constructor calls `replication_handler->startup`). Restoring the backed-up parts of the
     /// nested ReplacingMergeTree on top of that freshly replicated data would mix the backup snapshot with the
-    /// current remote state, so an in-place restore cannot faithfully represent the backup. Fail closed and
-    /// direct the user to restore the data into a separately pre-created ReplacingMergeTree table instead - the
-    /// data is still captured by `backupData`. The target must already exist as a ReplacingMergeTree: restoring
-    /// `... AS <new_table>` into a not-yet-existing table would recreate it from the backup definition (again as
-    /// MaterializedPostgreSQL) and hit this same error, and `allow_different_table_def` only skips the definition
-    /// comparison against an already existing target.
+    /// current remote state, so an in-place restore into an already-existing MaterializedPostgreSQL table cannot
+    /// faithfully represent the backup. Fail closed and direct the user to restore the data into a separately
+    /// pre-created ReplacingMergeTree table instead - the data is still captured by `backupData`. Restoring
+    /// `... AS <new_table>` into a not-yet-existing table never reaches this point: that path would recreate the
+    /// table from the backup definition (again as MaterializedPostgreSQL) and is rejected earlier, in the storage
+    /// factory, before the table is created (see `registerStorageMaterializedPostgreSQL`). `allow_different_table_def`
+    /// only skips the definition comparison against an already existing target.
     throw Exception(
         ErrorCodes::NOT_IMPLEMENTED,
         "Restoring a MaterializedPostgreSQL table ({}) in place is not supported, because the table would start "
         "replicating from the live PostgreSQL source and mix it with the backup snapshot. "
         "Restore the data into a separate ReplacingMergeTree table that you have created beforehand with the same "
         "structure as the nested table (including the _sign and _version columns), e.g.: "
-        "RESTORE TABLE <src> AS <existing_replacing_mergetree> SETTINGS allow_different_table_def = 1. "
-        "Restoring AS a not-yet-existing table would recreate it as MaterializedPostgreSQL from the backup "
-        "definition and fail with this same error, so the target must already exist as a ReplacingMergeTree.",
+        "RESTORE TABLE <src> AS <existing_replacing_mergetree> SETTINGS allow_different_table_def = 1.",
         getStorageID().getNameForLogs());
 }
 
@@ -574,6 +573,23 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
+        /// Restoring a MaterializedPostgreSQL table from a backup is not supported, and must be rejected here -
+        /// before the storage is constructed - to fail closed. The constructor calls `replication_handler->startup`,
+        /// so by the time `restoreDataFromBackup` could reject the restore the table would already exist and be
+        /// replicating from the live PostgreSQL source (`RestorerFromBackup` does not roll back the created table on
+        /// a later failure). The table data is still captured by the backup (delegated to the nested
+        /// ReplacingMergeTree, see `backupData`); restore it into a ReplacingMergeTree created beforehand instead.
+        if (args.is_restore_from_backup)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Restoring a MaterializedPostgreSQL table ({}) from a backup is not supported, because the table "
+                "would start replicating from the live PostgreSQL source as soon as it is created, mixing the backup "
+                "snapshot with the current remote state. The table data is still captured by the backup (delegated "
+                "to the nested ReplacingMergeTree); restore it into a ReplacingMergeTree table that you have created "
+                "beforehand with the same structure as the nested table (including the _sign and _version columns), "
+                "e.g.: RESTORE TABLE <src> AS <existing_replacing_mergetree> SETTINGS allow_different_table_def = 1.",
+                args.table_id.getNameForLogs());
+
         StorageInMemoryMetadata metadata;
         metadata.setColumns(args.columns);
         metadata.setConstraints(args.constraints);
