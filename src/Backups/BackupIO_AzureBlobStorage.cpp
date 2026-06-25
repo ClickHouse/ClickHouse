@@ -34,17 +34,19 @@ namespace
     std::map<String, String> serializeAzureRequestSettings(
         const AzureBlobStorage::RequestSettings & settings, const ReadSettings & read_settings)
     {
+        /// Only settings that backup Azure IO actually consumes are reported. Disk/list-only fields
+        /// (read_only, list_object_keys_size) are intentionally omitted, as are the http_keep_alive_*
+        /// fields (which come from server settings, not RequestSettings), so the map is not misleading
+        /// about what the backup engine effectively uses.
         return {
             {"use_native_copy", settings.use_native_copy ? "true" : "false"},
             {"check_objects_after_upload", settings.check_objects_after_upload ? "true" : "false"},
-            {"read_only", settings.read_only ? "true" : "false"},
             {"max_single_part_upload_size", std::to_string(settings.max_single_part_upload_size)},
             /// Backup reads use ReadBufferFromAzureBlobStorage, whose seek coalescing uses the read
             /// setting (remote_read_min_bytes_for_seek), not RequestSettings::min_bytes_for_seek.
             {"min_bytes_for_seek", std::to_string(read_settings.remote_fs_settings.min_bytes_for_seek)},
             {"max_single_read_retries", std::to_string(settings.max_single_read_retries)},
             {"max_single_download_retries", std::to_string(settings.max_single_download_retries)},
-            {"list_object_keys_size", std::to_string(settings.list_object_keys_size)},
             {"min_upload_part_size", std::to_string(settings.min_upload_part_size)},
             {"max_upload_part_size", std::to_string(settings.max_upload_part_size)},
             {"max_single_part_copy_size", std::to_string(settings.max_single_part_copy_size)},
