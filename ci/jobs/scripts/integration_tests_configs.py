@@ -23,7 +23,7 @@ LLVM_COVERAGE_SKIP_PREFIXES = [
 ]
 
 TEST_CONFIGS = [
-    TC("test_dns_cache/", False, "uses fixed IPv6 addresses; Docker network startup is serialized via file lock"),
+    TC("test_dns_cache/", True, "uses fixed IPs on the one shared subnet, so cluster.start() holds the global /tmp/docker_net.lock for the whole cluster lifetime; under --dist=each the flaky/targeted check runs this same module on every worker at once and they serialize on that lock, blowing the 10-minute acquire budget. Run sequentially so only one such cluster exists at a time."),
     TC("test_global_overcommit_tracker/", False, "memory overcommit test; isolated to its own ClickHouse instance"),
     TC(
         "test_profile_max_sessions_for_user/",
