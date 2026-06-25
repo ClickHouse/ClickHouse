@@ -61,17 +61,6 @@ DatabaseS3::DatabaseS3(const String & name_, const Configuration& config_, Conte
 {
 }
 
-void DatabaseS3::addTable(const std::string & table_name, StoragePtr table_storage) const
-{
-    std::lock_guard lock(mutex);
-    auto [_, inserted] = loaded_tables.emplace(table_name, table_storage);
-    if (!inserted)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Table with name `{}` already exists in database `{}` (engine {})",
-            table_name, getDatabaseName(), getEngineName());
-}
-
 std::string DatabaseS3::getFullUrl(const std::string & name) const
 {
     if (!config.url_prefix.empty())
@@ -107,28 +96,12 @@ bool DatabaseS3::isTableExist(const String & name, ContextPtr context_) const
 
 StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) const
 {
-    /// A cached storage is reused by later sessions without rebuilding its S3 client, so it must be cached
-    /// only when that client can never carry server-managed credentials -- otherwise a session that is
-    /// allowed to use them could prime the cache for a later restricted session, bypassing the restriction.
-    /// `NOSIGN` is always anonymous, so it is safe. An explicit access key pair is safe only when the building
-    /// session is itself restricted: otherwise `StorageS3Configuration::fromAST` may inherit a
-    /// server-configured `role_arn` from the `<s3>` config and assume the server's role on top of the explicit
-    /// keys (under the restriction that inherited `role_arn` is stripped instead). Everything else is rebuilt
-    /// under the current query context every time, so the restriction is enforced for each session.
-    const bool safe_to_cache
-        = config.no_sign_request
-        || (config.access_key_id.has_value() && config.secret_access_key.has_value()
-            && context_->shouldRestrictUserQueryS3Credentials());
-
-    /// Check if the table exists in the loaded tables map.
-    if (safe_to_cache)
-    {
-        std::lock_guard lock(mutex);
-        auto it = loaded_tables.find(name);
-        if (it != loaded_tables.end())
-            return it->second;
-    }
-
+    /// The built storage is intentionally NOT cached across sessions. The S3 client an `s3(...)` table builds
+    /// depends on the per-session `s3_allow_server_credentials_in_user_queries` value (e.g. whether a
+    /// server-configured `role_arn` is stripped), so a storage built by one session must not be reused by
+    /// another with a different effective credential mode -- that would let an allowed session prime a client
+    /// for a later restricted one (or vice versa). Rebuild under the current query context every time so the
+    /// restriction is enforced per session. Caching can be reintroduced once it keys on the credential mode.
     auto url = getFullUrl(name);
     checkUrl(url, context_, /* throw_on_error */true);
 
@@ -154,8 +127,7 @@ StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) co
 
     /// TableFunctionS3 throws exceptions, if table cannot be created.
     auto table_storage = table_function->execute(function, context_, name, /*cached_columns_=*/{}, /*use_global_context=*/false, /*is_insert_query=*/true);
-    if (table_storage && safe_to_cache)
-        addTable(name, table_storage);
+    /// Intentionally not cached -- see the note above.
 
     return table_storage;
 }
