@@ -93,6 +93,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsOverflowMode read_overflow_mode;
+    extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool allow_experimental_analyzer;
@@ -1377,6 +1378,14 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     const auto & settings = context->getSettingsRef();
     if (!settings[Setting::use_query_condition_cache]
             || !settings[Setting::allow_experimental_analyzer]
+            /// A cached verdict can encode a skip-index-derived exclusion (e.g. with
+            /// use_skip_indexes_on_data_read=0 the index runs at analysis time and its
+            /// dropped marks are persisted under the bare WHERE-condition hash). The cache
+            /// key does not record whether skip indexes were applied, so a query that
+            /// disabled them must not consult it: a skip index may legitimately diverge from
+            /// the row-level predicate (e.g. a text index with a preprocessor), and reusing
+            /// its verdict would drop a mark the predicate alone matches -> wrong result.
+            || !settings[Setting::use_skip_indexes]
             || (!select_query_info.prewhere_info && !select_query_info.filter_actions_dag)
             || (vector_search_parameters.has_value()) /// vector search has filter in the ORDER BY
             || select_query_info.isFinal()
