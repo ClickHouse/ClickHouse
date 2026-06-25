@@ -600,7 +600,7 @@ static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pu
     return res;
 }
 
-static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, QueryResultCacheUsage /*query_result_cache_usage*/, bool pulling_pipeline)
+static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, const ContextPtr & context, QueryResultCacheUsage /*query_result_cache_usage*/, bool pulling_pipeline)
 {
     /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
     /// prevent partial/garbage results in case of exceptions during query execution.
@@ -627,6 +627,13 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
 
     /// Reset pipeline before fetching profile counters
     query_pipeline.reset();
+
+    /// The pipeline (and its threads) have been finalized and joined by the reset above, so it is now
+    /// safe to release the memory reservation: pipeline threads hold raw pointers to `MemoryReservation`
+    /// (see `WorkloadResources` in `PipelineExecutor`) and would otherwise race with its destruction.
+    /// It must be released here, before `finalizePerformanceCounters`, so that the resulting
+    /// `MemoryReservationDecreases` profile event is recorded in `query_log`.
+    context->releaseMemoryReservation();
 
     /// Update performance counters before logging to query_log
     CurrentThread::finalizePerformanceCounters();
@@ -761,7 +768,7 @@ void logQueryFinish(
     bool internal)
 {
     const auto time_now = std::chrono::system_clock::now();
-    auto query_pipeline_finalized_info = finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
+    auto query_pipeline_finalized_info = finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), context, query_result_cache_usage, pulling_pipeline);
     logQueryFinishImpl(elem, context, query_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, time_now);
 }
 
@@ -1923,11 +1930,12 @@ static BlockIO executeQueryImpl(
 
             /// The prepare callback flushes pipeline progress and resets the pipeline
             auto finish_callback_finalize_pipeline = [
+                                     context,
                                      query_result_cache_usage,
                                      // Need to be cached, since will be changed after complete()
                                      pulling_pipeline = pipeline.pulling()](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
             {
-                return finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
+                return finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), context, query_result_cache_usage, pulling_pipeline);
             };
 
             /// The finish callback logs the query result
