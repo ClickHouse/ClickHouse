@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -167,7 +168,14 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Array & x) const
     for (const Field & elem : x)
         element_types.emplace_back(applyVisitor(*this, elem));
 
-    return std::make_shared<DataTypeArray>(getLeastSupertype<on_error>(element_types));
+    /// Try to find a common element type. If there is none (e.g. the array mixes
+    /// JSON objects with scalars like ["text", {"k":1}]), fall back to Dynamic so
+    /// the array can be stored without loss in a ColumnDynamic. The Dynamic element
+    /// type supports every Field value including Object (JSON) elements.
+    auto element_type = tryGetLeastSupertype(element_types);
+    if (!element_type)
+        element_type = std::make_shared<DataTypeDynamic>();
+    return std::make_shared<DataTypeArray>(std::move(element_type));
 }
 
 template <LeastSupertypeOnError on_error>

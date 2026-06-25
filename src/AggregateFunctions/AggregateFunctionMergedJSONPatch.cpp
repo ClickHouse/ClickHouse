@@ -3,12 +3,16 @@
 #include <Common/FieldVisitorToString.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <Columns/ColumnObject.h>
+#include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/FieldToDataType.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromStringWithMemoryTracking.h>
+#include <IO/WriteBufferFromVector.h>
 #include <Common/Arena.h>
 #include <Common/FieldBinaryEncoding.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Field.h>
 
 #include <algorithm>
@@ -33,6 +37,8 @@ namespace ErrorCodes
   * `JSON` values. Each update is ordered by its sort key, and newer writes replace older writes for
   * the same path or any ancestor/descendant conflicting path.
   *
+  * Arrays are preserved as atomic replacement values, including mixed arrays such as `[42, "x", {"k": 1}]`.
+  *
   * It also inherits one important `ColumnObject` limitation: null-valued object members are dropped
   * on insertion. As a result, RFC 7396 null deletion semantics such as `{"key": null}` are not
   * representable here, because `ColumnObject` cannot distinguish between "key is absent" and
@@ -40,43 +46,6 @@ namespace ErrorCodes
   */
 struct AggregateFunctionMergedJSONPatchData
 {
-    /// `JSON` / `ColumnObject` cannot insert arrays that mix scalar elements with nested `JSON`
-    /// object elements, because array element type inference ends up with incompatible `String`
-    /// and `JSON` types. `mergedJSONPatch` follows RFC 7396 and keeps arrays as atomic replacement
-    /// values, so a heterogeneous source array can survive unchanged until aggregate finalization.
-    ///
-    /// To avoid `NO_COMMON_TYPE` during final insertion of the aggregate result, recursively detect
-    /// arrays that contain both object and non-object elements and stringify only the object
-    /// elements. This preserves RFC 7396 replacement semantics for the array as a whole while
-    /// converting it to a representation that the current `JSON` type can store.
-    static void normalizeMixedJSONArray(Field & value)
-    {
-        if (value.getType() != Field::Types::Array)
-            return;
-
-        auto & array = value.safeGet<Array>();
-        bool has_object = false;
-        bool has_non_object = false;
-
-        for (auto & element : array)
-        {
-            normalizeMixedJSONArray(element);
-
-            if (element.getType() == Field::Types::Object)
-                has_object = true;
-            else
-                has_non_object = true;
-        }
-
-        if (has_object && has_non_object)
-        {
-            for (auto & element : array)
-            {
-                if (element.getType() == Field::Types::Object)
-                    element = Field(convertObjectToString(element.safeGet<Object>()));
-            }
-        }
-    }
 
     struct SortKey
     {
@@ -196,7 +165,7 @@ struct AggregateFunctionMergedJSONPatchData
 
     Arena path_arena;
     Arena value_arena;
-    std::vector<Entry> entries;
+    VectorWithMemoryTracking<Entry> entries;
 
     static StringSlice copyToArena(Arena & arena, std::string_view data)
     {
@@ -267,7 +236,7 @@ struct AggregateFunctionMergedJSONPatchData
         return lhs == rhs || isDescendantPath(lhs, rhs) || isDescendantPath(rhs, lhs);
     }
 
-    static auto findInsertPosition(std::vector<Entry> & entries, std::string_view path)
+    static auto findInsertPosition(VectorWithMemoryTracking<Entry> & entries, std::string_view path)
     {
         return std::lower_bound(
             entries.begin(),
@@ -277,25 +246,6 @@ struct AggregateFunctionMergedJSONPatchData
             {
                 return entry.path.view() < rhs_path;
             });
-    }
-
-    static void insertNestedPath(Object & root, std::string_view path, Field value)
-    {
-        size_t dot = path.find('.');
-        if (dot == std::string_view::npos)
-        {
-            root[String(path)] = std::move(value);
-            return;
-        }
-
-        String head(path.substr(0, dot));
-        std::string_view tail = path.substr(dot + 1);
-
-        auto it = root.find(head);
-        if (it == root.end() || it->second.getType() != Field::Types::Object)
-            it = root.emplace(head, Field(Object{})).first;
-
-        insertNestedPath(it->second.safeGet<Object>(), tail, std::move(value));
     }
 
     bool hasNewerConflictingEntry(std::string_view path, const SortKey & sort_key) const
@@ -340,8 +290,6 @@ struct AggregateFunctionMergedJSONPatchData
 
     void insertPathValue(std::string_view path, Field value, const SortKey & sort_key)
     {
-        normalizeMixedJSONArray(value);
-
         if (!isObjectField(value))
         {
             insertLeafEntry(path, std::move(value), sort_key);
@@ -442,7 +390,6 @@ struct AggregateFunctionMergedJSONPatchData
 
             Field value;
             path_info.column->get(path_info.row, value);
-            normalizeMixedJSONArray(value);
 
             insertPathValue(path_info.path, std::move(value), sort_key);
             it.next();
@@ -503,17 +450,60 @@ struct AggregateFunctionMergedJSONPatchData
     {
         auto & result_column = assert_cast<ColumnObject &>(to);
 
-        Object result_object;
-        for (const auto & entry : entries)
-            insertNestedPath(result_object, entry.path.view(), entry.value.get());
-
-        if (result_object.empty())
+        if (entries.empty())
         {
             result_column.insertDefault();
             return;
         }
 
-        result_column.insert(Field(result_object));
+        size_t current_size = result_column.size();
+        auto [shared_data_paths, shared_data_values] = result_column.getSharedDataPathsAndValues();
+
+        for (const auto & entry : entries)
+        {
+            std::string_view path = entry.path.view();
+            Field value = entry.value.get();
+
+            if (auto typed_it = result_column.getTypedPaths().find(path); typed_it != result_column.getTypedPaths().end())
+            {
+                typed_it->second->insert(value);
+            }
+            else if (auto dynamic_it = result_column.getDynamicPathsPtrs().find(path); dynamic_it != result_column.getDynamicPathsPtrs().end())
+            {
+                dynamic_it->second->insert(value);
+            }
+            else if (auto * dynamic_path_column = result_column.tryToAddNewDynamicPath(path))
+            {
+                dynamic_path_column->insert(value);
+            }
+            else if (!value.isNull())
+            {
+                /// Dynamic path limit reached: write directly to shared data using Dynamic
+                /// binary serialization. This is the same encoding ColumnObject::insert uses
+                /// for overflow paths and handles any Field including arrays containing objects.
+                shared_data_paths->insertData(path.data(), path.size());
+                auto & chars = shared_data_values->getChars();
+                {
+                    WriteBufferFromVector<ColumnString::Chars> value_buf(chars, AppendModeTag{});
+                    DataTypeDynamic().getDefaultSerialization()->serializeBinary(value, value_buf, {});
+                }
+                shared_data_values->getOffsets().push_back(chars.size());
+            }
+        }
+
+        result_column.getSharedDataOffsets().push_back(shared_data_paths->size());
+
+        for (auto & [_, column] : result_column.getTypedPaths())
+        {
+            if (column->size() == current_size)
+                column->insertDefault();
+        }
+
+        for (auto & [_, column] : result_column.getDynamicPathsPtrs())
+        {
+            if (column->size() == current_size)
+                column->insertDefault();
+        }
     }
 };
 
@@ -599,7 +589,7 @@ void registerAggregateFunctionMergedJSONPatch(AggregateFunctionFactory & factory
 {
     AggregateFunctionProperties properties = {
         .returns_default_when_only_null = false,
-        .is_order_dependent = false
+        .is_order_dependent = true
     };
 
     FunctionDocumentation::Description description = R"(
@@ -615,6 +605,10 @@ from the serialized JSON object to ensure consistent ordering across distributed
 
 When called with two arguments `mergedJSONPatch(json_col, sort_key)`, the provided sort_key
 determines which value wins for each JSON path. The value with the largest sort_key is retained.
+
+If two conflicting patches have equal sort keys, the result is order-dependent: the patch processed
+later wins the tie. This matches the aggregate implementation and means users should not rely on
+`ORDER BY` being removed before aggregation to break ties deterministically.
 
 LIMITATION: RFC 7396 null deletion semantics (where `{"key": null}` removes a key) are not supported.
 ColumnObject silently drops null-valued keys during insertion, making it impossible to distinguish

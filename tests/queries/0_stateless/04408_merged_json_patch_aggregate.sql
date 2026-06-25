@@ -54,6 +54,19 @@ FROM
     SELECT '{"arr":["2",{"k":2}]}'::JSON, 2
 );
 
+-- Mixed array via State+Merge combinator: object elements inside arrays must not be stringified.
+SELECT toJSONString(mergedJSONPatchMerge(state))
+FROM
+(
+    SELECT mergedJSONPatchState(patch, version) AS state
+    FROM
+    (
+        SELECT '{"arr":["1",{"k":1}]}'::JSON AS patch, 1 AS version
+        UNION ALL
+        SELECT '{"arr":["2",{"k":2}]}'::JSON, 2
+    )
+);
+
 DROP TABLE IF EXISTS merged_json_patch_states;
 
 CREATE TABLE merged_json_patch_states
