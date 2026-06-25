@@ -31,7 +31,7 @@
             <use_xid_64>1</use_xid_64>
             <max_request_size>10000000</max_request_size>
             <!-- exercise the chunked snapshot format -->
-            <write_snapshot_version>8</write_snapshot_version>
+            <write_snapshot_version>9</write_snapshot_version>
         </coordination_settings>
 
         <raft_configuration>

@@ -2,7 +2,7 @@
 """Integration test for the chunked snapshot format in a 3-node Keeper cluster.
 
 Scenario:
-  1. Start a 3-node cluster with `write_snapshot_version=8` and `snapshot_distance=10`.
+  1. Start a 3-node cluster with `write_snapshot_version=9` and `snapshot_distance=10`.
   2. Stop one follower so it will miss the initial writes.
   3. Write 12 nodes via the leader — this triggers a chunked snapshot.
   4. Restart the stopped follower.

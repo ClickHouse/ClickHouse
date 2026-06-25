@@ -477,15 +477,6 @@ const std::unordered_set<std::string_view> excluded_functions = {
     /// Needs query context.
     "__applyFilter",
 
-    /// These functions do something weird with array offsets, making the result for one row depend on other rows sometimes.
-    /// E.g. this outputs ([],[NULL]) for the first row:
-    ///   SELECT kql_array_sort_desc(a, []::Array(Int8)) FROM system.one ARRAY JOIN CAST([[], [1]] AS Array(Array(UInt64))) AS a
-    /// but if you leave only the first row in the ARRAY JOIN (remove ", [1]"), it outputs ([],[]).
-    /// These functions are not documented and not meant to be called by users directly, so maybe
-    /// this behavior is intended and makes sense somehow.
-    "kql_array_sort_asc",
-    "kql_array_sort_desc",
-
     /// Slow, especially in TSAN build.
     "addressToLineWithInlines",
 };
@@ -1773,7 +1764,7 @@ struct FunctionsStressTestThread
 
         /// Execute on each row separately.
 
-        std::vector<MutableColumnPtr> mutable_valid_args;
+        MutableColumns mutable_valid_args;
         MutableColumnPtr mutable_result;
         std::optional<size_t> any_failed_row;
         for (size_t row_idx = 0; row_idx < options.rows_per_batch; ++row_idx)

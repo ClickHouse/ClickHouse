@@ -32,7 +32,7 @@
 
             <use_xid_64>1</use_xid_64>
             <!-- exercise the chunked snapshot format -->
-            <write_snapshot_version>8</write_snapshot_version>
+            <write_snapshot_version>9</write_snapshot_version>
 
             <nuraft_use_bg_thread_for_snapshot_io>0</nuraft_use_bg_thread_for_snapshot_io>
         </coordination_settings>
