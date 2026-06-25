@@ -1451,7 +1451,35 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         inner_query_tree->setAlias(table_expression_query_info.table_expression->getAlias());
                         /// Find the underlying distributed table's node inside the inner query tree.
                         auto dist_table_node = findTableNodeByStorage(inner_query_tree, underlying_dist);
-                        if (dist_table_node)
+
+                        /// A view may declare an explicit column schema whose types differ from the
+                        /// inner query's result types (e.g. CREATE VIEW v (id UInt8) AS SELECT id FROM dist
+                        /// where dist.id is UInt32). StorageView::readImpl converts the inner result to the
+                        /// view's declared structure ("Convert VIEW subquery result to VIEW table
+                        /// structure"); the pushdown ships the raw inner query and skips that conversion,
+                        /// so a shard would return the inner types and break the VIEW type contract.
+                        /// Suppress when any read column's declared type differs from the inner output
+                        /// type, falling back to readImpl which applies the cast.
+                        bool view_schema_matches_inner = true;
+                        {
+                            std::unordered_map<String, DataTypePtr> inner_types;
+                            for (const auto & col : inner_query_tree->as<QueryNode &>().getProjectionColumns())
+                                inner_types.emplace(col.name, col.type);
+                            const auto & view_columns = storage_snapshot->metadata->getColumns();
+                            for (const auto & name : columns_names)
+                            {
+                                if (!view_columns.has(name)) /// skip virtuals / non-declared columns
+                                    continue;
+                                auto it = inner_types.find(name);
+                                if (it == inner_types.end() || !view_columns.get(name).type->equals(*it->second))
+                                {
+                                    view_schema_matches_inner = false;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (dist_table_node && view_schema_matches_inner)
                         {
                             /// Column-aware access check for the underlying distributed table, gated on
                             /// the same security modes readImpl would check under (INVOKER and legacy
