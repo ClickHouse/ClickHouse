@@ -183,8 +183,10 @@ INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] RETURNING (SELECT .
 For `INSERT SELECT`, the `RETURNING` clause appears after the source query:
 
 ```sql
-INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] SELECT ... RETURNING (SELECT ...)
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] SELECT ... RETURNING (SELECT ...) [SETTINGS ...]
 ```
+
+A trailing `SETTINGS` clause after the `RETURNING` subquery is applied to the **source `SELECT`** (the same as a plain `INSERT ... SELECT ... SETTINGS ...`), not to the `RETURNING` subquery. To set options that shape the returned rows, place the `SETTINGS` inside the subquery itself, for example `RETURNING (SELECT ... SETTINGS ...)`.
 
 The parenthesized subquery is required. The client receives a single result set: the result of the `RETURNING` subquery.
 
