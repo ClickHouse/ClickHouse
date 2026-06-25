@@ -100,6 +100,11 @@ size_t promotedBytesSoFar()
     return CurrentThread::getProfileEvents()[ProfileEvents::ReaderExecutorBytesPromoted].load(std::memory_order_relaxed);
 }
 
+size_t bytesFromSourceSoFar()
+{
+    return CurrentThread::getProfileEvents()[ProfileEvents::ReaderExecutorBytesFromSource].load(std::memory_order_relaxed);
+}
+
 /// In-memory source reader. `open` materializes the requested object into a
 /// temp file and returns a file-backed `ReadBufferFromFileBase`. Temp files
 /// are cleaned up on destruction. (Copied from `gtest_reader_executor.cpp`.)
@@ -732,6 +737,118 @@ TEST_F(ReaderExecutorCacheChain, PageHitSkipsSourceAndFs)
             << "page hits must not back-fill the fs cache";
         EXPECT_FALSE(view->misses().empty());
     }
+}
+
+
+/// Cross-cache fill (example A): the page holds the PREFIX `[0,16)` and the SUFFIX
+/// `[32,64)` of an fs segment but not the interior hole `[16,32)`; the fs is empty.
+/// Reading the whole fs segment, the cross-cache expansion probes the page over the
+/// WHOLE segment, so the executor fetches ONLY the genuine hole `[16,32)` from the
+/// source and fills the page-covered prefix/suffix DOWN into the fs cell - it does NOT
+/// fetch `[16,64)` from the source.
+TEST_F(ReaderExecutorCacheChain, CrossCacheFillsMissTailFromPage)
+{
+    constexpr size_t segment_size = 64;
+    constexpr size_t block_size = 16;
+    constexpr size_t file_size = 2 * segment_size;
+
+    const String content = makePattern(file_size);
+    auto source = std::make_shared<BoundedMemorySource>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_size);
+
+    auto page_cache = makePageCache();
+    auto fc = makeFileCache("fcA", segment_size, /*max_size=*/1ull << 20);
+    auto page_provider = makePageProvider(page_cache, "obj", block_size, file_size);
+    auto disk_provider = makeDiskProvider(fc);
+
+    /// Warm ONLY page blocks [0,16) and [32,64) via a page-only chain; a page read fills
+    /// whole blocks, so two reads leave exactly the [16,32) hole cold.
+    {
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> page_only;
+        page_only.push_back(page_provider);
+        ReaderExecutor::Options o;
+        o.window_size = block_size;
+        o.min_bytes_for_seek = 0;
+        o.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+        ReaderExecutor warmer(source, objects, page_only, o);
+        EXPECT_EQ(readBigAtViaTransient(warmer, 0, block_size), content.substr(0, block_size));
+        EXPECT_EQ(readBigAtViaTransient(warmer, 2 * block_size, 2 * block_size),
+            content.substr(2 * block_size, 2 * block_size));
+    }
+
+    /// page + fs (fs empty). Read the segment [0,64): only the hole is fetched.
+    const size_t src_bytes_before = bytesFromSourceSoFar();
+    {
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+        caches.push_back(page_provider);
+        caches.push_back(disk_provider);
+        ReaderExecutor::Options o;
+        o.window_size = block_size;
+        o.min_bytes_for_seek = 0;
+        o.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+        ReaderExecutor executor(source, objects, caches, o);
+        EXPECT_EQ(readBigAtViaTransient(executor, 0, segment_size), content.substr(0, segment_size));
+    }
+    EXPECT_EQ(bytesFromSourceSoFar() - src_bytes_before, block_size)
+        << "only the [16,32) hole is fetched; the page-covered prefix/suffix fill down from the page";
+
+    /// The fs cell [0,64) is now populated (page-filled + source-filled).
+    {
+        StoredObject object{"obj", "", file_size};
+        auto view = disk_provider->planResidencyView(object, /*object_file_offset=*/0, ByteRange{0, segment_size});
+        EXPECT_FALSE(view->hits().empty()) << "the fs cell must be filled from page + source";
+    }
+}
+
+
+/// Contrast to example A: the page holds ONLY the prefix `[0,16)` of the fs segment; the
+/// suffix `[16,64)` is covered by no tier. Reading the segment, the executor fetches the
+/// WHOLE uncovered tail `[16,64)` from the source - cross-cache fill is impossible there.
+TEST_F(ReaderExecutorCacheChain, CrossCacheFetchesUncoveredTail)
+{
+    constexpr size_t segment_size = 64;
+    constexpr size_t block_size = 16;
+    constexpr size_t file_size = 2 * segment_size;
+
+    const String content = makePattern(file_size);
+    auto source = std::make_shared<BoundedMemorySource>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_size);
+
+    auto page_cache = makePageCache();
+    auto fc = makeFileCache("fcB", segment_size, /*max_size=*/1ull << 20);
+    auto page_provider = makePageProvider(page_cache, "obj", block_size, file_size);
+    auto disk_provider = makeDiskProvider(fc);
+
+    /// Warm ONLY page block [0,16); leave [16,64) cold.
+    {
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> page_only;
+        page_only.push_back(page_provider);
+        ReaderExecutor::Options o;
+        o.window_size = block_size;
+        o.min_bytes_for_seek = 0;
+        o.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+        ReaderExecutor warmer(source, objects, page_only, o);
+        EXPECT_EQ(readBigAtViaTransient(warmer, 0, block_size), content.substr(0, block_size));
+    }
+
+    const size_t src_bytes_before = bytesFromSourceSoFar();
+    {
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+        caches.push_back(page_provider);
+        caches.push_back(disk_provider);
+        ReaderExecutor::Options o;
+        o.window_size = block_size;
+        o.min_bytes_for_seek = 0;
+        o.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+        ReaderExecutor executor(source, objects, caches, o);
+        EXPECT_EQ(readBigAtViaTransient(executor, 0, segment_size), content.substr(0, segment_size));
+    }
+    EXPECT_EQ(bytesFromSourceSoFar() - src_bytes_before, segment_size - block_size)
+        << "the page covers only [0,16); the uncovered tail [16,64) is fetched from the source";
 }
 
 

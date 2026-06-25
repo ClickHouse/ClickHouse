@@ -2658,7 +2658,36 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
         read_plan = std::move(empty);
         return;
     }
-    geom->plan_end = plan_range.end();
+    /// Cross-cache expansion (generalized): the coarser lower tiers report misses
+    /// SEGMENT-aligned, so a miss touching the base request extends past it to the cell
+    /// boundary. Learn that extent with a read-only probe, then probe EVERY tier over the
+    /// expanded `probe_range` below so a faster tier's coverage of the miss tail fills the
+    /// lower cell DOWN (`UpperCacheRead`) - or, covering the whole cell, prunes the lower
+    /// writer - rather than the tail being fetched from the source. This is the "expands from
+    /// segments" half of the plan window (the request being `boundedPlanSpan`); misses are
+    /// segment-bounded, so it adds at most a cell beyond the request.
+    ByteRange probe_range = plan_range;
+    if (generalized_plan_window && caches.size() > 1)
+    {
+        size_t probe_end = plan_range.end();
+        for (auto & cache : caches)
+        {
+            if (!cache->populatesOnMiss())
+                continue;
+            size_t piece_file_start = plan_range.offset;
+            for (const auto & pr : offset_map.map(plan_range))
+            {
+                auto v = cache->planResidencyView(
+                    pr.object, piece_file_start - pr.object_offset, ByteRange{piece_file_start, pr.size});
+                for (const auto & m : v->misses())
+                    probe_end = std::max(probe_end, m.range.end());
+                piece_file_start += pr.size;
+            }
+        }
+        probe_range = ByteRange{plan_range.offset, probe_end - plan_range.offset};
+    }
+
+    geom->plan_end = probe_range.end();
     geom->pinned_end = geom->plan_end;
     ReadPlan plan;
 
@@ -2669,18 +2698,18 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// `upper_hits` (the running union of already-processed, faster tiers' hits) lets a
     /// slower tier PRUNE the miss cells a faster tier already holds. The streaming `covered`
     /// guard in `readPhysicalWindow` re-establishes the same priority when serving.
-    /// On the generalized path the right clip for hits is the (pressure-scaled)
-    /// ceiling, so a hit segment straddling the probe edge folds whole into the plan;
-    /// the legacy path clips at the probe end.
+    /// On the generalized path hits fold up to the ceiling OR the expanded `probe_range` end,
+    /// whichever is larger, so a hit segment straddling the expanded end folds whole into the
+    /// plan; the legacy path clips at the probe end.
     const size_t resident_clip_end = generalized_plan_window
-        ? plan_range.offset + effectivePlanCeiling(geom->pressure_level)
+        ? std::max(probe_range.end(), plan_range.offset + effectivePlanCeiling(geom->pressure_level))
         : plan_range.end();
 
     IntervalSet upper_hits;
     for (auto & cache : caches)
     {
-        auto pieces = offset_map.map(plan_range);
-        size_t piece_file_start = plan_range.offset;
+        auto pieces = offset_map.map(probe_range);
+        size_t piece_file_start = probe_range.offset;
         for (const auto & pr : pieces)
         {
             const size_t object_file_offset = piece_file_start - pr.object_offset;
@@ -2698,7 +2727,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
             buf_entry.object = pr.object;
             buf_entry.object_file_offset = object_file_offset;
 
-            extractResidentRuns(*view, plan_range, resident_clip_end, geom_entry);
+            extractResidentRuns(*view, probe_range, resident_clip_end, geom_entry);
             extractMissesAndOpenWriters(*cache, *view, pr.object, object_file_offset, upper_hits, geom_entry, buf_entry);
 
             /// Fold this tier's hits into `upper_hits` so the next (slower) tier prunes
@@ -2723,25 +2752,19 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
 
     chassert(geom->entries.size() == plan.bufs.size());
 
-    /// Generalized plan window: fold whole hit segments (extracted up to the ceiling)
-    /// into the serve horizon `plan_end`, and extend the pin horizon `pinned_end` over
-    /// the miss write cells too (already unclamped past the probe). The fetch is bounded
-    /// by the base request passed to `buildSchedule` below, NOT by `plan_end`, so folding
-    /// hits never widens the fetch -- it only makes the cached tail serveable and lets the
-    /// plan be reused across `read_until` advances while the cursor stays under `pinned_end`.
+    /// Generalized plan window: the cross-cache expansion already pulled the touched MISS
+    /// segments inside `[plan_start, plan_end)`, so extend `plan_end` only over a HIT segment
+    /// straddling the expanded end (fewer replans). The pin horizon equals the serve horizon
+    /// (`pinned_end == plan_end`): no dead zone, and the schedule may cover the whole span
+    /// because a miss tail a faster tier holds is filled DOWN (`UpperCacheRead`), not fetched.
     if (generalized_plan_window)
     {
         size_t hit_end = geom->plan_end;
-        size_t pin_end = geom->plan_end;
         for (const auto & e : geom->entries)
-        {
             for (const auto & r : e.resident)
                 hit_end = std::max(hit_end, r.end());
-            for (const auto & m : e.aligned_miss)
-                pin_end = std::max(pin_end, m.end());
-        }
         geom->plan_end = hit_end;
-        geom->pinned_end = std::max(hit_end, pin_end);
+        geom->pinned_end = hit_end;
     }
 
     /// Publish atomically: `geometry()` and `bufs` are one object (`read_plan`), so a
