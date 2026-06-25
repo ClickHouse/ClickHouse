@@ -307,3 +307,51 @@ GTEST_TEST(FunctionSignature, AlternativeFallbackOnUnavailableConst)
     /// With an actual constant the first alternative is used.
     EXPECT_EQ(checkSignature(sig, {makeConstColumn("String", Field(String("UInt16")))}), "UInt16");
 }
+
+GTEST_TEST(FunctionSignature, ExplicitArityAlternatives)
+{
+    /// `arrayROCAUC`: nested Optional groups (`[const Bool, [Array]]`) are not expressible,
+    /// so the legal 2..4 argument arities are spelled as explicit alternatives.
+    const String sig =
+        "(Array, Array) -> Float64"
+        " OR (Array, Array, const Bool) -> Float64"
+        " OR (Array, Array, const Bool, Array) -> Float64";
+
+    EXPECT_EQ(checkSignature(sig, {makeColumn("Array(Float64)"), makeColumn("Array(UInt8)")}), "Float64");
+    EXPECT_EQ(
+        checkSignature(sig, {makeColumn("Array(Float64)"), makeColumn("Array(UInt8)"), makeConstColumn("Bool", Field(UInt64(1)))}),
+        "Float64");
+    EXPECT_EQ(
+        checkSignature(sig,
+            {makeColumn("Array(Float64)"), makeColumn("Array(UInt8)"), makeConstColumn("Bool", Field(UInt64(1))), makeColumn("Array(Int32)")}),
+        "Float64");
+    /// Out-of-range arities are rejected.
+    EXPECT_THAT(checkSignature(sig, {makeColumn("Array(Float64)")}), ::testing::StartsWith("FAIL:"));
+    EXPECT_THAT(
+        checkSignature(sig,
+            {makeColumn("Array(Float64)"), makeColumn("Array(UInt8)"), makeConstColumn("Bool", Field(UInt64(1))),
+             makeColumn("Array(Int32)"), makeColumn("Array(Int32)")}),
+        ::testing::StartsWith("FAIL:"));
+}
+
+GTEST_TEST(FunctionSignature, ExactFixedStringWidth)
+{
+    /// `IPv6NumToString` / `UUIDNumToString` encode the exact `FixedString` width directly in
+    /// the signature (instead of a separate `getReturnTypeImpl` width override), so a
+    /// wrong-width `FixedString` is rejected during analysis on every path.
+    const String sig = "(IPv6 | FixedString(16)) -> String";
+    EXPECT_EQ(checkSignature(sig, {makeColumn("FixedString(16)")}), "String");
+    EXPECT_EQ(checkSignature(sig, {makeColumn("IPv6")}), "String");
+    EXPECT_THAT(checkSignature(sig, {makeColumn("FixedString(8)")}), ::testing::StartsWith("FAIL:"));
+    EXPECT_THAT(checkSignatureTypesOnly(sig, {makeColumn("FixedString(8)")}), ::testing::StartsWith("FAIL:"));
+}
+
+GTEST_TEST(FunctionSignature, ConstArgumentPosition)
+{
+    /// A `const` position is rejected for a non-constant column on the column path, but is
+    /// accepted on the types-only path (where constness cannot be observed).
+    const String sig = "(String, const String) -> String";
+    EXPECT_EQ(checkSignature(sig, {makeColumn("String"), makeConstColumn("String", Field(String("x")))}), "String");
+    EXPECT_THAT(checkSignature(sig, {makeColumn("String"), makeColumn("String")}), ::testing::StartsWith("FAIL:"));
+    EXPECT_EQ(checkSignatureTypesOnly(sig, {makeColumn("String"), makeColumn("String")}), "String");
+}
