@@ -274,11 +274,11 @@ namespace
                     return true;
 
                 // Wildcard support (single '*' only): a '*' must match exactly one component.
-                // The separator is '.' only for names matched by DNS label (a CN or a "DNS:" SAN);
-                // every other SAN (a "URI:" SAN, or one configured without a recognized "DNS:"/"URI:"
-                // prefix) uses '/'. Choosing '.' via an allow-list keeps all other patterns on '/',
-                // whose "no '/' in the matched span" rule is identical to the original slash-count
-                // guard, so their matching is unchanged and "URI:" matching is never widened.
+                // A DNS label (a CN or a "DNS:" SAN) is one non-empty label with no '.' and no '/'.
+                // Every other SAN (a "URI:" SAN, or one configured without a recognized "DNS:"/"URI:"
+                // prefix) keeps the original rule: only '/' is forbidden in the matched span, which is
+                // identical to the original slash-count guard, so its matching is unchanged and "URI:"
+                // matching is never widened.
                 if (subject.contains('*'))
                 {
                     const auto star = subject.find('*');
@@ -286,7 +286,6 @@ namespace
                     const auto suffix = std::string_view(subject).substr(star + 1);
                     const bool is_dns_label = (type == X509Certificate::Subjects::Type::CN)
                         || (type == X509Certificate::Subjects::Type::SAN && subject.starts_with("DNS:"));
-                    const char separator = is_dns_label ? '.' : '/';
 
                     for (const auto & certificate_subject : ssl_certificate_credentials->getSSLCertificateSubjects().at(type))
                     {
@@ -298,11 +297,15 @@ namespace
 
                         const auto matched = std::string_view(certificate_subject).substr(
                             prefix.size(), certificate_subject.size() - prefix.size() - suffix.size());
-                        // A single '*' matches exactly one component: the matched span must contain no
-                        // separator, and for a DNS label it must be non-empty (an empty label such as the
-                        // cert SAN "DNS:.corp.example.com" is not a valid match per RFC 6125 6.4.3). Path
-                        // segments may legitimately be empty, so the '/' case keeps its prior behavior.
-                        if (matched.find(separator) == std::string_view::npos && (!is_dns_label || !matched.empty()))
+                        // A single '*' matches exactly one component. A DNS label (a CN or "DNS:" SAN) is one
+                        // non-empty label: the span must be non-empty and contain no '.' and no '/' (a '/' is
+                        // not part of a hostname and the original slash-count guard forbade it). Other SANs
+                        // ("URI:" or unprefixed) keep the original rule: only '/' is forbidden, so empty path
+                        // segments stay allowed and "URI:" matching is not widened.
+                        const bool span_is_single_component = is_dns_label
+                            ? (!matched.empty() && !matched.contains('.') && !matched.contains('/'))
+                            : !matched.contains('/');
+                        if (span_is_single_component)
                             return true;
                     }
                 }

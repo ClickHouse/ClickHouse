@@ -480,6 +480,19 @@ def test_x509_dns_san_wildcard_single_label():
             "SELECT currentUser()", user="wildcard_dns", cert_name="client10"
         )
     assert "403" in str(err.value)
+    # Negative (slash in span): a DNS label contains no '/', so the matched span must reject one.
+    # 'DNS:foo/bar.corp.example.com' must NOT match 'DNS:*.corp.example.com' (the old slash-count
+    # guard forbade this; the single-label rule must keep forbidding it).
+    with pytest.raises(Exception) as err:
+        execute_query_native(
+            instance, "SELECT currentUser()", user="wildcard_dns", cert_name="client12"
+        )
+    assert "AUTHENTICATION_FAILED" in str(err.value)
+    with pytest.raises(Exception) as err:
+        execute_query_https(
+            "SELECT currentUser()", user="wildcard_dns", cert_name="client12"
+        )
+    assert "403" in str(err.value)
 
 
 def test_x509_cn_wildcard_single_label():
@@ -516,6 +529,18 @@ def test_x509_cn_wildcard_single_label():
     with pytest.raises(Exception) as err:
         execute_query_https(
             "SELECT currentUser()", user="wildcard_cn", cert_name="client10"
+        )
+    assert "403" in str(err.value)
+    # Negative (slash in span): a CN label contains no '/', so 'foo/bar.corp.example.com' must NOT
+    # match the CN wildcard '*.corp.example.com' (the old slash-count guard forbade this).
+    with pytest.raises(Exception) as err:
+        execute_query_native(
+            instance, "SELECT currentUser()", user="wildcard_cn", cert_name="client12"
+        )
+    assert "AUTHENTICATION_FAILED" in str(err.value)
+    with pytest.raises(Exception) as err:
+        execute_query_https(
+            "SELECT currentUser()", user="wildcard_cn", cert_name="client12"
         )
     assert "403" in str(err.value)
 

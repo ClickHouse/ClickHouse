@@ -33,6 +33,11 @@ openssl req -newkey rsa:4096 -nodes -batch -keyout client10-key.pem -out client1
 # configured without a 'DNS:'/'URI:' prefix does NOT widen URI matching: a bare 'SAN *' must NOT
 # match this URI certificate (the '/' separator rejects it, exactly as the original guard did).
 openssl req -newkey rsa:4096 -nodes -batch -keyout client11-key.pem -out client11-req.pem -subj "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=client11"
+# A name with a '/' in the wildcard-matched span ('foo/bar.corp.example.com'), set as both the CN
+# and a DNS SAN, to test that a DNS/CN wildcard does NOT match a span containing '/': the matched
+# label must contain neither '.' nor '/', so '*.corp.example.com' must reject this. ('/' in the CN
+# is escaped as '\/' because openssl uses '/' as the -subj field separator.)
+openssl req -newkey rsa:4096 -nodes -batch -keyout client12-key.pem -out client12-req.pem -subj "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=foo\/bar.corp.example.com"
 # A certificate whose validity period extends beyond the year 2106, i.e. beyond the range of DateTime
 # (UInt32 epoch seconds). Used to check that session_log records such validity times without truncation.
 openssl req -newkey rsa:4096 -nodes -batch -keyout client_far_future-key.pem -out client_far_future-req.pem -subj "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=client_far_future"
@@ -49,6 +54,7 @@ openssl x509 -req -days 3650 -in client8-req.pem -CA ca-cert.pem -CAkey ca-key.p
 openssl x509 -req -days 3650 -in client9-req.pem -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial -extfile client9-ext.cnf -out client9-cert.pem
 openssl x509 -req -days 3650 -in client10-req.pem -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial -extfile client10-ext.cnf -out client10-cert.pem
 openssl x509 -req -days 3650 -in client11-req.pem -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial -extfile client11-ext.cnf -out client11-cert.pem
+openssl x509 -req -days 3650 -in client12-req.pem -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial -extfile client12-ext.cnf -out client12-cert.pem
 # ~100 years, so the notAfter time falls past the year 2106 (the upper bound of DateTime).
 openssl x509 -req -days 36525 -in client_far_future-req.pem -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial -out client_far_future-cert.pem
 
