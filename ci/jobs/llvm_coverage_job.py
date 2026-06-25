@@ -17,11 +17,38 @@ _EXTRA_BASELINES_TARGET = 5
 _S3_BASE_URL = "https://clickhouse-builds.s3.amazonaws.com/REFs/master"
 
 
+def _is_full_coverage_run(sha: str) -> bool:
+    """Return True only if this master commit ran FT + IT + unit coverage jobs.
+
+    A partial master run (e.g. only FT because only stateless tests changed)
+    produces an .info file with less coverage than a full run. Using such a
+    file as a baseline would introduce the same scope mismatch we fix on the
+    PR side. We probe the three representative profdata artifacts that are
+    present in a full run:
+      - FT batch 1  (always present if FT ran)
+      - IT batch 1  (present only if IT ran)
+      - unit tests  (present only if unit ran; only in clickhouse-builds)
+    All three must exist for the run to be accepted as a full-suite baseline.
+    """
+    probes = [
+        f"{_S3_BASE_URL}/{sha}/stateless_tests_amd_llvm_coverage_1_3/ft-amd_llvm_coverage_1_3.profdata",
+        f"{_S3_BASE_URL}/{sha}/integration_tests_amd_llvm_coverage_1_5/it-amd_llvm_coverage_1_5.profdata",
+        f"{_S3_BASE_URL}/{sha}/unit_tests_amd_llvm_coverage/unit-tests.profdata",
+    ]
+    for probe_url in probes:
+        check = Shell.get_output(f"wget --spider '{probe_url}' 2>&1 || true", verbose=False)
+        if "200 OK" not in check:
+            return False
+    return True
+
+
 def _download_extra_baselines(master_commits: list[str], first_base_commit: str) -> int:
     """Download up to _EXTRA_BASELINES_TARGET additional master coverage baselines.
 
     Walks master_commits (nearest-first) starting after first_base_commit,
-    skipping commits without a published .info, until the target count is reached.
+    skipping commits that either have no published .info or ran a partial
+    coverage suite (missing IT or unit jobs). Only full-suite runs are accepted
+    so all baselines cover the same test scope as the PR run.
     Files are written to TEMP_DIR/base_llvm_coverage_{2..N}.info.
     Returns the number of extra baselines successfully downloaded.
     """
@@ -40,6 +67,12 @@ def _download_extra_baselines(master_commits: list[str], first_base_commit: str)
         dest = Path(TEMP_DIR) / f"base_llvm_coverage_{slot}.info"
         check = Shell.get_output(f"wget --spider '{url}' 2>&1 || true", verbose=False)
         if "200 OK" not in check:
+            continue
+        # Verify this master commit ran a full coverage suite (FT + IT + unit).
+        # Partial runs (e.g. only FT because only stateless tests changed) produce
+        # .info files with a different test scope and must be skipped.
+        if not _is_full_coverage_run(sha):
+            print(f"  Skipping {sha[:12]}: partial coverage run (missing IT or unit profdata)")
             continue
         print(f"Downloading extra baseline #{slot} from {sha[:12]}...")
         rc = Shell.run(f"wget --quiet '{url}' -O '{dest}'", verbose=False)
