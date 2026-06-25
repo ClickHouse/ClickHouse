@@ -402,6 +402,105 @@ def test_prepared_statement_no_sql_injection(started_cluster):
     cur.execute("DROP TABLE inj_secret;")
 
 
+def test_execute_no_sql_injection(started_cluster):
+    # Simple-query PREPARE/EXECUTE path: EXECUTE arguments are spliced into the
+    # prepared statement body by $N substitution, so a string argument must be
+    # emitted as a quoted+escaped SQL literal, never as raw SQL text.
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    cur.execute("DROP TABLE IF EXISTS exec_users;")
+    cur.execute("DROP TABLE IF EXISTS exec_secret;")
+    cur.execute("CREATE TABLE exec_users (id Int32, name String) ENGINE = Memory;")
+    cur.execute("INSERT INTO exec_users (id, name) VALUES (1, 'alice'), (2, 'bob');")
+    cur.execute("CREATE TABLE exec_secret (sid Int32, secret String) ENGINE = Memory;")
+    cur.execute("INSERT INTO exec_secret (sid, secret) VALUES (99, 'TOP_SECRET');")
+
+    # Numeric argument: stays a bare number, normal lookup works.
+    cur.execute("PREPARE by_id AS SELECT name FROM exec_users WHERE id = $1;")
+    cur.execute("EXECUTE by_id(2);")
+    assert cur.fetchall() == [("bob",)]
+
+    # String argument: must be treated as a single literal, normal lookup works.
+    cur.execute("PREPARE by_name AS SELECT id FROM exec_users WHERE name = $1;")
+    cur.execute("EXECUTE by_name('alice');")
+    assert cur.fetchall() == [(1,)]
+
+    # Injection attempt: the argument must be re-quoted as one string literal,
+    # so the UNION never executes and the secret table is not read.
+    cur.execute(
+        "EXECUTE by_name('x'' UNION ALL SELECT secret FROM exec_secret -- ');"
+    )
+    assert cur.fetchall() == []
+
+    # An argument containing a single quote round-trips as data.
+    cur.execute("PREPARE echo_one AS SELECT $1 AS v;")
+    cur.execute("EXECUTE echo_one('O''Brien');")
+    assert cur.fetchall() == [("O'Brien",)]
+
+    cur.execute("DEALLOCATE by_id;")
+    cur.execute("DEALLOCATE by_name;")
+    cur.execute("DEALLOCATE echo_one;")
+    cur.execute("DROP TABLE exec_users;")
+    cur.execute("DROP TABLE exec_secret;")
+
+
+def test_copy_no_sql_injection(started_cluster):
+    # COPY builds its SELECT/INSERT from the client-supplied table and column
+    # identifiers. A malicious identifier (quoted so it survives as a single
+    # token) must be back-quoted into one harmless identifier, never spliced as
+    # raw SQL, so it cannot break out into a UNION or a second statement.
+    node = started_cluster.instances["node"]
+
+    ch = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        database="",
+    )
+    ch.autocommit = True
+    cur = ch.cursor()
+    cur.execute("DROP TABLE IF EXISTS copy_t;")
+    cur.execute("DROP TABLE IF EXISTS copy_secret;")
+    cur.execute("CREATE TABLE copy_t (x UInt32) ENGINE = Memory;")
+    cur.execute("INSERT INTO copy_t VALUES (1), (2);")
+    cur.execute("CREATE TABLE copy_secret (s String) ENGINE = Memory;")
+    cur.execute("INSERT INTO copy_secret VALUES ('TOP_SECRET');")
+
+    # Malicious table identifier: the whole UNION is wrapped in one quoted
+    # identifier so it reaches the handler as a single name. It must be treated
+    # as one (non-existent) table name, not executed as SQL.
+    out = StringIO()
+    with pytest.raises(Exception):
+        cur.copy_expert(
+            'COPY "copy_t UNION ALL SELECT s FROM copy_secret" TO STDOUT', out
+        )
+    assert "TOP_SECRET" not in out.getvalue()
+
+    # Malicious column identifier: same idea via the column list.
+    out2 = StringIO()
+    with pytest.raises(Exception):
+        cur.copy_expert(
+            'COPY copy_t ("x) , (SELECT s FROM copy_secret") TO STDOUT', out2
+        )
+    assert "TOP_SECRET" not in out2.getvalue()
+
+    # A benign COPY on the same table still works after the blocked attempts.
+    out3 = StringIO()
+    cur.copy_expert("COPY copy_t TO STDOUT", out3)
+    assert sorted(out3.getvalue().split()) == ["1", "2"]
+
+    cur.execute("DROP TABLE copy_t;")
+    cur.execute("DROP TABLE copy_secret;")
+
+
 def test_copy_command(started_cluster):
     node = cluster.instances["node"]
 
