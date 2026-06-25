@@ -70,6 +70,7 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Cache/VectorQueryPlanCache.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <QueryPipeline/printPipeline.h>
 #include <IO/Progress.h>
@@ -119,6 +120,7 @@ namespace ProfileEvents
     extern const Event InsertQueryTimeMicroseconds;
     extern const Event OtherQueryTimeMicroseconds;
     extern const Event ASTFuzzerQueries;
+    extern const Event QueryParseMicroseconds;
 }
 
 namespace CurrentMetrics
