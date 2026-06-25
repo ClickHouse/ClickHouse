@@ -41,9 +41,9 @@ studi	1
 3
 0
 -- hasPhrase: phrase tokens are stemmed before index lookup.
-1
-1
-1
+3
+3
+3
 3
 0
 -- startsWith / endsWith: prefix/suffix tokens are stemmed for the hint lookup.
