@@ -2023,13 +2023,6 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     /// Create the postprocessor for validation.
     /// This validates the token transformation expression (always String -> String).
     MergeTreeIndexTextPostprocessor postprocessor(postprocessor_ast, index);
-
-    /// A postprocessor may drop or rewrite tokens, which would desynchronize the recorded
-    /// positions from the actual token sequence and break positional phrase search.
-    if (positions && postprocessor.hasActions())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Text index arguments '{}' and '{}' cannot be used together",
-            ARGUMENT_POSITIONS, ARGUMENT_POSTPROCESSOR);
 }
 
 }
