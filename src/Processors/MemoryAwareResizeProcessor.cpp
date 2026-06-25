@@ -1,8 +1,28 @@
 #include <Processors/MemoryAwareResizeProcessor.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Squashing.h>
 
 namespace DB
 {
+
+namespace
+{
+    size_t estimateChunkBytes(const Chunk & chunk)
+    {
+        size_t bytes = chunk.bytes();
+        if (bytes > 0)
+            return bytes;
+        /// Between PlanSquashingTransform and ApplySquashingTransform the outer Chunk
+        /// carries `ChunksToSquash` as chunk info: the real columns live in `info->data`
+        /// and `Chunk::bytes()` reports 0. Pull the byte size out of the inner chunks.
+        if (auto squashing_info = chunk.getChunkInfos().get<ChunksToSquash>())
+        {
+            for (const auto & entry : squashing_info->data)
+                bytes += entry.chunk.bytes();
+        }
+        return bytes;
+    }
+}
 
 MemoryAwareResizeProcessor::MemoryAwareResizeProcessor(
     SharedHeader header,
@@ -11,7 +31,10 @@ MemoryAwareResizeProcessor::MemoryAwareResizeProcessor(
     InsertMemoryThrottlePtr throttle_)
     : IProcessor(InputPorts(num_inputs, header), OutputPorts(num_outputs, header))
     , throttle(std::move(throttle_))
-    , allowed_outputs(num_outputs)
+    /// Start with just `min_outputs` active — we have no chunk-size estimate yet, so we cannot
+    /// safely fan out. `updateAllowedOutputs` expands the active set on each `prepare` once it
+    /// has observed at least one chunk and confirmed headroom.
+    , allowed_outputs(throttle ? min_outputs : num_outputs)
 {
 }
 
@@ -202,7 +225,7 @@ IProcessor::Status MemoryAwareResizeProcessor::prepare(const UpdatedInputPorts &
 
         auto data = input_with_data.port->pullData();
         if (throttle)
-            throttle->observeChunkBytes(data.chunk.bytes());
+            throttle->observeChunkBytes(estimateChunkBytes(data.chunk));
         waiting_output.port->pushData(std::move(data));
         input_with_data.status = InputStatus::NotActive;
         waiting_output.status = OutputStatus::NotActive;
