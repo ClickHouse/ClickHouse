@@ -468,6 +468,18 @@ def test_x509_dns_san_wildcard_single_label():
             "SELECT currentUser()", user="wildcard_dns", cert_name="client8"
         )
     assert "403" in str(err.value)
+    # Negative (empty label): the '*' must match a NON-empty label, so the malformed name
+    # 'DNS:.corp.example.com' (empty first label) must be rejected by 'DNS:*.corp.example.com'.
+    with pytest.raises(Exception) as err:
+        execute_query_native(
+            instance, "SELECT currentUser()", user="wildcard_dns", cert_name="client10"
+        )
+    assert "AUTHENTICATION_FAILED" in str(err.value)
+    with pytest.raises(Exception) as err:
+        execute_query_https(
+            "SELECT currentUser()", user="wildcard_dns", cert_name="client10"
+        )
+    assert "403" in str(err.value)
 
 
 def test_x509_cn_wildcard_single_label():
@@ -492,6 +504,18 @@ def test_x509_cn_wildcard_single_label():
     with pytest.raises(Exception) as err:
         execute_query_https(
             "SELECT currentUser()", user="wildcard_cn", cert_name="client8"
+        )
+    assert "403" in str(err.value)
+    # Negative (empty label): an empty CN label '.corp.example.com' must be rejected by the
+    # CN wildcard '*.corp.example.com'.
+    with pytest.raises(Exception) as err:
+        execute_query_native(
+            instance, "SELECT currentUser()", user="wildcard_cn", cert_name="client10"
+        )
+    assert "AUTHENTICATION_FAILED" in str(err.value)
+    with pytest.raises(Exception) as err:
+        execute_query_https(
+            "SELECT currentUser()", user="wildcard_cn", cert_name="client10"
         )
     assert "403" in str(err.value)
 

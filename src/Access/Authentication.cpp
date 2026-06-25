@@ -294,7 +294,11 @@ namespace
 
                         const auto matched = std::string_view(certificate_subject).substr(
                             prefix.size(), certificate_subject.size() - prefix.size() - suffix.size());
-                        if (matched.find(separator) == std::string_view::npos)
+                        // A single '*' matches exactly one component: the matched span must contain no
+                        // separator, and for DNS/CN it must be non-empty (an empty label such as the cert
+                        // SAN "DNS:.corp.example.com" is not a valid match per RFC 6125 6.4.3). URI path
+                        // segments may legitimately be empty, so the URI case keeps its prior behavior.
+                        if (matched.find(separator) == std::string_view::npos && (is_uri || !matched.empty()))
                             return true;
                     }
                 }
