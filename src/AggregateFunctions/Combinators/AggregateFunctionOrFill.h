@@ -7,6 +7,7 @@
 #include <Common/memory.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Common/Exception.h>
 
 
 namespace DB
@@ -15,6 +16,19 @@ struct Settings;
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
+}
+
+inline bool isFinalizedGroupBloomFilterAggregateFunction(const IAggregateFunction & function)
+{
+    if (function.getName() == "groupBloomFilter")
+        return true;
+
+    if (function.isState())
+        return false;
+
+    const auto nested_function = function.getNestedFunction();
+    return nested_function && isFinalizedGroupBloomFilterAggregateFunction(*nested_function);
 }
 
 /**
@@ -41,7 +55,13 @@ public:
         , inner_nullable{nested_function->getResultType()->isNullable()}
         , result_is_nullable{createResultType(nested_function_->getResultType())->isNullable()}
     {
-        // nothing
+        if (isFinalizedGroupBloomFilterAggregateFunction(*nested_function))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Aggregate function {} can only be used as an aggregate state. "
+                "Use {}State or {}MergeState with bloomFilterContains",
+                "groupBloomFilter",
+                "groupBloomFilter",
+                "groupBloomFilter");
     }
 
     String getName() const override
