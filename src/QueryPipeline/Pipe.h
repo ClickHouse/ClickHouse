@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Processors/IProcessor.h>
 
@@ -14,11 +13,11 @@ class EnabledQuota;
 struct StreamLocalLimits;
 
 class Pipe;
-using Pipes = std::vector<Pipe>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+using Pipes = std::vector<Pipe>;
 
 class ReadProgressCallback;
 
-using OutputPortRawPtrs = std::vector<OutputPort *>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+using OutputPortRawPtrs = std::vector<OutputPort *>;
 
 /// Pipe is a set of processors which represents the part of pipeline.
 /// Pipe contains a list of output ports, with specified port for totals and specified port for extremes.
@@ -91,7 +90,7 @@ public:
     void addSimpleTransform(const ProcessorGetterSharedHeaderWithStreamKind & getter);
 
     /// Add chain to every output port.
-    void addChains(VectorWithMemoryTracking<Chain> chains);
+    void addChains(std::vector<Chain> chains);
 
     /// Changes the number of output ports if needed. Adds (Strict)ResizeProcessor.
     void resize(size_t num_streams, bool strict = false, UInt64 min_outstreams_per_resize_after_split = 0);
