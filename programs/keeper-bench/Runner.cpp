@@ -842,18 +842,18 @@ struct SetupNodeCollector
             std::make_shared<DB::DiskLocal>("Keeper-snapshots", setup_nodes_snapshot_path));
 
         snapshot_manager.emplace(1, keeper_context);
-        auto snapshot_result = snapshot_manager->restoreFromLatestSnapshot();
-        if (snapshot_result.storage == nullptr)
+        initial_storage = std::make_unique<Coordination::KeeperStorage>(
+            /* tick_time_ms */ 500, /* superdigest */ "", keeper_context, /* initialize_system_nodes */ false);
+        auto buffer = snapshot_manager->deserializeLatestSnapshotBufferFromDisk();
+        if (buffer)
         {
-            std::cerr << "No initial snapshot found" << std::endl;
-            initial_storage = std::make_unique<Coordination::KeeperStorage>(
-                /* tick_time_ms */ 500, /* superdigest */ "", keeper_context, /* initialize_system_nodes */ false);
-            initial_storage->initializeSystemNodes();
+            snapshot_manager->deserializeSnapshotFromBuffer(buffer, *initial_storage);
+            std::cerr << "Loaded initial nodes from snapshot" << std::endl;
         }
         else
         {
-            std::cerr << "Loaded initial nodes from snapshot" << std::endl;
-            initial_storage = std::move(snapshot_result.storage);
+            std::cerr << "No initial snapshot found" << std::endl;
+            initial_storage->initializeSystemNodes();
         }
     }
 

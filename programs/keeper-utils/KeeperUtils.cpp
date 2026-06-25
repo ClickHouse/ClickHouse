@@ -106,28 +106,21 @@ void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool 
                 auto snapshot_manager = KeeperSnapshotManager(
                     std::numeric_limits<size_t>::max(), // snapshots_to_keep
                     keeper_context,
-                    true, // compress_snapshots_zstd
-                    "",   // superdigest
-                    500   // storage_tick_time
+                    true // compress_snapshots_zstd
                 );
 
                 // Deserialize the exact named file, not by parsed index: with retained
                 // same-index duplicates, an index lookup could read a different sibling.
                 SnapshotFileInfo selected_snapshot{std::filesystem::path(full_path).filename().string(), keeper_context->getSnapshotDisk()};
-                auto result = snapshot_manager.deserializeSnapshotFromBuffer(
-                    snapshot_manager.deserializeSnapshotBufferFromDisk(selected_snapshot),
-                    full_storage);
-
-                if (!result.storage)
-                {
-                    std::cerr << "  Warning: Failed to load snapshot data\n\n";
-                    continue;
-                }
-
-                const auto & snapshot_meta = result.snapshot_meta;
+                auto buffer = snapshot_manager.deserializeSnapshotBufferFromDisk(selected_snapshot);
 
                 if (full_storage)
                 {
+                    auto storage = std::make_unique<KeeperStorage>(
+                        /* tick_time_ms */ 500, /* superdigest */ "", keeper_context, /* initialize_system_nodes */ false);
+                    auto result = snapshot_manager.deserializeSnapshotFromBuffer(buffer, *storage);
+                    const auto & snapshot_meta = result.snapshot_meta;
+
                     std::cout << fmt::format(
                         "  Last committed log index: {}\n"
                         "  Last committed log term: {}\n"
@@ -135,26 +128,54 @@ void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool 
                         "  Digest: {}\n",
                         snapshot_meta->get_last_log_idx(),
                         snapshot_meta->get_last_log_term(),
-                        result.storage->getNodesCount(),
-                        result.storage->getNodesDigest(/*committed=*/true, /*lock_transaction_mutex=*/false).value)
+                        storage->getNodesCount(),
+                        storage->getNodesDigest(/*committed=*/true, /*lock_transaction_mutex=*/false).value)
                         << std::endl;
                 }
                 else
                 {
+                    /// We don't need the full storage, so read only the node paths directly via the reader.
+                    auto reader = snapshot_manager.makeSnapshotReader(buffer);
+                    reader->readMetadata();
+                    reader->readACLMapAndNodeCount();
+
+                    std::vector<std::string> paths;
+                    paths.reserve(reader->node_count);
+
+                    auto streams = reader->createStreams(1);
+                    auto & stream = *streams[0];
+                    std::string path_buf;
+                    std::string data_buf;
+                    KeeperNodeStats stats;
+                    size_t path_size = 0;
+                    while (stream.readNodePathSize(path_size))
+                    {
+                        path_buf.resize(path_size);
+                        size_t data_size = 0;
+                        stream.readNodePathAndDataSize(path_buf.data(), path_size, data_size);
+                        /// Read (and discard) the node's data and stats to advance to the next node.
+                        data_buf.resize(data_size);
+                        stream.readNodeDataAndStats(data_buf.data(), data_size, stats);
+                        paths.push_back(path_buf);
+                    }
+                    reader->finishStreams(std::move(streams));
+
+                    const auto & snapshot_meta = reader->snapshot_meta;
+
                     std::cout << fmt::format(
                         "  Last committed log index: {}\n"
                         "  Last committed log term: {}\n"
                         "  Number of paths: {}\n",
                         snapshot_meta->get_last_log_idx(),
                         snapshot_meta->get_last_log_term(),
-                        result.paths.size())
+                        paths.size())
                         << std::endl;
 
                     if (with_node_stats)
                     {
                         std::cout << "Finding biggest subtrees... " << std::endl;
                         std::unordered_map<std::string_view, size_t> subtree_sizes;
-                        for (const auto & path : result.paths)
+                        for (const auto & path : paths)
                         {
                             if (path == "/")
                                 continue;

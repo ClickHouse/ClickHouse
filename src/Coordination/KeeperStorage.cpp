@@ -31,6 +31,7 @@
 #include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperReconfiguration.h>
+#include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStorage.h>
 
 #include <limits>
@@ -635,6 +636,112 @@ void KeeperStorage::initializeSystemNodes()
 
     updateStats();
     initialized = true;
+}
+
+void KeeperStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader)
+{
+    bool recalculate_digest = reader.nodes_digest == 0 && keeper_context->digestEnabled();
+    nodes_digest = reader.nodes_digest;
+
+    container.reserve(reader.node_count);
+    auto streams = reader.createStreams(1);
+    chassert(streams.size() == 1);
+    size_t path_size = 0;
+    while (streams[0]->readNodePathSize(path_size))
+    {
+        auto path_data = container.allocateKey(path_size);
+        size_t data_size = 0;
+        streams[0]->readNodePathAndDataSize(path_data.get(), path_size, data_size);
+        std::string_view path{path_data.get(), path_size};
+
+        Node node;
+        node.stats.data_size = static_cast<uint32_t>(data_size);
+        if (data_size != 0)
+            node.data = std::unique_ptr<char[]>(new char[node.stats.data_size]);
+        streams[0]->readNodeDataAndStats(node.data.get(), data_size, node.stats);
+
+        switch (streams[0]->checkIfSystemNode(path, node.stats))
+        {
+            case KeeperSnapshotReader::Stream::WhatToDoWithNode::ProcessNormally: break;
+            case KeeperSnapshotReader::Stream::WhatToDoWithNode::Skip: continue;
+            case KeeperSnapshotReader::Stream::WhatToDoWithNode::Clear: node = Node{}; break;
+        }
+
+        auto ephemeral_owner = node.stats.getEphemeralOwner();
+        if (!node.stats.isEphemeral() && node.stats.getNumChildren() > 0)
+            node.getChildren().reserve(node.stats.getNumChildren());
+
+        if (ephemeral_owner != 0)
+        {
+            committed_ephemerals[node.stats.getEphemeralOwner()].insert(std::string{path});
+            ++committed_ephemeral_nodes;
+        }
+
+        if (node.stats.isTTL())
+        {
+            ttl_paths.insert(std::string{path});
+            committed_ttl_nodes.fetch_add(1);
+        }
+
+        if (recalculate_digest)
+            nodes_digest += node.getDigest(path);
+
+        container.insertOrReplace(std::move(path_data), path_size, std::move(node));
+    }
+
+    reader.finishStreams(std::move(streams));
+
+    acl_map = std::move(reader.acl_map);
+    zxid = reader.commit_zxid;
+    old_snapshot_zxid = reader.old_snapshot_zxid;
+    session_id_counter = reader.session_id_counter;
+
+    LOG_TRACE(getLogger("KeeperStorage"), "Building structure for children nodes");
+
+    /// Populate children sets.
+    for (const auto & itr : container)
+    {
+        if (itr.key != "/")
+        {
+            auto parent_path = Coordination::parentNodePath(itr.key);
+            container.updateValue(
+                parent_path, [path = itr.key](typename KeeperStorage::Node & value) { value.addChild(Coordination::getBaseNodeName(path)); });
+        }
+    }
+
+    for (const auto & itr : container)
+    {
+        if (itr.key != "/")
+        {
+            if (itr.value.stats.getNumChildren() != static_cast<int32_t>(itr.value.getChildren().size()))
+            {
+#ifdef NDEBUG
+                /// TODO (alesapin) remove this, it should be always CORRUPTED_DATA.
+                LOG_ERROR(
+                    getLogger("KeeperStorage"),
+                    "Children counter in stat.numChildren {}"
+                    " is different from actual children size {} for node {}",
+                    itr.value.stats.getNumChildren(),
+                    itr.value.getChildren().size(),
+                    itr.key);
+#else
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Children counter in stat.numChildren {}"
+                    " is different from actual children size {} for node {}",
+                    itr.value.stats.getNumChildren(),
+                    itr.value.getChildren().size(),
+                    itr.key);
+#endif
+            }
+        }
+    }
+
+    reader.readSessionsAndClusterConfig(*this);
+
+    initializeSystemNodes();
+
+    updateStats();
 }
 
 std::shared_ptr<KeeperStorage::Node> KeeperStorage::UncommittedState::tryGetNodeFromStorage(std::string_view path) const

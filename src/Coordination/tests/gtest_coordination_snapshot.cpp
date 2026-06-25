@@ -608,8 +608,8 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)
 
     auto debuf = manager.deserializeSnapshotBufferFromDisk(2);
 
-    auto deser_result = manager.deserializeSnapshotFromBuffer(debuf);
-    const auto & restored_storage = deser_result.storage;
+    auto restored_storage = std::make_unique<Storage>(500, "", this->keeper_context, /* initialize_system_nodes */ false);
+    manager.deserializeSnapshotFromBuffer(debuf, *restored_storage);
 
     EXPECT_EQ(restored_storage->container.size(), 6);
     EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 3);
@@ -672,8 +672,8 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotMoreWrites)
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 50).size(), 1);
 
     auto debuf = manager.deserializeSnapshotBufferFromDisk(50);
-    auto deser_result = manager.deserializeSnapshotFromBuffer(debuf);
-    const auto & restored_storage = deser_result.storage;
+    auto restored_storage = std::make_unique<Storage>(500, "", this->keeper_context, /* initialize_system_nodes */ false);
+    manager.deserializeSnapshotFromBuffer(debuf, *restored_storage);
 
     EXPECT_EQ(restored_storage->container.size(), 54);
     for (size_t i = 0; i < 50; ++i)
@@ -717,8 +717,8 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotManySnapshots)
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 250).size(), 1);
 
 
-    auto deser_result= manager.restoreFromLatestSnapshot();
-    const auto & restored_storage = deser_result.storage;
+    auto restored_storage = std::make_unique<Storage>(500, "", this->keeper_context, /* initialize_system_nodes */ false);
+    manager.restoreFromLatestSnapshot(*restored_storage);
 
     EXPECT_EQ(restored_storage->container.size(), 254);
 
@@ -777,8 +777,8 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotMode)
             EXPECT_FALSE(storage.container.contains(fmt::format("/hello_{}", i)));
     }
 
-    auto deser_result = manager.restoreFromLatestSnapshot();
-    const auto & restored_storage = deser_result.storage;
+    auto restored_storage = std::make_unique<Storage>(500, "", this->keeper_context, /* initialize_system_nodes */ false);
+    manager.restoreFromLatestSnapshot(*restored_storage);
 
     for (size_t i = 0; i < 50; ++i)
     {
@@ -815,7 +815,8 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotBroken)
     plain_buf.truncate(34);
     plain_buf.finalize();
 
-    EXPECT_THROW(manager.restoreFromLatestSnapshot(), DB::Exception);
+    Storage restored_storage(500, "", this->keeper_context, /* initialize_system_nodes */ false);
+    EXPECT_THROW(manager.restoreFromLatestSnapshot(restored_storage), DB::Exception);
 }
 
 TYPED_TEST(CoordinationTest, TestStorageSnapshotDifferentCompressions)
@@ -848,8 +849,8 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotDifferentCompressions)
 
     auto debuf = new_manager.deserializeSnapshotBufferFromDisk(2);
 
-    auto deser_result = new_manager.deserializeSnapshotFromBuffer(debuf);
-    const auto & restored_storage = deser_result.storage;
+    auto restored_storage = std::make_unique<Storage>(500, "", this->keeper_context, /* initialize_system_nodes */ false);
+    new_manager.deserializeSnapshotFromBuffer(debuf, *restored_storage);
 
     EXPECT_EQ(restored_storage->container.size(), 6);
     EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 3);
@@ -934,8 +935,8 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotBlockACL)
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 50).size(), 1);
     {
         auto debuf = manager.deserializeSnapshotBufferFromDisk(50);
-        auto deser_result = manager.deserializeSnapshotFromBuffer(debuf);
-        const auto & restored_storage = deser_result.storage;
+        auto restored_storage = std::make_unique<Storage>(500, "", this->keeper_context, /* initialize_system_nodes */ false);
+        manager.deserializeSnapshotFromBuffer(debuf, *restored_storage);
 
         EXPECT_EQ(restored_storage->container.size(), 5);
         EXPECT_EQ(restored_storage->container.getValue(path).stats.acl_id, acl_id);
@@ -944,8 +945,8 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotBlockACL)
     {
         this->keeper_context->setBlockACL(true);
         auto debuf = manager.deserializeSnapshotBufferFromDisk(50);
-        auto deser_result = manager.deserializeSnapshotFromBuffer(debuf);
-        const auto & restored_storage = deser_result.storage;
+        auto restored_storage = std::make_unique<Storage>(500, "", this->keeper_context, /* initialize_system_nodes */ false);
+        manager.deserializeSnapshotFromBuffer(debuf, *restored_storage);
 
         EXPECT_EQ(restored_storage->container.size(), 5);
         EXPECT_EQ(restored_storage->container.getValue(path).stats.acl_id, 0);
@@ -1847,8 +1848,8 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotTTLRoundTrip)
     manager.serializeSnapshotBufferToDisk(*buf, zxid);
 
     auto debuf = manager.deserializeSnapshotBufferFromDisk(zxid);
-    auto deser_result = manager.deserializeSnapshotFromBuffer(debuf);
-    const auto & restored = deser_result.storage;
+    auto restored = std::make_unique<DB::KeeperStorage>(500, "", this->keeper_context, /* initialize_system_nodes */ false);
+    auto deser_result = manager.deserializeSnapshotFromBuffer(debuf, *restored);
 
     EXPECT_TRUE(restored->containsTTLPath("/ttl_node"));
 
@@ -2002,7 +2003,7 @@ TYPED_TEST(CoordinationTest, FinalizeSnapshotReceiveToDiskCleansPartialFilesOnSy
     EXPECT_EQ(manager.getLatestSnapshotInfo(), nullptr);
 }
 
-TEST(KeeperSnapshotManagerCleanupTest, CreateSnapshotKeepsPreviousMetadataAndAllowsRetryAfterFailedWrite)
+TYPED_TEST(CoordinationTest, CreateSnapshotKeepsPreviousMetadataAndAllowsRetryAfterFailedWrite)
 {
     ChangelogDirTest snapshots("./snapshots");
 
@@ -2081,7 +2082,7 @@ TEST(KeeperSnapshotManagerCleanupTest, CreateSnapshotKeepsPreviousMetadataAndAll
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 2, /*include_tmp_markers=*/true).size(), 1);
 }
 
-TEST(KeeperSnapshotManagerCleanupTest, ReceiveDuplicateSnapshotRepublishIsIdempotent)
+TYPED_TEST(CoordinationTest, ReceiveDuplicateSnapshotRepublishIsIdempotent)
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest rocks("./rocksdb");
@@ -2114,13 +2115,13 @@ TEST(KeeperSnapshotManagerCleanupTest, ReceiveDuplicateSnapshotRepublishIsIdempo
     /// The second call hits the pre-check and writes nothing.
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 100).size(), 1);
     auto restored_buf = manager.deserializeSnapshotBufferFromDisk(100);
-    auto restored = manager.deserializeSnapshotFromBuffer(restored_buf);
-    ASSERT_NE(restored.storage, nullptr);
-    EXPECT_TRUE(restored.storage->container.contains("/"));
-    EXPECT_FALSE(restored.storage->container.contains("/after_duplicate"));
+    auto restored_storage = std::make_unique<DB::KeeperStorage>(500, "", this->keeper_context, /* initialize_system_nodes */ false);
+    auto restored = manager.deserializeSnapshotFromBuffer(restored_buf, *restored_storage);
+    EXPECT_TRUE(restored_storage->container.contains("/"));
+    EXPECT_FALSE(restored_storage->container.contains("/after_duplicate"));
 }
 
-TEST(KeeperSnapshotManagerCleanupTest, StartupScanKeepsOneRegisteredSnapshotPerIndex)
+TYPED_TEST(CoordinationTest, StartupScanKeepsOneRegisteredSnapshotPerIndex)
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest rocks("./rocksdb");
@@ -2167,19 +2168,19 @@ TEST(KeeperSnapshotManagerCleanupTest, StartupScanKeepsOneRegisteredSnapshotPerI
     EXPECT_TRUE(snapshotFilesForIdx("./snapshots", 99, /*include_tmp_markers=*/true).empty());
 
     {
-        auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(66));
-        ASSERT_NE(restored.storage, nullptr);
-        EXPECT_TRUE(restored.storage->container.contains("/kept66"));
+        auto restored_storage = std::make_unique<DB::KeeperStorage>(500, "", this->keeper_context, /* initialize_system_nodes */ false);
+        auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(66), *restored_storage);
+        EXPECT_TRUE(restored_storage->container.contains("/kept66"));
     }
     {
-        auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(77));
-        ASSERT_NE(restored.storage, nullptr);
-        EXPECT_TRUE(restored.storage->container.contains("/kept77"));
+        auto restored_storage = std::make_unique<DB::KeeperStorage>(500, "", this->keeper_context, /* initialize_system_nodes */ false);
+        auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(77), *restored_storage);
+        EXPECT_TRUE(restored_storage->container.contains("/kept77"));
     }
     {
-        auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(88));
-        ASSERT_NE(restored.storage, nullptr);
-        EXPECT_TRUE(restored.storage->container.contains("/kept88"));
+        auto restored_storage = std::make_unique<DB::KeeperStorage>(500, "", this->keeper_context, /* initialize_system_nodes */ false);
+        auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(88), *restored_storage);
+        EXPECT_TRUE(restored_storage->container.contains("/kept88"));
     }
 
     /// Parser pins: unique and legacy names parse to the same index.
@@ -2187,7 +2188,7 @@ TEST(KeeperSnapshotManagerCleanupTest, StartupScanKeepsOneRegisteredSnapshotPerI
     EXPECT_EQ(DB::getLogIdxFromSnapshotPath("snapshot_100.bin.zstd"), 100);
 }
 
-TEST(KeeperSnapshotManagerCleanupTest, StartupScanKeepsLatestIndexDuplicatesForRecovery)
+TYPED_TEST(CoordinationTest, StartupScanKeepsLatestIndexDuplicatesForRecovery)
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest rocks("./rocksdb");
@@ -2227,9 +2228,9 @@ TEST(KeeperSnapshotManagerCleanupTest, StartupScanKeepsLatestIndexDuplicatesForR
     bool registered_copy_is_valid = true;
     try
     {
-        auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(90));
-        ASSERT_NE(restored.storage, nullptr);
-        EXPECT_TRUE(restored.storage->container.contains("/latest_valid"));
+        auto restored_storage = std::make_unique<DB::KeeperStorage>(500, "", this->keeper_context, /* initialize_system_nodes */ false);
+        auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(90), *restored_storage);
+        EXPECT_TRUE(restored_storage->container.contains("/latest_valid"));
     }
     catch (...) // Ok: exception means the registered copy is corrupt; we use the boolean to drive the recovery path below
     {
@@ -2241,13 +2242,13 @@ TEST(KeeperSnapshotManagerCleanupTest, StartupScanKeepsLatestIndexDuplicatesForR
         disk->removeFileIfExists("snapshot_90_corrupt0.bin.zstd");
         DB::KeeperSnapshotManager recovered_manager(3, ctx, true);
         EXPECT_EQ(recovered_manager.getLatestSnapshotIndex(), 90);
-        auto restored = recovered_manager.deserializeSnapshotFromBuffer(recovered_manager.deserializeSnapshotBufferFromDisk(90));
-        ASSERT_NE(restored.storage, nullptr);
-        EXPECT_TRUE(restored.storage->container.contains("/latest_valid"));
+        auto restored_storage = std::make_unique<DB::KeeperStorage>(500, "", this->keeper_context, /* initialize_system_nodes */ false);
+        auto restored = recovered_manager.deserializeSnapshotFromBuffer(recovered_manager.deserializeSnapshotBufferFromDisk(90), *restored_storage);
+        EXPECT_TRUE(restored_storage->container.contains("/latest_valid"));
     }
 }
 
-TEST(KeeperSnapshotManagerCleanupTest, StartupScanKeepsRetainedIndexDuplicatesForDrillRecovery)
+TYPED_TEST(CoordinationTest, StartupScanKeepsRetainedIndexDuplicatesForDrillRecovery)
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest rocks("./rocksdb");
@@ -2298,9 +2299,9 @@ TEST(KeeperSnapshotManagerCleanupTest, StartupScanKeepsRetainedIndexDuplicatesFo
     bool registered_copy_is_valid = true;
     try
     {
-        auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(80));
-        ASSERT_NE(restored.storage, nullptr);
-        EXPECT_TRUE(restored.storage->container.contains("/drill_valid"));
+        auto restored_storage = std::make_unique<DB::KeeperStorage>(500, "", this->keeper_context, /* initialize_system_nodes */ false);
+        auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(80), *restored_storage);
+        EXPECT_TRUE(restored_storage->container.contains("/drill_valid"));
     }
     catch (...) // Ok: exception means the registered copy is corrupt; we use the boolean to drive the recovery path below
     {
@@ -2312,13 +2313,13 @@ TEST(KeeperSnapshotManagerCleanupTest, StartupScanKeepsRetainedIndexDuplicatesFo
         disk->removeFileIfExists("snapshot_80_corrupt0.bin.zstd");
         DB::KeeperSnapshotManager recovered_manager(3, ctx, true);
         EXPECT_EQ(recovered_manager.getLatestSnapshotIndex(), 80);
-        auto restored = recovered_manager.deserializeSnapshotFromBuffer(recovered_manager.deserializeSnapshotBufferFromDisk(80));
-        ASSERT_NE(restored.storage, nullptr);
-        EXPECT_TRUE(restored.storage->container.contains("/drill_valid"));
+        auto restored_storage = std::make_unique<DB::KeeperStorage>(500, "", this->keeper_context, /* initialize_system_nodes */ false);
+        auto restored = recovered_manager.deserializeSnapshotFromBuffer(recovered_manager.deserializeSnapshotBufferFromDisk(80), *restored_storage);
+        EXPECT_TRUE(restored_storage->container.contains("/drill_valid"));
     }
 }
 
-TEST(KeeperSnapshotManagerCleanupTest, RetainedDuplicateAgesOutWithoutRestart)
+TYPED_TEST(CoordinationTest, RetainedDuplicateAgesOutWithoutRestart)
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest rocks("./rocksdb");
@@ -2347,7 +2348,7 @@ TEST(KeeperSnapshotManagerCleanupTest, RetainedDuplicateAgesOutWithoutRestart)
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 90).size(), 1);
 }
 
-TEST(KeeperSnapshotManagerCleanupTest, QueuePushFailureCleansSnapshotAndCallsWhenDone)
+TYPED_TEST(CoordinationTest, QueuePushFailureCleansSnapshotAndCallsWhenDone)
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest rocks("./rocksdb");
@@ -2385,7 +2386,7 @@ TEST(KeeperSnapshotManagerCleanupTest, QueuePushFailureCleansSnapshotAndCallsWhe
     EXPECT_TRUE(snapshotFilesForIdx("./snapshots", 1, /*include_tmp_markers=*/true).empty());
 }
 
-TEST(KeeperSnapshotManagerCleanupTest, SameIndexReceiveDuringLocalCreate)
+TYPED_TEST(CoordinationTest, SameIndexReceiveDuringLocalCreate)
 {
     using namespace std::chrono_literals;
 
@@ -2470,12 +2471,12 @@ TEST(KeeperSnapshotManagerCleanupTest, SameIndexReceiveDuringLocalCreate)
 
     /// Published bytes were never rewritten — a fresh manager restores the receive's data.
     DB::KeeperSnapshotManager manager(3, ctx, true);
-    auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(1));
-    ASSERT_NE(restored.storage, nullptr);
-    EXPECT_TRUE(restored.storage->container.contains("/from_receive"));
+    auto restored_storage = std::make_unique<DB::KeeperStorage>(500, "", this->keeper_context, /* initialize_system_nodes */ false);
+    auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(1), *restored_storage);
+    EXPECT_TRUE(restored_storage->container.contains("/from_receive"));
 }
 
-TEST(KeeperSnapshotManagerCleanupTest, ChunkedSameIndexReceiveDoesNotRewritePublishedSnapshot)
+TYPED_TEST(CoordinationTest, ChunkedSameIndexReceiveDoesNotRewritePublishedSnapshot)
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest rocks("./rocksdb");
@@ -2559,13 +2560,13 @@ TEST(KeeperSnapshotManagerCleanupTest, ChunkedSameIndexReceiveDoesNotRewritePubl
 
     DB::KeeperSnapshotManager manager(3, ctx, true);
     auto restored_buf = manager.deserializeSnapshotBufferFromDisk(10);
-    auto restored = manager.deserializeSnapshotFromBuffer(restored_buf);
-    ASSERT_NE(restored.storage, nullptr);
-    EXPECT_TRUE(restored.storage->container.contains("/original"));
-    EXPECT_FALSE(restored.storage->container.contains("/duplicate"));
+    auto restored_storage = std::make_unique<DB::KeeperStorage>(500, "", this->keeper_context, /* initialize_system_nodes */ false);
+    auto restored = manager.deserializeSnapshotFromBuffer(restored_buf, *restored_storage);
+    EXPECT_TRUE(restored_storage->container.contains("/original"));
+    EXPECT_FALSE(restored_storage->container.contains("/duplicate"));
 }
 
-TEST(KeeperSnapshotManagerCleanupTest, ApplySnapshotDoesNotWaitForLocalCreate)
+TYPED_TEST(CoordinationTest, ApplySnapshotDoesNotWaitForLocalCreate)
 {
     using namespace std::chrono_literals;
 
@@ -2654,7 +2655,7 @@ TEST(KeeperSnapshotManagerCleanupTest, ApplySnapshotDoesNotWaitForLocalCreate)
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 2).size(), 1);
 }
 
-TEST(KeeperSnapshotManagerCleanupTest, CreateLosesRaceToNewerSnapshotRetiresWrittenFile)
+TYPED_TEST(CoordinationTest, CreateLosesRaceToNewerSnapshotRetiresWrittenFile)
 {
     using namespace std::chrono_literals;
 
@@ -2726,7 +2727,7 @@ TEST(KeeperSnapshotManagerCleanupTest, CreateLosesRaceToNewerSnapshotRetiresWrit
     EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 2);
 }
 
-TEST(KeeperSnapshotManagerCleanupTest, CreateForOlderRetainedIndexAdoptsLatestSnapshot)
+TYPED_TEST(CoordinationTest, CreateForOlderRetainedIndexAdoptsLatestSnapshot)
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest rocks("./rocksdb");
@@ -2778,7 +2779,7 @@ TEST(KeeperSnapshotManagerCleanupTest, CreateForOlderRetainedIndexAdoptsLatestSn
     EXPECT_EQ(state_machine->last_snapshot()->get_last_log_idx(), 5);
 }
 
-TEST(KeeperSnapshotManagerCleanupTest, CreateRacingNewerReceiveWithRetainedSameIndexAdoptsLatest)
+TYPED_TEST(CoordinationTest, CreateRacingNewerReceiveWithRetainedSameIndexAdoptsLatest)
 {
     using namespace std::chrono_literals;
 
@@ -2847,7 +2848,7 @@ TEST(KeeperSnapshotManagerCleanupTest, CreateRacingNewerReceiveWithRetainedSameI
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 3, /*include_tmp_markers=*/true).size(), 1);
 }
 
-TEST(KeeperSnapshotManagerCleanupTest, PublishSnapshotFileReusesExistingAndRetiredLoserIsRemoved)
+TYPED_TEST(CoordinationTest, PublishSnapshotFileReusesExistingAndRetiredLoserIsRemoved)
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest rocks("./rocksdb");
@@ -2874,13 +2875,13 @@ TEST(KeeperSnapshotManagerCleanupTest, PublishSnapshotFileReusesExistingAndRetir
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 100).size(), 1);
     EXPECT_EQ(manager.totalSnapshots(), 1);
 
-    auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(100));
-    ASSERT_NE(restored.storage, nullptr);
-    EXPECT_TRUE(restored.storage->container.contains("/from_a"));
-    EXPECT_FALSE(restored.storage->container.contains("/from_b"));
+    auto restored_storage = std::make_unique<DB::KeeperStorage>(500, "", this->keeper_context, /* initialize_system_nodes */ false);
+    auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(100), *restored_storage);
+    EXPECT_TRUE(restored_storage->container.contains("/from_a"));
+    EXPECT_FALSE(restored_storage->container.contains("/from_b"));
 }
 
-TEST(KeeperSnapshotManagerCleanupTest, MovePublicationRejectionBranches)
+TYPED_TEST(CoordinationTest, MovePublicationRejectionBranches)
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest rocks("./rocksdb");
@@ -2939,9 +2940,9 @@ TEST(KeeperSnapshotManagerCleanupTest, MovePublicationRejectionBranches)
     EXPECT_EQ(candidate.file_info->disk, candidate.source_disk);
     EXPECT_EQ(candidate.file_info->path, candidate.source_path);
     {
-        auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(10));
-        ASSERT_NE(restored.storage, nullptr);
-        EXPECT_TRUE(restored.storage->container.contains("/move_me"));
+        auto restored_storage = std::make_unique<DB::KeeperStorage>(500, "", this->keeper_context, /* initialize_system_nodes */ false);
+        auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(10), *restored_storage);
+        EXPECT_TRUE(restored_storage->container.contains("/move_me"));
     }
 
     /// (d) Metadata replaced: remove + republish a fresh file for the same index;
@@ -2955,7 +2956,7 @@ TEST(KeeperSnapshotManagerCleanupTest, MovePublicationRejectionBranches)
     EXPECT_FALSE(manager.publishMovedSnapshotIfValid(candidate));
 }
 
-TEST(KeeperSnapshotManagerCleanupTest, MoveSnapshotCandidateHonorsBoolPublishCallback)
+TYPED_TEST(CoordinationTest, MoveSnapshotCandidateHonorsBoolPublishCallback)
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest rocks("./rocksdb");
@@ -3002,9 +3003,9 @@ TEST(KeeperSnapshotManagerCleanupTest, MoveSnapshotCandidateHonorsBoolPublishCal
     EXPECT_TRUE(fs::exists("./snapshots_move_target/" + candidate.target_path));
 
     /// The manager reads the moved snapshot from its new location.
-    auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(10));
-    ASSERT_NE(restored.storage, nullptr);
-    EXPECT_TRUE(restored.storage->container.contains("/move_me"));
+    auto restored_storage = std::make_unique<DB::KeeperStorage>(500, "", this->keeper_context, /* initialize_system_nodes */ false);
+    auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(10), *restored_storage);
+    EXPECT_TRUE(restored_storage->container.contains("/move_me"));
 }
 
 TEST(KeeperSnapshotFileNameTest, CanonicalSnapshotS3Name)

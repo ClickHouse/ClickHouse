@@ -120,9 +120,7 @@ KeeperStateMachine::KeeperStateMachine(
     , snapshot_manager(
           keeper_context_->getCoordinationSettings()[CoordinationSetting::snapshots_to_keep],
           keeper_context_,
-          keeper_context_->getCoordinationSettings()[CoordinationSetting::compress_snapshots_with_zstd_format],
-          superdigest_,
-          keeper_context_->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds())
+          keeper_context_->getCoordinationSettings()[CoordinationSetting::compress_snapshots_with_zstd_format])
 {
 }
 
@@ -147,7 +145,10 @@ void KeeperStateMachine::init()
             std::lock_guard lock(snapshots_lock);
 
             auto snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index);
-            auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf);
+            auto new_storage = std::make_unique<KeeperStorage>(
+                keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds(),
+                superdigest, keeper_context, /* initialize_system_nodes */ false);
+            auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf, *new_storage);
             auto latest_snapshot_info = snapshot_manager.getLatestSnapshotInfo();
             chassert(latest_snapshot_info);
 
@@ -162,7 +163,7 @@ void KeeperStateMachine::init()
                 tryLogCurrentException(log, "Failed to get snapshot size during init");
             }
 
-            storage = std::move(snapshot_deserialization_result.storage);
+            storage = std::move(new_storage);
             advanceLatestSnapshotMeta(snapshot_deserialization_result.snapshot_meta);
             cluster_config = snapshot_deserialization_result.cluster_config;
             keeper_context->setLastCommitIndex(latest_snapshot_meta->get_last_log_idx());
@@ -916,12 +917,13 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
                     latest_snapshot_meta_index_before_reset = latest_snapshot_meta->get_last_log_idx();
                 uint64_t last_uncommitted_log_idx = storage->getLastUncommittedLogIdx();
 
-                storage.reset();
-
                 try
                 {
-                    auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf);
-                    /// This repeats the pre-reset prefix check deliberately. It
+                    storage.reset();
+                    storage = std::make_unique<KeeperStorage>(
+                        keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds(),
+                        superdigest, keeper_context, /* initialize_system_nodes */ false);
+                    auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf, *storage);                    /// This repeats the pre-reset prefix check deliberately. It
                     /// catches future divergence between
                     /// `deserializeSnapshotMetadataFromBuffer` and
                     /// `deserializeSnapshotFromBuffer`.
@@ -935,7 +937,6 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
                             snapshot_deserialization_result.snapshot_meta->get_last_log_term());
 
                     snapshot_buf = nullptr;
-                    storage = std::move(snapshot_deserialization_result.storage);
                     preprocess_uncommitted_entries(last_uncommitted_log_idx);
                     /// An apply may legitimately target an index at or below the mark — never regress.
                     advanceLatestSnapshotMeta(snapshot_deserialization_result.snapshot_meta);
@@ -975,7 +976,6 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
         throw;
     }
 }
-
 
 void KeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf)
 {
