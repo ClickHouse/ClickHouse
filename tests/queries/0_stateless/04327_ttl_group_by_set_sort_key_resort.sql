@@ -63,6 +63,26 @@ SELECT 'lc sorted', (SELECT groupArray((k, toStartOfDay(ts))) FROM (SELECT k, ts
                   = (SELECT groupArray((k, toStartOfDay(ts))) FROM (SELECT k, ts FROM t_lc ORDER BY k, toStartOfDay(ts)));
 DROP TABLE t_lc;
 
+-- Subcolumn sort key: ORDER BY references the subcolumn t.a, while the SET assigns the whole
+-- physical column t. The re-sort gate must map the sorting-key dependency t.a to its storage
+-- column t before comparing it with the SET target, otherwise the stale materialized t.a (from
+-- the pre-merge sort) survives and the part is built from the pre-SET value.
+DROP TABLE IF EXISTS t_sub;
+CREATE TABLE t_sub (t Tuple(a UInt32, b UInt32), ts DateTime, cand Tuple(a UInt32, b UInt32), v UInt32)
+ENGINE = MergeTree ORDER BY (t.a, toStartOfDay(ts))
+TTL ts + toIntervalDay(1) GROUP BY t.a, toStartOfDay(ts)
+    SET ts = max(ts) + interval 100 years, t = argMax(cand, v)
+SETTINGS min_bytes_for_full_part_storage = 128;
+SYSTEM STOP MERGES t_sub;
+INSERT INTO t_sub VALUES ((5, 0), '2000-06-09 10:00', (900, 0), 10);
+INSERT INTO t_sub VALUES ((5, 0), '2000-06-10 10:00', (100, 0), 20);
+SYSTEM START MERGES t_sub;
+OPTIMIZE TABLE t_sub FINAL;
+SELECT 'sub data', t.a, ts FROM t_sub ORDER BY ALL;
+SELECT 'sub sorted', (SELECT groupArray((t.a, toStartOfDay(ts))) FROM (SELECT t.a, ts FROM t_sub SETTINGS optimize_read_in_order = 0))
+                   = (SELECT groupArray((t.a, toStartOfDay(ts))) FROM (SELECT t.a, ts FROM t_sub ORDER BY t.a, toStartOfDay(ts)));
+DROP TABLE t_sub;
+
 -- Control: SET only a non-sort-key column. The re-sort must not be needed and the merge
 -- must work exactly as before.
 DROP TABLE IF EXISTS t_nonkey;
