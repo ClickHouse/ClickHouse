@@ -1915,9 +1915,9 @@ TYPED_TEST(CoordinationChangelogTest, WriteAtRaceHistoricalRead)
             auto entries = changelog.log_entries_ext(1, 6, 0, DB::KeeperLogStore::NO_PEER_ID);
             entries_promise.set_value(std::move(entries));
         }
-        catch (...)
+        catch (...) // Ok: promise handles exception-case via nullptr
         {
-                entries_promise.set_value(nullptr);
+            entries_promise.set_value(nullptr);
         }
     });
 

@@ -152,6 +152,6 @@ def test_readahead_catchup(started_cluster):
         f"decoded={decoded}, reopens={reopens}, cursors_installed={cursors}"
     )
     assert decoded > 0, (
-        f"KeeperLogsReadAheadFillDecodedEntries is 0 on the leader: "
+        "KeeperLogsReadAheadFillDecodedEntries is 0 on the leader: "
         "read-ahead did not fire when streaming to node3"
     )

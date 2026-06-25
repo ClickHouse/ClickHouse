@@ -13,10 +13,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 namespace FailPoints
 {
     extern const char keeper_changelog_read_plan_resolved[];

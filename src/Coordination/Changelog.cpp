@@ -1668,7 +1668,7 @@ bool decodeOneRecord(ReadBuffer & buf, const String & path, uint64_t expected_in
     return true;
 }
 
-} // namespace
+}
 
 LogEntriesPtr LogEntryStorage::executeReadPlan(const LogReadPlan & plan, uint64_t read_deadline_ms) const
 {
@@ -2797,6 +2797,7 @@ void LogEntryStorage::shutdown()
         }
         catch (...)
         {
+            tryLogCurrentException(log, "Failed to drain readahead pool");
         }
     }
 }
