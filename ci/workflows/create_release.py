@@ -9,7 +9,7 @@ robot_token_secret = Secret.Config(
 
 release_job = Job.Config(
     name="CreateRelease",
-    runs_on=["self-hosted", "release-maker-asg"],
+    runs_on=["self-hosted", "amd-release-maker"],
     command="PYTHONPATH=. python3 ./ci/jobs/release_job.py",
     timeout=2 * 3600,
     enable_gh_auth=True,

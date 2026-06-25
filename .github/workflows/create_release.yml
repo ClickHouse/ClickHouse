@@ -75,7 +75,7 @@ permissions: write-all
 jobs:
 
   createrelease:
-    runs-on: [self-hosted, release-maker-asg]
+    runs-on: [self-hosted, amd-release-maker]
     needs: []
     name: "CreateRelease"
     outputs:
