@@ -226,10 +226,21 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
     /// QueryTreeBuilder, so a body such as `SELECT id FROM dist SETTINGS limit = 1` would be limited
     /// once globally on the normal path but once per shard on the pushdown path, changing the
     /// result. Rather than enumerate every result-changing setting, disqualify any SETTINGS clause.
+    /// GROUP BY ALL and LIMIT BY ALL set boolean flags (group_by_all / limit_by_all) while leaving
+    /// the corresponding expression lists (groupBy() / limitBy()) empty, so they must be checked
+    /// separately from the lists above. Like an explicit GROUP BY / LIMIT BY, they aggregate or limit
+    /// per shard under the pushdown instead of once globally on the normal path, changing the result.
+    /// The WITH TOTALS/ROLLUP/CUBE/GROUPING SETS modifiers are likewise aggregation markers, and
+    /// limitByLength()/limitByOffset() carry the N/OFFSET of a LIMIT BY — all rejected fail-close.
     if (select->with() || select->prewhere()
         || (select->where() && hasSubquery(select->where()))
-        || select->groupBy() || select->having() || select->qualify()
-        || select->orderBy() || select->limitLength() || select->limitOffset() || select->limitBy()
+        || select->groupBy() || select->group_by_all
+        || select->group_by_with_totals || select->group_by_with_rollup
+        || select->group_by_with_cube || select->group_by_with_grouping_sets
+        || select->having() || select->qualify()
+        || select->orderBy() || select->limitLength() || select->limitOffset()
+        || select->limitBy() || select->limit_by_all
+        || select->limitByLength() || select->limitByOffset()
         || select->distinct || select->arrayJoinExpressionList().first
         || select->settings())
     {
