@@ -197,6 +197,30 @@ def test_named_collection_role_arn_override_does_not_use_collection_keys():
     assert error, error
 
 
+def test_database_s3_named_collection_use_environment_credentials():
+    # ENGINE = S3(named_collection) must apply the same restriction as the s3 table function it flattens into.
+    # A collection opting in with use_environment_credentials = 1 is refused by default and works with the
+    # session opt-in -- proving the key is whitelisted (no unexpected-key error) and carried through to the
+    # built s3() table function (not flattened away).
+    url = "http://minio1:9001/root/db_s3_env_test/data.tsv"
+    node.query(
+        f"INSERT INTO FUNCTION s3('{url}', '{minio_access_key}', '{minio_secret_key}', 'TSV', 'x UInt8') "
+        "SELECT 9 SETTINGS s3_truncate_on_insert = 1"
+    )
+
+    node.query("DROP DATABASE IF EXISTS db_s3_env SYNC")
+    node.query("CREATE DATABASE db_s3_env ENGINE = S3(nc_db_use_env)")
+
+    # Default restriction: building the s3() table resolves the server's ambient credentials, so it is refused.
+    error = node.query_and_get_error("SELECT * FROM db_s3_env.`data.tsv`")
+    assert "ACCESS_DENIED" in error, error
+
+    # With the session opt-in the ambient credentials are used and the read succeeds.
+    assert node.query(f"SELECT * FROM db_s3_env.`data.tsv` {ALLOW}").strip() == "9"
+
+    node.query("DROP DATABASE db_s3_env SYNC")
+
+
 def test_backup_named_collection_does_not_inherit_server_keys():
     node_with_server_keys.query("DROP TABLE IF EXISTS t_backup_keys SYNC")
     node_with_server_keys.query(

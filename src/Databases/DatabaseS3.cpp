@@ -13,6 +13,7 @@
 #include <IO/S3/URI.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -38,7 +39,8 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "url",
     "access_key_id",
     "secret_access_key",
-    "no_sign_request"
+    "no_sign_request",
+    "use_environment_credentials"
 };
 
 namespace ErrorCodes
@@ -119,6 +121,16 @@ StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) co
         function->arguments->children.push_back(make_intrusive<ASTLiteral>(config.access_key_id.value()));
         function->arguments->children.push_back(make_intrusive<ASTLiteral>(config.secret_access_key.value()));
     }
+    else if (config.use_environment_credentials)
+    {
+        /// Carry the opt-in into the `s3` table function as an explicit key-value argument. Flattening to the
+        /// positional `s3(url)` form would lose it (whose built-in default depends on the server `<s3>` config).
+        /// The table function then applies the user-query credential restriction to it like any other query.
+        function->arguments->children.push_back(
+            makeASTFunction("equals",
+                make_intrusive<ASTIdentifier>("use_environment_credentials"),
+                make_intrusive<ASTLiteral>(static_cast<UInt64>(1))));
+    }
 
     auto table_function = TableFunctionFactory::instance().get(function, context_);
     if (!table_function)
@@ -182,6 +194,8 @@ ASTPtr DatabaseS3::getCreateDatabaseQueryImpl() const
         creation_args += ", 'NOSIGN'";
     else if (config.access_key_id.has_value() && config.secret_access_key.has_value())
         creation_args += fmt::format(", '{}', '{}'", config.access_key_id.value(), config.secret_access_key.value());
+    else if (config.use_environment_credentials)
+        creation_args += ", use_environment_credentials = 1";
 
     const String query = fmt::format("CREATE DATABASE {} ENGINE = S3({})", backQuoteIfNeed(database_name), creation_args);
     ASTPtr ast
@@ -226,6 +240,7 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
 
         result.url_prefix = collection.getOrDefault<String>("url", "");
         result.no_sign_request = collection.getOrDefault<bool>("no_sign_request", false);
+        result.use_environment_credentials = collection.getOrDefault<bool>("use_environment_credentials", false);
 
         auto key_id = collection.getOrDefault<String>("access_key_id", "");
         auto secret_key = collection.getOrDefault<String>("secret_access_key", "");
@@ -256,6 +271,26 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
             " - S3('url', 'access_key_id', 'secret_access_key')\n";
         const auto error_message =
             fmt::format("Engine DatabaseS3 must have the following arguments signature\n{}", supported_signature);
+
+        /// Accept a `use_environment_credentials = N` key-value argument (emitted by
+        /// `getCreateDatabaseQueryImpl` for a named-collection database that opted in) so that form round-trips.
+        auto is_use_environment_credentials_kv = [&](const ASTPtr & arg)
+        {
+            const auto * func = arg->as<ASTFunction>();
+            if (!func || func->name != "equals" || !func->arguments || func->arguments->children.size() != 2)
+                return false;
+            const auto * key = func->arguments->children[0]->as<ASTIdentifier>();
+            if (!key || key->name() != "use_environment_credentials")
+                return false;
+            const auto * value = func->arguments->children[1]->as<ASTLiteral>();
+            if (!value)
+                return false;
+            result.use_environment_credentials = value->value.safeGet<UInt64>() != 0;
+            return true;
+        };
+        engine_args.erase(
+            std::remove_if(engine_args.begin(), engine_args.end(), is_use_environment_credentials_kv),
+            engine_args.end());
 
         for (auto & arg : engine_args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context_);

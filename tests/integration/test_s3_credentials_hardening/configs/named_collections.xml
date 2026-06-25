@@ -19,5 +19,9 @@
             <access_key_id>minio</access_key_id>
             <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
         </nc_with_keys>
+        <nc_db_use_env>
+            <url>http://minio1:9001/root/db_s3_env_test/</url>
+            <use_environment_credentials>1</use_environment_credentials>
+        </nc_db_use_env>
     </named_collections>
 </clickhouse>
