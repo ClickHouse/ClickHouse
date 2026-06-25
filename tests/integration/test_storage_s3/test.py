@@ -2215,6 +2215,42 @@ def test_s3_server_credentials_anonymous_on_reload(started_cluster):
     instance.query("DROP TABLE IF EXISTS t_server_credentials_reload")
 
 
+def test_dynamic_s3_disk_anonymous_on_reload(started_cluster):
+    # A MergeTree table on an inline dynamic `disk(type = s3, ...)` that resolves the server's environment
+    # credentials must, after a restart, have its disk rebuilt anonymously (inaccessible) instead of silently
+    # using the server identity -- and the server must still start. Exercises the disk metadata-load fallback
+    # through DiskFromAST / processIncludes / forceAnonymousS3DiskConfig.
+    instance = started_cluster.instances["s3_environment_credentials_restricted"]
+    bucket = started_cluster.minio_restricted_bucket
+    disk_endpoint = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/dynamic_disk_reload/"
+    allow = {"s3_allow_server_credentials_in_user_queries": 1}
+    disk_def = f"disk(type = s3, endpoint = '{disk_endpoint}', use_environment_credentials = 1)"
+
+    instance.query("DROP TABLE IF EXISTS t_dynamic_disk SYNC")
+    # Creating the table requires opting in -- the disk resolves the server's environment credentials.
+    assert "ACCESS_DENIED" in instance.query_and_get_error(
+        f"CREATE TABLE t_dynamic_disk (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS disk = {disk_def}"
+    )
+    instance.query(
+        f"CREATE TABLE t_dynamic_disk (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS disk = {disk_def}",
+        settings=allow,
+    )
+    instance.query("INSERT INTO t_dynamic_disk SELECT * FROM numbers(100)", settings=allow)
+    assert instance.query("SELECT count() FROM t_dynamic_disk").strip() == "100"
+
+    # On restart the disk is rebuilt from the stored definition under the default restriction: the server must
+    # start, and the disk must become anonymous (inaccessible) rather than using the server identity.
+    instance.restart_clickhouse()
+
+    assert instance.query("SELECT 1").strip() == "1"
+    # The disk is now anonymous and cannot read the private bucket, even with the opt-in (the disk was rebuilt
+    # anonymously at load time), so reading the table fails. The server still started.
+    with pytest.raises(helpers.client.QueryRuntimeException):
+        instance.query("SELECT count() FROM t_dynamic_disk", settings=allow)
+
+    instance.query("DROP TABLE IF EXISTS t_dynamic_disk SYNC")
+
+
 def test_s3_list_objects_failure(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
