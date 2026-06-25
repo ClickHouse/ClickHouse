@@ -8,7 +8,7 @@
 -- The shared guard is bounded at 1<<30 to match the existing largestTriangleThreeBuckets
 -- contract (its MAX_ARRAY_SIZE), so no legitimate pre-existing state is rejected; the
 -- crafted size below is ~4.29e9 (0xffffffff), still well above the bound.
-SELECT mannWhitneyUTestMerge()(x) FROM (SELECT CAST(unhex('ffffffff0f00'), 'AggregateFunction(mannWhitneyUTest, Float64, UInt8)') AS x); -- { serverError TOO_LARGE_ARRAY_SIZE }
+SELECT mannWhitneyUTestMerge(x) FROM (SELECT CAST(unhex('ffffffff0f00'), 'AggregateFunction(mannWhitneyUTest, Float64, UInt8)') AS x); -- { serverError TOO_LARGE_ARRAY_SIZE }
 SELECT finalizeAggregation(CAST(unhex('ffffffff0f00'), 'AggregateFunction(largestTriangleThreeBuckets(3), Float64, Float64)')); -- { serverError TOO_LARGE_ARRAY_SIZE }
 
 -- quantileGK
@@ -24,7 +24,7 @@ SELECT finalizeAggregation(CAST(unhex('00ffffffff0f'), 'AggregateFunction(groupA
 SELECT finalizeAggregation(CAST(unhex('00ffffffff0f'), 'AggregateFunction(groupArrayIntersect, Array(String))')); -- { serverError TOO_LARGE_ARRAY_SIZE }
 
 -- A legitimate state must still round-trip after the guards.
-SELECT mannWhitneyUTestMerge()(s) FROM (SELECT mannWhitneyUTestState(x, y) AS s FROM (SELECT number::Float64 AS x, (number % 2)::UInt8 AS y FROM numbers(100)));
+SELECT mannWhitneyUTestMerge(s) FROM (SELECT mannWhitneyUTestState(x, y) AS s FROM (SELECT number::Float64 AS x, (number % 2)::UInt8 AS y FROM numbers(100)));
 SELECT quantileGKMerge(100, 0.5)(s) FROM (SELECT quantileGKState(100, 0.5)(number) AS s FROM numbers(1000));
 SELECT sequenceMatchMerge('(?1)(?2)')(s) FROM (SELECT sequenceMatchState('(?1)(?2)')(toDateTime(number), number = 1, number = 2) AS s FROM numbers(10));
 SELECT arraySort(groupArrayIntersectMerge(s)) FROM (SELECT groupArrayIntersectState([1::UInt64, 2, 3]) AS s UNION ALL SELECT groupArrayIntersectState([2::UInt64, 3, 4]));
