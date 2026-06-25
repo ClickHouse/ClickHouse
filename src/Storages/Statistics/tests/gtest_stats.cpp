@@ -9,6 +9,7 @@
 #include <Common/Exception.h>
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/convertFieldToType.h>
@@ -520,4 +521,13 @@ TEST(Statistics, StructureEqualsConsidersDataType)
     /// Same kinds but different declared type (nullability flip) -> not equal, both directions.
     EXPECT_FALSE(make_stat(plain_type)->structureEquals(*make_stat(nullable_type)));
     EXPECT_FALSE(make_stat(nullable_type)->structureEquals(*make_stat(plain_type)));
+
+    /// Custom-named types must be told apart by name, not by equals(): Bool is stored as UInt8 and shares
+    /// its typeid, so Bool->equals(UInt8) is true even though the serialized statistics layouts differ.
+    /// Comparing getName() keeps Bool and UInt8 distinct so a Bool<->UInt8 change forces a rebuild.
+    auto bool_type = DataTypeFactory::instance().get("Bool");
+    auto uint8_type = std::make_shared<DataTypeUInt8>();
+    EXPECT_TRUE(make_stat(bool_type)->structureEquals(*make_stat(bool_type)));
+    EXPECT_FALSE(make_stat(bool_type)->structureEquals(*make_stat(uint8_type)));
+    EXPECT_FALSE(make_stat(uint8_type)->structureEquals(*make_stat(bool_type)));
 }
