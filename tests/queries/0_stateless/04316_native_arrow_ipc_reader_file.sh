@@ -20,7 +20,8 @@ SELECT
     range(number % 4) AS arr,
     toLowCardinality(toString(number % 3)) AS lc
 FROM numbers(10)
-SETTINGS output_format_arrow_string_as_string = 1,
+SETTINGS output_format_arrow_use_native_writer = 0,
+         output_format_arrow_string_as_string = 1,
          output_format_arrow_compression_method = 'none',
          output_format_arrow_low_cardinality_as_dictionary = 1,
          max_block_size = 3

@@ -28,7 +28,8 @@ SELECT
     toDateTime64('2021-01-01 00:00:00', 3, 'UTC') + number AS dt64,
     if(number % 3 = 0, NULL, number)::Nullable(UInt64) AS nullable_n
 FROM numbers(7)
-SETTINGS output_format_arrow_string_as_string = 1,
+SETTINGS output_format_arrow_use_native_writer = 0,
+         output_format_arrow_string_as_string = 1,
          output_format_arrow_fixed_string_as_fixed_byte_array = 1,
          output_format_arrow_compression_method = 'none'
 "
@@ -48,7 +49,7 @@ echo "--- count only (native) ---"
 ${CLICKHOUSE_LOCAL} --query "SELECT count() FROM file('${DATA_FILE}', 'ArrowStream') SETTINGS input_format_arrow_use_native_reader = 1"
 
 echo "--- empty (0 rows, native) ---"
-${CLICKHOUSE_LOCAL} --query "INSERT INTO FUNCTION file('${DATA_FILE}', 'ArrowStream') SELECT toInt32(number) AS i, toString(number) AS s FROM numbers(0) SETTINGS output_format_arrow_compression_method = 'none', output_format_arrow_string_as_string = 1, engine_file_truncate_on_insert = 1"
+${CLICKHOUSE_LOCAL} --query "INSERT INTO FUNCTION file('${DATA_FILE}', 'ArrowStream') SELECT toInt32(number) AS i, toString(number) AS s FROM numbers(0) SETTINGS output_format_arrow_use_native_writer = 0, output_format_arrow_compression_method = 'none', output_format_arrow_string_as_string = 1, engine_file_truncate_on_insert = 1"
 ${CLICKHOUSE_LOCAL} --query "SELECT count() FROM file('${DATA_FILE}', 'ArrowStream') SETTINGS input_format_arrow_use_native_reader = 1"
 
 rm -f "${DATA_FILE}"
