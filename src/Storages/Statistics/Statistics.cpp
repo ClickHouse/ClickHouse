@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -136,6 +137,17 @@ void ColumnStatistics::build(const ColumnPtr & column)
     rows += column->size();
     for (const auto & stat : stats)
         stat.second->build(column);
+}
+
+void ColumnStatistics::build(const ColumnPtr & column, const BuildStatsCallback & callback)
+{
+    rows += column->size();
+    for (const auto & [type, single_stats] : stats)
+    {
+        Stopwatch watch(CLOCK_MONOTONIC);
+        single_stats->build(column);
+        callback(type, *single_stats, watch.elapsedMicroseconds());
+    }
 }
 
 void ColumnStatistics::merge(const ColumnStatisticsPtr & other)
@@ -569,6 +581,22 @@ void ColumnsStatistics::build(const Block & block)
 {
     for (const auto & [column_name, stat] : *this)
         stat->build(block.getByName(column_name).column);
+}
+
+void ColumnsStatistics::build(const Block & block, const BuildStatsCallback & callback)
+{
+    for (const auto & [column_name, stat] : *this)
+    {
+        const auto & column = block.getByName(column_name);
+        const UInt64 rows = column.column->size();
+        const UInt64 bytes = column.column->byteSize();
+        const String data_type_name = column.type->getName();
+        const String physical_type_name = column.column->getName();
+        stat->build(column.column, [&](StatisticsType type, const IStatistics & single_stats, UInt64 elapsed_microseconds)
+        {
+            callback(column_name, data_type_name, physical_type_name, type, single_stats, rows, bytes, elapsed_microseconds);
+        });
+    }
 }
 
 void ColumnsStatistics::buildIfExists(const Block & block)

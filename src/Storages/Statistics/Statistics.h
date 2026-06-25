@@ -7,6 +7,9 @@
 
 #include <boost/core/noncopyable.hpp>
 
+#include <functional>
+#include <map>
+
 namespace DB
 {
 
@@ -103,12 +106,14 @@ class ColumnStatistics
 {
 public:
     using StatsMap = std::map<StatisticsType, StatisticsPtr>;
+    using BuildStatsCallback = std::function<void(StatisticsType, const IStatistics &, UInt64 elapsed_microseconds)>;
     explicit ColumnStatistics(const ColumnStatisticsDescription & stats_desc_);
 
     void serialize(WriteBuffer & buf) const;
     static std::shared_ptr<ColumnStatistics> deserialize(ReadBuffer & buf, const DataTypePtr & data_type);
 
     void build(const ColumnPtr & column);
+    void build(const ColumnPtr & column, const BuildStatsCallback & callback);
     void merge(const ColumnStatisticsPtr & other);
 
     UInt64 getNumRows() const { return rows; }
@@ -159,7 +164,18 @@ public:
     explicit ColumnsStatistics(const ColumnsDescription & columns);
     ColumnsStatistics cloneEmpty() const;
 
+    using BuildStatsCallback = std::function<void(
+        const String & column_name,
+        const String & data_type_name,
+        const String & physical_type_name,
+        StatisticsType statistics_type,
+        const IStatistics & statistics,
+        UInt64 rows,
+        UInt64 bytes,
+        UInt64 elapsed_microseconds)>;
+
     void build(const Block & block);
+    void build(const Block & block, const BuildStatsCallback & callback);
     void buildIfExists(const Block & block);
     void merge(const ColumnsStatistics & other);
     Estimates getEstimates() const;

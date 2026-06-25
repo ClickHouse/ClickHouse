@@ -136,6 +136,25 @@ UInt64 getStatisticsFilesSize(const MergeTreeDataPartChecksums & checksums)
     return result;
 }
 
+String statisticsTypeToTraceString(StatisticsType type)
+{
+    switch (type)
+    {
+        case StatisticsType::TDigest:
+            return "tdigest";
+        case StatisticsType::Uniq:
+            return "uniq";
+        case StatisticsType::CountMinSketch:
+            return "countmin";
+        case StatisticsType::MinMax:
+            return "minmax";
+        case StatisticsType::Basic:
+            return "basic";
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}", type);
+    }
+}
+
 }
 
 void buildScatterSelector(
@@ -827,7 +846,62 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
             ProfileEventTimeIncrement<Microseconds> insert_watch(ProfileEvents::MergeTreeDataWriterInsertStatisticsCalculationMicroseconds);
-            statistics.build(block);
+
+            const bool trace_statistics_build = (currentThreadHasGroup() && currentThreadLogsLevel() >= LogsLevel::trace)
+                || log->is(Poco::Message::PRIO_TRACE);
+            if (trace_statistics_build)
+            {
+                const String query_id = context->getClientInfo().current_query_id;
+                const String table_name = data.getStorageID().getFullTableName();
+                statistics.build(
+                    block,
+                    [&](const String & column_name,
+                        const String & data_type_name,
+                        const String & physical_type_name,
+                        StatisticsType statistics_type,
+                        const IStatistics & single_statistics,
+                        UInt64 rows,
+                        UInt64 bytes,
+                        UInt64 elapsed_microseconds)
+                    {
+                        const String statistics_kind = statisticsTypeToTraceString(statistics_type);
+                        if (statistics_type == StatisticsType::Uniq)
+                        {
+                            LOG_TRACE(
+                                log,
+                                "Calculated insert-time statistics: query_id: {}, table: {}, column: {}, data_type: {}, physical_type: {}, "
+                                "statistics_kind: {}, rows: {}, bytes: {}, elapsed_us: {}, distinct_values: {}",
+                                query_id,
+                                table_name,
+                                column_name,
+                                data_type_name,
+                                physical_type_name,
+                                statistics_kind,
+                                rows,
+                                bytes,
+                                elapsed_microseconds,
+                                single_statistics.estimateCardinality());
+                        }
+                        else
+                        {
+                            LOG_TRACE(
+                                log,
+                                "Calculated insert-time statistics: query_id: {}, table: {}, column: {}, data_type: {}, physical_type: {}, "
+                                "statistics_kind: {}, rows: {}, bytes: {}, elapsed_us: {}",
+                                query_id,
+                                table_name,
+                                column_name,
+                                data_type_name,
+                                physical_type_name,
+                                statistics_kind,
+                                rows,
+                                bytes,
+                                elapsed_microseconds);
+                        }
+                    });
+            }
+            else
+                statistics.build(block);
         }
     }
 
