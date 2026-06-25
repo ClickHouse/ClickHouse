@@ -259,7 +259,6 @@ struct ReadAheadSettings
     uint64_t eviction_timeout_ms = 30000;
     uint64_t pool_threads = 0; /// 0 = derived from max_peer_readers
     uint64_t serve_wait_timeout_ms = 50;
-    uint64_t fill_timeout_ms = 0; /// 0 = no deadline
     uint64_t chunk_size = 16;
 };
 

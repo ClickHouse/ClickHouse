@@ -102,7 +102,6 @@ namespace ErrorCodes
     DECLARE(UInt64, keeper_log_readahead_eviction_timeout_ms, 30000, "Idle timeout in milliseconds after which an inactive per-peer reader is evicted.", 0) \
     DECLARE(UInt64, keeper_log_readahead_pool_threads, 0, "Number of threads in the dedicated read-ahead thread pool. 0 = derive from max_peer_readers.", 0) \
     DECLARE(UInt64, keeper_log_readahead_serve_wait_timeout_ms, 50, "Maximum time in milliseconds to wait for the background fill before falling back to a direct read.", 0) \
-    DECLARE(UInt64, keeper_log_readahead_fill_timeout_ms, 0, "Wall-clock deadline in milliseconds for one fill pass. 0 = no deadline; the fill runs until the window is full or EOF.", 0) \
     DECLARE(UInt64, keeper_log_readahead_chunk_size, 16, "Number of log entries decoded per chunk under file_mutex in the read-ahead fill task. Smaller values improve responsiveness to rewinds at the cost of more lock overhead.", 0) \
 
 DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS, COORDINATION_SETTINGS_SUPPORTED_TYPES)

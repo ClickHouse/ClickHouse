@@ -38,6 +38,9 @@ namespace ProfileEvents
     extern const Event KeeperLogsEntryReadFromCommitCache;
     extern const Event KeeperLogsEntryReadFromFile;
     extern const Event KeeperLogsPrefetchedEntries;
+    extern const Event KeeperLogsReadAheadFillReopens;
+    extern const Event KeeperLogsReadAheadFillDecodedEntries;
+    extern const Event KeeperLogsReadAheadCursorsInstalled;
     extern const Event KeeperChangelogWrittenBytes;
     extern const Event KeeperChangelogFileSyncMicroseconds;
 }
@@ -1772,6 +1775,8 @@ struct PerPeerReader
     bool discardBeforeLocked(uint64_t index) TSA_REQUIRES(deque_mutex);
     LogEntryPtr popFrontLocked() TSA_REQUIRES(deque_mutex);
     void resetToIndexLocked(uint64_t index) TSA_REQUIRES(deque_mutex);
+    /// Exclusive upper bound of indices the fill will produce unaided (pending cursors > resume > deque > front).
+    uint64_t fillCoverageEndLocked() const TSA_REQUIRES(deque_mutex);
 
     // === Fill cursor helpers (decoded_mutex held by caller) ===
     void setResumeCursorLocked(const ChangelogFileDescriptionPtr & file_description, size_t position, uint64_t first_index)
@@ -1856,6 +1861,19 @@ void PerPeerReader::resetToIndexLocked(uint64_t index)
     decoded_bytes = 0;
     decoded_front_index = index;
     resume_cursor.reset();
+}
+
+uint64_t PerPeerReader::fillCoverageEndLocked() const
+{
+    // FileSpan cursors are open-ended (read to file EOF), so reach = to_log_index + 1.
+    // to_log_index is immutable after sealing, safe to read without file withLock.
+    if (!pending_cursors.empty())
+        return pending_cursors.back().file_description->to_log_index + 1;
+    if (resume_cursor.has_value())
+        return resume_cursor->file_description->to_log_index + 1;
+    if (!decoded_entries.empty())
+        return decoded_front_index + decoded_entries.size();
+    return decoded_front_index;
 }
 
 void PerPeerReader::setResumeCursorLocked(const ChangelogFileDescriptionPtr & file_description, size_t position, uint64_t first_index)
@@ -1946,7 +1964,6 @@ enum class CursorOutcome : uint8_t
 {
     Eof,      /// file EOF: outer loop should handle the cache-boundary check
     Restart,  /// generation changed or file moved: outer loop should retake the next cursor
-    Parked,   /// fill deadline exceeded: outer loop should retake the (resume) cursor
     Terminal, /// reader state is no longer Running: fillTask should return
 };
 
@@ -2022,6 +2039,8 @@ OpenResult ensureOpenAt(PerPeerReader & reader, const LogReadPlan::FileSpan & cu
 
     if (!need_reopen && !need_seek)
         return OpenResult::Ready;
+
+    ProfileEvents::increment(ProfileEvents::KeeperLogsReadAheadFillReopens);
 
     try
     {
@@ -2102,6 +2121,7 @@ DecodeChunkResult decodeChunk(
             return DecodeChunkStatus::Ready;
         });
 
+    ProfileEvents::increment(ProfileEvents::KeeperLogsReadAheadFillDecodedEntries, chunk.size());
     return result;
 }
 
@@ -2151,9 +2171,7 @@ CursorOutcome fillFromCursor(
     const uint64_t file_to_index = cursor.file_description->to_log_index;
     const size_t chunk_size = settings.chunk_size;
     const uint64_t window_budget = settings.window_bytes;
-    const uint64_t deadline_ms = settings.fill_timeout_ms;
 
-    Stopwatch deadline_watch;
     uint64_t expected_idx = cursor.first_index;
     size_t next_position = reader.held_buf ? static_cast<size_t>(reader.held_buf->getPosition()) : cursor.position;
 
@@ -2163,15 +2181,12 @@ CursorOutcome fillFromCursor(
     while (true)
     {
         // Save the current decode position so the fill can resume from here on the next wakeup.
-        // Written at the top of every iteration so all exit paths (deadline, window park,
+        // Written at the top of every iteration so all exit paths (window park,
         // FileMoved, generation restart) automatically have an up-to-date resume point.
         {
             std::lock_guard dq_lock(reader.deque_mutex);
             reader.setResumeCursorLocked(cursor.file_description, next_position, expected_idx);
         }
-
-        if (deadline_ms > 0 && static_cast<uint64_t>(deadline_watch.elapsedMilliseconds()) > deadline_ms)
-            return CursorOutcome::Parked;
 
         // Failpoint: wedge the fill for testing.
         FailPointInjection::pauseFailPoint(FailPoints::keeper_changelog_readahead_fill_wedge);
@@ -2247,67 +2262,51 @@ void LogEntryStorage::retireReaderLocked(int32_t peer_id, const std::shared_ptr<
     per_peer_readers.erase(peer_id);
 }
 
-/// Build a read-ahead plan (fill cursors + bounded items for [start,end)).
+/// Build a read-ahead plan: direct-read items via getReadPlan, plus speculative fill cursors
+/// over [start, max_index_with_location] for sealed files within the window byte budget.
 /// PRECONDITION: caller holds changelog_lock (shared).
-/// Returns a plan with read_ahead_window set only if read-ahead should be used.
 LogReadPlan LogEntryStorage::getReadAheadPlan(uint64_t start, uint64_t end, int64_t max_size_bytes, uint64_t retained_start) const
 {
-    // Build the base plan for [start,end) — bounded runs and cache items that will be served.
+    // Build the direct-read items via the existing planner.
     LogReadPlan plan = getReadPlan(start, end, max_size_bytes, retained_start);
     if (plan.logs_compacted)
         return plan;
 
-    const bool can_use_readahead = !plan.items.empty() && readahead_settings.window_bytes != 0 && readahead_settings.max_peer_readers != 0
-        && readahead_settings.chunk_size != 0;
+    const bool can_use_readahead = readahead_settings.window_bytes != 0
+        && readahead_settings.max_peer_readers != 0 && readahead_settings.chunk_size != 0;
     if (!can_use_readahead)
         return plan;
 
-    // Walk [start, max_index_with_location) to build fill cursors for sealed files.
-    const uint64_t window_budget = readahead_settings.window_bytes;
-
-    // Walk logs_location forward, emitting one FillCursor per sealed-file run.
-    // Stop at: byte budget exceeded or unsealed (active/broken) file.
-    uint64_t window_bytes_so_far = 0;
+    // One open-ended fill cursor per sealed file in plan.items. If the same file appears
+    // as non-contiguous spans (gap from a rolled-back entry), abort read-ahead entirely —
+    // reading to EOF would decode the stale entry at the gap position.
     ChangelogFileDescriptionPtr prev_file;
-
-    if (!plan.read_ahead_window)
-        plan.read_ahead_window.emplace();
-
-    const auto start_fill_cursor = [&](const ChangelogFileDescriptionPtr & file_description, const LogLocation & location, uint64_t index)
+    for (const auto & item : plan.items)
     {
+        const auto * run = std::get_if<LogReadPlan::FileSpan>(&item);
+        if (!run)
+        {
+            prev_file.reset();
+            continue;
+        }
+        if (!run->file_description->sealed_for_read_ahead.load(std::memory_order_acquire))
+            break;
+        if (run->file_description == prev_file)
+        {
+            // Physical gap detected — disable read-ahead for this request.
+            plan.read_ahead_window.reset();
+            return plan;
+        }
+        prev_file = run->file_description;
+        if (!plan.read_ahead_window)
+            plan.read_ahead_window.emplace();
         LogReadPlan::FileSpan cursor;
-        cursor.file_description = file_description;
-        cursor.position = location.position;
-        cursor.first_index = index;
-        // count = 0: fill reads to EOF of file (open-ended cursor)
+        cursor.file_description = run->file_description;
+        cursor.position = run->position;
+        cursor.first_index = run->first_index;
         plan.read_ahead_window->push_back(std::move(cursor));
-        prev_file = file_description;
-    };
-
-    for (uint64_t idx = start; idx <= max_index_with_location; ++idx)
-    {
-        auto it = logs_location.find(idx);
-        if (it == logs_location.end())
-            break; /// gap in location map — stop window
-
-        const auto & loc = it->second;
-        const auto & fd = loc.file_description;
-
-        if (!fd->sealed_for_read_ahead.load(std::memory_order_acquire))
-            break; // active/incomplete file — stop the speculative window
-
-        // Always admit at least 1 entry.
-        if (window_bytes_so_far > 0 && window_bytes_so_far + loc.entry_size > window_budget)
-            break; // window filled
-
-        window_bytes_so_far += loc.entry_size;
-
-        if (!prev_file || prev_file != fd)
-            start_fill_cursor(fd, loc, idx);
-        // else: same file — existing cursor reads to EOF.
     }
 
-    // If no fill cursors were added, remove the empty window.
     if (plan.read_ahead_window && plan.read_ahead_window->empty())
         plan.read_ahead_window.reset();
     return plan;
@@ -2340,7 +2339,6 @@ void LogEntryStorage::fillTask(std::shared_ptr<PerPeerReader> reader) const
         case CursorOutcome::Terminal:
             return;
         case CursorOutcome::Restart:
-        case CursorOutcome::Parked:
             continue;
         case CursorOutcome::Eof:
             reader->closeHeld();
@@ -2460,16 +2458,56 @@ LogEntryStorage::acquireReaderLocked(int32_t peer_id, const LogReadPlan & plan, 
 
 void LogEntryStorage::installPlanLocked(PerPeerReader & reader, const LogReadPlan & plan) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    // Both backward rewinds and forward skips reset the reader to the new start index.
-    if (plan.start_index != reader.decoded_front_index)
-        reader.resetToIndexLocked(plan.start_index);
+    // If the fill went terminal (Exhausted/Error/Compacted) after the reader was acquired,
+    // leave it untouched; drainReader will fall back and the next request recreates a fresh reader.
+    if (reader.state != ReaderState::Running)
+        return;
 
-    if (plan.read_ahead_window && !plan.read_ahead_window->empty())
+    const uint64_t start = plan.start_index;
+
+    // Compute coverage_end BEFORE any clearing so the filter uses the live fill state.
+    uint64_t coverage_end = 0;
+    if (start < reader.decoded_front_index)
     {
-        reader.pending_cursors = *plan.read_ahead_window;
-        reader.resume_cursor.reset(); // pending cursors supersede any saved fill position
-        reader.fill_serve_cv.notify_all();
+        // Backward rewind: clear state and reinstall from start.
+        reader.resetToIndexLocked(start);
+        coverage_end = start;
     }
+    else
+    {
+        coverage_end = reader.fillCoverageEndLocked();
+        if (start >= coverage_end)
+        {
+            // Gap or fresh reader: fill will not reach start unaided; reset and install all.
+            reader.resetToIndexLocked(start);
+            coverage_end = start;
+        }
+        else
+        {
+            // Covered: the fill is already at or past start. Advance the deque front to free
+            // byte budget, but keep resume_cursor/pending_cursors so the fill runs uninterrupted.
+            if (reader.discardBeforeLocked(start))
+                reader.fill_serve_cv.notify_all();
+        }
+    }
+
+    if (!plan.read_ahead_window || plan.read_ahead_window->empty())
+        return;
+
+    // Append only cursors for files the fill is not already covering.
+    size_t installed = 0;
+    for (const auto & cursor : *plan.read_ahead_window)
+    {
+        if (cursor.first_index < coverage_end)
+            continue;
+        reader.pending_cursors.push_back(cursor);
+        ++installed;
+    }
+
+    ProfileEvents::increment(ProfileEvents::KeeperLogsReadAheadCursorsInstalled, installed);
+
+    if (installed > 0)
+        reader.fill_serve_cv.notify_all();
 }
 
 LogEntriesPtr LogEntryStorage::drainReader(int32_t peer_id, const std::shared_ptr<PerPeerReader> & reader, const LogReadPlan & plan)
@@ -2512,7 +2550,7 @@ LogEntriesPtr LogEntryStorage::drainReader(int32_t peer_id, const std::shared_pt
         fallback_plan.requested_entry_count = plan.requested_entry_count - result->size();
         fallback_plan.start_index = current_index - consumed_from_current_item;
 
-        auto tail = executeReadPlan(fallback_plan, readahead_settings.fill_timeout_ms);
+        auto tail = executeReadPlan(fallback_plan, 0);
         if (!tail)
             return nullptr;
 
@@ -2614,7 +2652,7 @@ LogEntriesPtr LogEntryStorage::drainReader(int32_t peer_id, const std::shared_pt
 LogEntriesPtr LogEntryStorage::serveReadAhead(int32_t peer_id, const LogReadPlan & plan) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     if (!plan.read_ahead_window || plan.logs_compacted)
-        return executeReadPlan(plan, readahead_settings.fill_timeout_ms);
+        return executeReadPlan(plan, 0);
 
     const auto now = std::chrono::steady_clock::now();
     std::shared_ptr<PerPeerReader> reader;
@@ -2625,7 +2663,7 @@ LogEntriesPtr LogEntryStorage::serveReadAhead(int32_t peer_id, const LogReadPlan
         reader = acquireReaderLocked(peer_id, plan, now);
     }
     if (!reader)
-        return executeReadPlan(plan, readahead_settings.fill_timeout_ms);
+        return executeReadPlan(plan, 0);
 
     {
         std::lock_guard dq_lock(reader->deque_mutex);

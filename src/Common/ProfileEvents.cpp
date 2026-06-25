@@ -1327,6 +1327,9 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperLogsEntryReadFromCommitCache, "Number of log entries in Keeper being read from commit logs cache", ValueType::Number) \
     M(KeeperLogsEntryReadFromFile, "Number of log entries in Keeper being read directly from the changelog file", ValueType::Number) \
     M(KeeperLogsPrefetchedEntries, "Number of log entries in Keeper being prefetched from the changelog file", ValueType::Number) \
+    M(KeeperLogsReadAheadFillReopens, "Number of times the Keeper read-ahead fill reopened or seeked a changelog file", ValueType::Number) \
+    M(KeeperLogsReadAheadFillDecodedEntries, "Number of log entries decoded by the Keeper read-ahead fill task", ValueType::Number) \
+    M(KeeperLogsReadAheadCursorsInstalled, "Number of read-ahead fill cursors installed into a per-peer reader by installPlanLocked", ValueType::Number) \
     M(KeeperChangelogWrittenBytes, "Number of bytes written to the changelog in Keeper", ValueType::Bytes) \
     M(KeeperChangelogFileSyncMicroseconds, "Time spent in fsync for Keeper changelog (uncompressed logs only)", ValueType::Microseconds) \
     M(KeeperSnapshotWrittenBytes, "Number of bytes written to snapshot files in Keeper", ValueType::Bytes) \

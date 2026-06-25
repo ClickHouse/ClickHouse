@@ -31,7 +31,6 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 max_log_file_size;
     extern const CoordinationSettingsUInt64 keeper_log_readahead_chunk_size;
     extern const CoordinationSettingsUInt64 keeper_log_readahead_eviction_timeout_ms;
-    extern const CoordinationSettingsUInt64 keeper_log_readahead_fill_timeout_ms;
     extern const CoordinationSettingsBool keeper_log_readahead_enabled;
     extern const CoordinationSettingsUInt64 keeper_log_readahead_max_peer_readers;
     extern const CoordinationSettingsUInt64 keeper_log_readahead_pool_threads;
@@ -338,7 +337,6 @@ KeeperStateManager::KeeperStateManager(
               .eviction_timeout_ms = keeper_context_->getCoordinationSettings()[CoordinationSetting::keeper_log_readahead_eviction_timeout_ms],
               .pool_threads = keeper_context_->getCoordinationSettings()[CoordinationSetting::keeper_log_readahead_pool_threads],
               .serve_wait_timeout_ms = keeper_context_->getCoordinationSettings()[CoordinationSetting::keeper_log_readahead_serve_wait_timeout_ms],
-              .fill_timeout_ms = keeper_context_->getCoordinationSettings()[CoordinationSetting::keeper_log_readahead_fill_timeout_ms],
               .chunk_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::keeper_log_readahead_chunk_size],
           },
           keeper_context_))

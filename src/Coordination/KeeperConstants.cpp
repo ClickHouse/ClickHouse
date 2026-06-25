@@ -328,6 +328,9 @@
     M(KeeperLogsEntryReadFromCommitCache) \
     M(KeeperLogsEntryReadFromFile) \
     M(KeeperLogsPrefetchedEntries) \
+    M(KeeperLogsReadAheadFillReopens) \
+    M(KeeperLogsReadAheadFillDecodedEntries) \
+    M(KeeperLogsReadAheadCursorsInstalled) \
 \
     M(JemallocFailedAllocationSampleTracking) \
     M(JemallocFailedDeallocationSampleTracking) \
