@@ -271,13 +271,8 @@ struct AggregateFunctionMergedJSONPatchData
             entries.end());
     }
 
-    void insertLeafEntry(std::string_view path, Field value, const SortKey & sort_key, Arena & arena)
+    void pushLeafEntry(std::string_view path, Field value, const SortKey & sort_key, Arena & arena)
     {
-        if (hasNewerConflictingEntry(path, sort_key))
-            return;
-
-        eraseShadowedEntries(path, sort_key);
-
         Entry entry;
         entry.path = copyToArena(arena, path);
         entry.value = encodeFieldToArena(std::move(value), arena);
@@ -285,6 +280,15 @@ struct AggregateFunctionMergedJSONPatchData
 
         auto it = findInsertPosition(entries, path);
         entries.insert(it, std::move(entry));
+    }
+
+    void insertLeafEntry(std::string_view path, Field value, const SortKey & sort_key, Arena & arena)
+    {
+        if (hasNewerConflictingEntry(path, sort_key))
+            return;
+
+        eraseShadowedEntries(path, sort_key);
+        pushLeafEntry(path, std::move(value), sort_key, arena);
     }
 
     void insertPathValue(std::string_view path, Field value, const SortKey & sort_key, Arena & arena)
@@ -386,30 +390,103 @@ struct AggregateFunctionMergedJSONPatchData
 
     void addKeyValuePairs(const ColumnObject & object_column, size_t row_num, const SortKey & sort_key, Arena & arena)
     {
+        /// Collect all leaf (path, value) pairs from the row before touching the aggregate state.
+        ///
+        /// The conflict-resolution helpers (hasNewerConflictingEntry / eraseShadowedEntries) must
+        /// only see the pre-existing state, not siblings from the same row. If we called
+        /// insertPathValue incrementally, a later path like "a.b" could erase an earlier sibling
+        /// "a" even though both come from the same patch and carry the same sort key.  The classic
+        /// example is JSON(a UInt32, `a.b` UInt32) with {"a":42}: ColumnObject stores both a=42
+        /// and a.b=0 in their typed columns; without this two-phase approach, processing "a.b"
+        /// would call eraseShadowedEntries("a.b", K) which erases "a" because its sort_key <= K.
+        ///
+        /// By collecting all leaf paths first and then inserting them against a snapshot of the
+        /// pre-existing state, siblings can never clobber each other.
+        ///
+        /// Note: SortedPathsIterator already skips null-valued dynamic paths (ColumnDynamic
+        /// represents absence as null).  Typed paths have no null/absent representation, so every
+        /// typed path in the schema is always yielded regardless of whether it was written for this
+        /// row.  We therefore pass all typed paths through; the two-phase insert ensures that a
+        /// default-valued path (e.g. a.b=0 when only "a" was written) does not erase a conflicting
+        /// sibling (a=42) from the same row, while still allowing a genuine {"a":0} write to win
+        /// over an older {"a":5} from a different row.
+        std::vector<std::pair<String, Field>> leaves; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+
         ColumnObject::SortedPathsIterator it(object_column, row_num);
         while (!it.end())
         {
             auto path_info = it.getCurrentPathInfo();
-
-            /// SortedPathsIterator already skips null dynamic paths. Do the same for typed paths
-            /// whose column is at its default for this row. A typed path at default means it was
-            /// never written for this row (e.g. a conflicting sibling path like "a.b" when "a" was
-            /// set to a scalar). Feeding default typed paths into insertPathValue would trigger
-            /// conflict resolution between paths belonging to the same input row, corrupting the
-            /// result.
-            if (path_info.type == ColumnObject::SortedPathsIterator::PathType::TYPED
-                && path_info.column->isDefaultAt(path_info.row))
-            {
-                it.next();
-                continue;
-            }
-
             Field value;
             path_info.column->get(path_info.row, value);
 
-            insertPathValue(path_info.path, std::move(value), sort_key, arena);
+            /// Flatten Object fields into child paths, mirroring insertPathValue.
+            collectLeaves(String(path_info.path), std::move(value), leaves);
             it.next();
         }
+
+        /// Phase 1: decide which leaves survive against the pre-existing state.
+        /// We snapshot entries.size() so that entries added in phase 2 are never
+        /// consulted while checking later leaves from the same row.
+        size_t existing_count = entries.size();
+        std::vector<size_t> survivors; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        survivors.reserve(leaves.size());
+        for (size_t i = 0; i < leaves.size(); ++i)
+        {
+            if (!hasNewerConflictingEntryIn(leaves[i].first, sort_key, existing_count))
+                survivors.push_back(i);
+        }
+
+        /// Phase 2: erase shadowed pre-existing entries and insert survivors.
+        /// Use pushLeafEntry (no re-check) because phase 1 already verified each survivor
+        /// against the pre-existing state; using insertLeafEntry here would let a newly
+        /// inserted sibling from this same row interfere with later siblings.
+        for (size_t idx : survivors)
+        {
+            eraseShadowedEntriesIn(leaves[idx].first, sort_key, existing_count);
+            pushLeafEntry(leaves[idx].first, std::move(leaves[idx].second), sort_key, arena);
+        }
+    }
+
+    /// Recursively flatten an Object field into (path, scalar-or-array) leaf pairs.
+    static void collectLeaves(String path, Field value, std::vector<std::pair<String, Field>> & out) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    {
+        if (!isObjectField(value))
+        {
+            out.emplace_back(std::move(path), std::move(value));
+            return;
+        }
+        const auto & object = value.safeGet<Object>();
+        for (const auto & [child_key, child_value] : object)
+        {
+            String child_path = path.empty() ? child_key : path + '.' + child_key;
+            collectLeaves(child_path, child_value, out);
+        }
+    }
+
+    /// Like hasNewerConflictingEntry but only checks the first `limit` entries.
+    bool hasNewerConflictingEntryIn(std::string_view path, const SortKey & sort_key, size_t limit) const
+    {
+        for (size_t i = 0; i < limit && i < entries.size(); ++i)
+        {
+            if (pathsConflict(entries[i].path.view(), path) && entries[i].sort_key > sort_key)
+                return true;
+        }
+        return false;
+    }
+
+    /// Like eraseShadowedEntries but only erases among the first `limit` entries.
+    void eraseShadowedEntriesIn(std::string_view path, const SortKey & sort_key, size_t limit)
+    {
+        size_t write = 0;
+        for (size_t i = 0; i < entries.size(); ++i)
+        {
+            bool shadowed = i < limit
+                && pathsConflict(entries[i].path.view(), path)
+                && entries[i].sort_key <= sort_key;
+            if (!shadowed)
+                entries[write++] = std::move(entries[i]);
+        }
+        entries.resize(write);
     }
 
     void merge(const AggregateFunctionMergedJSONPatchData & other, Arena & arena)
