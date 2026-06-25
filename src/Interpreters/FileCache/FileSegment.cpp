@@ -111,8 +111,6 @@ FileSegment::FileSegment(
         }
     }
 
-    /// Increment only after all throwing operations above, so the destructor's matching
-    /// decrement runs iff construction succeeded.
     CurrentMetrics::add(CurrentMetrics::CacheFileSegments);
 }
 
@@ -386,18 +384,18 @@ void FileSegment::setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_)
     auto lk = lock();
     assertIsDownloaderUnlocked("setRemoteFileReader", lk);
 
-    auto & dl = getOrCreateDownloadDataUnlocked(lk);
-    if (dl.remote_file_reader)
+    auto & download = getOrCreateDownloadDataUnlocked(lk);
+    if (download.remote_file_reader)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Remote file reader already exists");
 
-    dl.remote_file_reader = remote_file_reader_;
+    download.remote_file_reader = remote_file_reader_;
 }
 
 void FileSegment::write(char * from, size_t size, size_t offset_in_file)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentWriteMicroseconds);
     auto file_segment_path = getPath();
-    DownloadState * dl = nullptr;
+    DownloadState * download = nullptr;
     {
         if (!size)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing zero size is not allowed");
@@ -406,7 +404,7 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
             auto lk = lock();
             assertIsDownloaderUnlocked("write", lk);
             assertNotDetachedUnlocked(lk);
-            dl = &getOrCreateDownloadDataUnlocked(lk);
+            download = &getOrCreateDownloadDataUnlocked(lk);
         }
 
         if (download_state != State::DOWNLOADING)
@@ -453,15 +451,15 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
 #ifdef DEBUG_OR_SANITIZER_BUILD
         /// This mutex is only needed to have a valid assertion in assertCacheCorrectness(),
         /// which is only executed in debug/sanitizer builds (under DEBUG_OR_SANITIZER_BUILD).
-        std::lock_guard lock(dl->write_mutex);
+        std::lock_guard lock(download->write_mutex);
 #endif
 
-        if (!dl->cache_writer)
+        if (!download->cache_writer)
         {
             int flags = -1;
             if (downloaded_size > 0)
                 flags = O_WRONLY | O_APPEND | O_CLOEXEC;
-            dl->cache_writer = std::make_unique<WriteBufferFromFile>(getPath(), /* buf_size */0, flags);
+            download->cache_writer = std::make_unique<WriteBufferFromFile>(getPath(), /* buf_size */0, flags);
         }
 
         fiu_do_on(FailPoints::cache_filesystem_failure,
@@ -470,11 +468,11 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
         });
 
         /// Size is equal to offset as offset for write buffer points to data end.
-        dl->cache_writer->set(from, /* size */size, /* offset */size);
+        download->cache_writer->set(from, /* size */size, /* offset */size);
         /// Reset the buffer when finished.
-        SCOPE_EXIT({ dl->cache_writer->set(nullptr, 0); });
+        SCOPE_EXIT({ download->cache_writer->set(nullptr, 0); });
         /// Flush the buffer.
-        dl->cache_writer->next();
+        download->cache_writer->next();
 
         downloaded_size += size;
         chassert(std::filesystem::file_size(file_segment_path) == downloaded_size);

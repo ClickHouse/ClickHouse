@@ -251,20 +251,24 @@ private:
     LoggerPtr log;
     mutable SharedMutex key_prefix_directory_mutex;
 
+    using OriginInfoPtr = KeyMetadata::OriginInfoPtr;
+
     struct MetadataBucket : public std::unordered_map<FileCacheKey, KeyMetadataPtr>
     {
         CacheMetadataGuard::Lock lock() const;
+
+        /// Return a deduplicated immutable origin, shared by all keys of this bucket with the
+        /// same origin. The pool is sharded per bucket and guarded by the bucket's own lock
+        /// (which the caller already holds), so no separate/global mutex is needed. Distinct
+        /// origins are very few, so per-bucket sharding at most duplicates each origin per bucket.
+        OriginInfoPtr getOrCreateSharedOrigin(const OriginInfo & origin);
+
     private:
+        std::map<std::tuple<OriginInfo::UserID, std::optional<OriginInfo::Weight>, FileSegmentKeyType>, OriginInfoPtr> origins;
         mutable CacheMetadataGuard guard;
     };
     using MetadataBuckets = std::vector<MetadataBucket>;
     MetadataBuckets metadata_buckets{buckets_num};
-
-    /// Pool of deduplicated immutable origins, shared by all keys with the same origin.
-    using OriginInfoPtr = KeyMetadata::OriginInfoPtr;
-    OriginInfoPtr getOrCreateSharedOrigin(const OriginInfo & origin);
-    mutable std::mutex origins_mutex;
-    std::map<std::tuple<OriginInfo::UserID, std::optional<OriginInfo::Weight>, FileSegmentKeyType>, OriginInfoPtr> origins;
 
     struct DownloadThread
     {

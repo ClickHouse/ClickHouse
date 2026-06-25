@@ -98,9 +98,8 @@ void KeyMetadata::assertAccess(const UserID & user_id_) const
     }
 }
 
-CacheMetadata::OriginInfoPtr CacheMetadata::getOrCreateSharedOrigin(const OriginInfo & origin)
+CacheMetadata::OriginInfoPtr CacheMetadata::MetadataBucket::getOrCreateSharedOrigin(const OriginInfo & origin)
 {
-    std::lock_guard lock(origins_mutex);
     auto pool_key = std::make_tuple(origin.user_id, origin.weight, origin.segment_type);
     auto it = origins.find(pool_key);
     if (it == origins.end())
@@ -303,7 +302,7 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
             return nullptr;
 
         it = bucket.emplace(
-            key, std::make_shared<KeyMetadata>(key, getOrCreateSharedOrigin(origin), this, is_initial_load)).first;
+            key, std::make_shared<KeyMetadata>(key, bucket.getOrCreateSharedOrigin(origin), this, is_initial_load)).first;
 
         CurrentMetrics::add(CurrentMetrics::FilesystemCacheKeys);
     }
