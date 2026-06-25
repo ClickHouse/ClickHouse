@@ -5,8 +5,8 @@ from helpers.client import QueryRuntimeException
 from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
-node_lazy = cluster.add_instance("node_lazy")
-node_eager = cluster.add_instance("node_eager", main_configs=["configs/eager.xml"])
+node_lazy = cluster.add_instance("node_lazy", stay_alive=True)
+node_eager = cluster.add_instance("node_eager", main_configs=["configs/eager.xml"], stay_alive=True)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -14,7 +14,7 @@ def started_cluster():
     try:
         cluster.start()
         for node in (node_lazy, node_eager):
-            node.query("CREATE TABLE src (id UInt64, val String) ENGINE = Memory")
+            node.query("CREATE TABLE src (id UInt64, val String) ENGINE = MergeTree ORDER BY tuple()")
             node.query("INSERT INTO src VALUES (1, 'a')")
         yield cluster
     finally:
