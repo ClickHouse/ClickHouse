@@ -24,6 +24,10 @@ FROM numbers(100); -- { serverError BAD_ARGUMENTS }
 SELECT groupBloomFilter(1000)(materialize(CAST(NULL, 'Nullable(UInt64)')))
 FROM numbers(1); -- { serverError BAD_ARGUMENTS }
 
+-- groupBloomFilter without -State combinator must still throw through a wrapper when all Nullable inputs are NULL.
+SELECT groupBloomFilterDistinct(1000)(materialize(CAST(NULL, 'Nullable(UInt64)')))
+FROM numbers(1); -- { serverError BAD_ARGUMENTS }
+
 -- groupBloomFilterOrNull must not synthesize NULL for empty input.
 SELECT groupBloomFilterOrNull(1000)(number)
 FROM numbers(0); -- { serverError BAD_ARGUMENTS }

@@ -19,18 +19,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-inline bool isFinalizedGroupBloomFilterAggregateFunction(const IAggregateFunction & function)
-{
-    if (function.getName() == "groupBloomFilter")
-        return true;
-
-    if (function.isState())
-        return false;
-
-    const auto nested_function = function.getNestedFunction();
-    return nested_function && isFinalizedGroupBloomFilterAggregateFunction(*nested_function);
-}
-
 /**
   * -OrDefault and -OrNull combinators for aggregate functions.
   * If there are no input values, return NULL or a default value, accordingly.

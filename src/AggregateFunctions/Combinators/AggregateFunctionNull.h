@@ -256,7 +256,7 @@ public:
             }
             else
             {
-                if (nested_function->getName() == "groupBloomFilter")
+                if (isFinalizedGroupBloomFilterAggregateFunction(*nested_function))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Aggregate function {} can only be used as an aggregate state. "
                         "Use {}State or {}MergeState with bloomFilterContains",

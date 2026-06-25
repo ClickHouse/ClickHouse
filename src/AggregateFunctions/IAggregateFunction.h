@@ -921,6 +921,18 @@ public:
     }
 };
 
+inline bool isFinalizedGroupBloomFilterAggregateFunction(const IAggregateFunction & function)
+{
+    if (function.getName() == "groupBloomFilter")
+        return true;
+
+    if (function.isState())
+        return false;
+
+    const auto nested_function = function.getNestedFunction();
+    return nested_function && isFinalizedGroupBloomFilterAggregateFunction(*nested_function);
+}
+
 
 /// Properties of aggregate function that are independent of argument types and parameters.
 struct AggregateFunctionProperties
