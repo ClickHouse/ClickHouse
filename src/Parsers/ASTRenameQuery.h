@@ -52,6 +52,15 @@ public:
     /// Special flag for CREATE OR REPLACE. Do not throw if the second table does not exist.
     bool rename_if_cannot_exchange{false};
 
+    /// Set for the synthetic rename/exchange that CREATE OR REPLACE TABLE / REPLACE TABLE use to
+    /// swap a freshly built table (under a temporary name) into the target name. Only the target's
+    /// storage is replaced; its identity (the name) and the access entities keyed to that name,
+    /// including row policies, must stay on the target name. So this rename must NOT make row
+    /// policies follow the data the way an explicit RENAME/EXCHANGE does: doing so would move the
+    /// target's policy onto the temporary name that is dropped right after, leaving the replaced
+    /// table unfiltered (a row-policy escape). Internal only, never produced by the parser.
+    bool create_or_replace{false};
+
     explicit ASTRenameQuery(Elements elements_ = {})
         : elements(std::move(elements_))
     {

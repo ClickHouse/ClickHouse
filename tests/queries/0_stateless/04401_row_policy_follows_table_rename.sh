@@ -199,4 +199,32 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database =
 ${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY tp ON ${CLICKHOUSE_DATABASE}.ta, tp ON ${CLICKHOUSE_DATABASE}.\`${TMP_TABLE}\`"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLICKHOUSE_DATABASE}.ta"
 
+# CREATE OR REPLACE TABLE / REPLACE TABLE swap a freshly built table (under a temporary name) into
+# the target name through a synthetic rename/exchange. Only the storage is replaced; the target keeps
+# its name, so its row policy must stay bound to that name and keep filtering the new data. The policy
+# must NOT follow the data onto the dropped temporary name (which would leave the table unfiltered).
+echo '-- CREATE OR REPLACE TABLE: target row policy stays and keeps filtering'
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${CLICKHOUSE_DATABASE}.cor (id UInt64, dept String) ENGINE = MergeTree ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${CLICKHOUSE_DATABASE}.cor VALUES (1, 'eng'), (2, 'fin')"
+${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY corp ON ${CLICKHOUSE_DATABASE}.cor FOR SELECT USING dept = 'eng' TO ${USER}"
+echo 'before (eng only):'
+run_user "SELECT id FROM ${CLICKHOUSE_DATABASE}.cor ORDER BY id"
+run_user "CREATE OR REPLACE TABLE ${CLICKHOUSE_DATABASE}.cor (id UInt64, dept String) ENGINE = MergeTree ORDER BY id AS SELECT 1, 'eng' UNION ALL SELECT 2, 'fin' UNION ALL SELECT 4, 'fin'"
+echo 'after CREATE OR REPLACE (policy still filters -> eng only, not the new fin rows):'
+run_user "SELECT id FROM ${CLICKHOUSE_DATABASE}.cor ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "SELECT table FROM system.row_policies WHERE short_name = 'corp' AND database = '${CLICKHOUSE_DATABASE}'"
+${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY corp ON ${CLICKHOUSE_DATABASE}.cor"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLICKHOUSE_DATABASE}.cor"
+
+echo '-- REPLACE TABLE: target row policy stays and keeps filtering'
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${CLICKHOUSE_DATABASE}.rep (id UInt64, dept String) ENGINE = MergeTree ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${CLICKHOUSE_DATABASE}.rep VALUES (1, 'eng'), (2, 'fin')"
+${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY repp ON ${CLICKHOUSE_DATABASE}.rep FOR SELECT USING dept = 'eng' TO ${USER}"
+run_user "REPLACE TABLE ${CLICKHOUSE_DATABASE}.rep (id UInt64, dept String) ENGINE = MergeTree ORDER BY id AS SELECT 1, 'eng' UNION ALL SELECT 2, 'fin' UNION ALL SELECT 4, 'fin'"
+echo 'after REPLACE TABLE (policy still filters -> eng only):'
+run_user "SELECT id FROM ${CLICKHOUSE_DATABASE}.rep ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "SELECT table FROM system.row_policies WHERE short_name = 'repp' AND database = '${CLICKHOUSE_DATABASE}'"
+${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY repp ON ${CLICKHOUSE_DATABASE}.rep"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLICKHOUSE_DATABASE}.rep"
+
 ${CLICKHOUSE_CLIENT} --query "DROP USER ${USER}"

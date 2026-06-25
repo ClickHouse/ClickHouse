@@ -374,48 +374,59 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         /// Row policies are keyed by (database, table). They must follow the table on rename,
         /// otherwise after the rename the policy stays orphaned on the old name and the table
         /// becomes readable with no filtering under its new name (a row-policy escape).
-        ///
-        /// A database-wide policy (`ON db.*`) is not bound to any single table name, so it cannot
-        /// follow a table that moves to a different database: the destination lookup is `new_db.tbl`
-        /// then `new_db.*`, which never sees the old `db.*`, so the moved data would be readable
-        /// unfiltered (or under an unrelated destination `db.*`). Reject such cross-database moves
-        /// rather than silently dropping the filter. A same-database rename is unaffected: the
-        /// `db.*` policy keeps covering the table through the ANY_TABLE_MARK fallback.
-        if (elem.from_database_name != elem.to_database_name)
-        {
-            if (hasDatabaseWideRowPolicy(access_control, elem.from_database_name))
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Cannot move table {} to another database {} because a database-wide row policy "
-                    "(ON {}.*) applies to it and cannot follow it across databases",
-                    backQuoteIfNeed(elem.from_database_name) + "." + backQuoteIfNeed(elem.from_table_name),
-                    backQuoteIfNeed(elem.to_database_name),
-                    backQuoteIfNeed(elem.from_database_name));
-            /// EXCHANGE swaps data both ways, so the destination's `db.*` would likewise fail to
-            /// follow the table arriving from the other database.
-            if (exchange_tables && hasDatabaseWideRowPolicy(access_control, elem.to_database_name))
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Cannot exchange table {} with {} because a database-wide row policy (ON {}.*) "
-                    "applies to it and cannot follow it across databases",
-                    backQuoteIfNeed(elem.to_database_name) + "." + backQuoteIfNeed(elem.to_table_name),
-                    backQuoteIfNeed(elem.from_database_name) + "." + backQuoteIfNeed(elem.from_table_name),
-                    backQuoteIfNeed(elem.to_database_name));
-        }
+        std::vector<RowPolicyRekey> row_policy_rekeys;
 
-        /// Collect and PREFLIGHT the per-table re-keys here, before the first mutation below
-        /// (`removeDependencies` / `renameTable`): if a policy cannot be moved, the rename is
-        /// rejected now with nothing changed. The actual re-key runs after the rename commits,
-        /// where a throw could not be rolled back and would leave the table unfiltered.
-        auto row_policy_rekeys = collectRowPolicyRekeys(
-            access_control, elem.from_database_name, elem.from_table_name, elem.to_database_name, elem.to_table_name);
-        if (exchange_tables)
+        /// CREATE OR REPLACE TABLE / REPLACE TABLE reach this code through a synthetic rename/exchange
+        /// that swaps a freshly built table (temporary name) into the target name. Only the target's
+        /// storage is replaced; the target keeps its name, so the row policies bound to that name must
+        /// stay there (they then filter the replacement data). Re-keying would move the target's policy
+        /// onto the transient name, which is dropped immediately after, leaving the replaced table
+        /// unfiltered -- the very row-policy escape this fix closes. So skip the re-key for this case
+        /// entirely; the target's existing policies already protect the new storage.
+        if (!rename.create_or_replace)
         {
-            auto to_rekeys = collectRowPolicyRekeys(
-                access_control, elem.to_database_name, elem.to_table_name, elem.from_database_name, elem.from_table_name);
-            row_policy_rekeys.insert(row_policy_rekeys.end(), to_rekeys.begin(), to_rekeys.end());
+            /// A database-wide policy (`ON db.*`) is not bound to any single table name, so it cannot
+            /// follow a table that moves to a different database: the destination lookup is `new_db.tbl`
+            /// then `new_db.*`, which never sees the old `db.*`, so the moved data would be readable
+            /// unfiltered (or under an unrelated destination `db.*`). Reject such cross-database moves
+            /// rather than silently dropping the filter. A same-database rename is unaffected: the
+            /// `db.*` policy keeps covering the table through the ANY_TABLE_MARK fallback.
+            if (elem.from_database_name != elem.to_database_name)
+            {
+                if (hasDatabaseWideRowPolicy(access_control, elem.from_database_name))
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Cannot move table {} to another database {} because a database-wide row policy "
+                        "(ON {}.*) applies to it and cannot follow it across databases",
+                        backQuoteIfNeed(elem.from_database_name) + "." + backQuoteIfNeed(elem.from_table_name),
+                        backQuoteIfNeed(elem.to_database_name),
+                        backQuoteIfNeed(elem.from_database_name));
+                /// EXCHANGE swaps data both ways, so the destination's `db.*` would likewise fail to
+                /// follow the table arriving from the other database.
+                if (exchange_tables && hasDatabaseWideRowPolicy(access_control, elem.to_database_name))
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Cannot exchange table {} with {} because a database-wide row policy (ON {}.*) "
+                        "applies to it and cannot follow it across databases",
+                        backQuoteIfNeed(elem.to_database_name) + "." + backQuoteIfNeed(elem.to_table_name),
+                        backQuoteIfNeed(elem.from_database_name) + "." + backQuoteIfNeed(elem.from_table_name),
+                        backQuoteIfNeed(elem.to_database_name));
+            }
+
+            /// Collect and PREFLIGHT the per-table re-keys here, before the first mutation below
+            /// (`removeDependencies` / `renameTable`): if a policy cannot be moved, the rename is
+            /// rejected now with nothing changed. The actual re-key runs after the rename commits,
+            /// where a throw could not be rolled back and would leave the table unfiltered.
+            row_policy_rekeys = collectRowPolicyRekeys(
+                access_control, elem.from_database_name, elem.from_table_name, elem.to_database_name, elem.to_table_name);
+            if (exchange_tables)
+            {
+                auto to_rekeys = collectRowPolicyRekeys(
+                    access_control, elem.to_database_name, elem.to_table_name, elem.from_database_name, elem.from_table_name);
+                row_policy_rekeys.insert(row_policy_rekeys.end(), to_rekeys.begin(), to_rekeys.end());
+            }
+            preflightRowPolicyRekeys(access_control, row_policy_rekeys);
         }
-        preflightRowPolicyRekeys(access_control, row_policy_rekeys);
 
         if (exchange_tables)
         {

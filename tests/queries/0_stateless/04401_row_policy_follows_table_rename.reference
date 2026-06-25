@@ -52,3 +52,13 @@ ACCESS_ENTITY_ALREADY_EXISTS
 after rejected rename (table not renamed, policy stays on ta, eng only):
 1
 0
+-- CREATE OR REPLACE TABLE: target row policy stays and keeps filtering
+before (eng only):
+1
+after CREATE OR REPLACE (policy still filters -> eng only, not the new fin rows):
+1
+cor
+-- REPLACE TABLE: target row policy stays and keeps filtering
+after REPLACE TABLE (policy still filters -> eng only):
+1
+rep
