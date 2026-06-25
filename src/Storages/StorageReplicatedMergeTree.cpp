@@ -5,7 +5,7 @@
 #include <ranges>
 #include <chrono>
 
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <base/interpolate.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/FailPoint.h>

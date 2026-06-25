@@ -28,7 +28,7 @@
 #endif
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <base/sleep.h>
 #include <Poco/DOM/DOMParser.h>
 #include <Poco/Util/XMLConfiguration.h>

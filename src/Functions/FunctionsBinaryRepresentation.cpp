@@ -11,6 +11,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/castColumn.h>
 #include <Common/BinStringDecodeHelper.h>
+#include <Common/BitHelpers.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -60,16 +62,14 @@ struct HexImpl
         }
     }
 
-    static void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out, bool reverse_order = false)
+    static ALWAYS_INLINE inline void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out, bool reverse_order = false)
     {
         if (!reverse_order)
         {
-            while (pos < end)
-            {
-                writeHexByteUppercase(*pos, out);
-                ++pos;
-                out += word_size;
-            }
+            const auto raw_size = end - pos;
+            constexpr bool lower_case = false;
+            hexString<lower_case>(reinterpret_cast<UInt8*>(out), pos, raw_size);
+            out += 2 * raw_size;
         }
         else
         {
@@ -119,7 +119,7 @@ struct UnhexImpl
 
     static void decode(const char * pos, const char * end, char *& out)
     {
-        hexStringDecode(pos, end, out, word_size);
+        hexStringDecode2(pos, end, out);
     }
 };
 
@@ -359,20 +359,30 @@ public:
             /// reserve `word_size` bytes for each input byte
             out_vec.resize(in_vec.size() * word_size);
 
-            char * begin = reinterpret_cast<char *>(out_vec.data());
-            char * pos = begin;
-            size_t prev_offset = 0;
-
-            for (size_t i = 0; i < size; ++i)
+            if constexpr (word_size == 2)
             {
-                size_t new_offset = in_offsets[i];
-
-                Impl::executeOneString(&in_vec[prev_offset], &in_vec[new_offset], pos);
-
-                out_offsets[i] = pos - begin;
-
-                prev_offset = new_offset;
+                /// Hex is a pure byte-to-2-byte mapping, so we can encode the entire
+                /// contiguous buffer at once instead of dispatching per row.
+                constexpr bool lower_case = false;
+                hexString<lower_case>(out_vec.data(), in_vec.data(), in_vec.size());
+                for (size_t i = 0; i < size; ++i)
+                    out_offsets[i] = in_offsets[i] * word_size;
             }
+            else
+            {
+                char * begin = reinterpret_cast<char *>(out_vec.data());
+                char * pos = begin;
+                size_t prev_offset = 0;
+
+                for (size_t i = 0; i < size; ++i)
+                {
+                    size_t new_offset = in_offsets[i];
+                    Impl::executeOneString(&in_vec[prev_offset], &in_vec[new_offset], pos);
+                    out_offsets[i] = pos - begin;
+                    prev_offset = new_offset;
+                }
+            }
+
             if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Column size mismatch (internal logical error)");
 
@@ -414,21 +424,29 @@ public:
             out_offsets.resize(size);
             out_vec.resize(in_vec.size() * word_size);
 
-            char * begin = reinterpret_cast<char *>(out_vec.data());
-            char * pos = begin;
-
             size_t n = col_fstr_in->getN();
+            size_t hex_length = n * word_size;
 
-            size_t prev_offset = 0;
-
-            for (size_t i = 0; i < size; ++i)
+            if constexpr (word_size == 2)
             {
-                size_t new_offset = prev_offset + n;
+                constexpr bool lower_case = false;
+                hexString<lower_case>(out_vec.data(), in_vec.data(), in_vec.size());
+                for (size_t i = 0; i < size; ++i)
+                    out_offsets[i] = (i + 1) * hex_length;
+            }
+            else
+            {
+                char * begin = reinterpret_cast<char *>(out_vec.data());
+                char * pos = begin;
+                size_t prev_offset = 0;
 
-                Impl::executeOneString(&in_vec[prev_offset], &in_vec[new_offset], pos);
-
-                out_offsets[i] = pos - begin;
-                prev_offset = new_offset;
+                for (size_t i = 0; i < size; ++i)
+                {
+                    size_t new_offset = prev_offset + n;
+                    Impl::executeOneString(&in_vec[prev_offset], &in_vec[new_offset], pos);
+                    out_offsets[i] = pos - begin;
+                    prev_offset = new_offset;
+                }
             }
 
             if (!out_offsets.empty() && out_offsets.back() != out_vec.size())

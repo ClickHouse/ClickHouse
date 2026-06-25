@@ -12,7 +12,7 @@
 #include <Interpreters/FileCache/FileCacheUtils.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Interpreters/Context.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <Common/callOnce.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>

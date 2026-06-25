@@ -9,7 +9,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/ClientInfo.h>
 #include <base/getThreadId.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 
 namespace DB
 {

@@ -1,8 +1,9 @@
 #pragma once
 
-#include <bit>
 #include <cstring>
-#include "types.h"
+#include <string>
+
+#include <base/types.h>
 
 namespace CityHash_v1_0_2 { struct uint128; }
 
@@ -11,6 +12,30 @@ namespace wide
     template <size_t Bits, typename Signed>
     class integer;
 }
+
+
+/// Dispatching functions for hex encoding/decoding with multiarch support (implemented in Hex.cpp).
+namespace DB
+{
+
+/// Encode an integer of num_bytes (8, 16, or 32) stored at `value` in native byte order to hex.
+void encodeHexIntUpper(uint8_t * dst, const void * value, size_t num_bytes);
+void encodeHexIntLower(uint8_t * dst, const void * value, size_t num_bytes);
+
+/// Decode 16 hex chars to a UInt64.
+UInt64 decodeHexInt64(const uint8_t * src);
+
+/// Encode/decode a byte string to/from hex.
+void encodeHexStringUpper(uint8_t * dst, const uint8_t * src, size_t size);
+void encodeHexStringLower(uint8_t * dst, const uint8_t * src, size_t size);
+void decodeHexString(uint8_t * dst, const uint8_t * src, size_t size);
+
+/// Encode 16 bytes stored in little-endian order to 32 hex chars (used for CityHash128).
+void encodeHex16LEUpper(uint8_t * dst, const uint8_t * src);
+void encodeHex16LELower(uint8_t * dst, const uint8_t * src);
+
+}
+
 
 namespace impl
 {
@@ -122,56 +147,63 @@ namespace impl
     {
         static const constexpr size_t num_hex_digits = sizeof(TUInt) * 2;
 
-        static void hex(TUInt uint_, char * out, std::string_view table)
+        template <bool Upper>
+        static void hex(TUInt uint_, char * out)
         {
-            union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-            {
-                TUInt value;
-                UInt8 uint8[sizeof(TUInt)];
-            };
+            constexpr auto num_bytes = sizeof(TUInt);
+            auto * dst = reinterpret_cast<uint8_t *>(out);
 
-            value = uint_;
-
-            for (size_t i = 0; i < sizeof(TUInt); ++i)
+            if constexpr (num_bytes <= 4)
             {
-                if constexpr (std::endian::native == std::endian::little)
-                    memcpy(out + i * 2, &table[static_cast<size_t>(uint8[sizeof(TUInt) - 1 - i]) * 2], 2);
+                const auto & table = Upper ? hex_byte_to_char_uppercase_table : hex_byte_to_char_lowercase_table;
+                for (int i = static_cast<int>(num_bytes) - 1; i >= 0; --i)
+                {
+                    UInt8 byte = static_cast<UInt8>(uint_ >> (i * 8));
+                    memcpy(dst, &table[static_cast<size_t>(byte) * 2], 2);
+                    dst += 2;
+                }
+            }
+            else
+            {
+                if constexpr (Upper)
+                    DB::encodeHexIntUpper(dst, &uint_, num_bytes);
                 else
-                    memcpy(out + i * 2, &table[static_cast<size_t>(uint8[i]) * 2], 2);
+                    DB::encodeHexIntLower(dst, &uint_, num_bytes);
             }
         }
 
         static TUInt unhex(const char * data)
         {
-            TUInt res{};
-            if constexpr (sizeof(TUInt) == 1)
+            constexpr auto num_bytes = sizeof(TUInt);
+            if constexpr (num_bytes <= 4)
             {
-                res = unhexDigit(data[0]) * 0x10 + unhexDigit(data[1]);
-            }
-            else if constexpr (sizeof(TUInt) == 2)
-            {
-                res = static_cast<UInt16>(unhexDigit(data[0])) * 0x1000 + static_cast<UInt16>(unhexDigit(data[1])) * 0x100
-                    + static_cast<UInt16>(unhexDigit(data[2])) * 0x10 + static_cast<UInt16>(unhexDigit(data[3]));
-            }
-            else if constexpr ((sizeof(TUInt) <= 8) || ((sizeof(TUInt) % 8) != 0))
-            {
-                res = 0;
-                for (size_t i = 0; i < sizeof(TUInt) * 2; ++i, ++data)
+                TUInt res{};
+                for (size_t i = 0; i < num_bytes; ++i)
                 {
-                    res <<= 4;
-                    res += unhexDigit(*data);
+                    res = static_cast<TUInt>(
+                        (res << 8)
+                        | static_cast<TUInt>((unhexDigit(data[i * 2]) << 4) | unhexDigit(data[i * 2 + 1])));
                 }
+                return res;
             }
-            else
+            else if constexpr (num_bytes == 8)
             {
-                res = 0;
-                for (size_t i = 0; i < sizeof(TUInt) / 8; ++i, data += 16)
+                return static_cast<TUInt>(DB::decodeHexInt64(reinterpret_cast<const uint8_t *>(data)));
+            }
+            else if constexpr ((num_bytes % 8) == 0)
+            {
+                TUInt res{};
+                for (size_t i = 0; i < num_bytes / 8; ++i, data += 16)
                 {
                     res <<= 64;
                     res += HexConversionUInt<UInt64>::unhex(data);
                 }
+                return res;
             }
-            return res;
+            else
+            {
+                static_assert(false, "Unsupported sizeof(TUint) for unhex");
+            }
         }
     };
 
@@ -192,10 +224,15 @@ namespace impl
     {
         static const constexpr size_t num_hex_digits = 32;
 
-        static void hex(const CityHashUInt128 & uint_, char * out, std::string_view table)
+        template <bool Upper>
+        static void hex(const CityHashUInt128 & uint_, char * out)
         {
-            HexConversion<UInt64>::hex(uint_.high64, out, table);
-            HexConversion<UInt64>::hex(uint_.low64, out + 16, table);
+            auto * dst = reinterpret_cast<uint8_t *>(out);
+            const auto * input = reinterpret_cast<const uint8_t *>(&uint_);
+            if constexpr (Upper)
+                DB::encodeHex16LEUpper(dst, input);
+            else
+                DB::encodeHex16LELower(dst, input);
         }
 
         static CityHashUInt128 unhex(const char * data)
@@ -215,13 +252,13 @@ namespace impl
 template <typename T>
 void writeHexUIntUppercase(const T & value, char * out)
 {
-    impl::HexConversion<T>::hex(value, out, impl::hex_byte_to_char_uppercase_table);
+    impl::HexConversion<T>::template hex<true>(value, out);
 }
 
 template <typename T>
 void writeHexUIntLowercase(const T & value, char * out)
 {
-    impl::HexConversion<T>::hex(value, out, impl::hex_byte_to_char_lowercase_table);
+    impl::HexConversion<T>::template hex<false>(value, out);
 }
 
 template <typename T>
@@ -277,13 +314,17 @@ constexpr UInt8 unhex(char c)
 /// Converts two hexadecimal digits to UInt8.
 constexpr UInt8 unhex2(const char * data)
 {
-    return unhexUInt<UInt8>(data);
+    return static_cast<UInt8>((impl::unhexDigit(data[0]) << 4) | impl::unhexDigit(data[1]));
 }
 
 /// Converts four hexadecimal digits to UInt16.
 constexpr UInt16 unhex4(const char * data)
 {
-    return unhexUInt<UInt16>(data);
+    return static_cast<UInt16>(
+        (static_cast<UInt16>(impl::unhexDigit(data[0])) << 12)
+      | (static_cast<UInt16>(impl::unhexDigit(data[1])) << 8)
+      | (static_cast<UInt16>(impl::unhexDigit(data[2])) << 4)
+      | impl::unhexDigit(data[3]));
 }
 
 /// Produces a binary representation of a single byte.
@@ -295,9 +336,25 @@ inline void writeBinByte(UInt8 byte, void * out)
 /// Converts byte array to a hex string. Useful for debug logging.
 inline std::string hexString(const void * data, size_t size)
 {
-    const char * p = reinterpret_cast<const char *>(data);
     std::string s(size * 2, '\0');
-    for (size_t i = 0; i < size; ++i)
-        writeHexByteLowercase(p[i], s.data() + i * 2);
+    DB::encodeHexStringLower(reinterpret_cast<uint8_t *>(s.data()), reinterpret_cast<const uint8_t *>(data), size);
     return s;
+}
+
+/// Similar to the one above, but writes into the supplied output.
+template <bool Lower>
+inline void hexString(UInt8 * output, const void * data, size_t size)
+{
+    auto * dst = reinterpret_cast<uint8_t *>(output);
+    const auto * src = reinterpret_cast<const uint8_t *>(data);
+    if constexpr (Lower)
+        DB::encodeHexStringLower(dst, src, size);
+    else
+        DB::encodeHexStringUpper(dst, src, size);
+}
+
+/// Converts an even sized hex string into binary representation.
+inline void unHexString(UInt8 * output, const UInt8 * input, size_t raw_size)
+{
+    DB::decodeHexString(reinterpret_cast<uint8_t *>(output), reinterpret_cast<const uint8_t *>(input), raw_size);
 }
