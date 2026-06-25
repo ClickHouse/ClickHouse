@@ -67,7 +67,7 @@ private:
         Int64 partition_spec_id = 0;
         Int32 schema_id = 0;
         std::vector<String> partition_columns;
-        std::vector<DataTypePtr> partition_types;
+        DataTypes partition_types;
     };
 
     struct TargetManifest
