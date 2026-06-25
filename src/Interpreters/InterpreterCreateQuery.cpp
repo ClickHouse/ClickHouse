@@ -2315,7 +2315,7 @@ BlockIO InterpreterCreateQuery::doCreateTableAsSelect(ASTCreateQuery & create,
         DDLGuardPtr ddl_guard;
         [[maybe_unused]] bool done = InterpreterCreateQuery(query_ptr, create_context).doCreateTable(create, properties, ddl_guard, mode, true);
         ddl_guard.reset();
-        assert(done);
+        chassert(done);
         created = true;
 
         /// If table has dependencies - add them to the graph
