@@ -7,6 +7,9 @@ str sorted	1
 lc data	aaa	2100-06-10 10:00:00
 lc data	zzz	2100-06-09 10:00:00
 lc sorted	1
+sub data	100	2100-06-10 10:00:00
+sub data	900	2100-06-09 10:00:00
+sub sorted	1
 nonkey data	3	2000-06-10 10:00:00	200
 nonkey data	5	2000-06-09 10:00:00	100
 nonkey sorted	1

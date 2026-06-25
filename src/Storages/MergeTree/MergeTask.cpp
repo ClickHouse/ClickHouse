@@ -365,6 +365,11 @@ static String getColumnNameInStorage(const String & column_name, const NameSet &
 /// sorting key. The merge writer trusts the stream order, so the resulting part would have a
 /// primary index inconsistent with the data (a debug-only `CheckSortedTransform` catches it as
 /// a LOGICAL_ERROR; release builds write a corrupt part). Detect this so we can re-sort.
+///
+/// A `SET` target is always a physical storage column, while a sorting-key dependency can be a
+/// subcolumn (e.g. `ORDER BY t.a` requires `t.a`, whose storage column is `t`). Map each
+/// dependency to its storage column before comparing, the same way
+/// `extractMergingAndGatheringColumns` does via `getColumnNameInStorage`.
 static bool groupByTTLAssignsSortKeyColumn(const StorageMetadataPtr & metadata_snapshot)
 {
     if (!metadata_snapshot->hasSortingKey())
@@ -374,9 +379,13 @@ static bool groupByTTLAssignsSortKeyColumn(const StorageMetadataPtr & metadata_s
     if (group_by_ttls.empty())
         return false;
 
+    const auto storage_columns = metadata_snapshot->getColumns().getAllPhysical().getNameSet();
+    const auto virtual_columns
+        = metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNameSet();
+
     NameSet sort_key_dependencies;
     for (const auto & column : metadata_snapshot->getSortingKey().expression->getRequiredColumns())
-        sort_key_dependencies.insert(column);
+        sort_key_dependencies.insert(getColumnNameInStorage(column, storage_columns, virtual_columns));
 
     for (const auto & ttl : group_by_ttls)
         for (const auto & set_part : ttl.set_parts)
@@ -3206,13 +3215,12 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             /// Drop the stale materialized sort-key expression columns first; otherwise
             /// re-applying the expression would leave duplicate columns of the same name in the
             /// block. Only the computed (non-storage) sort-key columns are dropped: the storage
-            /// columns the expression reads from (e.g. `ts`, `k`) must stay so they can feed the
-            /// recomputation.
+            /// columns the expression reads from (e.g. `ts`, `k`, or a `Tuple` column `t` whose
+            /// subcolumn `t.a` is in the sorting key) must stay so they can feed the recomputation.
             const auto & current_header = *merge_parts_query_plan.getCurrentHeader();
             const auto storage_column_names = global_ctx->storage_columns.getNameSet();
-            const auto sort_key_expression_results = sorting_key_expression_dag.getNames();
             NameSet columns_to_recompute;
-            for (const auto & name : sort_key_expression_results)
+            for (const auto & name : sorting_key_expression_dag.getNames())
                 if (!storage_column_names.contains(name))
                     columns_to_recompute.insert(name);
 
@@ -3224,8 +3232,18 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
                     kept_outputs.push_back(output);
             drop_stale_dag.getOutputs() = std::move(kept_outputs);
 
+            /// When the sorting key depends on a subcolumn (e.g. `ORDER BY t.a`), the stale `t.a`
+            /// materialized before the merge is still in `current_header`. Hide the stale computed
+            /// sort-key columns from the subcolumn extractor so it re-extracts them from the
+            /// post-SET physical columns; otherwise it would treat the stale `t.a` as available,
+            /// skip re-extraction, and the re-sort would key on the pre-SET value.
+            Block header_for_extraction;
+            for (const auto & column : current_header)
+                if (!columns_to_recompute.contains(column.name))
+                    header_for_extraction.insert(column);
+
             auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(
-                current_header, sorting_key_expression_dag.getRequiredColumnsNames(), global_ctx->data->getContext());
+                header_for_extraction, sorting_key_expression_dag.getRequiredColumnsNames(), global_ctx->data->getContext());
 
             auto recalculate_sorting_key_step = std::make_unique<ExpressionStep>(
                 merge_parts_query_plan.getCurrentHeader(),
