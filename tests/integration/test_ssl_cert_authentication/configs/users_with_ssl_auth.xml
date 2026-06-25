@@ -32,6 +32,13 @@
                 <common_name>*.corp.example.com</common_name>
             </ssl_certificates>
         </wildcard_cn>
+        <wildcard_san_unprefixed>
+            <ssl_certificates>
+                <!-- A SAN wildcard with no "DNS:"/"URI:" prefix must not widen URI matching:
+                     it must not newly match a "URI:" certificate that the slash separator rejects. -->
+                <subject_alt_name>*</subject_alt_name>
+            </ssl_certificates>
+        </wildcard_san_unprefixed>
         <peter>
             <no_password/>
         </peter>

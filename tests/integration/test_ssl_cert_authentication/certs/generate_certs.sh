@@ -29,6 +29,10 @@ openssl req -newkey rsa:4096 -nodes -batch -keyout client9-key.pem -out client9-
 # DNS/CN wildcard does NOT match an empty label: '*.corp.example.com' must reject this (RFC 6125
 # requires '*' to match exactly one NON-empty label).
 openssl req -newkey rsa:4096 -nodes -batch -keyout client10-key.pem -out client10-req.pem -subj "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=.corp.example.com"
+# A URI SAN with no dot in its host ('URI:spiffe://foo/bar'), to test that a SAN wildcard pattern
+# configured without a 'DNS:'/'URI:' prefix does NOT widen URI matching: a bare 'SAN *' must NOT
+# match this URI certificate (the '/' separator rejects it, exactly as the original guard did).
+openssl req -newkey rsa:4096 -nodes -batch -keyout client11-key.pem -out client11-req.pem -subj "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=client11"
 # A certificate whose validity period extends beyond the year 2106, i.e. beyond the range of DateTime
 # (UInt32 epoch seconds). Used to check that session_log records such validity times without truncation.
 openssl req -newkey rsa:4096 -nodes -batch -keyout client_far_future-key.pem -out client_far_future-req.pem -subj "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=client_far_future"
@@ -44,6 +48,7 @@ openssl x509 -req -days 3650 -in client7-req.pem -CA ca-cert.pem -CAkey ca-key.p
 openssl x509 -req -days 3650 -in client8-req.pem -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial -extfile client8-ext.cnf -out client8-cert.pem
 openssl x509 -req -days 3650 -in client9-req.pem -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial -extfile client9-ext.cnf -out client9-cert.pem
 openssl x509 -req -days 3650 -in client10-req.pem -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial -extfile client10-ext.cnf -out client10-cert.pem
+openssl x509 -req -days 3650 -in client11-req.pem -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial -extfile client11-ext.cnf -out client11-cert.pem
 # ~100 years, so the notAfter time falls past the year 2106 (the upper bound of DateTime).
 openssl x509 -req -days 36525 -in client_far_future-req.pem -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial -out client_far_future-cert.pem
 

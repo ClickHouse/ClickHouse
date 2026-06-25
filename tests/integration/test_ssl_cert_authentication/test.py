@@ -532,6 +532,27 @@ def test_x509_uri_san_wildcard_dot_in_segment():
     )
 
 
+def test_x509_unprefixed_san_wildcard_does_not_widen_uri():
+    # A SAN wildcard configured without a recognized 'DNS:'/'URI:' prefix (here a bare 'SAN *')
+    # must NOT widen URI matching. The label separator '.' is used only for a CN or a 'DNS:' SAN;
+    # every other SAN keeps the '/' separator, whose "no '/' in the matched span" rule is identical
+    # to the original slash-count guard. So 'SAN *' must NOT match the URI certificate
+    # 'URI:spiffe://foo/bar' (client11), exactly as before this fix. Checked on both interfaces.
+    with pytest.raises(Exception) as err:
+        execute_query_native(
+            instance,
+            "SELECT currentUser()",
+            user="wildcard_san_unprefixed",
+            cert_name="client11",
+        )
+    assert "AUTHENTICATION_FAILED" in str(err.value)
+    with pytest.raises(Exception) as err:
+        execute_query_https(
+            "SELECT currentUser()", user="wildcard_san_unprefixed", cert_name="client11"
+        )
+    assert "403" in str(err.value)
+
+
 def test_session_log_certificate_success():
     # A successful certificate authentication must record the certificate details
     # in system.session_log, both for the native (TCP) and the HTTPS interface.
