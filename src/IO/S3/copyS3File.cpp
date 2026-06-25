@@ -124,11 +124,6 @@ namespace
             size_t part_size;
         };
 
-        struct UploadedPartResult
-        {
-            String tag;
-        };
-
         size_t num_parts;
         size_t normal_part_size;
         String multipart_upload_id;
@@ -427,13 +422,13 @@ namespace
 
                 auto request = makeUploadPartRequest(task.part_number, task.part_offset, task.part_size);
                 auto checksum = prepareUploadPartRequest(*request);
-                auto result = processUploadPartRequest(*request);
+                auto tag = processUploadPartRequest(*request);
 
                 watch.stop();
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, task.part_size);
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
-                part_tag = std::move(result.tag);
+                part_tag = std::move(tag);
                 if (usesFlexibleUploadChecksumHeader())
                     part_checksum = std::move(checksum);
                 auto finished_count = ++num_finished_parts;
@@ -453,7 +448,7 @@ namespace
 
         /// These functions can be called from multiple threads, so derived class needs to take care about synchronization.
         virtual std::unique_ptr<Aws::AmazonWebServiceRequest> makeUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) const = 0;
-        virtual UploadedPartResult processUploadPartRequest(Aws::AmazonWebServiceRequest & request) = 0;
+        virtual String processUploadPartRequest(Aws::AmazonWebServiceRequest & request) = 0;
     };
 
     /// Helper class to help implementing copyDataToS3File().
@@ -625,7 +620,7 @@ namespace
             return request;
         }
 
-        UploadedPartResult processUploadPartRequest(Aws::AmazonWebServiceRequest & request) override
+        String processUploadPartRequest(Aws::AmazonWebServiceRequest & request) override
         {
             auto & req = typeid_cast<S3::UploadPartRequest &>(request);
 
@@ -649,7 +644,7 @@ namespace
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
             }
 
-            return {outcome.GetResult().GetETag()};
+            return outcome.GetResult().GetETag();
         }
     };
 
@@ -852,7 +847,7 @@ namespace
             return request;
         }
 
-        UploadedPartResult processUploadPartRequest(Aws::AmazonWebServiceRequest & request) override
+        String processUploadPartRequest(Aws::AmazonWebServiceRequest & request) override
         {
             auto & req = typeid_cast<S3::UploadPartCopyRequest &>(request);
 
@@ -866,7 +861,7 @@ namespace
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
             }
 
-            return {outcome.GetResult().GetCopyPartResult().GetETag()};
+            return outcome.GetResult().GetCopyPartResult().GetETag();
         }
     };
 }
