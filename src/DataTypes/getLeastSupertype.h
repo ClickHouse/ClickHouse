@@ -12,6 +12,10 @@ enum class LeastSupertypeOnError : uint8_t
     String,
     Null,
     Variant,
+    /// When there is no common supertype, return Dynamic instead of throwing.
+    /// Use this policy when the result must be storable in a ColumnDynamic
+    /// (e.g. for typing Field values that will be inserted into Dynamic columns).
+    Dynamic,
 };
 
 /** Get data type that covers all possible values of passed data types.

@@ -615,10 +615,13 @@ ColumnObject silently drops null-valued keys during insertion, making it impossi
 between absent keys and keys with null values.
 )";
 
-    FunctionDocumentation::Syntax syntax = "mergedJSONPatch(json)";
+    FunctionDocumentation::Syntax syntax = "mergedJSONPatch(json[, sort_key])";
 
     FunctionDocumentation::Arguments arguments = {
-        {"json", "JSON column to aggregate.", {"JSON"}}
+        {"json", "JSON column to aggregate.", {"JSON"}},
+        {"sort_key", "Optional. Comparable column that determines which write wins for each path. "
+                     "The row with the largest sort_key value is retained. "
+                     "When omitted, a deterministic key is derived from the serialized JSON object.", {}}
     };
 
     FunctionDocumentation::ReturnedValue returned_value = {
