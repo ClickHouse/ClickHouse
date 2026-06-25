@@ -1176,8 +1176,16 @@ namespace ErrorCodes
     rolling upgrade and cleaned up by the current leader). New inserts use
     `replicated_deduplication_window_seconds`.
     )", 0) \
+    DECLARE(Milliseconds, deduplication_hashes_cache_update_wait_ms, 100, R"(
+    How long each insert iteration waits for the in-memory `deduplication_hashes` cache to refresh to a
+    newer version before re-checking it for already-inserted blocks. The cache mirrors the
+    `deduplication_hashes` directory in ClickHouse Keeper so inserts can detect duplicates without a
+    Keeper round-trip.
+    )", 0) \
     DECLARE(Milliseconds, async_block_ids_cache_update_wait_ms, 100, R"(
-    How long each insert iteration will wait for async_block_ids_cache update
+    Deprecated alias of `deduplication_hashes_cache_update_wait_ms`, kept for one release for backward
+    compatibility. It is honored only when `deduplication_hashes_cache_update_wait_ms` is left at its
+    default; this setting will be removed in a future release.
     )", 0) \
     DECLARE(UInt64, max_replicated_logs_to_keep, 1000, R"(
     How many records may be in the ClickHouse Keeper log if there is inactive
