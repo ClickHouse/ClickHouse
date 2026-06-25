@@ -8,6 +8,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/logger_useful.h>
+#include <Storages/MergeTree/TextIndexPositionData.h>
 #include <Formats/MarkInCompressedFile.h>
 
 #include <absl/container/btree_map.h>
@@ -78,7 +79,9 @@ struct MergeTreeIndexTextParams
     size_t dictionary_block_size = 0;
     size_t dictionary_block_frontcoding_compression = 1;
     size_t posting_list_block_size = 1024 * 1024;
+    size_t positions = 0;
     ASTPtr preprocessor;
+    ASTPtr postprocessor;
 };
 
 using PostingList = roaring::Roaring;
@@ -144,7 +147,14 @@ private:
 
 /// Save BulkContext to optimize consecutive insertions into the posting list.
 using TokenToPostingsBuilderMap = StringHashMap<PostingListBuilder>;
-using SortedTokensAndPostings = std::vector<std::pair<std::string_view, PostingListBuilder *>>;
+/// A token paired with its posting/position builder views.
+struct SortedToken
+{
+    std::string_view token;
+    PostingListBuilder * postings = nullptr;
+    PositionListBuilder * positions = nullptr; /// nullptr unless text index has `positions` enabled
+};
+using SortedTokens = std::vector<SortedToken>;
 struct TokenPostingsInfo;
 
 struct PostingsSerialization
@@ -166,6 +176,8 @@ struct PostingsSerialization
         /// If set, each compressed segment has a V2 Index Section with per-block metadata
         /// (last_row_id + relative_offset arrays) enabling binary-search in PostingListCursor.
         HasBlockIndex = 1ULL << 4,
+        /// If set, the token has positional data in the .pos file.
+        HasPositions = 1ULL << 5,
     };
 
     void serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
@@ -208,6 +220,11 @@ struct TokenPostingsInfo
     absl::InlinedVector<UInt64, 1> offsets;
     absl::InlinedVector<RowsRange, 1> ranges;
     PostingListPtr embedded_postings;
+
+    /// Position data offset in the .pos file
+    UInt64 position_offset = 0;
+    /// Number of Roaringish UInt64 entries in position data.
+    UInt32 position_cardinality = 0;
 
     /// Returns indexes of posting list blocks to read for the given range of rows.
     std::vector<size_t> getBlocksToRead(const RowsRange & range) const;
@@ -257,10 +274,13 @@ struct TextIndexHeader
     {
         Initial = 0,
         WithCodec = 1,
+        WithPositions = 2,
     };
 
     MergeTreeIndexVersion version = static_cast<MergeTreeIndexVersion>(Version::Initial);
     IPostingListCodec::Type codec_type = IPostingListCodec::Type::None;
+    /// Persisted for version >= WithPositions.
+    bool has_positions = false;
     DictionarySparseIndex sparse_index;
 };
 
@@ -280,7 +300,7 @@ struct TextIndexSerialization
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
-    static void serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, WriteBuffer & ostr);
+    static void serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, MergeTreeIndexVersion version, bool has_positions, WriteBuffer & ostr);
 
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);
     /// Reads only the version and posting list codec from the start of the header, without the
@@ -386,10 +406,11 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     MergeTreeIndexGranuleTextWritable(
         MergeTreeIndexTextParams params_,
         IPostingListCodec::Type posting_list_codec_type_,
-        SortedTokensAndPostings && tokens_and_postings_,
         TokenToPostingsBuilderMap && tokens_map_,
         std::list<PostingList> && posting_lists_,
-        std::unique_ptr<Arena> && arena_);
+        std::unique_ptr<Arena> && arena_,
+        std::unique_ptr<TokenToPositionListMap> && position_map_,
+        SortedTokens && sorted_tokens_);
 
     ~MergeTreeIndexGranuleTextWritable() override = default;
 
@@ -397,18 +418,19 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     void serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    bool empty() const override { return tokens_and_postings.empty(); }
+    bool empty() const override { return sorted_tokens.empty(); }
     size_t memoryUsageBytes() const override;
 
     /// If adding significantly large members here make sure to add them to memoryUsageBytes()
     MergeTreeIndexTextParams params;
     IPostingListCodec::Type posting_list_codec_type = IPostingListCodec::Type::None;
-    /// Pointers to tokens and posting lists in the granule.
-    SortedTokensAndPostings tokens_and_postings;
-    /// tokens_and_postings has references to data held in the fields below.
     TokenToPostingsBuilderMap tokens_map;
     std::list<PostingList> posting_lists;
     std::unique_ptr<Arena> arena;
+    /// Owns the PositionListBuilders referenced by sorted_tokens (phrase query support).
+    std::unique_ptr<TokenToPositionListMap> position_map;
+    /// Sorted view of tokens with their posting/position builders (non-owning; references the fields above).
+    SortedTokens sorted_tokens;
     LoggerPtr logger;
 };
 
@@ -424,6 +446,9 @@ struct MergeTreeIndexTextGranuleBuilder
 
     /// Extracts tokens from the document and adds them to the granule.
     void addDocument(std::string_view document);
+    // Adds a document to the granule. The document is inserted directly as a single token.
+    void addToken(std::string_view token, UInt32 token_position);
+
     void incrementCurrentRow();
     void setCurrentRow(size_t row) { current_row = row; }
 
@@ -444,10 +469,16 @@ struct MergeTreeIndexTextGranuleBuilder
     std::list<PostingList> posting_lists;
     /// Keys may be serialized into arena (see ArenaKeyHolder).
     std::unique_ptr<Arena> arena;
+    /// Position data for phrase query support.
+    /// Only allocated when params.positions is true.
+    std::unique_ptr<TokenToPositionListMap> position_map;
 };
 
 class MergeTreeIndexTextPreprocessor;
 using MergeTreeIndexTextPreprocessorPtr = std::shared_ptr<MergeTreeIndexTextPreprocessor>;
+
+class MergeTreeIndexTextPostprocessor;
+using MergeTreeIndexTextPostprocessorPtr = std::shared_ptr<MergeTreeIndexTextPostprocessor>;
 
 struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
 {
@@ -456,7 +487,8 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
         MergeTreeIndexTextParams params_,
         TokenizerPtr tokenizer_,
         const IPostingListCodec * posting_list_codec_,
-        MergeTreeIndexTextPreprocessorPtr preprocessor_);
+        MergeTreeIndexTextPreprocessorPtr preprocessor_,
+        MergeTreeIndexTextPostprocessorPtr postprocessor_);
 
     ~MergeTreeIndexAggregatorText() override = default;
 
@@ -466,18 +498,24 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
     void setCurrentRow(size_t row) { granule_builder.setCurrentRow(row); }
     UInt64 getNumProcessedTokens() const { return granule_builder.num_processed_tokens; }
 
+private:
+    /// Iterates over a ColumnArray(String) slice and calls addDocument<tokenize> on each element.
+    template <bool tokenize>
+    void addDocumentsFromArray(ColumnPtr column, size_t start_row, size_t rows_read);
+
     String index_column_name;
     MergeTreeIndexTextParams params;
     TokenizerPtr tokenizer;
-    const IPostingListCodec * posting_list_codec = nullptr;
     MergeTreeIndexTextGranuleBuilder granule_builder;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
+    MergeTreeIndexTextPostprocessorPtr postprocessor;
 };
 
 class MergeTreeIndexText final : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexText(
+        StorageMetadataPtr metadata_snapshot_,
         const IndexDescription & index_,
         MergeTreeIndexTextParams params_,
         std::unique_ptr<ITokenizer> tokenizer_,
@@ -505,6 +543,7 @@ public:
     std::unique_ptr<ITokenizer> tokenizer;
     std::unique_ptr<IPostingListCodec> posting_list_codec;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
+    MergeTreeIndexTextPostprocessorPtr postprocessor;
 };
 
 }
