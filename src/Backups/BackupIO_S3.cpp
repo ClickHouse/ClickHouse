@@ -125,6 +125,7 @@ private:
         String role_arn,
         String role_session_name,
         String external_id,
+        bool gcp_oauth_supplied_by_query,
         const S3Settings & settings,
         const ContextPtr & context)
     {
@@ -206,15 +207,16 @@ private:
         client_configuration.google_adc_refresh_token = settings.auth_settings[S3AuthSetting::google_adc_refresh_token];
 
         /// Under the restriction, a user backup must not use `http_client = gcp_oauth` inherited from the
-        /// server `<s3>` config to mint a token from the server's GCP metadata service. `gcp_oauth` is kept
-        /// only with a complete explicit Google ADC triple (the request's own credentials, as for a named
-        /// collection); otherwise the GCP OAuth fields are dropped so the backup authenticates with its
-        /// explicit S3 keys instead. The `role_arn` STS path is handled above.
+        /// server `<s3>` config to mint a token from the server's GCP metadata service. Only a `gcp_oauth`
+        /// inherited from the server config is dropped here (so the backup authenticates with its explicit S3
+        /// keys instead); a `gcp_oauth` the backup query/named collection supplied itself is left in place so
+        /// that, without a complete explicit Google ADC triple, it reaches the central `getCredentialsProvider`
+        /// rejection rather than being silently downgraded to anonymous. The `role_arn` STS path is handled above.
         const bool has_explicit_gcp_adc = !client_configuration.google_adc_client_id.empty()
             && !client_configuration.google_adc_client_secret.empty()
             && !client_configuration.google_adc_refresh_token.empty();
         if (boost::iequals(client_configuration.http_client, "gcp_oauth") && !has_explicit_gcp_adc
-            && context->shouldRestrictUserQueryS3Credentials())
+            && !gcp_oauth_supplied_by_query && context->shouldRestrictUserQueryS3Credentials())
         {
             client_configuration.http_client.clear();
             client_configuration.service_account.clear();
@@ -331,7 +333,11 @@ BackupReaderS3::BackupReaderS3(
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
 
-    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, s3_settings, context_);
+    /// `http_client = gcp_oauth` is server-managed unless the backup named collection supplied it itself; only a
+    /// server-inherited one is stripped in makeS3Client (a query-supplied one reaches the central rejection).
+    const bool gcp_oauth_supplied_by_query = named_collection_auth
+        && boost::iequals(String((*named_collection_auth)[S3AuthSetting::http_client]), "gcp_oauth");
+    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, gcp_oauth_supplied_by_query, s3_settings, context_);
 
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
         blob_storage_log = std::make_shared<BlobStorageLogWriter>(blob_storage_system_log);
@@ -440,7 +446,11 @@ BackupWriterS3::BackupWriterS3(
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
     s3_settings.request_settings[S3RequestSetting::storage_class_name] = storage_class_name;
 
-    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, s3_settings, context_);
+    /// `http_client = gcp_oauth` is server-managed unless the backup named collection supplied it itself; only a
+    /// server-inherited one is stripped in makeS3Client (a query-supplied one reaches the central rejection).
+    const bool gcp_oauth_supplied_by_query = named_collection_auth
+        && boost::iequals(String((*named_collection_auth)[S3AuthSetting::http_client]), "gcp_oauth");
+    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, gcp_oauth_supplied_by_query, s3_settings, context_);
 
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
     {

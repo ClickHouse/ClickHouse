@@ -6,5 +6,9 @@
         <nc_backup_url_only>
             <url>http://minio1:9001/root/backup_nc_url_only/</url>
         </nc_backup_url_only>
+        <nc_backup_gcp_oauth>
+            <url>http://minio1:9001/root/backup_nc_gcp_oauth/</url>
+            <http_client>gcp_oauth</http_client>
+        </nc_backup_gcp_oauth>
     </named_collections>
 </clickhouse>

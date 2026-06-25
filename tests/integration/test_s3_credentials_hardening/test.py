@@ -135,6 +135,26 @@ def test_backup_named_collection_does_not_inherit_server_role():
     node_with_server_role.query("DROP TABLE t_backup SYNC")
 
 
+def test_backup_named_collection_gcp_oauth_is_rejected():
+    # A backup named collection that itself asks for `http_client = gcp_oauth` without a complete explicit
+    # Google ADC triple must reach the central credential rejection -- it would otherwise mint a token from
+    # the server's GCP metadata service. It must not be silently downgraded to anonymous (the strip in
+    # makeS3Client only drops a `gcp_oauth` inherited from the server <s3> config, not one the collection
+    # supplied).
+    node.query("DROP TABLE IF EXISTS t_backup_gcp SYNC")
+    node.query("CREATE TABLE t_backup_gcp (x UInt8) ENGINE = MergeTree ORDER BY tuple()")
+    node.query("INSERT INTO t_backup_gcp SELECT 1")
+
+    error = node.query_and_get_error(
+        "BACKUP TABLE t_backup_gcp TO S3(nc_backup_gcp_oauth, 'b1')"
+    )
+    # The specific credential-restriction message proves it is the restriction rejecting it, not anonymous
+    # access failing or `gcp_oauth` being unsupported.
+    assert "gcp_oauth" in error and "not allowed to use" in error, error
+
+    node.query("DROP TABLE t_backup_gcp SYNC")
+
+
 def test_server_data_disk_unaffected():
     # The server's own S3-backed operations are not user queries and keep working regardless.
     node.query("DROP TABLE IF EXISTS t_local SYNC")
