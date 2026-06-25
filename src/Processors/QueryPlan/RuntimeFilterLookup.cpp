@@ -8,6 +8,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <algorithm>
+#include <cmath>
+#include <optional>
 #include <vector>
 
 namespace ProfileEvents
@@ -107,6 +109,10 @@ static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & sou
 
 static constexpr UInt64 BLOOM_FILTER_SEED = 42;
 static constexpr size_t HASH_BATCH_SIZE = 1024;
+/// Max size up to which the bloom filter grows before the false positive rate starts degrading.
+static constexpr UInt64 MAX_STATS_SIZED_BLOOM_FILTER_BYTES = 4 * 1024 * 1024;
+/// At 3 hash functions achieves a 12.5% false positive rate
+static constexpr Float64 RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE = 0.5;
 
 namespace
 {
@@ -166,6 +172,21 @@ void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ProcessBatch &&
         start_row += batch_size;
     }
 }
+
+/// Grow the bloom filter bytes to hold `distinct_keys` keys at the target fill rate using
+/// `hash_functions` hash functions: m = -hash_functions * distinct_keys / ln(1 - fill_rate) bits
+UInt64 growBloomFilterBytes(UInt64 distinct_keys, UInt64 hash_functions, UInt64 default_bloom_filter_bytes)
+{
+    const UInt64 ideal_bloom_filter_bytes = static_cast<UInt64>(std::ceil(-static_cast<double>(hash_functions) * static_cast<double>(distinct_keys) / std::log1p(-RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE) / 8.0));
+    return std::max(std::min(ideal_bloom_filter_bytes, MAX_STATS_SIZED_BLOOM_FILTER_BYTES), default_bloom_filter_bytes);
+}
+
+/// Check if a filter of `bloom_filter_bytes` fills past `max_ratio_of_set_bits` for `distinct_keys`.
+bool checkBloomFilterSaturation(UInt64 distinct_keys, UInt64 hash_functions, UInt64 bloom_filter_bytes, Float64 max_ratio_of_set_bits)
+{
+    const double predicted_fill_ratio = -std::expm1(-static_cast<double>(hash_functions) * static_cast<double>(distinct_keys) / (static_cast<double>(bloom_filter_bytes) * 8.0));
+    return predicted_fill_ratio >= max_ratio_of_set_bits;
+}
 }
 
 void ExactContainsRuntimeFilter::merge(const IRuntimeFilter * source)
@@ -219,13 +240,13 @@ ApproximateRuntimeFilter::ApproximateRuntimeFilter(
     UInt64 blocks_to_skip_before_reenabling_,
     UInt64 bytes_limit_,
     UInt64 exact_values_limit_,
-    UInt64 bloom_filter_bytes_,
     UInt64 bloom_filter_hash_functions_,
-    Float64 max_ratio_of_set_bits_in_bloom_filter_)
+    Float64 max_ratio_of_set_bits_in_bloom_filter_,
+    std::optional<UInt64> distinct_keys_hint_)
     : RuntimeFilterBase(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_, bytes_limit_, exact_values_limit_)
-    , bloom_filter_bytes(bloom_filter_bytes_)
     , bloom_filter_hash_functions(bloom_filter_hash_functions_)
     , max_ratio_of_set_bits_in_bloom_filter(max_ratio_of_set_bits_in_bloom_filter_)
+    , distinct_keys_hint(distinct_keys_hint_)
     , bloom_filter(nullptr)
 {}
 
@@ -233,6 +254,9 @@ void ApproximateRuntimeFilter::insert(ColumnPtr values)
 {
     if (inserts_are_finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert into runtime filter after it was marked as finished");
+
+    if (is_fully_disabled)
+        return;
 
     if (bloom_filter)
     {
@@ -252,6 +276,9 @@ void ApproximateRuntimeFilter::insert(ColumnPtr values)
 
 void ApproximateRuntimeFilter::finishInsertImpl()
 {
+    if (is_fully_disabled)
+        return;
+
     if (bloom_filter)
     {
         checkBloomFilterWorthiness();
@@ -271,7 +298,13 @@ void ApproximateRuntimeFilter::merge(const IRuntimeFilter * source)
     if (!source_typed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
 
-    if (source_typed->bloom_filter)
+    /// Disable the runtime filter if any partial filter is disabled because the decision is global.
+    if (is_fully_disabled || source_typed->is_fully_disabled)
+    {
+        setFullyDisabled();
+        releaseExactValues();
+    }
+    else if (source_typed->bloom_filter)
     {
         switchToBloomFilter();
         mergeBloomFilters(*bloom_filter, *source_typed->bloom_filter);
@@ -372,6 +405,19 @@ void ApproximateRuntimeFilter::switchToBloomFilter()
 {
     if (bloom_filter)
         return;
+
+    UInt64 bloom_filter_bytes = getBytesLimit();
+    if (distinct_keys_hint)
+    {
+        bloom_filter_bytes = growBloomFilterBytes(*distinct_keys_hint, bloom_filter_hash_functions, getBytesLimit());
+        if (checkBloomFilterSaturation(*distinct_keys_hint, bloom_filter_hash_functions, bloom_filter_bytes, max_ratio_of_set_bits_in_bloom_filter))
+        {
+            /// Skip building when the filter will get saturated and disabled by checkBloomFilterWorthiness anyway.
+            setFullyDisabled();
+            releaseExactValues();
+            return;
+        }
+    }
 
     bloom_filter = std::make_unique<BloomFilter>(bloom_filter_bytes, bloom_filter_hash_functions, BLOOM_FILTER_SEED);
     insertIntoBloomFilter(getValuesColumn());

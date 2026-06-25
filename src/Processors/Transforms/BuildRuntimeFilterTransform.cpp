@@ -23,13 +23,13 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     String filter_key_,
     size_t filters_to_merge_,
     UInt64 exact_values_limit_,
-    UInt64 bytes_limit_,
     UInt64 bloom_filter_bytes_,
     UInt64 bloom_filter_hash_functions_,
     Float64 pass_ratio_threshold_for_disabling_,
     UInt64 blocks_to_skip_before_reenabling_,
     Float64 max_ratio_of_set_bits_in_bloom_filter_,
     bool allow_to_use_not_exact_filter_,
+    std::optional<UInt64> distinct_keys_hint_,
     ContextPtr query_context_)
     : ISimpleTransform(header_, header_, true)
     , filter_column_name(filter_column_name_)
@@ -53,11 +53,11 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
                 filter_column_target_type,
                 pass_ratio_threshold_for_disabling_,
                 blocks_to_skip_before_reenabling_,
-                std::max(bytes_limit_, bloom_filter_bytes_),
-                exact_values_limit_,
                 bloom_filter_bytes_,
+                exact_values_limit_,
                 bloom_filter_hash_functions_,
-                max_ratio_of_set_bits_in_bloom_filter_);
+                max_ratio_of_set_bits_in_bloom_filter_,
+                distinct_keys_hint_);
         }
         else
         {
@@ -66,7 +66,7 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
                 filter_column_target_type,
                 pass_ratio_threshold_for_disabling_,
                 blocks_to_skip_before_reenabling_,
-                bytes_limit_,
+                bloom_filter_bytes_,
                 exact_values_limit_);
         }
     }
@@ -77,7 +77,7 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
             filter_column_target_type,
             pass_ratio_threshold_for_disabling_,
             blocks_to_skip_before_reenabling_,
-            bytes_limit_,
+            bloom_filter_bytes_,
             exact_values_limit_);
     }
 }

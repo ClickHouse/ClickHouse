@@ -1,5 +1,3 @@
-#include <algorithm>
-#include <cmath>
 #include <string_view>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
@@ -42,25 +40,6 @@ static constexpr UInt64 MAX_RUNTIME_BLOOM_FILTER_BYTES = 16 * 1024 * 1024;
 static constexpr UInt64 MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS = 10;
 static constexpr UInt64 DEFAULT_RUNTIME_BLOOM_FILTER_BYTES = 512 * 1024;
 static constexpr UInt64 DEFAULT_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS = 3;
-/// Max size up to which the bloom filter grows before the false positive rate starts degrading
-static constexpr UInt64 MAX_STATS_SIZED_BLOOM_FILTER_BYTES = 4 * 1024 * 1024;
-/// At 3 hash functions achieves a 12.5% false postive rate
-static constexpr Float64 RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE = 0.5;
-
-/// Grow the bloom filter bytes to hold `num_distinct_keys` keys at the target fill rate using
-/// `num_hash_functions` hash functions: m = -k * n / ln(1 - fill) bits
-static UInt64 growBloomFilterBytes(std::optional<UInt64> num_distinct_keys, UInt64 num_hash_functions, UInt64 default_bloom_filter_bytes)
-{
-    if (!num_distinct_keys)
-        return default_bloom_filter_bytes;
-
-    const double k = static_cast<double>(num_hash_functions);
-    const double n = static_cast<double>(*num_distinct_keys);
-    const double bits = -k * n / std::log1p(-RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE);
-    const UInt64 ideal_bloom_filter_bytes = static_cast<UInt64>(std::ceil(bits / 8.0));
-    /// Stats are only used to grow the filter, not to shrink it
-    return std::max(std::min(ideal_bloom_filter_bytes, MAX_STATS_SIZED_BLOOM_FILTER_BYTES), default_bloom_filter_bytes);
-}
 
 
 static ITransformingStep::Traits getTraits()
@@ -85,7 +64,7 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     String filter_name_,
     String filter_key_,
     UInt64 exact_values_limit_,
-    UInt64 default_bloom_filter_bytes_,
+    UInt64 bloom_filter_bytes_,
     UInt64 bloom_filter_hash_functions_,
     Float64 pass_ratio_threshold_for_disabling_,
     UInt64 blocks_to_skip_before_reenabling_,
@@ -101,21 +80,21 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     , filter_name(filter_name_)
     , filter_key(std::move(filter_key_))
     , exact_values_limit(exact_values_limit_)
-    , default_bloom_filter_bytes(default_bloom_filter_bytes_)
-    , distinct_keys_hint(distinct_keys_hint_)
+    , bloom_filter_bytes(bloom_filter_bytes_)
     , bloom_filter_hash_functions(bloom_filter_hash_functions_)
     , pass_ratio_threshold_for_disabling(pass_ratio_threshold_for_disabling_)
     , blocks_to_skip_before_reenabling(blocks_to_skip_before_reenabling_)
     , max_ratio_of_set_bits_in_bloom_filter(max_ratio_of_set_bits_in_bloom_filter_)
     , allow_to_use_not_exact_filter(allow_to_use_not_exact_filter_)
+    , distinct_keys_hint(distinct_keys_hint_)
 {
-    if (!default_bloom_filter_bytes)
-        default_bloom_filter_bytes = DEFAULT_RUNTIME_BLOOM_FILTER_BYTES;
-    if (default_bloom_filter_bytes > MAX_RUNTIME_BLOOM_FILTER_BYTES)
+    if (!bloom_filter_bytes)
+        bloom_filter_bytes = DEFAULT_RUNTIME_BLOOM_FILTER_BYTES;
+    if (bloom_filter_bytes > MAX_RUNTIME_BLOOM_FILTER_BYTES)
         throw Exception(
             ErrorCodes::PARAMETER_OUT_OF_BOUND,
             "Specified runtime bloom filter size {} is too big, maximum: {}",
-            default_bloom_filter_bytes, MAX_RUNTIME_BLOOM_FILTER_BYTES);
+            bloom_filter_bytes, MAX_RUNTIME_BLOOM_FILTER_BYTES);
 
     if (!bloom_filter_hash_functions)
         bloom_filter_hash_functions = DEFAULT_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS;
@@ -135,8 +114,6 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
     if (filter_key.empty())
         return;
 
-    const UInt64 bloom_filter_bytes = growBloomFilterBytes(distinct_keys_hint, bloom_filter_hash_functions, default_bloom_filter_bytes);
-
     auto streams = pipeline.getNumStreams();
     auto query_context = CurrentThread::get().tryGetQueryContext();
     pipeline.addSimpleTransform([&, query_context](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)-> ProcessorPtr
@@ -153,13 +130,13 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
             filter_key,
             /*filters_to_merge_=*/streams - 1,
             exact_values_limit,
-            default_bloom_filter_bytes,
             bloom_filter_bytes,
             bloom_filter_hash_functions,
             pass_ratio_threshold_for_disabling,
             blocks_to_skip_before_reenabling,
             max_ratio_of_set_bits_in_bloom_filter,
             allow_to_use_not_exact_filter,
+            distinct_keys_hint,
             query_context);
     });
 }
@@ -172,7 +149,7 @@ void BuildRuntimeFilterStep::updateOutputHeader()
 void BuildRuntimeFilterStep::serializeSettings(QueryPlanSerializationSettings & settings) const
 {
     settings[QueryPlanSerializationSetting::join_runtime_filter_exact_values_limit] = exact_values_limit;
-    settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_bytes] = default_bloom_filter_bytes;
+    settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_bytes] = bloom_filter_bytes;
     settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_hash_functions] = bloom_filter_hash_functions;
     settings[QueryPlanSerializationSetting::join_runtime_filter_pass_ratio_threshold_for_disabling] = pass_ratio_threshold_for_disabling;
     settings[QueryPlanSerializationSetting::join_runtime_filter_blocks_to_skip_before_reenabling] = blocks_to_skip_before_reenabling;

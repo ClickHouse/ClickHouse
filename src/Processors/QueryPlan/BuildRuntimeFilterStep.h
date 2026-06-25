@@ -19,7 +19,7 @@ public:
         String filter_name_,
         String filter_key_,
         UInt64 exact_values_limit_,
-        UInt64 default_bloom_filter_bytes_,
+        UInt64 bloom_filter_bytes_,
         UInt64 bloom_filter_hash_functions_,
         Float64 pass_ratio_threshold_for_disabling,
         UInt64 blocks_to_skip_before_reenabling,
@@ -61,8 +61,8 @@ private:
     String filter_key;
 
     UInt64 exact_values_limit;
-    UInt64 default_bloom_filter_bytes;
-    /// Expected number of distinct values in the filter, taken from previous hash table statistics.
+    UInt64 bloom_filter_bytes;
+    /// Measured distinct build-side keys from prior statistics, used to choose the bloom filter size.
     std::optional<UInt64> distinct_keys_hint;
     UInt64 bloom_filter_hash_functions;
     Float64 pass_ratio_threshold_for_disabling;
