@@ -228,6 +228,11 @@ Pipe buildDistributedFinalPipe(
     if (!non_intersecting_marks.empty())
         final_non_merge_pipes.emplace_back(read_non_intersecting(non_intersecting_marks));
 
+    /// An empty task (e.g. an ordinary MergeTree bucket the coordinator kept with no marks) has no pipes
+    /// on either side. Return an empty pipe -- asking an empty united pipe for its header below would crash.
+    if (final_merge_pipes.empty() && final_non_merge_pipes.empty())
+        return {};
+
     if (!final_merge_pipes.empty() && !final_non_merge_pipes.empty())
     {
         out_projection = {}; /// Projection happens via the converting transform below.
