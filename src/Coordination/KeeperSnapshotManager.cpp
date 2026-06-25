@@ -90,32 +90,6 @@ namespace
             /*require_frame_complete=*/true);
     }
 
-    void moveSnapshotBetweenDisks(
-        DiskPtr disk_from,
-        const std::string & path_from,
-        DiskPtr disk_to,
-        const std::string & path_to,
-        const KeeperContextPtr & keeper_context)
-    {
-        moveFileBetweenDisks(
-            std::move(disk_from),
-            path_from,
-            std::move(disk_to),
-            path_to,
-            /*before_file_remove_op=*/{},
-            getLogger("KeeperSnapshotManager"),
-            keeper_context);
-    }
-
-    uint64_t getSnapshotPathUpToLogIdx(const String & snapshot_path)
-    {
-        std::filesystem::path path(snapshot_path);
-        std::string filename = path.stem();
-        std::vector<std::string_view> name_parts;
-        splitInto<'_', '.'>(name_parts, filename);
-        return parse<uint64_t>(name_parts[1]);
-    }
-
 
     std::string getSnapshotFileName(uint64_t up_to_log_idx, bool compress_zstd)
     {
