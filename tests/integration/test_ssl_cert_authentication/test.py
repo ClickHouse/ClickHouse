@@ -578,6 +578,31 @@ def test_x509_unprefixed_san_wildcard_does_not_widen_uri():
     assert "403" in str(err.value)
 
 
+def test_x509_unprefixed_san_wildcard_does_not_span_dns_labels():
+    # A SAN wildcard configured without a recognized 'DNS:'/'URI:' prefix must match nothing.
+    # Certificate SAN subjects are always stored prefixed, so a bare 'SAN *.corp.example.com'
+    # would otherwise let '*' absorb the candidate's 'DNS:' prefix and span DNS labels: against
+    # 'DNS:evil.deep.corp.example.com' (client8) the matched span 'DNS:evil.deep' has no '/'.
+    # The unprefixed SAN pattern must be rejected, so neither a single-label (client7) nor a
+    # multi-label (client8) DNS certificate authenticates. Checked on both interfaces.
+    for cert in ("client7", "client8"):
+        with pytest.raises(Exception) as err:
+            execute_query_native(
+                instance,
+                "SELECT currentUser()",
+                user="wildcard_san_unprefixed_dns",
+                cert_name=cert,
+            )
+        assert "AUTHENTICATION_FAILED" in str(err.value)
+        with pytest.raises(Exception) as err:
+            execute_query_https(
+                "SELECT currentUser()",
+                user="wildcard_san_unprefixed_dns",
+                cert_name=cert,
+            )
+        assert "403" in str(err.value)
+
+
 def test_session_log_certificate_success():
     # A successful certificate authentication must record the certificate details
     # in system.session_log, both for the native (TCP) and the HTTPS interface.

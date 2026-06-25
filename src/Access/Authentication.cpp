@@ -274,13 +274,19 @@ namespace
                     return true;
 
                 // Wildcard support (single '*' only): a '*' must match exactly one component.
+                // Certificate SAN subjects are stored with a type prefix ("DNS:" or "URI:"), so a
+                // wildcard SAN pattern must carry one of those prefixes to align with a candidate.
+                // An unprefixed SAN wildcard (e.g. a bare "*" or "*.corp.example.com") would let '*'
+                // absorb the candidate's type prefix and span DNS labels, so it matches nothing.
                 // A DNS label (a CN or a "DNS:" SAN) is one non-empty label with no '.' and no '/'.
-                // Every other SAN (a "URI:" SAN, or one configured without a recognized "DNS:"/"URI:"
-                // prefix) keeps the original rule: only '/' is forbidden in the matched span, which is
-                // identical to the original slash-count guard, so its matching is unchanged and "URI:"
-                // matching is never widened.
+                // A "URI:" SAN keeps the original rule: only '/' is forbidden in the matched span,
+                // identical to the original slash-count guard, so "URI:" matching is never widened.
                 if (subject.contains('*'))
                 {
+                    if (type == X509Certificate::Subjects::Type::SAN
+                        && !subject.starts_with("DNS:") && !subject.starts_with("URI:"))
+                        continue;
+
                     const auto star = subject.find('*');
                     const auto prefix = std::string_view(subject).substr(0, star);
                     const auto suffix = std::string_view(subject).substr(star + 1);
@@ -299,9 +305,9 @@ namespace
                             prefix.size(), certificate_subject.size() - prefix.size() - suffix.size());
                         // A single '*' matches exactly one component. A DNS label (a CN or "DNS:" SAN) is one
                         // non-empty label: the span must be non-empty and contain no '.' and no '/' (a '/' is
-                        // not part of a hostname and the original slash-count guard forbade it). Other SANs
-                        // ("URI:" or unprefixed) keep the original rule: only '/' is forbidden, so empty path
-                        // segments stay allowed and "URI:" matching is not widened.
+                        // not part of a hostname and the original slash-count guard forbade it). A "URI:" SAN
+                        // keeps the original rule: only '/' is forbidden, so empty path segments stay allowed
+                        // and "URI:" matching is not widened.
                         const bool span_is_single_component = is_dns_label
                             ? (!matched.empty() && !matched.contains('.') && !matched.contains('/'))
                             : !matched.contains('/');
