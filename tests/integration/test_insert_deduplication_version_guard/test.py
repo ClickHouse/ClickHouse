@@ -60,6 +60,16 @@ def test_unsupported_version_rejected_on_reload(start_cluster):
     assert node.get_process_pid("clickhouse") is not None
     assert node.query("SELECT 1") == "1\n"
 
+    # The rejected reload must not have mutated the live config: the guard validates the incoming
+    # config before config().replace, so system.server_settings must still report the previous valid
+    # value rather than the unsupported one from the dropped reload.
+    assert (
+        node.query(
+            "SELECT value FROM system.server_settings WHERE name = 'insert_deduplication_version'"
+        ).strip()
+        == "new_unified_hash"
+    )
+
     # Restore the supported value and confirm a valid reload still succeeds.
     node.replace_in_config(CONFIG_PATH, "compatible_double_hashes", "new_unified_hash")
     node.query("SYSTEM RELOAD CONFIG")

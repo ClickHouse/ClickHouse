@@ -2412,15 +2412,22 @@ try
         main_config_zk_changed_event,
         [&](ConfigurationPtr loaded_config, bool initial_loading)
         {
+            /// Fail closed on a legacy insert_deduplication_version arriving via a runtime reload.
+            /// Validate the incoming config BEFORE config().replace below: validating after would mutate
+            /// the live config even for a rejected reload (ConfigReloader has no rollback hook), leaving
+            /// system.server_settings reporting an unsupported value. Reject first, then replace.
+            {
+                ServerSettings incoming_server_settings;
+                incoming_server_settings.loadSettingsFromConfig(*loaded_config);
+                validate_insert_deduplication_version(incoming_server_settings);
+            }
+
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
             Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
 
             ServerSettings new_server_settings;
             new_server_settings.loadSettingsFromConfig(config());
-            /// Fail closed on a legacy insert_deduplication_version arriving via a runtime reload too.
-            /// Throwing here makes ConfigReloader reject the reload and keep the previous valid config.
-            validate_insert_deduplication_version(new_server_settings);
 
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
 
