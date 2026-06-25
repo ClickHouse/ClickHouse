@@ -9,6 +9,7 @@
 #include <IO/ParallelReadBuffer.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteHelpers.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
