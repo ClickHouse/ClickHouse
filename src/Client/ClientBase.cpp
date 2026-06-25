@@ -3586,7 +3586,7 @@ Block ClientBase::fetchDocumentation(const String & query, const String & word)
         {} /// process_progress_callback
     );
 
-    std::vector<Block> blocks;
+    Blocks blocks;
     while (true)
     {
         Packet packet = connection->receivePacket();

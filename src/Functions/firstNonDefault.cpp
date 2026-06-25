@@ -134,7 +134,7 @@ public:
 
 REGISTER_FUNCTION(FirstNonDefault)
 {
-    FunctionDocumentation doc;
+    FunctionDocumentation doc{};
     doc.description = "Returns the first non-default value from a set of arguments";
     doc.syntax = "firstNonDefault(arg1[, arg2[ ...]])";
     doc.arguments = {
