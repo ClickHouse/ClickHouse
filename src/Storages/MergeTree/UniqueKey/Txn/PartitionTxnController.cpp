@@ -77,8 +77,10 @@ void PartitionTxnController::rollbackInstalls(const std::vector<PartName> & comm
     /// pre-DELETE state. `assigned_csn` is strictly above every committed
     /// version on each target (csn-seed floor + per-commit bump + install
     /// monotonicity assert), so this can only unlink THIS commit's own writes.
-    /// A `removeBitmap` that itself throws leaves the orphan on disk and
-    /// latches the partition fail-closed; recovery reconciles on reload.
+    /// A `removeBitmap` that itself throws leaves the orphan on that target's
+    /// storage; record it so the caller detaches the part as broken (csn-seed
+    /// would otherwise surface the orphan as committed on the next reload). We
+    /// keep undoing the remaining installs.
     for (auto it = committed_puts.rbegin(); it != committed_puts.rend(); ++it)
     {
         try
@@ -87,11 +89,11 @@ void PartitionTxnController::rollbackInstalls(const std::vector<PartName> & comm
         }
         catch (...)
         {
-            partition_state_torn.store(true, std::memory_order_release);
+            orphaned_targets.push_back(*it);
             tryLogCurrentException(
                 getLogger("PartitionTxnController"),
                 "rollback removeBitmap failed for target=" + *it
-                    + "; partition latched fail-closed until reload");
+                    + "; recorded as broken for detach by the caller");
         }
     }
 }
@@ -134,11 +136,9 @@ void PartitionTxnController::publishUnderLock(
 
 CommitResult PartitionTxnController::commit(CommitRequest req)
 {
-    if (partition_state_torn.load(std::memory_order_acquire))
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "UNIQUE KEY partition is fail-closed: a prior DELETE rollback left an orphaned "
-            "delete bitmap that could not be removed. Reload the table to run recovery "
-            "before issuing further DELETEs.");
+    /// Drop any record from a prior commit (the caller drains it via
+    /// takeOrphanedTargets after a throw; clear defensively here too).
+    orphaned_targets.clear();
 
     /// Single-attempt commit: the Local coordinator is pessimistic
     /// (`commit_lock`) and always assigns a csn. An optimistic Shared
@@ -165,14 +165,13 @@ CommitResult PartitionTxnController::commit(CommitRequest req)
     return result;
 }
 
+std::vector<PartName> PartitionTxnController::takeOrphanedTargets()
+{
+    return std::exchange(orphaned_targets, {});
+}
+
 QuerySnapshotResult PartitionTxnController::takeQuerySnapshot()
 {
-    /// Fast-fail; the authoritative torn check is the post-capture re-check below.
-    if (partition_state_torn.load(std::memory_order_acquire))
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "UNIQUE KEY partition is fail-closed: a prior DELETE rollback left an orphaned "
-            "delete bitmap. Reload the table to run recovery.");
-
     /// Materialize the snapshot csn and the pin in one serialization region
     /// (the coordinator's publish lock), so GC can't unlink a bitmap this
     /// reader needs between the csn read and the pin install.
@@ -184,14 +183,6 @@ QuerySnapshotResult PartitionTxnController::takeQuerySnapshot()
         pin = pin_registry->acquire(current_csn);
     });
     chassert(pin, "withinSnapshotRegion did not install a pin");
-
-    /// Authoritative torn re-check, after the capture: a commit latches `partition_state_torn`
-    /// under the same lock the snapshot region samples csn under, so any capture that could
-    /// observe the orphan necessarily took the lock after the latch and sees it here.
-    if (partition_state_torn.load(std::memory_order_acquire))
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "UNIQUE KEY partition is fail-closed: a prior DELETE rollback left an orphaned "
-            "delete bitmap. Reload the table to run recovery.");
 
     /// Bind the bitmap lookup into the freshly-built, sole-owned view. `store`
     /// is owned by `*this`, which outlives every snapshot it issues.

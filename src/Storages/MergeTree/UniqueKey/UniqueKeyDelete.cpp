@@ -15,7 +15,9 @@
 #include <Storages/MergeTree/UniqueKey/Txn/UniqueKeyManifest.h>
 #include <Storages/StorageMergeTree.h>
 
+#include <Common/Exception.h>
 #include <Common/Stopwatch.h>
+#include <Common/TransactionID.h>
 
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
@@ -189,7 +191,40 @@ size_t commitDeleteForPartition(
         }
     };
 
-    auto result = txn_controller.commit(std::move(req));
+    UniqueKeyTxn::CommitResult result;
+    try
+    {
+        result = txn_controller.commit(std::move(req));
+    }
+    catch (...)
+    {
+        /// A rollback double-fault (commit's undo couldn't remove a bitmap it
+        /// installed) leaves the named targets carrying an orphaned
+        /// delete_bitmap_<csn>.rbm. Quarantine each via `removePartsFromWorkingSet`
+        /// (-> Outdated + deferred refcount-gated removal — the DETACH/DROP PART
+        /// path, which never renames a live part's files): once Outdated the part
+        /// leaves the active set, so csn-seed can't surface the orphan. The retire
+        /// is the safety boundary (not swallowed); the clone-to-detached only
+        /// preserves rows for recovery (best-effort). Then rethrow.
+        for (const auto & broken_name : txn_controller.takeOrphanedTargets())
+            for (const auto & t : targets)
+                if (t.part->name == broken_name)
+                {
+                    storage.removePartsFromWorkingSet(NO_TRANSACTION_RAW, {t.part}, /*clear_without_timeout=*/true);
+                    try
+                    {
+                        t.part->makeCloneInDetached(
+                            "broken-uk-bitmap", t.part->getMetadataSnapshot(), /*disk_transaction=*/{});
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log,
+                            "broken UNIQUE KEY part " + broken_name
+                                + " retired from working set but clone-to-detached failed");
+                    }
+                }
+        throw;
+    }
     chassert(result.csn != UniqueKeyTxn::INVALID_CSN,
         "UNIQUE KEY DELETE: PartitionTxnController::commit returned INVALID_CSN");
 

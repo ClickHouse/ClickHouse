@@ -4,7 +4,6 @@
 #include <Storages/MergeTree/UniqueKey/Txn/ICommitCoordinator.h>
 #include <Storages/MergeTree/UniqueKey/Txn/SnapshotPinning.h>
 
-#include <atomic>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -82,12 +81,21 @@ using QuerySnapshotResult = QuerySnapshot;
 ///     Readers do NOT take the writer mutex.
 ///   - `runGcRound` runs on the background scheduler.
 ///
-/// Fail-closed poison: if a `commit` rollback cannot remove an already-installed
-/// bitmap (a double failure — publish threw, then `removeBitmap` threw), the
-/// orphaned `delete_bitmap_<csn>.rbm` is left on disk and csn-seed could later
-/// surface it as committed. `partition_state_torn` latches; subsequent `commit`
-/// and `takeQuerySnapshot` on this in-memory controller fail-closed until the
-/// table is reloaded, where recovery reconciles (or fail-closes on) the sidecar.
+/// Broken-part quarantine: if a `commit` rollback cannot remove an
+/// already-installed bitmap (a double failure — publish threw, then
+/// `removeBitmap` threw), the orphaned `delete_bitmap_<csn>.rbm` is stranded on
+/// that active target part, and csn-seed would surface it as committed on the
+/// next reload. Rather than latch an in-memory poison bit (which neither
+/// survives reload nor lets recovery's tmp-scan reach an active-part orphan),
+/// `commit` records the affected targets and `takeOrphanedTargets` hands them to
+/// the caller (which owns the `MergeTreeData`) to quarantine the safe runtime way
+/// MergeTree uses for DETACH/DROP PART — `removePartsFromWorkingSet` (-> Outdated,
+/// deferred refcount-gated physical removal; never renames a live part's files)
+/// plus a clone into `detached/` for recovery. Once Outdated the part leaves the
+/// active set, so the orphan can no longer be surfaced. (Durability tail: a crash
+/// in the narrow window after the part goes Outdated but before its deferred
+/// physical removal can reload it active again; fully closing that needs load-time
+/// reconciliation of active-part sidecars against the committed floor — TODO.)
 ///
 /// Lock nesting: no method holds a stock-MergeTree lock
 /// (`MergeTreeData::data_parts_mutex`) while holding a strategy-internal
@@ -143,6 +151,15 @@ public:
     /// current cluster floor without taking the GC round lock.
     CSN clusterFloor() const;
 
+    /// After `commit` throws on a rollback double-fault (its undo could not
+    /// remove a bitmap it installed), returns + clears the affected target part
+    /// names. The caller — which owns the `MergeTreeData` — must detach them as
+    /// broken so the orphaned `delete_bitmap_<csn>.rbm` leaves the active set
+    /// (csn-seed would otherwise surface it as committed on the next reload).
+    /// Empty after a clean commit or a cleanly-rolled-back failure. Call under
+    /// the same writer guard (`lockForWrite`) the commit was issued under.
+    std::vector<PartName> takeOrphanedTargets();
+
 private:
     /// One touched part's cumulative payload (`prev ∪ new_kills`) ready to
     /// install at the commit's assigned csn. Read-only once built.
@@ -164,17 +181,20 @@ private:
     void publishUnderLock(CSN assigned_csn, std::vector<CumulativeDelete> & prepared, const CommitRequest & req);
 
     /// Reverse-order rollback of `committed_puts` at `assigned_csn`. A
-    /// `removeBitmap` that itself throws latches the partition fail-closed
-    /// (the orphan survives on disk; recovery reconciles on reload).
+    /// `removeBitmap` that itself throws leaves the orphan on that target's
+    /// storage and records the target in `orphaned_targets` for the caller to
+    /// detach as broken (see the class note); the remaining installs still undo.
     void rollbackInstalls(const std::vector<PartName> & committed_puts, CSN assigned_csn);
 
     std::unique_ptr<ICommitCoordinator> coordinator;
     std::unique_ptr<IBitmapStore>       bitmap_store;
     std::unique_ptr<IPinRegistry>       pin_registry;
 
-    /// Latched when a `commit` rollback fails to fully undo its installs (see
-    /// the threading-contract note above). Gates `commit` / `takeQuerySnapshot`.
-    std::atomic<bool> partition_state_torn{false};
+    /// Targets whose orphaned install a `commit` rollback could not remove
+    /// (double-fault); drained by `takeOrphanedTargets`. Guarded by the caller's
+    /// writer guard (the same serialization as `commit`), not a dedicated mutex —
+    /// `takeQuerySnapshot` never touches it.
+    std::vector<PartName> orphaned_targets;
 };
 
 using PartitionTxnControllerPtr = std::unique_ptr<PartitionTxnController>;

@@ -166,11 +166,12 @@ TEST(PartitionTxnControllerCommitCumulative, MultipleTouchedPartsCumulateIndepen
     }
 }
 
-/// A publish-throw whose rollback also throws (removeBitmap fails) latches the
-/// partition fail-closed: the orphaned install survives on disk and csn-seed
-/// could later surface it as committed, so subsequent commit / takeQuerySnapshot
-/// must reject until the table reloads and recovery reconciles the sidecar.
-TEST(PartitionTxnControllerCommitCumulative, RollbackFailureLatchesPartitionFailClosed)
+/// A publish-throw whose rollback also throws (removeBitmap fails) records the
+/// orphan-bearing target so the caller can detach it as broken. The partition is
+/// NOT fail-closed: subsequent commit / takeQuerySnapshot still serve (the broken
+/// part is quarantined out of the active set by the caller, not by poisoning the
+/// in-memory controller).
+TEST(PartitionTxnControllerCommitCumulative, RollbackFailureReportsBrokenTargetForDetach)
 {
     auto controller = std::make_unique<PartitionTxnController>(
         std::make_unique<FakeCoordinator>(),
@@ -182,14 +183,22 @@ TEST(PartitionTxnControllerCommitCumulative, RollbackFailureLatchesPartitionFail
     req.staged.publish = [](CSN) { throw DB::Exception(DB::ErrorCodes::CANNOT_OPEN_FILE, "injected publish failure"); };
     EXPECT_THROW(controller->commit(std::move(req)), DB::Exception);
 
-    /// Latched: further commit and snapshot fail closed.
-    EXPECT_THROW(controller->commit(oneTouchedCommit("partB", makeBitmap({4}))), DB::Exception);
-    EXPECT_THROW(controller->takeQuerySnapshot(), DB::Exception);
+    /// The orphan-bearing target is reported for detach.
+    auto orphaned = controller->takeOrphanedTargets();
+    ASSERT_EQ(orphaned.size(), 1u);
+    EXPECT_EQ(orphaned[0], "partA");
+    /// Draining is one-shot.
+    EXPECT_TRUE(controller->takeOrphanedTargets().empty());
+
+    /// Not fail-closed: further commit and snapshot still serve.
+    EXPECT_NO_THROW(controller->takeQuerySnapshot());
+    auto ok = controller->commit(oneTouchedCommit("partB", makeBitmap({4})));
+    EXPECT_GT(ok.csn, 0u);
 }
 
-/// A publish-throw whose rollback SUCCEEDS (removeBitmap undoes the install) does
-/// NOT latch — no orphan survives, so the partition stays usable.
-TEST(PartitionTxnControllerCommitCumulative, SuccessfulRollbackDoesNotLatch)
+/// A publish-throw whose rollback SUCCEEDS (removeBitmap undoes the install)
+/// reports no broken target — no orphan survives, so the partition stays usable.
+TEST(PartitionTxnControllerCommitCumulative, SuccessfulRollbackReportsNoBrokenTarget)
 {
     RecordingBitmapStore * store = nullptr;
     auto controller = makeMonotoneFixture(store);
@@ -198,7 +207,8 @@ TEST(PartitionTxnControllerCommitCumulative, SuccessfulRollbackDoesNotLatch)
     req.staged.publish = [](CSN) { throw DB::Exception(DB::ErrorCodes::CANNOT_OPEN_FILE, "injected publish failure"); };
     EXPECT_THROW(controller->commit(std::move(req)), DB::Exception);
 
-    /// Rollback erased the install → not latched; partition still serves.
+    /// Rollback erased the install → nothing to detach; partition still serves.
+    EXPECT_TRUE(controller->takeOrphanedTargets().empty());
     EXPECT_NO_THROW(controller->takeQuerySnapshot());
     auto ok = controller->commit(oneTouchedCommit("partB", makeBitmap({4})));
     EXPECT_GT(ok.csn, 0u);
@@ -222,6 +232,7 @@ TEST(PartitionTxnControllerCommitCumulative, InstallThrowAfterDurableWriteIsRoll
     auto [bm, found_csn] = store->readBitmap("partA", 1);
     EXPECT_EQ(found_csn, 0u);
     EXPECT_TRUE(bm->empty());
-    /// removeBitmap succeeded → not latched; partition still serves.
+    /// removeBitmap succeeded → nothing to detach; partition still serves.
+    EXPECT_TRUE(controller->takeOrphanedTargets().empty());
     EXPECT_NO_THROW(controller->takeQuerySnapshot());
 }

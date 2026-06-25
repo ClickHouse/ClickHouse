@@ -179,7 +179,8 @@ public:
 
 /// `removeBitmap` always throws (a non-LOGICAL_ERROR code so the debug build
 /// doesn't abort) — drives the commit-rollback double failure (publish throws,
-/// then rollback cannot undo the install) that latches the partition fail-closed.
+/// then rollback cannot undo the install) that records the target as broken for
+/// the caller to detach.
 class ThrowOnRemoveBitmapStore : public RecordingBitmapStore
 {
 public:
