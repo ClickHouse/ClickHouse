@@ -260,14 +260,17 @@ jobs:
             VERSION_SUFFIX=$([ "$variant" = "ubuntu" ] && echo "" || echo "-$variant")
             LABEL_VERSION="${CLICKHOUSE_VERSION_STRING}${VERSION_SUFFIX}"
             # The exact version tag is always (re)built. The floating
-            # minor/major/latest tags track the current release, so they are
-            # skipped on a recovery run (only-repo/only-docker) to avoid moving
-            # them back to an older image.
+            # minor/major/latest tags track the current release. A docker-only
+            # recovery rebuilds docker for an already-released, possibly older
+            # tag, so it must not move the floating tags back to an older image;
+            # skip them in that case. A repo-only recovery instead repairs the
+            # current release (its docker images were never built), so it still
+            # publishes the floating tags.
             TAGS=(
               "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_STRING}${VERSION_SUFFIX}"
             )
 
-            if [ "${{ inputs.only-repo }}" != "true" ] && [ "${{ inputs.only-docker }}" != "true" ]; then
+            if [ "${{ inputs.only-docker }}" != "true" ]; then
               TAGS+=(
                 "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_MINOR}${VERSION_SUFFIX}"
                 "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_MAJOR}${VERSION_SUFFIX}"
@@ -338,14 +341,17 @@ jobs:
             VERSION_SUFFIX=$([ "$variant" = "ubuntu" ] && echo "" || echo "-$variant")
             LABEL_VERSION="${CLICKHOUSE_VERSION_STRING}${VERSION_SUFFIX}"
             # The exact version tag is always (re)built. The floating
-            # minor/major/latest tags track the current release, so they are
-            # skipped on a recovery run (only-repo/only-docker) to avoid moving
-            # them back to an older image.
+            # minor/major/latest tags track the current release. A docker-only
+            # recovery rebuilds docker for an already-released, possibly older
+            # tag, so it must not move the floating tags back to an older image;
+            # skip them in that case. A repo-only recovery instead repairs the
+            # current release (its docker images were never built), so it still
+            # publishes the floating tags.
             TAGS=(
               "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_STRING}${VERSION_SUFFIX}"
             )
 
-            if [ "${{ inputs.only-repo }}" != "true" ] && [ "${{ inputs.only-docker }}" != "true" ]; then
+            if [ "${{ inputs.only-docker }}" != "true" ]; then
               TAGS+=(
                 "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_MINOR}${VERSION_SUFFIX}"
                 "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_MAJOR}${VERSION_SUFFIX}"
