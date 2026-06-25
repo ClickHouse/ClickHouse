@@ -127,7 +127,7 @@ void writePartitionRecord(
     avro::GenericRecord & partition_record,
     const std::vector<String> & partition_columns,
     const std::vector<Field> & partition_values,
-    const std::vector<DataTypePtr> & partition_types)
+    const DataTypes & partition_types)
 {
     for (size_t i = 0; i < partition_columns.size(); ++i)
     {
@@ -735,7 +735,7 @@ void generateExistingManifestFile(
     Poco::JSON::Object::Ptr partition_spec,
     Int64 partition_spec_id,
     const std::vector<String> & partition_columns,
-    const std::vector<DataTypePtr> & partition_types,
+    const DataTypes & partition_types,
     const std::vector<Iceberg::ProcessedManifestFileEntryPtr> & entries,
     WriteBuffer & buf)
 {

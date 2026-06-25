@@ -114,7 +114,7 @@ void validateDropPartitionAST(const ASTPartition & ast, const PartitionCommand &
 /// or `toYearNumSinceEpoch(toDate('2025-01-01'))` evaluate to their
 /// partition-key value). Each resulting `Field` is then coerced to the
 /// corresponding partition-result type via `convertFieldToTypeOrThrow`.
-Row parsePartitionTuple(const IAST & value_ast, const std::vector<DataTypePtr> & partition_types, ContextPtr context)
+Row parsePartitionTuple(const IAST & value_ast, const DataTypes & partition_types, ContextPtr context)
 {
     const auto partitions_fields_count = partition_types.size();
     auto wrong_partition_fields_count = [&](size_t got)
@@ -165,7 +165,7 @@ Row parsePartitionTuple(const IAST & value_ast, const std::vector<DataTypePtr> &
     return out;
 }
 
-std::vector<DataTypePtr> resolvePartitionTypes(
+DataTypes resolvePartitionTypes(
     const Poco::JSON::Object & partition_spec,
     const Poco::JSON::Object & current_schema,
     const IcebergSchemaProcessor & schema_processor,
