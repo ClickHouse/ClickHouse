@@ -22,6 +22,16 @@
                 <subject_alt_name>URI:spiffe://bar.com/foo/*/far</subject_alt_name>
             </ssl_certificates>
         </stewie>
+        <wildcard_dns>
+            <ssl_certificates>
+                <subject_alt_name>DNS:*.corp.example.com</subject_alt_name>
+            </ssl_certificates>
+        </wildcard_dns>
+        <wildcard_cn>
+            <ssl_certificates>
+                <common_name>*.corp.example.com</common_name>
+            </ssl_certificates>
+        </wildcard_cn>
         <peter>
             <no_password/>
         </peter>

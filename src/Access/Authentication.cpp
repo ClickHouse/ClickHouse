@@ -273,21 +273,28 @@ namespace
                 if (ssl_certificate_credentials->getSSLCertificateSubjects().at(type).contains(subject))
                     return true;
 
-                // Wildcard support (1 only)
+                // Wildcard support (single '*' only). A '*' must match exactly one
+                // component: a DNS label for CN and "DNS:" SANs (separator '.'), or a
+                // path segment for "URI:" SANs (separator '/').
                 if (subject.contains('*'))
                 {
-                    auto prefix = std::string_view(subject).substr(0, subject.find('*'));
-                    auto suffix = std::string_view(subject).substr(subject.find('*') + 1);
-                    auto slashes = std::count(subject.begin(), subject.end(), '/');
+                    const auto star = subject.find('*');
+                    const auto prefix = std::string_view(subject).substr(0, star);
+                    const auto suffix = std::string_view(subject).substr(star + 1);
+                    const bool is_uri = (type == X509Certificate::Subjects::Type::SAN) && subject.starts_with("URI:");
+                    const char separator = is_uri ? '/' : '.';
 
                     for (const auto & certificate_subject : ssl_certificate_credentials->getSSLCertificateSubjects().at(type))
                     {
-                        bool matches_wildcard = certificate_subject.starts_with(prefix) && certificate_subject.ends_with(suffix);
+                        // Checked before the substr below so its length cannot underflow when prefix and suffix overlap.
+                        if (certificate_subject.size() < prefix.size() + suffix.size())
+                            continue;
+                        if (!certificate_subject.starts_with(prefix) || !certificate_subject.ends_with(suffix))
+                            continue;
 
-                        // '*' must not represent a '/' in URI, so check if the number of '/' are equal
-                        bool matches_slashes = slashes == count(certificate_subject.begin(), certificate_subject.end(), '/');
-
-                        if (matches_wildcard && matches_slashes)
+                        const auto matched = std::string_view(certificate_subject).substr(
+                            prefix.size(), certificate_subject.size() - prefix.size() - suffix.size());
+                        if (matched.find(separator) == std::string_view::npos)
                             return true;
                     }
                 }

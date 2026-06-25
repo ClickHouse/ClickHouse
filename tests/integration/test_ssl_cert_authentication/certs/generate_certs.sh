@@ -16,6 +16,15 @@ openssl req -newkey rsa:4096 -nodes -batch -keyout client3-key.pem -out client3-
 openssl req -newkey rsa:4096 -nodes -batch -keyout client4-key.pem -out client4-req.pem -subj "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=client4"
 openssl req -newkey rsa:4096 -nodes -batch -keyout client5-key.pem -out client5-req.pem -subj "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=client5"
 openssl req -newkey rsa:4096 -nodes -batch -keyout client6-key.pem -out client6-req.pem -subj "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=client6"
+# A single-label name under '*.corp.example.com', set as both the CN and a DNS SAN, to test
+# that a DNS/CN wildcard matches exactly one label (positive case).
+openssl req -newkey rsa:4096 -nodes -batch -keyout client7-key.pem -out client7-req.pem -subj "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=single.corp.example.com"
+# A multi-label name under '*.corp.example.com', set as both the CN and a DNS SAN, to test
+# that a DNS/CN wildcard does NOT match more than one label (the authentication-bypass case).
+openssl req -newkey rsa:4096 -nodes -batch -keyout client8-key.pem -out client8-req.pem -subj "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=evil.deep.corp.example.com"
+# A URI SAN whose wildcard-matched path segment contains a dot, to lock in that '.' is NOT a
+# separator for URI SANs (non-regression of the existing 'URI:spiffe://bar.com/foo/*/far' match).
+openssl req -newkey rsa:4096 -nodes -batch -keyout client9-key.pem -out client9-req.pem -subj "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=client9"
 # A certificate whose validity period extends beyond the year 2106, i.e. beyond the range of DateTime
 # (UInt32 epoch seconds). Used to check that session_log records such validity times without truncation.
 openssl req -newkey rsa:4096 -nodes -batch -keyout client_far_future-key.pem -out client_far_future-req.pem -subj "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=client_far_future"
@@ -27,6 +36,9 @@ openssl x509 -req -days 3650 -in client3-req.pem -CA ca-cert.pem -CAkey ca-key.p
 openssl x509 -req -days 3650 -in client4-req.pem -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial -extfile client4-ext.cnf -out client4-cert.pem
 openssl x509 -req -days 3650 -in client5-req.pem -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial -extfile client5-ext.cnf -out client5-cert.pem
 openssl x509 -req -days 3650 -in client6-req.pem -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial -extfile client6-ext.cnf -out client6-cert.pem
+openssl x509 -req -days 3650 -in client7-req.pem -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial -extfile client7-ext.cnf -out client7-cert.pem
+openssl x509 -req -days 3650 -in client8-req.pem -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial -extfile client8-ext.cnf -out client8-cert.pem
+openssl x509 -req -days 3650 -in client9-req.pem -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial -extfile client9-ext.cnf -out client9-cert.pem
 # ~100 years, so the notAfter time falls past the year 2106 (the upper bound of DateTime).
 openssl x509 -req -days 36525 -in client_far_future-req.pem -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial -out client_far_future-cert.pem
 

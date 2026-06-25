@@ -441,6 +441,73 @@ def test_x509_san_wildcard_support():
     instance.query("DROP USER brian")
 
 
+def test_x509_dns_san_wildcard_single_label():
+    # A '*' in a DNS SAN must match exactly one DNS label (RFC 6125 6.4.3).
+    # Positive: a single-label name under the wildcard authenticates, on both interfaces.
+    assert (
+        execute_query_native(
+            instance, "SELECT currentUser()", user="wildcard_dns", cert_name="client7"
+        )
+        == "wildcard_dns\n"
+    )
+    assert (
+        execute_query_https(
+            "SELECT currentUser()", user="wildcard_dns", cert_name="client7"
+        )
+        == "wildcard_dns\n"
+    )
+    # Negative (authentication bypass): a multi-label name must NOT match a single-label
+    # wildcard. 'evil.deep.corp.example.com' must be rejected by 'DNS:*.corp.example.com'.
+    with pytest.raises(Exception) as err:
+        execute_query_native(
+            instance, "SELECT currentUser()", user="wildcard_dns", cert_name="client8"
+        )
+    assert "AUTHENTICATION_FAILED" in str(err.value)
+    with pytest.raises(Exception) as err:
+        execute_query_https(
+            "SELECT currentUser()", user="wildcard_dns", cert_name="client8"
+        )
+    assert "403" in str(err.value)
+
+
+def test_x509_cn_wildcard_single_label():
+    # The same single-label rule applies to a wildcard in the certificate CN.
+    assert (
+        execute_query_native(
+            instance, "SELECT currentUser()", user="wildcard_cn", cert_name="client7"
+        )
+        == "wildcard_cn\n"
+    )
+    assert (
+        execute_query_https(
+            "SELECT currentUser()", user="wildcard_cn", cert_name="client7"
+        )
+        == "wildcard_cn\n"
+    )
+    with pytest.raises(Exception) as err:
+        execute_query_native(
+            instance, "SELECT currentUser()", user="wildcard_cn", cert_name="client8"
+        )
+    assert "AUTHENTICATION_FAILED" in str(err.value)
+    with pytest.raises(Exception) as err:
+        execute_query_https(
+            "SELECT currentUser()", user="wildcard_cn", cert_name="client8"
+        )
+    assert "403" in str(err.value)
+
+
+def test_x509_uri_san_wildcard_dot_in_segment():
+    # Non-regression: '.' separates labels for DNS/CN but is NOT a separator for URI SANs,
+    # whose separator is '/'. A wildcard URI path segment may legitimately contain dots, so
+    # 'URI:spiffe://bar.com/foo/baz.qux/far' must still match 'URI:spiffe://bar.com/foo/*/far'.
+    assert (
+        execute_query_native(
+            instance, "SELECT currentUser()", user="stewie", cert_name="client9"
+        )
+        == "stewie\n"
+    )
+
+
 def test_session_log_certificate_success():
     # A successful certificate authentication must record the certificate details
     # in system.session_log, both for the native (TCP) and the HTTPS interface.
