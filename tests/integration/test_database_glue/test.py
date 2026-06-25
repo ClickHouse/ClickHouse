@@ -1394,3 +1394,40 @@ def test_sts_credential_refresh_on_expired_token(started_cluster):
     )
 
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_glue_catalog_unavailable_after_restart_under_restriction(started_cluster):
+    # A Glue `DataLakeCatalog` whose catalog credentials are server-managed (no explicit keys -> resolved from
+    # the server environment) is created under the per-session opt-in. After a restart it is reloaded under the
+    # default restriction (`s3_allow_server_credentials_in_user_queries = 0`); the server must still start, but
+    # the catalog is left unavailable (governed by `s3_load_table_anonymously_if_credentials_restricted`) rather
+    # than silently reusing the server identity or aborting startup.
+    node = started_cluster.instances["node1"]
+    db_name = f"glue_server_cred_restart_{uuid.uuid4().hex}"
+
+    create_clickhouse_glue_database(
+        started_cluster,
+        node,
+        db_name,
+        with_credentials=False,
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
+    )
+    # Works while the creating session allows server-managed credentials for the catalog.
+    node.query(
+        f"SHOW TABLES FROM {db_name}",
+        settings={"s3_allow_server_credentials_in_user_queries": 1},
+    )
+
+    node.restart_clickhouse()
+
+    # The server starts even though the catalog can no longer resolve its (server-managed) credentials.
+    assert node.query("SELECT 1").strip() == "1"
+    # Reloaded under the default restriction, the catalog is unavailable and querying it reports the restriction.
+    error = node.query_and_get_error(f"SHOW TABLES FROM {db_name}")
+    assert (
+        "ACCESS_DENIED" in error
+        or "server-managed" in error
+        or "s3_allow_server_credentials_in_user_queries" in error
+    ), error
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
