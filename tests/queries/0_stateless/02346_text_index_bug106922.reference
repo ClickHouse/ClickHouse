@@ -1,0 +1,94 @@
+Nullable(String)
+-- NOT hasToken: NULL rows (2, 4) must not appear; only row 3 matches
+3
+3
+-- NOT hasAllTokens: only row 3 matches
+3
+3
+-- NOT hasAnyTokens: only row 3 matches
+3
+3
+-- NOT hasPhrase (Hint mode): rows 3 and 5 match, NULL rows excluded
+3
+5
+3
+5
+-- NOT endsWith (Hint mode): rows 3 and 5 match, NULL rows excluded
+3
+5
+3
+5
+-- NOT startsWith (Hint mode): only row 3, NULL rows excluded
+3
+3
+-- NOT LIKE suffix pattern (Hint mode): rows 3 and 5 match, NULL rows excluded
+3
+5
+3
+5
+-- NOT match: only row 3, NULL rows excluded
+3
+3
+-- positive hasPhrase still correct: only row 1
+1
+-- positive hasToken still correct: rows 1 and 5
+1
+5
+-- hasToken IS NULL selects exactly the NULL rows 2 and 4
+2
+4
+-- projection of hasToken keeps NULL for NULL rows
+1	1
+2	\N
+3	0
+4	\N
+5	1
+Nullable(String), all-NULL part
+-- NOT hasToken over an all-NULL part returns no rows (NOT NULL filters every row out)
+0
+0
+LowCardinality(Nullable(String))
+-- NOT hasToken with LowCardinality(Nullable): only row 3
+3
+3
+Nullable(String) with preprocessor = lower(str)
+-- NOT hasToken with preprocessor + Nullable: only row 3
+3
+3
+Nullable(String) with ngrams tokenizer, partially materialized index
+-- NOT hasPhrase (ngrams, partially materialized): rows 3 and 5, NULL rows excluded
+3
+5
+3
+5
+-- NOT endsWith (ngrams, partially materialized): rows 3 and 5, NULL rows excluded
+3
+5
+3
+5
+-- NOT LIKE suffix pattern (ngrams, partially materialized): rows 3 and 5, NULL rows excluded
+3
+5
+3
+5
+Map(String, Nullable(String)) with mapValues index
+-- NOT hasToken(m[key]): NULL map values must be excluded; count matches the non-direct-read path
+9968
+9968
+-- NOT hasPhrase(m[key]) (Hint mode): NULL map values must be excluded
+9968
+9968
+-- NOT LIKE(m[key]): NULL map values must be excluded
+9968
+9968
+-- no NULL map value leaks into the negated result
+0
+-- positive hasToken(m[key]) still uses the index and is correct
+12
+PREWHERE
+-- NOT hasToken in PREWHERE: only row 3
+3
+3
+Direct read stays enabled for a Nullable haystack
+-- virtual column is read directly and guarded by isNull(haystack)
+1	1
