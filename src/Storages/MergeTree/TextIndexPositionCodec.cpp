@@ -184,7 +184,7 @@ TextIndexPositionCodec::Encoding TextIndexPositionCodec::parseEncoding(const Str
         return Encoding::Raw;
     if (name == "pfor")
         return Encoding::Pfor;
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown text index positions_encoding '{}', expected 'none' or 'pfor'", name);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown text index positions_codec '{}', expected 'none' or 'pfor'", name);
 }
 
 void TextIndexPositionCodec::encode(std::span<const RoaringishEntry> entries, WriteBuffer & out, Encoding encoding)

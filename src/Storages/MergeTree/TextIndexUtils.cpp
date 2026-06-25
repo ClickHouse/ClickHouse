@@ -400,7 +400,7 @@ void MergeTextIndexesTask::flushPostingList()
 
         TextIndexPositionCodec::encode(
             output_positions, positions_stream->plain_hashing,
-            TextIndexPositionCodec::parseEncoding(params.positions_encoding));
+            TextIndexPositionCodec::parseEncoding(params.positions_codec));
     }
 
     output_infos.push_back(token_info);
@@ -524,7 +524,7 @@ bool MergeTextIndexesTask::executeStep()
                 PODArray<RoaringishEntry> position_entries;
                 TextIndexPositionCodec::decode(
                     *pos_data_buffer, position_entries,
-                    TextIndexPositionCodec::parseEncoding(params.positions_encoding),
+                    TextIndexPositionCodec::parseEncoding(params.positions_codec),
                     position_decode_scratch);
 
                 /// Adjust doc_ids if merging parts with offset remapping.

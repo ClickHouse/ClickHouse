@@ -11,13 +11,13 @@ namespace DB
 {
 
 /// Codec for encoding/decoding Roaringish 96-bit position lists, selected by the text
-/// index `positions_encoding` parameter:
+/// index `positions_codec` parameter:
 ///
-///   Raw  (positions_encoding='none', default):
+///   Raw  (positions_codec='none', default):
 ///     [VarUInt: count][count x 12 bytes: (doc_id:u32, group:u32, bitmap:u32) little-endian]
 ///     No compression; minimal decode latency.
 ///
-///   Pfor (positions_encoding='pfor'):
+///   Pfor (positions_codec='pfor'):
 ///     [VarUInt: count][VarUInt: payload_bytes][doc lane][group lane][bitmap lane]
 ///     The three UInt32 lanes are bit-packed with the PFor codec (clean-room PForDelta, Compression/PFor.h):
 ///     doc with integrated delta (non-decreasing across sorted entries), group and bitmap
@@ -44,7 +44,7 @@ public:
         PaddedPODArray<UInt32> bitmap;
     };
 
-    /// Maps the `positions_encoding` argument value ("none"/"pfor") to an Encoding.
+    /// Maps the `positions_codec` argument value ("none"/"pfor") to an Encoding.
     /// Throws BAD_ARGUMENTS on an unknown value.
     static Encoding parseEncoding(const String & name);
 

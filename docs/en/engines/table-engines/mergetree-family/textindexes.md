@@ -91,7 +91,7 @@ CREATE TABLE table
                                 [, posting_list_block_size = C]
                                 [, posting_list_codec = 'none' | 'bitpacking' ]
                                 [, positions = 0 | 1 ]
-                                [, positions_encoding = 'none' | 'pfor' ]
+                                [, positions_codec = 'none' | 'pfor' ]
                             )
 )
 ENGINE = MergeTree
@@ -126,7 +126,7 @@ ALTER TABLE table
                                 [, posting_list_block_size = C]
                                 [, posting_list_codec = 'none' | 'bitpacking' ]
                                 [, positions = 0 | 1 ]
-                                [, positions_encoding = 'none' | 'pfor' ]
+                                [, positions_codec = 'none' | 'pfor' ]
                             )
 
 ```
@@ -300,7 +300,7 @@ The on-disk format is not yet stable, so this parameter is experimental and may 
 Creating an index with `positions = 1` therefore requires the MergeTree setting [`allow_experimental_text_index_positions`](/operations/settings/merge-tree-settings#allow_experimental_text_index_positions) to be enabled.
 Set `positions = 0` (the default) to keep the posting-list-only storage; text indexes created without this argument remain position-less.
 
-Experimental parameter `positions_encoding` (default: `'none'`) controls how the stored token positions are compressed.
+Experimental parameter `positions_codec` (default: `'none'`) controls how the stored token positions are compressed.
 It only takes effect when `positions` is enabled.
 - `'none'` - positions are stored uncompressed.
 - `'pfor'` - positions are compressed with a `PForDelta` integer codec (frame-of-reference bit-packing with patched exceptions plus integrated delta coding). Produces a substantially smaller `.pos` file at a modest decode cost.

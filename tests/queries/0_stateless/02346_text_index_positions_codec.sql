@@ -1,6 +1,6 @@
 -- Tags: no-parallel-replicas
 
--- Tests the text-index `positions_encoding` parameter: 'none' and 'pfor'.
+-- Tests the text-index `positions_codec` parameter: 'none' and 'pfor'.
 
 SET enable_analyzer = 1;
 
@@ -9,7 +9,7 @@ SELECT 'Validation errors';
 CREATE TABLE tab_bad (
     id UInt32,
     message String,
-    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, positions = 1, positions_encoding = 'lz4')
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, positions = 1, positions_codec = 'lz4')
 )
 ENGINE = MergeTree
 ORDER BY id
@@ -18,17 +18,17 @@ SETTINGS allow_experimental_text_index_positions = 1; -- { serverError BAD_ARGUM
 CREATE TABLE tab_bad (
     id UInt32,
     message String,
-    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, positions_encoding = 'pfor')
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, positions_codec = 'pfor')
 )
 ENGINE = MergeTree
 ORDER BY id; -- { serverError BAD_ARGUMENTS }
 
-SELECT 'Results are same with both positions_encoding parameters';
+SELECT 'Results are same with both positions_codec parameters';
 
 CREATE TABLE tab_none (
     id UInt32,
     message String,
-    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, positions = 1, positions_encoding = 'none')
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, positions = 1, positions_codec = 'none')
 )
 ENGINE = MergeTree
 ORDER BY id
@@ -37,7 +37,7 @@ SETTINGS allow_experimental_text_index_positions = 1;
 CREATE TABLE tab_pfor (
     id UInt32,
     message String,
-    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, positions = 1, positions_encoding = 'pfor')
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, positions = 1, positions_codec = 'pfor')
 )
 ENGINE = MergeTree
 ORDER BY id
@@ -80,7 +80,7 @@ SELECT 'No token positions limit';
 CREATE TABLE tab_none (
     id UInt32,
     message String,
-    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, positions = 1, positions_encoding = 'none')
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, positions = 1, positions_codec = 'none')
 )
 ENGINE = MergeTree
 ORDER BY id
@@ -89,7 +89,7 @@ SETTINGS allow_experimental_text_index_positions = 1;
 CREATE TABLE tab_pfor (
     id UInt32,
     message String,
-    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, positions = 1, positions_encoding = 'pfor')
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, positions = 1, positions_codec = 'pfor')
 )
 ENGINE = MergeTree
 ORDER BY id
