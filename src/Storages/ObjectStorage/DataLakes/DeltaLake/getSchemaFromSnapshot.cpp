@@ -8,6 +8,7 @@
 
 #include <base/scope_guard.h>
 #include <Core/TypeId.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
 #include <DataTypes/DataTypeArray.h>
@@ -231,6 +232,7 @@ private:
             }
             catch (...)
             {
+                LOG_ERROR(state->log, "Error while visiting schema: {}", DB::getCurrentExceptionMessage(true));
                 setVisitorException(state);
             }
         }
