@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 
+#include <set>
 #include <Common/StringUtils.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/isValidUTF8.h>
@@ -1062,19 +1063,33 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         const String value = preprocessor->processConstant(value_field.safeGet<String>());
 
         /// When positions are available, use phrase search with positional intersection.
-        /// NOTE: positional phrase search is incompatible with a token-rewriting postprocessor
-        /// (it may drop/reorder tokens); the two are not expected to be configured together.
         if (has_positions)
         {
-            /// For phrase queries, we need tokens in their original order with duplicates preserved.
+            /// phrase_tokens keeps order and duplicates for positional search; unique_tokens is the
+            /// sorted distinct set used for granule-level filtering (all tokens must exist).
             VectorWithMemoryTracking<String> phrase_tokens;
             tokenizer->stringToTokens(value.data(), value.size(), phrase_tokens);
-            if (phrase_tokens.empty())
-                return false;
 
-            /// The sorted+deduplicated tokens are used for granule-level filtering (all tokens must exist).
-            auto unique_tokens = tokenizer->compactTokens(phrase_tokens);
-            std::sort(unique_tokens.begin(), unique_tokens.end());
+            VectorWithMemoryTracking<String> unique_tokens;
+            if (has_postprocessor)
+            {
+                /// Apply the postprocessor per token (dropping empties) so the phrase tokens match what the
+                /// index stored. The index assigns dense positions (dropped tokens leave no gap), so a phrase
+                /// like 'see cat' still matches a document 'see the cat' when the postprocessor drops 'the'.
+                phrase_tokens = postprocessor->processTokens(std::move(phrase_tokens));
+                if (phrase_tokens.empty())
+                    return false;
+
+                std::set<String> dedup(phrase_tokens.begin(), phrase_tokens.end());
+                unique_tokens = VectorWithMemoryTracking<String>(dedup.begin(), dedup.end());
+            }
+            else
+            {
+                if (phrase_tokens.empty())
+                    return false;
+                unique_tokens = tokenizer->compactTokens(phrase_tokens);
+                std::sort(unique_tokens.begin(), unique_tokens.end());
+            }
 
             auto query = std::make_shared<TextSearchQuery>(function_name, TextSearchMode::Phrase, direct_read_mode, std::move(unique_tokens));
             query->phrase_tokens = std::move(phrase_tokens);

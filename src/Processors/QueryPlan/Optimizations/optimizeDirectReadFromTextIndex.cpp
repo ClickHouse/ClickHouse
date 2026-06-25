@@ -429,12 +429,12 @@ private:
             || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
     }
 
-    /// Returns true for functions that require applying the postprocessor to the needle.
-    /// hasPhrase keeps its needle as an unsplit phrase string so per-token postprocessing does not apply.
+    /// Returns true for functions that require applying the postprocessor to the haystack and needle.
     static bool needApplyPostprocessor(const String & function_name)
     {
         return function_name == "hasToken"
-            || function_name == "hasAllTokens" || function_name == "hasAnyTokens";
+            || function_name == "hasAllTokens" || function_name == "hasAnyTokens"
+            || function_name == "hasPhrase";
     }
 
     std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node, const ContextPtr & context)
@@ -634,9 +634,11 @@ private:
                 new_children[2] = &actions_dag.addColumn(std::move(arg_column), arg_type, quoteString(array_tokenizer_desc));
             }
 
-            /// hasToken takes a String haystack, so rejoin the postprocessed tokens with a separator;
-            /// its boundary scan re-splits them. hasAnyTokens/hasAllTokens accept the Array(String) directly.
-            if (function_name == "hasToken")
+            /// hasToken and hasPhrase take a String haystack, so rejoin the postprocessed tokens with a
+            /// separator; the function re-tokenizes them. Tokens the postprocessor dropped are empty array
+            /// elements that become adjacent separators and produce no token on re-split, reproducing the
+            /// index's dense position sequence. hasAnyTokens/hasAllTokens accept the Array(String) directly.
+            if (function_name == "hasToken" || function_name == "hasPhrase")
             {
                 DataTypePtr separator_type = std::make_shared<DataTypeString>();
                 MutableColumnConstPtr separator_column = separator_type->createColumnConst(0, Field(String(" ")));
@@ -645,7 +647,28 @@ private:
                 new_children[0] = &actions_dag.addFunction(concat, {new_children[0], &separator}, "");
             }
 
-            if (needles_field.getType() == Field::Types::String)
+            if (function_name == "hasPhrase" && needles_field.getType() == Field::Types::String)
+            {
+                /// The needle is a phrase: tokenize it, postprocess each token (dropping empties), and rejoin
+                /// with a space so hasPhrase re-tokenizes it into the same dense postprocessed token sequence
+                /// the index stored.
+                const auto & phrase = needles_field.safeGet<String>();
+                VectorWithMemoryTracking<String> tokens;
+                tokenizer->stringToTokens(phrase.data(), phrase.size(), tokens);
+                tokens = postprocessor->processTokens(std::move(tokens));
+
+                String joined;
+                for (const auto & token : tokens)
+                {
+                    if (std::ranges::any_of(token, isTokenSeparator))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index postprocessor produced an invalid token '{}'", token);
+                    if (!joined.empty())
+                        joined += ' ';
+                    joined += token;
+                }
+                needles_field = joined;
+            }
+            else if (needles_field.getType() == Field::Types::String)
             {
                 /// hasToken case: single token string. If the postprocessor drops the needle (stop-word
                 /// filter, etc.), the empty needle is fine — hasToken returns 0 on it, matching the
