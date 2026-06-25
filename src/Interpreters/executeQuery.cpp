@@ -1101,7 +1101,9 @@ static BlockIO executeQueryImpl(
     HTTPContinueCallback http_continue_callback,
     QueryResultDetails & result_details)
 {
-    const bool internal = flags.internal;
+    if (flags.internal)
+        context->getClientInfo().is_internal = true;
+    const bool internal = context->getClientInfo().is_internal;
 
     /// query_span is a special span, when this function exits, it's lifetime is not ended, but ends when the query finishes.
     /// Some internal queries might call this function recursively by setting 'internal' parameter to 'true',

@@ -137,6 +137,7 @@ public:
 
     bool is_replicated_database_internal = false;
     bool is_shared_catalog_internal = false;
+    bool is_internal = false;
 
     /// For parallel processing on replicas
     bool collaborate_with_initiator{false};
@@ -149,12 +150,12 @@ public:
       * Only values that are not calculated automatically or passed separately are serialized.
       * Revisions are passed to use format that server will understand or client was used.
       */
-    /// `with_client_agent` controls whether the `client_agent` field is (de)serialized as a trailing
-    /// member of `ClientInfo`. It must be `false` for the embedded `ClientInfo` of the persisted async
-    /// `Distributed` insert header, where `client_agent` is stored as a trailing header field instead,
-    /// so that older binaries draining newer queue files can read the header without misinterpreting it.
-    void write(WriteBuffer & out, UInt64 server_protocol_revision, bool with_client_agent = true) const;
-    void read(ReadBuffer & in, UInt64 client_protocol_revision, bool with_client_agent = true);
+    /// `with_trailing_fields` controls whether the `client_agent` and `is_internal` fields are (de)serialized as
+    /// trailing members of `ClientInfo`. It must be `false` for the embedded `ClientInfo` of the persisted async
+    /// `Distributed` insert header, where `client_agent` and `is_internal` are stored as trailing header fields
+    /// instead, so that older binaries draining newer queue files can read the header without misinterpreting it.
+    void write(WriteBuffer & out, UInt64 server_protocol_revision, bool with_trailing_fields = true) const;
+    void read(ReadBuffer & in, UInt64 client_protocol_revision, bool with_trailing_fields = true);
 
     /// Initialize parameters on client initiating query.
     void setInitialQuery();
