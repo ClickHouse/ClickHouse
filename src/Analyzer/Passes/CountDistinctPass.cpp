@@ -11,6 +11,8 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
@@ -51,10 +53,20 @@ public:
         if (join_tree_node_type == QueryTreeNodeType::JOIN || join_tree_node_type == QueryTreeNodeType::CROSS_JOIN || join_tree_node_type == QueryTreeNodeType::ARRAY_JOIN)
             return;
 
-        /// Check only local table
-        if (auto * table_node = query_node->getJoinTree()->as<TableNode>())
+        /// Check only local table. Remote storages must be skipped because rewriting `countDistinct`/`uniqExact`
+        /// into `count()` over `GROUP BY` is not correct for distributed reads: with `distributed_group_by_no_merge`
+        /// the inner `GROUP BY` is completed independently per shard, so the outer `count()` would count duplicate
+        /// per-shard groups instead of the global distinct keys. A remote storage can be reached both directly
+        /// (`TableNode`) and through a table function such as `remote(...)` (`TableFunctionNode`), so check both.
+        const auto & join_tree_node = query_node->getJoinTree();
+        if (const auto * table_node = join_tree_node->as<TableNode>())
         {
             if (table_node->getStorage()->isRemote())
+                return;
+        }
+        else if (const auto * table_function_node = join_tree_node->as<TableFunctionNode>())
+        {
+            if (table_function_node->getStorage()->isRemote())
                 return;
         }
 
