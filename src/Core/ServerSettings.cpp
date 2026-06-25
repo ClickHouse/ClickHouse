@@ -71,14 +71,18 @@ namespace
 
 /// Settings without path are top-level server settings (no nesting).
 #define LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(DECLARE, ALIAS) \
-    DECLARE(InsertDeduplicationVersions, insert_deduplication_version, InsertDeduplicationVersions::COMPATIBLE_DOUBLE_HASHES, R"(
+    DECLARE(InsertDeduplicationVersions, insert_deduplication_version, InsertDeduplicationVersions::NEW_UNIFIED_HASHES, R"(
         This setting makes it possible to migrate from the code version which makes insert deduplication for sync and async inserts totally different not transparent way to the code version where inserted data would be deduplicated across sync and async inserts.
         The value `old_separate_hashes` means that ClickHouse will use different deduplication hashes for sync and async inserts (the same as before).
-        This value should be used as a default value if there is no intention to start migration.
+        This value preserves the legacy pre-migration behavior, for instances that intentionally have not started the migration; it is no longer the recommended default.
         The value `compatible_double_hashes` means that ClickHouse will use two deduplication hashes: the old one for sync or async inserts and another the new one for all inserts. This value should be used to migrate existing instances to the new behavior in a safe way.
         This value should be enabled for some time (see replicated_deduplication_window and non_replicated_deduplication_window settings) to make sure that no sync or async inserts are lost during migration.
         Finally the value `new_unified_hash` means that ClickHouse will use the new deduplication hash for sync and async inserts. This value could be enabled on new instances of ClickHouse or on instances which already used `compatible_double_hashes` value for some time.
-        The default would be set to `compatible_double_hashes` and then later to `new_unified_hash` in future versions of ClickHouse in order to complete the migration in a safe way in two reases.
+        With `new_unified_hash`, the deduplication hash covers the whole inserted block, so an insert is deduplicated only when its entire data matches a previous insert (a retry), not per individual partition.
+        Under `new_unified_hash` async inserts also use the unified hash and share the sync deduplication window (`replicated_deduplication_window` / `replicated_deduplication_window_seconds`); the `*_for_async_inserts` window settings apply only to the legacy `old_separate_hashes` / `compatible_double_hashes` path.
+        The default was `compatible_double_hashes` for one phase of the migration and is now `new_unified_hash`, which completes the migration in a safe way in two phases.
+        Instances upgraded directly from `old_separate_hashes` should run with `compatible_double_hashes` until the longest relevant deduplication window has elapsed (the sync window `replicated_deduplication_window` / `replicated_deduplication_window_seconds`, the async window `replicated_deduplication_window_for_async_inserts` / `replicated_deduplication_window_seconds_for_async_inserts` which defaults to one week if async inserts are used, and `non_replicated_deduplication_window`) before relying on the unified hash. Otherwise pre-upgrade ids still held in the old `blocks` / `async_blocks` directories are not seen by the unified hash and their retries can be accepted as new inserts, producing duplicates.
+        Async inserts add a caveat at the switch to `new_unified_hash`: under `compatible_double_hashes` their deduplication effectively spans the async window (the `async_blocks` id is kept that long), while `new_unified_hash` consults only `deduplication_hashes` (kept for the sync window), so async inserts older than the sync window can be re-accepted after the switch even after waiting. Before switching async workloads, either raise `replicated_deduplication_window` / `replicated_deduplication_window_seconds` to the async window and run so for a full async window, quiesce async inserts for the async window, or keep `compatible_double_hashes`.
     )", 0) \
     DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, R"(If it is set true will show addresses in stack traces)", 0) \
@@ -1002,7 +1006,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     **Example**
 
     ```xml
-    <keep_alive_timeout>10</keep_alive_timeout>
+    <keep_alive_timeout>30</keep_alive_timeout>
     ```
     )", 0) \
     DECLARE(UInt64, max_keep_alive_requests, 10000, R"(
@@ -1081,7 +1085,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, http_connections_warn_limit, 500, R"(Warning massages are written to the logs if number of in-use connections are higher than this limit. The limit applies to the http connections which do not belong to any disk or storage.)", 0) \
     DECLARE(UInt64, http_connections_store_limit, 1000, R"(Connections above this limit reset after use. Set to 0 to turn connection cache off. The limit applies to the http connections which do not belong to any disk or storage.)", 0) \
     DECLARE(UInt64, http_connections_hard_limit, 200000, R"(Exception is thrown at a creation attempt when this limit is reached. Set to 0 to turn off hard limitation. The limit applies to the http connections which do not belong to any disk or storage.)", 0) \
-    DECLARE(UInt64, disk_connections_rcvbuf, 0, R"(The size of the SO_RCVBUF option for disk (S3, Azure, GCS) connections. If set to a value greater than 0, overrides the kernel TCP autotuning for the receive buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
+    DECLARE(UInt64, disk_connections_rcvbuf, 204800, R"(The size of the SO_RCVBUF option for disk (S3, Azure, GCS) connections. Defaults to 204800 (200 KB): object storage is reached intra-region where the bandwidth-delay product is well below 100 KB, so a small cap delivers full throughput while avoiding the multi-MiB per-socket buffers kernel autotuning would otherwise allocate. Set to 0 to use kernel TCP autotuning for the receive buffer instead. Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
     DECLARE(UInt64, disk_connections_sndbuf, 0, R"(The size of the SO_SNDBUF option for disk (S3, Azure, GCS) connections. If set to a value greater than 0, overrides the kernel TCP autotuning for the send buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
     DECLARE(UInt64, storage_connections_rcvbuf, 0, R"(The size of the SO_RCVBUF option for storage connections (replication, distributed queries). If set to a value greater than 0, overrides the kernel TCP autotuning for the receive buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
     DECLARE(UInt64, storage_connections_sndbuf, 0, R"(The size of the SO_SNDBUF option for storage connections (replication, distributed queries). If set to a value greater than 0, overrides the kernel TCP autotuning for the send buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
@@ -1239,6 +1243,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(String, license_file, "", "License file contents for ClickHouse Enterprise Edition", 0) \
     DECLARE(String, license_public_key_for_testing, "", "Licensing demo key, for CI use only", 0) \
+    DECLARE(Bool, show_license_expiration_warnings, true, "Show the warning about the upcoming license expiration in system.warnings", 0) \
     DECLARE(NonZeroUInt64, prefetch_threadpool_pool_size, 100, R"(Size of background pool for prefetches for remote object storages)", 0) \
     DECLARE(UInt64, prefetch_threadpool_queue_size, 10000, R"(Number of tasks which is possible to push into prefetches pool)", 0) \
     DECLARE(UInt64, load_marks_threadpool_pool_size, 50, R"(Size of background pool for marks loading)", 0) \
@@ -1816,6 +1821,16 @@ std::string_view ServerSettings::getDescription(std::string_view name) const
     return impl->getDescription(name);
 }
 
+std::string_view ServerSettings::getTypeName(std::string_view name) const
+{
+    return impl->getTypeName(name);
+}
+
+String ServerSettings::getDefaultValueString(std::string_view name) const
+{
+    return impl->getDefaultValueString(name);
+}
+
 SettingsTierType ServerSettings::getTier(std::string_view name) const
 {
     return impl->getTier(name);
@@ -1896,6 +1911,7 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"merge_workload", {context->getMergeWorkload(), ChangeableWithoutRestart::Yes}},
             {"mutation_workload", {context->getMutationWorkload(), ChangeableWithoutRestart::Yes}},
             {"license_file", {context->getLicenseFile(), ChangeableWithoutRestart::Yes}},
+            {"show_license_expiration_warnings", {std::to_string(context->getShowLicenseExpirationWarnings()), ChangeableWithoutRestart::Yes}},
             {"throw_on_unknown_workload", {std::to_string(context->getThrowOnUnknownWorkload()), ChangeableWithoutRestart::Yes}},
             {"cpu_slot_preemption", {std::to_string(context->getCPUSlotPreemption()), ChangeableWithoutRestart::Yes}},
             {"cpu_slot_quantum_ns", {std::to_string(context->getCPUSlotQuantum()), ChangeableWithoutRestart::Yes}},
