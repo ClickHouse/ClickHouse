@@ -388,6 +388,21 @@ static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unord
         {
             return false;
         }
+
+        /// The function was resolved against `argument_types[i]`, so its native code (and hence
+        /// `getResultType()`) assumes that exact type. If the actual child node feeds a value of a
+        /// different type, JIT would emit code with mismatched LLVM operand types. This can happen
+        /// when a child's type is changed after the function node is built without re-resolving the
+        /// function -- e.g. correlated-subquery decorrelation under `group_by_use_nulls` retypes the
+        /// correlated-column INPUT to Nullable while the `minus`/etc. nodes consuming it keep their
+        /// non-Nullable result type. The interpreter tolerates this; JIT must not (it would abort in
+        /// `llvm::BinaryOperator::Create` on "operands of differing type"). Skip JIT for such nodes
+        /// and let them run in the interpreter, which produces the correct result.
+        if (i < node.children.size() && node.children[i]->result_type
+            && !node.children[i]->result_type->equals(*type))
+        {
+            return false;
+        }
     }
 
     return function.isCompilable();
