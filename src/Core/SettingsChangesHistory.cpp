@@ -39,6 +39,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.7",
+        {
+            {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
+        });
+
         addSettingsChanges(settings_changes_history, "26.6",
         {
             {"output_format_image_width", 1024, 1024, "New setting controlling the width of the output image for image output formats such as PNG."},
@@ -48,7 +53,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_lightweight_primary_key_index_analysis", false, true, "New setting to optimize primary key index analysis for tables with long primary keys"},
             {"ai_function_embedding_max_batch_size", 100, 100, "New setting"},
             {"enable_nullable_tuple_type", false, false, "Nullable Tuple is now Beta. Added as an alias for 'allow_experimental_nullable_tuple_type'."},
-            {"ai_function_credentials", "", "", "New setting"},
             {"enable_sharding_aggregator", false, false, "New setting to enable sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase; this is efficient for high cardinality keys with evenly distributed data."},
             {"allow_experimental_text_index_lazy_apply", false, false, "New setting to gate experimental lazy posting list apply mode"},
             {"text_index_posting_list_apply_mode", "materialize", "materialize", "New setting for lazy posting list apply mode"},
@@ -1253,6 +1257,11 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.7",
+        {
+            {"allow_experimental_text_index_positions", false, false, "New setting"},
+        });
+
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",
         {
             {"packed_skip_index_max_bytes", 0, 0, "New setting. Pack any skip-index substream whose serialized on-disk size is at most this many bytes into a single skp_idx.packed archive per part; larger substreams stay in the standalone skp_idx_<name>.idx2 / .mrk2 layout. Decision is made per substream at write time."},

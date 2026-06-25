@@ -54,15 +54,6 @@ namespace CoordinationSetting
 namespace
 {
 
-uint64_t getSnapshotPathUpToLogIdx(const String & snapshot_path)
-{
-    std::filesystem::path path(snapshot_path);
-    std::string filename = path.stem();
-    std::vector<std::string_view> name_parts;
-    splitInto<'_', '.'>(name_parts, filename);
-    return parse<uint64_t>(name_parts[1]);
-}
-
 void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool with_node_stats, size_t subtrees_limit)
 {
     try
@@ -120,8 +111,11 @@ void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool 
                     500   // storage_tick_time
                 );
 
+                // Deserialize the exact named file, not by parsed index: with retained
+                // same-index duplicates, an index lookup could read a different sibling.
+                SnapshotFileInfo selected_snapshot{std::filesystem::path(full_path).filename().string(), keeper_context->getSnapshotDisk()};
                 auto result = snapshot_manager.deserializeSnapshotFromBuffer(
-                    snapshot_manager.deserializeSnapshotBufferFromDisk(getSnapshotPathUpToLogIdx(full_path)),
+                    snapshot_manager.deserializeSnapshotBufferFromDisk(selected_snapshot),
                     full_storage);
 
                 if (!result.storage)

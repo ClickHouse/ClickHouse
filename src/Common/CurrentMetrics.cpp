@@ -353,6 +353,9 @@
     M(TextIndexHeaderCacheCells, "Number of entries in text index header cache") \
     M(TextIndexPostingsCacheBytes, "Size of the text index posting lists cache in bytes") \
     M(TextIndexPostingsCacheCells, "Number of entries in the text index posting lists cache") \
+    M(PointInPolygonCacheBytes, "Size in bytes of the cache of preprocessed constant polygons for the `pointInPolygon` function") \
+    M(PointInPolygonCacheCells, "Number of preprocessed constant polygons in the cache for the `pointInPolygon` function") \
+    M(PointInPolygonCacheSizeLimit, "Maximum size in bytes of the cache of preprocessed constant polygons for the `pointInPolygon` function (the applied value of the `point_in_polygon_cache_size` server setting)") \
     M(DNSHostsCacheBytes, "Size of the DNS hosts cache in bytes") \
     M(DNSHostsCacheSize, "Number of cached DNS hosts") \
     M(DNSAddressesCacheBytes, "Size of the DNS addresses cache in bytes") \
@@ -474,6 +477,9 @@
     \
     M(ConcurrentQueryScheduled, "Total number of query slot requests are being scheduled currently") \
     M(ConcurrentQueryAcquired, "Total number of acquired query slots") \
+    \
+    M(MemoryReservationApproved, "Total number of currently allocated (approved) bytes for memory reservations") \
+    M(MemoryReservationDemand, "Total number of outstanding increase request bytes for memory reservations") \
     \
     M(DiskS3NoSuchKeyErrors, "The number of `NoSuchKey` errors that occur when reading data from S3 cloud storage through ClickHouse disks.") \
     \
