@@ -121,7 +121,7 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
     };
 
     const Key key;
-    /// Shared (deduplicated) across all keys with the same origin, since OriginInfo is immutable
+    /// Shared across all keys with the same origin, since OriginInfo is immutable
     /// and distinct origins are very few. See CacheMetadata::getOrCreateSharedOrigin.
     const OriginInfoPtr origin;
 
