@@ -1,6 +1,8 @@
 #include <Columns/IColumn.h>
 #include <IO/copyData.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
+#include "config.h"
+
 #include <gtest/gtest.h>
 
 #include <filesystem>
@@ -91,6 +93,7 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
     extern const FileCacheSettingsBool enable_bypass_cache_with_threshold;
     extern const FileCacheSettingsUInt64 bypass_cache_threshold;
+    extern const FileCacheSettingsBool use_rocksdb_metadata_index;
 }
 
 void printRanges(const auto & segments)
@@ -1984,6 +1987,10 @@ TEST_F(FileCacheTest, LoadMetadataParallelism)
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
     settings[FileCacheSetting::load_metadata_threads] = 1;
     settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    /// The test asserts on log output emitted by `loadMetadataImpl` (filesystem directory scan).
+    /// With `use_rocksdb_metadata_index` enabled, phase 2 would load from the RocksDB index populated
+    /// in phase 1 and skip the scan, so disable it to always exercise the scan code path.
+    settings[FileCacheSetting::use_rocksdb_metadata_index] = false;
 
     /// Use diverse paths so keys hash to many different 3-char prefix directories,
     /// exercising parallel listing across multiple prefix dirs.
@@ -2713,3 +2720,176 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheDowngradedFileSegments].load(), downgraded_before + 1);
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheEvictedFileSegments].load(), evicted_before);
 }
+
+#if USE_ROCKSDB
+TEST_F(FileCacheTest, RocksDBIndex)
+{
+    /// Test that the RocksDB metadata index correctly persists file segment metadata
+    /// across cache reload, and that creation/load/detach operations are reflected in the index.
+
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    std::string query_id = "query_id_rocksdb";
+
+    Poco::XML::DOMParser dom_parser;
+    std::string xml(R"CONFIG(<clickhouse>
+</clickhouse>)CONFIG");
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId(query_id);
+    chassert(&DB::CurrentThread::get() == &thread_status);
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    const size_t file_size = INT_MAX;
+    const auto & user = FileCache::getCommonOrigin();
+
+    auto key1 = DB::FileCacheKey::fromPath("rocksdb_key1");
+    auto key2 = DB::FileCacheKey::fromPath("rocksdb_key2");
+
+    /// Phase 1: Create a cache with RocksDB index, download some segments.
+    {
+        DB::FileCacheSettings settings;
+        settings[FileCacheSetting::path] = cache_base_path;
+        settings[FileCacheSetting::max_size] = 100;
+        settings[FileCacheSetting::max_elements] = 10;
+        settings[FileCacheSetting::boundary_alignment] = 1;
+        settings[FileCacheSetting::load_metadata_asynchronously] = false;
+        settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+        settings[FileCacheSetting::use_rocksdb_metadata_index] = true;
+
+        auto cache = DB::FileCache("rocksdb_test", settings);
+        cache.initialize();
+
+        auto get_or_set = [&](const DB::FileCacheKey & key, size_t offset, size_t size)
+        {
+            return cache.getOrSet(key, offset, size, file_size, {}, 0, user);
+        };
+
+        /// Create and download segments for key1: [0, 9] and [10, 19].
+        {
+            auto holder = get_or_set(key1, 0, 10);
+            assertEqual(holder, { Range(0, 9) }, { State::EMPTY });
+            download(*holder->begin());
+            assertEqual(holder, { Range(0, 9) }, { State::DOWNLOADED });
+            increasePriority(holder);
+        }
+        {
+            auto holder = get_or_set(key1, 10, 10);
+            assertEqual(holder, { Range(10, 19) }, { State::EMPTY });
+            download(*holder->begin());
+            assertEqual(holder, { Range(10, 19) }, { State::DOWNLOADED });
+            increasePriority(holder);
+        }
+
+        /// Create and download a segment for key2: [0, 4].
+        {
+            auto holder = get_or_set(key2, 0, 5);
+            assertEqual(holder, { Range(0, 4) }, { State::EMPTY });
+            download(*holder->begin());
+            assertEqual(holder, { Range(0, 4) }, { State::DOWNLOADED });
+            increasePriority(holder);
+        }
+
+        ASSERT_EQ(cache.getFileSegmentsNum(), 3);
+        ASSERT_EQ(cache.getUsedCacheSize(), 25);
+
+        /// Verify the RocksDB index has 3 entries.
+        auto index = cache.getRocksDBIndex();
+        ASSERT_NE(index, nullptr);
+        auto entries = index->loadAll();
+        ASSERT_EQ(entries.size(), 3);
+    }
+
+    /// Phase 2: Re-create cache from the same path — should load from RocksDB index.
+    {
+        DB::FileCacheSettings settings;
+        settings[FileCacheSetting::path] = cache_base_path;
+        settings[FileCacheSetting::max_size] = 100;
+        settings[FileCacheSetting::max_elements] = 10;
+        settings[FileCacheSetting::boundary_alignment] = 1;
+        settings[FileCacheSetting::load_metadata_asynchronously] = false;
+        settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+        settings[FileCacheSetting::use_rocksdb_metadata_index] = true;
+
+        auto cache = DB::FileCache("rocksdb_test", settings);
+        cache.initialize();
+
+        /// All 3 segments should be present after reload.
+        ASSERT_EQ(cache.getFileSegmentsNum(), 3);
+        ASSERT_EQ(cache.getUsedCacheSize(), 25);
+
+        /// Verify key1 segments.
+        auto infos1 = cache.getFileSegmentInfos(key1, user.user_id);
+        ASSERT_EQ(infos1.size(), 2);
+        std::sort(infos1.begin(), infos1.end(), [](const auto & a, const auto & b) { return a.range_left < b.range_left; });
+        ASSERT_EQ(infos1[0].range_left, 0);
+        ASSERT_EQ(infos1[0].range_right, 9);
+        ASSERT_EQ(infos1[0].state, State::DOWNLOADED);
+        ASSERT_EQ(infos1[1].range_left, 10);
+        ASSERT_EQ(infos1[1].range_right, 19);
+        ASSERT_EQ(infos1[1].state, State::DOWNLOADED);
+
+        /// Verify key2 segment.
+        auto infos2 = cache.getFileSegmentInfos(key2, user.user_id);
+        ASSERT_EQ(infos2.size(), 1);
+        ASSERT_EQ(infos2[0].range_left, 0);
+        ASSERT_EQ(infos2[0].range_right, 4);
+        ASSERT_EQ(infos2[0].state, State::DOWNLOADED);
+    }
+
+    /// Phase 3: Detach a segment, reload, verify it's gone.
+    {
+        DB::FileCacheSettings settings;
+        settings[FileCacheSetting::path] = cache_base_path;
+        settings[FileCacheSetting::max_size] = 100;
+        settings[FileCacheSetting::max_elements] = 10;
+        settings[FileCacheSetting::boundary_alignment] = 1;
+        settings[FileCacheSetting::load_metadata_asynchronously] = false;
+        settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+        settings[FileCacheSetting::use_rocksdb_metadata_index] = true;
+
+        auto cache = DB::FileCache("rocksdb_test", settings);
+        cache.initialize();
+
+        ASSERT_EQ(cache.getFileSegmentsNum(), 3);
+
+        /// Remove key2 entirely.
+        cache.removeKeyIfExists(key2, user.user_id);
+
+        ASSERT_EQ(cache.getFileSegmentsNum(), 2);
+        ASSERT_EQ(cache.getUsedCacheSize(), 20);
+
+        /// RocksDB index should now have 2 entries.
+        auto index = cache.getRocksDBIndex();
+        auto entries = index->loadAll();
+        ASSERT_EQ(entries.size(), 2);
+    }
+
+    /// Phase 4: Reload again — should have only key1 segments.
+    {
+        DB::FileCacheSettings settings;
+        settings[FileCacheSetting::path] = cache_base_path;
+        settings[FileCacheSetting::max_size] = 100;
+        settings[FileCacheSetting::max_elements] = 10;
+        settings[FileCacheSetting::boundary_alignment] = 1;
+        settings[FileCacheSetting::load_metadata_asynchronously] = false;
+        settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+        settings[FileCacheSetting::use_rocksdb_metadata_index] = true;
+
+        auto cache = DB::FileCache("rocksdb_test", settings);
+        cache.initialize();
+
+        ASSERT_EQ(cache.getFileSegmentsNum(), 2);
+        ASSERT_EQ(cache.getUsedCacheSize(), 20);
+
+        /// key2 was removed, so only key1 segments remain.
+        auto infos1 = cache.getFileSegmentInfos(key1, user.user_id);
+        ASSERT_EQ(infos1.size(), 2);
+    }
+}
+#endif

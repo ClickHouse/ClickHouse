@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <boost/noncopyable.hpp>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/Guards.h>
@@ -304,6 +306,10 @@ private:
 
     /// Guarded by `segment_guard`. Set while dynamic-resize eviction is pending.
     bool on_delayed_removal = false;
+
+#if USE_ROCKSDB
+    bool added_to_rocksdb = false;
+#endif
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 };

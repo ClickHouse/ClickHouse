@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Interpreters/FileCache/FileSegment.h>
 
 #include <filesystem>
@@ -619,9 +621,38 @@ bool FileSegment::reserve(
         *this, size_to_reserve, *reserve_stat, getKeyMetadata()->origin, lock_wait_timeout_milliseconds, failure_reason);
 
     if (!reserved)
+    {
         setDownloadFailedUnlocked(lock());
+        return false;
+    }
 
-    return reserved;
+#if USE_ROCKSDB
+    /// Register in RocksDB index on first successful reservation, not at segment creation.
+    /// Many EMPTY segments are never downloaded (unused prefetches, LIMIT in query, etc.),
+    /// so deferring avoids redundant contention on creation/removal of empty segments.
+    bool is_first_reservation = (current_downloaded_size == 0 && already_reserved_size == 0);
+    if (is_first_reservation)
+    {
+        try
+        {
+            if (auto index = cache->getRocksDBIndex())
+            {
+                /// Put the index entry and set `added_to_rocksdb` atomically under `FileSegmentGuard::Lock`
+                /// so concurrent readers (e.g. `assertCorrectnessUnlocked`) never observe
+                /// the RocksDB row without the matching in-memory flag.
+                auto lk = lock();
+                index->put(file_key, offset(), /* size */ -1, getKeyMetadata()->origin, /* is_new_entry */ true);
+                added_to_rocksdb = true;
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to add entry to RocksDB index");
+        }
+    }
+#endif
+
+    return true;
 }
 
 void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock &)
@@ -642,6 +673,21 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock &)
 
     chassert(downloaded_size > 0);
     chassert(fs::file_size(getPath()) == downloaded_size);
+
+#if USE_ROCKSDB
+    try
+    {
+        if (auto index = cache->getRocksDBIndex())
+        {
+            index->put(file_key, offset(), static_cast<Int64>(downloaded_size), getKeyMetadata()->origin, /* is_new_entry */ !added_to_rocksdb);
+            added_to_rocksdb = true;
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to update entry in RocksDB index");
+    }
+#endif
 }
 
 void FileSegment::setDownloadFailed()
@@ -734,9 +780,28 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
              range().size(), result_size, downloaded_size.load());
 
     if (downloaded_size == result_size)
+    {
         setDownloadState(State::DOWNLOADED, lock);
+
+#if USE_ROCKSDB
+        try
+        {
+            if (auto index = cache->getRocksDBIndex())
+            {
+                index->put(file_key, offset(), static_cast<Int64>(downloaded_size), getKeyMetadata()->origin, /* is_new_entry */ !added_to_rocksdb);
+                added_to_rocksdb = true;
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to update entry in RocksDB index");
+        }
+#endif
+    }
     else
+    {
         setDownloadState(State::PARTIALLY_DOWNLOADED, lock);
+    }
 
     segment_range.right = segment_range.left + result_size - 1;
 
@@ -1103,6 +1168,36 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
         }
     }
 
+#if USE_ROCKSDB
+    if (cache)
+    {
+        if (auto index = cache->getRocksDBIndex())
+        {
+            if (download_state == State::DETACHED)
+            {
+                /// detach() cleared key_metadata together with the state transition, so user_id
+                /// is no longer reachable to query RocksDB. detach() also resets added_to_rocksdb
+                /// only after the row is removed, so the local flag is the surviving invariant.
+                chassert(!added_to_rocksdb);
+            }
+            else
+            {
+                bool in_rocksdb = index->exists(file_key, offset(), getKeyMetadata()->origin.user_id);
+
+                if (reserved_size == 0)
+                {
+                    chassert(!added_to_rocksdb);
+                    chassert(!in_rocksdb);
+                }
+                else if (added_to_rocksdb)
+                    chassert(in_rocksdb);
+                else
+                    chassert(!in_rocksdb);
+            }
+        }
+    }
+#endif
+
     return true;
 }
 
@@ -1188,9 +1283,39 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
     if (download_state == State::DETACHED)
         return;
 
+#if USE_ROCKSDB
+    /// Capture user_id before setDetachedState() clears key_metadata; we need it to address the
+    /// RocksDB row (the key is (FileCacheKey, offset, user_id) for per-user mode correctness).
+    std::string user_id_for_index;
+    if (added_to_rocksdb)
+        user_id_for_index = getKeyMetadata()->origin.user_id;
+#endif
+
     if (!downloader_id.empty())
         resetDownloaderUnlocked(lock);
     setDetachedState(lock);
+
+#if USE_ROCKSDB
+    /// Remove from RocksDB index BEFORE the file is deleted from disk.
+    /// If a crash happens between index removal and file deletion,
+    /// the worst case is an orphaned file (leaked disk space),
+    /// which is safer than a stale index entry pointing to a missing file.
+    if (added_to_rocksdb)
+    {
+        try
+        {
+            if (auto index = cache->getRocksDBIndex())
+            {
+                index->remove(file_key, offset(), user_id_for_index);
+                added_to_rocksdb = false;
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to remove entry from RocksDB index");
+        }
+    }
+#endif
 }
 
 void FileSegment::increasePriority()
