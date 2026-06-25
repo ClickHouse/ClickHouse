@@ -124,6 +124,7 @@
 #include <Storages/System/StorageSystemKeeperCluster.h>
 #endif
 #include <Storages/System/StorageSystemScheduler.h>
+#include <Storages/System/StorageSystemObjectStorageQueueMetadata.h>
 #include <Storages/System/StorageSystemObjectStorageQueueMetadataCache.h>
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Storages/System/StorageSystemDashboards.h>
@@ -287,6 +288,8 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemJemallocStats>(context, system_database, "jemalloc_stats", "Returns jemalloc statistics in a single row with a single column. Equivalent to SYSTEM JEMALLOC STATS command.");
     attachNoDescription<StorageSystemObjectStorageQueueMetadataCache<ObjectStorageType::S3>>(context, system_database, "s3queue_metadata_cache", "Contains in-memory state of S3Queue metadata and currently processed rows per file.");
     attachNoDescription<StorageSystemObjectStorageQueueMetadataCache<ObjectStorageType::Azure>>(context, system_database, "azure_queue_metadata_cache", "Contains in-memory state of AzureQueue metadata and currently processed rows per file.");
+    attachNoDescription<StorageSystemObjectStorageQueueMetadata<ObjectStorageType::S3>>(context, system_database, "s3_queue_metadata", "Contains the current number of processed, processing and failed nodes in keeper for each S3Queue metadata object.");
+    attachNoDescription<StorageSystemObjectStorageQueueMetadata<ObjectStorageType::Azure>>(context, system_database, "azure_queue_metadata", "Contains the current number of processed, processing and failed nodes in keeper for each AzureQueue metadata object.");
     attach<StorageSystemObjectStorageQueueSettings<ObjectStorageType::S3>>(context, system_database, "s3_queue_settings", "Contains a list of settings of S3Queue tables.");
     attach<StorageSystemObjectStorageQueueSettings<ObjectStorageType::Azure>>(context, system_database, "azure_queue_settings", "Contains a list of settings of AzureQueue tables.");
     attach<StorageSystemDashboards>(context, system_database, "dashboards", "Contains queries used by /dashboard page accessible though HTTP interface. This table can be useful for monitoring and troubleshooting. The table contains a row for every chart in a dashboard.");

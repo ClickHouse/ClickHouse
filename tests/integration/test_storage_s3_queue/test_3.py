@@ -400,3 +400,102 @@ def test_commit_on_limit(started_cluster, processing_threads):
             f"SELECT count() FROM system.text_log WHERE message ILIKE '%successful files: %' and logger_name ILIKE '%{table_name}%'"
         )
     )
+
+
+def test_system_queue_metadata(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_system_queue_metadata_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 10
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_loading_retries": 0,
+            # Keep `processing` nodes ephemeral so they disappear right after
+            # processing finishes - otherwise the counts would be racy.
+            "use_persistent_processing_nodes": False,
+        },
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    generate_random_files(started_cluster, files_path, files_to_generate, row_num=1)
+    # A malformed file which must end up in the `failed` folder.
+    incorrect_values_csv = b"not_a_number,1,1\n"
+    put_s3_file_content(
+        started_cluster, f"{files_path}/bad.csv", incorrect_values_csv
+    )
+
+    for _ in range(60):
+        if files_to_generate == int(
+            node.query(f"SELECT count() FROM {dst_table_name}")
+        ):
+            break
+        time.sleep(1)
+    assert files_to_generate == int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    def get_counts():
+        return list(
+            map(
+                int,
+                node.query(
+                    f"""
+                    SELECT processed_nodes, processing_nodes, failed_nodes
+                    FROM system.s3_queue_metadata
+                    WHERE zookeeper_path ilike '%{keeper_path}%'
+                    """
+                )
+                .strip()
+                .split("\t"),
+            )
+        )
+
+    for _ in range(60):
+        processed, processing, failed = get_counts()
+        if processed == files_to_generate and failed == 1 and processing == 0:
+            break
+        time.sleep(1)
+
+    assert processed == files_to_generate
+    assert processing == 0
+    assert failed == 1
+
+    # The contents columns must hold exactly as many nodes as the counts.
+    processed_len, processing_len, failed_len = list(
+        map(
+            int,
+            node.query(
+                f"""
+                SELECT length(processed), length(processing), length(failed)
+                FROM system.s3_queue_metadata
+                WHERE zookeeper_path ilike '%{keeper_path}%'
+                """
+            )
+            .strip()
+            .split("\t"),
+        )
+    )
+    assert processed_len == files_to_generate
+    assert processing_len == 0
+    assert failed_len == 1
+
+    # The `failed` node content stores the metadata of the malformed file,
+    # which includes its path.
+    failed_value = node.query(
+        f"""
+        SELECT arrayJoin(mapValues(failed))
+        FROM system.s3_queue_metadata
+        WHERE zookeeper_path ilike '%{keeper_path}%'
+        """
+    )
+    assert "bad.csv" in failed_value
+
+    node.query(f"DROP TABLE {table_name} SYNC")
