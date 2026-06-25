@@ -11,6 +11,7 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/SortDescription.h>
 #include <Common/assert_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include "config.h"
 
@@ -44,7 +45,7 @@ struct SortCursorImpl
       */
     size_t order = 0;
 
-    using NeedCollationFlags = std::vector<UInt8>;
+    using NeedCollationFlags = VectorWithMemoryTracking<UInt8>;
 
     /** Should we use Collator to sort a column? */
     NeedCollationFlags need_collation;
@@ -58,7 +59,7 @@ struct SortCursorImpl
     IColumnPermutation * permutation = nullptr;
 
 #if USE_EMBEDDED_COMPILER
-    std::vector<ColumnData> raw_sort_columns_data;
+    VectorWithMemoryTracking<ColumnData> raw_sort_columns_data;
 #endif
 
     SortCursorImpl() = default;
@@ -116,7 +117,7 @@ private:
     size_t pos = 0;
 };
 
-using SortCursorImpls = std::vector<SortCursorImpl>;
+using SortCursorImpls = VectorWithMemoryTracking<SortCursorImpl>;
 
 
 /// For easy copying.
@@ -490,7 +491,7 @@ public:
     }
 
 private:
-    using Container = std::vector<Cursor>;
+    using Container = VectorWithMemoryTracking<Cursor>;
     Container queue;
 
     /// Cache comparison between first and second child if the order in queue has not been changed.
