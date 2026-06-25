@@ -301,6 +301,9 @@ void MySQLHandler::run()
         {
             log->log(exc);
             packet_endpoint->sendPacket(ERRPacket(exc.code(), mysql_error_code, exc.message()));
+            /// Session setup failed: fail the handshake. Do not send the OK packet or enter the
+            /// command loop, which would leave an unauthorized initial database on a usable session.
+            return;
         }
 
         OKPacket ok_packet(0, handshake_response.capability_flags, 0, 0, 0);

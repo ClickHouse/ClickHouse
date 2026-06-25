@@ -5,6 +5,8 @@ import fnmatch
 import logging
 import math
 import os
+import socket
+import struct
 import time
 from typing import Literal
 
@@ -1034,3 +1036,117 @@ def test_mysql_metadata_commands_access_control(started_cluster):
 
     node.query("DROP USER mysql_lowpriv")
     node.query("DROP TABLE default.mysql_acl_employees")
+
+
+def _mysql_recv_packet(sock):
+    header = b""
+    while len(header) < 4:
+        chunk = sock.recv(4 - len(header))
+        if not chunk:
+            return None
+        header += chunk
+    length = header[0] | (header[1] << 8) | (header[2] << 16)
+    body = b""
+    while len(body) < length:
+        chunk = sock.recv(length - len(body))
+        if not chunk:
+            return None
+        body += chunk
+    return body
+
+
+def _mysql_send_packet(sock, seq, body):
+    length = len(body)
+    sock.sendall(bytes([length & 0xFF, (length >> 8) & 0xFF, (length >> 16) & 0xFF, seq]) + body)
+
+
+def test_mysql_handshake_database_access_control(started_cluster):
+    # A database selected in the initial handshake (CLIENT_CONNECT_WITH_DB) must enforce the same
+    # SHOW_DATABASES check as COM_INIT_DB / the SQL `USE` statement. On denial the handshake must
+    # cleanly fail: the server must NOT send an OK packet after the error and must NOT enter the
+    # command loop, otherwise a client that ignores the error still proceeds on an authenticated
+    # session. We drive the protocol over a raw socket precisely to mimic such a lenient client.
+    node = cluster.instances["node"]
+    node.query("DROP USER IF EXISTS mysql_handshake_lowpriv")
+    node.query(
+        "CREATE TABLE IF NOT EXISTS default.mysql_acl_handshake (id UInt64) ENGINE=MergeTree ORDER BY id"
+    )
+    node.query("CREATE USER mysql_handshake_lowpriv IDENTIFIED WITH no_password")
+    node.query("GRANT SELECT(id) ON default.mysql_acl_handshake TO mysql_handshake_lowpriv")
+
+    CLIENT_LONG_PASSWORD = 0x1
+    CLIENT_LONG_FLAG = 0x4
+    CLIENT_CONNECT_WITH_DB = 0x8
+    CLIENT_PROTOCOL_41 = 0x200
+    CLIENT_SECURE_CONNECTION = 0x8000
+    CLIENT_PLUGIN_AUTH = 0x80000
+
+    def handshake_with_db(database):
+        sock = socket.create_connection(
+            (started_cluster.get_instance_ip("node"), server_port), timeout=10
+        )
+        # Read and discard the server greeting.
+        assert _mysql_recv_packet(sock) is not None
+        capabilities = (
+            CLIENT_LONG_PASSWORD
+            | CLIENT_LONG_FLAG
+            | CLIENT_CONNECT_WITH_DB
+            | CLIENT_PROTOCOL_41
+            | CLIENT_SECURE_CONNECTION
+            | CLIENT_PLUGIN_AUTH
+        )
+        body = struct.pack("<I", capabilities)
+        body += struct.pack("<I", 16 * 1024 * 1024)  # max packet size
+        body += bytes([0x21])  # charset utf8_general_ci
+        body += b"\x00" * 23  # reserved
+        body += b"mysql_handshake_lowpriv\x00"
+        body += bytes([0])  # empty auth response (no_password)
+        body += database.encode() + b"\x00"
+        body += b"mysql_native_password\x00"
+        _mysql_send_packet(sock, 1, body)
+        # Read every packet the server sends, leniently (do not abort on an ERR packet) until it
+        # stops sending (the connection is closed or it blocks waiting for a command).
+        packets = []
+        sock.settimeout(5)
+        while True:
+            try:
+                pkt = _mysql_recv_packet(sock)
+            except socket.timeout:
+                packets.append("WAITING_FOR_COMMAND")
+                break
+            if pkt is None:
+                packets.append("CLOSED")
+                break
+            if pkt and pkt[0] == 0xFF:
+                packets.append("ERR")
+            elif pkt and pkt[0] == 0x00:
+                packets.append("OK")
+            else:
+                packets.append("OTHER")
+            if pkt and pkt[0] == 0x00:
+                # An OK packet completes the handshake: a usable command loop follows. Confirm by
+                # issuing COM_QUERY `SELECT 1` and seeing whether the server answers.
+                _mysql_send_packet(sock, 0, bytes([0x03]) + b"SELECT 1")
+                try:
+                    resp = _mysql_recv_packet(sock)
+                    packets.append("SESSION_USABLE" if resp is not None else "CLOSED")
+                except socket.timeout:
+                    packets.append("NO_RESPONSE")
+                break
+        sock.close()
+        return packets
+
+    # Denied database: the handshake must fail. The server may send an ERR; it must NOT then send
+    # an OK / leave a usable session.
+    denied = handshake_with_db("system")
+    assert "OK" not in denied, denied
+    assert "SESSION_USABLE" not in denied, denied
+    assert "ERR" in denied, denied
+
+    # Sanity: a database the user can access completes the handshake normally and yields a usable
+    # session (no regression for the allowed path).
+    allowed = handshake_with_db("default")
+    assert "OK" in allowed and "SESSION_USABLE" in allowed, allowed
+
+    node.query("DROP USER mysql_handshake_lowpriv")
+    node.query("DROP TABLE default.mysql_acl_handshake")
