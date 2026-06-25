@@ -11,6 +11,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Common/logger_useful.h>
+#include <Common/maskSensitiveQueryParameters.h>
 #include <Common/setThreadName.h>
 #include "config.h"
 
@@ -420,7 +421,9 @@ public:
     void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) override
     {
         const String & uri = request.getURI();
-        LOG_DEBUG(log(), "Processing Query API request: method={}, uri={}", request.getMethod(), uri);
+        /// This endpoint accepts user/password (and other secrets) as query-string parameters via
+        /// authenticateUserByHTTP, so the URI must be masked before it reaches the logs.
+        LOG_DEBUG(log(), "Processing Query API request: method={}, uri={}", request.getMethod(), maskSensitiveQueryParametersInURI(uri));
 
         response.setContentType("application/json");
 
@@ -513,7 +516,7 @@ public:
             }
             else
             {
-                LOG_ERROR(log(), "No matching endpoint found for URI: {}, method: {}", uri, request.getMethod());
+                LOG_ERROR(log(), "No matching endpoint found for URI: {}, method: {}", maskSensitiveQueryParametersInURI(uri), request.getMethod());
                 response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
                 writeString(R"({"status":"error","errorType":"not_found","error":"API endpoint not found"})", getOutputStream(response));
             }
