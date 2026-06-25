@@ -113,6 +113,28 @@ TEST(HTTPHeaderFilter, RegexpMatchExplicitInlineFlagStillWorks)
     EXPECT_TRUE(isForbidden(filter, "Secret_Header"));
 }
 
+/// An inline (?-i) scope re-enables case-sensitive matching for that literal.
+/// On master the regexp matched the original-case header, so such a config must
+/// keep blocking it: the regexp is matched against the original-case name, not a
+/// lower-cased one, otherwise an existing (?-i) blocklist would silently weaken.
+TEST(HTTPHeaderFilter, RegexpInlineCaseSensitiveScopeStillBlocksOriginalCase)
+{
+    HTTPHeaderFilter filter;
+    configure(filter, R"(
+        <clickhouse>
+            <http_forbid_headers>
+                <header_regexp>(?-i)Authorization</header_regexp>
+            </http_forbid_headers>
+        </clickhouse>
+    )");
+
+    /// The case-sensitive literal still matches the header it matched on master.
+    EXPECT_TRUE(isForbidden(filter, "Authorization"));
+    /// And the (?-i) scope keeps its case-sensitive semantics for other cases.
+    EXPECT_FALSE(isForbidden(filter, "authorization"));
+    EXPECT_FALSE(isForbidden(filter, "AUTHORIZATION"));
+}
+
 /// Case normalization must compose with whitespace/control-character stripping:
 /// a name padded with whitespace and in a different case is still forbidden.
 TEST(HTTPHeaderFilter, CaseInsensitiveComposesWithWhitespaceStripping)

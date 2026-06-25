@@ -32,15 +32,19 @@ void HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries & entries) con
                 [](char c) { return std::iscntrl(static_cast<unsigned char>(c)) || std::isspace(static_cast<unsigned char>(c)); }),
             normalized_name.end());
 
-        /// HTTP header names are case-insensitive (RFC 7230 3.2), so match case-insensitively.
+        /// HTTP header names are case-insensitive (RFC 7230 3.2). The exact-set
+        /// entries are stored lower-cased, so lower-case the name for that lookup.
         const std::string lower_name = Poco::toLower(normalized_name);
 
         if (forbidden_headers.contains(lower_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" is forbidden in configuration file, "
                                                     "see <http_forbid_headers>", entry.name);
 
+        /// Match the regexp against the original-case name: patterns are compiled
+        /// case-insensitive by default, but an inline (?-i) scope must see the real
+        /// case (lower-casing here would stop existing (?-i) configs from matching).
         for (const auto & header_regex : forbidden_headers_regexp)
-            if (re2::RE2::FullMatch(lower_name, *header_regex))
+            if (re2::RE2::FullMatch(normalized_name, *header_regex))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" is forbidden in configuration file, "
                                                         "see <http_forbid_headers>", entry.name);
     }
