@@ -42,3 +42,13 @@ ACCESS_STORAGE_READONLY
 after rejected rename (table not renamed, read-only policy still bound to rt):
 0
 rt
+-- cross-database RENAME rejected when a database-wide (db.*) policy applies
+NOT_IMPLEMENTED
+after rejected cross-db rename (table not moved, db-wide policy still filters source -> eng only):
+1
+0
+-- RENAME rejected when the transient (phase-1) row-policy name is taken (no commit-then-leak)
+ACCESS_ENTITY_ALREADY_EXISTS
+after rejected rename (table not renamed, policy stays on ta, eng only):
+1
+0

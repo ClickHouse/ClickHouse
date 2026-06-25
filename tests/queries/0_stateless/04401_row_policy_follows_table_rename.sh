@@ -160,4 +160,39 @@ SELECT table FROM system.row_policies WHERE database = 'rodb';
 "
 rm -rf "${LOCAL_DIR}"
 
+# A database-wide policy (ON db.*) is not bound to a single table name, so it cannot follow a table
+# that moves to a different database (the destination lookup new_db.t / new_db.* never sees old db.*).
+# Reject the cross-database move rather than silently dropping the filter.
+echo '-- cross-database RENAME rejected when a database-wide (db.*) policy applies'
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${DB2}"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLICKHOUSE_DATABASE}_x"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${DB2}"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_x.t (id UInt64, dept String) ENGINE = MergeTree ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${CLICKHOUSE_DATABASE}_x.t VALUES (1, 'eng'), (2, 'fin')"
+${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY xp ON ${CLICKHOUSE_DATABASE}_x.* FOR SELECT USING dept = 'eng' TO ${USER}"
+run_user "RENAME TABLE ${CLICKHOUSE_DATABASE}_x.t TO ${DB2}.t2" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
+echo 'after rejected cross-db rename (table not moved, db-wide policy still filters source -> eng only):'
+run_user "SELECT id FROM ${CLICKHOUSE_DATABASE}_x.t ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '${DB2}' AND name = 't2'"
+${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY xp ON ${CLICKHOUSE_DATABASE}_x.*"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${CLICKHOUSE_DATABASE}_x"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${DB2}"
+
+# The re-key parks each policy under a transient '.tmp_rename_row_policy_<uuid>_0' name during the
+# move. That name is derived from the visible policy UUID, so a pre-existing policy can occupy it
+# deterministically; the move would then throw AFTER the rename commits. Preflight rejects it first.
+echo '-- RENAME rejected when the transient (phase-1) row-policy name is taken (no commit-then-leak)'
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${CLICKHOUSE_DATABASE}.ta (id UInt64, dept String) ENGINE = MergeTree ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${CLICKHOUSE_DATABASE}.ta VALUES (1, 'eng'), (2, 'fin')"
+${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY tp ON ${CLICKHOUSE_DATABASE}.ta FOR SELECT USING dept = 'eng' TO ${USER}"
+TP_ID=$(${CLICKHOUSE_CLIENT} --query "SELECT id FROM system.row_policies WHERE short_name = 'tp' AND database = '${CLICKHOUSE_DATABASE}' AND table = 'ta'")
+TMP_TABLE=".tmp_rename_row_policy_${TP_ID}_0"
+${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY tp ON ${CLICKHOUSE_DATABASE}.\`${TMP_TABLE}\` FOR SELECT USING 1 TO ${USER}"
+run_user "RENAME TABLE ${CLICKHOUSE_DATABASE}.ta TO ${CLICKHOUSE_DATABASE}.tb" 2>&1 | grep -o -m1 "ACCESS_ENTITY_ALREADY_EXISTS"
+echo 'after rejected rename (table not renamed, policy stays on ta, eng only):'
+run_user "SELECT id FROM ${CLICKHOUSE_DATABASE}.ta ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '${CLICKHOUSE_DATABASE}' AND name = 'tb'"
+${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY tp ON ${CLICKHOUSE_DATABASE}.ta, tp ON ${CLICKHOUSE_DATABASE}.\`${TMP_TABLE}\`"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLICKHOUSE_DATABASE}.ta"
+
 ${CLICKHOUSE_CLIENT} --query "DROP USER ${USER}"
