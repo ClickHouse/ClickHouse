@@ -12,15 +12,20 @@ DROP TABLE IF EXISTS rmv_other SYNC;
 DROP TABLE IF EXISTS rmv_plain SYNC;
 
 CREATE TABLE src (x UInt32) ENGINE = MergeTree ORDER BY x;
+INSERT INTO src VALUES (1), (2), (3);
 CREATE TABLE tgt (x UInt32) ENGINE = MergeTree ORDER BY x;
 
--- First create of a non-APPEND refreshable MV with an explicit TO target.
+-- First create of a non-APPEND refreshable MV with an explicit TO target. The replacement view is
+-- built empty, so the target is only populated by the first refresh after the rename.
 CREATE OR REPLACE MATERIALIZED VIEW rmv REFRESH EVERY 1 HOUR TO tgt AS SELECT x FROM src;
-SELECT name FROM system.tables WHERE database = currentDatabase() AND name = 'rmv';
+SYSTEM WAIT VIEW rmv;
+SELECT 'first', sum(x) FROM tgt;
 
--- Replacing it used to fail: the target was still owned by the view being replaced.
+-- Replacing it used to fail: the target was still owned by the view being replaced. The new
+-- definition must take effect in the target.
 CREATE OR REPLACE MATERIALIZED VIEW rmv REFRESH EVERY 2 HOUR TO tgt AS SELECT x * 2 AS x FROM src;
-SELECT name FROM system.tables WHERE database = currentDatabase() AND name = 'rmv';
+SYSTEM WAIT VIEW rmv;
+SELECT 'replace', sum(x) FROM tgt;
 
 -- A different view must not take over a target that another refreshable MV owns,
 -- both via a plain CREATE and via CREATE OR REPLACE.

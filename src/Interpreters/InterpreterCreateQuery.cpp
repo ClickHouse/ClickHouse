@@ -2292,6 +2292,11 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         }
     }
 
+    /// Build the temporary replacement empty so it cannot refresh the target before the rename.
+    const bool refresh_after_replace = create.refresh_strategy && !create.is_create_empty;
+    if (refresh_after_replace)
+        create.is_create_empty = true;
+
     {
         const String name_hash = TemporaryReplaceTableName::calculateHash(create.getDatabase(), create.getTable());
         const String random_suffix = [&]()
@@ -2382,6 +2387,11 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             auto drop_context = make_drop_context();
             InterpreterDropQuery(ast_drop, drop_context).execute();
         }
+
+        /// Now that the replacement is committed, run the first refresh on the final view.
+        if (refresh_after_replace)
+            for (const auto & task : current_context->getRefreshSet().findTasks({create.getDatabase(), table_to_replace_name}))
+                task->run();
 
         create.setTable(table_to_replace_name);
 
