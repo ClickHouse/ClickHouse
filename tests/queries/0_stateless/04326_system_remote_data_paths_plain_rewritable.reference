@@ -1,8 +1,10 @@
 -- the plain_rewritable disk is reported in system.remote_data_paths with metadata_type
 1
--- remote_path always starts with the common blob prefix
+-- common_prefix_for_blobs is non-empty and remote_path starts with it
 0
 -- non-root local data paths are present
 1
 -- a freshly written table has no ephemeral entries
 0
+-- a wrapped (encrypted) plain_rewritable disk reports metadata_type and non-empty common_prefix_for_blobs
+1

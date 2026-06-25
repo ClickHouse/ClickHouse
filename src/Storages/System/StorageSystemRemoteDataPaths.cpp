@@ -12,7 +12,8 @@
 #include <Disks/DiskType.h>
 #include <Disks/IDisk.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
@@ -257,8 +258,13 @@ bool SystemRemoteDataPathsSource::nextDisk()
             /// store/data/shadow namespace, so traverse from the disk root. This also surfaces blobs
             /// not reachable through the logical tree (e.g. leftovers of an interrupted removal).
             current_disk_is_plain_rewritable = true;
-            if (const auto * plain = dynamic_cast<const MetadataStorageFromPlainRewritableObjectStorage *>(disk->getMetadataStorage().get()))
-                plain_common_prefix = plain->getCommonKeyPrefix();
+            /// Take the prefix from the object storage contract rather than casting the metadata storage:
+            /// cached/encrypted disks over plain_rewritable still report metadata_type = PlainRewritable but
+            /// wrap the metadata storage, so a cast to the concrete type would miss them.
+            auto object_storage = disk->getObjectStorage();
+            chassert(object_storage);
+            if (object_storage)
+                plain_common_prefix = object_storage->getCommonKeyPrefix();
 
             std::vector<std::string> roots;
             disk->listFiles("", roots);
