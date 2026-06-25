@@ -7,10 +7,7 @@
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStorage.h>
-#include <Coordination/KeeperStorageImpl.h>
-#include <Coordination/KeeperMemNodesStorage.h>
 #include <Coordination/KeeperStorage_fwd.h>
-#include <Common/assert_cast.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -480,12 +477,12 @@ void dumpSessions(const DB::KeeperStorage & storage, const std::string & output_
     }
 }
 
-void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & output_file, const std::string & output_format, bool parallel_output, bool with_acl)
+void dumpNodes(DB::KeeperStorage & storage, const std::string & output_file, const std::string & output_format, bool parallel_output, bool with_acl)
 {
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
 
-    using PrintFunction = std::function<void(const std::string & key, const DB::KeeperMemoryStorage::Node & value)>;
+    using PrintFunction = std::function<void(const std::string & key, const DB::KeeperNodeStats & stats, std::string_view data)>;
 
     const auto print_nodes = [&](const PrintFunction print_function)
     {
@@ -495,9 +492,12 @@ void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & outp
         {
             auto key = keys.front();
             keys.pop();
-            auto value = storage.nodes.container.getValue(key);
-            print_function(key, value);
-            for (const auto & child : value.getChildren())
+            DB::KeeperNodeStats stats;
+            std::string data;
+            if (!storage.nodes_storage->getCommittedNodeSimple(key, &stats, &data))
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Node {} not found while dumping nodes", key);
+            print_function(key, stats, data);
+            for (const auto & child : storage.nodes_storage->listCommittedChildrenNames(key))
             {
                 if (key == "/")
                     keys.push(fmt::format("/{}", child));
@@ -548,27 +548,27 @@ void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & outp
         else
             output_format_processor = DB::FormatFactory::instance().getOutputFormat(output_format, output_buf, data, global_context);
 
-        print_function = [&](const auto & key, const auto & value)
+        print_function = [&](const auto & key, const auto & stats, const auto & node_data)
         {
             size_t i = 0;
             res_columns[i++]->insert(key);
-            res_columns[i++]->insert(value.stats.czxid);
-            res_columns[i++]->insert(value.stats.mzxid);
-            res_columns[i++]->insert(value.stats.ctime / 1000);
-            res_columns[i++]->insert(value.stats.mtime / 1000);
-            res_columns[i++]->insert(value.stats.version);
-            res_columns[i++]->insert(value.stats.cversion);
-            res_columns[i++]->insert(value.stats.aversion);
-            res_columns[i++]->insert(value.stats.getEphemeralOwner());
-            res_columns[i++]->insert(value.stats.data_size);
-            res_columns[i++]->insert(value.stats.getNumChildren());
-            res_columns[i++]->insert(value.stats.pzxid);
-            res_columns[i++]->insert(value.getData());
+            res_columns[i++]->insert(stats.czxid);
+            res_columns[i++]->insert(stats.mzxid);
+            res_columns[i++]->insert(stats.ctime / 1000);
+            res_columns[i++]->insert(stats.mtime / 1000);
+            res_columns[i++]->insert(stats.version);
+            res_columns[i++]->insert(stats.cversion);
+            res_columns[i++]->insert(stats.aversion);
+            res_columns[i++]->insert(stats.getEphemeralOwner());
+            res_columns[i++]->insert(stats.data_size);
+            res_columns[i++]->insert(stats.getNumChildren());
+            res_columns[i++]->insert(stats.pzxid);
+            res_columns[i++]->insert(node_data);
 
             if (with_acl)
             {
                 std::string acl_str;
-                const auto acls = storage.acl_map.convertNumber(value.stats.acl_id);
+                const auto acls = storage.acl_map.convertNumber(stats.acl_id);
                 for (const auto & acl : acls)
                 {
                     if (!acl_str.empty())
@@ -588,23 +588,23 @@ void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & outp
         return;
     }
 
-    print_function = [&](const auto & key, const auto & value)
+    print_function = [&](const auto & key, const auto & stats, const auto & data)
     {
         std::cout << key << "\n";
         std::cout << fmt::format(
             "\tStat: {{version: {}, mtime: {}, emphemeralOwner: {}, czxid: {}, mzxid: {}, numChildren: {}, dataLength: {}}}\n",
-            value.stats.version,
-            value.stats.mtime,
-            value.stats.getEphemeralOwner(),
-            value.stats.czxid,
-            value.stats.mzxid,
-            value.stats.getNumChildren(),
-            value.stats.data_size);
+            stats.version,
+            stats.mtime,
+            stats.getEphemeralOwner(),
+            stats.czxid,
+            stats.mzxid,
+            stats.getNumChildren(),
+            stats.data_size);
 
         if (with_acl)
         {
             std::string acl_str;
-            const auto acls = storage.acl_map.convertNumber(value.stats.acl_id);
+            const auto acls = storage.acl_map.convertNumber(stats.acl_id);
             for (const auto & acl : acls)
             {
                 if (!acl_str.empty())
@@ -614,7 +614,7 @@ void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & outp
             std::cout << "\tACL: " << acl_str << std::endl;
         }
 
-        std::cout << "\tData: " << value.getData() << std::endl;
+        std::cout << "\tData: " << data << std::endl;
     };
 
     print_nodes(print_function);
@@ -728,7 +728,7 @@ int dumpStateMachine(
     if (dump_sessions)
         dumpSessions(state_machine->getStorageUnsafe(), output_file, output_format, parallel_output);
     else
-        dumpNodes(assert_cast<DB::KeeperMemoryStorage &>(state_machine->getStorageUnsafe()), output_file, output_format, parallel_output, with_acl);
+        dumpNodes(state_machine->getStorageUnsafe(), output_file, output_format, parallel_output, with_acl);
     return 0;
 }
 

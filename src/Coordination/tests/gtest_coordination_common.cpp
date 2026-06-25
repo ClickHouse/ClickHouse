@@ -104,4 +104,12 @@ std::string committedNodeData(DB::KeeperStorage & storage, std::string_view path
     return data;
 }
 
+std::string uncommittedNodeData(DB::KeeperStorage & storage, std::string_view path)
+{
+    std::string data;
+    if (!storage.nodes_storage->getUncommittedNodeSimple(path, /*out_stats=*/nullptr, &data))
+        data = "<NO NODE>";
+    return data;
+}
+
 #endif

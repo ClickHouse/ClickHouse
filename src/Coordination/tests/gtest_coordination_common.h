@@ -136,6 +136,8 @@ Coordination::ACLs getUncommittedACLs(DB::KeeperStorage & storage, std::string_v
 bool committedNodeExists(DB::KeeperStorage & storage, std::string_view path);
 /// Returns "<NO NODE>" if node doesn't exist.
 std::string committedNodeData(DB::KeeperStorage & storage, std::string_view path);
+/// Returns "<NO NODE>" if node doesn't exist.
+std::string uncommittedNodeData(DB::KeeperStorage & storage, std::string_view path);
 
 using LogEntryPtr = nuraft::ptr<nuraft::log_entry>;
 
