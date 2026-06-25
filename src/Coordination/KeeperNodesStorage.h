@@ -73,6 +73,8 @@ struct KeeperNodesStorage
 
     virtual ~KeeperNodesStorage() = default;
 
+    virtual void shutdown() {}
+
     /// Assigns just the fields relevant to node storage. Other fields are set by KeeperStorage.
     /// Caller must hold storage_mutex (shared_lock is sufficient).
     virtual void getNodeStorageStats(KeeperStorageStats & out) = 0;
@@ -104,11 +106,11 @@ struct KeeperNodesStorage
     virtual void commitDelta(Delta & delta, uint64_t * digest) = 0;
     virtual void cleanupUncommittedState(int64_t commit_zxid) = 0;
     virtual void rollbackUncommittedDelta(const Delta & delta) = 0;
-    virtual void cleanupAfterRollback(std::vector<uint64_t> rollbacked_zxids) = 0;
+    virtual void cleanupAfterRollback(std::vector<uint64_t> /*rollbacked_zxids*/) {}
     /// Call to calculate digest after preparing all uncommitted changes for a given zxid.
-    virtual uint64_t updateNodesDigest(uint64_t current_digest, uint64_t zxid) const = 0;
+    virtual void updateNodesDigest(uint64_t & /*current_digest*/, uint64_t /*zxid*/) const {}
 
-    virtual void recalculateStats() = 0;
+    virtual void recalculateStats() {}
 
     /// In addition to the above, the KeeperStorageImpl template argument must have the following
     /// types and methods.

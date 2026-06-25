@@ -555,14 +555,14 @@ void KeeperMemNodesStorage::cleanupAfterRollback(std::vector<uint64_t> rollbacke
     std::ranges::for_each(rollbacked_zxids, cleanup_uncommitted_nodes);
 }
 
-uint64_t KeeperMemNodesStorage::updateNodesDigest(uint64_t current_digest, uint64_t for_zxid) const
+void KeeperMemNodesStorage::updateNodesDigest(uint64_t & current_digest, uint64_t for_zxid) const
 {
     if (!keeper_context->digestEnabled())
-        return current_digest;
+        return;
 
     auto nodes_it = uncommitted_zxid_to_nodes.find(for_zxid);
     if (nodes_it == uncommitted_zxid_to_nodes.end())
-        return current_digest;
+        return;
 
     for (const auto node_it : nodes_it->second)
     {
@@ -573,8 +573,6 @@ uint64_t KeeperMemNodesStorage::updateNodesDigest(uint64_t current_digest, uint6
             current_digest += uncommitted_node.node->getDigest(path);
         }
     }
-
-    return current_digest;
 }
 
 bool KeeperMemNodesStorage::visitUncommittedRecursive(std::string_view root_path, size_t limit, std::function<bool(std::string_view /*path*/, UncommittedNodeRef &&)> check_node)

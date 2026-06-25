@@ -104,7 +104,7 @@ struct KeeperMemNodesStorage final : public KeeperNodesStorage
     void cleanupUncommittedState(int64_t commit_zxid) override;
     void rollbackUncommittedDelta(const Delta & delta) override;
     void cleanupAfterRollback(std::vector<uint64_t> rollbacked_zxids) override;
-    uint64_t updateNodesDigest(uint64_t current_digest, uint64_t zxid) const override;
+    void updateNodesDigest(uint64_t & current_digest, uint64_t zxid) const override;
 
     /// ========== Duck-typed interface used by KeeperStorageImpl ==========
 

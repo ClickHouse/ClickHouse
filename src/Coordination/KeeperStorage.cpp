@@ -700,6 +700,8 @@ void KeeperStorage::finalize()
     session_expiry_queue.clear();
 
     read_thread_pool.shutdown();
+
+    nodes_storage->shutdown();
 }
 
 bool KeeperStorage::isFinalized() const

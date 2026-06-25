@@ -1650,7 +1650,7 @@ KeeperDigest KeeperStorageImpl<NS>::preprocessRequest(
 
         if (!rolled_back && staging.digest.version != KeeperDigestVersion::NO_DIGEST)
         {
-            staging.digest.value = nodes.updateNodesDigest(staging.digest.value, new_last_zxid);
+            nodes.updateNodesDigest(staging.digest.value, new_last_zxid);
             // if the version of digest we got from the leader is the same as the one this instances has, we can simply copy the value
             // and just check the digest on the commit
             // a mistake can happen while applying the changes to the uncommitted_state so for now let's just recalculate the digest here also
@@ -1718,7 +1718,8 @@ KeeperDigest KeeperStorageImpl<NS>::preprocessRequest(
         /// Good for finding bugs in rollback.
         if (staging.digest.version != KeeperDigestVersion::NO_DIGEST && thread_local_rng() % 2 == 0)
         {
-            const UInt64 first_digest = nodes.updateNodesDigest(staging.digest.value, new_last_zxid);
+            nodes.updateNodesDigest(staging.digest.value, new_last_zxid);
+            const UInt64 first_digest = staging.digest.value;
             const size_t first_delta_count = staging.deltas.size();
 
             uncommitted_state.rollback(std::move(staging.deltas));
@@ -1728,7 +1729,8 @@ KeeperDigest KeeperStorageImpl<NS>::preprocessRequest(
             callOnConcreteRequestType(*zk_request, preprocess_request);
             chassert(error == Coordination::Error::ZOK, "Re-preprocessing after a spurious rollback unexpectedly failed");
 
-            const UInt64 second_digest = nodes.updateNodesDigest(staging.digest.value, new_last_zxid);
+            UInt64 second_digest = staging.digest.value;
+            nodes.updateNodesDigest(second_digest, new_last_zxid);
             chassert(
                 first_digest == second_digest && first_delta_count == staging.deltas.size(),
                 "Re-preprocessing after rollback produced a different result: preprocessing is non-deterministic or rollback is incomplete");
