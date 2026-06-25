@@ -150,7 +150,9 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     for (size_t i = 0; i < onexprs.size(); ++i)
     {
         const auto & key_names = !is_join_get ? onexprs[i].key_names_left : onexprs[i].key_names_right;
-        join_on_keys.emplace_back(block, key_names, onexprs[i].condColumnNames().first, join.key_sizes[i]);
+        join_on_keys.emplace_back(
+            block, key_names, onexprs[i].condColumnNames().first, join.key_sizes[i],
+            HashJoin::isLowCardinalityType(join.data->type));
     }
 
 
@@ -209,6 +211,7 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
             is_join_get,
             join.joined_block_split_single_row,
             join.enable_lazy_columns_replication,
+            join.enable_lazy_columns_indexing
         });
 
     if (next_scattered_block)

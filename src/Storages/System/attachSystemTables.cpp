@@ -12,6 +12,7 @@
 #include <Storages/System/StorageSystemBackgroundSchedulePool.h>
 #include <Storages/System/StorageSystemBackups.h>
 #include <Storages/System/StorageSystemBuildOptions.h>
+#include <Storages/System/StorageSystemHypotheticalIndexes.h>
 #include <Storages/System/StorageSystemInstrumentation.h>
 #include <Storages/System/StorageSystemCollations.h>
 #include <Storages/System/StorageSystemClusters.h>
@@ -22,6 +23,9 @@
 #include <Storages/System/StorageSystemDataSkippingIndices.h>
 #include <Storages/System/StorageSystemDataSkippingIndexTypes.h>
 #include <Storages/System/StorageSystemDataTypeFamilies.h>
+#include <Storages/System/StorageSystemDictionaryLayouts.h>
+#include <Storages/System/StorageSystemDictionarySources.h>
+#include <Storages/System/StorageSystemDocumentation.h>
 #include <Storages/System/StorageSystemDetachedParts.h>
 #include <Storages/System/StorageSystemDetachedTables.h>
 #include <Storages/System/StorageSystemDictionaries.h>
@@ -75,6 +79,7 @@
 #include <Storages/System/StorageSystemLicenses.h>
 #include <Storages/System/StorageSystemTimeZones.h>
 #include <Storages/System/StorageSystemDisks.h>
+#include <Storages/System/StorageSystemDiskTypes.h>
 #include <Storages/System/StorageSystemStoragePolicies.h>
 #include <Storages/System/StorageSystemZeros.h>
 #include <Storages/System/StorageSystemUsers.h>
@@ -102,6 +107,7 @@
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
 #include <Storages/System/StorageSystemCertificates.h>
 #include <Storages/System/StorageSystemTokenizers.h>
+#include <Storages/System/StorageSystemStemmers.h>
 #include <Storages/System/StorageSystemSchemaInferenceCache.h>
 #include <Storages/System/StorageSystemDroppedTables.h>
 #include <Storages/System/StorageSystemDroppedTablesParts.h>
@@ -109,16 +115,21 @@
 #include <Storages/System/StorageSystemZooKeeperWatches.h>
 #if USE_NURAFT
 #include <Storages/System/StorageSystemKeeperChangelogs.h>
+#include <Storages/System/StorageSystemKeeperSnapshots.h>
 #endif
 #include <Storages/System/StorageSystemJemalloc.h>
 #include <Storages/System/StorageSystemJemallocProfileText.h>
 #include <Storages/System/StorageSystemJemallocStats.h>
+#if USE_NURAFT
+#include <Storages/System/StorageSystemKeeperCluster.h>
+#endif
 #include <Storages/System/StorageSystemScheduler.h>
 #include <Storages/System/StorageSystemObjectStorageQueueMetadataCache.h>
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Storages/System/StorageSystemDashboards.h>
 #include <Storages/System/StorageSystemViewRefreshes.h>
 #include <Storages/System/StorageSystemDNSCache.h>
+#include <Storages/System/StorageSystemIcebergFiles.h>
 #include <Storages/System/StorageSystemIcebergHistory.h>
 #if USE_ICU
 #   include <Storages/System/StorageSystemUnicode.h>
@@ -171,6 +182,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<SystemMergeTreeSettings<false>>(context, system_database, "merge_tree_settings", "Contains a list of all MergeTree engine specific settings, their current and default values along with descriptions. You may change any of them in SETTINGS section in CREATE query.");
     attach<SystemMergeTreeSettings<true>>(context, system_database, "replicated_merge_tree_settings", "Contains a list of all ReplicatedMergeTree engine specific settings, their current and default values along with descriptions. You may change any of them in SETTINGS section in CREATE query. ");
     attach<StorageSystemBuildOptions>(context, system_database, "build_options", "Contains a list of all build flags, compiler options and commit hash for used build.");
+    attach<StorageSystemHypotheticalIndexes>(context, system_database, "hypothetical_indexes", "Shows session-scoped hypothetical indexes created with CREATE HYPOTHETICAL INDEX for use with EXPLAIN WHATIF.");
 #if USE_XRAY
     attach<StorageSystemInstrumentation>(context, system_database, "instrumentation", "Contains a list of all functions instrumented with XRay with their IDs and handlers.");
 #endif
@@ -178,7 +190,11 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemTableFunctions>(context, system_database, "table_functions", "Contains a list of all available table functions with their descriptions.");
     attach<StorageSystemAggregateFunctionCombinators>(context, system_database, "aggregate_function_combinators", "Contains a list of all available aggregate function combinators, which could be applied to aggregate functions and change the way they work.");
     attach<StorageSystemDataTypeFamilies>(context, system_database, "data_type_families", "Contains a list of all available native data types along with all the aliases used for compatibility with other DBMS.");
+    attach<StorageSystemDictionaryLayouts>(context, system_database, "dictionary_layouts", "Contains a list of all available dictionary layouts along with their embedded documentation.");
+    attach<StorageSystemDiskTypes>(context, system_database, "disk_types", "Contains a list of all available disk types along with their embedded documentation.");
+    attach<StorageSystemDictionarySources>(context, system_database, "dictionary_sources", "Contains a list of all available dictionary sources along with their embedded documentation.");
     attach<StorageSystemDataSkippingIndexTypes>(context, system_database, "data_skipping_index_types", "Contains a list of all available data skipping index types along with their embedded documentation.");
+    attach<StorageSystemDocumentation>(context, system_database, "documentation", "Collects the embedded documentation of the uniform components of the system (functions, table engines, data types, etc.) into a single table, with the reference documentation rendered as Markdown.");
     attach<StorageSystemCollations>(context, system_database, "collations", "Contains a list of all available collations for alphabetical comparison of strings.");
     attach<StorageSystemDatabaseEngines>(context, system_database, "database_engines", "Contains a list of all available database engines");
     attach<StorageSystemTableEngines>(context, system_database, "table_engines", "Contains a list of all available table engines along with information whether a particular table engine supports some specific features (e.g. settings, skipping indices, projections, replication, TTL, deduplication, parallel insert, etc.)");
@@ -258,6 +274,9 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attachNoDescription<StorageSystemQueryResultCache>(context, system_database, "query_cache", "Contains information about all entries inside query cache in server's memory.");
     attachNoDescription<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths", "Contains a mapping from a filename on local filesystem to a blob name inside object storage.");
     attachNoDescription<StorageSystemTokenizers>(context, system_database, "tokenizers", "Contains a list of the available tokenizers.");
+#if USE_LIBSTEMMER
+    attachNoDescription<StorageSystemStemmers>(context, system_database, "stemmers", "Contains a list of the available stemmers.");
+#endif
     attach<StorageSystemCertificates>(context, system_database, "certificates", "Contains information about available certificates and their sources.");
     attachNoDescription<StorageSystemNamedCollections>(context, system_database, "named_collections", "Contains a list of all named collections which were created via SQL query or parsed from configuration file.");
     attach<StorageSystemAsyncLoader>(context, system_database, "asynchronous_loader", "Contains information and status for recent asynchronous jobs (e.g. for tables loading). The table contains a row for every job.");
@@ -275,6 +294,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemWorkloads>(context, system_database, "workloads", "Contains a list of all currently existing workloads.");
     attach<StorageSystemResources>(context, system_database, "resources", "Contains a list of all currently existing resources.");
     attach<StorageSystemIcebergHistory>(context, system_database, "iceberg_history", "Displays the history of an iceberg table similar to the Spark history table");
+    attachNoDescription<StorageSystemIcebergFiles>(context, system_database, "iceberg_files", "Lists data and delete files of currently loaded Iceberg tables.");
 #if USE_ICU
     attach<StorageSystemUnicode>(context, system_database, "unicode", "Contains all unicode codepoints.");
 #endif
@@ -290,6 +310,8 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
 #if USE_NURAFT
     if (has_keeper_server)
     {
+        attach<StorageSystemKeeperSnapshots>(context, system_database, "keeper_snapshots", "Contains information about Keeper snapshots stored on this Keeper node. The table includes finalized snapshots and at most one in-flight snapshot currently being received from the leader.");
+        attach<StorageSystemKeeperCluster>(context, system_database, "keeper_cluster", "Contains one row per Raft cluster member as seen by this Keeper.");
         attach<StorageSystemKeeperChangelogs>(context, system_database, "keeper_changelogs", "Contains information about changelogs stored on this Keeper node.");
     }
 #endif

@@ -56,6 +56,21 @@ ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
 namespace detail
 {
 
+/// When assembling the result of a Variant/Dynamic-to-column conversion, the result column must have
+/// the exact type of the converted columns it is filled from, otherwise `insertFrom` fails the column
+/// type check. Under `accurateCastOrNull` a per-variant conversion may return a `Nullable` column even
+/// when `result_type` is not `Nullable` (a NULL marks a value that could not be converted), so the
+/// result column cannot always be created from `result_type` directly. All convertible variants share
+/// the same target type, so the type of any non-empty converted column is a valid template. Returns
+/// `nullptr` when there is no converted column to copy the type from.
+static MutableColumnPtr cloneEmptyFromFirstConvertedColumn(const VectorWithMemoryTracking<ColumnPtr> & cast_columns)
+{
+    for (const auto & column : cast_columns)
+        if (column)
+            return column->cloneEmpty();
+    return nullptr;
+}
+
 ColumnPtr ConvertImplFromDynamicToColumn::execute(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & result_type,
@@ -152,7 +167,11 @@ ColumnPtr ConvertImplFromDynamicToColumn::execute(
     }
 
     /// Construct result column from all cast variants.
-    auto res = result_type->createColumn();
+    auto res = cloneEmptyFromFirstConvertedColumn(cast_variant_columns);
+    if (!res)
+        res = cloneEmptyFromFirstConvertedColumn(cast_shared_variant_columns);
+    if (!res)
+        res = result_type->createColumn();
     res->reserve(input_rows_count);
     for (size_t i = 0; i != input_rows_count; ++i)
     {
@@ -261,8 +280,12 @@ ColumnPtr ConvertImplFromVariantToColumn::execute(
         nested_result = nested_result->convertToFullColumnIfConst();
 
         /// Expand the result back to original size, filling filtered-out rows with defaults.
-        nested_result->assumeMutable()->expand(filter, false);
-        return nested_result;
+        /// nested_convert may return the input variant subcolumn unchanged (e.g. toString of a
+        /// String variant), so nested_result can alias it; mutate() clones when shared, unlike
+        /// assumeMutable() which would expand the shared subcolumn in place and corrupt the source.
+        auto mutable_result = IColumn::mutate(std::move(nested_result));
+        mutable_result->expand(filter, false);
+        return mutable_result;
     }
 
     /// General case: multiple variants. Convert each variant separately and assemble row-by-row.
@@ -300,7 +323,9 @@ ColumnPtr ConvertImplFromVariantToColumn::execute(
         }
     }
 
-    auto res = result_type->createColumn();
+    auto res = cloneEmptyFromFirstConvertedColumn(cast_variant_columns);
+    if (!res)
+        res = result_type->createColumn();
     res->reserve(input_rows_count);
     for (size_t i = 0; i != input_rows_count; ++i)
     {
@@ -1177,8 +1202,17 @@ FunctionCast::WrapperType FunctionCast::createArrayToQBitWrapper(const DataTypeA
     const size_t dimension = to_qbit_type.getDimension();
     const size_t element_size = to_qbit_type.getElementSize();
 
-    return [nested_function = prepareUnpackDictionaries(from_nested_type, to_nested_type),
+    /// accurateOrNull conversions from a Dynamic/Variant nested source always return a Nullable
+    /// column (per-variant overflow-as-NULL), while QBit elements are non-nullable. Use a Nullable
+    /// nested target so the conversion assembles a consistent column; removeNullable() below strips it.
+    const DataTypePtr nested_target_type
+        = (cast_type == CastType::accurateOrNull && (isDynamic(from_nested_type) || isVariant(from_nested_type)))
+        ? makeNullable(to_nested_type)
+        : to_nested_type;
+
+    return [nested_function = prepareUnpackDictionaries(from_nested_type, nested_target_type),
             from_nested_type,
+            nested_target_type,
             to_nested_type,
             to_array_type = std::make_shared<DataTypeArray>(to_nested_type),
             dimension,
@@ -1194,16 +1228,46 @@ FunctionCast::WrapperType FunctionCast::createArrayToQBitWrapper(const DataTypeA
         /// has a different size (total elements vs. number of rows), and the original
         /// nullable_source column may have a different type than the converted column.
         ColumnsWithTypeAndName nested_columns{{col_array.getDataPtr(), from_nested_type, ""}};
-        auto converted_nested = nested_function(nested_columns, to_nested_type, nullptr, nested_columns.front().column->size());
-        /// When cast_type is accurateOrNull, the inner element conversion may wrap the result in ColumnNullable. Strip it because
-        /// we need raw ColumnVector data for bit transposition. The outer-level nullable semantics are handled by prepareRemoveNullable.
+        auto converted_nested = nested_function(nested_columns, nested_target_type, nullptr, nested_columns.front().column->size());
+
+        /// QBit elements are non-nullable, so a NULL element (a per-element accurateOrNull conversion
+        /// failure or a source NULL) cannot be represented and must make the whole QBit row NULL,
+        /// mirroring createTupleWrapper's non-Nullable-target branch. Aggregate the inner element null
+        /// map to a per-row null map before stripping it; wrapInNullable in prepareRemoveNullable then
+        /// merges this with the source null map.
+        ColumnPtr row_null_map_column;
+        if (const auto * nullable_nested = checkAndGetColumn<ColumnNullable>(converted_nested.get()))
+        {
+            const auto & element_null_map = nullable_nested->getNullMapData();
+            const auto & offsets = col_array.getOffsets();
+            const size_t rows = offsets.size();
+            auto row_null_map = ColumnUInt8::create(rows, UInt8(0));
+            auto & row_null_map_data = row_null_map->getData();
+            size_t prev_offset = 0;
+            for (size_t row = 0; row < rows; ++row)
+            {
+                const size_t off = offsets[row];
+                UInt8 any_null = 0;
+                for (size_t i = prev_offset; i < off; ++i)
+                    any_null |= element_null_map[i];
+                row_null_map_data[row] = any_null;
+                prev_offset = off;
+            }
+            row_null_map_column = std::move(row_null_map);
+        }
+
+        /// We need raw ColumnVector data for bit transposition; strip the inner nullable.
         converted_nested = removeNullable(converted_nested);
         auto converted_array = ColumnArray::create(converted_nested, col_array.getOffsetsPtr());
         ColumnsWithTypeAndName converted_arguments{{std::move(converted_array), std::make_shared<DataTypeArray>(to_nested_type), ""}};
 
         /// Pass nullable_source so that convertArrayToQBit can use the null map
         /// to skip NULL rows (whose nested arrays may have default/empty values).
-        return convertArrayToQBit<T>(converted_arguments, result_type, nullable_source, dimension, element_size);
+        auto qbit_column = convertArrayToQBit<T>(converted_arguments, result_type, nullable_source, dimension, element_size);
+
+        if (row_null_map_column)
+            return ColumnNullable::create(qbit_column, row_null_map_column);
+        return qbit_column;
     };
 }
 
@@ -1536,7 +1600,9 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
 
         /// Second, construct resulting column from cast variant columns according to discriminators.
         const auto & local_discriminators = column_variant.getLocalDiscriminators();
-        auto res = result_type->createColumn();
+        auto res = cloneEmptyFromFirstConvertedColumn(cast_variant_columns);
+        if (!res)
+            res = result_type->createColumn();
         res->reserve(input_rows_count);
         for (size_t i = 0; i != input_rows_count; ++i)
         {
@@ -2181,9 +2247,8 @@ FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper() const
                 if (!accurate::convertNumeric<typename ColumnNumberType::ValueType, FieldType, false>(in_data[i], converted_value))
                     throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be converted to enum type", toString(in_data[i]));
 
-                // This checks the number value exists in Enum values.
-                /// If not found, an error is thrown.
-                result_type.findByValue(converted_value);
+                /// Validate that value exists in Enum (throws if not found)
+                result_type.getNameForValue(converted_value);
                 out_data[i] = converted_value;
             }
         }

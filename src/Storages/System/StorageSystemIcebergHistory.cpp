@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
 #include <Processors/LimitTransform.h>
@@ -19,8 +20,15 @@
 #include <Access/ContextAccess.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Core/Settings.h>
+#include <Core/Field.h>
+
+#if USE_AVRO
+#include <base/EnumReflection.h>
+#endif
 
 /// Iceberg specs mention that the timestamps are stored in ms: https://iceberg.apache.org/spec/#table-metadata-fields
 static constexpr auto TIME_SCALE = 3;
@@ -36,15 +44,34 @@ namespace Setting
 
 ColumnsDescription StorageSystemIcebergHistory::getColumnsDescription()
 {
-    return ColumnsDescription
-    {
-        {"database",std::make_shared<DataTypeString>(),"Database name."},
-        {"table",std::make_shared<DataTypeString>(),"Table name."},
-        {"made_current_at",std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(TIME_SCALE)),"Date & time when this snapshot was made current snapshot"},
-        {"snapshot_id",std::make_shared<DataTypeUInt64>(),"Snapshot id which is used to identify a snapshot."},
-        {"parent_id",std::make_shared<DataTypeUInt64>(),"Parent id of this snapshot."},
-        {"is_current_ancestor",std::make_shared<DataTypeUInt8>(),"Flag that indicates if this snapshot is an ancestor of the current snapshot."}
-    };
+    auto operation_column_description = std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
+        {"UNKNOWN", static_cast<Int8>(-1)},
+#if USE_AVRO
+        {"APPEND", static_cast<Int8>(Iceberg::SnapshotSummaryOperation::APPEND)},
+        {"OVERWRITE", static_cast<Int8>(Iceberg::SnapshotSummaryOperation::OVERWRITE)},
+        {"REPLACE", static_cast<Int8>(Iceberg::SnapshotSummaryOperation::REPLACE)},
+        {"DELETE", static_cast<Int8>(Iceberg::SnapshotSummaryOperation::DELETE)},
+#endif
+    });
+
+    return ColumnsDescription{
+        {"database", std::make_shared<DataTypeString>(), "Database name."},
+        {"table", std::make_shared<DataTypeString>(), "Table name."},
+        {"made_current_at",
+         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(TIME_SCALE)),
+         "Date & time when this snapshot was made current snapshot"},
+        {"snapshot_id", std::make_shared<DataTypeUInt64>(), "Snapshot id which is used to identify a snapshot."},
+        {"parent_id", std::make_shared<DataTypeUInt64>(), "Parent id of this snapshot."},
+        {"is_current_ancestor",
+         std::make_shared<DataTypeUInt8>(),
+         "Flag that indicates if this snapshot is an ancestor of the current snapshot."},
+        {"operation",
+         std::move(operation_column_description),
+         "Snapshot operation (APPEND, OVERWRITE, DELETE, REPLACE and UNKNOWN). The UNKNOWN status means either that we were unable to read "
+         "the summary or that it is empty (it's optional for v1). The correct 'operation' field is required"},
+        {"summary",
+         std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()),
+         "Snapshot summary fields"}};
 }
 
 void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res_columns, [[maybe_unused]] ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
@@ -60,6 +87,9 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
     auto add_history_record = [&](const DatabaseTablesIteratorPtr & it, StorageObjectStorage * object_storage)
     {
         if (!access->isGranted(AccessType::SHOW_TABLES, it->databaseName(), it->name()))
+            return;
+
+        if (!object_storage->isIcebergStorage())
             return;
 
         /// Unfortunately this try/catch is unavoidable. Iceberg tables can be broken in arbitrary way, it's impossible
@@ -79,6 +109,18 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
                     res_columns[column_index++]->insert(iceberg_history_item.snapshot_id);
                     res_columns[column_index++]->insert(iceberg_history_item.parent_id);
                     res_columns[column_index++]->insert(iceberg_history_item.is_current_ancestor);
+
+                    if (!iceberg_history_item.snapshot_summary)
+                    {
+                        res_columns[column_index++]->insert(Int8(-1));
+                        res_columns[column_index++]->insertDefault();
+                    }
+                    else
+                    {
+                        const auto & snapshot_summary = iceberg_history_item.snapshot_summary;
+                        res_columns[column_index++]->insert(snapshot_summary->getOperation());
+                        res_columns[column_index++]->insert(snapshot_summary->toMap());
+                    }
                 }
             }
         }
