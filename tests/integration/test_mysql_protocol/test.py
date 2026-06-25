@@ -960,3 +960,127 @@ def test_mysql_dotnet_client(started_cluster):
     )
     # there is some thrash at the beggining of output, so it's better to use `in` instead of `==``
     assert reference in res
+
+
+def _com_field_list(client, table):
+    """Send a raw COM_FIELD_LIST (0x04) and return the column names from the
+    column-definition packets. Wire format is `table\\0field_wildcard`."""
+    client._execute_command(0x04, table.encode("utf-8") + b"\x00%")
+    columns = []
+    while True:
+        packet = client._read_packet()
+        if packet.is_eof_packet() or packet.is_ok_packet():
+            break
+        if packet.is_error_packet():
+            packet.check_error()  # raises pymysql.err.Error
+        data = packet.get_all_data()
+        pos = 0
+
+        def read_lenenc_str(buf, p):
+            n = buf[p]
+            p += 1
+            if n < 0xFB:
+                length = n
+            elif n == 0xFC:
+                length = buf[p] | (buf[p + 1] << 8)
+                p += 2
+            elif n == 0xFD:
+                length = buf[p] | (buf[p + 1] << 8) | (buf[p + 2] << 16)
+                p += 3
+            else:
+                length = int.from_bytes(buf[p : p + 8], "little")
+                p += 8
+            return buf[p : p + length].decode("utf-8", "replace"), p + length
+
+        # Column-definition (protocol 41): catalog, schema, table, org_table, name, ...
+        for _ in range(4):
+            _, pos = read_lenenc_str(data, pos)
+        name, pos = read_lenenc_str(data, pos)
+        columns.append(name)
+    return columns
+
+
+def test_mysql_metadata_commands_access_control(started_cluster):
+    """COM_FIELD_LIST and COM_INIT_DB must enforce the same access control as
+    the equivalent SQL (DESCRIBE / USE). A user without SHOW COLUMNS on a table
+    must not be able to enumerate its columns via mysql_list_fields, and a user
+    without SHOW DATABASES on a database must not be able to switch into it."""
+
+    def admin(sql):
+        # The `default` user in this test suite is password-protected ("123").
+        node.query(sql, settings={"password": "123"})
+
+    admin("DROP TABLE IF EXISTS default.acl_employees")
+    admin("DROP USER IF EXISTS acl_lowpriv")
+    admin("DROP USER IF EXISTS acl_fullpriv")
+    admin(
+        "CREATE TABLE default.acl_employees (id UInt64, name String, salary UInt64, ssn String) "
+        "ENGINE = MergeTree ORDER BY id"
+    )
+    admin("CREATE USER acl_lowpriv IDENTIFIED WITH no_password")
+    admin("GRANT SELECT(id, name) ON default.acl_employees TO acl_lowpriv")
+    admin("CREATE USER acl_fullpriv IDENTIFIED WITH no_password")
+    admin("GRANT SELECT ON default.acl_employees TO acl_fullpriv")
+    admin("GRANT SHOW DATABASES ON system.* TO acl_fullpriv")
+    admin("GRANT SHOW COLUMNS ON system.users TO acl_fullpriv")
+
+    try:
+        # --- Restricted user: both commands must be rejected ---
+        lowpriv = pymysql.connections.Connection(
+            host=started_cluster.get_instance_ip("node"),
+            user="acl_lowpriv",
+            password="",
+            database="default",
+            port=server_port,
+        )
+
+        # ACCESS_DENIED is error code 497; over the MySQL wire only the code and
+        # message are carried (no "(ACCESS_DENIED)" suffix as in the native protocol).
+        access_denied = 497
+
+        # COM_FIELD_LIST must not leak columns beyond the user's grant
+        # (it must not return `salary`/`ssn`). It fails closed, mirroring DESCRIBE.
+        with pytest.raises(pymysql.err.Error) as exc_info:
+            _com_field_list(lowpriv, "acl_employees")
+        assert exc_info.value.args[0] == access_denied, str(exc_info.value)
+        assert "SHOW COLUMNS" in exc_info.value.args[1], str(exc_info.value)
+
+        # COM_INIT_DB into a database the user has no grants on must be rejected
+        with pytest.raises(pymysql.err.Error) as exc_info:
+            lowpriv.select_db("system")
+        assert exc_info.value.args[0] == access_denied, str(exc_info.value)
+        assert "SHOW DATABASES" in exc_info.value.args[1], str(exc_info.value)
+        lowpriv.close()
+
+        # Connecting with a handshake database the user cannot access must fail
+        with pytest.raises(pymysql.err.Error) as exc_info:
+            pymysql.connections.Connection(
+                host=started_cluster.get_instance_ip("node"),
+                user="acl_lowpriv",
+                password="",
+                database="system",
+                port=server_port,
+            )
+        assert exc_info.value.args[0] == access_denied, str(exc_info.value)
+
+        # --- Properly granted user: both commands must still succeed ---
+        fullpriv = pymysql.connections.Connection(
+            host=started_cluster.get_instance_ip("node"),
+            user="acl_fullpriv",
+            password="",
+            database="default",
+            port=server_port,
+        )
+        assert sorted(_com_field_list(fullpriv, "acl_employees")) == [
+            "id",
+            "name",
+            "salary",
+            "ssn",
+        ]
+        fullpriv.select_db("system")
+        assert _com_field_list(fullpriv, "users")  # non-empty column list
+        fullpriv.close()
+    finally:
+        admin("DROP TABLE IF EXISTS default.acl_employees")
+        admin("DROP USER IF EXISTS acl_lowpriv")
+        admin("DROP USER IF EXISTS acl_fullpriv")
