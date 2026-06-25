@@ -23,32 +23,18 @@ IFS=',' read -ra COMMITS <<< "${PREV_30_COMMITS}"
 
 FOUND=0
 FIRST_BASE_COMMIT=""
-is_full_coverage_run() {
-  local sha="$1"
-  local base="https://clickhouse-builds.s3.amazonaws.com/REFs/master/${sha}"
-  # A valid baseline must have run FT + IT + unit. Probe one artifact from each.
-  wget --spider "${base}/stateless_tests_amd_llvm_coverage_1_3/ft-amd_llvm_coverage_1_3.profdata" 2>&1 | grep -q '200 OK' || return 1
-  wget --spider "${base}/integration_tests_amd_llvm_coverage_1_5/it-amd_llvm_coverage_1_5.profdata" 2>&1 | grep -q '200 OK' || return 1
-  wget --spider "${base}/unit_tests_amd_llvm_coverage/unit-tests.profdata" 2>&1 | grep -q '200 OK' || return 1
-  return 0
-}
-
 for TEST_COMMIT in "${COMMITS[@]}"; do
 COVERAGE_URL="https://clickhouse-builds.s3.amazonaws.com/REFs/master/${TEST_COMMIT}/llvm_coverage/llvm_coverage.info"
 echo "Checking coverage file for commit ${TEST_COMMIT}..."
 if wget --spider "${COVERAGE_URL}" 2>&1 | grep -q '200 OK'; then
-  if ! is_full_coverage_run "${TEST_COMMIT}"; then
-    echo "Skipping ${TEST_COMMIT}: partial coverage run (missing IT or unit profdata)"
-    continue
-  fi
-  echo "Found full-suite coverage file at ${COVERAGE_URL}"
-  wget --quiet "${COVERAGE_URL}" -O base_llvm_coverage.info
-  FIRST_BASE_COMMIT="${TEST_COMMIT}"
-  # Record which commit this baseline came from so line-number remapping
-  # in print_newly_covered_code.py can compute git diffs against extras.
-  echo "${TEST_COMMIT}" > base_llvm_coverage.sha
-  FOUND=1
-  break
+echo "Found coverage file at ${COVERAGE_URL}"
+wget --quiet "${COVERAGE_URL}" -O base_llvm_coverage.info
+FIRST_BASE_COMMIT="${TEST_COMMIT}"
+# Record which commit this baseline came from so line-number remapping
+# in print_newly_covered_code.py can compute git diffs against extras.
+echo "${TEST_COMMIT}" > base_llvm_coverage.sha
+FOUND=1
+break
 fi
 done
 
