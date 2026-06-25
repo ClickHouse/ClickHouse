@@ -263,7 +263,7 @@ def get_git_info() -> tuple[str, list[str], str, str, str, int]:
         ).strip()
         if merge_base:
             raw = Shell.get_output(
-                f"gh api 'repos/ClickHouse/ClickHouse/commits?sha={merge_base}&per_page=30' -q '.[].sha'",
+                f"gh api 'repos/ClickHouse/ClickHouse/commits?sha={merge_base}&per_page=100' -q '.[].sha'",
                 verbose=True,
             )
             master_track_commits = raw.splitlines()
