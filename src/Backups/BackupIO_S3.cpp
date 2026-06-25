@@ -244,6 +244,15 @@ private:
         res["max_put_rps"] = std::to_string(put_throttler ? put_throttler->getMaxSpeed() : 0UL);
         res["max_put_burst"] = std::to_string(put_throttler ? put_throttler->getMaxBurst() : 0UL);
 
+        /// Drop request settings that backup S3 IO never consumes, so the map reflects only what the
+        /// backup engine actually uses:
+        ///  - objects_chunk_size_to_delete: `removeFiles` always deletes in chunks of 1000 (the S3
+        ///    DeleteObjects API limit), ignoring this setting;
+        ///  - list_object_keys_size: `fileExists`/`getFileSize` use HeadObject, backup never lists keys;
+        ///  - read_only, throw_on_zero_files_match: disk/storage configuration not used by backup IO.
+        for (const auto * key : {"objects_chunk_size_to_delete", "list_object_keys_size", "read_only", "throw_on_zero_files_match"})
+            res.erase(key);
+
         return res;
     }
 }

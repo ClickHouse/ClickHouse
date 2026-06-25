@@ -34,6 +34,13 @@ $CLICKHOUSE_CLIENT "${client_opts[@]}" -m -q "
     select
         (select engine_settings['allow_native_copy'] from system.backups where query_id = '$qid_native')
         != (select engine_settings['allow_native_copy'] from system.backups where query_id = '$qid_no_native');
+    -- Request settings that backup S3 IO does not actually consume must not be reported (e.g. the delete
+    -- batch size, which BackupWriterS3 hardcodes to the S3 API limit, or disk-only settings).
+    select not has(mapKeys(engine_settings), 'objects_chunk_size_to_delete')
+       and not has(mapKeys(engine_settings), 'list_object_keys_size')
+       and not has(mapKeys(engine_settings), 'read_only')
+       and not has(mapKeys(engine_settings), 'throw_on_zero_files_match')
+    from system.backups where query_id = '$qid_native';
 "
 
 # The same must be exposed by the persisted system.backup_log row (exercises the log-specific
