@@ -11,8 +11,7 @@ from helpers.iceberg_utils import (
 
 NUMBER_OF_MANIFESTS = 5
 MAX_SELECT_SECONDS = 60.0
-FILES_PER_MANIFEST = 1000
-
+ROWS_PER_MANIFEST = 100
 
 def elapsed(node, query, **kwargs):
     query_id = get_uuid_str()
@@ -31,7 +30,9 @@ def test_manifest_read_performance(started_cluster_iceberg_with_spark):
 
     # Create Iceberg table. Properties ensure (a) manifests don't get merged and
     # (b) old metadata.json files get deleted.
-    spark.sql(f"""CREATE TABLE IF NOT EXISTS {TABLE_NAME} (id BIGINT) USING iceberg
+    spark.sql(f"""CREATE TABLE IF NOT EXISTS {TABLE_NAME} (id BIGINT)
+        USING iceberg
+        partitioned by (id)
         TBLPROPERTIES ('commit.manifest-merge.enabled' = 'false',
         'write.metadata.delete-after-commit.enabled' = 'true',
         'write.metadata.previous-versions-max' = '10')""")
@@ -39,11 +40,8 @@ def test_manifest_read_performance(started_cluster_iceberg_with_spark):
     # Each commit writes FILES_PER_MANIFEST data files in a single append, producing one
     # manifest with that many entries, to create a manifest-heavy table.
     for i in range(NUMBER_OF_MANIFESTS):
-        (spark.range(FILES_PER_MANIFEST)
-              .repartition(FILES_PER_MANIFEST)   # 1000 tasks -> 1000 files
-              .writeTo(TABLE_NAME).append())     # -> 1 manifest of 1000 entries
-        if (i + 1) % 50 == 0:
-            logging.info("Inserted %s/%s commits", i + 1, NUMBER_OF_MANIFESTS)
+        spark.sql(f"INSERT INTO {TABLE_NAME} SELECT id FROM range({ROWS_PER_MANIFEST});")
+        logging.info("Inserted %s/%s commits", i + 1, NUMBER_OF_MANIFESTS)
 
     # Copy files Spark created to minio.
     default_upload_directory(
