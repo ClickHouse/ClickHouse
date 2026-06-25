@@ -360,6 +360,48 @@ def test_prepared_statement(started_cluster):
         cur.execute("EXECUTE select_test(1);")
 
 
+def test_prepared_statement_no_sql_injection(started_cluster):
+    # Bound parameters must be treated as data, never spliced into the SQL text.
+    # A parameter such as "x' UNION ALL SELECT ..." must not be able to break out
+    # of the literal and read another table.
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    cur.execute("DROP TABLE IF EXISTS inj_users;")
+    cur.execute("DROP TABLE IF EXISTS inj_secret;")
+    cur.execute("CREATE TABLE inj_users (id Int32, name String) ENGINE = Memory;")
+    cur.execute("INSERT INTO inj_users (id, name) VALUES (1, 'alice'), (2, 'bob');")
+    cur.execute("CREATE TABLE inj_secret (sid Int32, secret String) ENGINE = Memory;")
+    cur.execute("INSERT INTO inj_secret (sid, secret) VALUES (99, 'TOP_SECRET');")
+
+    # Benign string parameter goes through the extended (Parse/Bind/Execute) path.
+    cur.execute("SELECT id FROM inj_users WHERE name = %s;", ("bob",), prepare=True)
+    assert cur.fetchall() == [(2,)]
+
+    # Numeric comparison with a (text) parameter still works.
+    cur.execute("SELECT id FROM inj_users WHERE id > %s ORDER BY id;", ("1",), prepare=True)
+    assert cur.fetchall() == [(2,)]
+
+    # Injection attempt: the payload must be bound as a single string literal,
+    # not interpreted as SQL, so the secret table is never read.
+    payload = "x' UNION ALL SELECT secret FROM inj_secret -- "
+    cur.execute("SELECT name FROM inj_users WHERE name = %s;", (payload,), prepare=True)
+    assert cur.fetchall() == []
+
+    # A parameter with a single quote must round-trip as data.
+    cur.execute("SELECT %s AS v;", ("O'Brien",), prepare=True)
+    assert cur.fetchall() == [("O'Brien",)]
+
+    cur.execute("DROP TABLE inj_users;")
+    cur.execute("DROP TABLE inj_secret;")
+
+
 def test_copy_command(started_cluster):
     node = cluster.instances["node"]
 

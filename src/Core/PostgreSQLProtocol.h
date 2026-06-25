@@ -9,6 +9,7 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/Base64.h>
+#include <Common/quoteString.h>
 #include <Poco/RegularExpression.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Parsers/ParserPreparedStatement.h>
@@ -16,8 +17,10 @@
 #include <Poco/SHA1Engine.h>
 #include <Access/Credentials.h>
 #include <algorithm>
+#include <optional>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include <Interpreters/Context.h>
 #include <Access/AccessControl.h>
@@ -761,7 +764,11 @@ class BindQuery : FrontMessage
 public:
     String portal_name;
     String function_name;
-    std::vector<String> parameters;
+    /// A bound parameter is either a client-supplied value (std::nullopt means
+    /// the SQL NULL sentinel, length -1 on the wire) or a text/binary payload.
+    /// The value is stored raw here; quoting into a SQL literal happens when the
+    /// statement body is assembled (see PreparedStatemetsManager::getStatement).
+    std::vector<std::optional<String>> parameters;
     Int16 num_params{};
 
     void deserialize(ReadBuffer & in) override
@@ -790,12 +797,12 @@ public:
                                 "Wrong parameter length {} in Bind message, it must not be less than -1", sz_param);
             if (sz_param == -1)
             {
-                parameters.emplace_back("NULL");
+                parameters.emplace_back(std::nullopt);
                 continue;
             }
             String current_param(sz_param, 0);
             in.readStrict(current_param.data(), sz_param);
-            parameters.push_back(current_param);
+            parameters.push_back(std::move(current_param));
         }
 
         Int16 num_format_params_result = 0;
@@ -1767,7 +1774,22 @@ public:
         if (!bind_query)
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Execute without prior Bind");
 
-        auto result = getStatement(bind_query->function_name, bind_query->parameters);
+        /// Bind parameters arrive as untyped text from the wire. Turn each into a
+        /// safe SQL literal before it is spliced into the statement body: a value
+        /// becomes a quoted+escaped string literal, the NULL sentinel becomes the
+        /// SQL keyword NULL. Without this, a parameter such as
+        /// `x' UNION ALL SELECT ...` would be injected verbatim.
+        std::vector<String> arguments;
+        arguments.reserve(bind_query->parameters.size());
+        for (const auto & parameter : bind_query->parameters)
+        {
+            if (parameter.has_value())
+                arguments.push_back(quoteString(*parameter));
+            else
+                arguments.emplace_back("NULL");
+        }
+
+        auto result = getStatement(bind_query->function_name, arguments);
 
         return result;
     }
@@ -1787,6 +1809,11 @@ private:
     std::optional<size_t> limit_statements;
     std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> bind_query;
 
+    /// Substitutes `$1`, `$2`, ... in the prepared statement body with the given
+    /// arguments. Each argument MUST already be a safe SQL fragment (a quoted
+    /// literal, a number, or NULL); callers are responsible for that. The
+    /// `Execute` (EXECUTE) path formats arguments via FieldVisitorToString, and
+    /// the `Bind` path quotes them in getStatmentFromBind().
     String getStatement(const String & function_name, const std::vector<String> & arguments)
     {
         auto it = statements.find(function_name);

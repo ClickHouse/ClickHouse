@@ -16,6 +16,7 @@
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
+#include <Common/quoteString.h>
 #include <Common/config_version.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
@@ -455,13 +456,15 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         if (!copy_query->column_names.empty())
         {
             for (const auto & column_name : copy_query->column_names)
-                columns_to_insert += fmt::format("{}, ", column_name);
+                columns_to_insert += fmt::format("{}, ", backQuoteIfNeed(column_name));
             columns_to_insert.pop_back();
             columns_to_insert.pop_back();
             columns_to_insert = "(" + columns_to_insert + ")";
         }
 
-        auto [ast, io] = executeQuery(fmt::format("INSERT INTO `{}` {} FROM INFILE 'psql_copy'", copy_query->table_name, columns_to_insert), query_context, {}, QueryProcessingStage::Enum::Complete);
+        /// Quote the identifiers: the table and column names come straight from
+        /// the client and would otherwise be spliced into the INSERT verbatim.
+        auto [ast, io] = executeQuery(fmt::format("INSERT INTO {} {} FROM INFILE 'psql_copy'", backQuoteIfNeed(copy_query->table_name), columns_to_insert), query_context, {}, QueryProcessingStage::Enum::Complete);
         chassert(io.pipeline.pushing());
         auto executor = std::make_unique<PushingPipelineExecutor>(io.pipeline);
 
@@ -552,12 +555,15 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         {
             columns_to_select.clear();
             for (const auto & column_name : copy_query->column_names)
-                columns_to_select += fmt::format("{}, ", column_name);
+                columns_to_select += fmt::format("{}, ", backQuoteIfNeed(column_name));
             columns_to_select.pop_back();
             columns_to_select.pop_back();
         }
 
-        auto select_query = fmt::format("SELECT {} FROM {};", columns_to_select, copy_query->table_name);
+        /// Quote the identifiers: the column and table names come straight from
+        /// the client and would otherwise be spliced into the SELECT verbatim,
+        /// e.g. a table name like `t UNION ALL SELECT ...` would inject SQL.
+        auto select_query = fmt::format("SELECT {} FROM {};", columns_to_select, backQuoteIfNeed(copy_query->table_name));
         auto [ast, io] = executeQuery(select_query, query_context, {}, QueryProcessingStage::Enum::Complete);
         chassert(io.pipeline.pulling());
         message_transport->send(PostgreSQLProtocol::Messaging::CopyOutResponse(static_cast<Int32>(io.pipeline.getHeader().columns())));
