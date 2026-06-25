@@ -17,6 +17,16 @@ namespace DB
 {
 struct Settings;
 
+namespace ErrorCodes
+{
+    extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
+/// Guard against allocation bombs in deserialize(): a crafted aggregate state
+/// can declare a huge element count and make resize/reserve allocate gigabytes
+/// before any data is read. The constant is arbitrary (matches windowFunnel).
+static constexpr size_t MAX_STATISTICS_STATE_SIZE = 100'000'000;
+
 /// Because ranks are adjusted, we have to store each of them in Float type.
 using RanksArray = VectorWithMemoryTracking<Float64>;
 
@@ -110,6 +120,9 @@ struct StatisticalSample
     {
         readVarUInt(size_x, buf);
         readVarUInt(size_y, buf);
+        if (size_x > MAX_STATISTICS_STATE_SIZE || size_y > MAX_STATISTICS_STATE_SIZE)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Too large array size in aggregate function state (maximum: {})", MAX_STATISTICS_STATE_SIZE);
         x.resize(size_x, arena);
         y.resize(size_y, arena);
         buf.readStrict(reinterpret_cast<char *>(x.data()), size_x * sizeof(x[0]));
