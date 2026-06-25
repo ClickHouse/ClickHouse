@@ -497,9 +497,10 @@ std::vector<AlterDropPartitionExecutor::ReplacementManifestWrite> AlterDropParti
                     "Manifest {} mixes content types; rewriting it is not supported",
                     target_manifest.manifest_path.serialize());
 
-            /// Fail-close on survivor metadata the rewrite cannot reproduce: it stamps the manifest with
-            /// the current schema-id and drops optional data_file fields. ClickHouse never produces an
-            /// evolved schema-id or a non-trivial sort_order_id, so refuse rather than corrupt them.
+            /// The rewrite carries every per-entry data_file field over verbatim, but it stamps the
+            /// manifest with the table's current schema-id (a manifest has a single schema-id, so a
+            /// survivor written under a different schema cannot be preserved here). Refuse rather than
+            /// silently re-stamp it.
             if (s->resolved_schema_id != state.schema_id)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
@@ -509,14 +510,6 @@ std::vector<AlterDropPartitionExecutor::ReplacementManifestWrite> AlterDropParti
                     target_manifest.manifest_path.serialize(),
                     s->resolved_schema_id,
                     state.schema_id);
-
-            if (s->parsed_entry->sort_order_id.has_value() && *s->parsed_entry->sort_order_id != 0)
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "DROP PARTITION would rewrite manifest {}, keeping a file with sort_order_id {}; "
-                    "preserving the sort order of survivors is not implemented",
-                    target_manifest.manifest_path.serialize(),
-                    *s->parsed_entry->sort_order_id);
         }
 
         auto new_manifest_path = filename_generator.generateManifestEntryName();
