@@ -976,7 +976,6 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
         {
             /// Nobody will try to execute query again
             LOG_WARNING(log, "Maximum retries count for task {} exceeded, cannot execute replicated DDL query", task.entry_name);
-            max_tries_exceeded = !is_replicated_database_task;
             break;
         }
 
