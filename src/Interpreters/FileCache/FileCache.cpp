@@ -1640,12 +1640,6 @@ void FileCache::removeFileSegment(const Key & key, size_t offset, const UserID &
 {
     assertInitialized();
     auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::THROW, OriginInfo(user_id));
-    /// Only a releasable segment (not held by anyone) can be dropped, like eviction and the
-    /// other drop paths. A segment still in use (e.g. being downloaded or read) must not be
-    /// removed: the key lock held here prevents a new holder from appearing, so a releasable
-    /// segment cannot have an in-flight operation racing with its removal.
-    if (auto metadata_ptr = locked_key->tryGetByOffset(offset); metadata_ptr && !metadata_ptr->releasable())
-        return;
     locked_key->removeFileSegment(offset);
 }
 
@@ -1653,11 +1647,8 @@ void FileCache::removeFileSegmentIfExists(const Key & key, size_t offset, const 
 {
     assertInitialized();
     auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::RETURN_NULL, OriginInfo(user_id));
-    if (!locked_key)
-        return;
-    if (auto metadata_ptr = locked_key->tryGetByOffset(offset); metadata_ptr && !metadata_ptr->releasable())
-        return;
-    locked_key->removeFileSegmentIfExists(offset);
+    if (locked_key)
+        locked_key->removeFileSegmentIfExists(offset);
 }
 
 void FileCache::removePathIfExists(const String & path, const UserID & user_id)
