@@ -13,6 +13,7 @@
 #include <Common/logger_useful.h>
 #include <Common/memory.h>
 #include <Common/setThreadName.h>
+#include <Common/PerCPUMemory.h>
 
 #include <Poco/Logger.h>
 
@@ -241,6 +242,9 @@ LogsLevel ThreadStatus::getClientLogsLevel() const
 
 void ThreadStatus::flushUntrackedMemory()
 {
+    /// The deferred bytes our contribution accounted for are about to be tracked, so remove it.
+    per_cpu_memory.release(per_cpu_untracked_memory);
+
     if (untracked_memory == 0)
         return;
 
