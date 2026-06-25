@@ -838,6 +838,7 @@ struct MemorySnapshotLoadHandle
     KeeperMemoryStorage::Ephemerals local_ephemerals;
     size_t local_ephemeral_nodes = 0;
     std::unordered_map<ACLId, uint64_t> acl_usage;
+    std::vector<String> local_ttl_paths;
 };
 
 /// Create a load handle. Thread-safe, takes no locks.
@@ -845,5 +846,5 @@ MemorySnapshotLoadHandle beginMemorySnapshotLoad(KeeperMemoryStorage & storage);
 
 /// Merge handles into `storage`: splice nodes, validate structure, merge side state.
 /// Caller must hold the storage lock (or be the init thread).
-void finalizeMemorySnapshotLoad(KeeperMemoryStorage & storage, std::span<MemorySnapshotLoadHandle> handles, bool recalculate_digest);
+void finalizeMemorySnapshotLoad(KeeperMemoryStorage & storage, std::span<MemorySnapshotLoadHandle> handles, bool recalculate_digest) TSA_NO_THREAD_SAFETY_ANALYSIS;
 }

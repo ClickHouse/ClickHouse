@@ -1460,6 +1460,9 @@ KeeperSnapshotManager<Storage>::deserializeChunkedSnapshotFromBuffer(ReadBufferF
                     ++current_handle.local_ephemeral_nodes;
                 }
 
+                if (node.stats.isTTL())
+                    current_handle.local_ttl_paths.push_back(path_str);
+
                 if (recalculate_digest)
                     current_handle.digest_sum += node.getDigest(path_str);
 

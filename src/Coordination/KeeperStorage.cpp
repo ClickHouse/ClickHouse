@@ -4744,7 +4744,7 @@ MemorySnapshotLoadHandle beginMemorySnapshotLoad(KeeperMemoryStorage & storage)
     return handle;
 }
 
-void finalizeMemorySnapshotLoad(KeeperMemoryStorage & storage, std::span<MemorySnapshotLoadHandle> handles, bool recalculate_digest)
+void finalizeMemorySnapshotLoad(KeeperMemoryStorage & storage, std::span<MemorySnapshotLoadHandle> handles, bool recalculate_digest) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     // Splice all node batches into the container and build the hash map.
     using LocalBatch = SnapshotableHashTable<KeeperMemNode>::LocalInsertBatch;
@@ -4806,6 +4806,12 @@ void finalizeMemorySnapshotLoad(KeeperMemoryStorage & storage, std::span<MemoryS
 
         if (!h.acl_usage.empty())
             storage.acl_map.addUsageBatch(h.acl_usage);
+
+        for (auto & path : h.local_ttl_paths)
+        {
+            storage.ttl_paths.insert(std::move(path));
+            storage.committed_ttl_nodes.fetch_add(1, std::memory_order_relaxed);
+        }
     }
 
     /// Drop unreferenced ACLs, matching the legacy path. Must run after all ACL usage is merged.
