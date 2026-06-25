@@ -1,3 +1,9 @@
+-- Regression: DROP INDEX must not collide with another index whose getIndexFileName begins with
+-- the dropped one's filename. With escape_index_filenames=0 the on-disk substream filenames for
+-- indices `a` and `a.b` share the `skp_idx_a` prefix; the archive filter must match exact
+-- substream filenames, not "<prefix>." starts_with patterns, otherwise dropping `a` would also
+-- erase `a.b`'s data inside skp_idx.packed.
+
 DROP TABLE IF EXISTS t_drop_prefix_a;
 CREATE TABLE t_drop_prefix_a
 (
@@ -20,6 +26,10 @@ INSERT INTO t_drop_prefix_a SELECT number, number * 2, number * 3 FROM numbers(2
 ALTER TABLE t_drop_prefix_a DROP INDEX `a` SETTINGS mutations_sync = 2;
 
 SELECT 'drop_a_query_ab', count() FROM t_drop_prefix_a WHERE w BETWEEN 100 AND 200;
+-- Prove the surviving index still gates granules. With the prefix bug, the index data was
+-- gone from the archive and the planner would fall back to scanning all granules. Random
+-- merge-tree settings make the absolute granule count vary, so we only assert that the Skip
+-- block's "kept" count is strictly less than the "total" count.
 SELECT 'drop_a_ab_filtered', countIf(
     splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
     < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
@@ -28,6 +38,7 @@ WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS al
 CHECK TABLE t_drop_prefix_a SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_drop_prefix_a;
 
+-- Symmetric scenario: dropping the longer-named index must not affect the shorter one.
 DROP TABLE IF EXISTS t_drop_prefix_ab;
 CREATE TABLE t_drop_prefix_ab
 (
