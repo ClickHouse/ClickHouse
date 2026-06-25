@@ -63,6 +63,11 @@ struct Optimization
         // parallel replicas
         bool parallel_replicas_filter_pushdown = false;
 
+        /// Mirrors `QueryPlanOptimizationSettings::push_down_volume_reducing_functions`.
+        /// `tryExecuteFunctionsAfterSorting` consults it to avoid pinging volume-reducing
+        /// functions back above a `SortingStep` that `tryPushDownVolumeReducingFunction`
+        /// pushed below it.
+        bool push_down_volume_reducing_functions = false;
         /// Top-K optimizations rely on a runtime `TopKThresholdTracker` shared between
         /// `SortingStep` and `ReadFromMergeTree`, and the dynamic-filtering path adds
         /// an internal `__topKFilter` function that is not registered in `FunctionFactory`.
@@ -97,6 +102,9 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
 /// Move FilterStep down if possible.
 /// May split FilterStep and push down only part of it.
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
+
+/// Move volume-reducing functions down if possible.
+size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
 /// Convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values
 size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
@@ -162,7 +170,7 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 18> optimizations = {{
+    static const std::array<Optimization, 19> optimizations = {{
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
@@ -170,6 +178,7 @@ inline const auto & getOptimizations()
         {tryMergeFilters, "mergeFilters", &QueryPlanOptimizationSettings::merge_filters},
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
         {tryConvertOuterJoinToInnerJoin, "convertOuterJoinToInnerJoin", &QueryPlanOptimizationSettings::convert_outer_join_to_inner_join},
+        {tryPushDownVolumeReducingFunction, "pushDownVolumeReducingFunction", &QueryPlanOptimizationSettings::push_down_volume_reducing_functions},
         {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::execute_functions_after_sorting},
         {tryReuseStorageOrderingForWindowFunctions, "reuseStorageOrderingForWindowFunctions", &QueryPlanOptimizationSettings::reuse_storage_ordering_for_window_functions},
         {tryLiftUpUnion, "liftUpUnion", &QueryPlanOptimizationSettings::lift_up_union},
