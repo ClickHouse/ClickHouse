@@ -315,6 +315,12 @@ public:
       */
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
 
+    /** True iff the per-row result depends only on argument values, not on whether the argument
+      * column is `ColumnConst` vs a full column. Counter-examples: `like` (ESCAPE arg-must-be-Const),
+      * `isConstant` (whole point is to inspect representation). Default is conservative
+      */
+    virtual bool isInvariantToConstness() const { return false; }
+
     /** Should we evaluate this function lazily in short-circuit function arguments?
       * If function can throw an exception or it's computationally heavy, then
       * it's suitable, otherwise it's not (due to the overhead of lazy execution).
@@ -388,6 +394,8 @@ public:
     virtual bool isInjective(const ColumnsWithTypeAndName &) const { return false; }
     virtual bool isServerConstant() const { return false; }
     virtual bool isShortCircuit(IFunctionBase::ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
+    /// See IFunctionBase::isInvariantToConstness
+    virtual bool isInvariantToConstness() const { return false; }
     /// Returns true for higher-order functions that accept a lambda expression as an argument
     /// (e.g. `arrayMap`, `arrayFilter`, `arrayFold`, `mapApply`). Used as a non-throwing
     /// capability check so callers can avoid invoking `getLambdaArgumentTypes`, which throws

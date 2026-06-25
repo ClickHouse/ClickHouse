@@ -884,17 +884,6 @@ void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
 namespace
 {
 
-/// value-only predicate functions, safe to evaluate on a Const argument even when the original
-/// argument was non-Const at runtime - their output doesn't observe column representation
-const std::unordered_set<std::string> & foldablePredicateFunctions()
-{
-    static const std::unordered_set<std::string> set{
-        "equals", "notEquals", "less", "greater",
-        "lessOrEquals", "greaterOrEquals", "and", "or",
-    };
-    return set;
-}
-
 struct FoldResult
 {
     ColumnPtr column;
@@ -902,8 +891,8 @@ struct FoldResult
 };
 
 /// Walk a predicate subtree. Accepted: literal const COLUMN leaves, `alias`/`materialize`
-/// walk-through, and whitelisted value-only functions. Returns the folded const if every
-/// node fits, nullopt otherwise. Leaves restricted to COLUMN nodes so we don't propagate
+/// walk-through, and FUNCTION nodes that declare `isInvariantToConstness()`. Returns the
+/// folded const if every node fits. Leaves restricted to COLUMN nodes so we don't propagate
 /// `is_deterministic_constant` defaults from `addFunctionImpl`-folded FUNCTION-with-column
 std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
 {
@@ -935,7 +924,7 @@ std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
         || !node->function_base
         || !node->function
         || !node->function_base->isDeterministic()
-        || !foldablePredicateFunctions().contains(node->function_base->getName()))
+        || !node->function_base->isInvariantToConstness())
         return std::nullopt;
 
     ColumnsWithTypeAndName args;
