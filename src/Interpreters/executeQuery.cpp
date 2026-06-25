@@ -67,6 +67,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <QueryPipeline/printPipeline.h>
 #include <IO/Progress.h>
@@ -116,6 +117,7 @@ namespace ProfileEvents
     extern const Event InsertQueryTimeMicroseconds;
     extern const Event OtherQueryTimeMicroseconds;
     extern const Event ASTFuzzerQueries;
+    extern const Event QueryParseMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -1150,6 +1152,8 @@ static BlockIO executeQueryImpl(
     /// Parse the query from string.
     try
     {
+        ProfileEventTimeIncrement<Microseconds> parse_time_watch(ProfileEvents::QueryParseMicroseconds);
+
         if (stage == QueryProcessingStage::QueryPlan)
         {
             /// Do not parse Query
@@ -2599,7 +2603,7 @@ void executeQuery(
     }
 
     /// We release query slot here to make sure client can safely reuse the slot with his next query, otherwise it will be released too late by BlockIO.
-    context->releaseQuerySlot();
+    context->releaseWorkloadResources();
 
     /// The order is important here:
     /// - first we save the finish_time that will be used for the entry in query_log/opentelemetry_span_log.finish_time_us
