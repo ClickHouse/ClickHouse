@@ -50,8 +50,10 @@ bool RecordBatchEncoder::canNativelyEncode(const DataTypePtr & type)
     if (which.isTuple())
     {
         for (const auto & e : assert_cast<const DataTypeTuple &>(*t).getElements())
+        {
             if (!canNativelyEncode(e))
                 return false;
+        }
         return true;
     }
     if (which.isMap())
@@ -67,8 +69,10 @@ bool RecordBatchEncoder::canNativelyEncode(const DataTypePtr & type)
         if (variants.size() > 127)
             return false;
         for (const auto & v : variants)
+        {
             if (!canNativelyEncode(v))
                 return false;
+        }
         return true;
     }
     /// `which.isFloat()` also matches `BFloat16`, which the value encoder does not handle; restrict to the
@@ -170,8 +174,10 @@ void RecordBatchEncoder::encodeValues(
         const auto & data = assert_cast<const ColumnUInt8 &>(column).getData();
         PODArray<char> bitmap((num_rows + 7) / 8, 0);
         for (size_t i = 0; i < num_rows; ++i)
+        {
             if (data[i])
                 bitmap[i >> 3] = static_cast<char>(bitmap[i >> 3] | (1 << (i & 7)));
+        }
         appendBuffer(bitmap.data(), bitmap.size());
         return;
     }

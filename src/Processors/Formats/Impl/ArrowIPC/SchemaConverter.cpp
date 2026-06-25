@@ -284,8 +284,10 @@ ArrowType parseType(const flatbuf::Field & field)
                         throw Exception(
                             ErrorCodes::INCORRECT_DATA, "Arrow IPC Union type id {} does not fit the Int8 type-ids buffer", id);
                     for (int existing : type.union_type_ids)
+                    {
                         if (existing == id)
                             throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC Union has duplicate type id {}", id);
+                    }
                     type.union_type_ids.push_back(id);
                 }
             }
@@ -715,8 +717,10 @@ bool DictPlan::hasAnyDictionary() const
     if (here)
         return true;
     for (const auto & child : children)
+    {
         if (child.hasAnyDictionary())
             return true;
+    }
     return false;
 }
 
@@ -828,11 +832,15 @@ ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size_)
         blocks.push_back({.offset = offset, .metadata_length = metadata_length, .body_length = body_length});
     };
     if (footer->dictionaries())
+    {
         for (const auto * block : *footer->dictionaries())
             add_block(result.dictionary_blocks, block);
+    }
     if (footer->recordBatches())
+    {
         for (const auto * block : *footer->recordBatches())
             add_block(result.record_batch_blocks, block);
+    }
     return result;
 }
 

@@ -197,8 +197,10 @@ void compressBuffersParallel(
     {
         Compressor compressor; /// codec contexts are not thread-safe: one per group
         for (size_t i = lo; i < hi; ++i)
+        {
             if (inputs[i].second > 0)
                 out[i] = compressor.compress(codec, inputs[i].first, inputs[i].second, level);
+        }
     });
 }
 
