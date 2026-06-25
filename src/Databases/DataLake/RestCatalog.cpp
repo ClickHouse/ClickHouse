@@ -265,13 +265,15 @@ DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(bool update_token) const
     /// https://github.com/apache/iceberg/blob/3badfe0c1fcf0c0adfc7aa4a10f0b50365c48cf9/open-api/rest-catalog-open-api.yaml#L3498C5-L3498C34
     if (!client_id.empty())
     {
-        if (!access_token.has_value() || update_token)
+        auto current = access_token.get();
+        if (!current || update_token)
         {
-            access_token = retrieveAccessToken();
+            access_token.set(std::make_unique<AccessToken>(retrieveAccessToken()));
+            current = access_token.get();
         }
 
         DB::HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", "Bearer " + access_token.value().token);
+        headers.emplace_back("Authorization", "Bearer " + current->token);
         return headers;
     }
     return {};
@@ -296,7 +298,7 @@ OneLakeCatalog::OneLakeCatalog(
     // Get token before loading config so getAuthHeaders() can work
     if (!client_id.empty() && !client_secret.empty())
     {
-        access_token = retrieveAccessToken();
+        access_token.set(std::make_unique<AccessToken>(retrieveAccessToken()));
     }
     config = loadConfig();
 }
@@ -412,7 +414,7 @@ BigLakeCatalog::BigLakeCatalog(
     // Get token before loading config so getAuthHeaders() can work
     if (!google_project_id.empty() || !google_adc_client_id.empty())
     {
-        access_token = retrieveGoogleCloudAccessToken();
+        access_token.set(std::make_unique<AccessToken>(retrieveGoogleCloudAccessToken()));
     }
     config = loadConfig();
 }
@@ -425,13 +427,15 @@ DB::HTTPHeaderEntries BigLakeCatalog::getAuthHeaders(bool update_token) const
     /// https://developers.google.com/identity/protocols/oauth2
     if (!google_project_id.empty() || !google_adc_client_id.empty())
     {
-        if (!access_token.has_value() || update_token || access_token->isExpired())
+        auto current = access_token.get();
+        if (!current || update_token || current->isExpired())
         {
-            access_token = retrieveGoogleCloudAccessToken();
+            access_token.set(std::make_unique<AccessToken>(retrieveGoogleCloudAccessToken()));
+            current = access_token.get();
         }
 
         DB::HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", "Bearer " + access_token->token);
+        headers.emplace_back("Authorization", "Bearer " + current->token);
 
         std::string project_id = google_project_id;
         if (project_id.empty() && !google_adc_quota_project_id.empty())
@@ -624,19 +628,23 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
 
 bool RestCatalog::empty() const
 {
-    /// TODO: add a test with empty namespaces and zero namespaces.
     bool found_table = false;
     auto stop_condition = [&](const std::string & namespace_name) -> bool
     {
+        if (found_table)
+            return true;
+
         const auto tables = getTables(namespace_name, /* limit */1);
-        found_table = !tables.empty();
+        if (!tables.empty())
+            found_table = true;
+
         return found_table;
     };
 
     Namespaces namespaces;
     getNamespacesRecursive("", namespaces, stop_condition, /* execute_func */{});
 
-    return found_table;
+    return !found_table;
 }
 
 DB::Names RestCatalog::getTables() const

@@ -215,6 +215,17 @@ std::string ZooKeeperAuthRequest::toStringImpl(bool /*short_format*/) const
         scheme);
 }
 
+enum class CreateMode
+{
+    PERSISTENT = 0,
+    EPHEMERAL = 1,
+    PERSISTENT_SEQUENTIAL = 2,
+    EPHEMERAL_SEQUENTIAL = 3,
+    CONTAINER = 4,
+    PERSISTENT_WITH_TTL = 5,
+    PERSISTENT_SEQUENTIAL_WITH_TTL = 6
+};
+
 void ZooKeeperCreateRequest::writeImpl(WriteBuffer & out) const
 {
     /// See https://github.com/ClickHouse/clickhouse-private/issues/3029
@@ -227,20 +238,34 @@ void ZooKeeperCreateRequest::writeImpl(WriteBuffer & out) const
     Coordination::write(data, out);
     Coordination::write(acls, out);
 
-    int32_t flags = 0;
+    CreateMode flags = CreateMode::PERSISTENT;
+    if (include_ttl)
+    {
+        chassert(!is_ephemeral);
+        flags = is_sequential ? CreateMode::PERSISTENT_SEQUENTIAL_WITH_TTL : CreateMode::PERSISTENT_WITH_TTL;
+    }
+    else if (is_ephemeral && is_sequential)
+        flags = CreateMode::EPHEMERAL_SEQUENTIAL;
+    else if (is_ephemeral)
+        flags = CreateMode::EPHEMERAL;
+    else if (is_sequential)
+        flags = CreateMode::PERSISTENT_SEQUENTIAL;
+    else
+        flags = CreateMode::PERSISTENT;
 
-    if (is_ephemeral)
-        flags |= 1;
-    if (is_sequential)
-        flags |= 2;
+    Coordination::write(static_cast<Int32>(flags), out);
 
-    Coordination::write(flags, out);
+    if (include_ttl)
+        Coordination::write(ttl, out);
 }
 
 size_t ZooKeeperCreateRequest::sizeImpl() const
 {
     int32_t flags = 0;
-    return Coordination::size(path) + Coordination::size(data) + Coordination::size(acls) + Coordination::size(flags);
+    auto size = Coordination::size(path) + Coordination::size(data) + Coordination::size(acls) + Coordination::size(flags);
+    if (include_ttl)
+        size += Coordination::size(ttl);
+    return size;
 }
 
 void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
@@ -249,13 +274,64 @@ void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
     Coordination::read(data, in);
     Coordination::read(acls, in);
 
-    int32_t flags = 0;
-    Coordination::read(flags, in);
+    int32_t flags_read = 0;
+    Coordination::read(flags_read, in);
 
-    if (flags & 1)
-        is_ephemeral = true;
-    if (flags & 2)
-        is_sequential = true;
+    /// include_stats / include_ttl may already be set from the opnum (Create2 / CreateTTL).
+    /// We must not lose include_stats when reclassifying, and we must reject combinations
+    /// that disagree with the wire create-mode (e.g. Create2 carrying a TTL flag would
+    /// otherwise pass feature-gating as Create2 yet create a TTL node here).
+    const bool from_create_ttl_opnum = include_ttl;
+    is_ephemeral = false;
+    is_sequential = false;
+    include_ttl = false;
+
+    /// org.apache.zookeeper.CreateMode.fromFlag — reject unknown flags rather than
+    /// silently treating them as PERSISTENT.
+    if (flags_read < static_cast<int32_t>(CreateMode::PERSISTENT)
+        || flags_read > static_cast<int32_t>(CreateMode::PERSISTENT_SEQUENTIAL_WITH_TTL))
+        throw Coordination::Exception(Coordination::Error::ZBADARGUMENTS,
+            "Unknown create mode flag {}", flags_read);
+
+    auto flags = static_cast<CreateMode>(flags_read);
+    switch (flags)
+    {
+        case CreateMode::PERSISTENT:
+            break;
+        case CreateMode::EPHEMERAL:
+            is_ephemeral = true;
+            break;
+        case CreateMode::PERSISTENT_SEQUENTIAL:
+            is_sequential = true;
+            break;
+        case CreateMode::EPHEMERAL_SEQUENTIAL:
+            is_ephemeral = true;
+            is_sequential = true;
+            break;
+        case CreateMode::CONTAINER:
+            throw Coordination::Exception(Coordination::Error::ZBADARGUMENTS,
+                "Container nodes are not supported");
+        case CreateMode::PERSISTENT_WITH_TTL:
+            include_ttl = true;
+            break;
+        case CreateMode::PERSISTENT_SEQUENTIAL_WITH_TTL:
+            include_ttl = true;
+            is_sequential = true;
+            break;
+    }
+
+    /// Opnum says TTL but create-mode flag says otherwise, or vice versa. Refuse both.
+    if (from_create_ttl_opnum != include_ttl)
+        throw Coordination::Exception(Coordination::Error::ZBADARGUMENTS,
+            "CreateTTL opnum and create-mode flag disagree on TTL");
+
+    /// Create2 sets include_stats; that must not coexist with a TTL create mode.
+    if (include_stats && include_ttl)
+        throw Coordination::Exception(Coordination::Error::ZBADARGUMENTS,
+            "Create2 must not carry a TTL create-mode flag");
+
+    if (include_ttl)
+        Coordination::read(ttl, in);
 }
 
 std::string ZooKeeperCreateRequest::toStringImpl(bool /*short_format*/) const
@@ -1351,6 +1427,8 @@ ZooKeeperResponsePtr ZooKeeperRemoveRequest::makeResponse() const
 
 ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const
 {
+    if (include_ttl)
+        return std::make_shared<ZooKeeperCreateTTLResponse>();
     if (include_stats)
         return std::make_shared<ZooKeeperCreate2Response>();
     if (not_exists)
@@ -1674,6 +1752,8 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
             res->not_exists = true;
         else if constexpr (num == OpNum::Create2)
             res->include_stats = true;
+        else if constexpr (num == OpNum::CreateTTL)
+            res->include_ttl = true;
         else if constexpr (num == OpNum::CheckStat)
             res->stat_to_check.emplace();
         else if constexpr (num == OpNum::TryRemove)
@@ -1691,6 +1771,7 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::Close, ZooKeeperCloseRequest>(*this);
     registerZooKeeperRequest<OpNum::Create, ZooKeeperCreateRequest>(*this);
     registerZooKeeperRequest<OpNum::Create2, ZooKeeperCreateRequest>(*this);
+    registerZooKeeperRequest<OpNum::CreateTTL, ZooKeeperCreateRequest>(*this);
     registerZooKeeperRequest<OpNum::Remove, ZooKeeperRemoveRequest>(*this);
     registerZooKeeperRequest<OpNum::TryRemove, ZooKeeperRemoveRequest>(*this);
     registerZooKeeperRequest<OpNum::Exists, ZooKeeperExistsRequest>(*this);

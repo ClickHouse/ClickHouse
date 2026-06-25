@@ -215,6 +215,8 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
             "database_engines",
             "table_engines",
             "table_functions",
+            "disk_types",
+            "dictionary_layouts",
             "aggregate_function_combinators",
             "completions",
 
@@ -601,13 +603,12 @@ std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
 }
 
 
-std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
+std::vector<QuotaUsage> ContextAccess::getQuotaUsages() const
 {
     auto quota = getQuota();
-    if (!quota) /// Detected by fuzzer
+    if (!quota)
         return {};
-    else
-        return quota->getUsage();
+    return quota->getAllUsage();
 }
 
 SettingsChanges ContextAccess::getDefaultSettings() const

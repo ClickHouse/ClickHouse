@@ -1,6 +1,16 @@
 """Long running tests, longer than 30 seconds"""
 
-from helpers.kafka.common_direct import *
+import json
+import logging
+import time
+
+from confluent_kafka.avro.cached_schema_registry_client import (
+    CachedSchemaRegistryClient,
+)
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
 import helpers.kafka.common as k
 
 cluster = ClickHouseCluster(__file__)
@@ -69,7 +79,7 @@ def kafka_setup_teardown():
 # TODO: add test for SELECT LIMIT is working.
 
 
-@k.pytest.mark.parametrize(
+@pytest.mark.parametrize(
     "create_query_generator",
     [k.generate_old_create_table_query, k.generate_new_create_table_query],
 )
@@ -754,7 +764,6 @@ def test_kafka_formats(kafka_cluster, create_query_generator):
             CREATE MATERIALIZED VIEW test.kafka_{format_name}_mv ENGINE=MergeTree ORDER BY tuple() AS
                 SELECT *, _topic, _partition, _offset FROM test.kafka_{format_name};
             """.format(
-                topic_name=topic_name,
                 format_name=format_name,
                 create_query=create_query_generator(
                     f"kafka_{format_name}",

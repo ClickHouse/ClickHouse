@@ -8,6 +8,7 @@
 
 #include <Core/Settings.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ShuffleHost.h>
@@ -54,6 +55,11 @@ namespace Setting
     extern const SettingsFloat opentelemetry_start_trace_probability;
     extern const SettingsFloatAuto opentelemetry_start_keeper_trace_probability;
 }
+
+namespace FailPoints
+{
+    extern const char keeper_fault_on_watch_request[];
+}
 }
 
 
@@ -62,6 +68,16 @@ namespace zkutil
 
 namespace
 {
+    /// Fail point that fails all requests with watches but allows requests without watches.
+    bool shouldInjectWatchFault(const Coordination::WatchCallbackPtrOrEventPtr & watch_callback)
+    {
+        if (!watch_callback)
+            return false;
+        bool inject = false;
+        fiu_do_on(DB::FailPoints::keeper_fault_on_watch_request, { inject = true; });
+        return inject;
+    }
+
     float calculateOpenTelemetryProbability()
     {
         const auto global_context = DB::Context::getGlobalContextInstance();
@@ -377,6 +393,11 @@ bool ZooKeeper::configChanged(const Poco::Util::AbstractConfiguration & config, 
     new_args.enforce_component_tracking = args.enforce_component_tracking;
     new_args.send_receive_os_threads_nice_value = args.send_receive_os_threads_nice_value;
 
+    /// last_zxid_seen is runtime session state propagated by startNewSession, not configuration,
+    /// so it is always 0 in new_args. Without this, the first config reload after any
+    /// expiry-driven session replacement recreates the session even if the config is unchanged.
+    new_args.last_zxid_seen = args.last_zxid_seen;
+
     return args != new_args;
 }
 
@@ -387,6 +408,9 @@ Coordination::Error ZooKeeper::getChildrenImpl(const std::string & path, Strings
                                    bool with_stat,
                                    bool with_data)
 {
+    if (shouldInjectWatchFault(watch_callback))
+        return Coordination::Error::ZCONNECTIONLOSS;
+
     std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
     if (sampleForOpenTelemetryTracing())
     {
@@ -685,6 +709,9 @@ Coordination::Error ZooKeeper::tryRemove(const std::string & path, int32_t versi
 
 Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallbackPtrOrEventPtr watch_callback)
 {
+    if (shouldInjectWatchFault(watch_callback))
+        return Coordination::Error::ZCONNECTIONLOSS;
+
     std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
     if (sampleForOpenTelemetryTracing())
     {
@@ -747,6 +774,9 @@ bool ZooKeeper::existsWatch(const std::string & path, Coordination::Stat * stat,
 Coordination::Error ZooKeeper::getImpl(
     const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallbackPtrOrEventPtr watch_callback)
 {
+    if (shouldInjectWatchFault(watch_callback))
+        return Coordination::Error::ZCONNECTIONLOSS;
+
     std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
     if (sampleForOpenTelemetryTracing())
     {

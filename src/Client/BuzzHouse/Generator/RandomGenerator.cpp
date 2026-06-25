@@ -95,12 +95,9 @@ String RandomGenerator::nextDate(const String & separator, const bool allow_func
     {
         switch (this->randomInt<uint32_t>(0, 1))
         {
-            case 0:
-                return separator + "1970-01-01" + separator; /// Epoch / min Date
-            case 1:
-                return separator + "2149-06-06" + separator; /// Max Date
-            default:
-                UNREACHABLE();
+            case 0: return separator + "1970-01-01" + separator; /// Epoch / min Date
+            case 1: return separator + "2149-06-06" + separator; /// Max Date
+            default: UNREACHABLE();
         }
     }
     const uint32_t month = months(generator);
@@ -119,14 +116,10 @@ String RandomGenerator::nextDate32(const String & separator, const bool allow_fu
     {
         switch (this->randomInt<uint32_t>(0, 2))
         {
-            case 0:
-                return separator + "1900-01-01" + separator; /// Min Date32
-            case 1:
-                return separator + "2299-12-31" + separator; /// Max Date32
-            case 2:
-                return separator + "1970-01-01" + separator; /// Epoch
-            default:
-                UNREACHABLE();
+            case 0: return separator + "1900-01-01" + separator; /// Min Date32
+            case 1: return separator + "2299-12-31" + separator; /// Max Date32
+            case 2: return separator + "1970-01-01" + separator; /// Epoch
+            default: UNREACHABLE();
         }
     }
     const uint32_t month = months(generator);
@@ -154,16 +147,11 @@ String RandomGenerator::nextTime(const String & separator, const bool allow_func
     {
         switch (this->randomInt<uint32_t>(0, 3))
         {
-            case 0:
-                return separator + "00:00:00" + separator; /// Midnight
-            case 1:
-                return separator + "23:59:59" + separator; /// End of day
-            case 2:
-                return separator + "-999:59:59" + separator; /// Min Time
-            case 3:
-                return separator + "999:59:59" + separator; /// Max Time
-            default:
-                UNREACHABLE();
+            case 0: return separator + "00:00:00" + separator; /// Midnight
+            case 1: return separator + "23:59:59" + separator; /// End of day
+            case 2: return separator + "-999:59:59" + separator; /// Min Time
+            case 3: return separator + "999:59:59" + separator; /// Max Time
+            default: UNREACHABLE();
         }
     }
     const int32_t hour = time_hours(generator);
@@ -186,16 +174,11 @@ String RandomGenerator::nextTime64(const String & separator, const bool allow_fu
         const String sub0 = has_subseconds ? ".000000000" : "";
         switch (this->randomInt<uint32_t>(0, 3))
         {
-            case 0:
-                return separator + "00:00:00" + sub0 + separator; /// Midnight
-            case 1:
-                return separator + "23:59:59" + sub + separator; /// End of day (with max subseconds)
-            case 2:
-                return separator + "-999:59:59" + sub0 + separator; /// Min Time64
-            case 3:
-                return separator + "999:59:59" + sub + separator; /// Max Time64
-            default:
-                UNREACHABLE();
+            case 0: return separator + "00:00:00" + sub0 + separator; /// Midnight
+            case 1: return separator + "23:59:59" + sub + separator; /// End of day (with max subseconds)
+            case 2: return separator + "-999:59:59" + sub0 + separator; /// Min Time64
+            case 3: return separator + "999:59:59" + sub + separator; /// Max Time64
+            default: UNREACHABLE();
         }
     }
     const int32_t hour = time_hours(generator);
@@ -226,14 +209,10 @@ String RandomGenerator::nextDateTime(const String & separator, const bool allow_
     {
         switch (this->randomInt<uint32_t>(0, 2))
         {
-            case 0:
-                return separator + "1970-01-01 00:00:00" + separator; /// Epoch / min DateTime
-            case 1:
-                return separator + "2106-02-07 06:28:15" + separator; /// Max DateTime (2^32-1 seconds)
-            case 2:
-                return separator + "1970-01-01 00:00:01" + separator; /// One second after epoch
-            default:
-                UNREACHABLE();
+            case 0: return separator + "1970-01-01 00:00:00" + separator; /// Epoch / min DateTime
+            case 1: return separator + "2106-02-07 06:28:15" + separator; /// Max DateTime (2^32-1 seconds)
+            case 2: return separator + "1970-01-01 00:00:01" + separator; /// One second after epoch
+            default: UNREACHABLE();
         }
     }
     const uint32_t month = months(generator);
@@ -274,14 +253,10 @@ String RandomGenerator::nextDateTime64(const String & separator, const bool allo
         const String sub0 = has_subseconds ? ".000000000" : "";
         switch (this->randomInt<uint32_t>(0, 2))
         {
-            case 0:
-                return separator + "1900-01-01 00:00:00" + sub0 + separator; /// Min DateTime64
-            case 1:
-                return separator + "2299-12-31 23:59:59" + sub + separator; /// Max DateTime64
-            case 2:
-                return separator + "1970-01-01 00:00:00" + sub0 + separator; /// Epoch
-            default:
-                UNREACHABLE();
+            case 0: return separator + "1900-01-01 00:00:00" + sub0 + separator; /// Min DateTime64
+            case 1: return separator + "2299-12-31 23:59:59" + sub + separator; /// Max DateTime64
+            case 2: return separator + "1970-01-01 00:00:00" + sub0 + separator; /// Epoch
+            default: UNREACHABLE();
         }
     }
     const uint32_t month = months(generator);
@@ -464,14 +439,10 @@ String RandomGenerator::nextUUID()
     {
         switch (this->randomInt<uint32_t>(0, 2))
         {
-            case 0:
-                return "00000000-0000-0000-0000-000000000000"; /// Nil UUID
-            case 1:
-                return "ffffffff-ffff-ffff-ffff-ffffffffffff"; /// Max UUID
-            case 2:
-                return "00000000-0000-0000-0000-000000000001"; /// Near-nil
-            default:
-                UNREACHABLE();
+            case 0: return "00000000-0000-0000-0000-000000000000"; /// Nil UUID
+            case 1: return "ffffffff-ffff-ffff-ffff-ffffffffffff"; /// Max UUID
+            case 2: return "00000000-0000-0000-0000-000000000001"; /// Near-nil
+            default: UNREACHABLE();
         }
     }
     return fmt::format(
@@ -516,18 +487,12 @@ String RandomGenerator::nextIPv4()
     {
         switch (this->randomInt<uint32_t>(0, 4))
         {
-            case 0:
-                return "0.0.0.0"; /// Unspecified
-            case 1:
-                return "127.0.0.1"; /// Loopback
-            case 2:
-                return "255.255.255.255"; /// Broadcast / max
-            case 3:
-                return "192.168.1.1"; /// Private (class C)
-            case 4:
-                return "10.0.0.1"; /// Private (class A)
-            default:
-                UNREACHABLE();
+            case 0: return "0.0.0.0"; /// Unspecified
+            case 1: return "127.0.0.1"; /// Loopback
+            case 2: return "255.255.255.255"; /// Broadcast / max
+            case 3: return "192.168.1.1"; /// Private (class C)
+            case 4: return "10.0.0.1"; /// Private (class A)
+            default: UNREACHABLE();
         }
     }
     return fmt::format("{}.{}.{}.{}", this->nextRandomUInt8(), this->nextRandomUInt8(), this->nextRandomUInt8(), this->nextRandomUInt8());
@@ -539,18 +504,12 @@ String RandomGenerator::nextIPv6()
     {
         switch (this->randomInt<uint32_t>(0, 4))
         {
-            case 0:
-                return "::"; /// Unspecified
-            case 1:
-                return "::1"; /// Loopback
-            case 2:
-                return "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"; /// Max
-            case 3:
-                return "fe80::1"; /// Link-local
-            case 4:
-                return "::ffff:127.0.0.1"; /// IPv4-mapped loopback
-            default:
-                UNREACHABLE();
+            case 0: return "::"; /// Unspecified
+            case 1: return "::1"; /// Loopback
+            case 2: return "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"; /// Max
+            case 3: return "fe80::1"; /// Link-local
+            case 4: return "::ffff:127.0.0.1"; /// IPv4-mapped loopback
+            default: UNREACHABLE();
         }
     }
     return fmt::format(

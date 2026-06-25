@@ -155,9 +155,10 @@ class MergeTreeIndexSet final : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexSet(
+        StorageMetadataPtr metadata_snapshot_,
         const IndexDescription & index_,
         size_t max_rows_)
-        : IMergeTreeIndex(index_)
+        : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
         , max_rows(max_rows_)
     {}
 

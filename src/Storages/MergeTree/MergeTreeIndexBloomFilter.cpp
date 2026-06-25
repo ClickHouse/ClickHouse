@@ -1019,7 +1019,11 @@ void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * p
     for (size_t column = 0; column < index_columns_name.size(); ++column)
     {
         const auto & column_and_type = block.getByName(index_columns_name[column]);
-        auto index_column = BloomFilterHash::hashWithColumn(column_and_type.type, column_and_type.column, *pos, max_read_rows);
+        /// A bloom filter only needs the set of distinct hashes, so for LowCardinality
+        /// columns this returns one hash per distinct dictionary value present in the
+        /// granule instead of one per row -- turning O(rows) hash-set inserts into
+        /// O(distinct). For other columns it is one hash per row, as before.
+        auto index_column = BloomFilterHash::hashWithColumnDistinct(column_and_type.type, column_and_type.column, *pos, max_read_rows);
 
         const auto & index_col = checkAndGetColumn<ColumnUInt64>(*index_column);
         const auto & index_data = index_col.getData();
@@ -1032,10 +1036,11 @@ void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * p
 }
 
 MergeTreeIndexBloomFilter::MergeTreeIndexBloomFilter(
+    StorageMetadataPtr metadata_snapshot_,
     const IndexDescription & index_,
     size_t bits_per_row_,
     size_t hash_functions_)
-    : IMergeTreeIndex(index_)
+    : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
     , bits_per_row(bits_per_row_)
     , hash_functions(hash_functions_)
 {
@@ -1078,7 +1083,7 @@ static void assertIndexColumnsType(const Block & header)
 }
 
 MergeTreeIndexPtr bloomFilterIndexCreator(
-    const IndexDescription & index)
+    StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
     double false_positive_rate = 0.025;
 
@@ -1091,10 +1096,10 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
     const auto & bits_per_row_and_size_of_hash_functions = BloomFilterHash::calculationBestPractices(false_positive_rate);
 
     return std::make_shared<MergeTreeIndexBloomFilter>(
-        index, bits_per_row_and_size_of_hash_functions.first, bits_per_row_and_size_of_hash_functions.second);
+        std::move(metadata_snapshot), index, bits_per_row_and_size_of_hash_functions.first, bits_per_row_and_size_of_hash_functions.second);
 }
 
-void bloomFilterIndexValidator(const IndexDescription & index, bool attach)
+void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & /*settings*/)
 {
     assertIndexColumnsType(index.sample_block);
 

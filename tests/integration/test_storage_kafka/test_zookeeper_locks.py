@@ -1,10 +1,9 @@
-from collections import Counter
 import json
 import time
 import pytest
 import logging
 
-from helpers.kafka.common_direct import *
+from helpers.cluster import ClickHouseCluster
 import helpers.kafka.common as k
 
 from helpers.keeper_utils import KeeperClient

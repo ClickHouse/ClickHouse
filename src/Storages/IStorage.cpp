@@ -227,7 +227,8 @@ Pipe IStorage::alterPartition(
 void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder &)
 {
     auto table_id = getStorageID();
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);
+    auto storage_metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    StorageInMemoryMetadata new_metadata = *storage_metadata_snapshot;
     params.apply(new_metadata, context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
@@ -318,7 +319,8 @@ StorageID IStorage::getStorageID() const
 
 bool IStorage::supportsSampling() const
 {
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->hasSamplingKey();
+    auto storage_metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    return storage_metadata_snapshot->hasSamplingKey();
 }
 
 ConditionSelectivityEstimatorPtr IStorage::getConditionSelectivityEstimator(const RangesInDataParts &, const Names &, ContextPtr) const

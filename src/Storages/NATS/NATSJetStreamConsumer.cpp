@@ -9,6 +9,11 @@ namespace ErrorCodes
     extern const int INVALID_STATE;
 }
 
+void NATSJetStreamConsumer::nackMessage(natsMsg * msg)
+{
+    natsMsg_Nak(msg, nullptr);
+}
+
 NATSJetStreamConsumer::NATSJetStreamConsumer(
     NATSConnectionPtr connection,
     String stream_name_,

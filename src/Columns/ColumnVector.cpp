@@ -19,7 +19,6 @@
 #include <Common/RadixSort.h>
 #include <Common/SipHash.h>
 #include <Common/TargetSpecific.h>
-#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
 #include <Common/iota.h>
@@ -78,24 +77,30 @@ void ColumnVector<T>::updateHashWithValueRange(size_t begin, size_t end, SipHash
     hash.update(reinterpret_cast<const char *>(&data[begin]), (end - begin) * sizeof(T));
 }
 
+/// Finalized per-row CRC32C hash of a value of type T (seeded with `WEAK_HASH32_INITIAL_VALUE`).
 template <typename T>
-WeakHash32 ColumnVector<T>::getWeakHash32() const
+static inline UInt32 weakHashValue32(T v) noexcept
 {
-    auto s = data.size();
-    WeakHash32 hash(s);
+    /// `BFloat16` is a 16-bit float but is NOT a `std::is_floating_point` type; hash its raw bits.
+    if constexpr (std::is_same_v<T, BFloat16>)
+        return static_cast<UInt32>(hashCRC32(v.raw(), WEAK_HASH32_INITIAL_VALUE));
+    else
+        return static_cast<UInt32>(hashCRC32(v, WEAK_HASH32_INITIAL_VALUE));
+}
 
-    const T * begin = data.data();
-    const T * end = begin + s;
-    UInt32 * hash_data = hash.getData().data();
-
-    while (begin < end)
-    {
-        *hash_data = static_cast<UInt32>(hashCRC32(*begin, *hash_data));
-        ++begin;
-        ++hash_data;
-    }
-
-    return hash;
+template <typename T>
+void ColumnVector<T>::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+{
+    /// CRC32C is a hardware dependency chain with no packed form, so SIMD multi-versioning
+    /// would not vectorise; keep a plain scalar loop. See IColumn::computeHashInto.
+    const T * src = data.data() + row_begin;
+    const size_t n = row_end - row_begin;
+    if (initial)
+        for (size_t i = 0; i < n; ++i)
+            hash_out[i] = weakHashValue32(src[i]);
+    else
+        for (size_t i = 0; i < n; ++i)
+            hash_out[i] = combineWeakHash32(weakHashValue32(src[i]), hash_out[i]);
 }
 
 template <typename T>

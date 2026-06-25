@@ -101,6 +101,9 @@ IndexDescription IndexDescription::getIndexFromAST(
     if (index_type->parameters && !index_type->parameters->children.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Index type cannot have parameters");
 
+    if (index_definition->granularity == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index GRANULARITY must be a positive integer");
+
     IndexDescription result;
     result.definition_ast = index_definition->clone();
     result.name = index_definition->name;

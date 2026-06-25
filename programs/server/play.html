@@ -199,7 +199,7 @@
         #menu.databases-opened
         {
             grid-template-columns: auto 1fr;
-            grid-template-areas: "databases-icon databases-icon" "contents contents" "terminal-icon github-icon";
+            grid-template-areas: "databases-icon databases-hide" "contents contents" "terminal-icon github-icon";
         }
 
         #menu.databases-opened #github-icon
@@ -236,6 +236,51 @@
             display: block;
         }
 
+        /* Drop the inline-SVG baseline gap so the icon's box hugs the glyph and the
+           "hide panel" button can be centered against it. */
+        #databases-icon svg
+        {
+            display: block;
+        }
+
+        /* Small "hide panel" button shown at the top-right corner of the menu, vertically
+           aligned with the database icon. Only visible while the database panel is open. */
+        #databases-hide
+        {
+            grid-area: databases-hide;
+            display: none;
+            justify-self: end;
+            /* Center against the database icon: same row, aligned by vertical midpoint.
+               The icon's bars span y=0..8 of a 9-unit viewBox, so their visual midpoint sits
+               (0.5/9) * 2.25em = 0.125em above the row center; nudge the arrow up to match.
+               font-size: inherit makes the button's em equal the icon's (buttons default to a
+               smaller font), so the offset is exact and scales with zoom. */
+            align-self: center;
+            align-items: center;
+            justify-content: center;
+            background: none;
+            border: none;
+            padding: 0 0.25rem;
+            cursor: pointer;
+            font-size: inherit;
+            transform: translateY(-0.125em);
+            /* Faint color, with no change on hover. */
+            color: var(--menu-toggle-color);
+            opacity: 0.25;
+        }
+
+        #databases-hide svg
+        {
+            width: 1.25em;
+            display: block;
+        }
+
+        /* Shown only while the database panel is open. */
+        #menu.databases-opened #databases-hide
+        {
+            display: flex;
+        }
+
         #databases
         {
             grid-area: contents;
@@ -243,6 +288,10 @@
             overflow-y: auto;
             scrollbar-width: thin;
             scrollbar-color: var(--border-color) transparent;
+            /* The menu column is auto-sized (max-content), so the appearance of the vertical
+               scrollbar (e.g. when expanding tables) would otherwise widen the whole panel by
+               the scrollbar width. Reserve the gutter permanently to avoid that layout shift. */
+            scrollbar-gutter: stable;
         }
 
         .tables:not(:empty)
@@ -316,11 +365,22 @@
             display: block;
         }
 
+        .database
+        {
+            /* Anchor the loading hourglass, which is absolutely positioned (see below). */
+            position: relative;
+        }
+
         .database button
         {
             cursor: pointer;
             background: transparent;
             font-size: 100%;
+            /* Span the full panel width so the whole row is a click target. */
+            display: block;
+            width: 100%;
+            text-align: left;
+            border: none;
             padding: 0;
             user-select: none;
             color: var(--text-color);
@@ -343,12 +403,18 @@
 
         .loading-hourglass
         {
-            display: inline-block;
-            margin-left: 0.5em;
+            /* Pinned to the top-right of the database row so the full-width name
+               button does not push it onto a new line while tables load. */
+            position: absolute;
+            top: 0;
+            right: 0.25rem;
             color: var(--misc-text-color);
             animation: hourglass-animation 2s linear infinite;
-            line-height: 0;
-            vertical-align: middle;
+            /* The hourglass overlays the right edge of the full-width database button.
+               Let clicks pass through to the button underneath, so the row stays fully
+               clickable while tables load (otherwise a click here is treated as a menu
+               background click and would close the whole panel). */
+            pointer-events: none;
         }
 
         .no-tables
@@ -368,12 +434,26 @@
 
         .table button
         {
-            display: inline-block;
-            max-width: 100%;
+            /* Span the full panel width so the whole row is a click target. */
+            display: block;
+            width: 100%;
+            text-align: left;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
-            vertical-align: middle;
+            cursor: pointer;
+            background: transparent;
+            border: none;
+            padding: 0;
+            font-size: 100%;
+            user-select: none;
+            color: var(--text-color);
+        }
+
+        .table button:hover, .table button:focus
+        {
+            color: var(--button-text-color);
+            background-color: var(--button-color);
         }
 
         .table-icon
@@ -397,7 +477,7 @@
             backdrop-filter: blur(4px);
             border-radius: 0.5rem;
             padding: 0.25rem;
-            margin-left: 0.25rem;
+            margin-left: 0.5rem;
             opacity: 0;
             pointer-events: none;
             transition: opacity 0s 0.1s;
@@ -414,7 +494,7 @@
             border-color: transparent color-mix(in srgb, var(--text-color) 50%, var(--background-color)) transparent transparent;
         }
 
-        .table button:hover + .table-addendum,
+        .table-name:hover ~ .table-addendum,
         .table .table-addendum:hover
         {
             opacity: 1;
@@ -426,7 +506,7 @@
            next mousemove), no balloon may appear from a :hover state. This prevents
            a different table button from scrolling under a stationary cursor and
            revealing its balloon without `mouseenter` having fired to position it. */
-        body.suppress-balloons .table button:hover + .table-addendum,
+        body.suppress-balloons .table-name:hover ~ .table-addendum,
         body.suppress-balloons .table .table-addendum:hover
         {
             opacity: 0;
@@ -884,9 +964,12 @@
 
 <body>
     <div id="menu">
-        <a id="databases-icon" class="menu-icon" href="">
+        <a id="databases-icon" class="menu-icon" href="" title="Databases and tables">
             <svg id="databases-toggle" viewBox="0 0 9 9"><path d="M0,0 h1 v8 h-1 z"/><path d="M2,0 h1 v8 h-1 z"/><path d="M4,0 h1 v8 h-1 z"/><path d="M6,0 h1 v8 h-1 z"/><path d="M8,3.25 h1 v1.5 h-1 z"/></svg>
         </a>
+        <button id="databases-hide" type="button" title="Hide the database panel">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><line x1="3" y1="12" x2="15" y2="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><polyline points="9,6 3,12 9,18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="20" y1="4" x2="20" y2="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
         <div id="databases"></div>
         <div id="terminal-icon" class="menu-icon" title="Web Terminal (~)">
             <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="22" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 8l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="13" y1="16" x2="18" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -1191,6 +1274,14 @@ class QueryResultElement extends HTMLElement
                     display: none;
                 }
 
+                #image
+                {
+                    display: none;
+                    margin-top: 1rem;
+                    max-width: 100%;
+                    background-color: var(--element-background-color);
+                }
+
                 td
                 {
                     background-color: var(--element-background-color);
@@ -1453,6 +1544,7 @@ class QueryResultElement extends HTMLElement
                 <table class="monospace shadow" id="data-table"></table>
                 <pre class="monospace shadow" id="data-unparsed"></pre>
             </div>
+            <img id="image" class="shadow" alt="Query result image">
             <div id="chart"></div>
             <div id="graph"></div>
             <p id="error" class="monospace shadow"></p>
@@ -1461,6 +1553,7 @@ class QueryResultElement extends HTMLElement
         this._dataDiv = this.shadowRoot.getElementById('data_div');
         this._dataTable = this.shadowRoot.getElementById('data-table');
         this._dataUnparsed = this.shadowRoot.getElementById('data-unparsed');
+        this._image = this.shadowRoot.getElementById('image');
         this._chart = this.shadowRoot.getElementById('chart');
         this._graph = this.shadowRoot.getElementById('graph');
         this._error = this.shadowRoot.getElementById('error');
@@ -1477,6 +1570,8 @@ class QueryResultElement extends HTMLElement
         this._current_selected_cell = null;
         this._uplot = null;
         this._queryText = '';
+        /// Object URL backing the displayed image, kept so it can be revoked when the result is cleared.
+        this._imageObjectURL = null;
 
         this._max_rows = 1_000;
         this._max_cells = 100_000;
@@ -1495,6 +1590,14 @@ class QueryResultElement extends HTMLElement
     {
         if (!this.hasAttribute('tabindex')) this.setAttribute('tabindex', '0');
         this.style.outline = 'none';
+    }
+
+    disconnectedCallback()
+    {
+        /// Multi-query results are transient elements that get removed from the DOM
+        /// (e.g. via `multiQueryContainer.innerHTML = ''`) without going through `clear`,
+        /// so revoke the image object URL here to avoid leaking the response blob.
+        this._clearImage();
     }
 
     get rowCount() { return this._row_idx; }
@@ -1522,6 +1625,7 @@ class QueryResultElement extends HTMLElement
         this._clearElement(this._chart);
         this._clearElement(this._dataUnparsed);
         this._clearElement(this._error);
+        this._clearImage();
 
         this._dataTable.classList.remove('fixed');
         this._dataDiv.classList.remove('fixed');
@@ -1966,6 +2070,27 @@ class QueryResultElement extends HTMLElement
         this._dataUnparsed.style.display = 'block';
     }
 
+    /// Display a binary image result (e.g. `FORMAT PNG`) instead of a table.
+    /// `blob` is the raw response body; we wrap it in an object URL for the `<img>` element.
+    renderImage(blob)
+    {
+        this._clearImage();
+        this._imageObjectURL = URL.createObjectURL(blob);
+        this._image.src = this._imageObjectURL;
+        this._image.style.display = 'block';
+    }
+
+    _clearImage()
+    {
+        if (this._imageObjectURL)
+        {
+            URL.revokeObjectURL(this._imageObjectURL);
+            this._imageObjectURL = null;
+        }
+        this._image.removeAttribute('src');
+        this._image.style.display = 'none';
+    }
+
     update(json, fragment)
     {
         if (json.progress)
@@ -2020,6 +2145,13 @@ class QueryResultElement extends HTMLElement
     {
         let cell = this._current_selected_cell;
         if (!cell) { return; }
+
+        if (e.key === 'Escape')
+        {
+            e.preventDefault();
+            this.clearSelection();
+            return;
+        }
 
         const row = cell.parentElement;
         const table = row.parentElement;
@@ -2603,7 +2735,12 @@ async function loadTables(server_address, user, password, database, container) {
         let table = document.createElement('div');
         table.className = 'table';
         let table_link = document.createElement('button');
-        table_link.append(getTableIcon(elem.engine), elem.table);
+        /// Wrap the icon+name so the balloon opens only when hovering the name, not the
+        /// empty right part of the full-width button.
+        let table_name = document.createElement('span');
+        table_name.className = 'table-name';
+        table_name.append(getTableIcon(elem.engine), elem.table);
+        table_link.appendChild(table_name);
 
         if (max_total_bytes && +elem.total_bytes) {
             const percent = Number(100 * +elem.total_bytes / max_total_bytes).toFixed(2);
@@ -2651,16 +2788,21 @@ async function loadTables(server_address, user, password, database, container) {
         engine_elem.addEventListener('click', e => set_query_or_run(e, `SHOW TABLE "${database}"."${elem.table}"`));
         table_addendum.append(engine_elem);
 
-        table_link.addEventListener('mouseenter', function() {
+        table_name.addEventListener('mouseenter', function() {
+            /// Anchor the balloon to the end of the name (clamped to the button when the name
+            /// is truncated), so it stays next to the text rather than the far-right edge.
             const rect = this.getBoundingClientRect();
-            table_addendum.style.left = rect.right + 'px';
+            const btn = table_link.getBoundingClientRect();
+            table_addendum.style.left = Math.min(rect.right, btn.right) + 'px';
             table_addendum.style.top = (rect.top + rect.height / 2) + 'px';
             table_addendum.style.visibility = '';
             visible_balloon = table_addendum;
         });
 
+        /// Keep the addendum inside the button so the `.table-name ~ .table-addendum` hover
+        /// selector works; it is position:fixed, so it is not clipped by the button overflow.
+        table_link.appendChild(table_addendum);
         table.appendChild(table_link);
-        table.appendChild(table_addendum);
         table.addEventListener('click', e => set_query_or_run(e, `SELECT * FROM "${database}"."${elem.table}" LIMIT 100`));
         tables_elem.appendChild(table);
     }
@@ -2734,6 +2876,12 @@ databases_toggle.addEventListener('click', e => {
     if (e.ctrlKey || e.metaKey || e.shiftKey) return;
     /// Normal click: toggle the databases panel instead of following the link.
     e.preventDefault();
+    toggleDatabases();
+});
+
+/// The "hide panel" button is only visible while the panel is open, so it always closes it.
+document.getElementById('databases-hide').addEventListener('click', e => {
+    e.stopPropagation();
     toggleDatabases();
 });
 
@@ -2814,7 +2962,7 @@ const default_format = 'JSONStringsEachRowWithProgress';
 
 let controller = null;
 /// Execute a single query, rendering results into the given targetResultEl.
-/// Returns { format, reply, response_ok, is_table, is_raw, is_chart, is_error }.
+/// Returns { format, reply, response_ok, is_table, is_raw, is_chart, is_image, is_error }.
 /// The caller is responsible for top-level UI (download buttons, history, favicon).
 /// `abortController` is an AbortController that can be used to cancel this query.
 async function postImpl(posted_request_num, query, targetResultEl, abortController, paramValuesSnapshot)
@@ -2846,6 +2994,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
     let is_table = false;
     let is_raw = false;
     let is_chart = false;
+    let is_image = false;
     let is_error = false;
 
     let response, reply, format;
@@ -2855,6 +3004,9 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             headers: { 'Authorization': 'never' } });
 
         format = response.headers.get('X-ClickHouse-Format') ?? default_format;
+        /// Detect image results (e.g. `FORMAT PNG`) by the response `Content-Type` rather than by
+        /// parsing the query, so any format that emits an image is rendered inline as a picture.
+        const content_type = response.headers.get('Content-Type') ?? '';
 
         if (!response.ok) {
             is_error = true;
@@ -2873,7 +3025,12 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
                 targetResultEl.renderError(reply);
             }
 
-            return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_error };
+            return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error };
+        } else if (content_type.startsWith('image/')) {
+            is_image = true;
+            const blob = await response.blob();
+            if (posted_request_num != request_num) { return { cancelled: true }; }
+            targetResultEl.renderImage(blob);
         } else if (format == default_format) {
             is_table = true;
             const reader = response.body.getReader();
@@ -2942,7 +3099,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             reply = e.toString();
         }
         targetResultEl.renderError(reply);
-        return { format, reply, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_error: true };
+        return { format, reply, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_image: false, is_error: true };
     }
 
     if (targetResultEl.isExplainGraph) {
@@ -2953,7 +3110,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
         if (is_table) targetResultEl.transposeIfNeeded();
     }
 
-    return { format, reply, response_ok: true, is_table, is_raw, is_chart, is_error };
+    return { format, reply, response_ok: true, is_table, is_raw, is_chart, is_image, is_error };
 }
 
 /// Execute a single query (legacy path, used for single-query mode).
@@ -2993,7 +3150,7 @@ async function postSingle(posted_request_num, query, history_query_text)
     last_query_for_download = query;
     last_params_for_download = paramValuesSnapshot;
 
-    if (result.is_raw) {
+    if (result.is_raw || result.is_image) {
         resultEl.elapsedNs = 1e6 * (performance.now() - last_query_start);
         elapsed_ns = resultEl.elapsedNs;
     } else {
@@ -3752,6 +3909,7 @@ async function getQueryUnderCursor() {
     }
 
     const tokens = await tokenize(all_queries);
+    const should_select_query = getQueryBoundaries(tokens, all_queries).length > 1;
 
     const cursor_position = query_area.selectionStart;
     let current_query_start = 0;
@@ -3777,7 +3935,7 @@ async function getQueryUnderCursor() {
             /// do not record it as the last completed query.
             const has_content = current_query_start < offset_before_token;
             if (has_content && current_offset >= cursor_position) {
-                query_area.setSelectionRange(current_query_start, current_offset);
+                if (should_select_query) query_area.setSelectionRange(current_query_start, current_offset);
                 query_area.focus();
                 return all_queries.substring(current_query_start, current_offset);
             }
@@ -3797,14 +3955,14 @@ async function getQueryUnderCursor() {
     /// an empty string. This is what handles the "single query ending in `;`
     /// with the cursor placed after it" case.
     if (current_query_start === current_offset && current_offset === all_queries.length && last_query_end >= 0) {
-        query_area.setSelectionRange(last_query_start, last_query_end);
+        if (should_select_query) query_area.setSelectionRange(last_query_start, last_query_end);
         query_area.focus();
         return all_queries.substring(last_query_start, last_query_end);
     }
 
     /// Cursor is in the last query (no trailing semicolon).
     const tail = all_queries.substring(current_query_start);
-    query_area.setSelectionRange(current_query_start, all_queries.length);
+    if (should_select_query) query_area.setSelectionRange(current_query_start, all_queries.length);
     query_area.focus();
     return tail;
 }

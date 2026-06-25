@@ -75,7 +75,7 @@ CREATE TABLE table
 (
     key UInt64,
     str String,
-    INDEX text_idx(str) TYPE text(
+    INDEX text_idx str TYPE text(
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
@@ -108,7 +108,7 @@ Alternatively, to add a text index to an existing table:
 
 ```sql title="Query"
 ALTER TABLE table
-    ADD INDEX text_idx(str) TYPE text(
+    ADD INDEX text_idx str TYPE text(
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
@@ -197,20 +197,28 @@ If the text index was build on a column of type `Nullable(T)` or `LowCardinality
 
 Examples:
 
-- `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))`
-- `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = substringIndex(col, '\n', 1))`
-- `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(extractTextFromHTML(col)))`
-- `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = removeDiacriticsUTF8(caseFoldUTF8(col)))`
+- `INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))`
+- `INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = substringIndex(col, '\n', 1))`
+- `INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(extractTextFromHTML(col)))`
+- `INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = removeDiacriticsUTF8(caseFoldUTF8(col)))`
 
 Also, the preprocessor expression must only reference the column or expression on top of which the text index is defined.
 
 Examples:
 
-- `INDEX idx(lower(col)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = upper(lower(col)))`
-- `INDEX idx(lower(col)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(lower(col), lower(col)))`
-- Not allowed: `INDEX idx(lower(col)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(col, col))`
+- `INDEX idx lower(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = upper(lower(col)))`
+- `INDEX idx lower(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(lower(col), lower(col)))`
+- Not allowed: `INDEX idx lower(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(col, col))`
 
 Using non-deterministic functions is disallowed.
+
+:::note
+Preprocessors are in principle equivalent to wrapping the index column or expression by the preprocessor expression.
+For example, the `lower` preprocessor in `INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))` can be emulated by `INDEX idx lower(col) TYPE text(tokenizer = 'splitByNonAlpha')`.
+The latter form has the disadvantage that the emulated preprocessor is only applied if it matches the filter condition in the WHERE clause.
+For example, `WHERE hasAllTokens(lower(col), [...])` matches while `WHERE hasAllTokens(col, [...])` does not.
+For an optimal user experience, we therefore recommend using preprocessor expressions.
+:::
 
 Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens), [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens), and [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhrase) use the preprocessor to first transform the search term before tokenizing it.
 Note that because the preprocessor is only applied on the text index path, results from these functions may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
@@ -221,7 +229,7 @@ For example,
 CREATE TABLE table
 (
     str String,
-    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
 )
 ENGINE = MergeTree
 ORDER BY tuple();
@@ -235,7 +243,7 @@ is equivalent to:
 CREATE TABLE table
 (
     str String,
-    INDEX idx(lower(str)) TYPE text(tokenizer = 'splitByNonAlpha')
+    INDEX idx lower(str) TYPE text(tokenizer = 'splitByNonAlpha')
 )
 ENGINE = MergeTree
 ORDER BY tuple();
@@ -297,6 +305,26 @@ Optional parameter `posting_list_block_size` (default: 1048576) specifies the si
 Optional parameter `posting_list_codec` (default: `none`) specifies the codec for posting list:
 - `none` - the posting lists are stored without additional compression.
 - `bitpacking` - apply [differential (delta) coding](https://en.wikipedia.org/wiki/Delta_encoding), followed by [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (each within blocks of fixed-size). Slows down SELECT queries, not recommended at the moment.
+
+The advanced parameters above can alternatively be set at the table level through the corresponding MergeTree settings: [`text_index_dictionary_block_size`](/operations/settings/merge-tree-settings#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/operations/settings/merge-tree-settings#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/operations/settings/merge-tree-settings#text_index_posting_list_block_size), and [`text_index_posting_list_codec`](/operations/settings/merge-tree-settings#text_index_posting_list_codec).
+They apply to every text index of the table that does not specify the parameter explicitly.
+
+The main use case of the table-level settings is to change the index parameters of an existing table without dropping and re-creating the text index on all table parts.
+Changing a table-level setting applies the new parameters only to text indexes built for new parts; existing parts keep their current layout.
+
+An argument given in the index definition takes precedence over the table setting, for example:
+
+```sql
+CREATE TABLE table(
+    s String,
+    -- This index uses 'bitpacking', overriding the table-level default below:
+    INDEX idx_a s TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking'),
+    -- This index inherits 'none' from the table setting:
+    INDEX idx_b lower(s) TYPE text(tokenizer = 'splitByNonAlpha'))
+ENGINE = MergeTree()
+ORDER BY tuple()
+SETTINGS text_index_posting_list_codec = 'none';
+```
 </details>
 
 *Index granularity.*
@@ -310,7 +338,7 @@ Example:
 CREATE TABLE table(
     k UInt64,
     s String,
-    INDEX idx(s) TYPE text(tokenizer = ngrams(2)))
+    INDEX idx s TYPE text(tokenizer = ngrams(2)))
 ENGINE = MergeTree()
 ORDER BY k;
 
@@ -908,7 +936,7 @@ Tokenizer separator characters in the phrase are ignored: `hasPhrase(text, 'quic
 CREATE TABLE tab (
     id UInt32,
     text String,
-    INDEX idx(text) TYPE text(tokenizer = splitByNonAlpha)
+    INDEX idx text TYPE text(tokenizer = splitByNonAlpha)
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -1253,7 +1281,7 @@ We will use `ALTER TABLE` and add a text index on comment column, then materiali
 
 ```sql
 -- Add the index
-ALTER TABLE hackernews ADD INDEX comment_idx(comment) TYPE text(tokenizer = splitByNonAlpha);
+ALTER TABLE hackernews ADD INDEX comment_idx comment TYPE text(tokenizer = splitByNonAlpha);
 
 -- Materialize the index for existing data
 ALTER TABLE hackernews MATERIALIZE INDEX comment_idx SETTINGS mutations_sync = 2;
@@ -1418,8 +1446,12 @@ For this specific case, `hasAnyTokens(comment, ['ClickHouse', 'clickhouse'])` wo
 
 ## Related content {#related-content}
 
-- Presentation: https://github.com/ClickHouse/clickhouse-presentations/blob/master/2025-tumuchdata-munich/ClickHouse_%20full-text%20search%20-%2011.11.2025%20Munich%20Database%20Meetup.pdf
-- Presentation: https://presentations.clickhouse.com/2026-fosdem-inverted-index/Inverted_indexes_the_what_the_why_the_how.pdf
+- Blog: [Announcing General Availability of ClickHouse Full-text Search](https://clickhouse.com/blog/full-text-search-ga-release)
+- Blog: [Building high-performance full-text search for object storage](https://clickhouse.com/blog/clickhouse-full-text-search-object-storage)
+- Video: [Intro to Full-Text Search in ClickHouse](https://www.youtube.com/watch?v=9zPmf1a_heU)
+- Video: [Under the Hood: Full Text Search at ClickHouse scale and speed](https://www.youtube.com/watch?v=8JbqE_ubfkU)
+- Presentation: [Inside ClickHouse full-text search: fast, native and columnar](https://github.com/ClickHouse/clickhouse-presentations/blob/master/2025-tumuchdata-munich/ClickHouse_%20full-text%20search%20-%2011.11.2025%20Munich%20Database%20Meetup.pdf)
+- Presentation: [Inverted database indexes: The why, the what, and the how, FOSDEM 2026](https://presentations.clickhouse.com/2026-fosdem-inverted-index/Inverted_indexes_the_what_the_why_the_how.pdf)
 
 **Outdated material**
 

@@ -344,6 +344,11 @@ bool isColumnNullableOrLowCardinalityNullable(const IColumn & column)
     return isColumnNullable(column) || isColumnLowCardinalityNullable(column);
 }
 
+bool canContainNull(const IColumn & column)
+{
+    return isColumnNullableOrLowCardinalityNullable(column) || checkColumn<ColumnVariant>(column) || checkColumn<ColumnDynamic>(column);
+}
+
 bool isColumnConst(const IColumn & column)
 {
     return checkColumn<ColumnConst>(column);

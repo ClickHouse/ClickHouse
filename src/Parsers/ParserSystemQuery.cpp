@@ -701,6 +701,9 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 res->distributed_cache_server_id = ast->as<ASTLiteral>()->value.safeGet<String>();
             }
 
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
+
             break;
         }
         case Type::SYNC_FILESYSTEM_CACHE:

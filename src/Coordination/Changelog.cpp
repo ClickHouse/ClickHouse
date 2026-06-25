@@ -1539,6 +1539,7 @@ LogEntriesPtr LogEntryStorage::getLogEntriesBetween(uint64_t start, uint64_t end
     size_t next_position = 0;
     const auto set_new_file = [&](const auto & log_location)
     {
+        chassert(!read_info.has_value());
         read_info.emplace();
         read_info->file_description = log_location.file_description;
         read_info->position = log_location.position;

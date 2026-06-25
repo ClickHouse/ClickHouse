@@ -13,6 +13,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <base/scope_guard.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 
 namespace DB
 {
@@ -426,6 +427,13 @@ void prepareEagerKeyConditionSets(
             filter_actions_dag->getOutputs().at(0), &allowed_inputs, context,
             /*allow_partial_result=*/ true))
         VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(*split, context);
+}
+
+size_t clampClusterFunctionNumStreams(UInt64 num_streams)
+{
+    /// 256 * cores is the ceiling max_threads gets in Context::setSetting; reuse it so a *Cluster
+    /// read step never reserves/resizes a pipe vector for a pathological user-supplied value.
+    return std::min<UInt64>(num_streams, 256 * getNumberOfCPUCoresToUse());
 }
 
 }

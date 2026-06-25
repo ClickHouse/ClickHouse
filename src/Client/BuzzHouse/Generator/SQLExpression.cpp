@@ -300,15 +300,9 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
             lv->set_no_quote_str(fmt::format("{}({})", rg.pickRandomly(sfuncs), rg.nextStrlen()));
         }
         break;
-        case LitOp::LitUUID:
-            lv->set_no_quote_str(fmt::format("'{}'{}", rg.nextUUID(), complex ? "::UUID" : ""));
-            break;
-        case LitOp::LitIPv4:
-            lv->set_no_quote_str(fmt::format("'{}'{}", rg.nextIPv4(), complex ? "::IPv4" : ""));
-            break;
-        case LitOp::LitIPv6:
-            lv->set_no_quote_str(fmt::format("'{}'{}", rg.nextIPv6(), complex ? "::IPv6" : ""));
-            break;
+        case LitOp::LitUUID: lv->set_no_quote_str(fmt::format("'{}'{}", rg.nextUUID(), complex ? "::UUID" : "")); break;
+        case LitOp::LitIPv4: lv->set_no_quote_str(fmt::format("'{}'{}", rg.nextIPv4(), complex ? "::IPv4" : "")); break;
+        case LitOp::LitIPv6: lv->set_no_quote_str(fmt::format("'{}'{}", rg.nextIPv6(), complex ? "::IPv6" : "")); break;
         case LitOp::LitGeo: {
             std::uniform_int_distribution<uint32_t> geo_range(1, static_cast<uint32_t>(GeoTypes_MAX));
             const GeoTypes gt = static_cast<GeoTypes>(geo_range(rg.generator));
@@ -316,9 +310,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
             lv->set_no_quote_str(fmt::format("'{}'{}{}", strAppendGeoValue(rg, gt), complex ? "::" : "", complex ? GeoTypes_Name(gt) : ""));
         }
         break;
-        case LitOp::LitStr:
-            lv->set_no_quote_str(rg.nextString("'", true, rg.nextStrlen()));
-            break;
+        case LitOp::LitStr: lv->set_no_quote_str(rg.nextString("'", true, rg.nextStrlen())); break;
         case LitOp::LitSpecial: {
             SpecialVal * val = lv->mutable_special_val();
             std::uniform_int_distribution<uint32_t> special_range(1, static_cast<uint32_t>(SpecialVal::SpecialValEnum_MAX));
@@ -341,9 +333,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
                 fmt::format("'{}'{}", strBuildJSON(rg, jrange(rg.generator), jrange(rg.generator)), complex ? "::JSON" : ""));
         }
         break;
-        case LitOp::LitNULLVal:
-            lv->mutable_special_val()->set_val(SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL);
-            break;
+        case LitOp::LitNULLVal: lv->mutable_special_val()->set_val(SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL); break;
         case LitOp::LitFraction: {
             std::uniform_int_distribution<uint32_t> frange(1, 999);
 
@@ -887,8 +877,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
                     this->width++;
                     generated_params += 4;
                     break;
-                default:
-                    break;
+                default: break;
             }
             func_call->add_combinators(comb);
         }
@@ -1163,15 +1152,9 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
 
     switch (static_cast<ExpOp>(expGen.nextOp())) /// drifts over time
     {
-        case ExpOp::Literal:
-            generateLiteralValue(rg, true, expr);
-            break;
-        case ExpOp::ColumnRef:
-            generateColRef(rg, expr);
-            break;
-        case ExpOp::Predicate:
-            generatePredicate(rg, expr);
-            break;
+        case ExpOp::Literal: generateLiteralValue(rg, true, expr); break;
+        case ExpOp::ColumnRef: generateColRef(rg, expr); break;
+        case ExpOp::Predicate: generatePredicate(rg, expr); break;
         case ExpOp::CastExpr: {
             uint32_t col_counter = 0;
             const uint64_t type_mask_backup = this->next_type_mask;
@@ -1371,20 +1354,13 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
                         }
                         nargs = 1;
                         break;
-                    case WINntile:
-                        nargs = 1;
-                        break;
-                    case WINnth_value:
-                        nargs = 2;
-                        break;
+                    case WINntile: nargs = 1; break;
+                    case WINnth_value: nargs = 2; break;
                     case WINlag:
                     case WINlagInFrame:
                     case WINlead:
-                    case WINleadInFrame:
-                        nargs = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 3));
-                        break;
-                    default:
-                        break;
+                    case WINleadInFrame: nargs = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 3)); break;
+                    default: break;
                 }
                 wc->set_func(wfs);
                 if (rg.nextLargeNumber() < 21)

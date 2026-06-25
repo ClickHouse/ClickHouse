@@ -209,22 +209,31 @@ static PostingsSerialization createPostingsSerialization(const IMergeTreeIndex &
 {
     const auto * codec = typeid_cast<const MergeTreeIndexText &>(index).getPostingListCodec();
     auto codec_type = codec ? codec->getType() : IPostingListCodec::Type::None;
-    /// The merge task always writes the current on-disk format, so the legacy lazy-codec fallback
-    /// doesn't apply — pass `WithCodec` to keep the codec fixed to the index definition.
-    return PostingsSerialization(
-        PostingListCodecFactory::createPostingListCodec(codec_type),
-        static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec));
+    auto codec_copy = PostingListCodecFactory::createPostingListCodec(codec_type);
+
+    /// The merged part is written in the current on-disk format.
+    return PostingsSerialization(std::move(codec_copy), static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec));
+}
+
+static PostingsSerialization createSourcePostingsSerialization(MergeTreeIndexReaderStream & header_stream)
+{
+    header_stream.seekToStart();
+    /// Only the version and codec are needed here, so skip deserializing the sparse index.
+    auto header = TextIndexSerialization::deserializeHeaderPrefix(*header_stream.getDataBuffer());
+    return PostingsSerialization(PostingListCodecFactory::createPostingListCodec(header.codec_type), header.version);
 }
 
 MergeTextIndexesTask::MergeTextIndexesTask(
     std::vector<TextIndexSegment> segments_,
     MergeTreeMutableDataPartPtr new_data_part_,
+    size_t num_rows_,
     MergeTreeIndexPtr index_ptr_,
     std::shared_ptr<MergedPartOffsets> merged_part_offsets_,
     const MergeTreeReaderSettings & reader_settings_,
     const MergeTreeWriterSettings & writer_settings_)
     : segments(std::move(segments_))
     , new_data_part(std::move(new_data_part_))
+    , num_rows(num_rows_)
     , index_ptr(std::move(index_ptr_))
     , merged_part_offsets(std::move(merged_part_offsets_))
     , writer_settings(writer_settings_)
@@ -264,6 +273,15 @@ MergeTextIndexesTask::MergeTextIndexesTask(
             input_streams_holders.emplace_back(std::move(stream));
         }
     }
+
+    /// Resolve each source part's codec from its own header.
+    source_postings_serializations.reserve(segments.size());
+
+    for (size_t i = 0; i < segments.size(); ++i)
+    {
+        auto * stream = input_streams[i].at(MergeTreeIndexSubstream::Type::Regular);
+        source_postings_serializations.emplace_back(createSourcePostingsSerialization(*stream));
+    }
 }
 
 MergeTextIndexesTask::~MergeTextIndexesTask() noexcept
@@ -296,7 +314,7 @@ void MergeTextIndexesTask::readDictionaryBlock(size_t source_num)
     if (data_buffer->eof())
         return;
 
-    inputs[source_num] = TextIndexSerialization::deserializeDictionaryBlock(*data_buffer, &postings_serialization);
+    inputs[source_num] = TextIndexSerialization::deserializeDictionaryBlock(*data_buffer, &source_postings_serializations[source_num]);
     const auto & tokens = inputs[source_num].tokens;
     cursors[source_num].reset({tokens}, getHeader(), tokens->size());
     queue.push(cursors[source_num]);
@@ -317,7 +335,7 @@ std::vector<PostingListPtr> MergeTextIndexesTask::readPostingLists(size_t source
     for (const auto offset_in_file : token_info.offsets)
     {
         stream->seekToMark({offset_in_file, 0});
-        postings.emplace_back(postings_serialization.deserialize(*data_buffer, token_info.header, token_info.cardinality));
+        postings.emplace_back(source_postings_serializations[source_num].deserialize(*data_buffer, token_info.header, token_info.cardinality));
     }
 
     return postings;
@@ -409,9 +427,18 @@ bool MergeTextIndexesTask::executeStep()
         is_initialized = true;
         initializeQueue();
         /// Write marks for compatibility with other skip indexes.
+        /// An empty part carries no marks at all, exactly like every other skip index on an
+        /// empty part. Writing one here would leave the marks file with a single mark while
+        /// `getMarksCountForSkipIndex` reports zero, so reading the marks back (e.g. when the
+        /// mark cache is prewarmed on attach) fails with `Too many marks in file`.
+        /// The part is not finalized yet at this stage, so its `index_granularity` is empty;
+        /// rely on the merged row count instead.
         chassert(new_data_part);
-        bool can_use_adaptive_granularity = new_data_part->index_granularity_info.mark_type.adaptive;
-        writeMarks(output_streams, can_use_adaptive_granularity);
+        if (num_rows != 0)
+        {
+            bool can_use_adaptive_granularity = new_data_part->index_granularity_info.mark_type.adaptive;
+            writeMarks(output_streams, can_use_adaptive_granularity);
+        }
     }
 
     if (!queue.isValid())

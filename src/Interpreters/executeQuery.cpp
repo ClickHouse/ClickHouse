@@ -1,4 +1,5 @@
 #include <Common/DateLUTImpl.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
@@ -115,6 +116,11 @@ namespace ProfileEvents
     extern const Event InsertQueryTimeMicroseconds;
     extern const Event OtherQueryTimeMicroseconds;
     extern const Event ASTFuzzerQueries;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric IsServerShuttingDown;
 }
 
 namespace DB
@@ -1594,18 +1600,11 @@ static BlockIO executeQueryImpl(
             if (quota)
             {
                 quota_checked = true;
-                if (quota->isKeyedByNormalizedQueryHash())
-                {
-                    quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
-                    quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERIES, 1);
-                    quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
-                }
-                else
-                {
-                    quota->used(QuotaType::QUERY_INSERTS, 1);
-                    quota->used(QuotaType::QUERIES, 1);
-                    quota->checkExceeded(QuotaType::ERRORS);
-                }
+                /// Each governing quota is accounted appropriately: NORMALIZED_QUERY_HASH quotas
+                /// track against per-hash intervals, the rest against shared session intervals.
+                quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
+                quota->usedForQuery(normalized_query_hash, QuotaType::QUERIES, 1);
+                quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
 
                 /// Track per-normalized-query-hash quota limits (works for all key types).
                 quota->usedPerNormalizedHash(normalized_query_hash);
@@ -1769,26 +1768,15 @@ static BlockIO executeQueryImpl(
                     quota = context->getQuota();
                     if (quota)
                     {
-                        if (quota->isKeyedByNormalizedQueryHash())
-                        {
-                            /// For NORMALIZED_QUERY_HASH keyed quotas, track all resources
-                            /// against per-hash intervals instead of shared session intervals.
-                            if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
-                                quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_SELECTS, 1);
-                            else if (out_ast->as<ASTInsertQuery>())
-                                quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
-                            quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERIES, 1);
-                            quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
-                        }
-                        else
-                        {
-                            if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
-                                quota->used(QuotaType::QUERY_SELECTS, 1);
-                            else if (out_ast->as<ASTInsertQuery>())
-                                quota->used(QuotaType::QUERY_INSERTS, 1);
-                            quota->used(QuotaType::QUERIES, 1);
-                            quota->checkExceeded(QuotaType::ERRORS);
-                        }
+                        /// Each governing quota is accounted appropriately: NORMALIZED_QUERY_HASH
+                        /// quotas track against per-hash intervals, the rest against shared session
+                        /// intervals. A user may be governed by several quotas of different key types.
+                        if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+                            quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_SELECTS, 1);
+                        else if (out_ast->as<ASTInsertQuery>())
+                            quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
+                        quota->usedForQuery(normalized_query_hash, QuotaType::QUERIES, 1);
+                        quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
 
                         /// Track per-normalized-query-hash quota limits (works for all key types).
                         quota->usedPerNormalizedHash(normalized_query_hash);
@@ -2053,10 +2041,32 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
 
     auto logger = getLogger("ASTFuzzer");
 
+    /// The fuzzer runs as a query finish callback, after the outer query's pipeline executor
+    /// has stopped enforcing limits. Without these checks the outer query keeps spawning fuzzed
+    /// queries while ignoring its own deadline, a KILL, or server shutdown, so it lingers in the
+    /// processlist and can trip the stress test hung check.
+    /// Some fuzzable queries (e.g. SHOW PROCESSLIST) are not inserted into the ProcessList, so
+    /// the deadline/KILL check via checkTimeLimitSoft is unavailable; the shutdown metric still
+    /// stops the loop in that case.
+    QueryStatusPtr process_list_element = context->getProcessListElement();
+
     ASTPtr base_ast = ast;
 
     for (size_t i = 0; i < num_runs; ++i)
     {
+        if (CurrentMetrics::get(CurrentMetrics::IsServerShuttingDown))
+        {
+            LOG_TRACE(logger, "Stopping AST fuzzer: the server is shutting down");
+            break;
+        }
+
+        /// checkTimeLimitSoft returns false without throwing on a KILL or the outer deadline.
+        if (process_list_element && !process_list_element->checkTimeLimitSoft())
+        {
+            LOG_TRACE(logger, "Stopping AST fuzzer: outer query was killed or timed out");
+            break;
+        }
+
         ASTPtr fuzzed_ast;
         NameToNameMap fuzzed_query_params;
         {
@@ -2542,6 +2552,18 @@ void executeQuery(
             /// It's possible to have queries without input and output.
         }
 
+        /// Query with `implicit_transaction` is committed here because:
+        /// 1. `onFinish` is invoked after the transaction is committed.
+        /// 2. When handling HTTP requests, in `HTTPHandler::processQuery`, there is `query_finish_callback` which is invoked before `onFinish`.
+        /// It releases the session and finalizes the output. The client might use the same session to query other queries. Hence, the transaction must be committed before `query_finish_callback`.
+        /// Refer: https://github.com/ClickHouse/ClickHouse/issues/80428
+        ///
+        /// It must also be committed before the AST fuzzer runs: the fuzzer resets the transaction stored
+        /// in the session and query contexts (see executeASTFuzzerQueries), which would otherwise leave the
+        /// executor's running flag set while `context->getCurrentTransaction()` is already gone.
+        if (implicit_tcl_executor->transactionRunning())
+            implicit_tcl_executor->commit(context);
+
         if (!flags.internal && ast)
         {
             Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
@@ -2576,16 +2598,8 @@ void executeQuery(
         throw;
     }
 
-    /// Query with `implicit_transaction` is committed here because:
-    /// 1. `onFinish` is invoked after the transaction is committed.
-    /// 2. When handling HTTP requests, in `HTTPHandler::processQuery`, there is `query_finish_callback` which is invoked before `onFinish`.
-    /// It releases the session and finalizes the output. The client might use the same session to query other queries. Hence, the transaction must be committed before `query_finish_callback`.
-    /// Refer: https://github.com/ClickHouse/ClickHouse/issues/80428
-    if (implicit_tcl_executor->transactionRunning())
-        implicit_tcl_executor->commit(context);
-
     /// We release query slot here to make sure client can safely reuse the slot with his next query, otherwise it will be released too late by BlockIO.
-    context->releaseQuerySlot();
+    context->releaseWorkloadResources();
 
     /// The order is important here:
     /// - first we save the finish_time that will be used for the entry in query_log/opentelemetry_span_log.finish_time_us

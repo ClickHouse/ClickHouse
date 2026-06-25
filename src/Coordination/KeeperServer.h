@@ -81,9 +81,9 @@ private:
 
     const int server_id;
 
-    nuraft::ptr<IKeeperStateMachine> state_machine;
-
     nuraft::ptr<KeeperStateManager> state_manager;
+
+    nuraft::ptr<IKeeperStateMachine> state_machine;
 
     nuraft::ptr<KeeperRaftServer> raft_instance; // TSA_GUARDED_BY(server_write_mutex);
     nuraft::ptr<nuraft::asio_service> asio_service;
@@ -205,6 +205,8 @@ public:
 
     KeeperLogInfo getKeeperLogInfo();
 
+    std::vector<KeeperClusterMemberInfo> getClusterMembersInfo() const;
+
     std::vector<KeeperChangelogStatus> getChangelogsStatus() const;
 
     bool requestLeader();
@@ -214,6 +216,8 @@ public:
     void recalculateStorageStats();
 
     std::optional<AuthenticationData> getAuthenticationData() const { return state_manager->getAuthenticationData(); }
+
+    std::vector<std::pair<std::string, Int32>> getExpiredTTLPathsForGarbageCollector(size_t batch_size) const;
 
     const KeeperContextPtr & getKeeperContext() const { return keeper_context; }
 };

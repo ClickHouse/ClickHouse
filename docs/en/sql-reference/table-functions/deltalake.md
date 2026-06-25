@@ -107,5 +107,5 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
 
 ## Related {#related}
 
-- [DeltaLake engine](engines/table-engines/integrations/deltalake.md)
-- [DeltaLake cluster table function](sql-reference/table-functions/deltalakeCluster.md)
+- [DeltaLake engine](/engines/table-engines/integrations/deltalake.md)
+- [DeltaLake cluster table function](/sql-reference/table-functions/deltalakeCluster.md)

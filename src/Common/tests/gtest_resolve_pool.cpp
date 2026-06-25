@@ -55,7 +55,7 @@ protected:
     }
 
     void SetUp() override {
-        DB::CurrentThread::getProfileEvents().reset();
+        DB::CurrentThread::getProfileEvents().resetCounters();
 
         ASSERT_EQ(0, CurrentMetrics::get(metrics.active_count));
         ASSERT_EQ(0, CurrentMetrics::get(metrics.banned_count));

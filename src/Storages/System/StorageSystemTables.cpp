@@ -306,7 +306,7 @@ protected:
     {
         if (table)
         {
-            StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+            const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
             if (!metadata_snapshot)
             {
                 columns[res_index++]->insertDefault();
@@ -607,7 +607,7 @@ protected:
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(static_cast<UInt64>(database->getObjectMetadataModificationTime(table_name)));
 
-                StorageMetadataPtr metadata_snapshot;
+                StorageMetadataHandle metadata_snapshot;
                 if (table)
                     metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
 

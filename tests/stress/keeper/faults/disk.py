@@ -12,7 +12,6 @@ from keeper.framework.core.util import (
     sh,
     sh_root,
     sh_root_strict,
-    sh_strict,
     ts_ms,
 )
 
@@ -338,17 +337,17 @@ def dm_delay(node, ms=3):
             print(f"[dm_delay][copyback][{node.name}] loop files: {(r_ls or {}).get('out', '')!r}")
             # Clear stale pre-fault files, then copy back — both strict so silent
             # failure cannot silently leave an empty coordination directory.
-            sh_root_strict(node, f"find /var/lib/clickhouse/coordination -mindepth 1 -delete", timeout=30)
+            sh_root_strict(node, "find /var/lib/clickhouse/coordination -mindepth 1 -delete", timeout=30)
             sh_root_strict(node, f"cp -a /mnt/{dm_name}/. /var/lib/clickhouse/coordination/", timeout=60)
-            r_coord = sh_root(node, f"ls -la /var/lib/clickhouse/coordination/ 2>&1", timeout=10)
+            r_coord = sh_root(node, "ls -la /var/lib/clickhouse/coordination/ 2>&1", timeout=10)
             print(f"[dm_delay][copyback][{node.name}] coord files: {(r_coord or {}).get('out', '')!r}")
             sh_root(node, f"sync || true; umount /mnt/{dm_name} 2>/dev/null || true", timeout=30)
             # Restore coordination dir ownership from parent (/var/lib/clickhouse)
             # in case it was recreated as root:root during cleanup teardown.
             sh_root(
                 node,
-                f"chown $(stat -c '%u:%g' /var/lib/clickhouse 2>/dev/null || echo '0:0') "
-                f"  /var/lib/clickhouse/coordination 2>/dev/null || true",
+                "chown $(stat -c '%u:%g' /var/lib/clickhouse 2>/dev/null || echo '0:0') "
+                "  /var/lib/clickhouse/coordination 2>/dev/null || true",
                 timeout=10,
             )
         else:
