@@ -620,8 +620,10 @@ namespace ErrorCodes
     - `0` (disable deduplication).
 
     A deduplication mechanism is used, similar to replicated tables (see
-    [replicated_deduplication_window](#replicated_deduplication_window) setting).
-    The hash sums of the created parts are written to a local file on a disk.
+    [replicated_deduplication_window](#replicated_deduplication_window) setting), including the
+    `insert_deduplication_version` granularity (whole inserted block under the default
+    `new_unified_hash`, per created part under the legacy versions). The hash sums are written to
+    a local file on a disk rather than to ClickHouse Keeper.
     )", 0) \
     DECLARE(UInt64, max_parts_to_merge_at_once, 100, R"(
     Max amount of parts which can be merged at once (0 - disabled). Doesn't affect
@@ -685,6 +687,10 @@ namespace ErrorCodes
     Default posting list codec for text indexes.
     Can be overridden by explicit `posting_list_codec` index argument.
     )", 0) \
+    DECLARE(Bool, allow_experimental_text_index_positions, false, R"(
+    Allow creating text indexes with the experimental `positions` argument which
+    stores token positions to support exact phrase matching.
+    )", EXPERIMENTAL) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
     Minimum time to wait before trying to select parts to merge again after no
     parts were selected. A lower setting will trigger selecting tasks in
@@ -1132,17 +1138,20 @@ namespace ErrorCodes
     - Any positive integer.
     - 0 (disable deduplication)
 
-    The `Insert` command creates one or more blocks (parts). For
-    [insert deduplication](../../engines/table-engines/mergetree-family/replication.md),
-    when writing into replicated tables, ClickHouse writes the hash sums of the
-    created parts into ClickHouse Keeper. Hash sums are stored only for the most
-    recent `replicated_deduplication_window` blocks. The oldest hash sums are
-    removed from ClickHouse Keeper.
+    For [insert deduplication](../../engines/table-engines/mergetree-family/replication.md),
+    when writing into replicated tables, ClickHouse writes deduplication hash sums into
+    ClickHouse Keeper. Hash sums are stored only for the most recent
+    `replicated_deduplication_window` blocks. The oldest hash sums are removed from
+    ClickHouse Keeper.
 
-    A large number for `replicated_deduplication_window` slows down `Inserts`
-    because more entries need to be compared. The hash sum is calculated from
-    the composition of the field names and types and the data of the inserted
-    part (stream of bytes).
+    Under the default `insert_deduplication_version = new_unified_hash` the hash sum covers the
+    whole inserted block, so an insert is deduplicated only when its entire data matches a
+    previous insert (a retry), not per individual part. Under the legacy `old_separate_hashes` /
+    `compatible_double_hashes` the hash sum is instead calculated per created part, from the
+    composition of the field names and types and the data of that part (stream of bytes).
+
+    A large number for `replicated_deduplication_window` slows down `Inserts` because more
+    entries need to be compared.
     )", 0) \
     DECLARE(UInt64, replicated_deduplication_window_seconds, 60 * 60 /* one hour */, R"(
     The number of seconds after which the hash sums of the inserted blocks are
@@ -1178,6 +1187,12 @@ namespace ErrorCodes
     down `Async Inserts` because it needs to compare more entries.
     The hash sum is calculated from the composition of the field names and types
     and the data of the insert (stream of bytes).
+
+    This setting applies only under `insert_deduplication_version = old_separate_hashes` or
+    `compatible_double_hashes`, which keep async-insert hashes in a separate `async_blocks`
+    directory. Under the default `new_unified_hash`, async inserts share the unified
+    `deduplication_hashes` directory with sync inserts and are governed by
+    `replicated_deduplication_window` / `replicated_deduplication_window_seconds` instead.
     )", 0) \
     DECLARE(UInt64, replicated_deduplication_window_seconds_for_async_inserts, 7 * 24 * 60 * 60 /* one week */, R"(
     The number of seconds after which the hash sums of the async inserts are
@@ -1195,6 +1210,10 @@ namespace ErrorCodes
 
     The time is relative to the time of the most recent record, not to the wall
     time. If it's the only record it will be stored forever.
+
+    Like `replicated_deduplication_window_for_async_inserts`, this applies only under
+    `insert_deduplication_version = old_separate_hashes` / `compatible_double_hashes`; under the
+    default `new_unified_hash`, async inserts use `replicated_deduplication_window_seconds`.
     )", 0) \
     DECLARE(Milliseconds, async_block_ids_cache_update_wait_ms, 100, R"(
     How long each insert iteration will wait for async_block_ids_cache update
@@ -2736,6 +2755,16 @@ std::vector<std::string_view> MergeTreeSettings::getAllAliasNames() const
 std::string_view MergeTreeSettings::getDescription(std::string_view name) const
 {
     return impl->getDescription(name);
+}
+
+std::string_view MergeTreeSettings::getTypeName(std::string_view name) const
+{
+    return impl->getTypeName(name);
+}
+
+String MergeTreeSettings::getDefaultValueString(std::string_view name) const
+{
+    return impl->getDefaultValueString(name);
 }
 
 SettingsTierType MergeTreeSettings::getTier(std::string_view name) const
