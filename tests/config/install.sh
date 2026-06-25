@@ -391,7 +391,9 @@ if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
     reserve_granularity_options=("1Mi" "4Mi" "8Mi")
     reserve_granularity="${reserve_granularity_options[$((RANDOM % ${#reserve_granularity_options[@]}))]}"
     echo "Replacing s3_cache reserve_granularity with $reserve_granularity"
-    reserve_granularity_sed="s|<reserve_granularity>[^<]*</reserve_granularity>|<reserve_granularity>$reserve_granularity</reserve_granularity>|"
+    # Scope the substitution to the <s3_cache> block so it does not touch other caches'
+    # reserve_granularity (e.g. dynamically_resize_filesystem_cache intentionally sets it to 0).
+    reserve_granularity_sed="/<s3_cache>/,/<\/s3_cache>/s|<reserve_granularity>[^<]*</reserve_granularity>|<reserve_granularity>$reserve_granularity</reserve_granularity>|"
 
     if check_clickhouse_version 25.5; then
       sed "$reserve_granularity_sed" $SRC_PATH/config.d/storage_conf.xml >$DEST_SERVER_PATH/config.d/storage_conf.xml
