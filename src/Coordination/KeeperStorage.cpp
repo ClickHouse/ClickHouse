@@ -634,7 +634,6 @@ void KeeperStorage::initializeSystemNodes()
         );
     }
 
-    updateStats();
     initialized = true;
 }
 
@@ -740,8 +739,6 @@ void KeeperStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader)
     reader.readSessionsAndClusterConfig(*this);
 
     initializeSystemNodes();
-
-    updateStats();
 }
 
 std::shared_ptr<KeeperStorage::Node> KeeperStorage::UncommittedState::tryGetNodeFromStorage(std::string_view path) const
@@ -1108,32 +1105,6 @@ uint64_t KeeperStorage::getLastUncommittedLogIdx() const
 {
     std::lock_guard lock(transaction_mutex);
     return uncommitted_transactions.empty() ? 0 : uncommitted_transactions.back().log_idx;
-}
-
-KeeperStorageStats::KeeperStorageStats(const KeeperStorageStats & other)
-{
-    *this = other;
-}
-
-KeeperStorageStats & KeeperStorageStats::operator=(const KeeperStorageStats & other)
-{
-    if (this == &other)
-        return *this;
-
-    /// Returned stats are a frozen, independently sampled copy. They can be
-    /// stale immediately after return and are intentionally no stronger than
-    /// the previous live-reference behavior.
-    nodes_count.store(other.nodes_count.load(std::memory_order_relaxed), std::memory_order_relaxed);
-    approximate_data_size.store(other.approximate_data_size.load(std::memory_order_relaxed), std::memory_order_relaxed);
-    total_watches_count.store(other.total_watches_count.load(std::memory_order_relaxed), std::memory_order_relaxed);
-    watched_paths_count.store(other.watched_paths_count.load(std::memory_order_relaxed), std::memory_order_relaxed);
-    sessions_with_watches_count.store(other.sessions_with_watches_count.load(std::memory_order_relaxed), std::memory_order_relaxed);
-    session_with_ephemeral_nodes_count.store(
-        other.session_with_ephemeral_nodes_count.load(std::memory_order_relaxed), std::memory_order_relaxed);
-    total_emphemeral_nodes_count.store(other.total_emphemeral_nodes_count.load(std::memory_order_relaxed), std::memory_order_relaxed);
-    last_zxid.store(other.last_zxid.load(std::memory_order_relaxed), std::memory_order_relaxed);
-
-    return *this;
 }
 
 Coordination::Error KeeperStorage::commit(KeeperStorage::DeltaRange deltas)
@@ -3378,8 +3349,6 @@ KeeperResponsesForSessions KeeperStorage::processRequest(
         callOnConcreteRequestType(*zk_request, process_request);
     }
 
-    updateStats();
-
     {
         std::lock_guard lock(transaction_mutex);
 
@@ -3655,8 +3624,6 @@ KeeperResponsesForSessions KeeperStorage::processLocalRequests(
         results = std::move(merged);
     }
 
-    updateStats();
-
     return results;
 }
 
@@ -3763,7 +3730,6 @@ void KeeperStorage::finishWritingSnapshot(std::unique_ptr<KeeperNodeStreamForSna
     stream->node_count = 0;
     container.disableSnapshotMode();
     container.clearOutdatedNodes();
-    stats.approximate_data_size.store(getApproximateDataSize(), std::memory_order_relaxed);
 }
 
 bool KeeperStorage::NodeStreamForSnapshot::next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats)
@@ -3780,12 +3746,6 @@ bool KeeperStorage::NodeStreamForSnapshot::next(std::string_view & out_path, std
         ++it;
 
     return true;
-}
-
-/// Introspection functions mostly used in 4-letter commands
-uint64_t KeeperStorage::getNodesCount() const
-{
-    return container.size();
 }
 
 std::vector<std::pair<std::string, Int32>> KeeperStorage::collectExpiredTTLPaths(int64_t now_ms, size_t batch_size) const
@@ -3825,22 +3785,6 @@ bool KeeperStorage::containsTTLPath(const std::string & path) const
 {
     SharedLockGuard storage_lock(storage_mutex);
     return ttl_paths.contains(path);
-}
-
-uint64_t KeeperStorage::getApproximateDataSize() const
-{
-    return container.getApproximateDataSize();
-}
-
-uint64_t KeeperStorage::getArenaDataSize() const
-{
-    return container.keyArenaSize();
-}
-
-uint64_t KeeperStorage::getWatchedPathsCount() const
-{
-    return watches.size() + list_watches.size() + persistent_watches.size() + persistent_list_watches.size()
-        + persistent_recursive_watches.size();
 }
 
 void KeeperStorage::clearDeadWatches(int64_t session_id)
@@ -3937,7 +3881,7 @@ void KeeperStorage::dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) co
         buf << "0x" << getHexUIntLowercase(session_id) << "\n";
     }
 
-    buf << "Sessions with Ephemerals (" << getSessionWithEphemeralNodesCount() << "):\n";
+    buf << "Sessions with Ephemerals (" << committed_ephemerals.size() << "):\n";
     for (const auto & [session_id, ephemeral_paths] : committed_ephemerals)
     {
         buf << "0x" << getHexUIntLowercase(session_id) << "\n";
@@ -4000,23 +3944,22 @@ void KeeperStorage::updateWatches(
     }
 }
 
-void KeeperStorage::updateStats()
+KeeperStorageStats KeeperStorage::getStorageStats() const
 {
-    stats.nodes_count.store(getNodesCount(), std::memory_order_relaxed);
-    stats.approximate_data_size.store(getApproximateDataSize(), std::memory_order_relaxed);
-    stats.total_watches_count.store(getTotalWatchesCount(), std::memory_order_relaxed);
-    stats.watched_paths_count.store(getWatchedPathsCount(), std::memory_order_relaxed);
-    stats.sessions_with_watches_count.store(getSessionsWithWatchesCount(), std::memory_order_relaxed);
-    stats.session_with_ephemeral_nodes_count.store(getSessionWithEphemeralNodesCount(), std::memory_order_relaxed);
-    stats.total_emphemeral_nodes_count.store(getTotalEphemeralNodesCount(), std::memory_order_relaxed);
-    stats.last_zxid.store(getZXID(), std::memory_order_relaxed);
-
+    std::shared_lock lock(storage_mutex);
     CurrentMetrics::set(CurrentMetrics::KeeperTTLNodes, committed_ttl_nodes.load());
-}
-
-const KeeperStorageStats & KeeperStorage::getStorageStats() const
-{
-    return stats;
+    return KeeperStorageStats
+    {
+        .nodes_count = container.size(),
+        .approximate_data_size = container.getApproximateDataSize(),
+        .total_watches_count = getTotalWatchesCount(),
+        .watched_paths_count = watches.size() + list_watches.size() + persistent_watches.size() + persistent_list_watches.size()
+        + persistent_recursive_watches.size(),
+        .sessions_with_watches_count = sessions_and_watchers.size(),
+        .session_with_ephemeral_nodes_count = committed_ephemerals.size(),
+        .total_emphemeral_nodes_count = committed_ephemeral_nodes,
+        .last_committed_zxid = getZXID(),
+    };
 }
 
 uint64_t KeeperStorage::getTotalWatchesCount() const
@@ -4032,25 +3975,9 @@ uint64_t KeeperStorage::getTotalWatchesCount() const
     return total_watches_count;
 }
 
-uint64_t KeeperStorage::getSessionWithEphemeralNodesCount() const
-{
-    return committed_ephemerals.size();
-}
-
-uint64_t KeeperStorage::getSessionsWithWatchesCount() const
-{
-    return sessions_and_watchers.size();
-}
-
-uint64_t KeeperStorage::getTotalEphemeralNodesCount() const
-{
-    return committed_ephemeral_nodes;
-}
-
 void KeeperStorage::recalculateStats()
 {
     container.recalculateDataSize();
-    stats.approximate_data_size.store(getApproximateDataSize(), std::memory_order_relaxed);
 }
 
 bool KeeperStorage::checkDigest(const KeeperDigest & first, const KeeperDigest & second)

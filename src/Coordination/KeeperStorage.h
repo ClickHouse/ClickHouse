@@ -103,18 +103,15 @@ static_assert(sizeof(KeeperMemNode) <= 160);
 
 struct KeeperStorageStats
 {
-    KeeperStorageStats() = default;
-    KeeperStorageStats(const KeeperStorageStats & other);
-    KeeperStorageStats & operator=(const KeeperStorageStats & other);
+    uint64_t nodes_count = 0;
+    uint64_t approximate_data_size = 0;
 
-    std::atomic<uint64_t> nodes_count = 0;
-    std::atomic<uint64_t> approximate_data_size = 0;
-    std::atomic<uint64_t> total_watches_count = 0;
-    std::atomic<uint64_t> watched_paths_count = 0;
-    std::atomic<uint64_t> sessions_with_watches_count = 0;
-    std::atomic<uint64_t> session_with_ephemeral_nodes_count = 0;
-    std::atomic<uint64_t> total_emphemeral_nodes_count = 0;
-    std::atomic<int64_t> last_zxid = 0;
+    uint64_t total_watches_count = 0;
+    uint64_t watched_paths_count = 0;
+    uint64_t sessions_with_watches_count = 0;
+    uint64_t session_with_ephemeral_nodes_count = 0;
+    uint64_t total_emphemeral_nodes_count = 0;
+    int64_t last_committed_zxid = 0;
 };
 
 /// Keeper state machine almost equal to the ZooKeeper's state machine.
@@ -216,8 +213,6 @@ public:
         std::optional<int64_t> ephemeral_owner;
     };
 
-    KeeperStorageStats stats;
-
     mutable std::mutex transaction_mutex;
 
     /// Global id of all requests applied to storage
@@ -291,14 +286,10 @@ public:
 
     KeeperDigest getNodesDigest(bool committed, bool lock_transaction_mutex) const;
 
-    const KeeperStorageStats & getStorageStats() const;
+    /// Introspection function mostly used in 4-letter commands.
+    /// Not thread safe, caller should make sure no other methods run in parallel with this.
+    KeeperStorageStats getStorageStats() const;
 
-    uint64_t getSessionWithEphemeralNodesCount() const;
-    uint64_t getTotalEphemeralNodesCount() const;
-
-    uint64_t getWatchedPathsCount() const;
-
-    uint64_t getSessionsWithWatchesCount() const;
     uint64_t getTotalWatchesCount() const;
 
     void dumpWatches(WriteBufferFromOwnString & buf) const;
@@ -552,19 +543,10 @@ public:
         const std::vector<String> & persistent_recursive_watches_paths,
         int64_t session_id);
 
-    /// Introspection functions mostly used in 4-letter commands
-    uint64_t getNodesCount() const;
-
-    uint64_t getApproximateDataSize() const;
-
-    uint64_t getArenaDataSize() const;
-
     std::vector<std::pair<std::string, Int32>> collectExpiredTTLPaths(int64_t now_ms, size_t batch_size) const;
 
     /// Used by tests.
     bool containsTTLPath(const std::string & path) const;
-
-    void updateStats();
 
     /// Register watches from a request/response pair.
     void updateWatches(
