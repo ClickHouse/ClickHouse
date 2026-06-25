@@ -446,12 +446,18 @@ struct AggregateFunctionMergedJSONPatchData
     /// insertLeafEntry would let a later entry erase an earlier sibling, because
     /// eraseShadowedEntries uses sort_key <= incoming, which is true for equal keys.
     ///
-    /// By snapshotting existing_count before the batch starts and scoping all conflict checks
-    /// and erasures to entries[0..existing_count), batch members cannot see or erase each other.
+    /// Three-phase approach:
+    ///   1. Filter: find batch entries not blocked by a pre-existing newer entry.
+    ///   2. Erase:  remove all pre-existing entries shadowed by any survivor.
+    ///   3. Insert: push all survivors into the now-clean state.
+    ///
+    /// Phases 2 and 3 are kept strictly separate so that a survivor pushed in phase 3 is
+    /// never seen by the erase pass of another survivor.  Using a positional index limit
+    /// (entries[0..existing_count)) breaks down when pushLeafEntry inserts into a sorted
+    /// position that falls below the limit, causing a later survivor's erase pass to
+    /// mis-identify the newly pushed sibling as a pre-existing entry and erase it.
     void insertBatchAtomic(std::vector<LeafRef> & batch, Arena & arena) // STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
-        /// Snapshot the pre-existing state size. Conflict checks and erasures are scoped to
-        /// entries[0..existing_count), so batch members cannot block or erase each other.
         size_t existing_count = entries.size();
 
         /// Phase 1: collect indices of batch entries not blocked by a pre-existing newer entry.
@@ -472,24 +478,27 @@ struct AggregateFunctionMergedJSONPatchData
                 survivors.push_back(i);
         }
 
-        /// Phase 2: erase pre-existing entries that are shadowed, then push each survivor.
+        /// Phase 2: remove all pre-existing entries shadowed by any survivor.
+        /// No insertions happen here, so entries contains only pre-existing data and the
+        /// j < existing_count guard is unnecessary — entries.size() == existing_count still.
         for (size_t idx : survivors)
         {
-            /// Erase only within the pre-existing prefix (entries[0..existing_count)).
-            /// Entries added during this phase 2 loop are beyond existing_count and must not
-            /// be touched — they are siblings from the same batch.
-            size_t write = 0;
-            for (size_t j = 0; j < entries.size(); ++j)
-            {
-                bool shadowed = j < existing_count
-                    && pathsConflict(entries[j].path.view(), batch[idx].path)
-                    && entries[j].sort_key <= batch[idx].sort_key;
-                if (!shadowed)
-                    entries[write++] = std::move(entries[j]);
-            }
-            entries.resize(write);
-            pushLeafEntry(batch[idx].path, std::move(batch[idx].value), batch[idx].sort_key, arena);
+            entries.erase(
+                std::remove_if(
+                    entries.begin(),
+                    entries.end(),
+                    [&](const Entry & e)
+                    {
+                        return pathsConflict(e.path.view(), batch[idx].path)
+                            && e.sort_key <= batch[idx].sort_key;
+                    }),
+                entries.end());
         }
+
+        /// Phase 3: push all survivors. The pre-existing state is already clean; batch
+        /// siblings are not yet in entries, so pushLeafEntry cannot accidentally erase them.
+        for (size_t idx : survivors)
+            pushLeafEntry(batch[idx].path, std::move(batch[idx].value), batch[idx].sort_key, arena);
     }
 
     void merge(const AggregateFunctionMergedJSONPatchData & other, Arena & arena)

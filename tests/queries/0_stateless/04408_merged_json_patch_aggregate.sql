@@ -84,6 +84,25 @@ FROM (
     )
 );
 
+-- Multi-row typed-path case: older {a:5} then newer {a:42}. The newer row wins and both typed
+-- paths (a and a.b) must survive in the result, matching direct toJSONString on the newer row.
+-- Without the phase-2/3 split, pushLeafEntry inserted the new "a" at a sorted position inside
+-- the pre-existing prefix; the next survivor's erase pass mis-identified it as a pre-existing
+-- entry and erased it, producing a=0 (column default) instead of a=42.
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM (
+    SELECT '{\"a\":5}'::JSON(a UInt32, `a.b` UInt32) AS patch, 1 AS version
+    UNION ALL
+    SELECT '{\"a\":42}'::JSON(a UInt32, `a.b` UInt32), 2
+);
+
+SELECT toJSONString(mergedJSONPatchMerge(state))
+FROM (
+    SELECT mergedJSONPatchState('{\"a\":5}'::JSON(a UInt32, `a.b` UInt32), 1) AS state
+    UNION ALL
+    SELECT mergedJSONPatchState('{\"a\":42}'::JSON(a UInt32, `a.b` UInt32), 2)
+);
+
 -- Typed path at default value (zero) written explicitly must still win over an older non-zero value.
 -- Without the fix, a genuine {"a":0} (newer) was silently dropped and {"a":5} (older) survived.
 SELECT toJSONString(mergedJSONPatch(patch, version))
