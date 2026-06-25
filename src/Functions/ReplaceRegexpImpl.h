@@ -140,14 +140,14 @@ struct ReplaceRegexpImpl
         return result.is_trivial && result.required_substring_is_prefix && result.required_substring == needle;
     }
 
-    /// Optimization for "anchored capture-then-truncate" patterns such as ClickBench Q28's
-    /// `^https?://(?:www\.)?([^/]+)/.*$` with replacement `\1`. The result of such a pattern is just
-    /// capturing group N, yet RE2 still scans (and discards) the trailing `.*` on every row. Instead we
-    /// match a "short" regexp with the trailing `.*$` removed and emit the captured group directly.
-    /// In default (non-dotall) mode `.*$` matches the rest of the string iff it contains no newline, so
-    /// when the remaining suffix is newline-free the short match's capture is provably identical to the
-    /// full match's (leftmost-first semantics); otherwise we fall back to the full regexp for that row.
-    /// Detection inspects the parsed RE2 syntax tree, not the textual pattern string.
+    /// Fast path for "anchored capture-then-truncate" patterns: a constant pattern `^ … (group N) … .*$`
+    /// (anchored at both ends, ending in `.*`) whose replacement is exactly a single backreference `\N` to
+    /// the N-th capturing group (N >= 1) returns just that group, e.g. ClickBench Q28's
+    /// `^https?://(?:www\.)?([^/]+)/.*$` with `\1`.
+    /// Rather than let RE2 scan and discard the trailing `.*` on every row, we match a "short" regexp with
+    /// `.*$` removed and emit group N directly. A non-dotall `.*$` matches the rest of the string iff it
+    /// has no newline, so we use the short capture when the suffix is newline-free and fall back to the
+    /// full regexp otherwise. Detection inspects the parsed RE2 syntax tree, not the textual pattern.
     struct AnchoredExtract
     {
         std::unique_ptr<re2::RE2> short_searcher;
