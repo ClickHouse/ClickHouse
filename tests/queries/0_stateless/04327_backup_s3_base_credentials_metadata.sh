@@ -69,12 +69,18 @@ check_base_backup_in_metadata inc_3
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "RESTORE TABLE data AS data_3 FROM S3($(s3_location inc_3)) SETTINGS base_backup=S3($(s3_location_root base))" | cut -f2
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "SELECT count() FROM data_3"
 
-echo 'inc_4: backward compatibility with credentials embedded in metadata'
-$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "BACKUP TABLE data TO S3($(s3_location inc_4)) SETTINGS base_backup=S3($(s3_location base))" | cut -f2
-# Imitate old metadata with embedded credentials and no marker.
-rewrite_backup_metadata inc_4 '<base_backup_copy_s3_credentials_from_backup>true</base_backup_copy_s3_credentials_from_backup>' ''
-rewrite_backup_metadata inc_4 '<use_same_s3_credentials_for_base_backup>true</use_same_s3_credentials_for_base_backup>' ''
-rewrite_backup_metadata inc_4 "S3('$(s3_url base)')" "S3('$(s3_url base)', 'test', 'testtest')"
+echo 'inc_4: use_same_s3_credentials with extra auth arguments'
+$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "BACKUP TABLE data TO S3($(s3_location inc_4)) SETTINGS base_backup=S3('$(s3_url base)', extra_credentials(external_id = 'SECRET_EXTERNAL_ID')), use_same_s3_credentials_for_base_backup=1" | cut -f2
 check_base_backup_in_metadata inc_4
-$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "RESTORE TABLE data AS data_4 FROM S3($(s3_location inc_4))" | cut -f2
+$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "RESTORE TABLE data AS data_4 FROM S3($(s3_location inc_4)) SETTINGS base_backup=S3($(s3_location base))" | cut -f2
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "SELECT count() FROM data_4"
+
+echo 'inc_5: backward compatibility with credentials embedded in metadata'
+$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "BACKUP TABLE data TO S3($(s3_location inc_5)) SETTINGS base_backup=S3($(s3_location base))" | cut -f2
+# Imitate old metadata with embedded credentials and no marker.
+rewrite_backup_metadata inc_5 '<base_backup_copy_s3_credentials_from_backup>true</base_backup_copy_s3_credentials_from_backup>' ''
+rewrite_backup_metadata inc_5 '<use_same_s3_credentials_for_base_backup>true</use_same_s3_credentials_for_base_backup>' ''
+rewrite_backup_metadata inc_5 "S3('$(s3_url base)')" "S3('$(s3_url base)', 'test', 'testtest')"
+check_base_backup_in_metadata inc_5
+$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "RESTORE TABLE data AS data_5 FROM S3($(s3_location inc_5))" | cut -f2
+$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "SELECT count() FROM data_5"

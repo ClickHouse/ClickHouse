@@ -433,20 +433,24 @@ void BackupImpl::writeBackupMetadata()
         if (base_backup_in_use)
         {
             /// Persist base backup locators without inline `S3` credentials.
-            const BackupInfo base_backup_info_for_metadata = base_backup_info->withoutS3Credentials(params.context);
-            const bool base_backup_credentials_were_stripped = base_backup_info_for_metadata.toString() != base_backup_info->toString();
+            BackupInfo effective_base_backup_info = *base_backup_info;
+            if (params.use_same_s3_credentials_for_base_backup)
+                backup_info.copyS3CredentialsTo(effective_base_backup_info);
+
+            const BackupInfo base_backup_info_for_metadata = effective_base_backup_info.withoutS3Credentials(params.context);
+            const bool base_backup_credentials_were_stripped = base_backup_info_for_metadata.toString() != effective_base_backup_info.toString();
             bool base_backup_can_use_this_backup_credentials = false;
 
             if (base_backup_credentials_were_stripped && backup_info.canCopyS3CredentialsTo(base_backup_info_for_metadata))
             {
                 BackupInfo base_backup_info_with_this_backup_credentials = base_backup_info_for_metadata;
                 backup_info.copyS3CredentialsTo(base_backup_info_with_this_backup_credentials);
-                base_backup_can_use_this_backup_credentials = base_backup_info_with_this_backup_credentials.toString() == base_backup_info->toString();
+                base_backup_can_use_this_backup_credentials = base_backup_info_with_this_backup_credentials.toString() == effective_base_backup_info.toString();
             }
 
             *out << "<base_backup>" << xml << base_backup_info_for_metadata.toString() << "</base_backup>";
             *out << "<base_backup_uuid>" << getBaseBackupUnlocked()->getUUID() << "</base_backup_uuid>";
-            if (params.use_same_s3_credentials_for_base_backup || base_backup_can_use_this_backup_credentials)
+            if (base_backup_can_use_this_backup_credentials)
                 *out << "<" << BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP << ">true</"
                      << BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP << ">";
         }

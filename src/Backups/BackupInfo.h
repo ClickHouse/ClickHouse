@@ -31,8 +31,9 @@ struct BackupInfo
     /// and this backup locator carries explicit credentials).
     bool canCopyS3CredentialsTo(const BackupInfo & dest) const;
 
-    /// Returns a copy without the `S3` credential arguments: S3('url', 'access_key_id',
-    /// 'secret_access_key') becomes S3('url'), and credential key-value arguments are removed.
+    /// Returns a copy without `S3` credentials: positional key/secret arguments are removed,
+    /// credential key-value arguments and trailing `extra_credentials` are removed, and credentials
+    /// embedded in URLs are redacted.
     /// Used to serialize the base backup locator into the `.backup` metadata, which must never
     /// contain credentials; on restore they are taken from the restore source locator, from the
     /// `base_backup` setting, or from the server-side configuration.
