@@ -14,6 +14,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
+#include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -368,24 +369,41 @@ void PrometheusHTTPProtocolAPI::appendTimeRangeConditions(
             TimeSeriesColumnNames::MinTime,
             TimeSeriesColumnNames::MaxTime);
 
-    /// `min_time`/`max_time` are `DateTime64(3)`. A series overlaps the requested range [start, end]
-    /// when its `min_time <= end` and `max_time >= start`. NULL bounds mean "unknown", so such rows are
-    /// kept to avoid hiding series whose time bounds are not set.
-    static constexpr UInt32 time_scale = 3;
+    /// `min_time`/`max_time` store the timestamp type of the `TimeSeries` table (`DateTime64(X)`, `DateTime`,
+    /// `UInt32`, ...), which is not necessarily `DateTime64(3)`. Derive that type/scale from the `time_series`
+    /// column the same way the PromQL query path does, and build the comparison literals with the same
+    /// conversion path (`timeSeriesTimestampToAST`), so no precision is lost for higher-scale tables and the
+    /// comparison type matches the column for non-`DateTime64` timestamps.
+    auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
+    auto timestamp_data_type
+        = splitTimeSeriesType(time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type).first;
+    UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
+    /// Parse both bounds first so that an inverted range is rejected (matching the PromQL query path in
+    /// `NodeEvaluationRangeGetter`) instead of silently matching long-lived series for an empty interval.
+    std::optional<DateTime64> start_time;
+    std::optional<DateTime64> end_time;
     if (!start_param.empty())
-    {
-        Int64 start_ms = parseTimeSeriesTimestamp(start_param, time_scale).value;
-        conditions.push_back(fmt::format(
-            "({0} IS NULL OR {0} >= fromUnixTimestamp64Milli(toInt64({1})))", TimeSeriesColumnNames::MaxTime, start_ms));
-    }
-
+        start_time = parseTimeSeriesTimestamp(start_param, timestamp_scale);
     if (!end_param.empty())
-    {
-        Int64 end_ms = parseTimeSeriesTimestamp(end_param, time_scale).value;
+        end_time = parseTimeSeriesTimestamp(end_param, timestamp_scale);
+
+    if (start_time && end_time && *start_time > *end_time)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "start_time must not be greater than end_time");
+
+    /// A series overlaps the requested range [start, end] when its `min_time <= end` and `max_time >= start`.
+    /// NULL bounds mean "unknown", so such rows are kept to avoid hiding series whose time bounds are not set.
+    if (start_time)
         conditions.push_back(fmt::format(
-            "({0} IS NULL OR {0} <= fromUnixTimestamp64Milli(toInt64({1})))", TimeSeriesColumnNames::MinTime, end_ms));
-    }
+            "({0} IS NULL OR {0} >= {1})",
+            TimeSeriesColumnNames::MaxTime,
+            timeSeriesTimestampToAST(*start_time, timestamp_data_type)->formatWithSecretsOneLine()));
+
+    if (end_time)
+        conditions.push_back(fmt::format(
+            "({0} IS NULL OR {0} <= {1})",
+            TimeSeriesColumnNames::MinTime,
+            timeSeriesTimestampToAST(*end_time, timestamp_data_type)->formatWithSecretsOneLine()));
 }
 
 /// Implements /api/v1/series: returns time series matching a metric name filter.
