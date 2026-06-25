@@ -2074,14 +2074,22 @@ template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeJSON(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
 {
-    const auto * key_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
-    if (!key_column)
+    String key;
+    if (const auto * key_const = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
+    {
+        key = key_const->getValue<String>();
+    }
+    else if (const auto * key_str = checkAndGetColumn<ColumnString>(arguments[1].column.get()); key_str && arguments[1].column->size() == 1)
+    {
+        key = String(key_str->getDataAt(0));
+    }
+    else
+    {
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN,
             "Second argument of function {} for JSON type must be a constant String, got {}",
             getName(), arguments[1].column->getName());
-
-    String key = key_column->getValue<String>();
+    }
 
     /// When json_type_escape_dots_in_keys is enabled, dots in individual path
     /// elements are stored escaped as %2E. Apply the same escaping to the key.
@@ -2449,18 +2457,21 @@ Arrays in ClickHouse are one-indexed.
 Negative indexes are supported. In this case, the corresponding element is selected, numbered from the end. For example, `arr[-1]` is the last item in the array.
 
 Operator `[n]` provides the same functionality.
+
+Also supports accessing [`JSON`](/sql-reference/data-types/newjson) columns by a constant string key using bracket syntax `json['key']`. Nested access can be chained: `json['a']['b']`.
     )";
     FunctionDocumentation::Syntax syntax = "arrayElement(arr, n)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "The array to search. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"n", "Position of the element to get. [`(U)Int*`](/sql-reference/data-types/int-uint)."}
+        {"arr", "The array to search. [`Array(T)`](/sql-reference/data-types/array). Or a [`JSON`](/sql-reference/data-types/newjson) column."},
+        {"n", "Position of the element to get. [`(U)Int*`](/sql-reference/data-types/int-uint). Or a constant [`String`](/sql-reference/data-types/string) key for JSON columns."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a single combined array from the provided array arguments", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT arrayElement(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElement(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
         {"Using [n] notation", "SELECT arr[2] FROM (SELECT [1, 2, 3] AS arr)", "2"},
-        {"Index out of array bounds", "SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "0"}
+        {"Index out of array bounds", "SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "0"},
+        {"JSON bracket access", "SELECT json['a'] FROM (SELECT '{\"a\" : 42}'::JSON AS json)", "42"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;

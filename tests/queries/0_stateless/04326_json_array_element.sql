@@ -160,6 +160,15 @@ SELECT j1['x'], j2['y'] FROM test_json_multi;
 SELECT arrayElement(json, 'a', 0) FROM test_json; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 -- ============================================
+-- 10. Constant JSON with bracket access
+-- ============================================
+-- When both arguments are constant, useDefaultImplementationForConstants
+-- unwraps them into plain 1-row columns. Verify this works correctly.
+SELECT 'const_json';
+SELECT '{"a" : 42}'::JSON(a UInt32) AS json, json['a'];
+SELECT '{"a" : {"b" : "hello"}}'::JSON AS json, json['a']['b'];
+
+-- ============================================
 -- Cleanup
 -- ============================================
 DROP TABLE test_json;

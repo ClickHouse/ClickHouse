@@ -110,3 +110,6 @@ where_clause
 1
 multi_json
 1	2
+const_json
+{"a":42}	42
+{"a":{"b":"hello"}}	hello
