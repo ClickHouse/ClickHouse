@@ -301,6 +301,46 @@ DROP VIEW test_view_strtype_04241;
 DROP TABLE test_distributed_strtype_04241;
 DROP TABLE test_local_strtype_04241;
 
+-- `arrayJoin` in the outer projection: pushdown must be disabled. `arrayJoin`
+-- expands each source row into one row per array element and drops rows whose
+-- array is empty, so it changes row cardinality *after* the source read. Unlike
+-- an `ARRAY JOIN` clause (which the analyzer lowers to a separate table
+-- expression, so the outer query is no longer a single-table read and never
+-- reaches the optimization), `arrayJoin` in the select list keeps the query
+-- single-table and would otherwise pass the guards. The data below gives the
+-- highest-`ts` source rows empty arrays, so a buggy pushdown (`ORDER BY ts DESC
+-- LIMIT 10` injected into the view) would truncate to those empty-array rows and
+-- return 0 expanded rows, while the correct behavior continues to lower-`ts`
+-- rows and returns 10.
+DROP TABLE IF EXISTS test_local_arrjoin_04241;
+DROP TABLE IF EXISTS test_distributed_arrjoin_04241;
+DROP VIEW IF EXISTS test_view_arrjoin_04241;
+
+CREATE TABLE test_local_arrjoin_04241 (id UInt64, ts UInt64, arr Array(UInt64))
+    ENGINE = MergeTree() ORDER BY id;
+-- Rows with the highest `ts` (id >= 90) have empty arrays; lower rows have one element.
+INSERT INTO test_local_arrjoin_04241
+    SELECT number, number AS ts, if(number >= 90, [], [number]) AS arr FROM numbers(100);
+
+CREATE TABLE test_distributed_arrjoin_04241 AS test_local_arrjoin_04241
+    ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), test_local_arrjoin_04241, id);
+
+CREATE VIEW test_view_arrjoin_04241 AS SELECT id, ts, arr FROM test_distributed_arrjoin_04241;
+
+SELECT 'arrayJoin in projection disables pushdown:',
+    (SELECT count() = 0 FROM (EXPLAIN SELECT arrayJoin(arr) AS x FROM test_view_arrjoin_04241 ORDER BY ts DESC LIMIT 10)
+     WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
+
+-- Correctness: the top source rows by `ts` all have empty arrays, so the result
+-- must come from lower-`ts` rows. With a buggy pushdown this would return 0 rows.
+SELECT 'arrayJoin in projection result count:', count() FROM (
+    SELECT arrayJoin(arr) AS x FROM test_view_arrjoin_04241 ORDER BY ts DESC LIMIT 10
+);
+
+DROP VIEW test_view_arrjoin_04241;
+DROP TABLE test_distributed_arrjoin_04241;
+DROP TABLE test_local_arrjoin_04241;
+
 -- View whose inner query has a `QUALIFY` clause: pushdown must be disabled.
 -- `QUALIFY` filters rows by a window function evaluated over the whole row set;
 -- pushing `ORDER BY/LIMIT` into the view would let each shard evaluate the

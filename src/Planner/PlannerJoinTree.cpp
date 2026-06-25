@@ -940,6 +940,20 @@ void pushOrderByIntoView(
     if (outer->hasGroupBy() || outer->hasHaving() || outer->isDistinct() || select_query_info.has_window)
         return;
 
+    /// `arrayJoin` used as a projection function changes row cardinality after
+    /// the source read: it expands each input row into one row per array element
+    /// and drops rows whose array is empty. Unlike an `ARRAY JOIN` clause (which
+    /// the analyzer lowers to a separate table expression, so the outer query is
+    /// no longer a single-table read and never reaches here), `arrayJoin` in the
+    /// select list keeps `is_single_table_expression` true and slips past the
+    /// guards above. Pushing `ORDER BY/LIMIT` into the view would then truncate
+    /// source rows before the expansion runs, so if the top ordered rows have
+    /// empty arrays the rewritten query would return too few rows instead of
+    /// continuing to lower ordered rows to fill the `LIMIT`. Mirror the existing
+    /// guard in `mainQueryNodeBlockSizeByLimit`.
+    if (hasFunctionNode(outer->getProjectionNode(), "arrayJoin"))
+        return;
+
     /// `LIMIT BY` is evaluated globally on the coordinator after merging.
     /// Pushing only `LIMIT_LENGTH` into the view would truncate per-shard before
     /// `LIMIT BY` is applied, so the coordinator may not see enough candidates

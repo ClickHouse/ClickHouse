@@ -58,6 +58,8 @@ exact_rows_before_limit disables pushdown:	1
 }
 type mismatch disables pushdown:	1
 type mismatch result:	9
+arrayJoin in projection disables pushdown:	1
+arrayJoin in projection result count:	10
 view QUALIFY disables pushdown:	1
 view SETTINGS limit disables pushdown:	1
 prefer_column_name_to_alias disables pushdown:	1
