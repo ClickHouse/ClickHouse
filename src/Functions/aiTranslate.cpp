@@ -17,9 +17,9 @@ class FunctionAiTranslate final : public FunctionBaseAI
 public:
     static constexpr auto name = "aiTranslate";
 
-    explicit FunctionAiTranslate(ContextPtr context_) : FunctionBaseAI(context_) {}
+    explicit FunctionAiTranslate(ContextPtr context) : FunctionBaseAI(context) {}
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionAiTranslate>(context_); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiTranslate>(context); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -28,6 +28,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
+            {"collection", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
             {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String)"},
             {"target_language", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
         };
@@ -42,10 +43,10 @@ public:
 
 private:
     static constexpr float default_temp = 0.3f;
-    static constexpr size_t prompt_arg_index = 0;
-    static constexpr size_t target_language_arg_index = 1;
-    static constexpr size_t instructions_arg_index = 2;
-    static constexpr size_t temp_arg_idx = 3;
+    static constexpr size_t prompt_arg_index = 1;
+    static constexpr size_t target_language_arg_index = 2;
+    static constexpr size_t instructions_arg_index = 3;
+    static constexpr size_t temp_arg_idx = 4;
 
     String functionName() const override { return name; }
 
@@ -53,11 +54,14 @@ private:
     size_t promptArgumentIndex() const override { return prompt_arg_index; }
     size_t temperatureArgumentIndex() const override { return temp_arg_idx; }
 
-    void checkSanityBeforeExecuteImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
+    void checkSanityBeforeExecuteImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        auto target_language = arguments[target_language_arg_index].column->getDataAt(0);
-        if (target_language.find_first_not_of(" \t\n\r") == std::string_view::npos)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "aiTranslate: 'target_language' must not be empty");
+        if (input_rows_count)
+        {
+            auto target_language = arguments[target_language_arg_index].column->getDataAt(0);
+            if (target_language.find_first_not_of(" \t\n\r") == std::string_view::npos)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "aiTranslate: 'target_language' must not be empty");
+        }
     }
 
     String buildSystemPrompt(const ColumnsWithTypeAndName & arguments) const override
@@ -86,12 +90,13 @@ REGISTER_FUNCTION(AiTranslate)
         .description = R"(
 Translates the given text into the specified target language using an LLM provider.
 
-Additional style or dialect instructions may be passed as a third argument (e.g. `'keep technical terms untranslated'`).
+Additional style or dialect instructions may be passed as a fourth argument (e.g. `'keep technical terms untranslated'`).
 
-Provider credentials and configuration are taken from the named collection specified by the `ai_function_credentials` setting.
+The first argument is a named collection that specifies the provider, model, endpoint, and API key.
 )",
-        .syntax = "aiTranslate(text, target_language[, instructions[, temperature]])",
+        .syntax = "aiTranslate(collection, text, target_language[, instructions[, temperature]])",
         .arguments = {
+            {"collection", "Name of a named collection containing provider credentials and configuration.", {"String"}},
             {"text", "Text to translate.", {"String"}},
             {"target_language", "Target language name or BCP-47 code (e.g. `'French'`, `'es-MX'`).", {"String"}},
             {"instructions", "Optional constant additional instructions for the translator.", {"String"}},
@@ -99,8 +104,8 @@ Provider credentials and configuration are taken from the named collection speci
         },
         .returned_value = {"The translated text, or the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples = {
-            {"Translate to French", "SELECT aiTranslate('Hello, world!', 'French') SETTINGS ai_function_credentials = 'my_ai_credentials'", "Bonjour le monde!"},
-            {"Translate to Japanese with style instructions", "SELECT aiTranslate(body, 'Japanese', 'Use polite form (desu/masu)') FROM articles LIMIT 5", ""},
+            {"Translate to French", "SELECT aiTranslate('ai_credentials', 'Hello, world!', 'French')", "Bonjour le monde!"},
+            {"Translate to Japanese with style instructions", "SELECT aiTranslate('ai_credentials', body, 'Japanese', 'Use polite form (desu/masu)') FROM articles LIMIT 5", ""},
         },
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::AI});
