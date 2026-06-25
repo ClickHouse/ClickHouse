@@ -24,8 +24,13 @@ namespace ErrorCodes
 
 /// Guard against allocation bombs in deserialize(): a crafted aggregate state
 /// can declare a huge element count and make resize/reserve allocate gigabytes
-/// before any data is read. The constant is arbitrary (matches windowFunnel).
-static constexpr size_t MAX_STATISTICS_STATE_SIZE = 100'000'000;
+/// before any data is read. The bound matches the existing largestTriangleThreeBuckets
+/// contract (its MAX_ARRAY_SIZE = 1ULL << 30), which is the only consumer of this
+/// shared read() with a documented size limit. Keeping the same value means no
+/// legitimate pre-existing state is rejected (for an oversized state the error just
+/// moves from getResult to deserialize), while crafted multi-GiB bombs that declare
+/// ~4.29e9 elements still throw before allocating.
+static constexpr size_t MAX_STATISTICS_STATE_SIZE = 1ULL << 30;
 
 /// Because ranks are adjusted, we have to store each of them in Float type.
 using RanksArray = VectorWithMemoryTracking<Float64>;
