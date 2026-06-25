@@ -2,6 +2,7 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Resolve/IdentifierLookup.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Poco/String.h>
 #include <base/defines.h>
 
@@ -25,7 +26,7 @@ struct ScopeAliases
     /// Cloned resolved expressions with aliases that must be removed
     QueryTreeNodes node_to_remove_aliases;
 
-    std::unordered_map<std::string, DataTypePtr> alias_name_to_expression_type;
+    UnorderedMapWithMemoryTracking<std::string, DataTypePtr> alias_name_to_expression_type;
 
     /// Lowercase alias -> list of original-case alias names, populated for unquoted aliases in standard mode.
     /// Must stay in sync with the primary alias_name_to_*_node maps above — always route inserts through

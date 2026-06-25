@@ -114,7 +114,7 @@ public:
         : database_catalog(database_catalog_)
     {}
 
-    Names getAllRegisteredNames() const override
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
         auto context = CurrentThread::tryGetQueryContext();
         if (!context)
@@ -123,7 +123,7 @@ public:
         const auto access = context->getAccess();
         const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
 
-        Names result;
+        VectorWithMemoryTracking<String> result;
         auto databases_list = database_catalog.getDatabases(GetDatabasesOptions{.with_remote_databases = true});
         for (const auto & database_name : databases_list | boost::adaptors::map_keys)
         {
@@ -482,7 +482,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         if (exception)
         {
             DatabaseNameHints hints(*this);
-            std::vector<String> names = hints.getHints(table_id.getDatabaseName());
+            auto names = hints.getHints(table_id.getDatabaseName());
             if (names.empty())
             {
                 exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(table_id.getDatabaseName())));
@@ -587,7 +587,7 @@ void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
     if (!db)
     {
         DatabaseNameHints hints(*this);
-        std::vector<String> names = hints.getHints(database_name);
+        auto names = hints.getHints(database_name);
         if (names.empty())
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
@@ -679,7 +679,7 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
     if (!db)
     {
         DatabaseNameHints hints(*this);
-        std::vector<String> names = hints.getHints(database_name);
+        auto names = hints.getHints(database_name);
         if (names.empty())
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
@@ -852,7 +852,7 @@ DatabasePtr DatabaseCatalog::getDatabase(std::string_view database_name) const
     if (!db)
     {
         DatabaseNameHints hints(*this);
-        std::vector<String> names = hints.getHints(std::string{database_name});
+        auto names = hints.getHints(std::string{database_name});
         if (names.empty())
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
@@ -2378,7 +2378,7 @@ std::pair<String, String> TableNameHints::getExtendedHintForTable(const String &
     return best_match;
 }
 
-Names TableNameHints::getAllRegisteredNames() const
+VectorWithMemoryTracking<String> TableNameHints::getAllRegisteredNames() const
 {
     if (!database)
         return {};
