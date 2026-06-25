@@ -10,5 +10,9 @@
             <url>http://minio1:9001/root/backup_nc_gcp_oauth/</url>
             <http_client>gcp_oauth</http_client>
         </nc_backup_gcp_oauth>
+        <nc_backup_role_only>
+            <url>http://minio1:9001/root/backup_nc_role_only/</url>
+            <role_arn>arn:aws:iam::123456789012:role/server-role</role_arn>
+        </nc_backup_role_only>
     </named_collections>
 </clickhouse>

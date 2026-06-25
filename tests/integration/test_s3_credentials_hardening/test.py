@@ -33,6 +33,18 @@ node_with_server_role = cluster.add_instance(
     },
 )
 
+# A separate instance whose server <s3> config carries static keys (and no environment credentials), to
+# verify that a backup named collection overrides -- rather than inherits -- the server's static keys.
+node_with_server_keys = cluster.add_instance(
+    "node_with_server_keys",
+    with_minio=True,
+    main_configs=["configs/named_collections.xml", "configs/s3_server_keys.xml"],
+    user_configs=["configs/users.xml"],
+    env_variables={
+        "AWS_EC2_METADATA_DISABLED": "true",
+    },
+)
+
 ALLOW = "SETTINGS s3_allow_server_credentials_in_user_queries = 1"
 
 
@@ -153,6 +165,43 @@ def test_backup_named_collection_gcp_oauth_is_rejected():
     assert "gcp_oauth" in error and "not allowed to use" in error, error
 
     node.query("DROP TABLE t_backup_gcp SYNC")
+
+
+def test_backup_named_collection_does_not_inherit_server_keys():
+    node_with_server_keys.query("DROP TABLE IF EXISTS t_backup_keys SYNC")
+    node_with_server_keys.query(
+        "CREATE TABLE t_backup_keys (x UInt8) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    node_with_server_keys.query("INSERT INTO t_backup_keys SELECT 1")
+
+    # Control: the positional URL form inherits the server <s3> static keys, so the backup succeeds. This
+    # proves the server keys are configured and usable for this endpoint (static keys are explicit
+    # credentials, not a server-managed mechanism, so the restriction does not block them).
+    node_with_server_keys.query(
+        "BACKUP TABLE t_backup_keys TO S3('http://minio1:9001/root/backup_keys_positional/b1')"
+    )
+
+    # A URL-only backup named collection is a full auth override: the server static keys must not leak into
+    # it, so the backup goes out unsigned and minio rejects the anonymous request instead.
+    error = node_with_server_keys.query_and_get_error(
+        "BACKUP TABLE t_backup_keys TO S3(nc_backup_url_only, 'b1')"
+    )
+    assert "403" in error or "Access Denied" in error or "AccessDenied" in error, error
+
+    # A backup named collection with only a role_arn has no base key pair of its own, so the server static
+    # keys must not be used as the STS base to assume the role. The role cannot be assumed and the backup
+    # fails (unsigned -> rejected) instead of authenticating with the server's keys.
+    error = node_with_server_keys.query_and_get_error(
+        "BACKUP TABLE t_backup_keys TO S3(nc_backup_role_only, 'b1')"
+    )
+    assert (
+        "403" in error
+        or "Access Denied" in error
+        or "AccessDenied" in error
+        or "server-managed credentials" in error
+    ), error
+
+    node_with_server_keys.query("DROP TABLE t_backup_keys SYNC")
 
 
 def test_server_data_disk_unaffected():

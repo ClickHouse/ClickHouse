@@ -16,6 +16,8 @@
 
 namespace DB::S3AuthSetting
 {
+    extern const S3AuthSettingsString access_key_id;
+    extern const S3AuthSettingsString secret_access_key;
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
     extern const S3AuthSettingsString external_id;
@@ -99,9 +101,14 @@ void registerBackupEngineS3(BackupFactory & factory)
             /// defaults when omitted, so none of them is inherited from the server `<s3>` config.
             /// `use_environment_credentials` defaults to 0 so a URL-only backup collection reads anonymously
             /// instead of authenticating with the server's own cloud identity (matches s3 table functions).
-            /// Static keys are credentials, not mechanisms, and keep the existing config inheritance.
+            /// The static key pair is also taken from the collection (empty when omitted) so it overrides --
+            /// rather than inherits -- the server `<s3>` static keys: a URL-only backup collection stays
+            /// anonymous instead of authenticating with the server's keys, and a collection with only a
+            /// `role_arn` has no base keys to assume the role with.
             named_collection_auth.emplace();
             auto & auth = *named_collection_auth;
+            auth[S3AuthSetting::access_key_id] = access_key_id;
+            auth[S3AuthSetting::secret_access_key] = secret_access_key;
             auth[S3AuthSetting::use_environment_credentials]
                 = collection->getOrDefault<bool>("use_environment_credentials", false);
             auth[S3AuthSetting::no_sign_request] = collection->getOrDefault<bool>("no_sign_request", false);

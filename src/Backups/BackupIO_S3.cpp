@@ -131,6 +131,10 @@ private:
     {
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
         HTTPHeaderEntries headers;
+        /// Whether the base key pair was supplied by the backup query or its named collection (rather than
+        /// inherited from the server `<s3>` config below). A role_arn may only be assumed on top of the
+        /// request's own base keys, never the server's.
+        const bool base_keys_supplied_by_query = !access_key_id.empty();
         if (access_key_id.empty())
         {
             credentials = Aws::Auth::AWSCredentials(settings.auth_settings[S3AuthSetting::access_key_id], settings.auth_settings[S3AuthSetting::secret_access_key]);
@@ -158,6 +162,19 @@ private:
         /// role so the explicit keys are used directly. With no explicit keys, the inherited role_arn is left
         /// in place and `getCredentialsProvider` refuses it as a server-managed credential.
         if (!role_arn_supplied_by_query && !role_arn.empty() && !credentials.IsEmpty()
+            && context->shouldRestrictUserQueryS3Credentials())
+        {
+            role_arn.clear();
+            role_session_name.clear();
+            external_id.clear();
+        }
+
+        /// Under the restriction, a query/named-collection role_arn must use the request's own base key pair,
+        /// not the server `<s3>` static keys: otherwise a backup that supplies only `extra_credentials(role_arn
+        /// = ...)` (or a collection with only a role) would assume the chosen role using the server's keys as the
+        /// STS base -- a confused deputy. Drop the role when the base keys were not supplied by the request; with
+        /// no role and only server keys, `getCredentialsProvider` then refuses the server-managed credentials.
+        if (role_arn_supplied_by_query && !base_keys_supplied_by_query && !role_arn.empty()
             && context->shouldRestrictUserQueryS3Credentials())
         {
             role_arn.clear();
