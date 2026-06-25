@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-parallel-replicas
+# Tags: long, no-replicated-database, no-parallel-replicas
+# Tag long: many cases (RENAME/EXCHANGE/cross-DB/RENAME DATABASE plus rejection paths, two of which
+#           start a separate clickhouse-local server) make a single run heavy; under the flaky-check's
+#           repeated parallel runs it exceeds the 180s soft cap. long exempts that cap and runs it ~5x
+#           instead of ~50x there, while still running once on every regular and per-test-coverage lane.
 # Tag no-replicated-database: RENAME of multiple tables in a single query is not supported there,
 #                             and database renames are handled differently.
 # Tag no-parallel-replicas: this test only checks row-policy bindings, parallel replicas are irrelevant here.
