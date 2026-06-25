@@ -643,12 +643,12 @@ def test_merge_workload_change():
 
         reads_before = int(
             node.query(
-                f"select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/{env}_merges' and type='fifo'"
+                f"select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/{env}_merges/%' and type='fifo'"
             ).strip()
         )
         writes_before = int(
             node.query(
-                f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/{env}_merges' and type='fifo'"
+                f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/{env}_merges/%' and type='fifo'"
             ).strip()
         )
 
@@ -659,12 +659,12 @@ def test_merge_workload_change():
 
         reads_after = int(
             node.query(
-                f"select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/{env}_merges' and type='fifo'"
+                f"select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/{env}_merges/%' and type='fifo'"
             ).strip()
         )
         writes_after = int(
             node.query(
-                f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/{env}_merges' and type='fifo'"
+                f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/{env}_merges/%' and type='fifo'"
             ).strip()
         )
 
@@ -697,12 +697,12 @@ def test_mutation_workload_change():
 
         reads_before = int(
             node.query(
-                f"select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/{env}_mutations' and type='fifo'"
+                f"select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/{env}_mutations/%' and type='fifo'"
             ).strip()
         )
         writes_before = int(
             node.query(
-                f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/{env}_mutations' and type='fifo'"
+                f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/{env}_mutations/%' and type='fifo'"
             ).strip()
         )
 
@@ -711,12 +711,12 @@ def test_mutation_workload_change():
 
         reads_after = int(
             node.query(
-                f"select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/{env}_mutations' and type='fifo'"
+                f"select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/{env}_mutations/%' and type='fifo'"
             ).strip()
         )
         writes_after = int(
             node.query(
-                f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/{env}_mutations' and type='fifo'"
+                f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/{env}_mutations/%' and type='fifo'"
             ).strip()
         )
 
