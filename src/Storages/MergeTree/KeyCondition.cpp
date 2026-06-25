@@ -2811,6 +2811,14 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
         node, info, out_key_column_num, out_argument_num_of_space_filling_curve, key_column_type, chain_not_tested_for_monotonicity))
         return false;
 
+    /// Build every chain function against a `LowCardinality`-stripped key type so the chain
+    /// is later applied to a stripped column/type in `applyMonotonicFunctionsChainToRange`.
+    /// Otherwise an explicit wrapper such as `CAST(lc_col, 'Int32')` would capture the
+    /// `LowCardinality` type here and its `FunctionCast` dictionary-unpack wrapper would hit a
+    /// `Bad cast` when fed the stripped column. Reachable via statistics part pruning, whose
+    /// key columns keep their raw `LowCardinality` type.
+    key_column_type = recursiveRemoveLowCardinality(key_column_type);
+
     for (auto it = chain_not_tested_for_monotonicity.rbegin(); it != chain_not_tested_for_monotonicity.rend(); ++it)
     {
         auto function = *it;
@@ -5165,10 +5173,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (!element.monotonic_functions_chain.empty())
             {
                 key_range_storage = hyperrectangle[key_column];
+                /// The chain was built in `extractAtomFromTree` against an
+                /// `LowCardinality`-stripped key type; the runtime type must match.
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
                     *key_range_storage,
                     element.monotonic_functions_chain,
-                    data_types[key_column],
+                    recursiveRemoveLowCardinality(data_types[key_column]),
                     single_point
                 );
 

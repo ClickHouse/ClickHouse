@@ -83,6 +83,9 @@ void changeColumnRepresentation(const ColumnPtr & src_column, ColumnPtr & dst_co
 ColumnPtr emptyNotNullableClone(const ColumnPtr & column);
 ColumnPtr materializeColumn(const Block & block, const String & name);
 Columns materializeColumns(const Block & block, const Names & names);
+/// Like materializeColumns, but keeps LowCardinality columns as-is (only removes Const/Sparse). Used
+/// for the probe side of single-LowCardinality-column joins, whose key getter consumes the dictionary.
+Columns materializeColumnsKeepLowCardinality(const Block & block, const Names & names);
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names);
 ColumnRawPtrs getRawPointers(const Columns & columns);
 void restoreLowCardinalityInplace(Block & block, const Names & lowcard_keys);

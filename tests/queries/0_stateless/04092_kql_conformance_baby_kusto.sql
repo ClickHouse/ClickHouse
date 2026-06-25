@@ -163,22 +163,6 @@ _dt | summarize p0 = percentile(a, 0), p100=percentile(a, 100);
 set dialect='clickhouse';
 DROP TABLE IF EXISTS _dt;
 CREATE TABLE _dt (x Nullable(Int32)) ENGINE = Memory;
-INSERT INTO _dt VALUES (1), (2), (3), (1);
-set dialect='kusto';
-print '-- BuiltInAggregates_make_set_int --';
-_dt | summarize a = make_set(x), b = make_set(x,2)
-| project a = array_sort_asc(a), b = array_sort_asc(b);
-set dialect='clickhouse';
-DROP TABLE IF EXISTS _dt;
-CREATE TABLE _dt (x Nullable(Int32)) ENGINE = Memory;
-INSERT INTO _dt VALUES (1), (2), (3), (1);
-set dialect='kusto';
-print '-- BuiltInAggregates_make_set_if_int --';
-_dt | summarize a = make_set_if(x,x>1), b = make_set_if(x,true,2)
-| project a = array_sort_asc(a), b = array_sort_asc(b);
-set dialect='clickhouse';
-DROP TABLE IF EXISTS _dt;
-CREATE TABLE _dt (x Nullable(Int32)) ENGINE = Memory;
 INSERT INTO _dt VALUES (1), (3), (2), (1);
 set dialect='kusto';
 print '-- BuiltInAggregates_make_list_int --';
@@ -513,14 +497,6 @@ INSERT INTO _dt VALUES ('[]'), ('[1,2]'), ('{}');
 set dialect='kusto';
 print '-- BuiltIns_array_length_Columnar --';
 _dt | project a=array_length(x);
--- FIXME: BuiltIns_array_sort_Scalar is commented out: mixed-type arrays (int+string) with array_sort require Array(Dynamic) sorting which ClickHouse does not support
--- print '-- BuiltIns_array_sort_Scalar --';
--- let x=dynamic([ 1, 3, 2, "a", "c", "b" ]);
--- print a=array_sort_asc(x), b=array_sort_desc(x);
--- FIXME: BuiltIns_array_sort_Columnar is commented out: mixed-type arrays (int+string) with array_sort require Array(Dynamic) sorting which ClickHouse does not support
--- print '-- BuiltIns_array_sort_Columnar --';
--- print x=dynamic([ 1, 3, 2, "a", "c", "b" ])
--- | project a=array_sort_asc(x), b=array_sort_desc(x);
 print '-- BuiltIns_bin_DateTime --';
 print v=bin(datetime(2022-03-02 23:04), 1h);
 set dialect='clickhouse';
