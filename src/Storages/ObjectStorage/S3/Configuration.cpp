@@ -265,6 +265,19 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     s3_settings->auth_settings[S3AuthSetting::role_session_name] = collection.getOrDefault<String>("role_session_name", "");
     s3_settings->auth_settings[S3AuthSetting::external_id] = collection.getOrDefault<String>("external_id", "");
 
+    /// Under the restriction, a `role_arn` supplied as a query override (`s3(collection, role_arn = ...)`) must
+    /// not be assumed on top of the collection's operator-provisioned static keys -- that would let a user pick
+    /// an arbitrary role to assume using the collection's keys as the STS base (a confused deputy). Honor a
+    /// query-overridden role only when the same query also supplied the base key pair; otherwise drop it. A
+    /// `role_arn` from the stored collection definition is left untouched, as it is operator-intended.
+    if (context->shouldRestrictUserQueryS3Credentials() && collection.isQueryOverridden("role_arn")
+        && !(collection.isQueryOverridden("access_key_id") && collection.isQueryOverridden("secret_access_key")))
+    {
+        s3_settings->auth_settings[S3AuthSetting::role_arn] = "";
+        s3_settings->auth_settings[S3AuthSetting::role_session_name] = "";
+        s3_settings->auth_settings[S3AuthSetting::external_id] = "";
+    }
+
     s3_settings->auth_settings[S3AuthSetting::http_client] = collection.getOrDefault<String>("http_client", "");
     s3_settings->auth_settings[S3AuthSetting::service_account] = collection.getOrDefault<String>("service_account", "");
     s3_settings->auth_settings[S3AuthSetting::metadata_service] = collection.getOrDefault<String>("metadata_service", "");

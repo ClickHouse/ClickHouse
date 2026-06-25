@@ -14,5 +14,10 @@
             <url>http://minio1:9001/root/backup_nc_role_only/</url>
             <role_arn>arn:aws:iam::123456789012:role/server-role</role_arn>
         </nc_backup_role_only>
+        <nc_with_keys>
+            <url>http://minio1:9001/root/nc_role_override/data.tsv</url>
+            <access_key_id>minio</access_key_id>
+            <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+        </nc_with_keys>
     </named_collections>
 </clickhouse>

@@ -58,6 +58,13 @@ public:
 
     bool isOverridable(const Key & key, bool default_value) const;
 
+    /// Record that `key` was overridden by a user query argument (e.g. `s3(collection, key = ...)`) rather
+    /// than coming from the stored collection definition. Lets callers keep operator-provisioned values and
+    /// user-supplied overrides distinct, which matters for credentials (a user must not override a role to
+    /// assume on top of the collection's operator-provisioned keys).
+    void markQueryOverridden(const Key & key);
+    bool isQueryOverridden(const Key & key) const;
+
     template <bool locked = false> void remove(const Key & key);
 
     /// Creates mutable, with NONE source id full copy.
@@ -99,6 +106,7 @@ protected:
     ImplPtr pimpl;
     const std::string collection_name;
     const bool is_mutable;
+    Keys query_overridden_keys;
     mutable std::mutex mutex;
 };
 

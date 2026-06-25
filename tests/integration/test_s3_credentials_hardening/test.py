@@ -167,6 +167,36 @@ def test_backup_named_collection_gcp_oauth_is_rejected():
     node.query("DROP TABLE t_backup_gcp SYNC")
 
 
+def test_named_collection_role_arn_override_does_not_use_collection_keys():
+    # A config collection carries operator-provisioned static keys. With named-collection overrides enabled
+    # (the default), a user must not be able to add `role_arn = ...` to assume an arbitrary role using those
+    # keys as the STS base. Under the restriction the injected role is dropped and the collection's keys are
+    # used directly (equivalent to s3(collection)).
+    url = "http://minio1:9001/root/nc_role_override/data.tsv"
+    node.query(
+        f"INSERT INTO FUNCTION s3('{url}', '{minio_access_key}', '{minio_secret_key}', 'TSV', 'x UInt8') "
+        "SELECT 5 SETTINGS s3_truncate_on_insert = 1"
+    )
+
+    # The injected role is dropped, so the read succeeds using the collection's own keys.
+    assert (
+        node.query(
+            "SELECT * FROM s3(nc_with_keys, role_arn = 'arn:aws:iam::123456789012:role/evil', "
+            "format = 'TSV', structure = 'x UInt8')"
+        ).strip()
+        == "5"
+    )
+
+    # With the override enabled the injected role is honored, so the role assume is attempted (and fails,
+    # there is no STS endpoint) instead of silently reading with the collection keys. This proves the read
+    # above succeeded because the role was dropped, not because the role was harmlessly ignored.
+    error = node.query_and_get_error(
+        "SELECT * FROM s3(nc_with_keys, role_arn = 'arn:aws:iam::123456789012:role/evil', "
+        f"format = 'TSV', structure = 'x UInt8') {ALLOW}"
+    )
+    assert error, error
+
+
 def test_backup_named_collection_does_not_inherit_server_keys():
     node_with_server_keys.query("DROP TABLE IF EXISTS t_backup_keys SYNC")
     node_with_server_keys.query(
