@@ -6,5 +6,5 @@
 1
 -- a freshly written table has no ephemeral entries
 0
--- a wrapped (encrypted) plain_rewritable disk reports metadata_type and non-empty common_prefix_for_blobs
+-- a wrapped (cache) plain_rewritable disk reports metadata_type and non-empty common_prefix_for_blobs
 1

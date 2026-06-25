@@ -7,10 +7,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 disk_name="04326_disk_${CLICKHOUSE_DATABASE}"
-enc_disk_name="04326_enc_disk_${CLICKHOUSE_DATABASE}"
+cached_disk_name="04326_cached_disk_${CLICKHOUSE_DATABASE}"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS 04326_t SYNC"
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS 04326_enc_t SYNC"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS 04326_cached_t SYNC"
 
 ${CLICKHOUSE_CLIENT} --query "
 CREATE TABLE 04326_t (a Int32, b String) ORDER BY a
@@ -43,28 +43,29 @@ ${CLICKHOUSE_CLIENT} --query "
 SELECT count() FROM system.remote_data_paths
 WHERE disk_name = '${disk_name}' AND is_ephemeral"
 
-# An encrypted disk wraps the plain_rewritable metadata storage, but the common blob prefix must still be
+# A cache disk wraps the plain_rewritable metadata storage, but the common blob prefix must still be
 # reported (it comes from the object storage contract, not a cast to the concrete metadata storage type).
 ${CLICKHOUSE_CLIENT} --query "
-CREATE TABLE 04326_enc_t (a Int32, b String) ORDER BY a
+CREATE TABLE 04326_cached_t (a Int32, b String) ORDER BY a
 SETTINGS disk = disk(
-    name = ${enc_disk_name},
-    type = encrypted,
-    key = '1234567890123456',
+    name = ${cached_disk_name},
+    type = cache,
+    max_size = '16Mi',
+    path = '04326_cache_${CLICKHOUSE_DATABASE}/',
     disk = disk(
-        name = 04326_enc_inner_${CLICKHOUSE_DATABASE},
+        name = 04326_cached_inner_${CLICKHOUSE_DATABASE},
         type = object_storage,
         object_storage_type = local,
         metadata_type = plain_rewritable,
-        path = 'disks/04326enc/${CLICKHOUSE_DATABASE}/'))
+        path = 'disks/04326cached/${CLICKHOUSE_DATABASE}/'))
 "
 
-${CLICKHOUSE_CLIENT} --query "INSERT INTO 04326_enc_t SELECT number, toString(number) FROM numbers(100)"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO 04326_cached_t SELECT number, toString(number) FROM numbers(100)"
 
-echo "-- a wrapped (encrypted) plain_rewritable disk reports metadata_type and non-empty common_prefix_for_blobs"
+echo "-- a wrapped (cache) plain_rewritable disk reports metadata_type and non-empty common_prefix_for_blobs"
 ${CLICKHOUSE_CLIENT} --query "
 SELECT count() >= 1 FROM system.remote_data_paths
-WHERE disk_name = '${enc_disk_name}' AND metadata_type = 'PlainRewritable' AND common_prefix_for_blobs != ''"
+WHERE disk_name = '${cached_disk_name}' AND metadata_type = 'PlainRewritable' AND common_prefix_for_blobs != ''"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE 04326_t SYNC"
-${CLICKHOUSE_CLIENT} --query "DROP TABLE 04326_enc_t SYNC"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE 04326_cached_t SYNC"
