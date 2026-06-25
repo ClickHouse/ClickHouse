@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.7",
         {
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
+            {"use_paimon_metadata_files_cache", false, false, "New setting to enable in-memory caching of parsed Paimon metadata files (manifest lists and manifests). For persistent Paimon table engines it must be enabled before metadata initialization; table functions evaluate it per query. Avoids repeated downloads and deserialization of metadata files from object storage on subsequent queries."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
@@ -75,7 +76,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_limit_by_in_order", false, true, "New setting to optimize `LIMIT BY` queries when `BY` columns are a prefix of the table's sorting key."},
             {"analyzer_compatibility_prefer_alias_over_subcolumn", false, false, "New compatibility setting"},
             {"query_plan_max_set_size_for_projection_match", 0, 10000, "Added new setting that bounds the cost of content-hashing IN-clause sets in the projection matcher (today: aggregate projection). Sets larger than the limit are treated as non-matching. Zero disables content-hash comparison entirely (compatibility value: projection match never succeeds for nodes with IN-sets)."},
-            {"use_paimon_metadata_files_cache", false, false, "New setting to enable in-memory caching of parsed Paimon metadata files (manifest lists and manifests). For persistent Paimon table engines it must be enabled before metadata initialization; table functions evaluate it per query. Avoids repeated downloads and deserialization of metadata files from object storage on subsequent queries."},
             {"allow_replace_partition_from_empty_source", true, false, "New safety check: `ALTER TABLE ... REPLACE PARTITION ... FROM ...` now throws when the source table has no parts in the requested partition (fixes the silent data loss in [#23727](https://github.com/ClickHouse/ClickHouse/issues/23727)). The previous behavior, silently dropping the destination partition, is preserved by setting `allow_replace_partition_from_empty_source = 1`."},
             {"query_plan_optimize_join_order_max_searched_plans", 0, 100000, "New setting to bound the number of partial plans the join order optimizer enumerates before falling back to the next algorithm."},
             {"distributed_plan_workers_num", 0, 0, "New experimental setting for how many stateless workers to lease for a distributed query. Zero disables leasing."},
