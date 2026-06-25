@@ -426,12 +426,15 @@ def test_execute_no_sql_injection(started_cluster):
     # emitted as a quoted+escaped SQL literal, never as raw SQL text.
     node = started_cluster.instances["node"]
 
-    ch = psycopg.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-    )
+    def connect():
+        return psycopg.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+        )
+
+    ch = connect()
     cur = ch.cursor()
     cur.execute("DROP TABLE IF EXISTS exec_users;")
     cur.execute("DROP TABLE IF EXISTS exec_secret;")
@@ -450,16 +453,33 @@ def test_execute_no_sql_injection(started_cluster):
     cur.execute("EXECUTE by_name('alice');")
     assert cur.fetchall() == [(1,)]
 
-    # The vulnerable shape: the prepared body wraps the placeholder in quotes
-    # (WHERE name = '$1'), exactly how a client expects to pass a string. The
-    # argument must be escaped before substitution; otherwise a doubled quote
-    # closes the literal and the UNION leaks the secret table.
-    cur.execute("PREPARE by_name_q AS SELECT id FROM exec_users WHERE name = '$1';")
-    cur.execute(
-        "EXECUTE by_name_q('bob'' UNION ALL SELECT secret FROM exec_secret -- ');"
-    )
-    rows = cur.fetchall()
-    assert ("TOP_SECRET",) not in rows
+    # Injection through a real, bare $N placeholder (not one wrapped in quotes:
+    # a quoted '$1' is a string-literal token and is left untouched, so it would
+    # never exercise this sink). The placeholder sits in a numeric comparison, so
+    # a client passes a string argument expecting it to be bound as one value. It
+    # must be emitted as a quoted+escaped literal; raw substitution would splice
+    # "1 UNION ALL SELECT secret ..." straight into the SQL and leak the secret.
+    # With the fix the string cannot be coerced to Int32 and the query errors out,
+    # which also drops the connection, so this runs on its own connection.
+    inj = connect()
+    inj_cur = inj.cursor()
+    inj_cur.execute("PREPARE by_id_inj AS SELECT name FROM exec_users WHERE id = $1;")
+    leaked = []
+    try:
+        inj_cur.execute(
+            "EXECUTE by_id_inj('1 UNION ALL SELECT secret FROM exec_secret -- ');"
+        )
+        leaked = inj_cur.fetchall()
+    except psycopg.Error:
+        pass
+    assert ("TOP_SECRET",) not in leaked
+    inj.close()
+
+    # An argument echoed straight back must round-trip as data, never as SQL: the
+    # same payload through "SELECT $1" comes back as a single string value.
+    cur.execute("PREPARE echo_inj AS SELECT $1;")
+    cur.execute("EXECUTE echo_inj('1 UNION ALL SELECT secret FROM exec_secret -- ');")
+    assert cur.fetchall() == [("1 UNION ALL SELECT secret FROM exec_secret -- ",)]
 
     # An argument containing a single quote round-trips as data.
     cur.execute("PREPARE echo_one AS SELECT $1 AS v;")
@@ -468,7 +488,7 @@ def test_execute_no_sql_injection(started_cluster):
 
     cur.execute("DEALLOCATE by_id;")
     cur.execute("DEALLOCATE by_name;")
-    cur.execute("DEALLOCATE by_name_q;")
+    cur.execute("DEALLOCATE echo_inj;")
     cur.execute("DEALLOCATE echo_one;")
     cur.execute("DROP TABLE exec_users;")
     cur.execute("DROP TABLE exec_secret;")
