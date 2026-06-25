@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <Parsers/IAST.h>
 
 
@@ -127,6 +128,31 @@ protected:
 
 private:
     static void replaceChildren(ASTPtr & node, const ASTPtr & replacement, const String & name);
+};
+
+class ASTColumnsRenameTransformer : public IASTColumnsTransformer
+{
+public:
+    String getID(char) const override { return "ColumnsRenameTransformer"; }
+    ASTPtr clone() const override
+    {
+        auto clone = make_intrusive<ASTColumnsRenameTransformer>(*this);
+        if (lambda)
+            clone->lambda = lambda->clone();
+        return clone;
+    }
+    void transform(ASTs & nodes) const override;
+    void appendColumnName(WriteBuffer & ostr) const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
+    Names source_names;
+    Names target_names;
+
+    ASTPtr lambda;
+    String lambda_arg;
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 
 }

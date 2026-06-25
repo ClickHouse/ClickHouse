@@ -1272,6 +1272,24 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
 
             column_transformers.emplace_back(std::make_shared<ReplaceColumnTransformerNode>(replacements, replace_transformer->is_strict));
         }
+        else if (auto * rename_transformer = child->as<ASTColumnsRenameTransformer>())
+        {
+            if (rename_transformer->lambda)
+            {
+                auto lambda_query_tree_node = buildExpression(rename_transformer->lambda, context);
+                column_transformers.emplace_back(std::make_shared<RenameColumnTransformerNode>(std::move(lambda_query_tree_node)));
+            }
+            else
+            {
+                std::vector<RenameColumnTransformerNode::Rename> renames;
+                renames.reserve(rename_transformer->source_names.size());
+
+                for (size_t i = 0; i < rename_transformer->source_names.size(); ++i)
+                    renames.emplace_back(RenameColumnTransformerNode::Rename{rename_transformer->source_names[i], rename_transformer->target_names[i]});
+
+                column_transformers.emplace_back(std::make_shared<RenameColumnTransformerNode>(std::move(renames)));
+            }
+        }
         else
         {
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Unsupported column matcher {}", child->formatForErrorMessage());
