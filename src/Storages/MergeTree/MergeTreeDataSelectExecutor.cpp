@@ -2144,10 +2144,10 @@ namespace
 
 void sortAndMergeAllowedPartRowRanges(boost::container::small_vector<std::pair<size_t, size_t>, 4> & intervals)
 {
-    std::sort(intervals.begin(), intervals.end());
-
     if (intervals.empty())
         return;
+
+    std::sort(intervals.begin(), intervals.end());
 
     size_t merged_size = 1;
     for (size_t interval_idx = 1; interval_idx < intervals.size(); ++interval_idx)
@@ -2250,6 +2250,8 @@ struct PartialPkVectorSearchHints
 
     void finalize(RangesInDataPartReadHints & read_hints)
     {
+        chassert(!read_hints.vector_search_results.has_value());
+
         if (!skip_vector_distance_hints && merged.has_value() && merged->distances.has_value() && !merged->rows.empty())
         {
             auto & rows_out = merged->rows;
@@ -2584,10 +2586,11 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                             pk_ranges_for_index_mark = &single_pk_range;
                         }
 
+                        const size_t granule_base_row = part->index_granularity->getMarkStartingRow(index_mark * skip_index_granularity);
+
                         for (auto row : rows)
                         {
-                            size_t num_marks = part->index_granularity->countMarksForRows(index_mark * skip_index_granularity, row);
-                            const size_t absolute_mark = (index_mark * skip_index_granularity) + num_marks;
+                            const size_t absolute_mark = part->index_granularity->getMarkRangeForRowOffset(granule_base_row + row).begin;
 
                             std::optional<MarkRange> data_range;
                             for (const auto & pk_range : *pk_ranges_for_index_mark)
