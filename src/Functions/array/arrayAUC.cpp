@@ -148,7 +148,13 @@ public:
     {
         if (is_pr)
             return "(Array, Array, [Array]) -> Float64";
-        return "(Array, Array, [const Bool, [Array]]) -> Float64";
+        /// `[const Bool, [Array]]` cannot be expressed as a nested Optional group (the
+        /// signature grammar does not allow groups inside `[...]`), so spell the legal
+        /// arities as explicit alternatives instead. `offsets` is only valid together
+        /// with `scale`, matching `getReturnTypeImpl` below.
+        return "(Array, Array) -> Float64"
+               " OR (Array, Array, const Bool) -> Float64"
+               " OR (Array, Array, const Bool, Array) -> Float64";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
