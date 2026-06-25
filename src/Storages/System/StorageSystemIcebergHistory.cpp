@@ -26,6 +26,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/System/StorageSystemIcebergHistory.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/VirtualColumnUtils.h>
 
 #if USE_AVRO
