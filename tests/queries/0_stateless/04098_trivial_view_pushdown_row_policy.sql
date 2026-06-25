@@ -1,7 +1,12 @@
--- The VIEW-level row policy must be enforced when
--- optimize_trivial_view_pushdown_to_distributed fires, including when the view
--- projects a computed alias that the policy references.
--- id=2 is hidden by the view policy; id=1, id=3, id=4 and id=5 stay visible.
+-- A row policy on the view (or on the underlying Distributed table) suppresses the
+-- trivial-view pushdown. Row policies must be enforced in the view-output namespace,
+-- which the canonical StorageView::readImpl path does correctly; the pushdown would
+-- inline the body and could bind the policy to a source column instead of the view
+-- alias (e.g. `SELECT val * 2 AS v` with policy on `v` under
+-- prefer_column_name_to_alias = 1), so whenever a policy applies we fall back to
+-- readImpl. This test asserts both that the pushdown is suppressed (plan keeps the
+-- "VIEW subquery" steps) and that the result is correct, identical with the setting
+-- on and off.
 --
 -- Tags: distributed
 
@@ -29,20 +34,38 @@ CREATE VIEW 04098_view_alias AS SELECT id, val * 2 AS v FROM 04098_dist;
 INSERT INTO 04098_dist VALUES (1, 100), (2, 200), (3, 300), (4, 400), (5, 500);
 SYSTEM FLUSH DISTRIBUTED 04098_dist;
 
--- Baseline: no policies, all 5 rows visible.
+SET optimize_trivial_view_pushdown_to_distributed = 1;
+
+-- Baseline: no policy, all 5 rows visible and the pushdown fires (no "VIEW subquery").
 SELECT count() FROM 04098_view;
+SELECT countIf(explain LIKE '%VIEW subquery%') = 0 AS pushdown_fires
+FROM (EXPLAIN SELECT id, val FROM 04098_view);
 
 CREATE ROW POLICY 04098_policy_view  ON 04098_view  USING id != 2 TO ALL;
 
--- View policy enforced: id=2 hidden, id=1, id=3, id=4 and id=5 survive.
-SET optimize_trivial_view_pushdown_to_distributed = 1;
-SELECT id, val FROM 04098_view ORDER BY id;
+-- With a view policy the pushdown is suppressed: plan keeps the "VIEW subquery" steps.
+SELECT countIf(explain LIKE '%VIEW subquery%') > 0 AS pushdown_suppressed
+FROM (EXPLAIN SELECT id, val FROM 04098_view);
 
--- Policy references the computed alias `v` directly; the analyzer must expand it to `val * 2`.
--- This hides id=2 (val=200 → v=400) just as `id != 2` would, keeping the reference output identical.
+-- The view policy is enforced (id=2 hidden); result is identical with the setting off.
+SELECT id, val FROM 04098_view ORDER BY id;
+SET optimize_trivial_view_pushdown_to_distributed = 0;
+SELECT id, val FROM 04098_view ORDER BY id;
+SET optimize_trivial_view_pushdown_to_distributed = 1;
+
+-- Policy references the computed alias `v` directly; the pushdown is suppressed and
+-- readImpl expands it to `val * 2`, hiding id=2 (val=200 → v=400).
 CREATE ROW POLICY 04098_policy_view_alias ON 04098_view_alias USING v != 400 TO ALL;
+SELECT countIf(explain LIKE '%VIEW subquery%') > 0 AS pushdown_suppressed
+FROM (EXPLAIN SELECT id, v FROM 04098_view_alias);
 SELECT id, v FROM 04098_view_alias ORDER BY id;
 DROP ROW POLICY 04098_policy_view_alias ON 04098_view_alias;
+
+-- A row policy on the underlying Distributed table also suppresses the pushdown.
+CREATE ROW POLICY 04098_policy_dist ON 04098_dist USING id != 3 TO ALL;
+SELECT countIf(explain LIKE '%VIEW subquery%') > 0 AS pushdown_suppressed
+FROM (EXPLAIN SELECT id, val FROM 04098_view);
+DROP ROW POLICY 04098_policy_dist ON 04098_dist;
 
 -- The view policy must appear in system.query_log.used_row_policies.
 SYSTEM FLUSH LOGS query_log;
@@ -55,6 +78,7 @@ WHERE
     AND type = 'QueryFinish'
     AND query LIKE '%SELECT id, val FROM 04098_view ORDER BY id%'
     AND query NOT LIKE '%system.query_log%'
+    AND query NOT LIKE '%EXPLAIN%'
 LIMIT 1;
 
 -- View in a join: the pushdown is suppressed (it only fires for a sole table
@@ -69,15 +93,6 @@ FROM 04098_join_local LEFT JOIN 04098_view ON 04098_join_local.id = 04098_view.i
 ORDER BY 04098_join_local.id;
 
 DROP TABLE 04098_join_local;
-
--- A non-deterministic view row policy suppresses the pushdown: the policy is a
--- coordinator-side filter on the normal path, but the pushdown would inject it into
--- the inner WHERE and evaluate it per-shard. The plan must keep the "VIEW subquery"
--- steps (standard path) rather than inlining the body.
-CREATE ROW POLICY 04098_policy_nondet ON 04098_view USING rand() < 2 TO ALL;
-SELECT countIf(explain LIKE '%VIEW subquery%') > 0 AS pushdown_suppressed
-FROM (EXPLAIN SELECT id FROM 04098_view);
-DROP ROW POLICY 04098_policy_nondet ON 04098_view;
 
 DROP ROW POLICY 04098_policy_view  ON 04098_view;
 DROP VIEW 04098_view_alias;

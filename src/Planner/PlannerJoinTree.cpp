@@ -1386,40 +1386,40 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     auto underlying_dist = view->tryGetUnderlyingDistributed(storage_snapshot, query_context);
                     if (underlying_dist)
                     {
-                        /// Suppress the pushdown if any expression the optimization would move from
-                        /// the coordinator onto the shards is unsafe to evaluate per-shard. Two such
-                        /// hazards are checked here:
+                        /// Suppress the pushdown when it would move an expression from the coordinator
+                        /// onto the shards that is unsafe to evaluate per-shard:
                         ///   * non-deterministic / server-local functions (hostName, serverUUID,
-                        ///     nowInBlock, blockNumber, rand, now, ...): evaluated per-shard instead of
-                        ///     once on the initiator, they change results;
-                        ///   * subqueries (e.g. the right-hand side of `IN (SELECT ...)`): evaluated
-                        ///     once on the coordinator on the normal StorageView path, but per-shard
-                        ///     under the pushdown. If such a subquery reads an initiator-local table,
-                        ///     or one whose contents/privileges differ between shards, the result can
-                        ///     change or the query can start throwing. (A scalar subquery the analyzer
-                        ///     already folded into a constant is safe and is not flagged — see
-                        ///     containsSubqueryNode.)
-                        /// Three sources are moved to the shards by the pushdown:
-                        ///   * the outer query (projections, WHERE, ...), shipped to the shards;
-                        ///   * the view's row policy, injected into the inner WHERE below (a
-                        ///     coordinator-side filter on the normal StorageView path);
-                        ///   * view-keyed additional_table_filters, folded into the outer WHERE below
-                        ///     (likewise coordinator-side normally).
+                        ///     nowInBlock, blockNumber, rand, now, ...) in the outer query — evaluated
+                        ///     per-shard instead of once on the initiator, changing results;
+                        ///   * subqueries in the outer query (e.g. the right-hand side of
+                        ///     `IN (SELECT ...)`) — evaluated per-shard against shard-local tables
+                        ///     instead of once on the coordinator (a scalar subquery the analyzer
+                        ///     already folded into a constant is safe and is not flagged);
+                        ///   * the same two hazards inside view-keyed additional_table_filters.
                         /// The view body itself needs no check: it is read through
-                        /// StorageDistributed::read in both paths, so its expressions run on the shards
-                        /// either way (and tryGetTrivialViewUnderlyingStorage already rejects a body
-                        /// whose WHERE/SELECT contains a subquery). Dist-keyed row policies are not
-                        /// enforced (see below) and dist-keyed additional_table_filters are propagated
-                        /// to shards in both paths, so neither contributes a divergence.
+                        /// StorageDistributed::read in both paths (and tryGetTrivialViewUnderlyingStorage
+                        /// already rejects a body whose WHERE/SELECT contains a subquery).
+                        ///
+                        /// Also suppress when a row policy applies to the view or to the underlying
+                        /// Distributed table. Row policies must be enforced in the view-output namespace;
+                        /// splicing a policy into the inlined body can bind to a source column instead of
+                        /// the view alias (e.g. `SELECT id + 1 AS id` with policy `id = 2` under
+                        /// prefer_column_name_to_alias = 1). The canonical StorageView::readImpl path
+                        /// enforces the view policy in the right namespace and handles the Distributed
+                        /// policy (not propagated to shards — see issue #28334) and used_row_policies
+                        /// bookkeeping correctly, so we fall back to it whenever any policy is present.
                         const auto & view_id = storage->getStorageID();
-                        auto view_policy_for_check = query_context->getRowPolicyFilter(
+                        const auto & dist_id = underlying_dist->getStorageID();
+                        auto view_row_policy = query_context->getRowPolicyFilter(
                             view_id.getDatabaseName(), view_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+                        auto dist_row_policy = query_context->getRowPolicyFilter(
+                            dist_id.getDatabaseName(), dist_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+                        const bool has_row_policy = (view_row_policy && !view_row_policy->isAlwaysTrue())
+                            || (dist_row_policy && !dist_row_policy->isAlwaysTrue());
 
-                        if (containsNonDeterministicFunction(table_expression_query_info.query_tree)
+                        if (has_row_policy
+                            || containsNonDeterministicFunction(table_expression_query_info.query_tree)
                             || containsSubqueryNode(table_expression_query_info.query_tree)
-                            || (view_policy_for_check && !view_policy_for_check->isAlwaysTrue()
-                                && (astContainsNonDeterministicFunction(view_policy_for_check->expression, query_context)
-                                    || astContainsSubquery(view_policy_for_check->expression)))
                             || astContainsNonDeterministicFunction(table_expression_query_info.additional_filter_ast, query_context)
                             || astContainsSubquery(table_expression_query_info.additional_filter_ast))
                             underlying_dist = nullptr;
@@ -1436,73 +1436,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             ? storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context)
                             : query_context;
 
-                        /// Analyze the view's inner query to obtain its query tree.
+                        /// Analyze the view's inner query to obtain its query tree. Row policies are not
+                        /// injected here: queries against a view (or underlying Distributed table) with a
+                        /// row policy were already excluded from the pushdown above, so the canonical
+                        /// StorageView::readImpl path enforces them in the correct namespace.
                         const auto & inner_query_ast = storage_snapshot->metadata->getSelectQuery().inner_query;
 
-                        /// The VIEW's row policy is injected into the inner query's WHERE clause so it
-                        /// is enforced under the pushdown (the normal where_filters path is a no-op
-                        /// here: StorageDistributed returns a processing stage other than FetchColumns).
-                        /// The view policy lives in the view's namespace, so the inner SELECT's aliases
-                        /// are exactly the columns it refers to.
-                        ///
-                        /// The underlying DISTRIBUTED table's policy is intentionally NOT enforced: it
-                        /// is not enforced on the non-pushdown path either (ClickHouse does not propagate
-                        /// Distributed-table row policies to shards — see issue #28334), and injecting it
-                        /// into the view SELECT would be unsound, because a policy on e.g. `secret` would
-                        /// resolve against a `0 AS secret` view alias instead of the source column. We
-                        /// still register it in used_row_policies to match the bookkeeping of the
-                        /// non-pushdown path (whose inner planner calls buildRowPolicyFilterIfNeeded for
-                        /// the Distributed table).
-                        ASTPtr effective_inner_query_ast = inner_query_ast;
-                        {
-                            auto register_used_policies = [&](const RowPolicyFilterPtr & policy)
-                            {
-                                for (const auto & row_policy : policy->policies)
-                                {
-                                    auto name = row_policy->getFullName().toString();
-                                    if (query_context->hasQueryContext())
-                                        query_context->getQueryContext()->addUsedRowPolicy(name);
-                                    used_row_policies.emplace(std::move(name));
-                                }
-                            };
-
-                            const auto & view_id = storage->getStorageID();
-                            auto view_row_policy = query_context->getRowPolicyFilter(
-                                view_id.getDatabaseName(), view_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-
-                            const auto & dist_id = underlying_dist->getStorageID();
-                            auto dist_row_policy = inner_context->getRowPolicyFilter(
-                                dist_id.getDatabaseName(), dist_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-
-                            /// Distributed table policy: register for query_log only, do not enforce.
-                            if (dist_row_policy && !dist_row_policy->isAlwaysTrue())
-                                register_used_policies(dist_row_policy);
-
-                            /// View policy: register and enforce by injecting into the inner WHERE.
-                            ASTPtr combined_policy;
-                            if (view_row_policy && !view_row_policy->isAlwaysTrue())
-                            {
-                                register_used_policies(view_row_policy);
-                                combined_policy = view_row_policy->expression->clone();
-                            }
-
-                            if (combined_policy)
-                            {
-                                auto cloned_ast = inner_query_ast->clone();
-                                /// inner_query is always an ASTSelectWithUnionQuery; tryGetTrivialViewUnderlyingStorage
-                                /// already verified it contains exactly one SELECT.
-                                auto * union_ast = cloned_ast->as<ASTSelectWithUnionQuery>();
-                                chassert(union_ast && union_ast->list_of_selects->children.size() == 1);
-                                auto & select_ast = union_ast->list_of_selects->children[0]->as<ASTSelectQuery &>();
-                                if (select_ast.where())
-                                    combined_policy = makeASTFunction("and", select_ast.where()->clone(), std::move(combined_policy));
-                                select_ast.setExpression(ASTSelectQuery::Expression::WHERE, std::move(combined_policy));
-                                effective_inner_query_ast = std::move(cloned_ast);
-                            }
-                        }
-
                         auto options = SelectQueryOptions(QueryProcessingStage::FetchColumns).subquery();
-                        InterpreterSelectQueryAnalyzer inner_interp(effective_inner_query_ast, inner_context, options);
+                        InterpreterSelectQueryAnalyzer inner_interp(inner_query_ast, inner_context, options);
                         const auto & inner_query_tree = inner_interp.getQueryTree();
                         /// Mark as subquery so it serializes as (SELECT ...) in the FROM clause.
                         inner_query_tree->as<QueryNode &>().setIsSubquery(true);
@@ -1514,11 +1455,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         {
                             /// Column-aware access check for the underlying distributed table, gated on
                             /// the same security modes readImpl would check under (INVOKER and legacy
-                            /// unset). The check runs on a freshly-analyzed PRE-POLICY tree so that
-                            /// columns referenced only by the injected row policy do not enter the grant
-                            /// requirement: readImpl's access check fires before buildRowPolicyFilterIfNeeded
-                            /// injects the row policy, and ClickHouse intentionally allows row policies
-                            /// to reference columns the user is not granted on.
+                            /// unset). The pushdown is suppressed entirely when a row policy applies to
+                            /// either the view or the distributed table (see the gate above), so the
+                            /// freshly-analyzed tree here carries no injected policy WHERE and the grant
+                            /// requirement reflects only the columns the outer query actually reads.
                             if (!view_sql_security || *view_sql_security == SQLSecurityType::INVOKER)
                             {
                                 /// Pass columns_names so the analyzer wraps the inner query as
@@ -1529,15 +1469,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                                 /// collectSelectedColumnsFromTable would pick up every column the view
                                 /// body mentions and over-require grants on the underlying table.
                                 InterpreterSelectQueryAnalyzer access_check_interp(inner_query_ast, inner_context, options, columns_names);
-                                auto pre_policy_tree = access_check_interp.getQueryTree();
-                                auto pre_policy_dist_node = findTableNodeByStorage(pre_policy_tree, underlying_dist);
-                                /// Pre-policy and post-policy trees only differ by an injected WHERE clause,
-                                /// which cannot add or remove table references; if the post-policy lookup
-                                /// found the dist table, the pre-policy one must too.
-                                chassert(pre_policy_dist_node);
+                                auto access_check_tree = access_check_interp.getQueryTree();
+                                auto access_check_dist_node = findTableNodeByStorage(access_check_tree, underlying_dist);
+                                /// This tree is the same inner query re-analyzed with the read column list;
+                                /// it cannot lose the dist table reference the earlier lookup found.
+                                chassert(access_check_dist_node);
                                 auto referenced_columns = collectSelectedColumnsFromTable(
-                                    pre_policy_tree, underlying_dist->getStorageID(), query_context);
-                                checkAccessRights(pre_policy_dist_node->as<TableNode &>(), referenced_columns, query_context);
+                                    access_check_tree, underlying_dist->getStorageID(), query_context);
+                                checkAccessRights(access_check_dist_node->as<TableNode &>(), referenced_columns, query_context);
                             }
 
                             /// Merge table expression modifiers (FINAL, SAMPLE) from the outer view
