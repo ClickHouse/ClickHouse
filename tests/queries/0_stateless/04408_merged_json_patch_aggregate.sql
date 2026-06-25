@@ -67,6 +67,13 @@ FROM
     )
 );
 
+-- Typed path with conflicting sibling: a typed "a.b" path at default must not clobber a non-default "a".
+-- Without the fix, iterating the row yields both a=42 and a.b=0; conflict resolution erases a.
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM (
+    SELECT '{\"a\":42}'::JSON(a UInt32, `a.b` UInt32) AS patch, 1 AS version
+);
+
 -- Known limitation: ColumnObject drops empty-object paths, so {"a":{}} cannot replace an older
 -- scalar at "a". The result is {"a":5} instead of the RFC 7396-correct {"a":{}}.
 SELECT toJSONString(mergedJSONPatch(patch, version))

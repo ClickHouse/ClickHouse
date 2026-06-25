@@ -386,6 +386,19 @@ struct AggregateFunctionMergedJSONPatchData
         {
             auto path_info = it.getCurrentPathInfo();
 
+            /// SortedPathsIterator already skips null dynamic paths. Do the same for typed paths
+            /// whose column is at its default for this row. A typed path at default means it was
+            /// never written for this row (e.g. a conflicting sibling path like "a.b" when "a" was
+            /// set to a scalar). Feeding default typed paths into insertPathValue would trigger
+            /// conflict resolution between paths belonging to the same input row, corrupting the
+            /// result.
+            if (path_info.type == ColumnObject::SortedPathsIterator::PathType::TYPED
+                && path_info.column->isDefaultAt(path_info.row))
+            {
+                it.next();
+                continue;
+            }
+
             Field value;
             path_info.column->get(path_info.row, value);
 
