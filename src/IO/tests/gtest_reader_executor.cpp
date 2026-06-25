@@ -1700,15 +1700,28 @@ public:
     String name() const override { return "EvictableSegmentMock"; }
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
 
-    /// Evict every segment not currently pinned by a caller.
+    /// Evict every segment not currently pinned by a caller; a re-download re-fills
+    /// the bytes from scratch, so drop the stored bytes alongside the frontier.
     void evictUnpinned()
     {
         for (auto & [idx, live] : liveness)
             if (live.use_count() == 1)
+            {
                 downloaded[idx] = 0;
+                bytes.erase(idx);
+            }
     }
 
     size_t segmentSize() const { return segment_size; }
+
+    /// Mark a segment fully resident with genuine `fill` bytes - the faithful twin of
+    /// setting `downloaded` directly, so reads return real data. Mirrors
+    /// `WideGranularityMockCache::seedBlock`.
+    void seedSegment(size_t idx, char fill)
+    {
+        downloaded[idx] = segment_size;
+        bytes[idx] = String(segment_size, fill);
+    }
 
     std::shared_ptr<int> & livenessFor(size_t idx)
     {
@@ -1720,6 +1733,9 @@ public:
 
     /// idx -> bytes downloaded from segment start (0 == empty).
     std::unordered_map<size_t, size_t> downloaded;
+    /// idx -> the genuine committed bytes for `[seg_start, seg_start + downloaded[idx])`;
+    /// reads return these (no fabricated placeholder). Length tracks `downloaded[idx]`.
+    std::unordered_map<size_t, String> bytes;
     /// idx -> liveness token; an extra ref (held by the executor's pin) makes
     /// the segment non-evictable.
     std::unordered_map<size_t, std::shared_ptr<int>> liveness;
@@ -1734,8 +1750,8 @@ private:
 /// Held read buffer over ONE segment's committed prefix `[seg_start, seg_start+dl)`.
 /// `readable()` re-reads the LIVE `downloaded[idx]` each call (clamped to the hit
 /// range), so a partial segment grown across windows by a concurrent writer becomes
-/// visible - like the real `DiskCacheReader`. `read(sub)` fabricates 'D' bytes
-/// for the committed sub-range.
+/// visible - like the real `DiskCacheReader`. `read(sub)` returns the genuine stored
+/// bytes for the committed sub-range.
 class EvictableSegmentReadBuffer : public CacheReader
 {
 public:
@@ -1760,9 +1776,18 @@ public:
         const size_t hi = std::min({sub.end(), hit_range.end(), readable()});
         if (lo >= hi)
             return result;
-        auto buf = std::make_shared<OwnedChainedBuffer>(hi - lo);
-        std::memset(buf->data(), 'D', hi - lo);
-        result.append(ChainedBufferNode{buf, 0, hi - lo, lo});
+        auto it = cache.bytes.find(seg_idx);
+        if (it == cache.bytes.end())
+            return result;
+        const size_t seg_start = seg_idx * cache.segmentSize();
+        const String & seg_bytes = it->second;
+        const size_t local_lo = lo - seg_start;
+        const size_t local_hi = std::min(hi - seg_start, seg_bytes.size());
+        if (local_lo >= local_hi)
+            return result;
+        auto buf = std::make_shared<OwnedChainedBuffer>(local_hi - local_lo);
+        std::memcpy(buf->data(), seg_bytes.data() + local_lo, local_hi - local_lo);
+        result.append(ChainedBufferNode{buf, 0, local_hi - local_lo, seg_start + local_lo});
         return result;
     }
 
@@ -1774,7 +1799,7 @@ private:
 
 /// Held write buffer over ONE aligned (segment) miss range. `write` appends into the
 /// segment append-only at the live `cwo` (with `reject_put` and the `livenessFor`
-/// token), advancing `committed`. `read` serves the committed prefix as 'D' bytes.
+/// token), advancing `committed`. `read` serves the genuine committed-prefix bytes.
 /// `pin(frontier)`: a partially-downloaded segment returns its liveness token (so it
 /// survives `evictUnpinned` while the executor holds it).
 class EvictableSegmentWriteBuffer : public CacheWriter
@@ -1813,6 +1838,14 @@ public:
         if (contiguous == 0)
             return 0;
 
+        /// Store the genuine bytes append-only (the frontier and the stored length stay
+        /// in lock-step), so a later read returns real data, not a placeholder.
+        String & seg_bytes = cache.bytes[seg_idx];
+        const size_t local = cwo - seg_start;
+        if (seg_bytes.size() < local + contiguous)
+            seg_bytes.resize(local + contiguous);
+        data.copyTo(seg_bytes.data() + local, ByteRange{cwo, contiguous});
+
         cache.downloaded[seg_idx] = std::min(seg, (cwo + contiguous) - seg_start);
         cache.livenessFor(seg_idx);
         committed_ranges.add(ByteRange{cwo, contiguous});
@@ -1830,9 +1863,17 @@ public:
         const size_t hi = std::min({sub.end(), aligned_range.end(), committed_end});
         if (lo >= hi)
             return result;
-        auto buf = std::make_shared<OwnedChainedBuffer>(hi - lo);
-        std::memset(buf->data(), 'D', hi - lo);
-        result.append(ChainedBufferNode{buf, 0, hi - lo, lo});
+        auto it = cache.bytes.find(seg_idx);
+        if (it == cache.bytes.end())
+            return result;
+        const String & seg_bytes = it->second;
+        const size_t local_lo = lo - seg_start;
+        const size_t local_hi = std::min(hi - seg_start, seg_bytes.size());
+        if (local_lo >= local_hi)
+            return result;
+        auto buf = std::make_shared<OwnedChainedBuffer>(local_hi - local_lo);
+        std::memcpy(buf->data(), seg_bytes.data() + local_lo, local_hi - local_lo);
+        result.append(ChainedBufferNode{buf, 0, local_hi - local_lo, seg_start + local_lo});
         return result;
     }
 
@@ -3994,8 +4035,9 @@ TEST(ReaderExecutor, WarmServePromotesInline)
 {
     /// The warm-path lever: an fs-resident scan serves from the slower tier and
     /// promotes the served runs into the faster (page) tier - inline on the serve
-    /// thread (the put lane is gone). The fs mock fabricates 'D' bytes; the source
-    /// must never be read.
+    /// thread (the put lane is gone). The fs mock stores 'D' bytes (the source is 'X'),
+    /// so an all-'D' result proves the serve came from the fs tier; the source must
+    /// never be read.
     constexpr size_t FILE_SIZE = 8000;
     constexpr size_t SEG = 2000;
     constexpr size_t WINDOW = 1000;
@@ -4008,7 +4050,7 @@ TEST(ReaderExecutor, WarmServePromotesInline)
 
     auto fs = std::make_shared<EvictableSegmentMockCache>(SEG);
     for (size_t i = 0; i < FILE_SIZE / SEG; ++i)
-        fs->downloaded[i] = SEG;   /// every segment fully resident
+        fs->seedSegment(i, 'D');   /// every segment fully resident with genuine 'D' bytes
     PageCacheFixture pcfix;
     VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
     caches.push_back(pcfix.provider(BLOCK, FILE_SIZE));   /// faster tier, cold
