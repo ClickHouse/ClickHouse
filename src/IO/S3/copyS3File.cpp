@@ -92,7 +92,7 @@ namespace
             , blob_storage_log(blob_storage_log_)
             , log(log_)
             , upload_checksum_algorithm(
-                use_upload_checksum_algorithm_ && !client_ptr->isChecksumDisabled()
+                use_upload_checksum_algorithm_ && (!client_ptr->isChecksumDisabled() || client_ptr->isS3ExpressBucket())
                     ? std::make_optional(S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, client_ptr->isS3ExpressBucket()))
                     : std::nullopt)
             , num_parts(0)

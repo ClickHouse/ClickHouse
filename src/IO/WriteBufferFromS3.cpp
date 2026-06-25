@@ -504,7 +504,7 @@ void WriteBufferFromS3::abortMultipartUpload()
 
 std::optional<S3::RequestChecksum::Algorithm> WriteBufferFromS3::getUploadChecksumAlgorithm() const
 {
-    if (client_ptr->isChecksumDisabled())
+    if (client_ptr->isChecksumDisabled() && !client_ptr->isS3ExpressBucket())
         return std::nullopt;
 
     return S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, client_ptr->isS3ExpressBucket());

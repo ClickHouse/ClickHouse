@@ -42,7 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.7",
         {
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
-            {"s3_upload_checksum_algorithm", "", "", "New setting to choose the checksum algorithm for `S3` uploads (`MD5`, `CRC32`, or `SHA256`). Empty keeps SDK `Content-MD5`, except in FIPS mode where it now sends `SHA256` instead of no checksum; `s3_disable_checksum` keeps the old no-checksum behavior for the empty value."},
+            {"s3_upload_checksum_algorithm", "", "", "New setting to choose the checksum algorithm for `S3` uploads (`MD5`, `CRC32`, or `SHA256`). Empty keeps SDK `Content-MD5`, except in FIPS mode where it now sends `SHA256` instead of no checksum; `s3_disable_checksum` keeps the old no-checksum behavior for the empty value on non-`S3Express` buckets."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
