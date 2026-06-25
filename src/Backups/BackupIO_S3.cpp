@@ -20,6 +20,8 @@
 
 #include <aws/core/auth/AWSCredentials.h>
 
+#include <boost/algorithm/string/predicate.hpp>
+
 #include <filesystem>
 
 
@@ -202,6 +204,26 @@ private:
         client_configuration.google_adc_client_id = settings.auth_settings[S3AuthSetting::google_adc_client_id];
         client_configuration.google_adc_client_secret = settings.auth_settings[S3AuthSetting::google_adc_client_secret];
         client_configuration.google_adc_refresh_token = settings.auth_settings[S3AuthSetting::google_adc_refresh_token];
+
+        /// Under the restriction, a user backup must not use `http_client = gcp_oauth` inherited from the
+        /// server `<s3>` config to mint a token from the server's GCP metadata service. `gcp_oauth` is kept
+        /// only with a complete explicit Google ADC triple (the request's own credentials, as for a named
+        /// collection); otherwise the GCP OAuth fields are dropped so the backup authenticates with its
+        /// explicit S3 keys instead. The `role_arn` STS path is handled above.
+        const bool has_explicit_gcp_adc = !client_configuration.google_adc_client_id.empty()
+            && !client_configuration.google_adc_client_secret.empty()
+            && !client_configuration.google_adc_refresh_token.empty();
+        if (boost::iequals(client_configuration.http_client, "gcp_oauth") && !has_explicit_gcp_adc
+            && context->shouldRestrictUserQueryS3Credentials())
+        {
+            client_configuration.http_client.clear();
+            client_configuration.service_account.clear();
+            client_configuration.metadata_service.clear();
+            client_configuration.request_token_path.clear();
+            client_configuration.google_adc_client_id.clear();
+            client_configuration.google_adc_client_secret.clear();
+            client_configuration.google_adc_refresh_token.clear();
+        }
 
         S3::ClientSettings client_settings{
             .use_virtual_addressing = s3_uri.is_virtual_hosted_style,
