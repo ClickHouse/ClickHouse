@@ -468,7 +468,9 @@ For more control over AI settings, configure them in your ClickHouse Client conf
             <enable_schema_access>true</enable_schema_access>
 
             <!-- Generation parameters -->
-            <temperature>0.0</temperature>
+            <!-- Optional: temperature is only sent to the model when set here.
+                 It is omitted by default because some models reject this parameter. -->
+            <!-- <temperature>0.0</temperature> -->
             <max_tokens>1000</max_tokens>
             <timeout_seconds>30</timeout_seconds>
             <max_steps>10</max_steps>
@@ -498,7 +500,9 @@ For more control over AI settings, configure them in your ClickHouse Client conf
       enable_schema_access: true
 
       # Generation parameters
-      temperature: 0.0      # Controls randomness (0.0 = deterministic)
+      # temperature is only sent to the model when set here; omitted by default
+      # because some models reject this parameter.
+      # temperature: 0.0    # Controls randomness (0.0 = deterministic)
       max_tokens: 1000      # Maximum response length
       timeout_seconds: 30   # Request timeout
       max_steps: 10         # Maximum schema exploration steps
@@ -583,7 +587,7 @@ ai:
 <details>
 <summary>Generation parameters</summary>
 
-- `temperature` - Controls randomness, 0.0 = deterministic, 1.0 = creative (default: `0.0`)
+- `temperature` - Controls randomness, 0.0 = deterministic, 1.0 = creative. Omitted by default and only sent to the model when explicitly set, because some models reject this parameter.
 - `max_tokens` - Maximum response length in tokens (default: `1000`)
 - `system_prompt` - Custom instructions for the AI (optional)
 

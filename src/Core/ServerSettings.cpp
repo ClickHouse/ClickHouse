@@ -1826,6 +1826,16 @@ std::string_view ServerSettings::getDescription(std::string_view name) const
     return impl->getDescription(name);
 }
 
+std::string_view ServerSettings::getTypeName(std::string_view name) const
+{
+    return impl->getTypeName(name);
+}
+
+String ServerSettings::getDefaultValueString(std::string_view name) const
+{
+    return impl->getDefaultValueString(name);
+}
+
 SettingsTierType ServerSettings::getTier(std::string_view name) const
 {
     return impl->getTier(name);
