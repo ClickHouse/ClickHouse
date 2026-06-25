@@ -6954,21 +6954,23 @@ void StorageReplicatedMergeTree::alter(
             StorageInMemoryMetadata metadata_copy = *current_metadata;
 
             if (settings_are_changed)
-            {
-                /// Just change settings
                 metadata_copy.settings_changes = future_metadata.settings_changes;
+            if (comment_is_changed)
+                metadata_copy.setComment(future_metadata.comment);
+
+            /// metadata_copy keeps the current columns and only applies the local setting/comment change,
+            /// so it can be larger than future_metadata (e.g. a mixed DROP COLUMN + MODIFY COMMENT shrinks
+            /// future_metadata while metadata_copy grows). Check its size before mutating any in-memory state.
+            checkMetadataDoesNotExceedMaxQuerySize(table_id, metadata_copy, query_context);
+
+            /// Just change settings
+            if (settings_are_changed)
                 changeSettings(metadata_copy.settings_changes, table_lock_holder);
-            }
 
             /// The comment is not replicated as of today, but we can implement it later.
             if (comment_is_changed)
-            {
-                metadata_copy.setComment(future_metadata.comment);
                 setInMemoryMetadata(metadata_copy);
-            }
 
-            /// Only the comment and/or settings changed here, so it is okay to assume alterTable won't throw as neither
-            /// of them are validated in alterTable.
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy, /*validate_new_create_query=*/true);
         }
 
