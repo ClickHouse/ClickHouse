@@ -441,6 +441,156 @@ def test_mysql_replacement_query(started_cluster):
     ]
 
 
+def test_mysql_replacement_query_injection(started_cluster):
+    # The MySQL handler rewrites a few client commands (SHOW TABLE STATUS LIKE, SET <mysql_setting>,
+    # KILL QUERY <id>) into ClickHouse SQL. The client-supplied argument must be parsed and re-quoted,
+    # never concatenated verbatim, otherwise a client can inject arbitrary SQL over the MySQL wire.
+    client = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="default",
+        password="123",
+        database="default",
+        port=server_port,
+    )
+
+    # SHOW TABLE STATUS LIKE: a benign pattern reads only system.tables.
+    cursor = client.cursor(pymysql.cursors.DictCursor)
+    cursor.execute("SHOW TABLE STATUS LIKE 'one'")
+    rows = cursor.fetchall()
+    assert [r["Name"] for r in rows] == ["one"], rows
+
+    # SHOW TABLE STATUS LIKE: an injected UNION must not leak system.users. The whole argument is
+    # parsed as one string literal, so the UNION tail becomes part of the LIKE pattern and matches
+    # nothing (the literal is unterminated -> parse fails -> empty pattern).
+    cursor.execute(
+        "SHOW TABLE STATUS LIKE '' "
+        "UNION ALL SELECT name,'','','',0,0,0,0,0,0,'',now(),now(),now(),'','','','' "
+        "FROM system.users"
+    )
+    leaked = [r["Name"] for r in cursor.fetchall()]
+    assert "default" not in leaked, "SHOW TABLE STATUS LIKE injection leaked system.users: %s" % leaked
+
+    # SHOW TABLE STATUS LIKE: a single trailing ';' is a statement terminator that programmatic
+    # MySQL clients pass through (the mysql CLI strips it). executeQuery treats it as end-of-query,
+    # so it must be accepted and produce the same result as without it.
+    cursor.execute("SHOW TABLE STATUS LIKE 'one'")
+    no_semicolon = [r["Name"] for r in cursor.fetchall()]
+    cursor.execute("SHOW TABLE STATUS LIKE 'one';")
+    with_semicolon = [r["Name"] for r in cursor.fetchall()]
+    assert with_semicolon == no_semicolon and "one" in with_semicolon, with_semicolon
+
+    # A second statement after the ';' must still be rejected (only a single terminator is allowed),
+    # so the UNION tail cannot leak system.users.
+    cursor.execute(
+        "SHOW TABLE STATUS LIKE '' ; "
+        "UNION ALL SELECT name,'','','',0,0,0,0,0,0,'',now(),now(),now(),'','','','' "
+        "FROM system.users"
+    )
+    leaked = [r["Name"] for r in cursor.fetchall()]
+    assert "default" not in leaked, "SHOW TABLE STATUS LIKE injection (trailing statement) leaked: %s" % leaked
+
+    # SET <mysql_setting>: an injected value tail must be REJECTED, and a malformed input must not
+    # change session state. Before the fix "SET SQL_SELECT_LIMIT=1, max_threads=42" became
+    # "SET limit=1, max_threads=42" (injecting max_threads); an intermediate fix instead silently
+    # reset the mapped `limit` to DEFAULT. Now any tail that is not exactly "= <literal|DEFAULT>"
+    # (with an optional single trailing ';') is rejected, leaving both `limit` and `max_threads`
+    # untouched. Use a fresh connection so the prior valid `limit` value is known to survive.
+    set_client = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="default",
+        password="123",
+        database="default",
+        port=server_port,
+    )
+    set_cursor = set_client.cursor(pymysql.cursors.DictCursor)
+    set_cursor.execute("SET SQL_SELECT_LIMIT=4242")
+    set_cursor.execute("SELECT changed FROM system.settings WHERE name = 'limit'")
+    assert set_cursor.fetchone()["changed"] == 1, "SET SQL_SELECT_LIMIT did not apply"
+    for injected in (
+        "SET SQL_SELECT_LIMIT=1, max_threads=42",
+        "SET SQL_SELECT_LIMIT=1, max_threads=42;",
+    ):
+        with pytest.raises(pymysql.Error):
+            set_cursor.execute(injected)
+        set_cursor.execute("SELECT value FROM system.settings WHERE name = 'max_threads'")
+        assert set_cursor.fetchone()["value"] != "42", "SET replacement injected max_threads: %s" % injected
+        set_cursor.execute("SELECT changed FROM system.settings WHERE name = 'limit'")
+        assert set_cursor.fetchone()["changed"] == 1, "rejected SET silently reset `limit`: %s" % injected
+    set_client.close()
+
+    # A normal SET still works (value is re-serialized, not dropped).
+    cursor.execute("SET SQL_SELECT_LIMIT=1234567")
+    cursor.execute("SET NET_WRITE_TIMEOUT=60")
+    cursor.execute("SET SQL_SELECT_LIMIT=DEFAULT")
+
+    # SET name boundary: the prefix check is byte-wise, so a longer variable that merely starts
+    # with a mapped name (SQL_SELECT_LIMITED vs SQL_SELECT_LIMIT) must NOT be translated and must
+    # not touch the mapped `limit` setting. Without the boundary check the value parser failed on
+    # the "ED=1" tail and the fallback emitted "SET limit = DEFAULT", silently resetting limit.
+    # (`limit` reads back as 0 regardless of value, so assert on `changed`, not `value`.) Use a
+    # fresh connection so the earlier SETs on `client` do not bleed into this check.
+    boundary_client = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="default",
+        password="123",
+        database="default",
+        port=server_port,
+    )
+    boundary = boundary_client.cursor(pymysql.cursors.DictCursor)
+    boundary.execute("SET SQL_SELECT_LIMIT=4242")
+    boundary.execute("SELECT changed FROM system.settings WHERE name = 'limit'")
+    assert boundary.fetchone()["changed"] == 1, "SET SQL_SELECT_LIMIT did not apply"
+    try:
+        boundary.execute("SET SQL_SELECT_LIMITED=1")
+    except pymysql.Error:
+        pass  # an unrelated variable passes through untranslated and errors as an unknown setting
+    boundary.execute("SELECT changed FROM system.settings WHERE name = 'limit'")
+    assert boundary.fetchone()["changed"] == 1, "SET SQL_SELECT_LIMITED reset the unrelated `limit` setting"
+    boundary_client.close()
+
+    # SET <mysql_setting> with a trailing ';' must still apply the value. Before accepting the
+    # terminator, "SET SQL_SELECT_LIMIT=2;" failed the value parser and reset limit to DEFAULT.
+    # Use a fresh connection so `limit` starts unchanged and we can assert on `changed`.
+    semicolon_client = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="default",
+        password="123",
+        database="default",
+        port=server_port,
+    )
+    semicolon = semicolon_client.cursor(pymysql.cursors.DictCursor)
+    semicolon.execute("SET SQL_SELECT_LIMIT=2;")
+    semicolon.execute("SELECT changed FROM system.settings WHERE name = 'limit'")
+    assert semicolon.fetchone()["changed"] == 1, "SET SQL_SELECT_LIMIT=2; did not apply"
+    semicolon_client.close()
+
+    # KILL QUERY: a numeric (possibly multi-digit) connection id is translated; previously the
+    # "^[0-9]" check silently dropped every multi-digit id. A single trailing ';' is accepted
+    # (programmatic clients pass it through), but a non-numeric tail or a second statement is not,
+    # so it stays injection-safe and never falls through to the unsupported raw "KILL QUERY <id>".
+    cursor.execute("KILL QUERY 12")
+    cursor.execute("KILL QUERY 12;")
+    with pytest.raises(pymysql.Error):
+        cursor.execute("KILL QUERY 12; SELECT 1")
+    cursor.execute("KILL QUERY WHERE query_id = 'mysql:0'")
+
+    # KILL QUERY separator: the dispatcher matches the key "KILL QUERY" (no separator) but the
+    # handler slices at len("KILL QUERY ") (with the space). Without a separator check a malformed
+    # command would skip the non-space byte and be coerced into a valid cancel: "KILL QUERY;12" and
+    # "KILL QUERYx12" both reached the digit regex as "12". They must instead be rejected (passed
+    # through and erroring), so the id must be preceded by a real separator.
+    for malformed in ("KILL QUERY;12", "KILL QUERYx12", "KILL QUERY12"):
+        with pytest.raises(pymysql.Error):
+            cursor.execute(malformed)
+
+    # SHOW TABLE STATUS LIKE separator: same dispatcher-key vs prefix-length mismatch. Without the
+    # separator check "SHOW TABLE STATUS LIKEx'one'" would skip the stray byte and look up 'one'.
+    # It must instead match nothing (the malformed command is not coerced into a lookup).
+    cursor.execute("SHOW TABLE STATUS LIKEx'one'")
+    assert [r["Name"] for r in cursor.fetchall()] == [], "SHOW TABLE STATUS LIKE accepted a missing separator"
+    client.close()
+
+
 def test_mysql_select_user(started_cluster):
     code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
         """
