@@ -764,22 +764,39 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     else
         partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
 
+    bool query_provided_access_key_id = false;
     if (auto access_key_id_value = getFromPositionOrKeyValue<String>("access_key_id", args, engine_args_to_idx, key_value_args);
         access_key_id_value.has_value())
     {
         s3_settings->auth_settings[S3AuthSetting::access_key_id] = access_key_id_value.value();
+        query_provided_access_key_id = true;
     }
 
+    bool query_provided_secret_access_key = false;
     if (auto secret_access_key_value = getFromPositionOrKeyValue<String>("secret_access_key", args, engine_args_to_idx, key_value_args);
         secret_access_key_value.has_value())
     {
         s3_settings->auth_settings[S3AuthSetting::secret_access_key] = secret_access_key_value.value();
+        query_provided_secret_access_key = true;
     }
 
     if (auto session_token_value = getFromPositionOrKeyValue<String>("session_token", args, engine_args_to_idx, key_value_args);
         session_token_value.has_value())
     {
         s3_settings->auth_settings[S3AuthSetting::session_token] = session_token_value.value();
+    }
+
+    /// A query-supplied `role_arn` (from `extra_credentials`) must assume the role using the query's own base
+    /// keys, never the static `access_key_id`/`secret_access_key` from the server `<s3>` config: otherwise the
+    /// user picks the role while the server pays with its keys (a confused-deputy STS path). When the query
+    /// did not supply its own explicit key pair, drop the `role_arn` so no role is assumed; any server static
+    /// keys are then used directly, which is allowed.
+    if (restrict_server_credentials && !String(s3_settings->auth_settings[S3AuthSetting::role_arn]).empty()
+        && !(query_provided_access_key_id && query_provided_secret_access_key))
+    {
+        s3_settings->auth_settings[S3AuthSetting::role_arn] = "";
+        s3_settings->auth_settings[S3AuthSetting::role_session_name] = "";
+        s3_settings->auth_settings[S3AuthSetting::external_id] = "";
     }
 
     if (no_sign_request)
