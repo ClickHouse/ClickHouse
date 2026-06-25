@@ -164,10 +164,14 @@ GlueCatalog::GlueCatalog(
         client_configuration.endpointOverride = endpoint;
         endpoint_provider->OverrideEndpoint(endpoint);
 
-        if (credentials.IsEmpty())
+        if (credentials.IsEmpty() && !creds_config.forbid_implicit_credentials)
         {
             /// You can specify any key for fake moto glue, it's just important
             /// for it not to be empty.
+            /// Skip this when the user-query credential restriction is in effect and no explicit credentials
+            /// were given: leaving them empty makes `getCredentialsProvider` refuse the server-managed request,
+            /// so the restriction (and the `DatabaseDataLake` unavailable-on-load fallback) is exercised instead
+            /// of being masked by a placeholder key.
             credentials.SetAWSAccessKeyId("testing");
             credentials.SetAWSSecretKey("testing");
         }

@@ -1422,8 +1422,11 @@ def test_glue_catalog_unavailable_after_restart_under_restriction(started_cluste
 
     # The server starts even though the catalog can no longer resolve its (server-managed) credentials.
     assert node.query("SELECT 1").strip() == "1"
-    # Reloaded under the default restriction, the catalog is unavailable and querying it reports the restriction.
-    error = node.query_and_get_error(f"SHOW TABLES FROM {db_name}")
+    # Reloaded under the default restriction, the catalog is unavailable. Querying a table goes through the
+    # catalog client (`getCatalog`) and reports the restriction, rather than silently reusing the server
+    # identity. (`SHOW TABLES` intentionally swallows catalog errors so `system.tables` does not fail, so it
+    # is not a reliable probe here.)
+    error = node.query_and_get_error(f"SELECT * FROM {db_name}.`unavailable.table`")
     assert (
         "ACCESS_DENIED" in error
         or "server-managed" in error

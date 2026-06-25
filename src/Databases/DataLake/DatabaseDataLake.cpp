@@ -1186,6 +1186,14 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         const bool allow_server_credentials_in_user_queries
             = args.context->getSettingsRef()[Setting::s3_allow_server_credentials_in_user_queries];
 
+        /// A database is loaded from existing metadata whenever it is attached rather than freshly created.
+        /// Unlike tables (loaded with `FORCE_ATTACH` on startup), a database is replayed from its stored
+        /// `ATTACH DATABASE` statement with plain `ATTACH`, so `isLoadingFromExistingMetadata` (which only
+        /// covers `FORCE_ATTACH`/`FORCE_RESTORE`) is too narrow here: treat any attach as loading from existing
+        /// metadata, so a catalog that resolves now-restricted server credentials is left unavailable instead
+        /// of aborting server startup.
+        const bool is_loading_from_existing_metadata = args.mode >= LoadingStrictnessLevel::ATTACH;
+
         return std::make_shared<DatabaseDataLake>(
             args.database_name,
             url,
@@ -1194,7 +1202,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             std::move(engine_for_tables),
             args.uuid,
             allow_server_credentials_in_user_queries,
-            isLoadingFromExistingMetadata(args.mode));
+            is_loading_from_existing_metadata);
     };
     /// TODO: DataLakeCatalog is polymorphic — underlying source (S3, Azure, HDFS, etc.) depends
     /// on the catalog type chosen at runtime. Consider adding source_access_type once a mechanism
