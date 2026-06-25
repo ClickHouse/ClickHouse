@@ -7,6 +7,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import pg_pass
 from helpers.postgres_utility import (
     PostgresManager,
+    assert_number_of_columns,
     check_several_tables_are_synchronized,
     check_tables_are_synchronized,
     get_postgres_conn,
