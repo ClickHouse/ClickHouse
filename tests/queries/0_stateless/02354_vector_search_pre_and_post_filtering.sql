@@ -1,9 +1,6 @@
 -- Tags: no-fasttest, no-ordinary-database
 
 -- Tests pre vs. post-filtering for vector search.
---
--- Partial PK pruning can still use vector index in relevant postfilter cases.
--- Keep both planner checks and runtime `USearchSearchCount` checks.
 
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to have local plan for parallel replicas
@@ -126,7 +123,7 @@ SELECT trimLeft(explain) FROM (
 )
 WHERE explain LIKE '%vector_similarity%';
 
-SELECT '-- Additional WHERE clauses present, 2 full parts selected by partition key / 1 part partially selected by PK, expect index usage';
+SELECT '-- Additional WHERE clauses present, 2 full parts selected by partition key / 1 part partially selected by PK';
 SELECT id
 FROM tab
 WHERE date = '2025-01-03' AND id <= 9
@@ -136,7 +133,6 @@ SETTINGS log_comment = '02354_vector_search_post_filter_strategy_query1', vector
 
 SYSTEM FLUSH LOGS query_log;
 
--- Runtime check for the query above: vector path should be hit.
 SELECT DISTINCT ProfileEvents['USearchSearchCount']
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND log_comment = '02354_vector_search_post_filter_strategy_query1'

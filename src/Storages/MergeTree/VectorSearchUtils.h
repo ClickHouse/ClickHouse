@@ -33,24 +33,19 @@ struct NearestNeighbours
     std::optional<std::vector<float>> distances;
 };
 
-/// Precomputed row filter for vector index filtered_search (see filterMarksUsingIndex).
+/// Row filter for vector index filtered_search (see filterMarksUsingIndex).
 struct GranuleRowFilter
 {
-    /// Precomputed granule bounds in part-level row offsets for fast predicate checks.
     size_t granule_row_base = 0;
     size_t granule_row_end = 0;
     size_t granule_row_span = 0;
-    /// Precomputed [row_begin, row_end) part-level intervals from PK ranges intersected with the skip-index granule.
-    /// Must be populated by the caller before passing to granuleLocalKeyAllowed.
-    /// Intervals must be sorted by row_begin and non-overlapping (enforced during construction).
+    /// Sorted, non-overlapping [row_begin, row_end) intervals in part-level row offsets.
     boost::container::small_vector<std::pair<size_t, size_t>, 4> allowed_part_row_ranges;
 };
 
 struct ANNSearchOverrides
 {
-    /// Restrict graph traversal to keys/_part_offsets passing this filter.
     std::optional<GranuleRowFilter> row_filter;
-    /// More in future...
 };
 
 }

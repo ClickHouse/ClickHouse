@@ -2142,6 +2142,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 namespace
 {
 
+/// Partial PK pruning: build row filter, cache ANN per skip-index granule, merge hints for MergeTreeRangeReader.
+
 void sortAndMergeAllowedPartRowRanges(boost::container::small_vector<std::pair<size_t, size_t>, 4> & intervals)
 {
     if (intervals.empty())
@@ -2202,7 +2204,7 @@ struct PartialPkVectorSearchHints
     bool skip_vector_distance_hints = false;
     std::unordered_set<size_t> merged_index_marks;
 
-    /// Returns false if this skip-index granule was already handled (e.g. second PK range in OR).
+    /// Returns false if this skip-index granule was already handled (e.g. OR over PK ranges).
     bool tryMergeGranuleHintsOnce(
         size_t index_mark,
         const NearestNeighbours & nn,
@@ -2213,16 +2215,11 @@ struct PartialPkVectorSearchHints
             return false;
 
         if (nn.rows.empty())
-        {
-            /// Empty ANN result means no rows survived PK filter for this granule.
-            /// Do not treat it as missing distances for the whole part.
             return true;
-        }
 
         if (!nn.distances.has_value())
         {
-            /// Fail-close: `_distance` path requires paired distances; if any granule lacks them,
-            /// drop accumulated hints for this part (conservative, matches legacy `read_hints = {}` intent).
+            /// `_distance` optimization needs distances for every granule in the part.
             skip_vector_distance_hints = true;
             merged.reset();
             return true;
@@ -2281,6 +2278,7 @@ struct PartialPkVectorSearchCache
 {
     std::unordered_map<size_t, MarkRanges> pk_ranges_by_index_mark;
     std::unordered_map<size_t, NearestNeighbours> vector_search_results_by_index_mark;
+    /// Number of outer-loop (i, index_mark) visits still pending; drops to zero before cache erase.
     std::unordered_map<size_t, size_t> remaining_uses_by_index_mark;
 
     void collectPkRangesByIndexMark(size_t ranges_size, const MarkRanges & pk_ranges, const MarkRanges & index_ranges)
@@ -2374,7 +2372,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         part->index_granularity_info.fixed_index_granularity,
         part->index_granularity_info.index_granularity_bytes);
 
-    /// Partial PK on the part: still run vector index; restrict hits to marks in ranges.
+    /// Partial PK: still run vector index and restrict hits to surviving marks.
     const bool all_match = (marks_count == ranges.getNumberOfMarks());
 
     MarkRanges index_ranges;
@@ -2524,8 +2522,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         MergeTreeIndexGranulePtr granule = nullptr;
         size_t last_index_mark = 0;
 
-        /// Vector index may be consulted for several skip-index granules; MergeTreeRangeReader expects
-        /// `vector_search_results.rows` as part-global row offsets, so merge all granule-local hits here.
+        /// Merge per-granule hits into part-level row offsets for MergeTreeRangeReader.
         PartialPkVectorSearchHints vector_search_hints;
         PartialPkVectorSearchCache vector_search_cache;
         const bool use_vector_search_cache = index_helper->isVectorSimilarityIndex() && !all_match;
@@ -2567,15 +2564,13 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     if (has_duplicates)
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Usearch returned duplicate row numbers");
 #endif
-                    /// Same `index_mark` may come from several PK ranges. Merge hints once.
+                    /// Same index_mark can be reached from several PK ranges (OR).
                     const bool first_visit_to_index_mark = vector_search_hints.tryMergeGranuleHintsOnce(
                         index_mark, nn, *part->index_granularity, skip_index_granularity);
 
-                    /// Cached ANN is shared across PK ranges for this index_mark; emit marks only on first visit.
                     if (!use_vector_search_cache || first_visit_to_index_mark)
                     {
-                        /// The same skip-index granule may be reached from several PK ranges (e.g. OR).
-                        /// ANN uses the union of PK ranges for this index_mark; do not clamp rows to ranges[i] only.
+                        /// With partial PK, one ANN run covers all PK ranges in this granule; emit marks once.
                         const MarkRanges * pk_ranges_for_index_mark = nullptr;
                         MarkRanges single_pk_range;
                         if (use_vector_search_cache)
