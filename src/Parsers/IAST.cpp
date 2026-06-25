@@ -13,6 +13,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
+#include <Common/checkStackSize.h>
 
 #include <algorithm>
 
@@ -255,6 +256,8 @@ String IAST::formatWithSecretsMultiLine() const
 
 bool IAST::childrenHaveSecretParts() const
 {
+    checkStackSize();
+
     for (const auto & child : children)
     {
         if (child->hasSecretParts())
