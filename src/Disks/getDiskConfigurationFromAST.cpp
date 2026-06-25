@@ -298,6 +298,12 @@ void forceAnonymousS3DiskConfig(Poco::Util::AbstractConfiguration & config)
     /// own credentials. `setString` overwrites any value the definition (or an `include`) supplied.
     config.setString("http_client", "");
     config.setString("no_sign_request", "1");
+
+    /// The disk is intentionally inaccessible (anonymous against a bucket that needs auth), so its startup
+    /// access check would fail and abort loading the table. Skip it: the table must load and merely be
+    /// inaccessible on query, not fail to attach. `getClient` separately drops the server-provided
+    /// `access_header`/SSE material so the unsigned client cannot keep the server identity alive.
+    config.setString("skip_access_check", "1");
 }
 
 void validateResolvedS3DiskCredentials(

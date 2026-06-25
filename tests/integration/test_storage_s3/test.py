@@ -138,6 +138,21 @@ def started_cluster():
             user_configs=["configs/sync_insert.xml"],
             stay_alive=True,
         )
+        # Dedicated node for the dynamic S3 disk reload test. A MergeTree table on a disk that loses access on
+        # restart cannot attach (it reads its parts at attach time) and stays in a failed-load state that cannot
+        # be dropped without the credentials, so it is kept off the shared restricted node to avoid affecting
+        # other tests.
+        cluster.add_instance(
+            "s3_environment_credentials_restricted_disk",
+            with_minio=True,
+            env_variables={
+                "AWS_ACCESS_KEY_ID": "minio",
+                "AWS_SECRET_ACCESS_KEY": "ClickHouse_Minio_P@ssw0rd",
+            },
+            main_configs=["configs/use_environment_credentials.xml"],
+            user_configs=["configs/sync_insert.xml"],
+            stay_alive=True,
+        )
         cluster.add_instance(
             "dummy2",
             with_minio=True,
@@ -2217,10 +2232,15 @@ def test_s3_server_credentials_anonymous_on_reload(started_cluster):
 
 def test_dynamic_s3_disk_anonymous_on_reload(started_cluster):
     # A MergeTree table on an inline dynamic `disk(type = s3, ...)` that resolves the server's environment
-    # credentials must, after a restart, have its disk rebuilt anonymously (inaccessible) instead of silently
-    # using the server identity -- and the server must still start. Exercises the disk metadata-load fallback
-    # through DiskFromAST / processIncludes / forceAnonymousS3DiskConfig.
-    instance = started_cluster.instances["s3_environment_credentials_restricted"]
+    # credentials must, after a restart, have its disk rebuilt anonymously instead of silently using the server
+    # identity -- and the server must still start. Exercises the disk metadata-load fallback through DiskFromAST /
+    # processIncludes / forceAnonymousS3DiskConfig.
+    #
+    # Unlike an `S3` engine table (which attaches without reading and only fails on query), a MergeTree table reads
+    # its parts from the disk at attach time, so an inaccessible disk makes the table fail to load. The contract we
+    # verify is therefore: the server starts (it is not bricked) and the table is inaccessible. The failed-load
+    # table cannot be dropped without restoring access, which is why this runs on its own node.
+    instance = started_cluster.instances["s3_environment_credentials_restricted_disk"]
     bucket = started_cluster.minio_restricted_bucket
     disk_endpoint = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/dynamic_disk_reload/"
     allow = {"s3_allow_server_credentials_in_user_queries": 1}
@@ -2242,13 +2262,13 @@ def test_dynamic_s3_disk_anonymous_on_reload(started_cluster):
     # start, and the disk must become anonymous (inaccessible) rather than using the server identity.
     instance.restart_clickhouse()
 
+    # The server started despite the inaccessible disk (it is not bricked by a definition that resolves the now
+    # restricted server credentials).
     assert instance.query("SELECT 1").strip() == "1"
-    # The disk is now anonymous and cannot read the private bucket, even with the opt-in (the disk was rebuilt
-    # anonymously at load time), so reading the table fails. The server still started.
+    # The disk is anonymous and cannot read the private bucket even with the opt-in (it was rebuilt anonymously at
+    # load time), so the table is inaccessible -- it must not silently return data through the server identity.
     with pytest.raises(helpers.client.QueryRuntimeException):
         instance.query("SELECT count() FROM t_dynamic_disk", settings=allow)
-
-    instance.query("DROP TABLE IF EXISTS t_dynamic_disk SYNC")
 
 
 def test_s3_list_objects_failure(started_cluster):

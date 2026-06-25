@@ -238,6 +238,22 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     String secret_access_key = auth_settings[S3AuthSetting::secret_access_key];
     String session_token = auth_settings[S3AuthSetting::session_token];
     auto headers = auth_settings.getHeaders();
+    String server_side_encryption_customer_key_base64 = auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64];
+    auto server_side_encryption_kms_config = auth_settings.server_side_encryption_kms_config;
+
+    /// When a persistent table or dynamic disk is loaded from existing metadata under the restriction and the
+    /// resolved client is unsigned (a dynamic disk forced anonymous by forceAnonymousS3DiskConfig, which sets
+    /// `no_sign_request`) or downgraded to anonymous (an S3 engine table, `anonymous_fallback_for_server_credentials`),
+    /// the table is meant to be inaccessible rather than keep using the server identity. The server `<s3>` endpoint
+    /// `access_header` and SSE material (merged from the global config) would otherwise still authorize/encrypt with
+    /// the server identity, so drop them and keep only the headers from the stored user definition.
+    if (is_loading_from_existing_metadata && context->shouldRestrictUserQueryS3Credentials()
+        && (credentials_configuration.no_sign_request || credentials_configuration.anonymous_fallback_for_server_credentials))
+    {
+        headers = auth_settings.headers;
+        server_side_encryption_customer_key_base64.clear();
+        server_side_encryption_kms_config = {};
+    }
 
     if (refresh_credentials_callback)
     {
@@ -278,8 +294,8 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
         client_settings,
         access_key_id,
         secret_access_key,
-        auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64],
-        auth_settings.server_side_encryption_kms_config,
+        server_side_encryption_customer_key_base64,
+        server_side_encryption_kms_config,
         headers,
         credentials_configuration,
         session_token,
