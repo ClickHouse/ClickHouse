@@ -16,9 +16,9 @@ FROM (
     FROM numbers(100)
 );
 
--- groupBloomFilter without -State combinator returns 0 (placeholder)
+-- groupBloomFilter without -State combinator has no meaningful scalar result.
 SELECT groupBloomFilter(1000)(number) AS result
-FROM numbers(100);
+FROM numbers(100); -- { serverError BAD_ARGUMENTS }
 
 -- Type name of state is AggregateFunction(groupBloomFilter...)
 SELECT toTypeName(groupBloomFilterState(1000)(number)) LIKE 'AggregateFunction(groupBloomFilter%' AS is_correct_type

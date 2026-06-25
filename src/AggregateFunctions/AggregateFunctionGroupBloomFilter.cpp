@@ -86,16 +86,18 @@ public:
         this->data(place).read(buf);
     }
 
-    void insertResultInto(AggregateDataPtr __restrict /* place */, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict /* place */, IColumn & /* to */, Arena *) const override
     {
-        /// Without -State combinator, return 0 as a placeholder.
-        /// The main use case is with -State combinator to get the Bloom filter state.
-        assert_cast<ColumnVector<UInt64> &>(to).getData().push_back(0);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Aggregate function {} can only be used as an aggregate state. "
+            "Use {}State or {}MergeState with bloomFilterContains",
+            AggregateFunctionGroupBloomFilterData::name,
+            AggregateFunctionGroupBloomFilterData::name,
+            AggregateFunctionGroupBloomFilterData::name);
     }
 };
 
 /// Aggregate function that builds a Bloom filter from numeric column values.
-/// Returns UInt64 (approximate count of distinct elements) by default.
 /// Use -State combinator to get the Bloom filter state for use with bloomFilterContains.
 template <typename T>
 class AggregateFunctionGroupBloomFilter final
@@ -356,8 +358,9 @@ groupBloomFilterState(filter_size_bytes, num_hashes[, seed])(column)
         {"seed", "Seed for hash functions. Default: 0."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns `0` by default. Use `-State` combinator to get the Bloom filter state as `AggregateFunction(groupBloomFilter, T)`.",
-        {"UInt64"}
+        "Returns the Bloom filter state as `AggregateFunction(groupBloomFilter, T)` when using the `-State` combinator. "
+        "The finalized form throws an exception because Bloom filters do not have a meaningful scalar result.",
+        {"AggregateFunction(groupBloomFilter, T)"}
     };
     FunctionDocumentation::Examples examples = {
         {

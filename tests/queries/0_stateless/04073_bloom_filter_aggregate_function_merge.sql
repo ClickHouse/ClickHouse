@@ -44,6 +44,12 @@ SELECT groupBloomFilterMerge(state) FROM (
     SELECT groupBloomFilterState(1000, 0.01, 42)(number) AS state FROM numbers(10)
 ); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT,NO_COMMON_TYPE }
 
+-- groupBloomFilterMerge finalization has no meaningful scalar result.
+SELECT groupBloomFilterMerge(1000)(state) FROM (
+    SELECT groupBloomFilterState(1000)(number) AS state FROM numbers(10)
+    UNION ALL
+    SELECT groupBloomFilterState(1000)(number + 10) AS state FROM numbers(10)
+); -- { serverError BAD_ARGUMENTS }
 
 -- Merge with empty rhs: result equals lhs
 SELECT bloomFilterContains(

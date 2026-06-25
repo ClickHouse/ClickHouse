@@ -30,7 +30,7 @@ groupBloomFilter(filter_size_bytes, num_hashes[, seed])(column)
 groupBloomFilterState(filter_size_bytes, num_hashes[, seed])(column)
 ```
 
-The `-State` combinator is required to obtain the Bloom filter state for use with `bloomFilterContains`. Without it, the function returns `0` as a placeholder.
+The `-State` combinator is required to obtain the Bloom filter state for use with `bloomFilterContains`. The finalized form `groupBloomFilter(...)` throws an exception because Bloom filters do not have a meaningful scalar result.
 
 The parameter form is selected by the second parameter: if it is a `Float64` value in `(0, 1)`, the parameters are interpreted as `expected_elements` and `false_positive_rate`; otherwise, they are interpreted as `filter_size_bytes` and `num_hashes`.
 
@@ -58,8 +58,8 @@ The maximum allowed filter size is 256 MB.
 
 ## Returned value {#returned-value}
 
-- Without `-State` combinator: returns `0` (placeholder value). [UInt64](/sql-reference/data-types/int-uint).
 - With `-State` combinator: returns the Bloom filter state as [`AggregateFunction(groupBloomFilter, T)`](/sql-reference/data-types/aggregatefunction).
+- Without `-State` combinator: throws an exception. Use `groupBloomFilterState` or `groupBloomFilterMergeState` with `bloomFilterContains` instead.
 
 ## Implementation details {#implementation-details}
 
