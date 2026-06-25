@@ -689,6 +689,10 @@ def match_reference_debug_info():
     # (merge-to-master). Must match compare.sh::match_reference_debug_info.
     left = Shell.get_output(f"readlink -f {perf_left}/clickhouse-server", strict=True)
     right = Shell.get_output(f"readlink -f {perf_right}/clickhouse-server", strict=True)
+    # The binaries are self-extracting; run each once so the on-disk file is the
+    # decompressed ELF that readelf/strip operate on.
+    Shell.check(f"{left} local --query 'select 1'")
+    Shell.check(f"{right} local --query 'select 1'")
     if Shell.check(f"readelf -S {right} | grep -q '\\.debug_info'"):
         print("Patched binary keeps debug info, leaving reference as-is")
         return

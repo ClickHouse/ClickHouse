@@ -145,13 +145,16 @@ function configure
 # binary has no DWARF and symbolizes addresses differently from the reference
 # (left, master) build that keeps debug info, which makes flamegraph tooling fail
 # to match the frames. Strip the reference to match. Merge-to-master keeps debug
-# info on both sides; detect it on the patched binary and skip. Both binaries are
-# already decompressed here (configure ran the reference, install the patched).
+# info on both sides; detect it on the patched binary and skip.
 function match_reference_debug_info
 {
     local left right
     left=$(readlink -f left/clickhouse-server)
     right=$(readlink -f right/clickhouse-server)
+    # The binaries are self-extracting; run each once so the on-disk file is the
+    # decompressed ELF that readelf/strip below operate on.
+    "$left" local --query "select 1" &>/dev/null ||:
+    "$right" local --query "select 1" &>/dev/null ||:
     if readelf -S "$right" | grep -q '\.debug_info'; then
         return
     fi
