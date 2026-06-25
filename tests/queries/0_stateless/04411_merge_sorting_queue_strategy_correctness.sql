@@ -1,10 +1,10 @@
-DROP TABLE IF EXISTS source_04402;
-DROP TABLE IF EXISTS horizontal_default_04402;
-DROP TABLE IF EXISTS horizontal_batch_04402;
-DROP TABLE IF EXISTS vertical_default_04402;
-DROP TABLE IF EXISTS vertical_batch_04402;
+DROP TABLE IF EXISTS source_04411;
+DROP TABLE IF EXISTS horizontal_default_04411;
+DROP TABLE IF EXISTS horizontal_batch_04411;
+DROP TABLE IF EXISTS vertical_default_04411;
+DROP TABLE IF EXISTS vertical_batch_04411;
 
-CREATE TABLE source_04402
+CREATE TABLE source_04411
 (
     id UInt64,
     k UInt32,
@@ -31,7 +31,7 @@ CREATE TABLE source_04402
 )
 ENGINE = Memory;
 
-INSERT INTO source_04402
+INSERT INTO source_04411
 SELECT
     number AS id,
     toUInt32(number % 17) AS k,
@@ -57,7 +57,7 @@ SELECT
     map('x', toUInt32(number), 'y', toUInt32(intHash32(number) % 1000)) AS m
 FROM numbers(240);
 
-CREATE TABLE horizontal_default_04402 AS source_04402
+CREATE TABLE horizontal_default_04411 AS source_04411
 ENGINE = MergeTree
 PARTITION BY tuple()
 ORDER BY (k, subkey)
@@ -70,7 +70,7 @@ SETTINGS
     min_bytes_for_wide_part = 0,
     min_rows_for_wide_part = 0;
 
-CREATE TABLE horizontal_batch_04402 AS source_04402
+CREATE TABLE horizontal_batch_04411 AS source_04411
 ENGINE = MergeTree
 PARTITION BY tuple()
 ORDER BY (k, subkey)
@@ -83,7 +83,7 @@ SETTINGS
     min_bytes_for_wide_part = 0,
     min_rows_for_wide_part = 0;
 
-CREATE TABLE vertical_default_04402 AS source_04402
+CREATE TABLE vertical_default_04411 AS source_04411
 ENGINE = MergeTree
 PARTITION BY tuple()
 ORDER BY (k, subkey)
@@ -99,7 +99,7 @@ SETTINGS
     vertical_merge_algorithm_min_bytes_to_activate = 0,
     vertical_merge_algorithm_min_columns_to_activate = 1;
 
-CREATE TABLE vertical_batch_04402 AS source_04402
+CREATE TABLE vertical_batch_04411 AS source_04411
 ENGINE = MergeTree
 PARTITION BY tuple()
 ORDER BY (k, subkey)
@@ -115,34 +115,34 @@ SETTINGS
     vertical_merge_algorithm_min_bytes_to_activate = 0,
     vertical_merge_algorithm_min_columns_to_activate = 1;
 
-INSERT INTO horizontal_default_04402 SELECT * FROM source_04402 WHERE id % 3 = 0;
-INSERT INTO horizontal_default_04402 SELECT * FROM source_04402 WHERE id % 3 = 1;
-INSERT INTO horizontal_default_04402 SELECT * FROM source_04402 WHERE id % 3 = 2;
+INSERT INTO horizontal_default_04411 SELECT * FROM source_04411 WHERE id % 3 = 0;
+INSERT INTO horizontal_default_04411 SELECT * FROM source_04411 WHERE id % 3 = 1;
+INSERT INTO horizontal_default_04411 SELECT * FROM source_04411 WHERE id % 3 = 2;
 
-INSERT INTO horizontal_batch_04402 SELECT * FROM source_04402 WHERE id % 3 = 0;
-INSERT INTO horizontal_batch_04402 SELECT * FROM source_04402 WHERE id % 3 = 1;
-INSERT INTO horizontal_batch_04402 SELECT * FROM source_04402 WHERE id % 3 = 2;
+INSERT INTO horizontal_batch_04411 SELECT * FROM source_04411 WHERE id % 3 = 0;
+INSERT INTO horizontal_batch_04411 SELECT * FROM source_04411 WHERE id % 3 = 1;
+INSERT INTO horizontal_batch_04411 SELECT * FROM source_04411 WHERE id % 3 = 2;
 
-INSERT INTO vertical_default_04402 SELECT * FROM source_04402 WHERE id % 3 = 0;
-INSERT INTO vertical_default_04402 SELECT * FROM source_04402 WHERE id % 3 = 1;
-INSERT INTO vertical_default_04402 SELECT * FROM source_04402 WHERE id % 3 = 2;
+INSERT INTO vertical_default_04411 SELECT * FROM source_04411 WHERE id % 3 = 0;
+INSERT INTO vertical_default_04411 SELECT * FROM source_04411 WHERE id % 3 = 1;
+INSERT INTO vertical_default_04411 SELECT * FROM source_04411 WHERE id % 3 = 2;
 
-INSERT INTO vertical_batch_04402 SELECT * FROM source_04402 WHERE id % 3 = 0;
-INSERT INTO vertical_batch_04402 SELECT * FROM source_04402 WHERE id % 3 = 1;
-INSERT INTO vertical_batch_04402 SELECT * FROM source_04402 WHERE id % 3 = 2;
+INSERT INTO vertical_batch_04411 SELECT * FROM source_04411 WHERE id % 3 = 0;
+INSERT INTO vertical_batch_04411 SELECT * FROM source_04411 WHERE id % 3 = 1;
+INSERT INTO vertical_batch_04411 SELECT * FROM source_04411 WHERE id % 3 = 2;
 
-OPTIMIZE TABLE horizontal_default_04402 FINAL SETTINGS optimize_throw_if_noop = 1;
-OPTIMIZE TABLE horizontal_batch_04402 FINAL SETTINGS optimize_throw_if_noop = 1;
-OPTIMIZE TABLE vertical_default_04402 FINAL SETTINGS optimize_throw_if_noop = 1;
-OPTIMIZE TABLE vertical_batch_04402 FINAL SETTINGS optimize_throw_if_noop = 1;
+OPTIMIZE TABLE horizontal_default_04411 FINAL SETTINGS optimize_throw_if_noop = 1;
+OPTIMIZE TABLE horizontal_batch_04411 FINAL SETTINGS optimize_throw_if_noop = 1;
+OPTIMIZE TABLE vertical_default_04411 FINAL SETTINGS optimize_throw_if_noop = 1;
+OPTIMIZE TABLE vertical_batch_04411 FINAL SETTINGS optimize_throw_if_noop = 1;
 
 SELECT throwIf(
     (
         SELECT groupArray(tuple(*))
-        FROM (SELECT * FROM horizontal_default_04402 ORDER BY k, subkey, id)
+        FROM (SELECT * FROM horizontal_default_04411 ORDER BY k, subkey, id)
     ) != (
         SELECT groupArray(tuple(*))
-        FROM (SELECT * FROM horizontal_batch_04402 ORDER BY k, subkey, id)
+        FROM (SELECT * FROM horizontal_batch_04411 ORDER BY k, subkey, id)
     ),
     'Horizontal merge results differ between default and batch sorting queue strategies')
 FORMAT Null;
@@ -150,10 +150,10 @@ FORMAT Null;
 SELECT throwIf(
     (
         SELECT groupArray(tuple(*))
-        FROM (SELECT * FROM vertical_default_04402 ORDER BY k, subkey, id)
+        FROM (SELECT * FROM vertical_default_04411 ORDER BY k, subkey, id)
     ) != (
         SELECT groupArray(tuple(*))
-        FROM (SELECT * FROM vertical_batch_04402 ORDER BY k, subkey, id)
+        FROM (SELECT * FROM vertical_batch_04411 ORDER BY k, subkey, id)
     ),
     'Vertical merge results differ between default and batch sorting queue strategies')
 FORMAT Null;
@@ -161,8 +161,8 @@ FORMAT Null;
 SELECT 'horizontal ok';
 SELECT 'vertical ok';
 
-DROP TABLE horizontal_default_04402;
-DROP TABLE horizontal_batch_04402;
-DROP TABLE vertical_default_04402;
-DROP TABLE vertical_batch_04402;
-DROP TABLE source_04402;
+DROP TABLE horizontal_default_04411;
+DROP TABLE horizontal_batch_04411;
+DROP TABLE vertical_default_04411;
+DROP TABLE vertical_batch_04411;
+DROP TABLE source_04411;
