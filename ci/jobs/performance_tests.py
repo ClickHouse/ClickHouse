@@ -681,6 +681,20 @@ def insert_flamegraph_stacks(cidb, info, reference_sha, compare_against_release)
     return insert_ok
 
 
+def match_reference_debug_info():
+    # PR builds use -g0 (DISABLE_ALL_DEBUG_SYMBOLS), so the patched binary has no
+    # DWARF and symbolizes addresses differently from the reference build that
+    # keeps debug info, which breaks flamegraph frame matching. Strip the
+    # reference to match, unless the patched binary keeps debug info too
+    # (merge-to-master). Must match compare.sh::match_reference_debug_info.
+    left = Shell.get_output(f"readlink -f {perf_left}/clickhouse-server", strict=True)
+    right = Shell.get_output(f"readlink -f {perf_right}/clickhouse-server", strict=True)
+    if Shell.check(f"readelf -S {right} | grep -q '\\.debug_info'"):
+        print("Patched binary keeps debug info, leaving reference as-is")
+        return
+    Shell.check(f"strip --strip-debug {left}", verbose=True)
+
+
 class CHServer:
     # upstream/master
     LEFT_SERVER_PORT = 9001
@@ -1179,6 +1193,8 @@ def main():
 
     if res and JobStages.RESTART in stages:
         print("Start Servers")
+
+        match_reference_debug_info()
 
         def restart_ch1():
             res_ = leftCH.start()

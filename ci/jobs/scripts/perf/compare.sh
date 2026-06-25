@@ -149,10 +149,13 @@ function configure
 # already decompressed here (configure ran the reference, install the patched).
 function match_reference_debug_info
 {
-    if readelf -S right/clickhouse | grep -q '\.debug_info'; then
+    local left right
+    left=$(readlink -f left/clickhouse-server)
+    right=$(readlink -f right/clickhouse-server)
+    if readelf -S "$right" | grep -q '\.debug_info'; then
         return
     fi
-    strip --strip-debug left/clickhouse
+    strip --strip-debug "$left"
 }
 
 function restart
