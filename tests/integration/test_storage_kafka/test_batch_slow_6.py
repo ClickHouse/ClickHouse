@@ -1,6 +1,15 @@
 """Long running tests, longer than 30 seconds"""
 
-from helpers.kafka.common_direct import *
+import json
+import logging
+import threading
+import time
+
+from kafka import KafkaAdminClient
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
 import helpers.kafka.common as k
 
 cluster = ClickHouseCluster(__file__)
