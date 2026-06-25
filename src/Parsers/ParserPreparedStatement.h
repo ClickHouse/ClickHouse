@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/IParserBase.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -25,7 +26,7 @@ public:
     ASTExecute() = default;
 
     String function_name;
-    std::vector<String> arguments;
+    VectorWithMemoryTracking<String> arguments;
 
     String getID(char) const override { return "Execute"; }
 
