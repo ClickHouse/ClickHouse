@@ -24,6 +24,7 @@
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
+#include <Common/SharedLockGuard.h>
 #include <Common/Stopwatch.h>
 
 namespace ProfileEvents
@@ -166,6 +167,13 @@ namespace
 
         if (version >= SnapshotVersion::V4 && version <= SnapshotVersion::V5)
             writeBinary(node.sizeInBytes(), out);
+
+        if (version >= SnapshotVersion::V8)
+        {
+            writeBinary(node.stats.isTTL(), out);
+            if (node.stats.isTTL())
+                writeBinary(node.stats.ttl(), out);
+        }
     }
 
     template<typename Node>
@@ -279,6 +287,18 @@ namespace
             uint64_t size_bytes = 0;
             readBinary(size_bytes, in);
         }
+
+        if (version >= SnapshotVersion::V8)
+        {
+            bool has_ttl = false;
+            readBinary(has_ttl, in);
+            if (has_ttl)
+            {
+                int64_t ttl_ms = 0;
+                readBinary(ttl_ms, in);
+                node.stats.setTTL(ttl_ms);
+            }
+        }
     }
 
     void serializeSnapshotMetadata(const SnapshotMetadataPtr & snapshot_meta, WriteBuffer & out)
@@ -301,6 +321,19 @@ namespace
 
 void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, WriteBuffer & out, KeeperContextPtr keeper_context)
 {
+    if (snapshot.version < SnapshotVersion::V8)
+    {
+        SharedLockGuard storage_lock(snapshot.storage->storage_mutex);
+        if (!snapshot.storage->ttl_paths.empty())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot serialize snapshot with version {}: storage contains {} TTL node(s), which require snapshot "
+                "version {} or higher. Bump write_snapshot_version after every replica has been upgraded.",
+                static_cast<uint8_t>(snapshot.version),
+                snapshot.storage->ttl_paths.size(),
+                static_cast<uint8_t>(SnapshotVersion::V8));
+    }
+
     writeBinary(static_cast<uint8_t>(snapshot.version), out);
     serializeSnapshotMetadata(snapshot.snapshot_meta, out);
 
@@ -572,6 +605,12 @@ void KeeperStorageSnapshot::deserialize(
 
         if (recalculate_digest)
             storage.nodes_digest += node.getDigest(path);
+
+        if (node.stats.isTTL())
+        {
+            storage.ttl_paths.insert(std::string{path});
+            storage.committed_ttl_nodes.fetch_add(1);
+        }
 
         storage.container.insertOrReplace(std::move(path_data), path_size, std::move(node));
     }

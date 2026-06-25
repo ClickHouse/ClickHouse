@@ -156,6 +156,7 @@ public:
     void recalculateStorageStats();
 
     void reconfigure(const KeeperRequestForSession& request_for_session);
+    std::vector<std::pair<std::string, Int32>> getExpiredTTLPathsForGarbageCollector(size_t batch_size) const;
 
     std::vector<KeeperSnapshotStatus> getSnapshotsStatus() const;
 

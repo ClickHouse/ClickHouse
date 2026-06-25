@@ -6,6 +6,7 @@
 #include <string>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperCommon.h>
+#include <Coordination/KeeperConstants.h>
 #include <Disks/IDisk.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperReconfiguration.h>
@@ -472,7 +473,8 @@ std::shared_ptr<KeeperRequestForSession> KeeperStateMachine::parseRequest(
     };
 
     const bool should_cache
-        = min_request_size_to_cache != 0 && request_for_session->session_id != -1 && data.size() >= min_request_size_to_cache
+        = min_request_size_to_cache != 0 && request_for_session->session_id != -1
+        && request_for_session->session_id != keeper_internal_ttl_garbage_collector_session_id && data.size() >= min_request_size_to_cache
         && std::all_of(
               non_cacheable_xids.begin(), non_cacheable_xids.end(), [&](const auto non_cacheable_xid) { return xid != non_cacheable_xid; });
 
@@ -1982,6 +1984,14 @@ void KeeperStateMachine::cancelIfHasUnfinishedSnapshotReceive()
     {
         tryLogCurrentException(log, "Failed to remove snapshot receive files");
     }
+}
+
+std::vector<std::pair<std::string, Int32>> KeeperStateMachine::getExpiredTTLPathsForGarbageCollector(size_t batch_size) const
+{
+    KEEPER_STORAGE_LOCK_SHARED(lock);
+    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    return storage->collectExpiredTTLPaths(now_ms, batch_size);
 }
 
 std::vector<KeeperSnapshotStatus> KeeperStateMachine::getSnapshotsStatus() const

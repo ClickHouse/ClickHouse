@@ -49,7 +49,7 @@ struct NodeStats
     int64_t ephemeralOwner() const
     {
         if (isEphemeral())
-            return ephemeral_or_seq_num.ephemeral_owner;
+            return ephemeral_or_seq_num_or_ttl.ephemeral_owner;
 
         return 0;
     }
@@ -57,26 +57,49 @@ struct NodeStats
     void setEphemeralOwner(int64_t ephemeral_owner)
     {
         is_ephemeral_and_ctime.is_ephemeral = true;
-        ephemeral_or_seq_num.ephemeral_owner = ephemeral_owner;
+        ephemeral_or_seq_num_or_ttl.ephemeral_owner = ephemeral_owner;
     }
 
     int64_t seqNum() const
     {
-        if (isEphemeral())
+        if (isEphemeral() || isTTL())
             return 0;
 
-        return ephemeral_or_seq_num.seq_num;
+        return ephemeral_or_seq_num_or_ttl.seq_num;
     }
 
     void setSeqNum(int64_t seq_num)
     {
-        ephemeral_or_seq_num.seq_num = seq_num;
+        ephemeral_or_seq_num_or_ttl.seq_num = seq_num;
     }
 
     void increaseSeqNum()
     {
-        chassert(!isEphemeral());
-        ++ephemeral_or_seq_num.seq_num;
+        chassert(!isEphemeral() && !isTTL());
+        ++ephemeral_or_seq_num_or_ttl.seq_num;
+    }
+
+    bool isTTL() const
+    {
+        return is_ephemeral_and_ctime.is_ttl;
+    }
+
+    int64_t ttl() const
+    {
+        chassert(isTTL());
+        return ephemeral_or_seq_num_or_ttl.ttl;
+    }
+
+    void setTTL(int64_t ttl_)
+    {
+        is_ephemeral_and_ctime.is_ttl = true;
+        ephemeral_or_seq_num_or_ttl.ttl = ttl_;
+    }
+
+    int64_t destroyTime() const
+    {
+        chassert(isTTL());
+        return mtime + ttl();
     }
 
     int64_t ctime() const
@@ -91,21 +114,26 @@ struct NodeStats
 
 private:
     /// as ctime can't be negative because it stores the timestamp when the
-    /// node was created, we can use the MSB for a bool
+    /// node was created, we can use the high bits for flags
     struct
     {
+        int64_t ctime : 62;
         int64_t is_ephemeral : 1;
-        int64_t ctime : 63;
-    } is_ephemeral_and_ctime{false, 0};
+        int64_t is_ttl : 1;
+    } is_ephemeral_and_ctime{0, false, false};
 
     /// ephemeral nodes cannot have children, so a node either stores
     /// ephemeral_owner (the owning session) OR seq_num (the counter
-    /// for generating sequential children names under this node)
+    /// for generating sequential children names under this node).
+    /// TTL nodes cannot have children either (in this implementation), so for
+    /// them this slot stores the ttl interval instead of seq_num. The active
+    /// member is selected by is_ephemeral / is_ttl.
     union
     {
         int64_t ephemeral_owner;
         int64_t seq_num;
-    } ephemeral_or_seq_num{0};
+        int64_t ttl;
+    } ephemeral_or_seq_num_or_ttl{0};
 };
 
 /// KeeperMemNode should have as minimal size as possible to reduce memory footprint
@@ -436,6 +464,15 @@ public:
     /// container.
     Container container;
 
+    /// Paths of nodes that may carry TTL
+    mutable std::unordered_set<
+        String,
+        StringHashForHeterogeneousLookup,
+        StringHashForHeterogeneousLookup::transparent_key_equal>
+        ttl_paths TSA_GUARDED_BY(storage_mutex);
+
+    std::atomic<UInt64> committed_ttl_nodes{0};
+
     struct UncommittedNodeRef;
 
     struct UncommittedState
@@ -546,13 +583,25 @@ public:
     // Create node in the storage
     // Returns false if it failed to create the node, true otherwise
     // We don't care about the exact failure because we should've caught it during preprocessing
+    // createNode and removeNode mutate ttl_paths (guarded by storage_mutex). They are part of the
+    // commit path, which is reached through the dual-mode process/processImpl templates: the same
+    // instantiation serves local reads under a shared lock and writes under an exclusive lock, so a
+    // single TSA_REQUIRES/TSA_REQUIRES_SHARED contract cannot describe it. That is why the whole
+    // storage_mutex-protected core (including all container access) is left unanalyzed; we follow the
+    // same convention here. The lock is always held exclusively when these run (see commit callers).
     bool
-    createNode(const std::string & path, String data, const Coordination::Stat & stat, ACLId acl_id, bool update_digest);
+    createNode(
+        const std::string & path,
+        String data,
+        const Coordination::Stat & stat,
+        ACLId acl_id,
+        bool update_digest,
+        std::optional<int64_t> ttl) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     // Remove node in the storage
     // Returns false if it failed to remove the node, true otherwise
     // We don't care about the exact failure because we should've caught it during preprocessing
-    bool removeNode(const std::string & path, int32_t version, bool update_digest);
+    bool removeNode(const std::string & path, int32_t version, bool update_digest) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     /// Used internally by `preprocess` and `processLocal` implementations.
     /// They usually have acl_id readily available, so we don't have to look up the node here.
@@ -616,6 +665,11 @@ public:
 
     uint64_t getArenaDataSize() const;
 
+    std::vector<std::pair<std::string, Int32>> collectExpiredTTLPaths(int64_t now_ms, size_t batch_size) const;
+
+    /// Used by tests.
+    bool containsTTLPath(const std::string & path) const;
+
     void updateStats();
 
     /// Register watches from a request/response pair.
@@ -641,7 +695,7 @@ public:
         std::string_view parent_path, UncommittedNodeRef parent,
         const NodeStats & new_parent_stats, int32_t new_parent_num_children,
         std::string_view path, UncommittedNodeRef node, const Coordination::Stat & stat,
-        ACLId acl_id, std::string_view data);
+        ACLId acl_id, std::string_view data, std::optional<int64_t> ttl = std::nullopt);
     void prepareRemoveNode(
         std::string_view parent_path, UncommittedNodeRef parent,
         const NodeStats & new_parent_stats, int32_t new_parent_num_children,
