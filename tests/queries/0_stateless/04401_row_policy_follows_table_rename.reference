@@ -30,3 +30,15 @@ TABLE_ALREADY_EXISTS
 after failed rename (policy stays, eng only):
 1
 ra
+-- RENAME rejected when destination row-policy name is taken (no commit-then-leak)
+ACCESS_ENTITY_ALREADY_EXISTS
+after rejected rename (table not renamed, policy stays on ka, eng only):
+1
+0
+ka
+kc
+-- RENAME rejected when the policy is in a read-only storage (users.xml), via clickhouse-local
+ACCESS_STORAGE_READONLY
+after rejected rename (table not renamed, read-only policy still bound to rt):
+0
+rt

@@ -109,4 +109,55 @@ ${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY rpol ON ${CLICKHOUSE_DATABASE}.ra"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLICKHOUSE_DATABASE}.ra"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLICKHOUSE_DATABASE}.rexist"
 
+# The re-key cannot be applied atomically with the table rename, so it must be checked BEFORE the
+# rename commits: otherwise a re-key that throws after the commit leaves the renamed table readable
+# without its filter (the very escape this fixes). The next two cases are the unmovable-policy paths.
+
+echo '-- RENAME rejected when destination row-policy name is taken (no commit-then-leak)'
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${CLICKHOUSE_DATABASE}.ka (id UInt64, dept String) ENGINE = MergeTree ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${CLICKHOUSE_DATABASE}.ka VALUES (1, 'eng'), (2, 'fin')"
+# A stationary policy already occupies the destination name 'kp ON kc'; the moving 'kp ON ka' cannot land there.
+${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY kp ON ${CLICKHOUSE_DATABASE}.ka FOR SELECT USING dept = 'eng' TO ${USER}"
+${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY kp ON ${CLICKHOUSE_DATABASE}.kc FOR SELECT USING 1 TO ${USER}"
+run_user "RENAME TABLE ${CLICKHOUSE_DATABASE}.ka TO ${CLICKHOUSE_DATABASE}.kc" 2>&1 | grep -o -m1 "ACCESS_ENTITY_ALREADY_EXISTS"
+echo 'after rejected rename (table not renamed, policy stays on ka, eng only):'
+run_user "SELECT id FROM ${CLICKHOUSE_DATABASE}.ka ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '${CLICKHOUSE_DATABASE}' AND name = 'kc'"
+${CLICKHOUSE_CLIENT} --query "SELECT table FROM system.row_policies WHERE short_name = 'kp' AND database = '${CLICKHOUSE_DATABASE}' ORDER BY table"
+${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY kp ON ${CLICKHOUSE_DATABASE}.ka, kp ON ${CLICKHOUSE_DATABASE}.kc"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLICKHOUSE_DATABASE}.ka"
+
+echo '-- RENAME rejected when the policy is in a read-only storage (users.xml), via clickhouse-local'
+LOCAL_DIR="${CLICKHOUSE_TMP}/04401_local"
+rm -rf "${LOCAL_DIR}"
+mkdir -p "${LOCAL_DIR}"
+cat > "${LOCAL_DIR}/users.xml" <<'XML'
+<clickhouse>
+    <users><default>
+        <password></password><profile>default</profile><quota>default</quota>
+        <access_management>1</access_management>
+        <databases><rodb><rt><filter>dept = 'eng'</filter></rt></rodb></databases>
+    </default></users>
+    <profiles><default/></profiles>
+    <quotas><default/></quotas>
+</clickhouse>
+XML
+cat > "${LOCAL_DIR}/config.xml" <<'XML'
+<clickhouse>
+    <user_directories><users_xml><path>users.xml</path></users_xml></user_directories>
+</clickhouse>
+XML
+${CLICKHOUSE_LOCAL} --config-file "${LOCAL_DIR}/config.xml" --path "${LOCAL_DIR}" -q "
+CREATE DATABASE rodb;
+CREATE TABLE rodb.rt (id UInt64, dept String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO rodb.rt VALUES (1, 'eng'), (2, 'fin');
+RENAME TABLE rodb.rt TO rodb.rt2;
+" 2>&1 | grep -o -m1 "ACCESS_STORAGE_READONLY"
+echo 'after rejected rename (table not renamed, read-only policy still bound to rt):'
+${CLICKHOUSE_LOCAL} --config-file "${LOCAL_DIR}/config.xml" --path "${LOCAL_DIR}" -q "
+SELECT count() FROM system.tables WHERE database = 'rodb' AND name = 'rt2';
+SELECT table FROM system.row_policies WHERE database = 'rodb';
+"
+rm -rf "${LOCAL_DIR}"
+
 ${CLICKHOUSE_CLIENT} --query "DROP USER ${USER}"
