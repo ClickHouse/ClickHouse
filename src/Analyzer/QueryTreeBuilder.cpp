@@ -1345,12 +1345,14 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
             for (const auto & replace_transformer_child : replace_transformer->children)
             {
                 auto & replacement = replace_transformer_child->as<ASTColumnsReplaceTransformer::Replacement &>();
-                /// `ASTColumnsReplaceTransformer::Replacement` stores the target as a raw `name` string,
-                /// so look up the quote style on the optional accompanying `name_is_double_quoted` flag.
+                /// `ASTColumnsReplaceTransformer::Replacement` stores the target as a raw `name` string
+                /// with a single `name_is_double_quoted` flag, because the parser only accepts a
+                /// single-part identifier. Lift that flag into a per-part vector so the analyzer's
+                /// matching is shaped the same as EXCEPT (per-part case-sensitivity for compound names).
                 replacements.emplace_back(ReplaceColumnTransformerNode::Replacement{
                     replacement.name,
                     buildExpression(replacement.children[0], context),
-                    replacement.name_is_double_quoted});
+                    std::vector<bool>{replacement.name_is_double_quoted}});
             }
 
             column_transformers.emplace_back(std::make_shared<ReplaceColumnTransformerNode>(replacements, replace_transformer->is_strict));

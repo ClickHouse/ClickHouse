@@ -348,7 +348,16 @@ ASTPtr ExceptColumnTransformerNode::toASTImpl(const ConvertToASTOptions & /* opt
     ast_except_transformer->children.reserve(except_column_names.size());
     for (size_t i = 0, n = except_column_names.size(); i < n; ++i)
     {
-        auto identifier = make_intrusive<ASTIdentifier>(except_column_names[i]);
+        /// Rebuild from split parts so a compound target like `data."Name"` round-trips with the
+        /// quoted suffix preserved. The single-String `ASTIdentifier` ctor would treat the joined
+        /// `data.Name` as one part and lose the per-part quote alignment.
+        auto target_parts_views = splitOnDot(except_column_names[i]);
+        std::vector<String> name_parts;
+        name_parts.reserve(target_parts_views.size());
+        for (auto part : target_parts_views)
+            name_parts.emplace_back(part);
+
+        auto identifier = make_intrusive<ASTIdentifier>(std::move(name_parts));
         if (i < target_parts_double_quoted.size())
         {
             const auto & per_part = target_parts_double_quoted[i];
@@ -386,7 +395,7 @@ ReplaceColumnTransformerNode::ReplaceColumnTransformerNode(const std::vector<Rep
                 replacement.column_name);
 
         replacements_names.push_back(replacement.column_name);
-        replacements_are_double_quoted.push_back(replacement.is_double_quoted);
+        target_parts_double_quoted.push_back(replacement.parts_double_quoted);
         replacement_expressions_nodes.push_back(replacement.expression_node);
     }
 }
@@ -402,19 +411,35 @@ QueryTreeNodePtr ReplaceColumnTransformerNode::findReplacementExpression(const s
         return getReplacements().getNodes()[replacement_index];
     }
 
-    /// `standard` mode: also match an unquoted REPLACE target case-insensitively. Quoted targets
-    /// (`REPLACE (... AS "Col")`) are skipped from the case-insensitive scan. Multiple unquoted
-    /// targets that fold to the same lookup are ambiguous — mirror the column/alias rule rather
-    /// than silently picking the first match.
+    /// `standard` mode: match per part — unquoted parts fold, double-quoted parts stay exact.
+    /// So `REPLACE (... AS data."Name")` matches `data.Name` but not `Data.name`. Multiple
+    /// targets that fold to the same lookup are ambiguous — mirror the column/alias rule.
     if (standard_mode)
     {
+        auto expression_parts = splitOnDot(expression_name);
         size_t matched_index = std::numeric_limits<size_t>::max();
         for (size_t i = 0, n = replacements_names.size(); i < n; ++i)
         {
-            if (i < replacements_are_double_quoted.size() && replacements_are_double_quoted[i])
+            auto target_parts = splitOnDot(replacements_names[i]);
+            if (target_parts.size() != expression_parts.size())
                 continue;
-            if (Poco::icompare(replacements_names[i], expression_name) != 0)
+
+            const auto & per_part_quote
+                = i < target_parts_double_quoted.size() ? target_parts_double_quoted[i] : std::vector<bool>{};
+
+            bool all_parts_match = true;
+            for (size_t p = 0; p < target_parts.size(); ++p)
+            {
+                const bool part_quoted = p < per_part_quote.size() && per_part_quote[p];
+                if (!partsEqualWithQuote(target_parts[p], expression_parts[p], part_quoted))
+                {
+                    all_parts_match = false;
+                    break;
+                }
+            }
+            if (!all_parts_match)
                 continue;
+
             if (matched_index != std::numeric_limits<size_t>::max() && replacements_names[matched_index] != replacements_names[i])
                 throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
                     "REPLACE column transformer target '{}' is ambiguous: matches multiple replacements with different cases: '{}' and '{}'",
@@ -458,7 +483,7 @@ bool ReplaceColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs, Compa
     const auto & rhs_typed = assert_cast<const ReplaceColumnTransformerNode &>(rhs);
     return is_strict == rhs_typed.is_strict
         && replacements_names == rhs_typed.replacements_names
-        && replacements_are_double_quoted == rhs_typed.replacements_are_double_quoted;
+        && target_parts_double_quoted == rhs_typed.target_parts_double_quoted;
 }
 
 void ReplaceColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState & hash_state, CompareOptions) const
@@ -477,12 +502,18 @@ void ReplaceColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState 
     }
 
     const bool any_quoted = std::any_of(
-        replacements_are_double_quoted.begin(), replacements_are_double_quoted.end(), [](bool b) { return b; });
+        target_parts_double_quoted.begin(),
+        target_parts_double_quoted.end(),
+        [](const auto & per_part) { return std::any_of(per_part.begin(), per_part.end(), [](bool b) { return b; }); });
     if (any_quoted)
     {
-        hash_state.update(replacements_are_double_quoted.size());
-        for (bool b : replacements_are_double_quoted)
-            hash_state.update(static_cast<uint8_t>(b));
+        hash_state.update(target_parts_double_quoted.size());
+        for (const auto & per_part : target_parts_double_quoted)
+        {
+            hash_state.update(per_part.size());
+            for (bool b : per_part)
+                hash_state.update(static_cast<uint8_t>(b));
+        }
     }
 }
 
@@ -492,7 +523,7 @@ QueryTreeNodePtr ReplaceColumnTransformerNode::cloneImpl() const
 
     result_replace_transformer->is_strict = is_strict;
     result_replace_transformer->replacements_names = replacements_names;
-    result_replace_transformer->replacements_are_double_quoted = replacements_are_double_quoted;
+    result_replace_transformer->target_parts_double_quoted = target_parts_double_quoted;
 
     return result_replace_transformer;
 }
@@ -510,8 +541,16 @@ ASTPtr ReplaceColumnTransformerNode::toASTImpl(const ConvertToASTOptions & optio
     {
         auto replacement_ast = make_intrusive<ASTColumnsReplaceTransformer::Replacement>();
         replacement_ast->name = replacements_names[i];
-        if (i < replacements_are_double_quoted.size())
-            replacement_ast->name_is_double_quoted = replacements_are_double_quoted[i];
+        if (i < target_parts_double_quoted.size())
+        {
+            /// Collapse per-part bits to a single AST-level bool: the AST `Replacement` only carries
+            /// one flag because the parser produces single-part targets. If any part is quoted, the
+            /// formatter renders the target with double quotes (round-trip survives for the cases
+            /// the parser can produce today).
+            const auto & per_part = target_parts_double_quoted[i];
+            replacement_ast->name_is_double_quoted
+                = std::any_of(per_part.begin(), per_part.end(), [](bool b) { return b; });
+        }
         replacement_ast->children.push_back(replacement_expressions_nodes[i]->toAST(options));
         ast_replace_transformer->children.push_back(std::move(replacement_ast));
     }

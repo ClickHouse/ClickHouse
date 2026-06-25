@@ -262,10 +262,10 @@ public:
     {
         std::string column_name;
         QueryTreeNodePtr expression_node;
-        /// `true` when the user wrote `REPLACE (expr AS "Col")`. Such targets stay case-sensitive in
-        /// `standard` mode while unquoted targets fold case-insensitively, matching how other
-        /// column references resolve.
-        bool is_double_quoted = false;
+        /// Per-part double-quote flag for the target identifier. `REPLACE (... AS "Col")` becomes
+        /// `{true}`; `REPLACE (... AS data."Name")` becomes `{false, true}`. Quoted parts stay
+        /// case-sensitive in `standard` mode while unquoted parts fold case-insensitively.
+        std::vector<bool> parts_double_quoted;
     };
 
     /// Initialize replace column transformer with replacements
@@ -327,9 +327,10 @@ private:
     }
 
     Names replacements_names;
-    /// Parallel to `replacements_names`. Targets pinned with `"Name"` stay case-sensitive in
-    /// `standard` mode.
-    std::vector<bool> replacements_are_double_quoted;
+    /// Parallel to `replacements_names`. Inner vector element `j` is true when target part `j` of
+    /// that identifier was double-quoted, so `data."Name"` carries `{false, true}` and the `data`
+    /// part folds while `Name` stays exact. Empty when the transformer was built without quote tracking.
+    std::vector<std::vector<bool>> target_parts_double_quoted;
     bool is_strict = false;
 
     static constexpr size_t replacements_child_index = 0;

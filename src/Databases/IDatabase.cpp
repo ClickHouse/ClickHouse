@@ -93,7 +93,10 @@ String IDatabase::tryResolveTableNameCaseInsensitive(const String & name, Contex
     /// `getTablesIterator` lists the whole catalog. For remote / data-lake databases
     /// (PostgreSQL, MySQL, DataLake, etc.) that means a paid round trip per missing-name lookup —
     /// far worse than the typo it would help with. Skip the scan for those engines; the
-    /// exact-name `tryGetTable` above already covered the cheap path.
+    /// exact-name `tryGetTable` above already covered the cheap path. This caveat is documented
+    /// in the `case_insensitive_names` setting docs (`Scope:` section); a typo against a remote
+    /// table surfaces as `UNKNOWN_TABLE` rather than the more helpful ambiguity/canonical-form
+    /// diagnostic, which is the deliberate trade-off for avoiding the remote round trip.
     if (isRemoteDatabase())
         return {};
 

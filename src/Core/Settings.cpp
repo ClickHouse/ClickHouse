@@ -7739,6 +7739,11 @@ table / column-list lookup and DDL statements (`CREATE`, `DROP`, `ALTER`, `RENAM
 names via exact match through the database catalog and `Block::findByName`. To reference an
 existing object whose name differs only in case, either quote it case-sensitively or rely on the
 exact-case object name. Removing this restriction is planned as a follow-up.
+
+Remote database engines (`PostgreSQL`, `MySQL`, `DataLake`, etc.) only resolve table names via the
+exact-case lookup; the case-insensitive fallback that enumerates the catalog is skipped to avoid a
+paid remote round trip per missing-name probe. A typo in the case of a remote table name surfaces
+as `UNKNOWN_TABLE` — quote the name case-sensitively or use the exact remote object name.
 )", 0) \
     DECLARE(UInt64, max_limit_for_vector_search_queries, 1'000, R"(
 SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.
