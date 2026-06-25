@@ -42,12 +42,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.7",
         {
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
+            {"type_json_skip_null_typed_paths", false, false, "New setting to treat NULL values in typed JSON paths as absent"},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
         {
-            {"type_json_skip_null_typed_paths", false, false, "New setting to treat NULL values in typed JSON paths as absent"},
-            {"enable_join_runtime_filter_shared_fixed_hash_table", false, true, "New setting to share the hash join's FixedHashMap as the runtime filter for the probe side, replacing the Set/BloomFilter built upstream by the runtime filter framework."},
             {"output_format_image_width", 1024, 1024, "New setting controlling the width of the output image for image output formats such as PNG."},
             {"output_format_image_height", 1024, 1024, "New setting controlling the height of the output image for image output formats such as PNG."},
             {"output_format_image_terminal_mode", "", "", "New setting controlling whether image output formats such as PNG are rendered directly to the terminal using an inline image protocol."},
