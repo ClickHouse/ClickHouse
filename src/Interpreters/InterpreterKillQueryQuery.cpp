@@ -447,7 +447,7 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     /// them — the result set is bounded by the size of `system.processes`,
     /// `system.mutations`, `system.part_moves_between_shards` or
     /// `system.transactions`, so this remains cheap.
-    std::vector<Block> blocks;
+    Blocks blocks;
     io.executeWithCallbacks([&]()
     {
         PullingPipelineExecutor executor(io.pipeline);
