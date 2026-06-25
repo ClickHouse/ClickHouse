@@ -73,7 +73,10 @@ fast_test_digest_config = Job.CacheDigestConfig(
 # not cover them).
 darwin_fast_test_digest_config = Job.CacheDigestConfig(
     include_paths=fast_test_digest_config.include_paths
-    + ["./ci/defs/darwin.skip", "./ci/jobs/scripts/fast_test_darwin.sh"],
+    + [
+        "./tests/darwin_fast_test_blacklist.txt",
+        "./ci/jobs/scripts/fast_test_darwin.sh",
+    ],
 )
 
 common_build_job_config = Job.Config(
