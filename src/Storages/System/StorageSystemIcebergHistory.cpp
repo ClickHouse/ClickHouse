@@ -1,32 +1,32 @@
-#include <Storages/System/StorageSystemIcebergHistory.h>
 #include <mutex>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeDateTime.h>
+#include <Access/ContextAccess.h>
+#include <Columns/ColumnString.h>
+#include <Core/Field.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
-#include <Storages/SelectQueryInfo.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Access/ContextAccess.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/System/StorageSystemIcebergHistory.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Columns/ColumnString.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Core/Settings.h>
-#include <Core/Field.h>
 
 #if USE_AVRO
 #include <base/EnumReflection.h>
@@ -40,8 +40,8 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsBool use_iceberg_metadata_files_cache;
+extern const SettingsSeconds lock_acquire_timeout;
+extern const SettingsBool use_iceberg_metadata_files_cache;
 }
 
 ColumnsDescription StorageSystemIcebergHistory::getColumnsDescription()
@@ -105,7 +105,8 @@ void StorageSystemIcebergHistory::fillData(
         /// to handle properly all possible errors which we can get when attempting to read metadata of iceberg table
         try
         {
-            if (IcebergMetadata * iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage->getExternalMetadata(context_copy)); iceberg_metadata)
+            if (IcebergMetadata * iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage->getExternalMetadata(context_copy));
+                iceberg_metadata)
             {
                 IcebergMetadata::IcebergHistory iceberg_history_items = iceberg_metadata->getHistory(context_copy);
 
@@ -135,9 +136,10 @@ void StorageSystemIcebergHistory::fillData(
         }
         catch (...)
         {
-            tryLogCurrentException(getLogger("SystemIcebergHistory"), fmt::format("Ignoring broken table {}", object_storage->getStorageID().getFullTableName()));
+            tryLogCurrentException(
+                getLogger("SystemIcebergHistory"),
+                fmt::format("Ignoring broken table {}", object_storage->getStorageID().getFullTableName()));
         }
-
     };
 
     /// Filter databases first: listing tables of a remote database (PostgreSQL/MySQL/...)
@@ -193,7 +195,8 @@ void StorageSystemIcebergHistory::fillData(
         if (!storage)
             continue;
 
-        TableLockHolder lock = storage->tryLockForShare(context_copy->getCurrentQueryId(), context_copy->getSettingsRef()[Setting::lock_acquire_timeout]);
+        TableLockHolder lock
+            = storage->tryLockForShare(context_copy->getCurrentQueryId(), context_copy->getSettingsRef()[Setting::lock_acquire_timeout]);
         if (!lock)
             // Table was dropped while acquiring the lock, skipping table
             continue;
@@ -203,6 +206,17 @@ void StorageSystemIcebergHistory::fillData(
             add_history_record(database_name, table_name, object_storage_table);
         }
     }
+#endif
+}
+Block StorageSystemIcebergHistory::getFilterSampleBlock() const
+{
+#if USE_AVRO
+    return {
+        {{}, std::make_shared<DataTypeString>(), "database"},
+        {{}, std::make_shared<DataTypeString>(), "table"},
+    };
+#else
+    return {};
 #endif
 }
 }

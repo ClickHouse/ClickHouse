@@ -34,6 +34,8 @@ protected:
         [[maybe_unused]] ContextPtr context,
         [[maybe_unused]] const ActionsDAG::Node * predicate,
         std::vector<UInt8>) const override;
+
+    Block getFilterSampleBlock() const override;
 };
 
 }
