@@ -165,7 +165,7 @@ void ArrowIPCBlockOutputFormat::writeSchemaIfNeeded()
 }
 
 ArrowIPC::MessageWriter::WrittenMessage ArrowIPCBlockOutputFormat::writeBatchMessage(
-    const ArrowIPC::RecordBatchEncoder::EncodedBatch & batch, std::optional<int64_t> dictionary_id, bool is_delta)
+    const ArrowIPC::RecordBatchEncoder::EncodedBatch & batch, std::optional<Int64> dictionary_id, bool is_delta)
 {
     flatbuffers::FlatBufferBuilder builder;
     flatbuffers::Offset<ArrowIPC::flatbuf::BodyCompression> compression_off = 0;
@@ -196,7 +196,7 @@ ArrowIPC::MessageWriter::WrittenMessage ArrowIPCBlockOutputFormat::writeBatchMes
 
     auto message = ArrowIPC::flatbuf::CreateMessage(
         builder, ArrowIPC::flatbuf::MetadataVersion_V5, header_type, header_off,
-        static_cast<int64_t>(batch.body.size()));
+        static_cast<Int64>(batch.body.size()));
     builder.Finish(message);
 
     return message_writer->writeMessage(
@@ -385,7 +385,7 @@ void ArrowIPCBlockOutputFormat::finalizeImpl()
     ArrowIPC::buildFooter(builder, column_names, column_types, format_settings, dictionary_blocks, record_blocks);
     out.write(reinterpret_cast<const char *>(builder.GetBufferPointer()), builder.GetSize());
 
-    int32_t footer_length = DB::toLittleEndian(static_cast<int32_t>(builder.GetSize()));
+    Int32 footer_length = DB::toLittleEndian(static_cast<Int32>(builder.GetSize()));
     out.write(reinterpret_cast<const char *>(&footer_length), sizeof(footer_length));
     out.write(ARROW_MAGIC.data(), ARROW_MAGIC.size());
 }

@@ -101,7 +101,7 @@ DataTypePtr mapEntriesHint(const DataTypePtr & hint)
 }
 }
 
-void DictionaryRegistry::set(int64_t id, ColumnPtr values, bool is_delta)
+void DictionaryRegistry::set(Int64 id, ColumnPtr values, bool is_delta)
 {
     auto it = dictionaries.find(id);
     if (is_delta)
@@ -121,7 +121,7 @@ void DictionaryRegistry::set(int64_t id, ColumnPtr values, bool is_delta)
     }
 }
 
-ColumnPtr DictionaryRegistry::get(int64_t id) const
+ColumnPtr DictionaryRegistry::get(Int64 id) const
 {
     auto it = dictionaries.find(id);
     if (it == dictionaries.end())
@@ -199,7 +199,7 @@ void fillFixed(IColumn & column, size_t rows, const RecordBatchDecoder::Slice & 
 
 }
 
-ColumnPtr RecordBatchDecoder::buildNullMap(const Slice & validity, size_t rows, int64_t null_count) const
+ColumnPtr RecordBatchDecoder::buildNullMap(const Slice & validity, size_t rows, Int64 null_count) const
 {
     auto null_map = ColumnUInt8::create(rows);
     auto & data = null_map->getData();
@@ -285,10 +285,10 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
             else
             {
                 /// half-float -> Float32
-                checkBufferSize(values, requiredBytes(rows, sizeof(uint16_t)), "half_float");
+                checkBufferSize(values, requiredBytes(rows, sizeof(UInt16)), "half_float");
                 auto & data = assert_cast<ColumnFloat32 &>(*column).getData();
                 data.resize(rows);
-                const auto * src = reinterpret_cast<const uint16_t *>(values.ptr);
+                const auto * src = reinterpret_cast<const UInt16 *>(values.ptr);
                 for (size_t i = 0; i < rows; ++i)
                     data[i] = convertFloat16ToFloat32(src[i]);
             }
@@ -375,10 +375,10 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
             else
             {
                 /// date64: milliseconds since the epoch, maps to DateTime (UInt32 seconds).
-                checkBufferSize(values, requiredBytes(rows, sizeof(int64_t)), "date64");
+                checkBufferSize(values, requiredBytes(rows, sizeof(Int64)), "date64");
                 auto & data = assert_cast<ColumnUInt32 &>(*column).getData();
                 data.resize(rows);
-                const auto * src = reinterpret_cast<const int64_t *>(values.ptr);
+                const auto * src = reinterpret_cast<const Int64 *>(values.ptr);
                 for (size_t i = 0; i < rows; ++i)
                     data[i] = static_cast<UInt32>(src[i] / 1000);
             }
@@ -392,10 +392,10 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
             /// `time32[s|ms]` stores 4-byte values; `time64`/`timestamp` store 8-byte values.
             if (type.kind == TypeKind::Time && type.time_bit_width == 32)
             {
-                checkBufferSize(values, requiredBytes(rows, sizeof(int32_t)), "time32");
+                checkBufferSize(values, requiredBytes(rows, sizeof(Int32)), "time32");
                 auto & data = assert_cast<ColumnDecimal<DateTime64> &>(*column).getData();
                 data.resize(rows);
-                const auto * src = reinterpret_cast<const int32_t *>(values.ptr);
+                const auto * src = reinterpret_cast<const Int32 *>(values.ptr);
                 for (size_t i = 0; i < rows; ++i)
                     data[i] = DateTime64(src[i]);
                 break;
@@ -425,28 +425,28 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
 
             /// Validate the offsets buffer before reserving: an inflated (or forged-huge) row count would
             /// otherwise reserve gigabytes (and hit the memory limit) before this check could reject the file.
-            const size_t offset_size = large ? sizeof(int64_t) : sizeof(int32_t);
+            const size_t offset_size = large ? sizeof(Int64) : sizeof(Int32);
             checkBufferSize(offsets_slice, requiredBytes(rows + 1, offset_size), "offsets");
 
             string_column.reserve(rows);
             string_column.getChars().reserve(static_cast<size_t>(data_slice.length) + rows);
 
-            auto read_offset = [&](size_t i) -> int64_t
+            auto read_offset = [&](size_t i) -> Int64
             {
                 if (large)
-                    return reinterpret_cast<const int64_t *>(offsets_slice.ptr)[i];
-                return reinterpret_cast<const int32_t *>(offsets_slice.ptr)[i];
+                    return reinterpret_cast<const Int64 *>(offsets_slice.ptr)[i];
+                return reinterpret_cast<const Int32 *>(offsets_slice.ptr)[i];
             };
 
             /// A sliced Arrow string array can begin at a non-negative first offset; the value bytes are
             /// read directly from `data[offset[i], offset[i + 1])`, so any base offset works as long as the
             /// offsets stay monotonic and within the data buffer (matching the Apache Arrow library reader).
-            int64_t prev = read_offset(0);
+            Int64 prev = read_offset(0);
             if (prev < 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC string column has a negative first offset {}", prev);
             for (size_t i = 0; i < rows; ++i)
             {
-                const int64_t end = read_offset(i + 1);
+                const Int64 end = read_offset(i + 1);
                 if (end < prev || end > data_slice.length)
                     throw Exception(
                         ErrorCodes::INCORRECT_DATA,
@@ -471,7 +471,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
             /// int32 buffer_index, int32 offset into that data buffer}.
             const Slice views = nextBuffer();
             checkBufferSize(views, requiredBytes(rows, 16), "binary view");
-            const int64_t num_data = variadic_index < variadic_counts.size() ? variadic_counts[variadic_index] : 0;
+            const Int64 num_data = variadic_index < variadic_counts.size() ? variadic_counts[variadic_index] : 0;
             ++variadic_index;
             /// `num_data` is untrusted IPC metadata (already checked non-negative in `decodeColumns`). A forged
             /// huge positive count would drive an oversized `reserve` before `nextBuffer` notices the batch has
@@ -483,7 +483,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
                     num_data, buffer_slices.size() - buffer_index);
             VectorWithMemoryTracking<Slice> data_buffers;
             data_buffers.reserve(static_cast<size_t>(num_data));
-            for (int64_t i = 0; i < num_data; ++i)
+            for (Int64 i = 0; i < num_data; ++i)
                 data_buffers.push_back(nextBuffer());
 
             auto & string_column = assert_cast<ColumnString &>(*column);
@@ -491,8 +491,8 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
             for (size_t i = 0; i < rows; ++i)
             {
                 const char * v = views.ptr + i * 16;
-                int32_t length = 0;
-                memcpy(&length, v, sizeof(int32_t));
+                Int32 length = 0;
+                memcpy(&length, v, sizeof(Int32));
                 if (length < 0)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Negative Arrow view length {}", length);
                 if (length <= 12)
@@ -501,14 +501,14 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
                 }
                 else
                 {
-                    int32_t data_buffer_index = 0;
-                    int32_t offset = 0;
-                    memcpy(&data_buffer_index, v + 8, sizeof(int32_t));
-                    memcpy(&offset, v + 12, sizeof(int32_t));
+                    Int32 data_buffer_index = 0;
+                    Int32 offset = 0;
+                    memcpy(&data_buffer_index, v + 8, sizeof(Int32));
+                    memcpy(&offset, v + 12, sizeof(Int32));
                     if (data_buffer_index < 0 || static_cast<size_t>(data_buffer_index) >= data_buffers.size())
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow view references invalid data buffer {}", data_buffer_index);
                     const Slice & data = data_buffers[data_buffer_index];
-                    if (offset < 0 || static_cast<int64_t>(offset) + length > data.length)
+                    if (offset < 0 || static_cast<Int64>(offset) + length > data.length)
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow view references out-of-range data");
                     string_column.insertData(data.ptr + offset, static_cast<size_t>(length));
                 }
@@ -597,18 +597,18 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
         {
             /// Map is List<Struct<key, value>>: read the list offsets, then the entries struct.
             const Slice offsets_slice = nextBuffer();
-            checkBufferSize(offsets_slice, requiredBytes(rows + 1, sizeof(int32_t)), "map offsets");
-            const auto * arrow_offsets = reinterpret_cast<const int32_t *>(offsets_slice.ptr);
-            const int64_t base = arrow_offsets[0];
+            checkBufferSize(offsets_slice, requiredBytes(rows + 1, sizeof(Int32)), "map offsets");
+            const auto * arrow_offsets = reinterpret_cast<const Int32 *>(offsets_slice.ptr);
+            const Int64 base = arrow_offsets[0];
             if (base < 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map has a negative first offset {}", base);
             auto offsets_col = ColumnUInt64::create(rows);
             auto & offs = offsets_col->getData();
             /// Offsets must be monotonic non-decreasing: compare each with the previous one, not only `base`.
-            int64_t prev = base;
+            Int64 prev = base;
             for (size_t i = 0; i < rows; ++i)
             {
-                const int64_t end = arrow_offsets[i + 1];
+                const Int64 end = arrow_offsets[i + 1];
                 if (end < prev)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map has non-monotonic offsets");
                 offs[i] = static_cast<UInt64>(end - base);
@@ -625,7 +625,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
             /// A sliced Arrow map can begin at a non-zero first offset; only entries[base, prev) are
             /// referenced. Reject offsets past the entries, then slice the key/value columns to that range
             /// so their size matches the base-relative offsets (matching the Apache Arrow library reader).
-            if (prev > static_cast<int64_t>(entries_tuple.size()))
+            if (prev > static_cast<Int64>(entries_tuple.size()))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map offset {} points past the {} entries", prev, entries_tuple.size());
             const size_t referenced = static_cast<size_t>(prev - base);
             ColumnPtr keys = entries_tuple.getColumnPtr(0);
@@ -651,27 +651,27 @@ ColumnPtr RecordBatchDecoder::readOffsetsAndChild(
     const ArrowField & field, size_t rows, bool large, const DataTypePtr & target_hint, const String & path)
 {
     const Slice offsets_slice = nextBuffer();
-    const size_t offset_size = large ? sizeof(int64_t) : sizeof(int32_t);
+    const size_t offset_size = large ? sizeof(Int64) : sizeof(Int32);
     checkBufferSize(offsets_slice, requiredBytes(rows + 1, offset_size), "list offsets");
 
-    auto read_offset = [&](size_t i) -> int64_t
+    auto read_offset = [&](size_t i) -> Int64
     {
         if (large)
-            return reinterpret_cast<const int64_t *>(offsets_slice.ptr)[i];
-        return reinterpret_cast<const int32_t *>(offsets_slice.ptr)[i];
+            return reinterpret_cast<const Int64 *>(offsets_slice.ptr)[i];
+        return reinterpret_cast<const Int32 *>(offsets_slice.ptr)[i];
     };
 
-    const int64_t base = read_offset(0);
+    const Int64 base = read_offset(0);
     /// The first offset must be non-negative; the per-row offsets below are stored relative to it.
     if (base < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC list has a negative first offset {}", base);
     auto offsets_col = ColumnUInt64::create(rows);
     auto & offs = offsets_col->getData();
     /// Offsets must be monotonic non-decreasing: compare each with the previous one, not only `base`.
-    int64_t prev = base;
+    Int64 prev = base;
     for (size_t i = 0; i < rows; ++i)
     {
-        const int64_t end = read_offset(i + 1);
+        const Int64 end = read_offset(i + 1);
         if (end < prev)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC list has non-monotonic offsets");
         offs[i] = static_cast<UInt64>(end - base);
@@ -684,7 +684,7 @@ ColumnPtr RecordBatchDecoder::readOffsetsAndChild(
     /// A sliced Arrow list can begin at a non-zero first offset; only child[base, prev) is referenced.
     /// Reject offsets that point past the child, then slice it to the referenced range so its size matches
     /// the base-relative offsets — mirroring the Apache Arrow library reader's Flatten/slice of a slice.
-    if (prev > static_cast<int64_t>(child->size()))
+    if (prev > static_cast<Int64>(child->size()))
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Arrow IPC list offset {} points past the {}-element child", prev, child->size());
@@ -695,7 +695,7 @@ ColumnPtr RecordBatchDecoder::readOffsetsAndChild(
 }
 
 ColumnPtr RecordBatchDecoder::decodeDictionary(
-    const ArrowField & field, size_t rows, const Slice & validity, int64_t null_count, bool allow_low_cardinality)
+    const ArrowField & field, size_t rows, const Slice & validity, Int64 null_count, bool allow_low_cardinality)
 {
     const Slice indices_slice = nextBuffer();
     ColumnPtr values = registry.get(field.dictionary->id);
@@ -748,11 +748,11 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(
         {
             case 8: v = index_is_signed ? Int64(reinterpret_cast<const int8_t *>(indices_slice.ptr)[i])
                                         : Int64(reinterpret_cast<const uint8_t *>(indices_slice.ptr)[i]); break;
-            case 16: v = index_is_signed ? Int64(reinterpret_cast<const int16_t *>(indices_slice.ptr)[i])
-                                         : Int64(reinterpret_cast<const uint16_t *>(indices_slice.ptr)[i]); break;
-            case 32: v = index_is_signed ? Int64(reinterpret_cast<const int32_t *>(indices_slice.ptr)[i])
-                                         : Int64(reinterpret_cast<const uint32_t *>(indices_slice.ptr)[i]); break;
-            case 64: v = reinterpret_cast<const int64_t *>(indices_slice.ptr)[i]; break;
+            case 16: v = index_is_signed ? Int64(reinterpret_cast<const Int16 *>(indices_slice.ptr)[i])
+                                         : Int64(reinterpret_cast<const UInt16 *>(indices_slice.ptr)[i]); break;
+            case 32: v = index_is_signed ? Int64(reinterpret_cast<const Int32 *>(indices_slice.ptr)[i])
+                                         : Int64(reinterpret_cast<const UInt32 *>(indices_slice.ptr)[i]); break;
+            case 64: v = reinterpret_cast<const Int64 *>(indices_slice.ptr)[i]; break;
             default: throw Exception(ErrorCodes::INCORRECT_DATA, "Unsupported Arrow dictionary index width {}", bits);
         }
         if (v < 0 || static_cast<UInt64>(v) >= dict_size)
@@ -788,12 +788,12 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
     checkBufferSize(type_ids_slice, rows, "union type ids");
     const auto * type_ids = reinterpret_cast<const int8_t *>(type_ids_slice.ptr);
 
-    const int32_t * value_offsets = nullptr;
+    const Int32 * value_offsets = nullptr;
     if (dense)
     {
         const Slice offsets_slice = nextBuffer();
-        checkBufferSize(offsets_slice, requiredBytes(rows, sizeof(int32_t)), "union offsets");
-        value_offsets = reinterpret_cast<const int32_t *>(offsets_slice.ptr);
+        checkBufferSize(offsets_slice, requiredBytes(rows, sizeof(Int32)), "union offsets");
+        value_offsets = reinterpret_cast<const Int32 *>(offsets_slice.ptr);
     }
 
     /// Decode children. Arrow `null`-typed children are the ClickHouse NULL placeholder: they carry a
@@ -882,7 +882,7 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
                 off_data[row] = 0;
                 continue;
             }
-            const int32_t off = value_offsets[row];
+            const Int32 off = value_offsets[row];
             if (off < 0 || static_cast<size_t>(off) >= variant_columns[local]->size())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow dense union offset {} out of range", off);
             /// A referenced null value in a nullable child becomes a Variant NULL, not a default value.
@@ -947,7 +947,7 @@ ColumnPtr RecordBatchDecoder::decodeField(
     const flatbuf::FieldNode & node = nextNode();
     /// `FieldNode::length` is signed IPC metadata; reject a negative (corrupted) length before casting,
     /// otherwise it would become a huge row count and drive oversized allocations.
-    const int64_t node_length = node.length();
+    const Int64 node_length = node.length();
     if (node_length < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC field node has a negative length {}", node_length);
     const size_t rows = static_cast<size_t>(node_length);
@@ -1098,9 +1098,9 @@ void RecordBatchDecoder::skipField(const ArrowField & field)
         case TypeKind::Utf8View:
         {
             nextBuffer();
-            const int64_t num_data = variadic_index < variadic_counts.size() ? variadic_counts[variadic_index] : 0;
+            const Int64 num_data = variadic_index < variadic_counts.size() ? variadic_counts[variadic_index] : 0;
             ++variadic_index;
-            for (int64_t i = 0; i < num_data; ++i)
+            for (Int64 i = 0; i < num_data; ++i)
                 nextBuffer();
             break;
         }
@@ -1159,7 +1159,7 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeColumns(
     variadic_index = 0;
     variadic_counts.clear();
     if (const auto * counts = batch.variadicBufferCounts())
-        for (int64_t c : *counts)
+        for (Int64 c : *counts)
         {
             /// Untrusted IPC metadata: a negative count would become a huge `size_t` when reserving the
             /// data-buffer vector for a `BinaryView`/`Utf8View` column. Reject it.
@@ -1240,9 +1240,9 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
 
     const auto * buffers = batch.buffers();
     const size_t num_buffers = buffers ? buffers->size() : 0;
-    const int64_t body_size = static_cast<int64_t>(body.size());
+    const Int64 body_size = static_cast<Int64>(body.size());
 
-    auto validate = [&](int64_t offset, int64_t length)
+    auto validate = [&](Int64 offset, Int64 length)
     {
         /// Empty buffers may use a placeholder offset (e.g. -1); only non-empty buffers must be in range.
         if (length == 0)
@@ -1321,7 +1321,7 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
         }
         const auto * buffer = buffers->Get(static_cast<flatbuffers::uoffset_t>(i));
         validate(buffer->offset(), buffer->length());
-        const int64_t length = buffer->length();
+        const Int64 length = buffer->length();
 
         /// `pos` accumulates from untrusted `uncompressed_length` metadata; both the 8-byte alignment and
         /// the running total must not wrap, otherwise `decompressed_body` would be under-allocated while a
@@ -1339,7 +1339,7 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
         if (length < 8)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer is too small for its length prefix");
 
-        int64_t uncompressed_length = 0;
+        Int64 uncompressed_length = 0;
         memcpy(&uncompressed_length, src, sizeof(uncompressed_length));
         uncompressed_length = DB::fromLittleEndian(uncompressed_length);
 
@@ -1387,7 +1387,7 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
 
     buffer_slices.reserve(num_buffers);
     for (const auto & p : placements)
-        buffer_slices.push_back(Slice{decompressed_body.data() + p.offset, static_cast<int64_t>(p.length)});
+        buffer_slices.push_back(Slice{decompressed_body.data() + p.offset, static_cast<Int64>(p.length)});
 }
 
 RecordBatchDecoder::DecodedColumns
@@ -1423,7 +1423,7 @@ VectorWithMemoryTracking<char> RecordBatchDecoder::reachableTopLevelBuffers(
     try
     {
         if (const auto * counts = batch.variadicBufferCounts())
-            for (int64_t c : *counts)
+            for (Int64 c : *counts)
             {
                 if (c < 0)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC variadic buffer count is negative ({})", c);

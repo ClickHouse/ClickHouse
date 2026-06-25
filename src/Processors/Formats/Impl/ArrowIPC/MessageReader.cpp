@@ -26,38 +26,38 @@ namespace
 {
 
 /// 0xFFFFFFFF marks the modern (>= v0.15.0) encapsulated-message framing.
-constexpr int32_t IPC_CONTINUATION_TOKEN = -1;
+constexpr Int32 IPC_CONTINUATION_TOKEN = -1;
 
 /// Even a schema with thousands of columns has a FlatBuffer well under a megabyte. Any larger
 /// metadata length almost certainly means the input is not Arrow IPC (e.g. JSON misread as a size),
 /// so we reject it before allocating, mirroring the guard in the Arrow-library based reader.
-constexpr int64_t MAX_REASONABLE_METADATA_LENGTH = 256 * 1024 * 1024;
+constexpr Int64 MAX_REASONABLE_METADATA_LENGTH = 256 * 1024 * 1024;
 
-int32_t readInt32LE(ReadBuffer & in)
+Int32 readInt32LE(ReadBuffer & in)
 {
-    int32_t value = 0;
+    Int32 value = 0;
     in.readStrict(reinterpret_cast<char *>(&value), sizeof(value));
     return DB::fromLittleEndian(value);
 }
 
 }
 
-bool MessageReader::readNextMessage(Message & out, int64_t expected_metadata_length)
+bool MessageReader::readNextMessage(Message & out, Int64 expected_metadata_length)
 {
     if (in.eof())
         return false;
 
     /// Bytes consumed by the message framing before the metadata flatbuffer: a 4-byte length prefix, plus
     /// 4 more when the modern continuation token precedes it.
-    int64_t framing = sizeof(int32_t);
-    int32_t metadata_length = readInt32LE(in);
+    Int64 framing = sizeof(Int32);
+    Int32 metadata_length = readInt32LE(in);
     if (metadata_length == IPC_CONTINUATION_TOKEN)
     {
         /// Modern framing is the continuation token followed by the real metadata length; end of stream
         /// is the token followed by a zero length. The token alone (EOF right after it) is a truncated
         /// stream, so always read the next int32 and let `readStrict` report `CANNOT_READ_ALL_DATA` if it
         /// is missing, rather than accepting the truncated input as a clean end of stream.
-        framing += sizeof(int32_t);
+        framing += sizeof(Int32);
         metadata_length = readInt32LE(in);
     }
 
@@ -103,18 +103,18 @@ namespace
 /// Each buffer is validated against `body_length` with overflow-safe arithmetic (`offset + length` cannot
 /// wrap because `length <= body_length` is checked first), so a span pointing past the body is rejected
 /// here rather than read.
-int64_t referencedBodyLength(const flatbuf::RecordBatch & batch, int64_t body_length)
+Int64 referencedBodyLength(const flatbuf::RecordBatch & batch, Int64 body_length)
 {
     const auto * buffers = batch.buffers();
     if (buffers == nullptr)
         return 0;
 
-    int64_t used = 0;
+    Int64 used = 0;
     for (flatbuffers::uoffset_t i = 0; i < buffers->size(); ++i)
     {
         const auto * buffer = buffers->Get(i);
-        const int64_t offset = buffer->offset();
-        const int64_t length = buffer->length();
+        const Int64 offset = buffer->offset();
+        const Int64 length = buffer->length();
         /// An empty buffer may carry a placeholder offset (e.g. -1); it references no body bytes.
         if (length == 0)
             continue;
@@ -131,11 +131,11 @@ int64_t referencedBodyLength(const flatbuf::RecordBatch & batch, int64_t body_le
 }
 
 void MessageReader::readBody(
-    const flatbuf::RecordBatch & batch, int64_t body_length, PODArray<char> & body, const VectorWithMemoryTracking<char> * reachable)
+    const flatbuf::RecordBatch & batch, Int64 body_length, PODArray<char> & body, const VectorWithMemoryTracking<char> * reachable)
 {
     if (reachable == nullptr)
     {
-        const int64_t used = referencedBodyLength(batch, body_length);
+        const Int64 used = referencedBodyLength(batch, body_length);
         body.resize(used);
         if (used > 0)
             in.readStrict(body.data(), used);
@@ -155,15 +155,15 @@ void MessageReader::readBody(
     /// allocation and is a possible future improvement.
     const auto * buffers = batch.buffers();
     const size_t num_buffers = buffers ? buffers->size() : 0;
-    VectorWithMemoryTracking<std::pair<int64_t, int64_t>> ranges;
-    int64_t used = 0;
+    VectorWithMemoryTracking<std::pair<Int64, Int64>> ranges;
+    Int64 used = 0;
     for (size_t i = 0; i < num_buffers; ++i)
     {
         if (i >= reachable->size() || !(*reachable)[i])
             continue;
         const auto * buffer = buffers->Get(static_cast<flatbuffers::uoffset_t>(i));
-        const int64_t offset = buffer->offset();
-        const int64_t length = buffer->length();
+        const Int64 offset = buffer->offset();
+        const Int64 length = buffer->length();
         /// An empty buffer may carry a placeholder offset (e.g. -1); it references no body bytes.
         if (length == 0)
             continue;
@@ -180,7 +180,7 @@ void MessageReader::readBody(
     std::sort(ranges.begin(), ranges.end());
 
     auto * seekable = dynamic_cast<SeekableReadBuffer *>(&in);
-    auto skip = [&](int64_t n)
+    auto skip = [&](Int64 n)
     {
         if (n <= 0)
             return;
@@ -192,13 +192,13 @@ void MessageReader::readBody(
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data from the Arrow IPC message body");
     };
 
-    int64_t cur = 0;
+    Int64 cur = 0;
     for (const auto & [offset, length] : ranges)
     {
-        const int64_t end = offset + length;
+        const Int64 end = offset + length;
         if (end <= cur)
             continue; /// already covered by a previous (overlapping) range
-        const int64_t start = std::max(offset, cur);
+        const Int64 start = std::max(offset, cur);
         if (start > cur)
             skip(start - cur);
         in.readStrict(body.data() + start, end - start);
@@ -208,12 +208,12 @@ void MessageReader::readBody(
     /// in-bounds. These exist, so they are `seek`-skipped (never read) and deliberately not validated — a
     /// corrupt or truncated *unrequested* column must not fail a subset read. An out-of-bounds (corrupt)
     /// unrequested buffer is ignored here rather than read.
-    int64_t referenced_end = cur;
+    Int64 referenced_end = cur;
     for (size_t i = 0; i < num_buffers; ++i)
     {
         const auto * buffer = buffers->Get(static_cast<flatbuffers::uoffset_t>(i));
-        const int64_t offset = buffer->offset();
-        const int64_t length = buffer->length();
+        const Int64 offset = buffer->offset();
+        const Int64 length = buffer->length();
         if (length > 0 && offset >= 0 && length <= body_length && offset <= body_length - length)
             referenced_end = std::max(referenced_end, offset + length);
     }
@@ -229,7 +229,7 @@ void MessageReader::readBody(
     skipBody(body_length - cur);
 }
 
-void MessageReader::skipBody(int64_t body_length)
+void MessageReader::skipBody(Int64 body_length)
 {
     /// Report a truncated body the same way `readBody` (via `readStrict`) does — as `CANNOT_READ_ALL_DATA`,
     /// not the bare `ATTEMPT_TO_READ_AFTER_EOF` that `ignore` would throw — so the error code does not depend

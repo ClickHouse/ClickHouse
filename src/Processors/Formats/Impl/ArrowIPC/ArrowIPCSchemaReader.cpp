@@ -96,7 +96,7 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
             if (!count_reader.readNextMessage(msg, block.metadata_length)
                 || msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_RecordBatch)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a record batch in the Arrow file");
-            const int64_t length = msg.header->header_as_RecordBatch()->length();
+            const Int64 length = msg.header->header_as_RecordBatch()->length();
             if (length < 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch has a negative length {}", length);
             /// The loop seeks to each block before reading its metadata, so the body is never needed here.

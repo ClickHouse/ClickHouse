@@ -32,7 +32,7 @@ public:
     {
         /// Points into `metadata_storage`; valid until the next `readNextMessage` call.
         const flatbuf::Message * header = nullptr;
-        int64_t body_length = 0;
+        Int64 body_length = 0;
     };
 
     /// Reads the metadata of the next message. Returns false on end-of-stream (the EOS marker or eof).
@@ -40,7 +40,7 @@ public:
     /// (framing + padded flatbuffer): pass the footer `Block.metaDataLength` in the file format so a
     /// mismatch is rejected before allocating and the following body is read from the footer-declared
     /// boundary. The stream format leaves it at the default (only the absolute `MAX_REASONABLE` ceiling).
-    bool readNextMessage(Message & out, int64_t expected_metadata_length = -1);
+    bool readNextMessage(Message & out, Int64 expected_metadata_length = -1);
 
     /// Reads the message body of a record/dictionary batch into `body`, leaving the buffer positioned right
     /// after the whole `body_length`-byte body (so the next message follows). Only the prefix actually
@@ -56,11 +56,11 @@ public:
     /// on a stream). `body` is still sized to the maximum reachable `offset + length`, so a requested column
     /// late in the layout keeps the buffer large; compacting the body and remapping buffer offsets to shrink
     /// the allocation is a possible future improvement.
-    void readBody(const flatbuf::RecordBatch & batch, int64_t body_length, PODArray<char> & body,
+    void readBody(const flatbuf::RecordBatch & batch, Int64 body_length, PODArray<char> & body,
                   const VectorWithMemoryTracking<char> * reachable = nullptr);
 
     /// Skips the message body without materializing it.
-    void skipBody(int64_t body_length);
+    void skipBody(Int64 body_length);
 
 private:
     ReadBuffer & in;

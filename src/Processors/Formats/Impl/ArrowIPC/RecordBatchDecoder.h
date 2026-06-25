@@ -24,13 +24,13 @@ class DictionaryRegistry
 {
 public:
     /// Replaces (or, for delta batches, appends to) the values for a dictionary id.
-    void set(int64_t id, ColumnPtr values, bool is_delta);
-    ColumnPtr get(int64_t id) const;
+    void set(Int64 id, ColumnPtr values, bool is_delta);
+    ColumnPtr get(Int64 id) const;
     /// Drops all dictionaries (used when an `IInputFormat` is reset to read another stream).
     void clear() { dictionaries.clear(); }
 
 private:
-    UnorderedMapWithMemoryTracking<int64_t, ColumnPtr> dictionaries;
+    UnorderedMapWithMemoryTracking<Int64, ColumnPtr> dictionaries;
 };
 
 /// Decodes Arrow IPC record batches directly into ClickHouse columns, without the Apache Arrow library.
@@ -59,7 +59,7 @@ public:
     struct Slice
     {
         const char * ptr = nullptr;
-        int64_t length = 0;
+        Int64 length = 0;
     };
 
     /// Decodes the schema's fields from one record batch and its full message body. When
@@ -117,8 +117,8 @@ private:
     ColumnPtr decodeInner(const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path);
     ColumnPtr decodeUnion(const ArrowField & field, size_t rows);
     ColumnPtr decodeDictionary(
-        const ArrowField & field, size_t rows, const Slice & validity, int64_t null_count, bool allow_low_cardinality);
-    ColumnPtr buildNullMap(const Slice & validity, size_t rows, int64_t null_count) const;
+        const ArrowField & field, size_t rows, const Slice & validity, Int64 null_count, bool allow_low_cardinality);
+    ColumnPtr buildNullMap(const Slice & validity, size_t rows, Int64 null_count) const;
     ColumnPtr readOffsetsAndChild(
         const ArrowField & field, size_t rows, bool large, const DataTypePtr & target_hint, const String & path);
     /// The requested ClickHouse type for a field, preferring the hint derived from its parent and otherwise
@@ -142,7 +142,7 @@ private:
     size_t node_index = 0;
     size_t buffer_index = 0;
     /// For BinaryView/Utf8View columns: the per-field count of variadic data buffers.
-    VectorWithMemoryTracking<int64_t> variadic_counts;
+    VectorWithMemoryTracking<Int64> variadic_counts;
     size_t variadic_index = 0;
 };
 

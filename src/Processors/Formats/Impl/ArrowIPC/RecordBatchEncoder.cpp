@@ -83,7 +83,7 @@ void RecordBatchEncoder::appendBuffer(const void * data, size_t length)
     while (body.size() % 8 != 0)
         body.push_back('\0');
     const size_t offset = body.size();
-    buffers.emplace_back(static_cast<int64_t>(offset), static_cast<int64_t>(length));
+    buffers.emplace_back(static_cast<Int64>(offset), static_cast<Int64>(length));
     if (length > 0)
     {
         body.resize(offset + length);
@@ -95,10 +95,10 @@ void RecordBatchEncoder::appendEmptyBuffer()
 {
     while (body.size() % 8 != 0)
         body.push_back('\0');
-    buffers.emplace_back(static_cast<int64_t>(body.size()), 0);
+    buffers.emplace_back(static_cast<Int64>(body.size()), 0);
 }
 
-int64_t RecordBatchEncoder::appendValidity(const IColumn * null_map_column, size_t num_rows)
+Int64 RecordBatchEncoder::appendValidity(const IColumn * null_map_column, size_t num_rows)
 {
     if (!null_map_column)
     {
@@ -109,7 +109,7 @@ int64_t RecordBatchEncoder::appendValidity(const IColumn * null_map_column, size
 
     const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
     PODArray<char> bitmap((num_rows + 7) / 8, 0);
-    int64_t null_count = 0;
+    Int64 null_count = 0;
     for (size_t i = 0; i < num_rows; ++i)
     {
         if (null_map[i])
@@ -123,15 +123,15 @@ int64_t RecordBatchEncoder::appendValidity(const IColumn * null_map_column, size
 
 void RecordBatchEncoder::appendOffsets(const IColumn::Offsets & ch_offsets, size_t num_rows)
 {
-    PODArray<int32_t> arrow_offsets(num_rows + 1);
+    PODArray<Int32> arrow_offsets(num_rows + 1);
     arrow_offsets[0] = 0;
     for (size_t i = 0; i < num_rows; ++i)
     {
-        if (ch_offsets[i] > static_cast<UInt64>(std::numeric_limits<int32_t>::max()))
+        if (ch_offsets[i] > static_cast<UInt64>(std::numeric_limits<Int32>::max()))
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC offset {} exceeds 32 bits", ch_offsets[i]);
-        arrow_offsets[i + 1] = static_cast<int32_t>(ch_offsets[i]);
+        arrow_offsets[i + 1] = static_cast<Int32>(ch_offsets[i]);
     }
-    appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(int32_t));
+    appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(Int32));
 }
 
 namespace
@@ -202,10 +202,10 @@ void RecordBatchEncoder::encodeValues(
             }
             /// Date is UInt16 days; widen to Int32 to match Arrow date32.
             const auto & data = assert_cast<const ColumnUInt16 &>(column).getData();
-            PODArray<int32_t> widened(num_rows);
+            PODArray<Int32> widened(num_rows);
             for (size_t i = 0; i < num_rows; ++i)
-                widened[i] = static_cast<int32_t>(data[i]);
-            appendBuffer(widened.data(), num_rows * sizeof(int32_t));
+                widened[i] = static_cast<Int32>(data[i]);
+            appendBuffer(widened.data(), num_rows * sizeof(Int32));
             return;
         }
         case TypeIndex::DateTime64:
@@ -272,24 +272,24 @@ void RecordBatchEncoder::encodeValues(
             const auto & cs = assert_cast<const ColumnString &>(column);
             const auto & chars = cs.getChars();
             const auto & offs = cs.getOffsets();
-            PODArray<int32_t> arrow_offsets(num_rows + 1);
+            PODArray<Int32> arrow_offsets(num_rows + 1);
             PODArray<char> data;
             arrow_offsets[0] = 0;
-            int64_t cur = 0;
+            Int64 cur = 0;
             for (size_t i = 0; i < num_rows; ++i)
             {
                 const size_t start = i == 0 ? 0 : offs[i - 1];
                 const size_t len = offs[i] - start; /// ClickHouse ColumnString stores no trailing '\0'
-                cur += static_cast<int64_t>(len);
-                if (cur > std::numeric_limits<int32_t>::max())
+                cur += static_cast<Int64>(len);
+                if (cur > std::numeric_limits<Int32>::max())
                     throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC string offset exceeds 32 bits");
                 const size_t old = data.size();
                 data.resize(old + len);
                 if (len)
                     memcpy(data.data() + old, &chars[start], len);
-                arrow_offsets[i + 1] = static_cast<int32_t>(cur);
+                arrow_offsets[i + 1] = static_cast<Int32>(cur);
             }
-            appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(int32_t));
+            appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(Int32));
             appendBuffer(data.data(), data.size());
             return;
         }
@@ -305,16 +305,16 @@ void RecordBatchEncoder::encodeValues(
             /// Utf8/Binary, so emit the int32 offsets buffer (each row is exactly N bytes) and the data
             /// buffer, instead of a single fixed-width values buffer.
             const size_t n = cfs.getN();
-            PODArray<int32_t> arrow_offsets(num_rows + 1);
+            PODArray<Int32> arrow_offsets(num_rows + 1);
             arrow_offsets[0] = 0;
             for (size_t i = 0; i < num_rows; ++i)
             {
                 const UInt64 end = static_cast<UInt64>(i + 1) * n;
-                if (end > static_cast<UInt64>(std::numeric_limits<int32_t>::max()))
+                if (end > static_cast<UInt64>(std::numeric_limits<Int32>::max()))
                     throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC string offset exceeds 32 bits");
-                arrow_offsets[i + 1] = static_cast<int32_t>(end);
+                arrow_offsets[i + 1] = static_cast<Int32>(end);
             }
-            appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(int32_t));
+            appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(Int32));
             appendBuffer(cfs.getChars().data(), num_rows * n);
             return;
         }
@@ -366,7 +366,7 @@ void RecordBatchEncoder::encodeValues(
             const auto & entries = assert_cast<const ColumnTuple &>(arr.getData());
             const size_t entries_rows = entries.size();
             /// The entries struct node (non-nullable), then its key and value children.
-            nodes.emplace_back(static_cast<int64_t>(entries_rows), 0);
+            nodes.emplace_back(static_cast<Int64>(entries_rows), 0);
             appendEmptyBuffer();
             const auto & map_type = assert_cast<const DataTypeMap &>(*type);
             encodeField(entries.getColumn(0), map_type.getKeyType(), entries_rows);
@@ -415,7 +415,7 @@ void RecordBatchEncoder::encodeField(const IColumn & column, const DataTypePtr &
         nested_type = removeNullable(type);
     }
 
-    int64_t null_count = 0;
+    Int64 null_count = 0;
     if (null_map_column)
     {
         const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
@@ -423,7 +423,7 @@ void RecordBatchEncoder::encodeField(const IColumn & column, const DataTypePtr &
             null_count += null_map[i] ? 1 : 0;
     }
 
-    nodes.emplace_back(static_cast<int64_t>(num_rows), null_count);
+    nodes.emplace_back(static_cast<Int64>(num_rows), null_count);
     appendValidity(null_map_column, num_rows);
     encodeValues(*nested, nested_type, num_rows, null_map_column);
 }
@@ -437,27 +437,27 @@ void RecordBatchEncoder::encodeVariant(const IColumn & column, const DataTypePtr
     const auto & ch_offsets = variant_column.getOffsets();
 
     /// The union node itself: no nulls are reported here (NULL rows use the dedicated null child).
-    nodes.emplace_back(static_cast<int64_t>(num_rows), 0);
+    nodes.emplace_back(static_cast<Int64>(num_rows), 0);
 
-    PODArray<int8_t> type_ids(num_rows);
-    PODArray<int32_t> value_offsets(num_rows);
+    PODArray<Int8> type_ids(num_rows);
+    PODArray<Int32> value_offsets(num_rows);
     for (size_t row = 0; row < num_rows; ++row)
     {
         const auto local = local_discriminators[row];
         if (local == ColumnVariant::NULL_DISCRIMINATOR)
         {
-            type_ids[row] = static_cast<int8_t>(num_variants);
+            type_ids[row] = static_cast<Int8>(num_variants);
             value_offsets[row] = 0;
             continue;
         }
-        type_ids[row] = static_cast<int8_t>(variant_column.globalDiscriminatorByLocal(local));
+        type_ids[row] = static_cast<Int8>(variant_column.globalDiscriminatorByLocal(local));
         const UInt64 off = ch_offsets[row];
-        if (off > static_cast<UInt64>(std::numeric_limits<int32_t>::max()))
+        if (off > static_cast<UInt64>(std::numeric_limits<Int32>::max()))
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC dense union offset exceeds 32 bits");
-        value_offsets[row] = static_cast<int32_t>(off);
+        value_offsets[row] = static_cast<Int32>(off);
     }
-    appendBuffer(type_ids.data(), num_rows * sizeof(int8_t));
-    appendBuffer(value_offsets.data(), num_rows * sizeof(int32_t));
+    appendBuffer(type_ids.data(), num_rows * sizeof(Int8));
+    appendBuffer(value_offsets.data(), num_rows * sizeof(Int32));
 
     /// Children in global discriminator order, then a trailing single-element null child for NULL rows.
     for (size_t i = 0; i < num_variants; ++i)
@@ -482,7 +482,7 @@ RecordBatchEncoder::EncodedBatch RecordBatchEncoder::encode(const Columns & colu
         body.push_back('\0');
 
     EncodedBatch result;
-    result.num_rows = static_cast<int64_t>(num_rows);
+    result.num_rows = static_cast<Int64>(num_rows);
 
     if (settings.arrow.output_compression_method == FormatSettings::ArrowCompression::NONE)
     {
@@ -520,31 +520,31 @@ RecordBatchEncoder::EncodedBatch RecordBatchEncoder::encode(const Columns & colu
 
             if (len == 0)
             {
-                result.buffers.emplace_back(static_cast<int64_t>(dst_offset), 0);
+                result.buffers.emplace_back(static_cast<Int64>(dst_offset), 0);
                 continue;
             }
 
-            int64_t prefix = 0;
+            Int64 prefix = 0;
             const char * payload = nullptr;
             size_t payload_size = 0;
             if (compressed[i].size() < len)
             {
-                prefix = DB::toLittleEndian(static_cast<int64_t>(len));
+                prefix = DB::toLittleEndian(static_cast<Int64>(len));
                 payload = compressed[i].data();
                 payload_size = compressed[i].size();
             }
             else
             {
-                prefix = DB::toLittleEndian(static_cast<int64_t>(-1));
+                prefix = DB::toLittleEndian(static_cast<Int64>(-1));
                 payload = body.data() + buffer.offset();
                 payload_size = len;
             }
 
-            const size_t total = sizeof(int64_t) + payload_size;
+            const size_t total = sizeof(Int64) + payload_size;
             result.body.resize(dst_offset + total);
             memcpy(result.body.data() + dst_offset, &prefix, sizeof(prefix));
-            memcpy(result.body.data() + dst_offset + sizeof(int64_t), payload, payload_size);
-            result.buffers.emplace_back(static_cast<int64_t>(dst_offset), static_cast<int64_t>(total));
+            memcpy(result.body.data() + dst_offset + sizeof(Int64), payload, payload_size);
+            result.buffers.emplace_back(static_cast<Int64>(dst_offset), static_cast<Int64>(total));
         }
         while (result.body.size() % 8 != 0)
             result.body.push_back('\0');

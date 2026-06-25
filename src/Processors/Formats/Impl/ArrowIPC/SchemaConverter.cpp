@@ -508,7 +508,7 @@ buildField(
                 const int bit_width = which.idx == TypeIndex::Decimal256 ? 256 : 128;
                 type_type = flatbuf::Type_Decimal;
                 type_offset = flatbuf::CreateDecimal(
-                    b, static_cast<int32_t>(getDecimalPrecision(*t)), static_cast<int32_t>(getDecimalScale(*t)), bit_width).Union();
+                    b, static_cast<Int32>(getDecimalPrecision(*t)), static_cast<Int32>(getDecimalScale(*t)), bit_width).Union();
                 break;
             }
             case TypeIndex::String:
@@ -528,7 +528,7 @@ buildField(
                 {
                     type_type = flatbuf::Type_FixedSizeBinary;
                     type_offset = flatbuf::CreateFixedSizeBinary(
-                        b, static_cast<int32_t>(assert_cast<const DataTypeFixedString &>(*t).getN())).Union();
+                        b, static_cast<Int32>(assert_cast<const DataTypeFixedString &>(*t).getN())).Union();
                 }
                 else if (settings.arrow.output_string_as_string)
                 {
@@ -611,9 +611,9 @@ buildField(
                 children.push_back(flatbuf::CreateField(
                     b, b.CreateString("NULL"), false, flatbuf::Type_Null, flatbuf::CreateNull(b).Union(), 0, 0));
 
-                VectorWithMemoryTracking<int32_t> type_id_list(variants.size() + 1);
+                VectorWithMemoryTracking<Int32> type_id_list(variants.size() + 1);
                 for (size_t i = 0; i < type_id_list.size(); ++i)
-                    type_id_list[i] = static_cast<int32_t>(i);
+                    type_id_list[i] = static_cast<Int32>(i);
                 auto type_ids_off = b.CreateVector(type_id_list);
                 type_type = flatbuf::Type_Union;
                 type_offset = flatbuf::CreateUnion(b, flatbuf::UnionMode_Dense, type_ids_off).Union();
@@ -654,10 +654,10 @@ flatbuffers::Offset<flatbuf::Schema> buildSchemaTable(
         field_offsets.push_back(buildField(builder, names[i], types[i], settings, plans[i]));
     auto fields_vec = builder.CreateVector(field_offsets);
 
-    flatbuffers::Offset<flatbuffers::Vector<int64_t>> features = 0;
+    flatbuffers::Offset<flatbuffers::Vector<Int64>> features = 0;
     if (settings.arrow.output_compression_method != FormatSettings::ArrowCompression::NONE)
     {
-        const VectorWithMemoryTracking<int64_t> feature_list{flatbuf::Feature_COMPRESSED_BODY};
+        const VectorWithMemoryTracking<Int64> feature_list{flatbuf::Feature_COMPRESSED_BODY};
         features = builder.CreateVector(feature_list);
     }
     return flatbuf::CreateSchema(builder, flatbuf::Endianness_Little, fields_vec, 0, features);
@@ -679,7 +679,7 @@ namespace
 /// `type` (top-level or nested), walking children in the same order the schema builder recurses, so the
 /// plan, the schema and the writer's column substitution all agree by position. `Variant` is a boundary:
 /// a `LowCardinality` inside it is written as plain values (matching the encoder), not a nested dictionary.
-DictPlan buildDictPlan(const DataTypePtr & type, const FormatSettings & settings, int64_t & next_id)
+DictPlan buildDictPlan(const DataTypePtr & type, const FormatSettings & settings, Int64 & next_id)
 {
     DictPlan plan;
     if (settings.arrow.low_cardinality_as_dictionary && type->lowCardinality())
@@ -724,7 +724,7 @@ DictPlans assignOutputDictionaries(const DataTypes & types, const FormatSettings
 {
     DictPlans plans;
     plans.reserve(types.size());
-    int64_t next_id = 0;
+    Int64 next_id = 0;
     for (const auto & type : types)
         plans.push_back(buildDictPlan(type, settings, next_id));
     return plans;
@@ -762,7 +762,7 @@ ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size_)
 
     const off_t file_size = static_cast<off_t>(file_size_);
     /// Minimum: leading "ARROW1" + 2 padding bytes, a footer length and the trailing "ARROW1".
-    if (file_size < static_cast<off_t>(2 * ARROW_MAGIC.size() + 2 + sizeof(int32_t)))
+    if (file_size < static_cast<off_t>(2 * ARROW_MAGIC.size() + 2 + sizeof(Int32)))
         throw Exception(ErrorCodes::INCORRECT_DATA, "File is too small to be an Arrow file");
 
     char magic[6];
@@ -777,12 +777,12 @@ ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size_)
     if (std::string_view(magic, ARROW_MAGIC.size()) != ARROW_MAGIC)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Not an Arrow file: missing trailing magic");
 
-    int32_t footer_length = 0;
-    in.seek(file_size - static_cast<off_t>(ARROW_MAGIC.size()) - static_cast<off_t>(sizeof(int32_t)), SEEK_SET);
+    Int32 footer_length = 0;
+    in.seek(file_size - static_cast<off_t>(ARROW_MAGIC.size()) - static_cast<off_t>(sizeof(Int32)), SEEK_SET);
     in.readStrict(reinterpret_cast<char *>(&footer_length), sizeof(footer_length));
     footer_length = DB::fromLittleEndian(footer_length);
     const off_t footer_offset
-        = file_size - static_cast<off_t>(ARROW_MAGIC.size()) - static_cast<off_t>(sizeof(int32_t)) - footer_length;
+        = file_size - static_cast<off_t>(ARROW_MAGIC.size()) - static_cast<off_t>(sizeof(Int32)) - footer_length;
     if (footer_length <= 0 || footer_offset < static_cast<off_t>(ARROW_MAGIC.size()))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted Arrow file footer length {}", footer_length);
 
@@ -808,12 +808,12 @@ ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size_)
     /// body by the buffers the batch actually references, so a forged `bodyLength` cannot itself drive an
     /// oversized allocation.) Reject both here so a malformed footer fails cleanly. The bound is checked
     /// incrementally against `footer_offset` so the sum cannot overflow.
-    const int64_t data_region_end = footer_offset;
+    const Int64 data_region_end = footer_offset;
     auto add_block = [data_region_end](ArrowFileBlocks & blocks, const flatbuf::Block * block)
     {
-        const int64_t offset = block->offset();
-        const int32_t metadata_length = block->metaDataLength();
-        const int64_t body_length = block->bodyLength();
+        const Int64 offset = block->offset();
+        const Int32 metadata_length = block->metaDataLength();
+        const Int64 body_length = block->bodyLength();
         if (offset < 0 || metadata_length < 0 || body_length < 0)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,

@@ -31,7 +31,7 @@ public:
         VectorWithMemoryTracking<flatbuf::FieldNode> nodes;
         VectorWithMemoryTracking<flatbuf::Buffer> buffers;
         PODArray<char> body;
-        int64_t num_rows = 0;
+        Int64 num_rows = 0;
         /// Set when the body buffers were compressed; the writer then adds a BodyCompression to the batch.
         std::optional<CompressionCodec> codec;
     };
@@ -58,7 +58,7 @@ private:
     void appendEmptyBuffer();
     /// Emits the validity buffer: a packed LSB-first bitmap (1 = valid) for nullable columns, or an
     /// empty buffer otherwise. Returns the null count.
-    int64_t appendValidity(const IColumn * null_map_column, size_t num_rows);
+    Int64 appendValidity(const IColumn * null_map_column, size_t num_rows);
     void appendOffsets(const IColumn::Offsets & ch_offsets, size_t num_rows);
 
     const FormatSettings & settings;

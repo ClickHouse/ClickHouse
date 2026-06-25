@@ -48,7 +48,7 @@ private:
     /// when `dictionary_id` is set), returning its location for recording an Arrow file `Block`.
     ArrowIPC::MessageWriter::WrittenMessage writeBatchMessage(
         const ArrowIPC::RecordBatchEncoder::EncodedBatch & batch,
-        std::optional<int64_t> dictionary_id = std::nullopt,
+        std::optional<Int64> dictionary_id = std::nullopt,
         bool is_delta = false);
 
     /// Recursively replaces every dictionary-encoded `LowCardinality` node of `column`/`type` (per `plan`)

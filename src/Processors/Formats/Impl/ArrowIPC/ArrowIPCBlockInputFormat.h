@@ -82,7 +82,7 @@ private:
     std::unordered_map<String, GeoColumnMetadata> geo_columns; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     ArrowIPC::DictionaryRegistry dictionaries;
     /// For each Arrow dictionary id, the field describing its value type (used to decode dictionary batches).
-    UnorderedMapWithMemoryTracking<int64_t, ArrowIPC::ArrowField> dictionary_value_fields;
+    UnorderedMapWithMemoryTracking<Int64, ArrowIPC::ArrowField> dictionary_value_fields;
     std::unique_ptr<ArrowIPC::RecordBatchDecoder> decoder;
     /// Top-level Arrow field names the requested header needs (normalized for case-insensitive matching).
     /// The decoder skips every other column so a SELECT of a subset of columns does not decode — or fail
@@ -97,7 +97,7 @@ private:
     /// `computeReachableDictionaryIds`). A DictionaryBatch whose id is not here belongs only to unrequested
     /// columns and its body is skipped rather than decoded, so a subset read does not pay for — or fail on —
     /// an unrequested column's dictionary.
-    UnorderedSetWithMemoryTracking<int64_t> reachable_dictionary_ids;
+    UnorderedSetWithMemoryTracking<Int64> reachable_dictionary_ids;
     bool prepared = false;
     PODArray<char> body_buffer;
 

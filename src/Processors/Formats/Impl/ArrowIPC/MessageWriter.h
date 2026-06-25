@@ -4,6 +4,8 @@
 
 #if USE_ARROW
 
+#include <base/types.h>
+
 #include <cstdint>
 #include <cstddef>
 
@@ -29,9 +31,9 @@ public:
 
     struct WrittenMessage
     {
-        int64_t offset = 0;          /// where the message starts
-        int32_t metadata_length = 0; /// bytes from the start up to the body (prefix + padded metadata)
-        int64_t body_length = 0;
+        Int64 offset = 0;          /// where the message starts
+        Int32 metadata_length = 0; /// bytes from the start up to the body (prefix + padded metadata)
+        Int64 body_length = 0;
     };
 
     /// Writes one message and returns its location, for recording an Arrow file `Block`.
@@ -43,11 +45,11 @@ public:
     /// Writes raw bytes (e.g. the file magic), advancing the tracked offset.
     void writeRaw(const char * data, size_t size);
 
-    int64_t offset() const { return bytes_written; }
+    Int64 offset() const { return bytes_written; }
 
 private:
     WriteBuffer & out;
-    int64_t bytes_written = 0;
+    Int64 bytes_written = 0;
 };
 
 }

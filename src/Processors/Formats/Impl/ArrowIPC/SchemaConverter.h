@@ -26,7 +26,7 @@ namespace DB::ArrowIPC
 /// Arrow-free description of an Arrow logical type, parsed from the IPC Schema FlatBuffer.
 /// This is the input to both the CH-type mapping (schema inference / header building) and the
 /// record-batch decoder's per-field buffer walk.
-enum class TypeKind : uint8_t
+enum class TypeKind : UInt8
 {
     Null,
     Int,
@@ -99,7 +99,7 @@ struct ArrowType
     /// decode these types, but knowing the layout lets `skipField` advance the node/buffer cursors past an
     /// unrequested column of such a type (subset-of-columns support), instead of failing a `SELECT` of the
     /// other columns. `Unknown` means the layout is not known and the column cannot be skipped.
-    enum class SkipLayout : uint8_t
+    enum class SkipLayout : UInt8
     {
         Unknown,        /// cannot be skipped
         ListView,       /// validity + offsets + sizes buffers, then one child (same buffer count for LargeListView)
@@ -110,7 +110,7 @@ struct ArrowType
 
 struct DictionaryEncoding
 {
-    int64_t id = -1;
+    Int64 id = -1;
     int index_bit_width = 32;
     bool index_is_signed = true;
     bool is_ordered = false;
@@ -145,9 +145,9 @@ bool isUUIDField(const ArrowField & field);
 /// A record-batch / dictionary-batch location inside an Arrow file.
 struct ArrowFileBlock
 {
-    int64_t offset = 0;
-    int32_t metadata_length = 0; /// the block's metadata section size; bounds the message metadata read
-    int64_t body_length = 0;
+    Int64 offset = 0;
+    Int32 metadata_length = 0; /// the block's metadata section size; bounds the message metadata read
+    Int64 body_length = 0;
 };
 
 using ArrowFileBlocks = VectorWithMemoryTracking<ArrowFileBlock>;
@@ -189,7 +189,7 @@ void buildSchemaMessage(
 /// Description of a dictionary-encoded output node (`output_format_arrow_low_cardinality_as_dictionary`).
 struct OutputDictionary
 {
-    int64_t id = 0;
+    Int64 id = 0;
     int index_bit_width = 32;
     bool index_is_signed = true;
 };

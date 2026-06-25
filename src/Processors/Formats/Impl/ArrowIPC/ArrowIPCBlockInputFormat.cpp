@@ -105,7 +105,7 @@ void ArrowIPCBlockInputFormat::collectDictionaryFields(const ArrowIPC::ArrowFiel
             /// The dictionary batch carries the plain value column: same type, but not dictionary-encoded.
             ArrowIPC::ArrowField value_field = field;
             value_field.dictionary.reset();
-            const int64_t id = field.dictionary->id;
+            const Int64 id = field.dictionary->id;
             auto it = dictionary_value_fields.find(id);
             if (it == dictionary_value_fields.end())
             {
@@ -245,7 +245,7 @@ void checkDictionaryUnique(const ColumnPtr & values)
 /// Collects every Arrow dictionary id used anywhere in `field`'s type subtree (the field itself or a
 /// dictionary nested inside its Array/Map/Tuple/Union children). Used to decide which DictionaryBatch
 /// bodies a subset read actually needs.
-void collectDictionaryIdsInSubtree(const ArrowIPC::ArrowField & field, UnorderedSetWithMemoryTracking<int64_t> & out)
+void collectDictionaryIdsInSubtree(const ArrowIPC::ArrowField & field, UnorderedSetWithMemoryTracking<Int64> & out)
 {
     if (field.dictionary)
         out.insert(field.dictionary->id);
@@ -432,7 +432,7 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
             /// than dereferencing null below.
             if (!dict_batch->data())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch has no data");
-            const int64_t id = dict_batch->id();
+            const Int64 id = dict_batch->id();
             /// A dictionary referenced only by unrequested (skipped) top-level fields is never used by the
             /// chunk this query builds. Do not decode its body: that would be wasted work and could fail or
             /// allocate a large/corrupt dictionary for a column the query did not ask for. The next loop
@@ -798,7 +798,7 @@ Chunk ArrowIPCBlockInputFormat::readStream()
                 /// than dereferencing null below.
                 if (!dict_batch->data())
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch has no data");
-                const int64_t id = dict_batch->id();
+                const Int64 id = dict_batch->id();
                 /// Subset reads: a dictionary referenced only by unrequested (skipped) top-level fields is
                 /// never used, so skip its body instead of decoding (and possibly failing/allocating on) it.
                 if (!reachable_dictionary_ids.contains(id))

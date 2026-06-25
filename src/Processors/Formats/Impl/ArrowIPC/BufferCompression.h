@@ -14,7 +14,7 @@ namespace DB::ArrowIPC
 {
 
 /// Arrow IPC per-buffer body compression codec (matches flatbuf::CompressionType).
-enum class CompressionCodec : int8_t
+enum class CompressionCodec : UInt8
 {
     Lz4Frame = 0,
     Zstd = 1,
