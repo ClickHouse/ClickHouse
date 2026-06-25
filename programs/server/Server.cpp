@@ -1474,6 +1474,9 @@ try
 
         if (server_settings[ServerSetting::total_memory_profiler_sample_max_allocation_size])
             total_memory_tracker.setSampleMaxAllocationSize(server_settings[ServerSetting::total_memory_profiler_sample_max_allocation_size]);
+
+        if (current_thread)
+            current_thread->resolveMemorySampleConfig();
     }
 
     total_memory_tracker.setJemallocFlushProfileInterval(server_settings[ServerSetting::jemalloc_flush_profile_interval_bytes]);

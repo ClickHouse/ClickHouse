@@ -321,6 +321,18 @@ public:
         return sample_probability;
     }
 
+    /// getEffectiveSampleProbability reads only this cache on the per-allocation path, so it must be
+    /// re-resolved from the tracker chain whenever the effective parent changes (attach, switcher),
+    /// otherwise threads parented to total_memory_tracker miss total_memory_tracker_sample_probability.
+    MemoryTracker::SampleConfig getMemorySampleConfig() const { return {sample_probability, sample_min_allocation_size, sample_max_allocation_size}; }
+    void setMemorySampleConfig(const MemoryTracker::SampleConfig & c)
+    {
+        sample_probability = c.probability;
+        sample_min_allocation_size = c.min_allocation_size;
+        sample_max_allocation_size = c.max_allocation_size;
+    }
+    void resolveMemorySampleConfig() { setMemorySampleConfig(memory_tracker.getResolvedSampleConfig()); }
+
 private:
     void applyGlobalSettings();
     void applyQuerySettings();

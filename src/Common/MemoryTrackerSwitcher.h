@@ -19,6 +19,9 @@ private:
     /// so it must be saved/restored together with it; otherwise allocations in the switched
     /// scope fold into the previous parent's contribution.
     PerCPUMemoryThreadState prev_per_cpu;
+    /// The cached sample config follows the tracker parent, so re-resolve it for the switched
+    /// scope and restore it after (see ThreadStatus::resolveMemorySampleConfig).
+    MemoryTracker::SampleConfig prev_sample_config;
 };
 
 }

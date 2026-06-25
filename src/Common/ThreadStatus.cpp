@@ -117,6 +117,9 @@ ThreadStatus::ThreadStatus()
     last_rusage = std::make_unique<RUsageCounters>();
 
     memory_tracker.setDescription("Thread");
+    /// memory_tracker is already parented to total_memory_tracker, so a thread that never attaches
+    /// to a group still honors total_memory_tracker_sample_probability.
+    resolveMemorySampleConfig();
     log = getLogger("ThreadStatus");
 
     current_thread = this;
