@@ -132,8 +132,6 @@ const LoggerPtr & FileSegment::getLog() const
 
 FileSegment::State FileSegment::state() const
 {
-    /// `download_state` is atomic; a lock would only serialize it with other fields,
-    /// which this snapshot getter does not read.
     return download_state.load();
 }
 
