@@ -1,0 +1,232 @@
+--- Int64 dynamic → Int32 typed (values fit) ---
+optimized:	1
+optimized:	-100
+optimized:	2147483647
+optimized:	-2147483648
+format_parse:	1
+format_parse:	-100
+format_parse:	2147483647
+format_parse:	-2147483648
+--- Int64 dynamic → UInt8 typed (values fit) ---
+optimized:	0
+optimized:	1
+optimized:	255
+format_parse:	0
+format_parse:	1
+format_parse:	255
+--- Int64 dynamic → Float64 typed ---
+optimized:	42
+optimized:	-100
+optimized:	0
+format_parse:	42
+format_parse:	-100
+format_parse:	0
+--- Float64 dynamic → Int32 typed (exact values) ---
+optimized:	1
+optimized:	-100
+optimized:	0
+format_parse:	1
+format_parse:	-100
+format_parse:	0
+--- Bool dynamic → UInt8 typed ---
+optimized:	1
+optimized:	0
+format_parse:	1
+format_parse:	0
+--- Bool dynamic → Int64 typed ---
+optimized:	1
+optimized:	0
+format_parse:	1
+format_parse:	0
+--- UInt64 dynamic → Int64 typed (values fit) ---
+optimized:	0
+optimized:	100
+optimized:	9223372036854775807
+format_parse:	0
+format_parse:	100
+format_parse:	9223372036854775807
+--- Int64 dynamic → String typed ---
+optimized:	42
+optimized:	-100
+optimized:	0
+format_parse:	42
+format_parse:	-100
+format_parse:	0
+--- Float64 dynamic → String typed ---
+optimized:	1.5
+optimized:	-3.14
+optimized:	0
+format_parse:	1.5
+format_parse:	-3.14
+format_parse:	0
+--- Bool dynamic → String typed ---
+optimized:	true
+optimized:	false
+format_parse:	true
+format_parse:	false
+--- String dynamic → Int64 typed ---
+optimized:	123
+optimized:	-456
+optimized:	0
+format_parse:	123
+format_parse:	-456
+format_parse:	0
+--- String dynamic → Float64 typed ---
+optimized:	1.5
+optimized:	-3.14
+optimized:	0
+format_parse:	1.5
+format_parse:	-3.14
+format_parse:	0
+--- String dynamic → UInt8 typed (values fit) ---
+optimized:	0
+optimized:	255
+optimized:	128
+format_parse:	0
+format_parse:	255
+format_parse:	128
+--- String dynamic → Int8 typed (values fit) ---
+optimized:	-128
+optimized:	0
+optimized:	127
+format_parse:	-128
+format_parse:	0
+format_parse:	127
+--- String dynamic → Int32 typed (values fit) ---
+optimized:	2147483647
+optimized:	-2147483648
+optimized:	0
+format_parse:	2147483647
+format_parse:	-2147483648
+format_parse:	0
+--- String dynamic → Decimal typed ---
+optimized:	1.23
+optimized:	45.678
+optimized:	-99.9
+format_parse:	1.23
+format_parse:	45.678
+format_parse:	-99.9
+--- String dynamic → Date typed ---
+optimized:	2024-01-15
+optimized:	2024-06-01
+optimized:	2025-12-31
+format_parse:	2024-01-15
+format_parse:	2024-06-01
+format_parse:	2025-12-31
+--- String dynamic → DateTime64 typed ---
+optimized:	2024-01-15 12:30:00.000
+optimized:	2024-06-01 00:00:00.000
+format_parse:	2024-01-15 12:30:00.000
+format_parse:	2024-06-01 00:00:00.000
+--- String dynamic → UUID typed ---
+optimized:	550e8400-e29b-41d4-a716-446655440000
+optimized:	6ba7b810-9dad-11d1-80b4-00c04fd430c8
+format_parse:	550e8400-e29b-41d4-a716-446655440000
+format_parse:	6ba7b810-9dad-11d1-80b4-00c04fd430c8
+--- String dynamic → IPv4 typed ---
+optimized:	192.168.1.1
+optimized:	10.0.0.1
+format_parse:	192.168.1.1
+format_parse:	10.0.0.1
+--- Date dynamic → String typed ---
+optimized:	2024-01-15
+optimized:	2024-06-01
+format_parse:	2024-01-15
+format_parse:	2024-06-01
+--- DateTime64 dynamic → String typed ---
+optimized:	2024-01-15 12:30:45.123000000
+optimized:	2024-06-01 00:00:00.000000000
+format_parse:	2024-01-15 12:30:45.123000000
+format_parse:	2024-06-01 00:00:00.000000000
+--- DISALLOWED: Int64 dynamic → Date typed (fallback) ---
+--- DISALLOWED: Int64 dynamic → DateTime typed (fallback) ---
+optimized:	2023-11-14 22:13:20
+optimized:	2001-09-09 01:46:40
+format_parse:	2023-11-14 22:13:20
+format_parse:	2001-09-09 01:46:40
+--- DISALLOWED: Int64 dynamic → DateTime64 typed (fallback) ---
+optimized:	1970-01-20 16:13:20.000
+optimized:	1970-01-12 13:46:40.000
+format_parse:	1970-01-20 16:13:20.000
+format_parse:	1970-01-12 13:46:40.000
+--- DISALLOWED: Date dynamic → Int64 typed (fallback) ---
+--- DISALLOWED: DateTime64 dynamic → Int64 typed (fallback) ---
+--- DISALLOWED: DateTime64 dynamic → Float64 typed (fallback) ---
+--- DISALLOWED: Date dynamic → DateTime typed (fallback) ---
+optimized:	2024-01-15 00:00:00
+optimized:	2024-06-01 00:00:00
+format_parse:	2024-01-15 00:00:00
+format_parse:	2024-06-01 00:00:00
+--- DISALLOWED: DateTime64 dynamic → Date typed (fallback) ---
+--- DISALLOWED: DateTime64 dynamic → DateTime typed (fallback) ---
+optimized:	2024-01-15 12:30:45
+optimized:	2024-06-01 00:00:00
+format_parse:	2024-01-15 12:30:45
+format_parse:	2024-06-01 00:00:00
+--- DISALLOWED: Float64 dynamic → Float32 typed (fallback, precision loss) ---
+optimized:	1.5
+optimized:	-3.14
+optimized:	0
+format_parse:	1.5
+format_parse:	-3.14
+format_parse:	0
+--- DISALLOWED: Int64 dynamic → Decimal typed (fallback) ---
+optimized:	42
+optimized:	-100
+optimized:	0
+format_parse:	42
+format_parse:	-100
+format_parse:	0
+--- DISALLOWED: Float64 dynamic → Decimal typed (fallback) ---
+optimized:	1.5
+optimized:	3.14
+format_parse:	1.5
+format_parse:	3.14
+--- Array(Int64) dynamic → Array(Int32) typed ---
+optimized:	[1,2,3]
+optimized:	[100,-200]
+optimized:	[]
+format_parse:	[1,2,3]
+format_parse:	[100,-200]
+format_parse:	[]
+--- Array(Int64) dynamic → Array(String) typed ---
+optimized:	['1','2']
+optimized:	['42']
+format_parse:	['1','2']
+format_parse:	['42']
+--- Mixed Int64+String dynamic → String typed (all variants castable) ---
+optimized:	42
+optimized:	hello
+optimized:	-100
+format_parse:	42
+format_parse:	hello
+format_parse:	-100
+--- Mixed Int64+Bool dynamic → Int32 typed (all variants castable) ---
+optimized:	42
+optimized:	1
+optimized:	0
+format_parse:	42
+format_parse:	1
+format_parse:	0
+--- Mixed Int64+Date dynamic → String typed (all variants castable to String) ---
+optimized:	42
+optimized:	2024-01-15
+format_parse:	42
+format_parse:	2024-01-15
+--- Mixed Int64+Date dynamic → Int32 typed (Date not castable to Int → fallback) ---
+--- Overflow: Int64(300) → UInt8 typed ---
+--- Overflow: Int64(-1) → UInt32 typed ---
+--- Overflow: Int64(2147483648) → Int32 typed ---
+--- Overflow: Float64(1.5) → Int32 typed (non-exact) ---
+--- Overflow: String("300") → UInt8 typed ---
+--- Overflow: String("-1") → UInt32 typed ---
+--- Overflow: String("99999999999") → Int32 typed ---
+--- Overflow: String("-200") → Int8 typed ---
+--- accurateCastOrNull: type mismatch returns NULL ---
+\N
+--- accurateCastOrNull: valid conversion returns value ---
+{"a":"42"}
+--- accurateCast: type mismatch still throws ---
+{"a":42}
+{"a":0}
+{"a":43}

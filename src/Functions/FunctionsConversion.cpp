@@ -1,6 +1,18 @@
 #include <Functions/FunctionsConversion.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/re2.h>
+#include <Interpreters/castColumn.h>
+#include <IO/WriteBufferFromString.h>
+#include <Formats/JSONExtractTree.h>
+
+#if USE_SIMDJSON
+#include <Common/JSONParsers/SimdJSONParser.h>
+#elif USE_RAPIDJSON
+#include <Common/JSONParsers/RapidJSONParser.h>
+#else
+#include <Common/JSONParsers/DummyJSONParser.h>
+#endif
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -16,6 +28,7 @@ namespace ErrorCodes
     extern const int CANNOT_CONVERT_TYPE;
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
@@ -1398,6 +1411,970 @@ FunctionCast::WrapperType FunctionCast::createMapWrapper(const DataTypePtr & fro
     }
 }
 
+namespace
+{
+
+#if USE_SIMDJSON
+using JSONParserForConversion = SimdJSONParser;
+#elif USE_RAPIDJSON
+using JSONParserForConversion = RapidJSONParser;
+#else
+using JSONParserForConversion = DummyJSONParser;
+#endif
+
+/// Returns true if the type is "structural" — it influences JSON path routing
+/// and therefore requires full format+parse when added/removed/changed as a typed path.
+bool isStructuralTypeForJSON(const DataTypePtr & type)
+{
+    if (isObject(type) || isDynamic(type) || isTuple(type) || isMap(type))
+        return true;
+
+    bool has_structural = false;
+    type->forEachChild([&](const IDataType & child)
+    {
+        if (isObject(child) || isDynamic(child) || isTuple(child) || isMap(child))
+            has_structural = true;
+    });
+    return has_structural;
+}
+
+/// Returns the canonical Dynamic type for a typed path type, or nullptr if not promotable.
+DataTypePtr getPromotedTypeForDynamic(const DataTypePtr & type, const FormatSettings & format_settings)
+{
+    TypeIndex id = type->getTypeId();
+    switch (id)
+    {
+        case TypeIndex::Int64:
+        case TypeIndex::UInt64:
+        case TypeIndex::Float64:
+        case TypeIndex::String:
+            return type; /// Already canonical.
+        case TypeIndex::Int8: [[fallthrough]];
+        case TypeIndex::Int16: [[fallthrough]];
+        case TypeIndex::Int32:
+            return std::make_shared<DataTypeInt64>();
+        case TypeIndex::UInt8:
+        {
+            /// Bool is represented as UInt8 — keep it as-is (canonical).
+            if (isBool(type))
+                return type;
+            return std::make_shared<DataTypeUInt64>();
+        }
+        case TypeIndex::UInt16: [[fallthrough]];
+        case TypeIndex::UInt32:
+            return std::make_shared<DataTypeUInt64>();
+        case TypeIndex::Float32: [[fallthrough]];
+        case TypeIndex::Decimal32: [[fallthrough]];
+        case TypeIndex::Decimal64: [[fallthrough]];
+        case TypeIndex::Decimal128: [[fallthrough]];
+        case TypeIndex::Decimal256:
+            return std::make_shared<DataTypeFloat64>();
+        case TypeIndex::Date: [[fallthrough]];
+        case TypeIndex::Date32:
+        {
+            if (format_settings.try_infer_dates)
+                return std::make_shared<DataTypeDate>();
+            return std::make_shared<DataTypeString>();
+        }
+        case TypeIndex::DateTime:
+        {
+            if (format_settings.try_infer_datetimes)
+            {
+                if (format_settings.try_infer_datetimes_only_datetime64)
+                    return std::make_shared<DataTypeDateTime64>(9);
+                return std::make_shared<DataTypeDateTime>();
+            }
+            return std::make_shared<DataTypeString>();
+        }
+        case TypeIndex::DateTime64:
+        {
+            if (format_settings.try_infer_datetimes)
+                return std::make_shared<DataTypeDateTime64>(9);
+            return std::make_shared<DataTypeString>();
+        }
+        case TypeIndex::Array:
+        {
+            const auto & array_type = assert_cast<const DataTypeArray &>(*type);
+            auto promoted_nested = getPromotedTypeForDynamic(array_type.getNestedType(), format_settings);
+            if (!promoted_nested)
+                return nullptr;
+            if (promoted_nested->equals(*array_type.getNestedType()))
+                return type;
+            return std::make_shared<DataTypeArray>(promoted_nested);
+        }
+        case TypeIndex::Nullable:
+        {
+            const auto & nullable_type = assert_cast<const DataTypeNullable &>(*type);
+            auto promoted_nested = getPromotedTypeForDynamic(nullable_type.getNestedType(), format_settings);
+            if (!promoted_nested)
+                return nullptr;
+            if (promoted_nested->equals(*nullable_type.getNestedType()))
+                return type;
+            return std::make_shared<DataTypeNullable>(promoted_nested);
+        }
+        default:
+            return nullptr; /// Not promotable.
+    }
+}
+
+/// Returns true if CAST(from_type, to_type) produces the same result as
+/// JSON format+parse for the same value.
+bool isDynamicElementToTypedCastSafe(const DataTypePtr & from_type, const DataTypePtr & to_type)
+{
+    auto from_inner = removeNullable(from_type);
+    auto to_inner = removeNullable(to_type);
+
+    /// Int*, UInt*, Float*, Bool — the numeric types that JSON inference produces
+    /// (Int64, UInt64, Float64, Bool) and the typed-path types they can safely
+    /// convert to via accurateCast. Bool is UInt8, so isNativeInteger covers it.
+    auto isIntOrFloat = [](const IDataType & t) -> bool
+    {
+        return isNativeInteger(t) || isFloat(t);
+    };
+
+    auto isDateOrDateTime = [](const IDataType & t) -> bool
+    {
+        return isDateOrDate32(t) || isDateTime(t) || isDateTime64(t);
+    };
+
+    /// From numeric (Int64, UInt64, Float64, Bool in Dynamic) →
+    /// to Int*/UInt*/Float*/Bool/String. accurateCast handles overflow.
+    /// Exception: Float64 → Float32 narrowing is excluded because accurateCast
+    /// rejects precision loss (the round-trip Float64→Float32→Float64 is not exact),
+    /// while format+parse handles it correctly via text serialization.
+    if (isIntOrFloat(*from_inner) && (isIntOrFloat(*to_inner) || isStringOrFixedString(*to_inner)))
+    {
+        if (isFloat(*from_inner) && isFloat(*to_inner)
+            && from_inner->getSizeOfValueInMemory() > to_inner->getSizeOfValueInMemory())
+            return false;
+        return true;
+    }
+
+    /// From Date/DateTime/DateTime64 → to String only.
+    /// Cross-cast to numeric is disallowed because CAST interprets the
+    /// internal numeric representation, while format+parse would go through
+    /// a text date representation that cannot be parsed as a number.
+    /// Cross-cast between Date/DateTime/DateTime64 is also disallowed because
+    /// castColumnAccurate may fail on text representations (e.g. DateTime64
+    /// text "2024-01-15 12:30:00" cannot be parsed as Date by the CAST path).
+    if (isDateOrDateTime(*from_inner) && isStringOrFixedString(*to_inner))
+        return true;
+
+    /// "Simple non-nested" = any type without subtypes: numbers, strings, dates,
+    /// decimals, UUID, IPv4, IPv6, Enum, etc. Types with subtypes (Array, Tuple,
+    /// Map, Nullable, Object, Variant, LowCardinality) are excluded. Dynamic has
+    /// haveSubtypes()=false but is excluded explicitly as it is structural.
+    auto isSimpleNonNested = [](const IDataType & t) -> bool
+    {
+        return !t.haveSubtypes() && !isDynamic(t);
+    };
+
+    /// From String → any simple non-nested type.
+    /// Both paths go through text parsing so semantics match.
+    if (isStringOrFixedString(*from_inner) && isSimpleNonNested(*to_inner))
+        return true;
+
+    /// Any simple non-nested → String.
+    if (isSimpleNonNested(*from_inner) && isStringOrFixedString(*to_inner))
+        return true;
+
+    /// Array(safe) → Array(safe): recursive.
+    if (isArray(*from_inner) && isArray(*to_inner))
+    {
+        const auto & from_arr = assert_cast<const DataTypeArray &>(*from_inner);
+        const auto & to_arr = assert_cast<const DataTypeArray &>(*to_inner);
+        return isDynamicElementToTypedCastSafe(from_arr.getNestedType(), to_arr.getNestedType());
+    }
+
+    return false;
+}
+
+/// Returns true if all variant types in the Dynamic column can be safely CAST to dest_type.
+bool canCastDynamicToTyped(const ColumnDynamic & col_dynamic, const DataTypePtr & dest_type)
+{
+    const auto & variant_info = col_dynamic.getVariantInfo();
+    const auto & variant_types = assert_cast<const DataTypeVariant &>(
+        *variant_info.variant_type).getVariants();
+
+    /// If shared variant has data, be conservative — fall back.
+    if (!col_dynamic.getSharedVariant().empty())
+        return false;
+
+    for (size_t i = 0; i < variant_types.size(); ++i)
+    {
+        if (i == col_dynamic.getSharedVariantDiscriminator())
+            continue;
+        if (!isDynamicElementToTypedCastSafe(variant_types[i], dest_type))
+            return false;
+    }
+    return true;
+}
+
+struct ObjectConversionPlan
+{
+    /// Typed paths in destination but not in source (need dynamic->typed).
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> new_typed_paths;
+
+    /// Typed paths in source but not in destination (need typed->dynamic).
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> removed_typed_paths;
+
+    /// Typed paths in both but with different types (need CAST).
+    /// Maps path -> (from_type, to_type).
+    UnorderedMapWithMemoryTracking<String, std::pair<DataTypePtr, DataTypePtr>> changed_typed_paths;
+
+    /// Typed paths in both with the same type (reuse column pointer).
+    UnorderedSetWithMemoryTracking<String> unchanged_typed_paths;
+
+    /// New SKIP exact paths (in destination but not in source).
+    UnorderedSetWithMemoryTracking<String> new_skip_paths;
+
+    /// New SKIP REGEXP patterns (in destination but not in source).
+    VectorWithMemoryTracking<String> new_skip_regexps;
+
+    /// Whether max_dynamic_paths or max_dynamic_types changed.
+    bool dynamic_limits_changed = false;
+
+    /// Whether any changed typed path involves a structural type.
+    bool has_structural_type_change = false;
+
+    bool canOptimize() const
+    {
+        return !dynamic_limits_changed && !has_structural_type_change;
+    }
+
+    bool isIdentity() const
+    {
+        return new_typed_paths.empty()
+            && removed_typed_paths.empty()
+            && changed_typed_paths.empty()
+            && new_skip_paths.empty()
+            && new_skip_regexps.empty()
+            && !dynamic_limits_changed;
+    }
+
+    bool hasNewSkipRules() const
+    {
+        return !new_skip_paths.empty() || !new_skip_regexps.empty();
+    }
+};
+
+ObjectConversionPlan buildObjectConversionPlan(
+    const DataTypeObject & src_type,
+    const DataTypeObject & dst_type)
+{
+    ObjectConversionPlan plan;
+
+    plan.dynamic_limits_changed =
+        (src_type.getMaxDynamicPaths() != dst_type.getMaxDynamicPaths())
+        || (src_type.getMaxDynamicTypes() != dst_type.getMaxDynamicTypes());
+
+    const auto & src_typed = src_type.getTypedPaths();
+    const auto & dst_typed = dst_type.getTypedPaths();
+
+    /// Find new, removed, changed, and unchanged typed paths.
+    for (const auto & [path, dst_path_type] : dst_typed)
+    {
+        auto it = src_typed.find(path);
+        if (it == src_typed.end())
+        {
+            plan.new_typed_paths[path] = dst_path_type;
+            if (isStructuralTypeForJSON(dst_path_type))
+                plan.has_structural_type_change = true;
+        }
+        else if (!it->second->equals(*dst_path_type))
+        {
+            plan.changed_typed_paths[path] = {it->second, dst_path_type};
+            if (isStructuralTypeForJSON(it->second) || isStructuralTypeForJSON(dst_path_type))
+                plan.has_structural_type_change = true;
+        }
+        else
+        {
+            plan.unchanged_typed_paths.insert(path);
+        }
+    }
+
+    for (const auto & [path, src_path_type] : src_typed)
+    {
+        if (!dst_typed.contains(path))
+        {
+            plan.removed_typed_paths[path] = src_path_type;
+            if (isStructuralTypeForJSON(src_path_type))
+                plan.has_structural_type_change = true;
+        }
+    }
+
+    /// Find new skip rules.
+    const auto & src_skip = src_type.getPathsToSkip();
+    const auto & dst_skip = dst_type.getPathsToSkip();
+    for (const auto & path : dst_skip)
+    {
+        if (!src_skip.contains(path))
+            plan.new_skip_paths.insert(path);
+    }
+
+    const auto & src_regexps = src_type.getPathRegexpsToSkip();
+    const auto & dst_regexps = dst_type.getPathRegexpsToSkip();
+    UnorderedSetWithMemoryTracking<String> src_regexp_set(src_regexps.begin(), src_regexps.end());
+    for (const auto & regexp : dst_regexps)
+    {
+        if (!src_regexp_set.contains(regexp))
+            plan.new_skip_regexps.push_back(regexp);
+    }
+
+    return plan;
+}
+
+/// Check if any shared data entry matches a new typed path (binary search per row).
+bool sharedDataIsAffectedByNewTypedPaths(
+    const ColumnObject & src,
+    const ObjectConversionPlan & plan)
+{
+    auto [paths_col, values_col] = src.getSharedDataPathsAndValues();
+    if (paths_col->empty())
+        return false;
+
+    const auto & shared_data_offsets = src.getSharedDataOffsets();
+    for (size_t row = 0; row < shared_data_offsets.size(); ++row)
+    {
+        size_t start = shared_data_offsets[row - 1];
+        size_t end = shared_data_offsets[row];
+        if (start == end)
+            continue;
+
+        for (const auto & [path, _] : plan.new_typed_paths)
+        {
+            size_t lower_bound = ColumnObject::findPathLowerBoundInSharedData(path, *paths_col, start, end);
+            if (lower_bound < end && paths_col->getDataAt(lower_bound) == path)
+                return true;
+        }
+    }
+    return false;
+}
+
+/// Check if any shared data entry is affected by new typed paths or skip rules (linear scan).
+template <typename SkipPredicate>
+bool sharedDataIsAffected(
+    const ColumnObject & src,
+    const ObjectConversionPlan & plan,
+    const SkipPredicate & shouldSkip)
+{
+    auto [paths_col, values_col] = src.getSharedDataPathsAndValues();
+    if (paths_col->empty())
+        return false;
+
+    for (size_t i = 0; i < paths_col->size(); ++i)
+    {
+        auto path = paths_col->getDataAt(i);
+        if (plan.new_typed_paths.contains(String(path)))
+            return true;
+        if (shouldSkip(path))
+            return true;
+    }
+    return false;
+}
+
+/// Convert a single typed path column to ColumnDynamic.
+/// Uses the JSON parser + DynamicNode path (via buildJSONExtractTree) to ensure
+/// type inference matches the standard Object deserialization pipeline.
+ColumnPtr convertTypedColumnToDynamic(
+    const ColumnPtr & src_column,
+    const DataTypePtr & src_type,
+    size_t max_dynamic_types,
+    size_t rows,
+    const FormatSettings & format_settings)
+{
+    auto dynamic_type = std::make_shared<DataTypeDynamic>(max_dynamic_types);
+    auto dynamic_column = dynamic_type->createColumn();
+    auto & col_dynamic = assert_cast<ColumnDynamic &>(*dynamic_column);
+    col_dynamic.reserve(rows);
+
+    auto src_serialization = src_type->getDefaultSerialization();
+    auto dynamic_node = buildJSONExtractTree<JSONParserForConversion>(dynamic_type, "JSON type conversion");
+    JSONParserForConversion parser;
+    JSONExtractInsertSettings insert_settings;
+
+    FormatSettings json_format_settings = format_settings;
+    json_format_settings.json.quote_64bit_integers = false;
+
+    WriteBufferFromOwnString write_buf;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        write_buf.restart();
+        src_serialization->serializeTextJSON(*src_column, i, write_buf, json_format_settings);
+
+        JSONParserForConversion::Element element;
+        if (!parser.parse(write_buf.str(), element))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Cannot parse JSON value during type conversion: {}",
+                write_buf.str().substr(0, 100));
+
+        String error;
+        if (!dynamic_node->insertResultToColumn(col_dynamic, element, insert_settings, json_format_settings, error))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot insert value into Dynamic column during type conversion: {}", error);
+    }
+
+    return dynamic_column;
+}
+
+/// Convert a ColumnDynamic to a typed column.
+/// Uses the JSON parser + typed node path (via buildJSONExtractTree) to ensure
+/// value extraction matches the standard Object deserialization pipeline.
+/// When skip_on_failure is true, rows that fail parsing or type coercion get a default
+/// value instead of raising an exception (matches `type_json_skip_invalid_typed_paths` behavior).
+ColumnPtr convertDynamicColumnToTyped(
+    const ColumnPtr & src_column,
+    const DataTypePtr & dest_type,
+    size_t rows,
+    const FormatSettings & format_settings,
+    bool skip_on_failure = false)
+{
+    auto dynamic_type = std::make_shared<DataTypeDynamic>();
+    auto dest_column = dest_type->createColumn();
+    auto dynamic_serialization = dynamic_type->getDefaultSerialization();
+    auto typed_node = buildJSONExtractTree<JSONParserForConversion>(dest_type, "JSON type conversion");
+    JSONParserForConversion parser;
+    JSONExtractInsertSettings insert_settings;
+
+    FormatSettings json_format_settings = format_settings;
+    json_format_settings.json.quote_64bit_integers = false;
+
+    WriteBufferFromOwnString write_buf;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        if (src_column->isNullAt(i))
+        {
+            dest_column->insertDefault();
+            continue;
+        }
+
+        write_buf.restart();
+        dynamic_serialization->serializeTextJSON(*src_column, i, write_buf, json_format_settings);
+
+        JSONParserForConversion::Element element;
+        if (!parser.parse(write_buf.str(), element))
+        {
+            if (skip_on_failure)
+            {
+                dest_column->insertDefault();
+                continue;
+            }
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Cannot parse JSON value during type conversion: {}",
+                write_buf.str().substr(0, 100));
+        }
+
+        String error;
+        if (!typed_node->insertResultToColumn(*dest_column, element, insert_settings, json_format_settings, error))
+        {
+            if (skip_on_failure)
+            {
+                dest_column->insertDefault();
+                continue;
+            }
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot insert value into typed column during type conversion: {}", error);
+        }
+    }
+
+    return dest_column;
+}
+
+/// Convert a typed column from one type to another using format+parse.
+/// On each row, serializes the source value to JSON text, parses it, and inserts via
+/// the JSONExtractTree node for the destination type. Rows that fail parsing or type
+/// coercion get a default value (matches `type_json_skip_invalid_typed_paths` behavior).
+ColumnPtr convertTypedColumnToTypedSafe(
+    const ColumnPtr & src_column,
+    const DataTypePtr & src_type,
+    const DataTypePtr & dest_type,
+    size_t rows,
+    const FormatSettings & format_settings)
+{
+    auto dest_column = dest_type->createColumn();
+    auto src_serialization = src_type->getDefaultSerialization();
+    auto typed_node = buildJSONExtractTree<JSONParserForConversion>(dest_type, "JSON type conversion");
+    JSONParserForConversion parser;
+    JSONExtractInsertSettings insert_settings;
+
+    FormatSettings json_format_settings = format_settings;
+    json_format_settings.json.quote_64bit_integers = false;
+
+    WriteBufferFromOwnString write_buf;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        write_buf.restart();
+        src_serialization->serializeTextJSON(*src_column, i, write_buf, json_format_settings);
+
+        JSONParserForConversion::Element element;
+        if (!parser.parse(write_buf.str(), element))
+        {
+            dest_column->insertDefault();
+            continue;
+        }
+
+        String error;
+        if (!typed_node->insertResultToColumn(*dest_column, element, insert_settings, json_format_settings, error))
+            dest_column->insertDefault();
+    }
+
+    return dest_column;
+}
+
+/// Main optimized Object-to-Object conversion.
+ColumnPtr convertObjectColumns(
+    const ColumnPtr & src_col_ptr,
+    const DataTypeObject & dst_type,
+    const ObjectConversionPlan & plan,
+    size_t rows,
+    const FormatSettings & format_settings)
+{
+    const auto & src = assert_cast<const ColumnObject &>(*src_col_ptr);
+    const auto & src_typed_paths = src.getTypedPaths();
+    const auto & src_dynamic_paths = src.getDynamicPaths();
+
+    size_t dst_global_max_dynamic_paths = dst_type.getMaxDynamicPaths();
+    size_t dst_max_dynamic_types = dst_type.getMaxDynamicTypes();
+
+    /// ======================== Phase 1: Build skip predicate ========================
+
+    /// Compile regexps.
+    VectorWithMemoryTracking<std::unique_ptr<re2::RE2>> compiled_new_skip_regexps;
+    compiled_new_skip_regexps.reserve(plan.new_skip_regexps.size());
+    for (const auto & pattern : plan.new_skip_regexps)
+        compiled_new_skip_regexps.push_back(std::make_unique<re2::RE2>(pattern));
+
+    auto shouldSkip = [&](std::string_view path) -> bool
+    {
+        for (const auto & skip_path : plan.new_skip_paths)
+        {
+            if (path == skip_path)
+                return true;
+            if (path.starts_with(skip_path) && path.size() > skip_path.size()
+                && path[skip_path.size()] == '.')
+                return true;
+        }
+
+        for (const auto & regexp : compiled_new_skip_regexps)
+        {
+            if (format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp)
+            {
+                if (RE2::PartialMatch(re2::StringPiece(path.data(), path.size()), *regexp))
+                    return true;
+            }
+            else
+            {
+                if (RE2::FullMatch(re2::StringPiece(path.data(), path.size()), *regexp))
+                    return true;
+            }
+        }
+
+        return false;
+    };
+
+    /// ======================== Phase 2: Classify source dynamic paths ========================
+
+    /// Paths that stay as dynamic (not skipped, not promoted to typed).
+    VectorWithMemoryTracking<String> src_dynamic_paths_to_reuse;
+    /// Paths that become typed paths in destination.
+    VectorWithMemoryTracking<String> src_dynamic_paths_to_typed;
+
+    for (const auto & [path, _col] : src_dynamic_paths)
+    {
+        if (shouldSkip(path))
+            continue;
+        if (plan.new_typed_paths.contains(path))
+            src_dynamic_paths_to_typed.push_back(path);
+        else
+            src_dynamic_paths_to_reuse.push_back(path);
+    }
+
+    /// ======================== Phase 3: Build destination typed paths ========================
+
+    using PathToColumnMap = UnorderedMapWithMemoryTracking<String, ColumnPtr>;
+    PathToColumnMap dst_typed_columns;
+
+    /// Track which new typed paths were populated from dynamic paths (so we know
+    /// which ones still need to be populated from shared data or filled with defaults).
+    UnorderedSetWithMemoryTracking<String> new_typed_paths_populated;
+
+    const auto & dst_typed_path_types = dst_type.getTypedPaths();
+
+    /// Unchanged typed paths: reuse by pointer (unless a new skip rule matches).
+    for (const auto & path : plan.unchanged_typed_paths)
+    {
+        if (shouldSkip(path))
+        {
+            /// New skip rule covers this typed path — fill with defaults, matching format+parse behavior.
+            auto col = dst_typed_path_types.at(path)->createColumn();
+            col->insertManyDefaults(rows);
+            dst_typed_columns[path] = std::move(col);
+        }
+        else
+        {
+            auto it = src_typed_paths.find(path);
+            dst_typed_columns[path] = it->second;
+        }
+    }
+
+    /// Changed typed paths: CAST (unless a new skip rule matches).
+    const bool skip_invalid = format_settings.json.type_json_skip_invalid_typed_paths;
+    for (const auto & [path, type_pair] : plan.changed_typed_paths)
+    {
+        const auto & [from_tp, to_tp] = type_pair;
+        if (shouldSkip(path))
+        {
+            auto col = to_tp->createColumn();
+            col->insertManyDefaults(rows);
+            dst_typed_columns[path] = std::move(col);
+        }
+        else
+        {
+            auto it = src_typed_paths.find(path);
+            if (skip_invalid)
+                dst_typed_columns[path] = convertTypedColumnToTypedSafe(it->second, from_tp, to_tp, rows, format_settings);
+            else
+                dst_typed_columns[path] = castColumn({it->second, from_tp, ""}, to_tp);
+        }
+    }
+
+    /// New typed paths from dynamic.
+    for (const auto & path : src_dynamic_paths_to_typed)
+    {
+        auto it_type = plan.new_typed_paths.find(path);
+        auto it_col = src_dynamic_paths.find(path);
+        const auto & dynamic_col = assert_cast<const ColumnDynamic &>(*it_col->second);
+
+        if (skip_invalid)
+        {
+            /// When type_json_skip_invalid_typed_paths is enabled, always use format+parse
+            /// with per-row failure handling to match the JSON parser contract.
+            dst_typed_columns[path] = convertDynamicColumnToTyped(
+                it_col->second, it_type->second, rows, format_settings, /*skip_on_failure=*/true);
+        }
+        else if (canCastDynamicToTyped(dynamic_col, it_type->second))
+        {
+            auto dynamic_type = std::make_shared<DataTypeDynamic>(dst_max_dynamic_types);
+            dst_typed_columns[path] = castColumnAccurate({it_col->second, dynamic_type, ""}, it_type->second);
+        }
+        else
+        {
+            dst_typed_columns[path] = convertDynamicColumnToTyped(
+                it_col->second, it_type->second, rows, format_settings);
+        }
+        new_typed_paths_populated.insert(path);
+    }
+
+    /// New typed paths not from dynamic — will be filled from shared data in Phase 7 or defaults in Phase 8.
+    /// Create empty mutable columns for them now.
+    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> new_typed_path_mutable_columns;
+    for (const auto & [path, tp] : plan.new_typed_paths)
+    {
+        if (!new_typed_paths_populated.contains(path))
+        {
+            new_typed_path_mutable_columns[path] = tp->createColumn();
+            new_typed_path_mutable_columns[path]->reserve(rows);
+        }
+    }
+
+    /// ======================== Phase 4: Build destination dynamic paths ========================
+
+    PathToColumnMap dst_dynamic_columns;
+
+    for (const auto & path : src_dynamic_paths_to_reuse)
+    {
+        auto it = src_dynamic_paths.find(path);
+        dst_dynamic_columns[path] = it->second;
+    }
+
+    /// ======================== Phase 5: Convert removed typed paths ========================
+
+    size_t available_dynamic_slots = dst_global_max_dynamic_paths > dst_dynamic_columns.size()
+        ? dst_global_max_dynamic_paths - dst_dynamic_columns.size()
+        : 0;
+
+    /// Sort removed typed paths for deterministic ordering.
+    VectorWithMemoryTracking<String> sorted_removed_typed_paths;
+    sorted_removed_typed_paths.reserve(plan.removed_typed_paths.size());
+    for (const auto & [path, _] : plan.removed_typed_paths)
+        sorted_removed_typed_paths.push_back(path);
+    std::sort(sorted_removed_typed_paths.begin(), sorted_removed_typed_paths.end());
+
+    /// Removed typed paths that overflow into shared data: (path, ColumnDynamic).
+    VectorWithMemoryTracking<std::pair<String, ColumnPtr>> removed_typed_paths_to_shared_data;
+
+    for (const auto & path : sorted_removed_typed_paths)
+    {
+        /// Skip removed typed paths that match destination skip rules.
+        if (shouldSkip(path))
+            continue;
+
+        auto it_type = plan.removed_typed_paths.find(path);
+        auto it_col = src_typed_paths.find(path);
+
+        /// Produce a ColumnDynamic from the typed column.
+        ColumnPtr dynamic_col;
+        auto promoted = getPromotedTypeForDynamic(it_type->second, format_settings);
+        if (promoted)
+        {
+            auto dynamic_type = std::make_shared<DataTypeDynamic>(dst_max_dynamic_types);
+            ColumnPtr promoted_col = promoted->equals(*it_type->second)
+                ? it_col->second->getPtr()
+                : castColumn({it_col->second, it_type->second, ""}, promoted);
+            dynamic_col = castColumn({promoted_col, promoted, ""}, dynamic_type);
+        }
+        else
+        {
+            dynamic_col = convertTypedColumnToDynamic(
+                it_col->second, it_type->second, dst_max_dynamic_types, rows, format_settings);
+        }
+
+        if (available_dynamic_slots > 0)
+        {
+            dst_dynamic_columns[path] = std::move(dynamic_col);
+            --available_dynamic_slots;
+        }
+        else
+        {
+            removed_typed_paths_to_shared_data.emplace_back(path, std::move(dynamic_col));
+        }
+    }
+
+    /// ======================== Phase 6: Determine whether shared data can be reused ========================
+
+    bool shared_data_reusable = true;
+
+    if (!removed_typed_paths_to_shared_data.empty())
+    {
+        shared_data_reusable = false;
+    }
+    else if (plan.new_typed_paths.size() > new_typed_paths_populated.size() || plan.hasNewSkipRules())
+    {
+        /// Some new typed paths were not in dynamic — they might be in shared data.
+        /// Or skip rules might affect shared data entries.
+        if (plan.hasNewSkipRules())
+        {
+            shared_data_reusable = !sharedDataIsAffected(src, plan, shouldSkip);
+        }
+        else
+        {
+            shared_data_reusable = !sharedDataIsAffectedByNewTypedPaths(src, plan);
+        }
+    }
+
+    /// ======================== Phase 7: Rebuild shared data (if needed) ========================
+
+    ColumnPtr dst_shared_data;
+
+    if (shared_data_reusable)
+    {
+        /// Reuse the source shared data by pointer (COW handles copy-on-write).
+        dst_shared_data = src.getSharedDataNestedColumn().getPtr();
+    }
+    else
+    {
+        /// Rebuild shared data row-by-row.
+        MutableColumns paths_and_values;
+        paths_and_values.emplace_back(ColumnString::create());
+        paths_and_values.emplace_back(ColumnString::create());
+        auto dst_shared_data_col = ColumnArray::create(ColumnTuple::create(std::move(paths_and_values)));
+        auto & dst_shared_offsets = dst_shared_data_col->getOffsets();
+        auto & dst_shared_tuple = assert_cast<ColumnTuple &>(dst_shared_data_col->getData());
+        auto & dst_shared_paths_col = assert_cast<ColumnString &>(dst_shared_tuple.getColumn(0));
+        auto & dst_shared_values_col = assert_cast<ColumnString &>(dst_shared_tuple.getColumn(1));
+
+        dst_shared_offsets.reserve(rows);
+
+        /// Pre-allocate reusable ColumnDynamic for deserializing shared data entries.
+        auto reusable_dynamic_type = std::make_shared<DataTypeDynamic>(dst_max_dynamic_types);
+        auto reusable_dynamic_col = reusable_dynamic_type->createColumn();
+        auto reusable_dynamic_serialization = reusable_dynamic_type->getDefaultSerialization();
+
+        /// Prepare typed nodes for new typed paths that come from shared data.
+        /// Uses the JSON parser + typed node path to match Object deserialization behavior.
+        using TypedNodePtr = std::unique_ptr<JSONExtractTreeNode<JSONParserForConversion>>;
+        UnorderedMapWithMemoryTracking<String, TypedNodePtr> new_typed_path_nodes;
+        JSONParserForConversion shared_data_parser;
+        JSONExtractInsertSettings shared_data_insert_settings;
+        FormatSettings json_format_settings = format_settings;
+        json_format_settings.json.quote_64bit_integers = false;
+
+        for (const auto & [path, _] : new_typed_path_mutable_columns)
+            new_typed_path_nodes[path] = buildJSONExtractTree<JSONParserForConversion>(plan.new_typed_paths.at(path), "JSON type conversion");
+
+        /// Track which new typed paths got a value in each row.
+        UnorderedSetWithMemoryTracking<String> populated_in_row;
+
+        const auto & src_shared_offsets = src.getSharedDataOffsets();
+        auto [src_paths_col, src_values_col] = src.getSharedDataPathsAndValues();
+
+        for (size_t row = 0; row < rows; ++row)
+        {
+            size_t src_start = src_shared_offsets[row - 1];
+            size_t src_end = src_shared_offsets[row];
+
+            populated_in_row.clear();
+
+            /// Merge source shared data entries with removed typed paths going to shared data.
+            /// Both are sorted by path name, so we do a merge.
+            size_t src_idx = src_start;
+            size_t removed_idx = 0;
+
+            auto writeSourceEntry = [&](size_t idx)
+            {
+                auto path = src_paths_col->getDataAt(idx);
+
+                /// Check skip rules first — skip wins over typed-path promotion.
+                if (shouldSkip(path))
+                    return;
+
+                /// Check if this path should become a new typed path.
+                auto it = new_typed_path_mutable_columns.find(String(path));
+                if (it != new_typed_path_mutable_columns.end())
+                {
+                    /// Deserialize from shared data into reusable Dynamic, serialize to JSON text,
+                    /// then parse with JSON parser + typed node to match Object deserialization behavior.
+                    ColumnObject::deserializeValueFromSharedData(src_values_col, idx, *reusable_dynamic_col);
+                    WriteBufferFromOwnString write_buf;
+                    reusable_dynamic_serialization->serializeTextJSON(*reusable_dynamic_col, reusable_dynamic_col->size() - 1, write_buf, json_format_settings);
+                    reusable_dynamic_col->popBack(1);
+
+                    JSONParserForConversion::Element element;
+                    if (!shared_data_parser.parse(write_buf.str(), element))
+                    {
+                        if (skip_invalid)
+                            return; /// Leave unpopulated — default will be inserted at the end of the row.
+                        throw Exception(
+                            ErrorCodes::INCORRECT_DATA,
+                            "Cannot parse JSON value during type conversion: {}",
+                            write_buf.str().substr(0, 100));
+                    }
+
+                    String error;
+                    if (!new_typed_path_nodes.at(String(path))->insertResultToColumn(*it->second, element, shared_data_insert_settings, json_format_settings, error))
+                    {
+                        if (skip_invalid)
+                            return; /// Leave unpopulated — default will be inserted at the end of the row.
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot insert value into typed column during type conversion: {}", error);
+                    }
+
+                    populated_in_row.insert(String(path));
+                    return;
+                }
+
+                /// Copy entry to destination.
+                dst_shared_paths_col.insertData(path.data(), path.size());
+                auto value = src_values_col->getDataAt(idx);
+                dst_shared_values_col.insertData(value.data(), value.size());
+            };
+
+            while (src_idx < src_end && removed_idx < removed_typed_paths_to_shared_data.size())
+            {
+                auto src_path = src_paths_col->getDataAt(src_idx);
+                const auto & removed_path = removed_typed_paths_to_shared_data[removed_idx].first;
+
+                if (src_path < removed_path)
+                {
+                    writeSourceEntry(src_idx);
+                    ++src_idx;
+                }
+                else
+                {
+                    /// Serialize the removed typed path entry into shared data.
+                    const auto & removed_dynamic_col = assert_cast<const ColumnDynamic &>(*removed_typed_paths_to_shared_data[removed_idx].second);
+                    ColumnObject::serializePathAndValueIntoSharedData(&dst_shared_paths_col, &dst_shared_values_col, removed_path, removed_dynamic_col, row);
+                    ++removed_idx;
+                }
+            }
+
+            /// Remaining source entries.
+            while (src_idx < src_end)
+            {
+                writeSourceEntry(src_idx);
+                ++src_idx;
+            }
+
+            /// Remaining removed typed path entries.
+            while (removed_idx < removed_typed_paths_to_shared_data.size())
+            {
+                const auto & removed_path = removed_typed_paths_to_shared_data[removed_idx].first;
+                const auto & removed_dynamic_col = assert_cast<const ColumnDynamic &>(*removed_typed_paths_to_shared_data[removed_idx].second);
+                ColumnObject::serializePathAndValueIntoSharedData(&dst_shared_paths_col, &dst_shared_values_col, removed_path, removed_dynamic_col, row);
+                ++removed_idx;
+            }
+
+            dst_shared_offsets.push_back(dst_shared_paths_col.size());
+
+            /// Insert defaults for new typed paths that didn't get a value in this row.
+            for (auto & [path, col] : new_typed_path_mutable_columns)
+            {
+                if (!populated_in_row.contains(path))
+                    col->insertDefault();
+            }
+        }
+
+        dst_shared_data = std::move(dst_shared_data_col);
+    }
+
+    /// ======================== Phase 8: Lock dynamic structure and fill defaults ========================
+
+    /// Fill defaults for new typed paths that were not populated at all (absent in both dynamic and shared data).
+    for (auto & [path, col] : new_typed_path_mutable_columns)
+    {
+        if (col->empty())
+        {
+            /// Path was absent — fill entirely with defaults.
+            col->insertManyDefaults(rows);
+        }
+        dst_typed_columns[path] = std::move(col);
+    }
+
+    /// Lock max_dynamic_paths if shared data is non-empty.
+    size_t effective_max_dynamic_paths = dst_global_max_dynamic_paths;
+    if (!assert_cast<const ColumnArray &>(*dst_shared_data).getData().empty())
+        effective_max_dynamic_paths = dst_dynamic_columns.size();
+
+    return ColumnObject::create(
+        dst_typed_columns,
+        dst_dynamic_columns,
+        dst_shared_data,
+        effective_max_dynamic_paths,
+        dst_global_max_dynamic_paths,
+        dst_max_dynamic_types);
+}
+
+/// Format+parse fallback for Object->Object conversion (existing approach).
+ColumnPtr convertObjectViaFormatParse(
+    ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & result_type,
+    const ColumnNullable * nullable_source,
+    size_t input_rows_count,
+    const FunctionConvertSettings & cast_settings,
+    bool requested_result_is_nullable,
+    CastType cast_type)
+{
+    auto json_string = ColumnString::create();
+    ColumnStringHelpers::WriteHelper<ColumnString> write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
+    auto & write_buffer = write_helper.getWriteBuffer();
+    FormatSettings format_settings = cast_settings.format_settings;
+    auto serialization = arguments[0].type->getDefaultSerialization();
+    format_settings.json.quote_64bit_integers = false;
+    for (size_t i = 0; i < input_rows_count; ++i)
+    {
+        serialization->serializeTextJSON(*arguments[0].column, i, write_buffer, format_settings);
+        write_helper.finishRow();
+    }
+    write_helper.finalize();
+
+    ColumnsWithTypeAndName args_with_json_string = {ColumnWithTypeAndName(json_string->getPtr(), std::make_shared<DataTypeString>(), "")};
+    if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
+        return ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(result_type), nullable_source, input_rows_count, cast_settings);
+
+    return ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, cast_settings);
+}
+
+} /// anonymous namespace
+
 FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object, bool requested_result_is_nullable) const
 {
     if (checkAndGetDataType<DataTypeString>(from_type.get()))
@@ -1411,42 +2388,50 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
         };
     }
 
+    /// Optimized Object(JSON) -> Object(JSON) conversion: avoid full serialize+parse when
+    /// only a subset of paths are affected by parameter changes (typed paths, skip rules).
+    if (const auto * from_object = checkAndGetDataType<DataTypeObject>(from_type.get());
+        from_object && from_object->getSchemaFormat() == DataTypeObject::SchemaFormat::JSON
+        && to_object->getSchemaFormat() == DataTypeObject::SchemaFormat::JSON)
+    {
+        auto plan = buildObjectConversionPlan(*from_object, *to_object);
+
+        /// Identity: only metadata changes (e.g. removing skip rules) — return source column directly.
+        if (plan.isIdentity())
+        {
+            return [](ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t)
+            {
+                return arguments[0].column;
+            };
+        }
+
+        /// Optimized path: reuse sub-columns by pointer, CAST only changed paths.
+        /// Skip for accurateCastOrNull — the format+parse fallback already handles
+        /// OrNull semantics (catches exceptions and returns NULL on failure).
+        if (plan.canOptimize() && settings.json_use_optimized_type_conversion
+            && cast_type != CastType::accurateOrNull)
+        {
+            auto captured_format_settings = settings.format_settings;
+            return [captured_plan = std::move(plan), captured_format_settings]
+                (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
+            {
+                const auto & dst_type_obj = assert_cast<const DataTypeObject &>(*result_type);
+                return convertObjectColumns(arguments[0].column, dst_type_obj, captured_plan, input_rows_count, captured_format_settings);
+            };
+        }
+
+        /// Fall through to format+parse below.
+    }
+
     /// Cast Tuple/Object/Map/JSON to JSON type through serializing into JSON string and parsing back into JSON column.
-    /// Potentially we can do smarter conversion Tuple -> JSON with type preservation, but it's questionable how exactly Tuple should be
-    /// converted to JSON (for example, should we recursively convert nested Array(Tuple) to Array(JSON) or not, should we infer types from String fields, etc).
-    /// Proper implementation of a conversion between 2 different JSON types is really complex, because different JSON types
-    /// can have different parameters:
-    /// - set of typed paths
-    /// - set of skip rules
-    /// - max_dynamic_paths/max_dynamic_types parameters
-    /// Also max_dynamic_paths/max_dynamic_types parameters of nested JSON types depend on current max_dynamic_paths/max_dynamic_types,
-    /// so if these parameters are changed, we have to recursively find all nested JSON types and change their parameters as well.
-    /// It's all complicates the implementation and last attempt to implement it led to several bugs.
-    /// So for now let's perform this conversion through cast to String and parsing new JSON back from it.
-    /// It's not effective, but 100% accurate.
     if (checkAndGetDataType<DataTypeTuple>(from_type.get())
         || checkAndGetDataType<DataTypeMap>(from_type.get()) || checkAndGetDataType<DataTypeObject>(from_type.get()))
     {
         return [this, requested_result_is_nullable](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
         {
-            auto json_string = ColumnString::create();
-            ColumnStringHelpers::WriteHelper<ColumnString> write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
-            auto & write_buffer = write_helper.getWriteBuffer();
-            FormatSettings format_settings = settings.format_settings;
-            auto serialization = arguments[0].type->getDefaultSerialization();
-            format_settings.json.quote_64bit_integers = false;
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                serialization->serializeTextJSON(*arguments[0].column, i, write_buffer, format_settings);
-                write_helper.finishRow();
-            }
-            write_helper.finalize();
-
-            ColumnsWithTypeAndName args_with_json_string = {ColumnWithTypeAndName(json_string->getPtr(), std::make_shared<DataTypeString>(), "")};
-            if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
-                return ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(result_type), nullable_source, input_rows_count, settings);
-
-            return ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, settings);
+            return convertObjectViaFormatParse(
+                arguments, result_type, nullable_source, input_rows_count,
+                settings, requested_result_is_nullable, cast_type);
         };
     }
 

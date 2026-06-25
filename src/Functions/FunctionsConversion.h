@@ -90,6 +90,7 @@ namespace Setting
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsBool input_format_ipv4_default_on_conversion_error;
     extern const SettingsBool input_format_ipv6_default_on_conversion_error;
+    extern const SettingsBool json_use_optimized_type_conversion;
     extern const SettingsBool check_conversion_from_numbers_to_enum;
     extern const SettingsBool precise_float_parsing;
     extern const SettingsBool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
@@ -132,6 +133,7 @@ struct FunctionConvertSettings
     const bool check_conversion_from_numbers_to_enum;
     const bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
     const bool cast_keep_nullable;
+    const bool json_use_optimized_type_conversion;
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
     const FormatSettings format_settings;
 
@@ -148,6 +150,7 @@ struct FunctionConvertSettings
         , check_conversion_from_numbers_to_enum(context && context->getSettingsRef()[Setting::check_conversion_from_numbers_to_enum])
         , date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands(context && context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands])
         , cast_keep_nullable(context && context->getSettingsRef()[Setting::cast_keep_nullable])
+        , json_use_optimized_type_conversion(!context || context->getSettingsRef()[Setting::json_use_optimized_type_conversion])
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
     {
@@ -1373,7 +1376,8 @@ struct ConvertThroughParsing
                             if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
                             {
                                 if (!tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, settings.precise_float_parsing))
-                                    throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse string to type {}", TypeName<typename ToDataType::FieldType>);
+                                    throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse string '{}' as type {}",
+                                        String(read_buffer.buffer().begin(), read_buffer.buffer().size()), TypeName<typename ToDataType::FieldType>);
                             }
                             else
                                 parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, settings.precise_float_parsing);
@@ -1817,8 +1821,8 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
                 }
                 else
                 {
-                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value in column {} cannot be safely converted into type {}",
-                        named_from.column->getName(), result_type->getName());
+                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value '{}' in column {} cannot be safely converted into type {}",
+                        toString(vec_from[i]), named_from.column->getName(), result_type->getName());
                 }
             }
         }
