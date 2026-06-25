@@ -79,6 +79,11 @@ def test_refreshable_mv_attach_without_multi_read(started_cluster):
     # The server must be up and answering queries (no crash, no crash-loop).
     assert node.query("SELECT 1").strip() == "1"
 
+    # Attach schedules the graceful-stop pass asynchronously, so the status read can otherwise
+    # observe the transient Scheduling state before doScheduling reaches the Disabled state. Wait
+    # for the scheduled pass to settle (WAIT VIEW returns immediately once the view is Disabled).
+    node.query("SYSTEM WAIT VIEW rdb.mv")
+
     # The view must have stopped gracefully, reporting the reason rather than aborting.
     status = node.query(
         "SELECT status, exception FROM system.view_refreshes WHERE view = 'mv'"
@@ -96,6 +101,10 @@ def test_refreshable_mv_attach_without_multi_read(started_cluster):
     node.query("SYSTEM START VIEW rdb.mv")
     node.query("SYSTEM REFRESH VIEW rdb.mv")
     assert node.query("SELECT 1").strip() == "1"
+    # SYSTEM REFRESH VIEW is async: run() moves the task to Scheduling, and only the background
+    # scheduler later hits the coordination.unavailable branch and switches it back to Disabled.
+    # Wait for that scheduled pass before asserting, so the read never observes transient Scheduling.
+    node.query("SYSTEM WAIT VIEW rdb.mv")
     status = node.query(
         "SELECT status FROM system.view_refreshes WHERE view = 'mv'"
     ).strip()
