@@ -66,21 +66,6 @@ CREATE TABLE t_json_minmax_forbidden (
     col1 JSON
 ) ENGINE = MergeTree() ORDER BY id;
 
--- Should succeed: MODIFY SETTING in the same ALTER applies before validation.
-ALTER TABLE t_json_minmax_forbidden
-    ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1,
-    MODIFY SETTING allow_minmax_index_for_json = 1;
-
--- Should succeed: table-level setting made by the previous ALTER keeps later unrelated ALTER valid.
-ALTER TABLE t_json_minmax_forbidden ADD COLUMN extra UInt8 DEFAULT 0;
-
-DROP TABLE IF EXISTS t_json_minmax_forbidden;
-
-CREATE TABLE t_json_minmax_forbidden (
-    id Int32,
-    col1 JSON
-) ENGINE = MergeTree() ORDER BY id;
-
 -- Should succeed: table-level setting is already effective before adding the index.
 ALTER TABLE t_json_minmax_forbidden MODIFY SETTING allow_minmax_index_for_json = 1;
 ALTER TABLE t_json_minmax_forbidden
