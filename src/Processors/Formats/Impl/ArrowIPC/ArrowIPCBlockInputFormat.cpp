@@ -419,6 +419,17 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
             if (!message_reader->readNextMessage(msg, block.metadata_length)
                 || msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_DictionaryBatch)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a dictionary batch in the Arrow file");
+
+            const auto * dict_batch = msg.header->header_as_DictionaryBatch();
+            const Int64 id = dict_batch->id();
+            /// A dictionary referenced only by unrequested (skipped) top-level fields is never used by the
+            /// chunk this query builds. Do not decode its body: that would be wasted work and could fail or
+            /// allocate a large/corrupt dictionary for a column the query did not ask for. The next loop
+            /// iteration seeks to the following block, so the unread body is harmless. Check this before any
+            /// body-length/data validation so a missing/corrupt unrequested dictionary cannot fail a
+            /// projected read.
+            if (!reachable_dictionary_ids.contains(id))
+                continue;
             /// The footer block fixes this message's body size; a message claiming a different (e.g. huge)
             /// body length is corrupt and would otherwise force reading past the footer-declared boundary.
             if (msg.body_length != block.body_length)
@@ -426,19 +437,10 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
                     ErrorCodes::INCORRECT_DATA,
                     "Arrow IPC dictionary batch body length {} does not match the footer block length {}",
                     msg.body_length, block.body_length);
-
-            const auto * dict_batch = msg.header->header_as_DictionaryBatch();
             /// `DictionaryBatch.data` is optional in the FlatBuffer schema; reject a missing one rather
             /// than dereferencing null below.
             if (!dict_batch->data())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch has no data");
-            const Int64 id = dict_batch->id();
-            /// A dictionary referenced only by unrequested (skipped) top-level fields is never used by the
-            /// chunk this query builds. Do not decode its body: that would be wasted work and could fail or
-            /// allocate a large/corrupt dictionary for a column the query did not ask for. The next loop
-            /// iteration seeks to the following block, so the unread body is harmless.
-            if (!reachable_dictionary_ids.contains(id))
-                continue;
             auto field_it = dictionary_value_fields.find(id);
             if (field_it == dictionary_value_fields.end())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow file dictionary batch for unknown id {}", id);
@@ -794,18 +796,20 @@ Chunk ArrowIPCBlockInputFormat::readStream()
                     continue;
                 }
                 const auto * dict_batch = msg.header->header_as_DictionaryBatch();
-                /// `DictionaryBatch.data` is optional in the FlatBuffer schema; reject a missing one rather
-                /// than dereferencing null below.
-                if (!dict_batch->data())
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch has no data");
                 const Int64 id = dict_batch->id();
                 /// Subset reads: a dictionary referenced only by unrequested (skipped) top-level fields is
                 /// never used, so skip its body instead of decoding (and possibly failing/allocating on) it.
+                /// Check this before validating `data` so a missing/corrupt unrequested dictionary cannot fail
+                /// a projected read.
                 if (!reachable_dictionary_ids.contains(id))
                 {
                     message_reader->skipBody(msg.body_length);
                     continue;
                 }
+                /// `DictionaryBatch.data` is optional in the FlatBuffer schema; reject a missing one rather
+                /// than dereferencing null below.
+                if (!dict_batch->data())
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch has no data");
                 auto field_it = dictionary_value_fields.find(id);
                 if (field_it == dictionary_value_fields.end())
                     throw Exception(
