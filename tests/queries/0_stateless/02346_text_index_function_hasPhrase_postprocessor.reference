@@ -1,0 +1,34 @@
+1. lower postprocessor: phrase search is case-insensitive.
+[1,3]
+[1,3]
+[1,3]
+[1,3]
+[2]
+[2]
+2. Stop-word postprocessor: dropped tokens do not break adjacency.
+[1,3]
+[1,3]
+[1,3]
+[1,3]
+[3]
+[1]
+3. Suffix-stripping postprocessor (changes token sizes): phrase matches on transformed tokens.
+[1,3]
+[1,3]
+[1,3]
+[1,3]
+4. Corner cases.
+-- Phrase of only stop words: the index bails out, the literal row scan matches literal occurrences
+[1,2]
+[1,2]
+-- Stop words between real tokens are removed, so cat dog matches across a dropped the
+[2,3,4]
+[2,3,4]
+-- Duplicate real tokens in the phrase keep their multiplicity
+[3]
+[3]
+5. Partially materialized index: row-scan (old parts) and index (new parts) agree.
+[1,2,3,4]
+[1,2,3,4]
+[1,2,3,4]
+[1,2,3,4]
