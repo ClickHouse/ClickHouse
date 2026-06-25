@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <Coordination/KeeperDelta.h>
 #include <Coordination/ACLMap.h>
 #include <Coordination/SessionExpiryQueue.h>
 #include <Coordination/SnapshotableHashTable.h>
@@ -136,13 +137,7 @@ public:
 
     static String generateDigest(const String & userdata);
 
-    struct AuthID
-    {
-        std::string scheme;
-        std::string id;
-
-        bool operator==(const AuthID & other) const { return scheme == other.scheme && id == other.id; }
-    };
+    using AuthID = KeeperAuthID;
 
     using Ephemerals = std::unordered_map<int64_t, std::unordered_set<std::string>>;
 
@@ -180,19 +175,8 @@ public:
         StringHashForHeterogeneousLookup,
         StringHashForHeterogeneousLookup::transparent_key_equal>;
 
-    // Applying ZooKeeper request to storage consists of two steps:
-    //  - preprocessing which, instead of applying the changes directly to storage,
-    //    generates deltas with those changes, denoted with the request ZXID
-    //  - processing which applies deltas with the correct ZXID to the storage
-    //
-    // Delta objects allow us two things:
-    //  - fetch the latest, uncommitted state of an object by getting the committed
-    //    state of that same object from the storage and applying the deltas
-    //    in the same order as they are defined
-    //  - quickly commit the changes to the storage
-
-    struct Delta;
-
+    using Delta = KeeperDelta;
+    using Operation = KeeperDelta::Operation;
     using DeltaIterator = std::list<KeeperStorage::Delta>::const_iterator;
     struct DeltaRange
     {
@@ -317,13 +301,7 @@ protected:
     std::list<TransactionInfo> uncommitted_transactions TSA_GUARDED_BY(transaction_mutex);
 
 public:
-    /// For the duration of a preprocessRequest call, these fields accumulate changes made by the
-    /// transaction that's being preprocessed.
-    /// These deltas are already applied to UncommittedState; if the transaction fails, they must be
-    /// rolled back.
-    int64_t staging_zxid = -1;
-    KeeperDigest staging_digest;
-    std::list<Delta> staging_deltas;
+    KeeperStagingTransaction staging;
 
 protected:
 
@@ -561,8 +539,8 @@ private:
     void addDigest(const Node & node, std::string_view path);
 
 public:
-    /// Functions that mutate UncommittedState, add corresponding deltas to staging_deltas, and
-    /// update staging_digest.
+    /// Functions that mutate UncommittedState, add corresponding deltas to staging.deltas, and
+    /// update staging.digest.
     /// These are public because they're called from the free `preprocess` request handlers.
     void prepareUpdateNodeStat(std::string_view path, UncommittedNodeRef node, const KeeperNodeStats & new_stats);
     void prepareUpdateNodeData(std::string_view path, UncommittedNodeRef node, const KeeperNodeStats & new_stats, std::string_view new_data);

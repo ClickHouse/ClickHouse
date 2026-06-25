@@ -52,6 +52,15 @@ struct KeeperDigest
 
 static constexpr auto KEEPER_CURRENT_DIGEST_VERSION = KeeperDigestVersion::V5;
 
+/// One SHA1 of user:password that a session authenticated with.
+struct KeeperAuthID
+{
+    std::string scheme;
+    std::string id;
+
+    bool operator==(const KeeperAuthID & other) const { return scheme == other.scheme && id == other.id; }
+};
+
 struct KeeperResponseForSession
 {
     int64_t session_id{};

@@ -434,119 +434,6 @@ KeeperMemNode KeeperMemNode::copyFromSnapshotNode()
     return node_copy;
 }
 
-struct CreateNodeDelta
-{
-    Coordination::Stat stat;
-    ACLId acl_id;
-    String data;
-    std::optional<int64_t> ttl;
-};
-
-struct RemoveNodeDelta
-{
-    KeeperNodeStats stat;
-    String data;
-};
-
-struct UpdateNodeStatDelta
-{
-    explicit UpdateNodeStatDelta(const KeeperMemNode & node)
-        : old_stats(node.stats)
-        , new_stats(node.stats)
-    {}
-
-    KeeperNodeStats old_stats;
-    KeeperNodeStats new_stats;
-};
-
-struct UpdateNodeDataDelta
-{
-    std::string old_data;
-    std::string new_data;
-};
-
-struct ErrorDelta
-{
-    Coordination::Error error;
-};
-
-struct FailedMultiDelta
-{
-    size_t failed_pos = std::numeric_limits<size_t>::max();
-    Coordination::Error failed_pos_error = Coordination::Error::ZOK;
-    Coordination::Error global_error = Coordination::Error::ZOK;
-};
-
-// Denotes end of a subrequest in multi request
-struct SubDeltaEnd
-{
-};
-
-struct AddAuthDelta
-{
-    int64_t session_id;
-    std::shared_ptr<KeeperStorage::AuthID> auth_id;
-};
-
-struct CloseSessionDelta
-{
-    int64_t session_id;
-};
-
-using Operation = std::variant<
-    CreateNodeDelta,
-    RemoveNodeDelta,
-    UpdateNodeStatDelta,
-    UpdateNodeDataDelta,
-    AddAuthDelta,
-    ErrorDelta,
-    SubDeltaEnd,
-    FailedMultiDelta,
-    CloseSessionDelta>;
-
-struct KeeperStorage::Delta
-{
-    Delta(String path_, int64_t zxid_, Operation operation_) : path(std::move(path_)), zxid(zxid_), operation(std::move(operation_)) { }
-
-    Delta(int64_t zxid_, Coordination::Error error) : Delta("", zxid_, ErrorDelta{error}) { }
-
-    Delta(int64_t zxid_, Operation subdelta) : Delta("", zxid_, subdelta) { }
-
-    String path;
-    int64_t zxid;
-    Operation operation;
-};
-
-std::string_view deltaTypeToString(const Operation & operation);
-std::string_view deltaTypeToString(const Operation & operation)
-{
-    /// Using std::visit ensures compile-time exhaustiveness checking -
-    /// adding a new type to Operation will cause a compilation error until handled here
-    return std::visit([]<typename T>(const T &) -> std::string_view
-    {
-        if constexpr (std::is_same_v<T, CreateNodeDelta>)
-            return "CreateNodeDelta";
-        else if constexpr (std::is_same_v<T, RemoveNodeDelta>)
-            return "RemoveNodeDelta";
-        else if constexpr (std::is_same_v<T, UpdateNodeStatDelta>)
-            return "UpdateNodeStatDelta";
-        else if constexpr (std::is_same_v<T, UpdateNodeDataDelta>)
-            return "UpdateNodeDataDelta";
-        else if constexpr (std::is_same_v<T, AddAuthDelta>)
-            return "AddAuthDelta";
-        else if constexpr (std::is_same_v<T, ErrorDelta>)
-            return "ErrorDelta";
-        else if constexpr (std::is_same_v<T, SubDeltaEnd>)
-            return "SubDeltaEnd";
-        else if constexpr (std::is_same_v<T, FailedMultiDelta>)
-            return "FailedMultiDelta";
-        else if constexpr (std::is_same_v<T, CloseSessionDelta>)
-            return "CloseSessionDelta";
-        else
-            static_assert(sizeof(T) == 0, "Unhandled Operation type in deltaTypeToString");
-    }, operation);
-}
-
 KeeperStorage::DeltaIterator KeeperStorage::DeltaRange::begin() const
 {
     return begin_it;
@@ -799,8 +686,6 @@ bool KeeperStorage::UncommittedState::hasACL(int64_t session_id, bool committed,
 
 void KeeperStorage::UncommittedState::rollbackDelta(const Delta & delta)
 {
-    chassert(!delta.path.empty(), fmt::format("Path is empty for delta of type '{}'", deltaTypeToString(delta.operation)));
-
     std::visit(
         [&]<typename DeltaType>(const DeltaType & operation)
         {
@@ -1441,7 +1326,7 @@ processLocal(const T & zk_request, KeeperStorage & /*storage*/, int64_t /*sessio
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Local processing not supported for request with type {}", zk_request.getOpNum());
 }
 
-/// Applies changes to UncommittedState and staging_{deltas,digest}.
+/// Applies changes to UncommittedState and `staging`.
 /// If returns non-ZOK, the caller rolls back all added deltas and adds an ErrorDelta instead.
 template <std::derived_from<Coordination::ZooKeeperRequest> T>
 Coordination::Error preprocess(
@@ -1581,14 +1466,14 @@ static Coordination::Error preprocess(
     else if (parent_cversion > new_parent_stats.cversion)
         new_parent_stats.cversion = parent_cversion;
 
-    new_parent_stats.pzxid = std::max(storage.staging_zxid, new_parent_stats.pzxid);
+    new_parent_stats.pzxid = std::max(storage.staging.zxid, new_parent_stats.pzxid);
 
     new_parent_stats.increaseNumChildren();
 
     Coordination::Stat stat;
-    stat.czxid = storage.staging_zxid;
-    stat.mzxid = storage.staging_zxid;
-    stat.pzxid = storage.staging_zxid;
+    stat.czxid = storage.staging.zxid;
+    stat.mzxid = storage.staging.zxid;
+    stat.pzxid = storage.staging.zxid;
     stat.ctime = time;
     stat.mtime = time;
     stat.numChildren = 0;
@@ -1739,8 +1624,8 @@ static Coordination::Error preprocess(
 
     KeeperNodeStats new_parent_stats = parent_node->stats;
 
-    if (zk_request.restored_from_zookeeper_log && new_parent_stats.pzxid < storage.staging_zxid)
-        new_parent_stats.pzxid = storage.staging_zxid;
+    if (zk_request.restored_from_zookeeper_log && new_parent_stats.pzxid < storage.staging.zxid)
+        new_parent_stats.pzxid = storage.staging.zxid;
 
     auto node_ref = storage.uncommitted_state.getNode(zk_request.path);
     const auto * node = node_ref.get();
@@ -2217,7 +2102,7 @@ static Coordination::Error preprocess(
 
     KeeperNodeStats new_stats = node->stats;
     new_stats.version++;
-    new_stats.mzxid = storage.staging_zxid;
+    new_stats.mzxid = storage.staging.zxid;
     new_stats.mtime = time;
     new_stats.data_size = static_cast<uint32_t>(zk_request.data.size());
     storage.prepareUpdateNodeData(zk_request.path, node_ref, new_stats, zk_request.data);
@@ -2842,11 +2727,11 @@ static Coordination::Error preprocess(
         {
             /// Failed multi-write. Caller will roll back any changes we've made.
             /// (Caller has special case to preserve FailedMultiDelta but roll back everything before it.)
-            storage.staging_deltas.emplace_back(storage.staging_zxid, FailedMultiDelta{ .failed_pos = i, .failed_pos_error = error });
+            storage.staging.deltas.emplace_back(storage.staging.zxid, FailedMultiDelta{ .failed_pos = i, .failed_pos_error = error });
             return error;
         }
 
-        storage.staging_deltas.emplace_back(storage.staging_zxid, SubDeltaEnd{});
+        storage.staging.deltas.emplace_back(storage.staging.zxid, SubDeltaEnd{});
     }
 
     return Coordination::Error::ZOK;
@@ -3015,7 +2900,7 @@ KeeperDigest KeeperStorage::preprocessRequest(
     if (!initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
 
-    if (!staging_deltas.empty() || staging_zxid != -1)
+    if (!staging.deltas.empty() || staging.zxid != -1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "State left over from previous transaction");
 
     TransactionInfo * transaction = nullptr;
@@ -3060,10 +2945,10 @@ KeeperDigest KeeperStorage::preprocessRequest(
                                 new_last_zxid, last_zxid);
         }
 
-        staging_zxid = new_last_zxid;
-        staging_digest = current_digest;
+        staging.zxid = new_last_zxid;
+        staging.digest = current_digest;
         KeeperDigestVersion version = keeper_context->digestEnabled() ? KEEPER_CURRENT_DIGEST_VERSION : KeeperDigestVersion::NO_DIGEST;
-        chassert(staging_digest.version == version);
+        chassert(staging.digest.version == version);
 
         transaction = &uncommitted_transactions.emplace_back(TransactionInfo{.zxid = new_last_zxid, .nodes_digest = current_digest, .log_idx = log_idx});
     }
@@ -3073,17 +2958,17 @@ KeeperDigest KeeperStorage::preprocessRequest(
     {
         if (request_finalized)
             return;
-        uncommitted_state.addDeltas(std::move(staging_deltas));
-        staging_deltas.clear();
+        uncommitted_state.addDeltas(std::move(staging.deltas));
+        staging.deltas.clear();
 
         if (zk_request->getOpNum() == Coordination::OpNum::Create)
         {
-            fiu_do_on(FailPoints::keeper_leader_sets_invalid_digest, staging_digest.value = 42);
+            fiu_do_on(FailPoints::keeper_leader_sets_invalid_digest, staging.digest.value = 42);
         }
 
-        if (!rolled_back && staging_digest.version != KeeperDigestVersion::NO_DIGEST)
+        if (!rolled_back && staging.digest.version != KeeperDigestVersion::NO_DIGEST)
         {
-            staging_digest.value = uncommitted_state.updateNodesDigest(staging_digest.value, new_last_zxid);
+            staging.digest.value = uncommitted_state.updateNodesDigest(staging.digest.value, new_last_zxid);
             // if the version of digest we got from the leader is the same as the one this instances has, we can simply copy the value
             // and just check the digest on the commit
             // a mistake can happen while applying the changes to the uncommitted_state so for now let's just recalculate the digest here also
@@ -3094,11 +2979,11 @@ KeeperDigest KeeperStorage::preprocessRequest(
             // which we're also holding. (Except for commit callback, which reads
             // `uncommitted_transactions.front()`, but only after the transaction is committed,
             // which can't happen before we return from here.)
-            transaction->nodes_digest = staging_digest;
+            transaction->nodes_digest = staging.digest;
         }
 
         uncommitted_state.cleanup(getZXID());
-        staging_zxid = -1;
+        staging.zxid = -1;
         request_finalized = true;
     };
 
@@ -3128,8 +3013,8 @@ KeeperDigest KeeperStorage::preprocessRequest(
 
         prepareRemoveEphemeralNodes(ephemeral_paths, session_id);
 
-        staging_deltas.emplace_back(staging_zxid, CloseSessionDelta{session_id});
-        uncommitted_state.closed_sessions_to_zxids[session_id].insert(staging_zxid);
+        staging.deltas.emplace_back(staging.zxid, CloseSessionDelta{session_id});
+        uncommitted_state.closed_sessions_to_zxids[session_id].insert(staging.zxid);
 
         finalize(/*rolled_back=*/ false);
         return transaction->nodes_digest;
@@ -3149,21 +3034,21 @@ KeeperDigest KeeperStorage::preprocessRequest(
         /// prepare it again, and assert that the result is the same.
         /// This shouldn't have any externally observable effects.
         /// Good for finding bugs in rollback.
-        if (staging_digest.version != KeeperDigestVersion::NO_DIGEST && thread_local_rng() % 2 == 0)
+        if (staging.digest.version != KeeperDigestVersion::NO_DIGEST && thread_local_rng() % 2 == 0)
         {
-            const UInt64 first_digest = uncommitted_state.updateNodesDigest(staging_digest.value, new_last_zxid);
-            const size_t first_delta_count = staging_deltas.size();
+            const UInt64 first_digest = uncommitted_state.updateNodesDigest(staging.digest.value, new_last_zxid);
+            const size_t first_delta_count = staging.deltas.size();
 
-            uncommitted_state.rollback(std::move(staging_deltas));
-            staging_deltas.clear();
-            staging_digest = transaction->nodes_digest;
+            uncommitted_state.rollback(std::move(staging.deltas));
+            staging.deltas.clear();
+            staging.digest = transaction->nodes_digest;
 
             callOnConcreteRequestType(*zk_request, preprocess_request);
             chassert(error == Coordination::Error::ZOK, "Re-preprocessing after a spurious rollback unexpectedly failed");
 
-            const UInt64 second_digest = uncommitted_state.updateNodesDigest(staging_digest.value, new_last_zxid);
+            const UInt64 second_digest = uncommitted_state.updateNodesDigest(staging.digest.value, new_last_zxid);
             chassert(
-                first_digest == second_digest && first_delta_count == staging_deltas.size(),
+                first_digest == second_digest && first_delta_count == staging.deltas.size(),
                 "Re-preprocessing after rollback produced a different result: preprocessing is non-deterministic or rollback is incomplete");
         }
 #endif
@@ -3178,20 +3063,20 @@ KeeperDigest KeeperStorage::preprocessRequest(
         /// prepareWriteCommon and updateNodesDigest) or revert to original digest.
 
         /// Hack: Multi request needs a FailedMultiDelta instead of ErrorDelta. We pass it from
-        /// `preprocess` to here through staging_deltas.
+        /// `preprocess` to here through staging.deltas.
         std::optional<Delta> custom_error_delta;
-        if (!staging_deltas.empty() && std::get_if<FailedMultiDelta>(&staging_deltas.back().operation))
+        if (!staging.deltas.empty() && std::get_if<FailedMultiDelta>(&staging.deltas.back().operation))
         {
-            custom_error_delta = std::move(staging_deltas.back());
-            staging_deltas.pop_back();
+            custom_error_delta = std::move(staging.deltas.back());
+            staging.deltas.pop_back();
         }
 
-        uncommitted_state.rollback(std::move(staging_deltas));
-        staging_deltas.clear();
+        uncommitted_state.rollback(std::move(staging.deltas));
+        staging.deltas.clear();
         if (custom_error_delta.has_value())
-            staging_deltas.push_back(std::move(*custom_error_delta));
+            staging.deltas.push_back(std::move(*custom_error_delta));
         else
-            staging_deltas.emplace_back(staging_zxid, error);
+            staging.deltas.emplace_back(staging.zxid, error);
         finalize(/*rolled_back=*/ true);
     }
     return transaction->nodes_digest;
@@ -4133,18 +4018,18 @@ void KeeperStorage::prepareWriteCommon(std::string_view path, UncommittedNodeRef
     chassert(node.it.has_value());
 
     auto node_it = *node.it;
-    auto & zxid_nodes = uncommitted_state.zxid_to_nodes[staging_zxid];
+    auto & zxid_nodes = uncommitted_state.zxid_to_nodes[staging.zxid];
     const bool node_was_not_yet_in_zxid = zxid_nodes.insert(node_it).second;
 
     /// if it's the first time we see that node in the transaction
     /// we need to subtract it's digest from the point before
     /// we started the transaction
     /// at the end of transaction, we add new node digests in updateNodesDigest
-    if (node_was_not_yet_in_zxid && staging_digest.version != KeeperDigestVersion::NO_DIGEST &&
+    if (node_was_not_yet_in_zxid && staging.digest.version != KeeperDigestVersion::NO_DIGEST &&
         node_it->second.node)
-        staging_digest.value -= node_it->second.node->getDigest(path);
+        staging.digest.value -= node_it->second.node->getDigest(path);
 
-    node_it->second.applied_zxids.push_back(staging_zxid);
+    node_it->second.applied_zxids.push_back(staging.zxid);
 }
 
 void KeeperStorage::prepareUpdateNodeStat(std::string_view path, UncommittedNodeRef node, const KeeperNodeStats & new_stats)
@@ -4152,9 +4037,9 @@ void KeeperStorage::prepareUpdateNodeStat(std::string_view path, UncommittedNode
     prepareWriteCommon(path, node);
 
     Node * node_ptr = node.getMut();
-    UpdateNodeStatDelta delta(*node_ptr);
+    UpdateNodeStatDelta delta(node_ptr->stats);
     delta.new_stats = new_stats;
-    staging_deltas.emplace_back(std::string{path}, staging_zxid, std::move(delta));
+    staging.deltas.emplace_back(std::string{path}, staging.zxid, std::move(delta));
 
     node_ptr->invalidateDigestCache();
     node_ptr->stats = new_stats;
@@ -4169,8 +4054,8 @@ void KeeperStorage::prepareUpdateNodeData(std::string_view path, UncommittedNode
     /// The data delta must be ordered before the stat delta: at commit time the stat delta
     /// overwrites `stats.data_size` (to the new size), after which `getData` would read the old
     /// buffer with the new size. Committing the data delta first keeps the node consistent.
-    staging_deltas.emplace_back(
-        std::string{path}, staging_zxid,
+    staging.deltas.emplace_back(
+        std::string{path}, staging.zxid,
         UpdateNodeDataDelta{.old_data = std::string{node_ptr->getData()}, .new_data = std::string{new_data}});
 
     node_ptr->invalidateDigestCache();
@@ -4199,9 +4084,9 @@ void KeeperStorage::prepareCreateNode(
         node.it = uncommitted_state.nodes.emplace(std::string{path}, typename UncommittedState::UncommittedNode{}).first;
     prepareWriteCommon(path, node);
 
-    staging_deltas.emplace_back(
+    staging.deltas.emplace_back(
         std::string{path},
-        staging_zxid,
+        staging.zxid,
         CreateNodeDelta{stat, acl_id, std::string{data}, ttl});
 
     auto node_it = *node.it;
@@ -4220,8 +4105,8 @@ void KeeperStorage::prepareRemoveNodeWithoutUpdatingParent(
 {
     prepareWriteCommon(path, node);
     const Node * node_ptr = node.get();
-    staging_deltas.emplace_back(
-        std::string{path}, staging_zxid,
+    staging.deltas.emplace_back(
+        std::string{path}, staging.zxid,
         RemoveNodeDelta{node_ptr->stats, std::string{node_ptr->getData()}});
 
     (*node.it)->second.node = nullptr;
@@ -4300,8 +4185,8 @@ void KeeperStorage::prepareRemoveEphemeralNodes(const std::unordered_set<std::st
 void KeeperStorage::prepareAddAuth(std::shared_ptr<KeeperStorage::AuthID> new_auth, int64_t session_id)
 {
     auto & uncommitted_auth = uncommitted_state.session_and_auth[session_id];
-    uncommitted_auth.push_back(std::pair{staging_zxid, new_auth});
-    staging_deltas.emplace_back(staging_zxid, AddAuthDelta{session_id, std::move(new_auth)});
+    uncommitted_auth.push_back(std::pair{staging.zxid, new_auth});
+    staging.deltas.emplace_back(staging.zxid, AddAuthDelta{session_id, std::move(new_auth)});
 }
 
 bool KeeperStorage::removePersistentWatch(const String & path, Coordination::RemoveWatchRequest::WatchType type, int64_t session_id)
