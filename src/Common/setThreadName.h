@@ -79,6 +79,7 @@ namespace DB
     M(KEEPER_COMMIT, "KeeperCommit") \
     M(KEEPER_APPEND, "KeeperAppend") \
     M(KEEPER_READ, "KeeperRead") \
+    M(KEEPER_TTL_GARBAGE_COLLECTOR, "KeeperTTLGC") \
     M(KAFKA_BACKGROUND, "KafkaBackgrd") \
     M(KAFKA_BROKER, "KafkaBroker") \
     M(KAFKA_CLEANUP, "KafkaClnup") \

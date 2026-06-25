@@ -48,7 +48,7 @@ WITH RECURSIVE t AS (
 UNION ALL
     SELECT n+1 FROM t WHERE n < 5
 )
-SELECT * FROM t;
+SELECT * FROM t ORDER BY ALL;
 1
 2
 3
@@ -59,7 +59,7 @@ WITH RECURSIVE t AS (
     SELECT 1 AS n
 UNION ALL
     SELECT n+1 FROM t)
-SELECT * FROM t LIMIT 10;
+SELECT * FROM t LIMIT 10 SETTINGS max_threads = 1;
 1
 2
 3
@@ -75,7 +75,7 @@ WITH RECURSIVE t AS (
 UNION ALL
     SELECT n || ' bar' FROM t WHERE length(n) < 20
 )
-SELECT n, toTypeName(n) FROM t;
+SELECT n, toTypeName(n) FROM t ORDER BY ALL;
 foo	String
 foo bar	String
 foo bar bar	String

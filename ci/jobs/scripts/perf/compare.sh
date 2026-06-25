@@ -14,11 +14,13 @@ LEFT_SERVER_PORT=9001
 LEFT_SERVER_KEEPER_PORT=9181
 LEFT_SERVER_KEEPER_RAFT_PORT=9234
 LEFT_SERVER_INTERSERVER_PORT=9009
+LEFT_SERVER_HTTP_PORT=8123
 # patched version
 RIGHT_SERVER_PORT=19001
 RIGHT_SERVER_KEEPER_PORT=19181
 RIGHT_SERVER_KEEPER_RAFT_PORT=19234
 RIGHT_SERVER_INTERSERVER_PORT=19009
+RIGHT_SERVER_HTTP_PORT=18123
 
 # abort_conf   -- abort if some options is not recognized
 # abort        -- abort if something is not right in the env (i.e. per-cpu arenas does not work)
@@ -150,6 +152,10 @@ function restart
         --user_files_path left/db/user_files
         --top_level_domains_path "$(left_or_right left top_level_domains)"
         --tcp_port $LEFT_SERVER_PORT
+        # The perf-comparison config removes <http_port>; re-enable it on the
+        # command line (a documented config override) with a distinct port per
+        # server, so that shell-script tests can talk to the server over HTTP.
+        --http_port $LEFT_SERVER_HTTP_PORT
         --keeper_server.tcp_port $LEFT_SERVER_KEEPER_PORT
         --keeper_server.raft_configuration.server.port $LEFT_SERVER_KEEPER_RAFT_PORT
         --keeper_server.storage_path left/coordination
@@ -170,6 +176,7 @@ function restart
         --user_files_path right/db/user_files
         --top_level_domains_path "$(left_or_right right top_level_domains)"
         --tcp_port $RIGHT_SERVER_PORT
+        --http_port $RIGHT_SERVER_HTTP_PORT
         --keeper_server.tcp_port $RIGHT_SERVER_KEEPER_PORT
         --keeper_server.raft_configuration.server.port $RIGHT_SERVER_KEEPER_RAFT_PORT
         --keeper_server.storage_path right/coordination
@@ -345,6 +352,11 @@ function run_tests
             argv=(
                 --host localhost localhost
                 --port "$LEFT_SERVER_PORT" "$RIGHT_SERVER_PORT"
+                # Binary paths and HTTP ports are used by shell-script tests
+                # (<query type="shell">), e.g. clickhouse-local startup and HTTP
+                # reads. They are parallel to --host/--port (left, then right).
+                --binary left/clickhouse right/clickhouse
+                --http-port "$LEFT_SERVER_HTTP_PORT" "$RIGHT_SERVER_HTTP_PORT"
                 --runs "$CHPC_RUNS"
                 --max-queries "$max_queries"
                 --profile-seconds "$profile_seconds"
@@ -486,7 +498,12 @@ create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-
         with (select groupUniqArrayArray(mapKeys(ProfileEvents)) from query_logs) as all_names
             select arrayReduce('sumMapState', [(all_names, arrayMap(x->0::Nullable(Float64), all_names))])
         ) as all_metrics
-    select test, query_index, version, query_id,
+    -- Take version/query_id from query_runs, the preserved side of the RIGHT JOIN.
+    -- For SQL queries the query_log always matches, so this is the same value;
+    -- but shell-script queries (<query type="shell">) have no query_log row, and
+    -- the unqualified columns would otherwise default to query_logs' 0/'' and
+    -- collapse both servers' runs onto version 0.
+    select test, query_index, query_runs.version version, query_runs.query_id query_id,
         (finalizeAggregation(
             arrayReduce('sumMapMergeState',
                 [
@@ -1120,6 +1137,18 @@ do
             || rg --no-filename --max-count=2 -i '^[^ ]\+: ' "$log" \
             || head -10 "$log"
     } | sed "s/^/$test\t/" >> run-errors.tsv ||:
+done
+
+# Shell-script queries (<query type="shell">) report a failure on a server by
+# emitting a `run-error` line to stdout (the per-test *-err.log is not always
+# available at report time). Fold those into run-errors.tsv as well, in the
+# 'test<tab>error' shape the Run Errors table and CIDB expect, so a shell test
+# that failed on one server is reported instead of silently disappearing.
+for test_file in *-raw.tsv
+do
+    test_name=$(basename "$test_file" "-raw.tsv")
+    sed -n "s/^run-error\t\([0-9]*\)\t\([0-9]*\)\t/$test_name\tquery \1 server \2: /p" \
+        < "$test_file" >> run-errors.tsv ||:
 done
 }
 

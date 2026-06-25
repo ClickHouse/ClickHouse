@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemDictionaryLayouts.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
@@ -47,3 +48,6 @@ void StorageSystemDictionaryLayouts::fillData(MutableColumns & res_columns, Cont
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDictionaryLayouts) }
