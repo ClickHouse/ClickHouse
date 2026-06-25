@@ -1484,9 +1484,10 @@ static Coordination::Error preprocess(
 
     ACLId acl_id = storage.acl_map.convertACLs(node_acls);
 
-    storage.prepareCreateNode(
-        parent_path, parent_node_ref, new_parent_stats,
-        path_created, child_node_ref, stat, acl_id, zk_request.data,
+    storage.prepareUpdateNodeStat(
+        parent_path, std::move(parent_node_ref), new_parent_stats);
+    storage.prepareCreateNodeWithoutUpdatingParent(
+        path_created, std::move(child_node_ref), stat, acl_id, zk_request.data,
         zk_request.include_ttl ? std::optional(zk_request.ttl) : std::nullopt);
 
     return Coordination::Error::ZOK;
@@ -1637,7 +1638,7 @@ static Coordination::Error preprocess(
 
         if (zk_request.restored_from_zookeeper_log)
         {
-            storage.prepareUpdateNodeStat(parent_path, parent_node_ref, new_parent_stats);
+            storage.prepareUpdateNodeStat(parent_path, std::move(parent_node_ref), new_parent_stats);
             return Coordination::Error::ZOK;
         }
 
@@ -1681,8 +1682,8 @@ static Coordination::Error preprocess(
         unregisterEphemeralPath(storage.uncommitted_state.ephemerals, node->stats.getEphemeralOwner(), zk_request.path, /*throw_if_missing=*/false);
     }
 
-    storage.prepareRemoveNode(
-        parent_path, parent_node_ref, new_parent_stats, zk_request.path, node_ref);
+    storage.prepareUpdateNodeStat(parent_path, std::move(parent_node_ref), new_parent_stats);
+    storage.prepareRemoveNodeWithoutUpdatingParent(zk_request.path, std::move(node_ref));
 
     return Coordination::Error::ZOK;
 }
@@ -1798,8 +1799,6 @@ public:
 
     std::deque<KeeperStorage::SubtreeNodeToRemove> extractResult()
     {
-        /// Remove children before their parents.
-        std::reverse(result.begin(), result.end());
         return std::move(result);
     }
 
@@ -1953,7 +1952,14 @@ static Coordination::Error preprocess(
         }
     }
 
-    storage.prepareRemoveRecursive(parent_path, parent_node_ref, new_parent_stats, nodes_to_remove);
+    storage.prepareUpdateNodeStat(parent_path, std::move(parent_node_ref), new_parent_stats);
+
+    /// Remove children before parents (the traversal above is pre-order).
+    for (auto it = nodes_to_remove.rbegin(); it != nodes_to_remove.rend(); ++it)
+    {
+        auto node_to_remove = storage.uncommitted_state.getNode(it->path);
+        storage.prepareRemoveNodeWithoutUpdatingParent(it->path, std::move(node_to_remove));
+    }
 
     return Coordination::Error::ZOK;
 }
@@ -2105,14 +2111,14 @@ static Coordination::Error preprocess(
     new_stats.mzxid = storage.staging.zxid;
     new_stats.mtime = time;
     new_stats.data_size = static_cast<uint32_t>(zk_request.data.size());
-    storage.prepareUpdateNodeData(zk_request.path, node_ref, new_stats, zk_request.data);
+    storage.prepareUpdateNodeDataAndStat(zk_request.path, std::move(node_ref), new_stats, zk_request.data);
 
     auto parent_path = Coordination::parentNodePath(zk_request.path);
     auto parent_node_ref = storage.uncommitted_state.getNode(parent_path);
     const auto * parent_node = parent_node_ref.get();
     KeeperNodeStats new_parent_stats = parent_node->stats;
     ++new_parent_stats.cversion;
-    storage.prepareUpdateNodeStat(parent_path, parent_node_ref, new_parent_stats);
+    storage.prepareUpdateNodeStat(parent_path, std::move(parent_node_ref), new_parent_stats);
 
     return Coordination::Error::ZOK;
 }
@@ -2646,7 +2652,7 @@ static Coordination::Error preprocess(
     KeeperNodeStats new_stats = node->stats;
     ++new_stats.aversion;
     new_stats.acl_id = storage.acl_map.convertACLs(node_acls);
-    storage.prepareUpdateNodeStat(zk_request.path, node_ref, new_stats);
+    storage.prepareUpdateNodeStat(zk_request.path, std::move(node_ref), new_stats);
 
     return Coordination::Error::ZOK;
 }
@@ -4013,7 +4019,7 @@ KeeperResponsesForSessions KeeperStorage::setWatches(
 }
 
 /// Must be called before mutating any node in other prepare* functions.
-void KeeperStorage::prepareWriteCommon(std::string_view path, UncommittedNodeRef node)
+void KeeperStorage::prepareWriteCommon(std::string_view path, UncommittedNodeRef & node)
 {
     chassert(node.it.has_value());
 
@@ -4032,7 +4038,7 @@ void KeeperStorage::prepareWriteCommon(std::string_view path, UncommittedNodeRef
     node_it->second.applied_zxids.push_back(staging.zxid);
 }
 
-void KeeperStorage::prepareUpdateNodeStat(std::string_view path, UncommittedNodeRef node, const KeeperNodeStats & new_stats)
+void KeeperStorage::prepareUpdateNodeStat(std::string_view path, UncommittedNodeRef && node, const KeeperNodeStats & new_stats)
 {
     prepareWriteCommon(path, node);
 
@@ -4045,7 +4051,7 @@ void KeeperStorage::prepareUpdateNodeStat(std::string_view path, UncommittedNode
     node_ptr->stats = new_stats;
 }
 
-void KeeperStorage::prepareUpdateNodeData(std::string_view path, UncommittedNodeRef node, const KeeperNodeStats & new_stats, std::string_view new_data)
+void KeeperStorage::prepareUpdateNodeDataAndStat(std::string_view path, UncommittedNodeRef && node, const KeeperNodeStats & new_stats, std::string_view new_data)
 {
     prepareWriteCommon(path, node);
 
@@ -4061,25 +4067,13 @@ void KeeperStorage::prepareUpdateNodeData(std::string_view path, UncommittedNode
     node_ptr->invalidateDigestCache();
     node_ptr->setData(String{new_data});
 
-    prepareUpdateNodeStat(path, node, new_stats);
+    prepareUpdateNodeStat(path, std::move(node), new_stats);
 }
 
-void KeeperStorage::prepareCreateNode(
-    std::string_view parent_path, UncommittedNodeRef parent,
-    const KeeperNodeStats & new_parent_stats,
-    std::string_view path, UncommittedNodeRef node, const Coordination::Stat & stat,
+void KeeperStorage::prepareCreateNodeWithoutUpdatingParent(
+    std::string_view path, UncommittedNodeRef && node, const Coordination::Stat & stat,
     ACLId acl_id, std::string_view data, std::optional<int64_t> ttl)
 {
-    /// (prepareCreateNode combines parent node update and new node creation. Currently these
-    ///  operations are independent here, and we could equally well remove the parent update from
-    ///  here and have the caller call prepare for the parent separately. But other implementations
-    ///  would want a different type of update for parent, e.g. "update stats and add child" delta.
-    ///  Even currently it would be more efficient to add such delta type; it would reduce the
-    ///  number of node lookups when committing Create request from 3 to 2, as currently it looks up
-    ///  the parent twice: to update stats and to add child. Same story for Remove.)
-
-    prepareUpdateNodeStat(parent_path, parent, new_parent_stats);
-
     if (!node.it.has_value())
         node.it = uncommitted_state.nodes.emplace(std::string{path}, typename UncommittedState::UncommittedNode{}).first;
     prepareWriteCommon(path, node);
@@ -4101,7 +4095,7 @@ void KeeperStorage::prepareCreateNode(
 }
 
 void KeeperStorage::prepareRemoveNodeWithoutUpdatingParent(
-    std::string_view path, UncommittedNodeRef node)
+    std::string_view path, UncommittedNodeRef && node)
 {
     prepareWriteCommon(path, node);
     const Node * node_ptr = node.get();
@@ -4110,29 +4104,6 @@ void KeeperStorage::prepareRemoveNodeWithoutUpdatingParent(
         RemoveNodeDelta{node_ptr->stats, std::string{node_ptr->getData()}});
 
     (*node.it)->second.node = nullptr;
-}
-
-void KeeperStorage::prepareRemoveNode(
-    std::string_view parent_path, UncommittedNodeRef parent,
-    const KeeperNodeStats & new_parent_stats,
-    std::string_view path, UncommittedNodeRef node)
-{
-    prepareUpdateNodeStat(parent_path, parent, new_parent_stats);
-    prepareRemoveNodeWithoutUpdatingParent(path, node);
-}
-
-void KeeperStorage::prepareRemoveRecursive(
-    std::string_view parent_path, UncommittedNodeRef parent,
-    const KeeperNodeStats & new_parent_stats,
-    std::deque<SubtreeNodeToRemove> nodes_to_remove)
-{
-    prepareUpdateNodeStat(parent_path, parent, new_parent_stats);
-
-    for (const auto & node_info : nodes_to_remove)
-    {
-        UncommittedNodeRef node = uncommitted_state.getNode(node_info.path);
-        prepareRemoveNodeWithoutUpdatingParent(node_info.path, node);
-    }
 }
 
 void KeeperStorage::prepareRemoveEphemeralNodes(const std::unordered_set<std::string> & paths, int64_t session_id)
@@ -4172,14 +4143,14 @@ void KeeperStorage::prepareRemoveEphemeralNodes(const std::unordered_set<std::st
         ++parent_update.new_stats.cversion;
         parent_update.new_stats.decreaseNumChildren();
 
-        prepareRemoveNodeWithoutUpdatingParent(ephemeral_path, node);
+        prepareRemoveNodeWithoutUpdatingParent(ephemeral_path, std::move(node));
     }
 
     /// Note: we rely on the fact that ephemeral nodes can't have children. Otherwise we'd need to
     ///       check to make sure we're not updating a node we already removed, and that we're not
     ///       removing a node that still has children.
     for (auto & [path, update] : parent_updates)
-        prepareUpdateNodeStat(path, update.node, update.new_stats);
+        prepareUpdateNodeStat(path, std::move(update.node), update.new_stats);
 }
 
 void KeeperStorage::prepareAddAuth(std::shared_ptr<KeeperStorage::AuthID> new_auth, int64_t session_id)

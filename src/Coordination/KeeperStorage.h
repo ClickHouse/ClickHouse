@@ -542,30 +542,23 @@ public:
     /// Functions that mutate UncommittedState, add corresponding deltas to staging.deltas, and
     /// update staging.digest.
     /// These are public because they're called from the free `preprocess` request handlers.
-    void prepareUpdateNodeStat(std::string_view path, UncommittedNodeRef node, const KeeperNodeStats & new_stats);
-    void prepareUpdateNodeData(std::string_view path, UncommittedNodeRef node, const KeeperNodeStats & new_stats, std::string_view new_data);
-    void prepareCreateNode(
-        std::string_view parent_path, UncommittedNodeRef parent,
-        const KeeperNodeStats & new_parent_stats,
-        std::string_view path, UncommittedNodeRef node, const Coordination::Stat & stat,
+    void prepareUpdateNodeStat(std::string_view path, UncommittedNodeRef && node, const KeeperNodeStats & new_stats);
+    void prepareUpdateNodeDataAndStat(std::string_view path, UncommittedNodeRef && node, const KeeperNodeStats & new_stats, std::string_view new_data);
+    void prepareCreateNodeWithoutUpdatingParent(
+        std::string_view path, UncommittedNodeRef && node, const Coordination::Stat & stat,
         ACLId acl_id, std::string_view data, std::optional<int64_t> ttl);
-    void prepareRemoveNode(
-        std::string_view parent_path, UncommittedNodeRef parent,
-        const KeeperNodeStats & new_parent_stats,
-        std::string_view path, UncommittedNodeRef node);
-    /// (`nodes_to_remove` must be a node + the set of all its descendants, not arbitrary set of
-    ///  nodes. Because we don't update children stats on parents of removed nodes, expecting those
-    ///  parents to also be in the set to be removed, except for the outermost `parent`.)
-    void prepareRemoveRecursive(
-        std::string_view parent_path, UncommittedNodeRef parent,
-        const KeeperNodeStats & new_parent_stats,
-        std::deque<SubtreeNodeToRemove> nodes_to_remove);
+    void prepareRemoveNodeWithoutUpdatingParent(std::string_view path, UncommittedNodeRef && node);
+
+    /// Helper that uses getUncommittedNode, prepareRemoveNodeWithoutUpdatingParent, and
+    /// prepareUpdateNodeStat to remove the given set of ephemeral nodes and update their parents'
+    /// stats accordingly. Requires that no nodes in the set are ancestors of other nodes (true for
+    /// ephemeral nodes because they can't have children).
     void prepareRemoveEphemeralNodes(const std::unordered_set<std::string> & paths, int64_t session_id);
+
     void prepareAddAuth(std::shared_ptr<KeeperStorage::AuthID> new_auth, int64_t session_id);
 
     /// Helpers used by other `prepare*` implementations.
-    void prepareWriteCommon(std::string_view path, UncommittedNodeRef node);
-    void prepareRemoveNodeWithoutUpdatingParent(std::string_view path, UncommittedNodeRef node);
+    void prepareWriteCommon(std::string_view path, UncommittedNodeRef & node);
 };
 
 }
