@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+
 
 namespace
 {
@@ -41,9 +46,19 @@ public:
         return 1;
     }
 
-    String getSignatureString() const override
+    /// No declarative signature. The result type is the type *named by the argument value*,
+    /// so resolving it through `typeFromString(t)` in the signature would run inside
+    /// `applyFunctionSignature`'s `SuppressQueryFactoriesInfoScope` and hide the user-supplied
+    /// type from `query_log.used_data_type_families`. Resolve it explicitly here so the lookup
+    /// is attributed (see `01656_test_query_log_factories_info`).
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(const t String) -> typeFromString(t)";
+        const ColumnConst * col_type_const = typeid_cast<const ColumnConst *>(arguments.front().column.get());
+        if (!col_type_const || !isString(arguments.front().type))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must be a constant string describing type.",
+                getName());
+
+        return DataTypeFactory::instance().get(col_type_const->getValue<String>());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
