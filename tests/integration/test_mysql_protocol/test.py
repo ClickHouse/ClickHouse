@@ -960,3 +960,77 @@ def test_mysql_dotnet_client(started_cluster):
     )
     # there is some thrash at the beggining of output, so it's better to use `in` instead of `==``
     assert reference in res
+
+
+def _com_field_list(client, table):
+    # COM_FIELD_LIST returns one ColumnDefinition41 packet per column, terminated by an EOF/OK
+    # packet. On access denial the server sends an ERR packet, which pymysql raises from read_packet().
+    # The payload is a NUL-terminated table name followed by an (empty) field wildcard.
+    client._execute_command(0x04, table + "\x00")
+    columns = []
+    packet = client._read_packet()
+    while not (packet.is_eof_packet() or packet.is_ok_packet()):
+        # ColumnDefinition41 layout: catalog, schema, table, org_table, name, org_name, ...
+        # The column name is the 5th length-encoded string.
+        for _ in range(4):
+            packet.read_length_coded_string()
+        columns.append(packet.read_length_coded_string().decode())
+        packet = client._read_packet()
+    return columns
+
+
+def test_mysql_metadata_commands_access_control(started_cluster):
+    # COM_FIELD_LIST (mysql_list_fields) and COM_INIT_DB (USE db) over the MySQL wire protocol
+    # must enforce the same access control as the equivalent SQL statements (DESCRIBE / USE).
+    node = cluster.instances["node"]
+    node.query("DROP USER IF EXISTS mysql_lowpriv")
+    node.query(
+        "CREATE TABLE IF NOT EXISTS default.mysql_acl_employees "
+        "(id UInt64, name String, salary UInt64, ssn String) ENGINE=MergeTree ORDER BY id"
+    )
+    node.query("CREATE USER mysql_lowpriv IDENTIFIED WITH no_password")
+    node.query("GRANT SELECT(id, name) ON default.mysql_acl_employees TO mysql_lowpriv")
+
+    client = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="mysql_lowpriv",
+        password="",
+        database="default",
+        port=server_port,
+    )
+
+    # COM_FIELD_LIST on a table the user lacks SHOW COLUMNS on must be rejected (used to leak all
+    # column names regardless of column-level grants).
+    with pytest.raises(pymysql.err.MySQLError) as exc_info:
+        _com_field_list(client, "mysql_acl_employees")
+    assert "ACCESS_DENIED" in str(exc_info.value), str(exc_info.value)
+    assert "SHOW COLUMNS" in str(exc_info.value), str(exc_info.value)
+
+    # COM_INIT_DB to a database the user has no grants on must be rejected (used to switch the
+    # current database with no check, then COM_FIELD_LIST would leak system table schemas).
+    with pytest.raises(pymysql.err.MySQLError) as exc_info:
+        client.select_db("system")
+    assert "ACCESS_DENIED" in str(exc_info.value), str(exc_info.value)
+    assert "SHOW DATABASES" in str(exc_info.value), str(exc_info.value)
+
+    client.close()
+
+    # A user that is granted the table fully can still use both commands.
+    node.query("GRANT SHOW COLUMNS ON default.mysql_acl_employees TO mysql_lowpriv")
+    granted = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="mysql_lowpriv",
+        password="",
+        database="default",
+        port=server_port,
+    )
+    assert sorted(_com_field_list(granted, "mysql_acl_employees")) == [
+        "id",
+        "name",
+        "salary",
+        "ssn",
+    ]
+    granted.close()
+
+    node.query("DROP USER mysql_lowpriv")
+    node.query("DROP TABLE default.mysql_acl_employees")
