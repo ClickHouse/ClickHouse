@@ -236,6 +236,17 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
 
         if (!secret_key.empty())
             result.secret_access_key = secret_key;
+
+        /// A URL-only named collection (no explicit key pair, not NOSIGN) defaults to anonymous access, the
+        /// same as `s3(named_collection)` where `use_environment_credentials` defaults to 0. Preserve that as
+        /// NOSIGN so `getTableImpl` does not flatten it to the positional `s3(url)` form, whose built-in
+        /// default is `use_environment_credentials = 1` and would resolve the server's ambient credentials.
+        const bool has_complete_keys = result.access_key_id.has_value() && result.secret_access_key.has_value();
+        if (!result.no_sign_request && !has_complete_keys
+            && !collection.getOrDefault<bool>("use_environment_credentials", false))
+        {
+            result.no_sign_request = true;
+        }
     }
     else
     {
