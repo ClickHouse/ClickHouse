@@ -93,10 +93,11 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool enforce_memory_
 
             try
             {
+                /// We cannot return the AllocationTrace from here, since its sample_probability was calculated on the (batched) flushed size, which may not match the original allocation size.
                 if (current_untracked_memory > 0)
-                    return memory_tracker->allocImpl(current_untracked_memory, enforce_memory_limit);
+                    std::ignore = memory_tracker->allocImpl(current_untracked_memory, enforce_memory_limit, /*query_tracker=*/ nullptr, /*_sample_probability=*/ 0.0);
                 else
-                    return memory_tracker->free(-current_untracked_memory);
+                    std::ignore = memory_tracker->free(-current_untracked_memory, /*_sample_probability=*/ 0.0);
             }
             catch (...)
             {
@@ -173,10 +174,11 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
 
             Int64 untracked_memory = current_thread->untracked_memory;
             current_thread->untracked_memory = 0;
+            /// We cannot return the AllocationTrace from here, since its sample_probability was calculated on the (batched) flushed size, which may not match the original allocation size.
             if (untracked_memory > 0)
-                return memory_tracker->allocImpl(untracked_memory, /*enforce_memory_limit=*/ false);
+                std::ignore = memory_tracker->allocImpl(untracked_memory, /*enforce_memory_limit=*/ false, /*query_tracker=*/ nullptr, /*_sample_probability=*/ 0.0);
             else
-                return memory_tracker->free(-untracked_memory);
+                std::ignore = memory_tracker->free(-untracked_memory, /*_sample_probability=*/ 0.0);
         }
 
         return AllocationTrace(current_thread->getEffectiveSampleProbability(size));
