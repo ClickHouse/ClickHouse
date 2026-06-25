@@ -499,3 +499,92 @@ def test_system_queue_metadata(started_cluster):
     assert "bad.csv" in failed_value
 
     node.query(f"DROP TABLE {table_name} SYNC")
+
+
+def test_system_queue_metadata_ordered(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_system_queue_metadata_ordered_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 10
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            # A single processed pointer (no buckets) keeps the test deterministic.
+            "s3queue_buckets": 1,
+            "s3queue_processing_threads_num": 1,
+        },
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    generate_random_files(started_cluster, files_path, files_to_generate, row_num=1)
+
+    for _ in range(60):
+        if files_to_generate == int(
+            node.query(f"SELECT count() FROM {dst_table_name}")
+        ):
+            break
+        time.sleep(1)
+    assert files_to_generate == int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    # In ordered mode there are no per-file processed nodes, so processed_nodes
+    # is NULL and the last processed pointer is exposed via processed_path.
+    assert (
+        "1"
+        == node.query(
+            f"""
+            SELECT processed_nodes IS NULL
+            FROM system.s3_queue_metadata
+            WHERE zookeeper_path ilike '%{keeper_path}%'
+            """
+        ).strip()
+    )
+
+    # processing/failed counts are still meaningful in ordered mode.
+    processing, failed = list(
+        map(
+            int,
+            node.query(
+                f"""
+                SELECT processing_nodes, failed_nodes
+                FROM system.s3_queue_metadata
+                WHERE zookeeper_path ilike '%{keeper_path}%'
+                """
+            )
+            .strip()
+            .split("\t"),
+        )
+    )
+    assert processing == 0
+    assert failed == 0
+
+    # The single processed pointer holds the last processed file path.
+    processed_path_len = int(
+        node.query(
+            f"""
+            SELECT length(processed_path)
+            FROM system.s3_queue_metadata
+            WHERE zookeeper_path ilike '%{keeper_path}%'
+            """
+        ).strip()
+    )
+    assert processed_path_len == 1
+
+    processed_path_value = node.query(
+        f"""
+        SELECT arrayJoin(mapValues(processed_path))
+        FROM system.s3_queue_metadata
+        WHERE zookeeper_path ilike '%{keeper_path}%'
+        """
+    )
+    assert files_path in processed_path_value
+
+    node.query(f"DROP TABLE {table_name} SYNC")
