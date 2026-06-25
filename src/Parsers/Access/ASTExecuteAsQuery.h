@@ -14,7 +14,7 @@ class ASTUserNameWithHost;
 class ASTExecuteAsQuery : public ASTQueryWithOutput
 {
 public:
-    ASTUserNameWithHost * target_user;
+    ASTUserNameWithHost * target_user{};
     IAST * subquery = nullptr;
 
     String getID(char) const override;

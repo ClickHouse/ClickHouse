@@ -1,7 +1,11 @@
 #include <Client.h>
+#include <base/defines.h>
 #include <Client/ConnectionString.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
+
+/// musl defines stderr as (stderr) which is a self-referential macro
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options.hpp>
 #include <Common/Config/parseConnectionCredentials.h>
@@ -119,7 +123,7 @@ void Client::processError(std::string_view query) const
 
     // A debug check -- at least some exception must be set, if the error
     // flag is set, and vice versa.
-    assert(have_error == (client_exception || server_exception));
+    chassert(have_error == (client_exception || server_exception));
 }
 
 
@@ -723,8 +727,45 @@ void Client::printChangedSettings() const
 }
 
 
+String Client::getHelpHeader() const
+{
+    return fmt::format(
+        "Usage: {0} [--query <query>]\n"
+        "{0} is a client application that is used to connect to ClickHouse.\n\n"
+        "It can run queries as a command line tool if you pass queries as an argument\n"
+        "or as an interactive client.\n"
+        "Queries can run one at a time, or in a multiquery mode.\n"
+        "To change settings you may use SET statements and SETTINGS clause\n"
+        "in queries or set them for a session with corresponding arguments.\n"
+        "'{0}' command will try to connect to clickhouse-server running\n"
+        "on the same server. If you have credentials set up, pass them with\n"
+        "--user <username> --password <password> or with --ask-password argument\n"
+        "that will open command prompt.\n\n"
+        "Connect to tcp native port (9000) without encryption:\n"
+        "    {0} --host clickhouse.example.com --password mysecretpassword\n"
+        "Connect to secure endpoint:\n"
+        "    {0} --secure --host clickhouse.example.com --password mysecretpassword\n",
+        app_name);
+}
+
+
+String Client::getHelpFooter() const
+{
+    return fmt::format(
+        "Note: if clickhouse is installed, you can use 'clickhouse-client' invocation with a dash.\n\n"
+        "Example printing current longest running query on a server:\n"
+        "    {0} --query \\\n"
+        "        'SELECT * FROM system.processes ORDER BY elapsed LIMIT 1 FORMAT Vertical'\n"
+        "Example creating table and inserting data:\n"
+        "    {0} --multiquery --query \\\n"
+        "        'CREATE TABLE t (a Int) ENGINE = Memory; INSERT INTO t VALUES (1), (2), (3)'\n",
+        app_name);
+}
+
+
 void Client::printHelpMessage(const OptionsDescription & options_description)
 {
+    output_stream << getHelpHeader() << "\n";
     if (options_description.main_description.has_value())
         output_stream << options_description.main_description.value() << "\n";
     if (options_description.external_description.has_value())
@@ -733,6 +774,7 @@ void Client::printHelpMessage(const OptionsDescription & options_description)
         output_stream << options_description.hosts_and_ports_description.value() << "\n";
 
     output_stream << "All settings are documented at https://clickhouse.com/docs/operations/settings/settings.\n";
+    output_stream << getHelpFooter() << "\n";
     output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parameterized queries.\n";
     output_stream << "\nSee also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
 }
@@ -789,7 +831,10 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("fake-drop", "Ignore all DROP queries, should be used only for testing")
         ("accept-invalid-certificate",
             "Ignore certificate verification errors, equal to config parameters "
-            "openSSL.client.invalidCertificateHandler.name=AcceptCertificateHandler and openSSL.client.verificationMode=none");
+            "openSSL.client.invalidCertificateHandler.name=AcceptCertificateHandler and openSSL.client.verificationMode=none")
+        ("inline-insert-data",
+            "Send INSERT data as is in the query text instead of converting it to blocks in the native format. "
+            "The server will parse the inline data itself, avoiding the round-trip to receive table structure.");
 
     /// Commandline options related to external tables.
 
@@ -915,6 +960,8 @@ void Client::processOptions(
         config().setBool("no-server-client-version-message", true);
     if (options.contains("fake-drop"))
         config().setString("ignore_drop_queries_probability", "1");
+    if (options.contains("inline-insert-data"))
+        config().setBool("inline-insert-data", true);
     if (options.contains("jwt"))
     {
         if (!options["user"].defaulted())
@@ -1005,7 +1052,7 @@ void Client::processOptions(
 
 void Client::processConfig()
 {
-    if (!queries.empty() && config().has("queries-file"))
+    if (!queries.empty() && !queries_files.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
 
     /// Batch mode is enabled if one of the following is true:
@@ -1016,20 +1063,21 @@ void Client::processConfig()
     /// - --queries-file command line option is present.
     ///   The value of the option is used as file with query (or of multiple queries) to execute.
 
-    delayed_interactive = config().has("interactive") && (!queries.empty() || config().has("queries-file"));
+    delayed_interactive = config().has("interactive") && (!queries.empty() || !queries_files.empty());
     if (stdin_is_a_tty && (delayed_interactive || (queries.empty() && queries_files.empty())))
     {
         is_interactive = true;
     }
     else
     {
-        echo_queries = config().getBool("echo", false);
         ignore_error = config().getBool("ignore-error", false);
 
         query_id = config().getString("query_id", "");
         if (!query_id.empty())
             client_context->setCurrentQueryId(query_id);
     }
+
+    setupEchoAndHighlightSettings();
 
     if (is_interactive || delayed_interactive)
     {
@@ -1050,8 +1098,13 @@ void Client::processConfig()
     pager = config().getString("pager", "");
     enable_highlight = config().getBool("highlight", true);
     multiline = config().has("multiline");
+    rainbow_parentheses = config().getBool("rainbow_parentheses", true);
     print_stack_trace = config().getBool("stacktrace", false);
     default_database = config().getString("database", "");
+    inline_insert_data = config().getBool("inline-insert-data", false);
+
+    if (inline_insert_data)
+        client_context->setSetting("send_table_structure_on_insert_with_inline_data", false);
 
     setDefaultFormatsAndCompressionFromConfiguration();
 }
@@ -1309,8 +1362,7 @@ void Client::readArguments(
 }
 
 
-#pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wmissing-declarations"
+int mainEntryClickHouseClient(int argc, char ** argv);
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {

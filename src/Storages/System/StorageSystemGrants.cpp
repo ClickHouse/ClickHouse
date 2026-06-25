@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemGrants.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemPrivileges.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -96,7 +97,7 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
             column_role_name_null_map.push_back(false);
         }
         else
-            assert(false);
+            chassert(false);
 
         column_access_type.push_back(static_cast<Int16>(access_type));
         column_access_object.insertData(access_object.data(), access_object.length());
@@ -194,3 +195,6 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemGrants) }

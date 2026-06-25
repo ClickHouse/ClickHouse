@@ -58,7 +58,7 @@ static const ColumnAggregateFunction * getColumnData(const ColumnPtr & column, b
 }
 
 template <typename Name>
-class FunctionNumericIndexedVectorBuildImpl : public IFunction,
+class FunctionNumericIndexedVectorBuildImpl final : public IFunction,
                                               public FunctionNumericIndexedVectorHelper<FunctionNumericIndexedVectorBuildImpl<Name>>
 {
 public:
@@ -147,7 +147,7 @@ struct NameNumericIndexedVectorBuild
 using FunctionNumericIndexedVectorBuild = FunctionNumericIndexedVectorBuildImpl<NameNumericIndexedVectorBuild>;
 
 template <template <class> class FuncImpl>
-class FunctionNumericIndexedVector : public IFunction, public FunctionNumericIndexedVectorHelper<FunctionNumericIndexedVector<FuncImpl>>
+class FunctionNumericIndexedVector final : public IFunction, public FunctionNumericIndexedVectorHelper<FunctionNumericIndexedVector<FuncImpl>>
 {
 public:
     /// The template parameters in BSINumericIndexedVector are randomly filled.
@@ -482,7 +482,7 @@ using FunctionNumericIndexedVectorCardinality
 using FunctionNumericIndexedVectorAllValueSum
     = FunctionNumericIndexedVectorToNumberImpl<Float64, NumericIndexedVectorAllValueSumImpl<Float64>>;
 
-class FunctionNumericIndexedVectorGetValueImpl : public IFunction,
+class FunctionNumericIndexedVectorGetValueImpl final : public IFunction,
                                                  public FunctionNumericIndexedVectorHelper<FunctionNumericIndexedVectorGetValueImpl>
 {
 public:
@@ -718,7 +718,7 @@ struct NumericIndexedVectorShortDebugStringImpl
 using FunctionNumericIndexedVectorShortDebugString = FunctionNumericIndexedVectorToStringImpl<NumericIndexedVectorShortDebugStringImpl>;
 
 template <typename Name>
-class FunctionNumericIndexedVectorToMapImpl : public IFunction,
+class FunctionNumericIndexedVectorToMapImpl final : public IFunction,
                                               public FunctionNumericIndexedVectorHelper<FunctionNumericIndexedVectorToMapImpl<Name>>
 {
 public:
