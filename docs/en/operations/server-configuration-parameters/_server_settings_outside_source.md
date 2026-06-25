@@ -130,6 +130,18 @@ consider alternative authentication methods due to
 bcrypt's computational overhead at higher work factors.
 :::
 
+## max_concurrent_bcrypt_authentications {#max_concurrent_bcrypt_authentications}
+
+Maximum number of `bcrypt_password` verifications allowed to run concurrently across the whole server.
+
+bcrypt is intentionally CPU-expensive, so a flood of authentication attempts with many distinct passwords can saturate all CPU cores and cause a denial of service. This setting bounds the worst-case bcrypt CPU usage regardless of how many distinct passwords are tried. Attempts that exceed the limit fail fast with the generic authentication error, exactly as if the password were wrong, and are counted by the `BcryptAuthenticationThrottled` event in [`system.events`](/operations/system-tables/events). Successful and repeated identical credentials are served from the bcrypt result cache and are never throttled.
+
+A value of `0` (the default) means no limit, preserving the previous behavior. A non-zero value should be chosen with care: setting it too low can reject legitimate concurrent logins (for example during a fleet restart). A small fraction of the available CPU cores is a reasonable starting point.
+
+```xml
+<max_concurrent_bcrypt_authentications>0</max_concurrent_bcrypt_authentications>
+```
+
 ## table_engines_require_grant {#table_engines_require_grant}
 
 If set to true, users require a grant to create a table with a specific engine e.g. `GRANT TABLE ENGINE ON TinyLog to user`.
