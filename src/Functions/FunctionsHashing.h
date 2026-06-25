@@ -738,9 +738,30 @@ struct ImplXxHash64
 
     /*
        With current implementation with more than 1 arguments it will give the results
-       non-reproducible from outside of CH. (see comment on ImplXxHash32).
+       non-reproducible from outside of CH. (see comment on `ImplXxHash32`).
      */
     static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
+
+    static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
+};
+
+struct ImplXxHash64Spark
+{
+    static constexpr auto name = "xxHash64Spark";
+    using ReturnType = Int64;
+    using uint128_t = CityHash_v1_0_2::uint128;
+
+    static Int64 apply(const char * s, const size_t len) { return bit_cast<Int64>(XXH_INLINE_XXH64(s, len, 42)); }
+
+    /*
+       With current implementation with more than 1 arguments it will give the results
+       non-reproducible from outside of CH. (see comment on `ImplXxHash32`).
+    */
+    static Int64 combineHashes(Int64 h1, Int64 h2)
+    {
+        return bit_cast<Int64>(CityHash_v1_0_2::Hash128to64(uint128_t(bit_cast<UInt64>(h1), bit_cast<UInt64>(h2))));
+    }
 
     static constexpr bool use_int_hash_for_pods = false;
     static constexpr bool return_bigint_instead_of_fixedstring = false;
@@ -1870,6 +1891,7 @@ using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
 
 using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
 using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
+using FunctionXxHash64Spark = FunctionAnyHash<ImplXxHash64Spark>;
 using FunctionXXH3 = FunctionAnyHash<ImplXXH3>;
 using FunctionXXH3_128 = FunctionAnyHash<ImplXXH3_128>;
 
