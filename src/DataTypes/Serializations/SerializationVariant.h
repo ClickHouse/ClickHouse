@@ -206,13 +206,16 @@ private:
         size_t limit,
         ReadBuffer * stream,
         bool continuous_reading,
-        DeserializeBinaryBulkStateVariantDiscriminators & state) const;
+        DeserializeBinaryBulkStateVariantDiscriminators & state,
+        const DeserializeBinaryBulkSettings & settings) const;
 
-    static void readDiscriminatorsGranuleStart(DeserializeBinaryBulkStateVariantDiscriminators & state, ReadBuffer * stream);
-
-    /// Validate a discriminator read from untrusted input: it must be NULL_DISCRIMINATOR
-    /// or a valid local discriminator (< number of variants). Throws INCORRECT_DATA otherwise.
-    void checkDiscriminator(ColumnVariant::Discriminator discr) const;
+    /// Reads the compact-discriminators granule header and validates the compact discriminator
+    /// against num_variants when num_variants > 0.
+    static void readDiscriminatorsGranuleStart(
+        DeserializeBinaryBulkStateVariantDiscriminators & state,
+        ReadBuffer * stream,
+        size_t num_variants,
+        const DeserializeBinaryBulkSettings & settings);
 
     /// Shared implementation for Escaped and Raw text deserialization.
     /// Checks for NULL representation in the raw buffer before escape processing
