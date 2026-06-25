@@ -231,11 +231,25 @@ def test_snapshots_with_disks(started_cluster):
             cleanup_disks=False,
         )
 
-        ## all but the latest log should be on S3
+        # Relocating non-latest snapshots to the configured disk runs after the
+        # "Created persistent snapshot" log line, so poll for the count to settle
+        # instead of checking once (mirrors assert_single_local_log above).
+        def assert_single_local_snapshot():
+            local_snapshot_files = get_local_snapshots(node_snapshot)
+            start_time = time.time()
+            while len(local_snapshot_files) != 1:
+                logging.debug(f"Local snapshot files: {local_snapshot_files}")
+                assert (
+                    time.time() - start_time < 60
+                ), "local_snapshot_files size is not equal to 1 after 60s"
+                time.sleep(1)
+                local_snapshot_files = get_local_snapshots(node_snapshot)
+
+        ## all but the latest snapshot should be on S3
+        assert_single_local_snapshot()
+        local_snapshot_files = get_local_snapshots(node_snapshot)
         s3_snapshot_files = list_s3_objects(started_cluster, "snapshots/")
         assert set(s3_snapshot_files) == set(previous_snapshot_files[:-1])
-        local_snapshot_files = get_local_snapshots(node_snapshot)
-        assert len(local_snapshot_files) == 1
         assert local_snapshot_files[0] == previous_snapshot_files[-1]
 
         previous_snapshot_files = s3_snapshot_files + local_snapshot_files
@@ -250,9 +264,9 @@ def test_snapshots_with_disks(started_cluster):
         snapshot_idx = keeper_utils.send_4lw_cmd(cluster, node_snapshot, "csnp")
         node_snapshot.wait_for_log_line(f"Created persistent snapshot {snapshot_idx}")
 
-        snapshot_files = list_s3_objects(started_cluster, "snapshots/")
+        assert_single_local_snapshot()
         local_snapshot_files = get_local_snapshots(node_snapshot)
-        assert len(local_snapshot_files) == 1
+        snapshot_files = list_s3_objects(started_cluster, "snapshots/")
 
         snapshot_files.extend(local_snapshot_files)
 
