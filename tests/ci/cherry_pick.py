@@ -39,7 +39,11 @@ from typing import Iterable, List, Optional
 from github.GithubException import GithubException
 
 from cache_utils import GitHubCache
-from cherry_pick_branches import select_backport_branches
+from cherry_pick_branches import (
+    branch_version,
+    label_version,
+    select_backport_branches,
+)
 from ci_buddy import CIBuddy
 from ci_utils import Shell
 from env_helper import (
@@ -641,13 +645,23 @@ class BackportPRs:
         self.release_prs = self.gh.get_release_pulls(self._repo_name)
         self.release_branches = [pr.head.ref for pr in self.release_prs]
 
-        self.labels_to_backport = [
-            # compatibility labels for the cloud and public release branches
-            f"v{branch.replace('release/', '')}-must-backport"
-            for branch in self.release_branches
-        ]
+        # A version-specific label `vX.Y-must-backport` is backported to X.Y and
+        # to every newer active release (see `select_backport_branches`). The
+        # named release need not be active itself, so the search must also pick
+        # up PRs labelled for an end-of-life release as long as a newer release
+        # is still active. Include every version-specific label that exists in
+        # the repo whose version is not newer than the newest active release --
+        # a newer label could not expand to any active branch.
+        newest_active = max(branch_version(branch) for branch in self.release_branches)
+        self.labels_to_backport = sorted(
+            label.name
+            for label in self.repo.get_labels()
+            if label_version(label.name) is not None
+            and label_version(label.name) <= newest_active
+        )
 
         logging.info("Active releases: %s", ", ".join(self.release_branches))
+        logging.info("Labels to backport: %s", ", ".join(self.labels_to_backport))
 
     def update_local_release_branches(self):
         logging.info("Update local release branches")
