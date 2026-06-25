@@ -89,7 +89,7 @@ struct BlockIO
     void setAllDataSent() const;
 
     /// Release query slot early to allow client to reuse it for his next query.
-    void releaseWorkloadResources() const;
+    void releaseQuerySlot() const;
 
     void resetPipeline(bool cancel);
 

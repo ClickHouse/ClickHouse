@@ -690,7 +690,7 @@ namespace ErrorCodes
     DECLARE(Bool, allow_experimental_text_index_positions, false, R"(
     Allow creating text indexes with the experimental `positions` argument which
     stores token positions to support exact phrase matching.
-    )", EXPERIMENTAL) \
+    )", BETA) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
     Minimum time to wait before trying to select parts to merge again after no
     parts were selected. A lower setting will trigger selecting tasks in
@@ -2755,16 +2755,6 @@ std::vector<std::string_view> MergeTreeSettings::getAllAliasNames() const
 std::string_view MergeTreeSettings::getDescription(std::string_view name) const
 {
     return impl->getDescription(name);
-}
-
-std::string_view MergeTreeSettings::getTypeName(std::string_view name) const
-{
-    return impl->getTypeName(name);
-}
-
-String MergeTreeSettings::getDefaultValueString(std::string_view name) const
-{
-    return impl->getDefaultValueString(name);
 }
 
 SettingsTierType MergeTreeSettings::getTier(std::string_view name) const

@@ -218,8 +218,6 @@ public:
         M(keys128)                     \
         M(keys256)                     \
         M(hashed)                      \
-        M(low_cardinality_key_string)       \
-        M(low_cardinality_key_fixed_string) \
         M(two_level_key32)             \
         M(two_level_key64)             \
         M(two_level_key_string)        \
@@ -238,18 +236,14 @@ public:
         M(range17_key64)               \
         M(range18_key64)
 
-    /// Used for reading from StorageJoin and applying joinGet function. The single-LowCardinality-key
-    /// maps store key values in maps physically identical to their non-LowCardinality counterparts, so
-    /// they are read back the same way (the output key column is the parent LowCardinality type).
+    /// Used for reading from StorageJoin and applying joinGet function
     #define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
         M(key8)                                \
         M(key16)                               \
         M(key32)                               \
         M(key64)                               \
         M(key_string)                          \
-        M(key_fixed_string)                    \
-        M(low_cardinality_key_string)          \
-        M(low_cardinality_key_fixed_string)
+        M(key_fixed_string)
 
     /// Used in ConcurrentHashJoin
     #define APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M, ...)           \
@@ -288,20 +282,6 @@ public:
         }
     }
 
-    /// True for the single-LowCardinality-column maps, whose key getter consumes the live
-    /// ColumnLowCardinality (so the key column must not be materialized for them).
-    static bool isLowCardinalityType(Type type)
-    {
-        switch (type)
-        {
-            case Type::low_cardinality_key_string:
-            case Type::low_cardinality_key_fixed_string:
-                return true;
-            default:
-                return false;
-        }
-    }
-
     /** Different data structures, that are used to perform JOIN.
       */
     template <typename Mapped>
@@ -320,8 +300,6 @@ public:
         std::shared_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>           keys128;
         std::shared_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>           keys256;
         std::shared_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>         hashed;
-        std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>      low_cardinality_key_string;
-        std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>      low_cardinality_key_fixed_string;
         std::shared_ptr<TwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>>   two_level_key32;
         std::shared_ptr<TwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>>   two_level_key64;
         std::shared_ptr<TwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_string;

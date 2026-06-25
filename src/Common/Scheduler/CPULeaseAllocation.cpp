@@ -1,6 +1,5 @@
 #include <Common/Scheduler/CPULeaseAllocation.h>
 #include <Common/Scheduler/ISchedulerQueue.h>
-#include <Common/Scheduler/Debug.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
@@ -12,7 +11,7 @@
 #include <atomic>
 #include <utility>
 
-#ifdef SCHEDULER_DEBUG
+#if 0
 #define LOG_EVENT(X) LOG_TRACE(log, "{}:{} ({}) allocated={} granted={} running={} L:{} P:{} <{}/{}> e:{}", \
     lease_id, settings.workload, #X, allocated, granted, threads.running_count, formatBitset(threads.leased), \
     formatBitset(threads.preempted), consumed_ns, requested_ns, requests.hasEnqueued())
