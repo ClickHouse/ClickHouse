@@ -17,6 +17,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 
 
 namespace DB
@@ -31,25 +32,21 @@ namespace ErrorCodes
 namespace
 {
 
-/// Build a SocketAddress from a string read off the native protocol wire.
-/// ClientInfo::write always serializes the address as an IP literal plus a numeric port
-/// ("ip:port" or "[ipv6]:port", via SocketAddress::toString), but the value is attacker-controlled
-/// and may be corrupted or desynced. Poco's SocketAddress(String) constructor would resolve a
-/// non-numeric port via getservbyname() and a non-IP host via DNS::hostByName() - both reach a
-/// non-reentrant libc resolver family that base/harmful traps to an uncatchable SIGILL in
-/// debug/sanitizer builds. Validate both parts here (numeric port <= 65535, host parseable as an
-/// IP literal) and construct the address directly from the parsed IPAddress, so malformed input
-/// such as "host:9000" or ":9000" becomes a catchable error instead of a resolver call.
-/// The host and port substrings are split exactly as Poco::Net::SocketAddress::init() does.
-Poco::Net::SocketAddress makeSocketAddressFromWire(const String & host_and_port)
+/// Parse a string read off the native protocol wire into an "ip:port" SocketAddress WITHOUT resolving.
+/// ClientInfo::write always serializes the address as an IP literal plus a numeric port ("ip:port" or
+/// "[ipv6]:port", via SocketAddress::toString), but the value is attacker-controlled and may be
+/// corrupted or desynced. Poco's SocketAddress(String) constructor would resolve a non-numeric port
+/// via getservbyname() and a non-IP host via DNS::hostByName() - both reach a non-reentrant libc
+/// resolver family that base/harmful traps to an uncatchable SIGILL in debug/sanitizer builds. We split
+/// host and port exactly as Poco::Net::SocketAddress::init() does, require a numeric port <= 65535 and a
+/// host that parses as an IP literal, and build the address directly from the parsed IPAddress. Returns
+/// nullopt for anything else (empty, a leading-'/' UNIX-local form, a non-numeric/out-of-range port, or
+/// a non-IP host), so the caller decides whether to reject it or fall back to a default - never resolving.
+std::optional<Poco::Net::SocketAddress> tryParseIpEndpointFromWire(const String & host_and_port)
 {
-    if (host_and_port.empty())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Empty address received over the network");
-
-    /// A leading '/' makes Poco build a UNIX_LOCAL address, whose host()/port() throw later; every
-    /// initial_address consumer calls those, so reject it here instead of deferring the throw.
-    if (host_and_port.front() == '/')
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed address received over the network: not an IP endpoint");
+    /// A leading '/' makes Poco build a UNIX_LOCAL address, whose host()/port() throw later.
+    if (host_and_port.empty() || host_and_port.front() == '/')
+        return {};
 
     std::string_view host;
     size_t port_pos = String::npos;
@@ -59,7 +56,7 @@ Poco::Net::SocketAddress makeSocketAddressFromWire(const String & host_and_port)
         /// for IPAddress::tryParse is the address between the brackets (unbracketed).
         const auto closing_bracket = host_and_port.find(']');
         if (closing_bracket == String::npos)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed IPv6 address received over the network");
+            return {};
         host = std::string_view(host_and_port).substr(1, closing_bracket - 1);
         if (closing_bracket + 1 < host_and_port.size() && host_and_port[closing_bracket + 1] == ':')
             port_pos = closing_bracket + 2;
@@ -78,23 +75,21 @@ Poco::Net::SocketAddress makeSocketAddressFromWire(const String & host_and_port)
     const std::string_view port
         = port_pos == String::npos ? std::string_view{} : std::string_view(host_and_port).substr(port_pos);
     if (port.empty())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed address received over the network: missing port number");
+        return {};
 
     UInt32 port_number = 0;
     for (const char c : port)
     {
         if (!isNumericASCII(c))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed address received over the network: non-numeric port");
+            return {};
         port_number = port_number * 10 + static_cast<UInt32>(c - '0');
         if (port_number > 0xFFFF)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed address received over the network: port number out of range");
+            return {};
     }
 
-    /// The host must be an IP literal. ClientInfo::write only ever emits one (SocketAddress::host()),
-    /// so a non-IP host means corrupted/desynced input - reject it instead of letting Poco resolve it.
     Poco::Net::IPAddress ip;
     if (!Poco::Net::IPAddress::tryParse(std::string(host), ip))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed address received over the network: host is not an IP literal");
+        return {};
 
     return Poco::Net::SocketAddress(ip, static_cast<UInt16>(port_number));
 }
@@ -306,7 +301,18 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
 
     String initial_address_string;
     readBinary(initial_address_string, in);
-    initial_address = std::make_shared<Poco::Net::SocketAddress>(makeSocketAddressFromWire(initial_address_string));
+    /// The wire address must never reach Poco's resolver (getservbyname/DNS, trapped to SIGILL). For a
+    /// SECONDARY_QUERY the value is consumed verbatim (system.query_log, interserver authenticate), so a
+    /// non-"ip:port" form is corrupted input and is rejected as INCORRECT_DATA. For an INITIAL_QUERY the
+    /// server overwrites initial_address with the real peer address in Session::makeQueryContextImpl, so
+    /// the wire value is discarded; to stay compatible with the pre-validation native protocol (which
+    /// documented a generic host:port) we accept it leniently and fall back to a default endpoint when it
+    /// is not a plain IP literal, instead of rejecting otherwise-valid initiating clients.
+    auto parsed_address = tryParseIpEndpointFromWire(initial_address_string);
+    if (!parsed_address && query_kind == QueryKind::SECONDARY_QUERY)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Malformed initial_address received over the network: expected an IP literal with a numeric port");
+    initial_address = std::make_shared<Poco::Net::SocketAddress>(parsed_address.value_or(Poco::Net::SocketAddress{}));
 
     if (client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INITIAL_QUERY_START_TIME)
     {
