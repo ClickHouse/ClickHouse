@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-random-merge-tree-settings
+# Tags: long, no-random-settings, no-random-merge-tree-settings
 #
 # A KILLed INSERT must abort an in-progress skip-index build promptly, instead of
 # finishing the whole build first. We start a single-block INSERT that spends many
@@ -7,6 +7,11 @@
 # to return quickly. Without the per-granule cancellation check the KILL blocks until the
 # whole block's build completes and the timeout below trips.
 #
+# no-random-settings: the test reads 30M rows in a single large INSERT and controls
+# termination itself via KILL QUERY. Randomized query limits break that contract -- e.g.
+# an injected 'max_rows_to_read' aborts the INSERT with TOO_MANY_ROWS before the build even
+# starts, and a random 'max_execution_time' / 'max_memory_usage' would terminate it instead
+# of our KILL. We need the read/time/memory limits left at their (unlimited) defaults.
 # no-random-merge-tree-settings: a randomized index_granularity changes the granule count
 # and can make the build pathologically slow or memory-heavy; the timing/memory assumptions
 # here need the pinned granularity below.
