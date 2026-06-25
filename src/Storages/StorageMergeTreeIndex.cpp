@@ -1,5 +1,4 @@
 #include <Storages/StorageMergeTreeIndex.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
@@ -37,7 +36,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-class MergeTreeIndexSource final : public ISource, WithContext
+class MergeTreeIndexSource : public ISource, WithContext
 {
 public:
     MergeTreeIndexSource(
@@ -289,8 +288,7 @@ StorageMergeTreeIndex::StorageMergeTreeIndex(
     data_parts = merge_tree->getDataPartsVectorForInternalUsage();
     std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
 
-    auto primary_key_metadata = merge_tree->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    key_sample_block = std::make_shared<const Block>(primary_key_metadata->getPrimaryKey().sample_block);
+    key_sample_block = std::make_shared<const Block>(merge_tree->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getPrimaryKey().sample_block);
 
     if (with_minmax)
     {

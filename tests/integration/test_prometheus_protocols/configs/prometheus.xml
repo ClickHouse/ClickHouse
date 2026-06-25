@@ -71,24 +71,6 @@
                     <table>default.prometheus</table>
                 </handler>
             </my_rule_9>
-
-            <my_rule_10>
-                <!-- This handler sets no database and no table, so both database and table names
-                     come from the query parameters. -->
-                <url>/api/v1/query_dynamic_table</url>
-                <handler>
-                    <type>query_api</type>
-                </handler>
-            </my_rule_10>
-
-            <my_rule_11>
-                <!-- This handler sets only database, so the table name comes from the query parameters. -->
-                <url>/api/v1/query_dynamic_table_and_fixed_db</url>
-                <handler>
-                    <type>query_api</type>
-                    <database>default</database>
-                </handler>
-            </my_rule_11>
         </handlers>
     </prometheus>
 </clickhouse>
