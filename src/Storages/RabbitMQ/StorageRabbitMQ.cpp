@@ -86,6 +86,9 @@ static const uint32_t QUEUE_SIZE = 100000;
 static const auto MAX_FAILED_READ_ATTEMPTS = 10;
 static const auto RESCHEDULE_MS = 500;
 static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
+/// Timeout for AMQP operations that use a blocking event loop (setup, cleanup, queue removal).
+/// Bounds how long DROP TABLE / server shutdown can block when the broker connection is dead.
+static const auto BLOCKING_LOOP_TIMEOUT_MS = 30000;
 
 namespace ErrorCodes
 {
@@ -641,7 +644,8 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
         }
     }
 
-    connection->getHandler().startBlockingLoop();
+    if (!connection->getHandler().startBlockingLoopWithTimeout(BLOCKING_LOOP_TIMEOUT_MS))
+        throw Exception(ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE, "Timed out waiting for exchange setup — RabbitMQ may be unreachable");
     if (!error.empty())
         throw Exception(error_code, "{}", error);
 }
@@ -723,7 +727,8 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
     /// AMQP::autodelete setting is not allowed, because in case of server restart there will be no consumers
     /// and deleting queues should not take place.
     rabbit_channel.declareQueue(queue_name, AMQP::durable, queue_settings).onSuccess(success_callback).onError(error_callback);
-    connection->getHandler().startBlockingLoop();
+    if (!connection->getHandler().startBlockingLoopWithTimeout(BLOCKING_LOOP_TIMEOUT_MS))
+        throw Exception(ErrorCodes::CANNOT_CREATE_RABBITMQ_QUEUE_BINDING, "Timed out waiting for queue setup — RabbitMQ may be unreachable");
     if (!error.empty())
         throw Exception(ErrorCodes::CANNOT_CREATE_RABBITMQ_QUEUE_BINDING, "{}", error);
 }
@@ -971,6 +976,10 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
         return;
 
     connection->heartbeat();
+    /// Run the event loop briefly so that any I/O error triggered by the heartbeat write on a
+    /// dead socket is processed before we check isConnected(). Without this, the error event
+    /// only surfaces inside startBlockingLoop() — after the guard has already passed.
+    connection->getHandler().iterateLoop();
     if (!connection->isConnected())
     {
         String queue_names;
@@ -1006,7 +1015,9 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
             connection->getHandler().stopBlockingLoop();
         });
     }
-    connection->getHandler().startBlockingLoop();
+    if (!connection->getHandler().startBlockingLoopWithTimeout(BLOCKING_LOOP_TIMEOUT_MS))
+        LOG_WARNING(log, "Timed out waiting for queue cleanup — RabbitMQ connection may be dead. "
+                         "Queues may need to be deleted manually.");
     rabbit_channel->close();
 
     /// Also there is no need to cleanup exchanges as they were created with AMQP::autodelete option. Once queues

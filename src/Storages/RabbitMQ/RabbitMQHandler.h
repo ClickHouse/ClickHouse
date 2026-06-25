@@ -40,6 +40,10 @@ public:
     /// No synchronization is done with the main loop thread.
     int startBlockingLoop();
 
+    /// Like startBlockingLoop() but stops automatically after timeout_ms milliseconds.
+    /// Returns true if the loop exited naturally (callbacks fired), false if it timed out.
+    bool startBlockingLoopWithTimeout(uint64_t timeout_ms);
+
     void stopLoop();
     void stopBlockingLoop();
 
