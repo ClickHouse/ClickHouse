@@ -250,6 +250,9 @@ public:
             chassert(file_buf);
             last_index_written.reset();
             current_file_description = std::move(file_description);
+            // File reopened for append — clear the seal so the planner skips it.
+            if (mode == WriteMode::Append)
+                current_file_description->sealed_for_read_ahead.store(false, std::memory_order_release);
 
             if (log_file_settings.compress_logs)
                 compressed_buffer = std::make_unique<ZstdDeflatingAppendableWriteBuffer>(
@@ -1354,6 +1357,9 @@ void LogEntryStorage::cleanAfter(uint64_t index)
     /// remove all the term infos we don't need (all terms that start after index)
     while (!log_term_infos.empty() && log_term_infos.back().first_index > index)
         log_term_infos.pop_back();
+
+    // Entries > index were rewritten; buffered decoded content is now stale.
+    closeAllReadersLocked();
 }
 
 bool LogEntryStorage::contains(uint64_t index) const
@@ -1865,7 +1871,7 @@ void PerPeerReader::resetToIndexLocked(uint64_t index)
 
 uint64_t PerPeerReader::fillCoverageEndLocked() const
 {
-    // FileSpan cursors are open-ended (read to file EOF), so reach = to_log_index + 1.
+    // Fill cursors read to the file's last sealed index (to_log_index), so reach = to_log_index + 1.
     // to_log_index is immutable after sealing, safe to read without file withLock.
     if (!pending_cursors.empty())
         return pending_cursors.back().file_description->to_log_index + 1;
@@ -2262,6 +2268,17 @@ void LogEntryStorage::retireReaderLocked(int32_t peer_id, const std::shared_ptr<
     per_peer_readers.erase(peer_id);
 }
 
+void LogEntryStorage::closeAllReadersLocked()
+{
+    std::lock_guard map_lock(per_peer_readers_mutex);
+    for (auto & [pid, reader] : per_peer_readers)
+    {
+        std::lock_guard dq_lock(reader->deque_mutex);
+        reader->closeReaderLocked(/*bump_generation=*/true);
+    }
+    per_peer_readers.clear();
+}
+
 /// Build a read-ahead plan: direct-read items via getReadPlan, plus speculative fill cursors
 /// over [start, max_index_with_location] for sealed files within the window byte budget.
 /// PRECONDITION: caller holds changelog_lock (shared).
@@ -2277,7 +2294,7 @@ LogReadPlan LogEntryStorage::getReadAheadPlan(uint64_t start, uint64_t end, int6
     if (!can_use_readahead)
         return plan;
 
-    // One open-ended fill cursor per sealed file in plan.items. If the same file appears
+    // One fill cursor (reads to to_log_index) per sealed file in plan.items. If the same file appears
     // as non-contiguous spans (gap from a rolled-back entry), abort read-ahead entirely —
     // reading to EOF would decode the stale entry at the gap position.
     ChangelogFileDescriptionPtr prev_file;
@@ -2360,18 +2377,21 @@ void LogEntryStorage::fillTask(std::shared_ptr<PerPeerReader> reader) const
 
 void LogEntryStorage::ensureReadAheadPoolLocked()
 {
-    if (readahead_pool)
+    // Don't recreate the pool after shutdown — a fill task would capture `this` after teardown.
+    if (is_shutdown || readahead_pool)
         return;
     size_t threads = readahead_settings.pool_threads;
     if (threads == 0)
         threads = readahead_settings.max_peer_readers;
+    // Queue size must always be max_peer_readers: scheduleOrThrowOnError blocks when the queue
+    // is full and is called under per_peer_readers_mutex, which would deadlock on shutdown.
     readahead_pool = std::make_unique<ThreadPool>(
         CurrentMetrics::KeeperChangelogReadAheadThreads,
         CurrentMetrics::KeeperChangelogReadAheadThreadsActive,
         CurrentMetrics::KeeperChangelogReadAheadThreadsScheduled,
         threads,
         threads,
-        threads);
+        readahead_settings.max_peer_readers);
 }
 
 void LogEntryStorage::evictIdleReadersLocked(std::chrono::steady_clock::time_point now)
@@ -2413,11 +2433,19 @@ LogEntryStorage::acquireReaderLocked(int32_t peer_id, const LogReadPlan & plan, 
     if (it != per_peer_readers.end())
     {
         auto & existing = it->second;
-        bool terminal = false;
+        bool terminal = [&]
         {
             std::lock_guard dq_lock(existing->deque_mutex);
-            terminal = existing->state != ReaderState::Running;
-        }
+            if (existing->state == ReaderState::Exhausted)
+            {
+                // Exhausted: fill is done but deque may still hold entries. Keep the reader
+                // if its decoded tail covers plan.start_index; retire otherwise.
+                const uint64_t coverage_end = existing->decoded_front_index + existing->decoded_entries.size();
+                return plan.start_index >= coverage_end;
+            }
+
+            return existing->state != ReaderState::Running;
+        }();
         if (terminal)
         {
             retireReaderLocked(peer_id, existing);
@@ -2458,8 +2486,15 @@ LogEntryStorage::acquireReaderLocked(int32_t peer_id, const LogReadPlan & plan, 
 
 void LogEntryStorage::installPlanLocked(PerPeerReader & reader, const LogReadPlan & plan) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    // If the fill went terminal (Exhausted/Error/Compacted) after the reader was acquired,
-    // leave it untouched; drainReader will fall back and the next request recreates a fresh reader.
+    // Exhausted reader with a drainable deque: advance the front, no new cursors.
+    if (reader.state == ReaderState::Exhausted)
+    {
+        if (reader.discardBeforeLocked(plan.start_index))
+            reader.fill_serve_cv.notify_all();
+        return;
+    }
+
+    // Other terminal states: leave untouched; drainReader falls back to direct read.
     if (reader.state != ReaderState::Running)
         return;
 

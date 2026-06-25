@@ -184,7 +184,7 @@ struct LogReadPlan
 {
     /// File position descriptor shared by direct reads and read-ahead fill cursors.
     /// For direct reads (items): count > 0 is the exact record count.
-    /// For fill cursors (ReadAheadWindow): count = 0 means read to EOF of the file.
+    /// For fill cursors (ReadAheadWindow): count = 0 means read to the file's last sealed index (to_log_index).
     struct FileSpan
     {
         ChangelogFileDescriptionPtr file_description;
@@ -434,6 +434,9 @@ private:
 
     /// Mark a reader closed and remove it from the map. Fill task self-exits asynchronously.
     void retireReaderLocked(int32_t peer_id, const std::shared_ptr<PerPeerReader> & reader) TSA_REQUIRES(per_peer_readers_mutex);
+
+    /// Close and discard all per-peer readers. Called on writeAt to invalidate stale decoded content.
+    void closeAllReadersLocked();
 
     /// Lazily create the read-ahead thread pool.
     void ensureReadAheadPoolLocked() TSA_REQUIRES(per_peer_readers_mutex);

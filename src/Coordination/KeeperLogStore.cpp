@@ -94,16 +94,27 @@ KeeperLogStore::log_entries_ext(uint64_t start, uint64_t end, int64_t batch_size
         return plan;
     };
 
-    if (peer_id != NO_PEER_ID && changelog.isReadAheadEnabled())
+    try
     {
-        auto plan = build_plan_under_lock([&] TSA_NO_THREAD_SAFETY_ANALYSIS
-                                          { return changelog.getReadAheadPlan(start, end, batch_size_hint_in_bytes); });
-        return changelog.serveReadAhead(peer_id, plan);
-    }
+        if (peer_id != NO_PEER_ID && changelog.isReadAheadEnabled())
+        {
+            auto plan = build_plan_under_lock([&] TSA_NO_THREAD_SAFETY_ANALYSIS
+                                              { return changelog.getReadAheadPlan(start, end, batch_size_hint_in_bytes); });
+            return changelog.serveReadAhead(peer_id, plan);
+        }
 
-    auto plan
-        = build_plan_under_lock([&] TSA_NO_THREAD_SAFETY_ANALYSIS { return changelog.getReadPlan(start, end, batch_size_hint_in_bytes); });
-    return changelog.executeReadPlan(plan);
+        auto plan
+            = build_plan_under_lock([&] TSA_NO_THREAD_SAFETY_ANALYSIS { return changelog.getReadPlan(start, end, batch_size_hint_in_bytes); });
+        return changelog.executeReadPlan(plan);
+    }
+    catch (...)
+    {
+        // NuRaft's log_entries_ext contract: return nullptr when an entry cannot be retrieved
+        // (e.g. a concurrent writeAt truncation races with the lock-free read phase).
+        // NuRaft treats nullptr as a signal to trigger snapshot fallback.
+        tryLogCurrentException(log, fmt::format("While reading changelog entries [{}, {})", start, end));
+        return nullptr;
+    }
 }
 
 nuraft::ptr<nuraft::log_entry> KeeperLogStore::entry_at(uint64_t index)

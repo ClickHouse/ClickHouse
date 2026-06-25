@@ -2370,9 +2370,8 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadShutdownJoinsFills)
         changelog.log_entries_ext(1, 6, 0, /*peer_id=*/4);
     });
 
-    // Give the fill task time to enter the wedge before releasing it.
-    // The test verifies that changelog.shutdown() (called in destructor) joins all fill tasks.
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    // Wait until the fill task is actually wedged before releasing it.
+    DB::FailPointInjection::waitForPause(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
     DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
 
     reader.join();
