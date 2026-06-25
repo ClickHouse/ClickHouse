@@ -37,6 +37,13 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
     extern const S3AuthSettingsString external_id;
+    extern const S3AuthSettingsString http_client;
+    extern const S3AuthSettingsString service_account;
+    extern const S3AuthSettingsString metadata_service;
+    extern const S3AuthSettingsString request_token_path;
+    extern const S3AuthSettingsString google_adc_client_id;
+    extern const S3AuthSettingsString google_adc_client_secret;
+    extern const S3AuthSettingsString google_adc_refresh_token;
 }
 
 #endif
@@ -301,12 +308,21 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             );
             s3_settings->auth_settings[S3AuthSetting::access_key_id] = move_access_key_id;
             s3_settings->auth_settings[S3AuthSetting::secret_access_key] = move_secret_access_key;
-            /// The move destination authenticates with its own explicit keys (required above). Drop any
-            /// `role_arn`/STS settings inherited from the server `<s3>` config so the move never assumes the
-            /// server's role on top of those keys; the move settings have no way to request a role explicitly.
+            /// The move destination authenticates with its own explicit keys (required above). Drop every
+            /// server-managed auth mechanism inherited from the server `<s3>` config so the move never uses
+            /// the server's identity on top of those keys: `role_arn`-based STS, and the GCP OAuth mechanism
+            /// (`http_client = gcp_oauth` would mint a token from the server's GCP metadata service at the
+            /// HTTP layer regardless of the keys). The move settings have no way to request any of these.
             s3_settings->auth_settings[S3AuthSetting::role_arn] = "";
             s3_settings->auth_settings[S3AuthSetting::role_session_name] = "";
             s3_settings->auth_settings[S3AuthSetting::external_id] = "";
+            s3_settings->auth_settings[S3AuthSetting::http_client] = "";
+            s3_settings->auth_settings[S3AuthSetting::service_account] = "";
+            s3_settings->auth_settings[S3AuthSetting::metadata_service] = "";
+            s3_settings->auth_settings[S3AuthSetting::request_token_path] = "";
+            s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = "";
+            s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = "";
+            s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = "";
             std::shared_ptr<S3::Client> dst_client = getClient(
                 move_uri,
                 *s3_settings,
