@@ -46,6 +46,7 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, LightweightMutationProjectionMode) \
     M(CLASS_NAME, MaxThreads) \
     M(CLASS_NAME, MergeSelectorAlgorithm) \
+    M(CLASS_NAME, MergeSortingQueueStrategy) \
     M(CLASS_NAME, Milliseconds) \
     M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, Seconds) \

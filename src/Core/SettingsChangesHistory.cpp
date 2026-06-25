@@ -1259,6 +1259,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"text_index_posting_list_codec", "none", "none", "New setting"},
             {"materialize_projections_on_insert", true, true, "New setting"},
             {"materialize_projections_on_merge", false, false, "New setting"},
+            {"merge_sorting_queue_strategy", "default", "default", "New setting to choose the sorting queue strategy for ordinary `MergeTree` merges."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.5",
         {

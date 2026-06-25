@@ -819,6 +819,11 @@ namespace ErrorCodes
     Target time to execution of one step of merge or mutation. Can be exceeded if
     one step takes longer time
     )", 0) \
+    DECLARE(MergeSortingQueueStrategy, merge_sorting_queue_strategy, MergeSortingQueueStrategy::Default, R"(
+    Queue strategy for ordinary `MergeTree` merges. Possible values:
+    `default` uses the original row-at-a-time sorting queue, `batch` uses the
+    batch sorting queue to reduce per-row queue overhead.
+    )", 0) \
     DECLARE(Bool, enforce_index_structure_match_on_partition_manipulation, false, R"(
     If this setting is enabled for destination table of a partition manipulation
     query (`ATTACH/MOVE/REPLACE PARTITION`), the indices and projections must be

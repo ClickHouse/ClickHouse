@@ -351,6 +351,12 @@ IMPLEMENT_SETTING_ENUM(
      {"Manual", MergeSelectorAlgorithm::MANUAL}})
 
 IMPLEMENT_SETTING_ENUM(
+    MergeSortingQueueStrategy,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"default", MergeSortingQueueStrategy::Default},
+     {"batch", MergeSortingQueueStrategy::Batch}})
+
+IMPLEMENT_SETTING_ENUM(
     DatabaseDataLakeCatalogType,
     ErrorCodes::BAD_ARGUMENTS,
     {{"rest", DatabaseDataLakeCatalogType::ICEBERG_REST},

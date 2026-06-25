@@ -432,6 +432,14 @@ DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
 
 DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
+enum class MergeSortingQueueStrategy : uint8_t
+{
+    Default,
+    Batch,
+};
+
+DECLARE_SETTING_ENUM(MergeSortingQueueStrategy)
+
 enum class DatabaseDataLakeCatalogType : uint8_t
 {
     NONE,
