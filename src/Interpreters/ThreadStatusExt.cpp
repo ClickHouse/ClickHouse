@@ -229,8 +229,18 @@ std::shared_ptr<ProfileEvents::Counters::Snapshot> ThreadGroup::getProfileCounte
 
 void ThreadGroup::linkThread(UInt64 thread_id)
 {
+    linkThreadImpl(thread_id, /*count_towards_peak=*/ true);
+}
+
+void ThreadGroup::linkThreadImpl(UInt64 thread_id, bool count_towards_peak)
+{
+    /// Propagate the attach up the parent chain so that the parent's elapsed-time accounting and
+    /// profile-event roll-up cover work done in this (descendant) scope. The parent must not count
+    /// this thread towards its own peak though: `peak_threads_usage` of a query is the peak number
+    /// of threads of the query itself, not of nested scopes such as the async materialized-view
+    /// executor (which is created via `createForMaterializedView` as a child of the `INSERT` group).
     if (parent)
-        parent->linkThread(thread_id);
+        parent->linkThreadImpl(thread_id, /*count_towards_peak=*/ false);
 
     std::lock_guard lock(mutex);
     thread_ids.insert(thread_id);
@@ -239,7 +249,8 @@ void ThreadGroup::linkThread(UInt64 thread_id)
         effective_group_stopwatch.restart();
 
     ++active_thread_count;
-    peak_threads_usage = std::max(peak_threads_usage, active_thread_count);
+    if (count_towards_peak)
+        peak_threads_usage = std::max(peak_threads_usage, active_thread_count);
 }
 
 void ThreadGroup::unlinkThread()

@@ -172,14 +172,22 @@ private:
     /// Set of all thread ids which has been attached to the group
     std::unordered_set<UInt64> thread_ids TSA_GUARDED_BY(mutex);
 
-    /// Count of simultaneously working threads
+    /// Count of simultaneously working threads, including threads attached to descendant groups
+    /// (their presence propagates up the parent chain so that elapsed-time accounting covers them).
     size_t active_thread_count TSA_GUARDED_BY(mutex) = 0;
 
-    /// Peak threads count in the group
+    /// Peak threads count in the group. Counts only threads directly attached to this group, not
+    /// threads of descendant scope groups: the latter must not inflate the parent query's
+    /// `peak_threads_usage` (e.g. the async materialized-view executor running under an `INSERT`).
     size_t peak_threads_usage TSA_GUARDED_BY(mutex) = 0;
 
     Stopwatch effective_group_stopwatch TSA_GUARDED_BY(mutex) = Stopwatch(STOPWATCH_DEFAULT_CLOCK, 0, /* is running */ false);
     UInt64 elapsed_group_ns TSA_GUARDED_BY(mutex) = 0;
+
+    /// Shared implementation of linkThread. `count_towards_peak` is true only for the group the
+    /// thread directly attaches to; the recursive parent-chain calls pass false so a nested scope's
+    /// threads do not inflate the parent query's `peak_threads_usage`.
+    void linkThreadImpl(UInt64 thread_id, bool count_towards_peak);
 
     static ThreadGroupPtr create(ContextPtr query_context);
 };
