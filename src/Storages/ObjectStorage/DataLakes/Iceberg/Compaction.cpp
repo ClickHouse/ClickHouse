@@ -183,6 +183,14 @@ static Plan getPlan(
 
             for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
             {
+                /// A manifest is referenced by the manifest list of every snapshot from the one that
+                /// created it onwards, so we encounter its data files once per such snapshot. Capture
+                /// them only for the snapshot that introduced the manifest; otherwise a carried-forward
+                /// file is attributed to several rebuilt snapshots and its rows are counted multiple
+                /// times in the summary totals (`total-records`), inflating a trivial `SELECT count()`.
+                if (plan.manifest_file_to_first_snapshot[manifest_file.manifest_file_path] != snapshot.snapshot_id)
+                    continue;
+
                 auto partition_index = plan.partition_encoder.encodePartition(data_file->parsed_entry->partition_key_value);
                 if (plan.partitions.size() <= partition_index)
                     plan.partitions.push_back({});
@@ -423,6 +431,13 @@ static void writeMetadataFiles(
 
     std::unordered_map<Int64, UInt64> snapshot_id_to_records_count;
 
+    /// The rebuilt history keeps only APPEND snapshots, so an append's original parent (a skipped
+    /// DELETE/OVERWRITE) is not present in the metadata we are assembling. Link each retained
+    /// snapshot to the previously generated one instead; 0 is the "no parent" sentinel for the
+    /// first one. This keeps the parent chain self-consistent for the fail-close check in
+    /// `generateNextMetadata`.
+    Int64 last_generated_snapshot_id = 0;
+
     for (const auto & history_record : plan.history)
     {
         auto append = tryGetAppendUpdate(history_record);
@@ -439,7 +454,7 @@ static void writeMetadataFiles(
         auto new_snapshot = metadata_generator.generateNextMetadata(
             plan.generator,
             generated_metadata_info.path,
-            history_record.parent_id,
+            last_generated_snapshot_id,
             Iceberg::SnapshotSummaryUpdateAppend{
                 .added_files = append->added_files,
                 .added_records = total_records_count,
@@ -449,6 +464,7 @@ static void writeMetadataFiles(
             history_record.snapshot_id,
             history_record.made_current_at.value);
 
+        last_generated_snapshot_id = history_record.snapshot_id;
         new_snapshots.push_back(new_snapshot);
         snapshot_id_to_snapshot[history_record.snapshot_id] = new_snapshot.snapshot;
     }
