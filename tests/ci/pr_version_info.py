@@ -52,13 +52,9 @@ import argparse
 import logging
 import re
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Dict, Iterable, List, NamedTuple, Optional, Set, Tuple
-
-# How many release-branch backport lookups to run concurrently. These are the
-# only per-PR REST requests left after the lightweight GraphQL window fetch.
-DEFAULT_SCAN_THREADS = 12
 
 # Heavy imports (github, clickhouse_helper, ...) are done lazily inside main() so
 # that the pure helpers below stay importable for unit tests without PyGithub.
@@ -238,16 +234,6 @@ class VersionHistory:
         return version
 
 
-def get_backport_pr(repo, owner: str, release: str, number: int):
-    """Return the (merged, if any) backport PR for ``number`` on ``release``."""
-    head = f"{owner}:backport/{release}/{number}"
-    candidates = list(repo.get_pulls(state="all", head=head))
-    merged = [pr for pr in candidates if pr.merged_at is not None]
-    if merged:
-        return merged[0]
-    return candidates[0] if candidates else None
-
-
 def apply_section(gh, repo, info, section_body: str, dry_run: bool) -> bool:
     """Write the section into the PR if it changed. Returns True if changed.
 
@@ -279,54 +265,53 @@ def update_backport_pr(
 
 
 def scan_backport_versions(
-    repo,
-    owner: str,
+    gh,
+    repo_name: str,
     numbers: List[int],
     release_branches: List[str],
     version_history: VersionHistory,
-    threads: int,
 ) -> Tuple[Dict[int, List[str]], Set[int]]:
     """Resolve, for each original PR number, the versions its merged backports
-    shipped in by scanning every active release branch.
+    shipped in by looking up `backport/<release>/<number>` on every release.
 
-    Each original is scanned by its own worker, so the scans run concurrently
-    while keeping failures isolated per original: if any release-branch lookup
-    for an original fails, that original is reported in the returned ``failed``
-    set and left out of the versions map. The caller must skip those originals
-    rather than write a partial `Backported to` list (fail closed). Returns
-    ``({number: [versions, newest first]}, failed_numbers)``.
+    The lookups for all ``(number, release)`` pairs are resolved with a few
+    batched GraphQL requests rather than one REST request per pair, which keeps
+    a wide lookback from tripping GitHub's secondary rate limit. Returns
+    ``({number: [versions, newest first]}, failed_numbers)``; on a hard query
+    failure every scanned original is reported failed so the caller skips it
+    (fail closed -- never write a partial `Backported to` list).
     """
-    by_number: Dict[int, List[str]] = {}
-    failed: Set[int] = set()
-    if not numbers:
-        return by_number, failed
+    if not numbers or not release_branches:
+        return {}, set()
 
-    def scan_one(number: int) -> List[str]:
-        versions: List[str] = []
-        for release in release_branches:
-            backport_pr = get_backport_pr(repo, owner, release, number)
-            if backport_pr is None or backport_pr.merged_at is None:
-                continue
-            version = version_history.version_for_commit(backport_pr.merge_commit_sha)
-            if version:
-                versions.append(version)
-        return sorted(set(versions), key=version_key, reverse=True)
+    pairs = [(number, release) for number in numbers for release in release_branches]
+    head_refs = [f"backport/{release}/{number}" for number, release in pairs]
+    try:
+        merge_commits = gh.get_backport_merge_commits(repo_name, head_refs)
+    except Exception as ex:  # pylint: disable=broad-except
+        logging.error(
+            "Backport scan failed; %s originals will be reconciled next run: %s",
+            len(numbers),
+            ex,
+        )
+        return {}, set(numbers)
 
-    def work(number: int) -> Tuple[int, Optional[List[str]], Optional[Exception]]:
-        try:
-            return number, scan_one(number), None
-        except Exception as ex:  # pylint: disable=broad-except
-            return number, None, ex
+    by_number: Dict[int, List[str]] = defaultdict(list)
+    for number, release in pairs:
+        oid = merge_commits.get(f"backport/{release}/{number}")
+        if not oid:
+            continue
+        version = version_history.version_for_commit(oid)
+        if version:
+            by_number[number].append(version)
 
-    with ThreadPoolExecutor(max_workers=max(1, threads)) as executor:
-        for number, versions, error in executor.map(work, numbers):
-            if error is not None:
-                logging.error("Failed to scan backports for PR #%s: %s", number, error)
-                failed.add(number)
-            else:
-                by_number[number] = versions
-
-    return by_number, failed
+    return (
+        {
+            number: sorted(set(versions), key=version_key, reverse=True)
+            for number, versions in by_number.items()
+        },
+        set(),
+    )
 
 
 def update_original_pr(
@@ -368,12 +353,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dry-run", action="store_true", help="do not edit any PR, only print"
     )
-    parser.add_argument(
-        "--threads",
-        type=int,
-        default=DEFAULT_SCAN_THREADS,
-        help="concurrent backport-branch lookups",
-    )
     return parser.parse_args()
 
 
@@ -385,7 +364,6 @@ def main() -> int:
 
     args = parse_args()
     token = args.token or get_best_robot_token()
-    owner = args.repo.split("/")[0]
 
     # A manual run can widen the lookback via the `days` workflow_dispatch input;
     # it overrides the command's --days. Absent/empty (scheduled runs) -> --days.
@@ -449,16 +427,15 @@ def main() -> int:
         if release:
             scan_release_branches.add(release)
 
-    # Resolve every scanned original's backports up front, in parallel -- the
-    # only remaining per-PR REST traffic. `scan_failed` holds originals whose
-    # scan errored; they are skipped below so we never write a partial list.
+    # Resolve every scanned original's backports up front via batched GraphQL.
+    # `scan_failed` holds originals whose scan errored; they are skipped below so
+    # we never write a partial list.
     backported_by_number, scan_failed = scan_backport_versions(
-        repo,
-        owner,
+        gh,
+        args.repo,
         sorted(need_scan),
         sorted(scan_release_branches),
         version_history,
-        args.threads,
     )
 
     updated = 0

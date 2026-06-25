@@ -228,10 +228,25 @@ class GitHub(github.Github):
                     "POST", url, input={"query": query, "variables": variables}
                 )
                 # GraphQL reports query errors with HTTP 200 and an `errors` key,
-                # so `requestJsonAndCheck` does not raise on them.
-                if data.get("errors"):
-                    raise GithubException(200, data["errors"], None)
-                return data["data"]
+                # so `requestJsonAndCheck` does not raise on them. A query can be
+                # partially successful: e.g. a `pullRequest(number: N)` alias for
+                # a number that does not exist in this repo returns `null` for
+                # that field plus a NOT_FOUND error, while the other aliases
+                # resolve. Use whatever `data` resolved; only raise when nothing
+                # came back at all (malformed query, auth failure, ...).
+                payload = data.get("data")
+                errors = data.get("errors")
+                if payload is None:
+                    raise GithubException(
+                        200, errors or "GraphQL query returned no data", None
+                    )
+                if errors:
+                    logger.warning(
+                        "GraphQL returned %s error(s); using partial data: %s",
+                        len(errors),
+                        errors[0].get("message", errors[0]),
+                    )
+                return payload
             except RateLimitExceededException:
                 if i == self.retries - 1:
                     raise
@@ -315,6 +330,44 @@ class GitHub(github.Github):
                 node = (repository or {}).get(f"pr{n}")
                 if node:
                     result[n] = self._pr_info_from_node(node)
+        return result
+
+    def get_backport_merge_commits(
+        self, repo_name: str, head_refs: List[str]
+    ) -> Dict[str, Optional[str]]:
+        """For each backport branch name, return the merge commit SHA of the
+        merged PR opened from it (or ``None`` if there is none), batching many
+        head refs per GraphQL request.
+
+        Replaces one REST `get_pulls(head=...)` request per backport branch --
+        which at a large lookback fans out into thousands of calls and trips
+        GitHub's secondary rate limit -- with a handful of GraphQL queries.
+        """
+        owner, name = repo_name.split("/")
+        result = {}  # type: Dict[str, Optional[str]]
+        batch_size = 50
+        for start in range(0, len(head_refs), batch_size):
+            batch = head_refs[start : start + batch_size]
+            aliases = " ".join(
+                f'b{i}: pullRequests(headRefName: "{head}", states: MERGED, '
+                "first: 1) { nodes { mergeCommit { oid } } }"
+                for i, head in enumerate(batch)
+            )
+            gql = (
+                "query($owner:String!, $name:String!) {"
+                f"  repository(owner:$owner, name:$name) {{ {aliases} }}"
+                "}"
+            )
+            repository = (
+                self._graphql(gql, {"owner": owner, "name": name})["repository"] or {}
+            )
+            for i, head in enumerate(batch):
+                node = repository.get(f"b{i}")
+                oid = None
+                if node and node["nodes"]:
+                    merge_commit = node["nodes"][0].get("mergeCommit")
+                    oid = merge_commit.get("oid") if merge_commit else None
+                result[head] = oid
         return result
 
     def sleep_on_rate_limit(self) -> None:
