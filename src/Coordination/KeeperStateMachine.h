@@ -9,6 +9,7 @@
 #include <base/defines.h>
 #include <libnuraft/nuraft.hxx>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <optional>
 
 namespace DB
 {
@@ -20,6 +21,7 @@ using KeeperResponseCallback = std::function<void(KeeperResponseForSession)>; //
 using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 
 struct KeeperStorageStats;
+class KeeperLogStore;
 
 struct ISnapshotLoader;
 
@@ -48,6 +50,9 @@ public:
     /// Read state from the latest snapshot
     virtual void init() = 0;
 
+    void setLogStore(KeeperLogStore * log_store_);
+    KeeperLogStore * getLogStore() { return log_store; }
+
     enum ZooKeeperLogSerializationVersion
     {
         INITIAL = 0,
@@ -73,7 +78,7 @@ public:
 
     static nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(const KeeperRequestForSession & request_for_session);
 
-    virtual std::optional<KeeperDigest> preprocess(const KeeperRequestForSession & request_for_session) = 0;
+    virtual std::optional<KeeperDigest> preprocess(const KeeperRequestForSession & request_for_session, bool lock_mutex) = 0;
 
     void commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf) override; /// NOLINT
 
@@ -133,6 +138,7 @@ public:
     virtual void recalculateStorageStats() = 0;
 
     virtual void reconfigure(const KeeperRequestForSession& request_for_session) = 0;
+    virtual std::vector<std::pair<std::string, Int32>> getExpiredTTLPathsForGarbageCollector(size_t batch_size) const = 0;
 
     virtual std::vector<KeeperSnapshotStatus> getSnapshotsStatus() const = 0;
 
@@ -141,12 +147,15 @@ public:
     /// Caller must hold `snapshots_lock`.
     virtual SnapshotFileInfoPtr getSnapshotPinUnlocked(uint64_t log_idx) const TSA_REQUIRES(snapshots_lock) = 0;
 
+    /// Call after loading `storage` from snapshot.
+    /// Does preprocessRequest on log entries to populate storage's UncommittedState.
+    virtual void preprocessUncommittedLogEntries(uint64_t start_idx, uint64_t end_idx, bool lock_mutex) = 0;
+
 protected:
     CommitCallback commit_callback;
 
     /// Monotonic high-water mark reported to NuRaft via `last_snapshot`. Advanced only via
-    /// `advanceLatestSnapshotMeta`; never regresses; retention pins its registry entry (the
-    /// bytes can still be rewritten in place by a same-index re-receive — pre-existing).
+    /// `advanceLatestSnapshotMeta`; never regresses; retention pins its registry entry.
     /// A saved-but-not-applied install does not advance it, so the manager's map max may
     /// exceed it; `init` adopts the newest disk snapshot.
     SnapshotMetadataPtr latest_snapshot_meta TSA_GUARDED_BY(snapshots_lock) = nullptr;
@@ -221,6 +230,8 @@ protected:
 
     KeeperSnapshotManagerS3 * snapshot_manager_s3;
 
+    KeeperLogStore * log_store = nullptr;
+
     virtual KeeperResponseForSession processReconfiguration(const KeeperRequestForSession & request_for_session)
         = 0;
 };
@@ -242,7 +253,7 @@ public:
     /// Read state from the latest snapshot
     void init() override;
 
-    std::optional<KeeperDigest> preprocess(const KeeperRequestForSession & request_for_session) override;
+    std::optional<KeeperDigest> preprocess(const KeeperRequestForSession & request_for_session, bool lock_mutex) override;
 
     nuraft::ptr<nuraft::buffer> pre_commit(uint64_t log_idx, nuraft::buffer & data) override;
 
@@ -304,19 +315,49 @@ public:
     void recalculateStorageStats() override;
 
     void reconfigure(const KeeperRequestForSession& request_for_session) override;
+    std::vector<std::pair<std::string, Int32>> getExpiredTTLPathsForGarbageCollector(size_t batch_size) const override;
 
     std::vector<KeeperSnapshotStatus> getSnapshotsStatus() const override;
 
-    /// Cancel an in-progress snapshot receive: remove the receive file (the FINAL
-    /// `snapshot_<idx>` name — a same-index re-receive can thus delete a registered
-    /// snapshot) and its marker, and reset the context.
+    /// Cancel an in-progress snapshot receive: remove partial files and reset the context.
     void cancelIfHasUnfinishedSnapshotReceive() TSA_REQUIRES(snapshots_lock);
 
     SnapshotFileInfoPtr getSnapshotPinUnlocked(uint64_t log_idx) const override TSA_REQUIRES(snapshots_lock);
 
+    void preprocessUncommittedLogEntries(uint64_t start_idx, uint64_t end_idx, bool lock_mutex) override;
+
 private:
-    /// Main state machine logic
-    std::unique_ptr<Storage> storage;
+    struct DetachedSnapshotReceiveFiles
+    {
+        DiskPtr disk;
+        std::string snapshot_file_name;
+        uint64_t log_idx = 0;
+    };
+
+    std::optional<DetachedSnapshotReceiveFiles> detachUnfinishedSnapshotReceiveForCleanup() TSA_REQUIRES(snapshots_lock);
+    void cleanupDetachedSnapshotReceive(const DetachedSnapshotReceiveFiles & files);
+    void runSnapshotMaintenance(SnapshotMaintenanceTasks && tasks);
+
+    /// Phase 2 of the create task: write+sync under a fresh unique name, outside `snapshots_lock`.
+    SnapshotFileInfoPtr writeSnapshotToDisk(const KeeperStorageSnapshot<Storage> & snapshot);
+
+    struct LocalSnapshotPublishOutcome
+    {
+        SnapshotFileInfoPtr published;       /// entry to report to NuRaft / S3
+        SnapshotFileInfoPtr loser_to_remove; /// retired; unlinked outside the lock when the last ref drops
+        bool won = false;                    /// true iff our written file became the registered entry
+    };
+
+    /// Phase 3: metadata-only publication with adopt-on-conflict. No disk IO.
+    /// Adopt-on-conflict: the caller unlinks loser_to_remove outside the lock.
+    LocalSnapshotPublishOutcome publishWrittenSnapshot(
+        const SnapshotFileInfoPtr & written_file_info,
+        const SnapshotMetadataPtr & written_snapshot_meta,
+        std::optional<uint64_t> written_size) TSA_REQUIRES(snapshots_lock);
+
+    /// Main state machine logic. Swapped by `apply_snapshot` under the exclusive
+    /// storage lock; in-flight create tasks capture their own reference.
+    std::shared_ptr<Storage> storage;
 
     /// Save/Load and Serialize/Deserialize logic for snapshots.
     KeeperSnapshotManager<Storage> snapshot_manager;

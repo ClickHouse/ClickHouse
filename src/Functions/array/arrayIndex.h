@@ -925,6 +925,15 @@ private:
         arguments_copy[0].type = std::move(array_type);
         arguments_copy[0].name = arguments[0].name;
 
+        /// executeImpl strips LowCardinality before executeArrayImpl, but the Map path bypasses it.
+        /// Strip here too so executeArrayImpl sees a ColumnNullable lookup column and fills null_map_item,
+        /// keeping null-needle semantics identical to the plain array path.
+        for (auto & argument : arguments_copy)
+        {
+            argument.column = recursiveRemoveLowCardinality(argument.column);
+            argument.type = recursiveRemoveLowCardinality(argument.type);
+        }
+
         return executeArrayImpl(arguments_copy, result_type);
     }
 
