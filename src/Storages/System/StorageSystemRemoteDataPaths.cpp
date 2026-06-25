@@ -135,6 +135,8 @@ private:
     /// (e.g. leftovers of an interrupted removal). For these disks a few extra columns are filled in.
     bool current_disk_is_plain_rewritable = false;
     std::string plain_common_prefix;
+    /// Metadata type name of the current disk, computed once per disk instead of per row.
+    String current_metadata_type_name;
 };
 
 class ReadFromSystemRemoteDataPaths final : public SourceStepWithFilter
@@ -249,10 +251,12 @@ bool SystemRemoteDataPathsSource::nextDisk()
             break;
 
         const auto & disk = disks[current_disk].second;
+        const auto metadata_type = disk->getDataSourceDescription().metadata_type;
+        current_metadata_type_name = String{magic_enum::enum_name(metadata_type)};
 
         auto & current = paths_stack.emplace_back();
 
-        if (disk->getDataSourceDescription().metadata_type == MetadataStorageType::PlainRewritable)
+        if (metadata_type == MetadataStorageType::PlainRewritable)
         {
             /// plain_rewritable disks keep their layout in an in-memory tree without the usual
             /// store/data/shadow namespace, so traverse from the disk root. This also surfaces blobs
@@ -266,10 +270,22 @@ bool SystemRemoteDataPathsSource::nextDisk()
             if (object_storage)
                 plain_common_prefix = object_storage->getCommonKeyPrefix();
 
+            /// Honor traverse_shadow_remote_data_paths for the frozen-data namespace, exactly like the
+            /// non-plain branch: keep the root traversal for extra temporary/leftover roots, but skip the
+            /// `shadow` root unless the setting is enabled, and apply skipPredicateForShadowDir when it is.
+            const bool traverse_shadow = context->getSettingsRef()[Setting::traverse_shadow_remote_data_paths];
             std::vector<std::string> roots;
             disk->listFiles("", roots);
             for (const auto & root : roots)
+            {
+                if (root == "shadow")
+                {
+                    if (traverse_shadow)
+                        current.names.push_back({root, skipPredicateForShadowDir});
+                    continue;
+                }
                 current.names.push_back({root, nullptr});
+            }
         }
         else
         {
@@ -420,14 +436,14 @@ Chunk SystemRemoteDataPathsSource::generate()
         }
 
         const auto & [disk_name, disk] = disks[current_disk];
+        const auto & base_path = disk->getPath();
 
         FileCachePtr cache;
         if (disk->supportsCache())
             cache = FileCacheFactory::instance().getByName(disk->getCacheName())->cache;
 
-        const String metadata_type_name{magic_enum::enum_name(disk->getDataSourceDescription().metadata_type)};
-
-        auto local_path = getCurrentPath();
+        const auto metadata_storage = disk->getMetadataStorage();
+        const std::string local_path = getCurrentPath();
 
         const auto & skip_predicate = getCurrentSkipPredicate();
         if (skip_predicate && skip_predicate(local_path))
@@ -436,7 +452,7 @@ Chunk SystemRemoteDataPathsSource::generate()
         StoredObjects storage_objects;
         try
         {
-            storage_objects = disk->getMetadataStorage()->getStorageObjects(local_path);
+            storage_objects = metadata_storage->getStorageObjects(local_path);
         }
         catch (Exception & e)
         {
@@ -457,24 +473,24 @@ Chunk SystemRemoteDataPathsSource::generate()
         bool is_ephemeral = false;
         if (current_disk_is_plain_rewritable)
         {
-            if (auto ts = disk->getMetadataStorage()->getLastModifiedIfExists(local_path))
+            if (auto ts = metadata_storage->getLastModifiedIfExists(local_path))
                 last_modified = ts->epochTime();
-            const std::string lp = local_path.string();
             /// A blob is an ephemeral leftover of an interrupted operation when the top component of its
             /// logical path is a temporary name (the rename target used by move/unlink/removeRecursive).
-            is_ephemeral = PlainRewritableLayout::looksLikeEphemeralName(std::string_view(lp).substr(0, lp.find('/')));
+            is_ephemeral = PlainRewritableLayout::looksLikeEphemeralName(
+                std::string_view(local_path).substr(0, local_path.find('/')));
         }
 
         for (const auto & object : storage_objects)
         {
             ++row_count;
             col_disk_name->insert(disk_name);
-            col_base_path->insert(disk->getPath());
+            col_base_path->insert(base_path);
             if (cache)
                 col_cache_base_path->insert(cache->getBasePath());
             else
                 col_cache_base_path->insertDefault();
-            col_local_path->insert(local_path.string());
+            col_local_path->insert(local_path);
             col_remote_path->insert(object.remote_path);
             col_size->insert(object.bytes_size);
 
@@ -492,7 +508,7 @@ Chunk SystemRemoteDataPathsSource::generate()
             {
                 col_cache_paths->insertDefault();
             }
-            col_metadata_type->insert(metadata_type_name);
+            col_metadata_type->insert(current_metadata_type_name);
             col_last_modified->insert(static_cast<UInt32>(last_modified));
             col_is_ephemeral->insert(is_ephemeral);
         }
