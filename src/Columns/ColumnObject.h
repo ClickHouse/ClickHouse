@@ -357,6 +357,10 @@ private:
     void serializePathAndValueIntoArena(Arena & arena, const char *& begin, std::string_view path, std::string_view value, std::string_view & res) const;
     void serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena & arena, const char *& begin, std::string_view & res) const;
     void deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in);
+    /// Rebuild sorted_typed_path_columns from current typed_paths pointers.
+    /// Must be called after any operation that can replace typed path column pointers
+    /// (e.g. forEachMutableSubcolumn).
+    void rebuildSortedTypedPathColumns();
 
     /// Map path -> column for paths with explicitly specified types.
     /// This set of paths is constant and cannot be changed.

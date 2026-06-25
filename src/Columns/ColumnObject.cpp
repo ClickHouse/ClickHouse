@@ -147,6 +147,14 @@ ColumnObject::ColumnObject(const ColumnObject & other)
         sorted_dynamic_paths.emplace(path);
 }
 
+void ColumnObject::rebuildSortedTypedPathColumns()
+{
+    sorted_typed_path_columns.clear();
+    sorted_typed_path_columns.reserve(sorted_typed_paths.size());
+    for (const auto & path : sorted_typed_paths)
+        sorted_typed_path_columns.push_back(typed_paths.find(path)->second.get());
+}
+
 ColumnObject::Ptr ColumnObject::create(
     const UnorderedMapWithMemoryTracking<String, ColumnPtr> & typed_paths_,
     const UnorderedMapWithMemoryTracking<String, ColumnPtr> & dynamic_paths_,
@@ -1502,6 +1510,7 @@ void ColumnObject::forEachMutableSubcolumn(DB::IColumn::MutableColumnCallback ca
 {
     for (auto & [_, column] : typed_paths)
         callback(column);
+    rebuildSortedTypedPathColumns();
     for (auto & [path, column] : dynamic_paths)
     {
         callback(column);
@@ -1517,6 +1526,7 @@ void ColumnObject::forEachMutableSubcolumnRecursively(DB::IColumn::RecursiveMuta
         callback(*column);
         column->forEachMutableSubcolumnRecursively(callback);
     }
+    rebuildSortedTypedPathColumns();
     for (auto & [path, column] : dynamic_paths)
     {
         callback(*column);
