@@ -86,8 +86,8 @@ To retain the previous behavior, set setting `least_greatest_legacy_null_behavio
     {
         "Numeric types",
         R"(
-SELECT greatest(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 -- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
+SELECT greatest(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
         )",
         R"(
 ┌─result─┬─type────┐
@@ -109,8 +109,8 @@ SELECT greatest(['hello'], ['there'], ['world']);
     {
         "DateTime types",
         R"(
-SELECT greatest(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3));
 -- The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
+SELECT greatest(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3));
         )",
         R"(
 ┌─greatest(toD⋯(now(), 3))─┐

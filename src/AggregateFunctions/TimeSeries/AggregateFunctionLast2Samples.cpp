@@ -139,6 +139,7 @@ timeSeriesLastTwoSamples(timestamp, value)
     {
         "Example table for raw data, and a table for storing re-sampled data",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 -- Table for raw data
 CREATE TABLE t_raw_timeseries
 (

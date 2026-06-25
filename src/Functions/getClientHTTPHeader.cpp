@@ -101,6 +101,7 @@ If the function is used in the context of a distributed query, it returns non-em
         {
             "Usage example",
             R"(
+SET allow_get_client_http_header = 1;
 SELECT getClientHTTPHeader('Content-Type');
             )",
             R"(

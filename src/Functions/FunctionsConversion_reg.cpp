@@ -1168,12 +1168,12 @@ Supports conversion from String, FixedString, DateTime, or numeric types represe
     FunctionDocumentation::ReturnedValue returned_value_toTime = {"Returns the converted value.", {"Time"}};
     FunctionDocumentation::Examples examples_toTime = {
     {
-        "String to Time conversion",
+        "DateTime64 to Time conversion",
         R"(
-SELECT toTime('14:30:25')
+SELECT toTime(toDateTime64('2025-04-15 14:30:25.123', 3))
         )",
         R"(
-14:30:25
+1970-01-02 14:30:25
         )"
     },
     {
@@ -1182,16 +1182,16 @@ SELECT toTime('14:30:25')
 SELECT toTime(toDateTime('2025-04-15 14:30:25'))
         )",
         R"(
-14:30:25
+1970-01-02 14:30:25
         )"
     },
     {
-        "Integer to Time conversion",
+        "Integer (seconds since epoch) to Time conversion",
         R"(
-SELECT toTime(52225)
+SELECT toTime(toDateTime(52225))
         )",
         R"(
-14:30:25
+1970-01-02 14:30:25
         )"
     }
     };
@@ -1215,7 +1215,7 @@ Provides microsecond precision for time values.
     {
         "String to Time64 conversion",
         R"(
-SELECT toTime64('14:30:25.123456')
+SELECT toTime64('14:30:25.123456', 6)
         )",
         R"(
 14:30:25.123456
@@ -1224,16 +1224,16 @@ SELECT toTime64('14:30:25.123456')
     {
         "DateTime64 to Time64 conversion",
         R"(
-SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6))
+SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6), 6)
         )",
         R"(
 14:30:25.123456
         )"
     },
     {
-        "Integer to Time64 conversion",
+        "Float (seconds since midnight) to Time64 conversion",
         R"(
-SELECT toTime64(52225123456)
+SELECT toTime64(52225.123456, 6)
         )",
         R"(
 14:30:25.123456

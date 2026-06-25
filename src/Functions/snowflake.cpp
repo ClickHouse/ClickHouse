@@ -346,6 +346,7 @@ Extracts the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wi
     {
         "Usage example",
         R"(
+SET allow_deprecated_snowflake_conversion_functions = 1;
 SELECT snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC');
         )",
         R"(
@@ -385,6 +386,7 @@ Extracts the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wi
     {
         "Usage example",
         R"(
+SET allow_deprecated_snowflake_conversion_functions = 1;
 SELECT snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC');
         )",
         R"(
@@ -423,6 +425,7 @@ Converts a [DateTime](../data-types/datetime.md) value to the first [Snowflake I
     {
         "Usage example",
         R"(
+SET allow_deprecated_snowflake_conversion_functions = 1;
 WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt SELECT dateTimeToSnowflake(dt);
         )",
         R"(
@@ -460,6 +463,7 @@ Converts a [DateTime64](../data-types/datetime64.md) to the first [Snowflake ID]
     {
         "Usage example",
         R"(
+SET allow_deprecated_snowflake_conversion_functions = 1;
 WITH toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64 SELECT dateTime64ToSnowflake(dt64);
         )",
         R"(
