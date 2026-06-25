@@ -2343,36 +2343,32 @@ struct ConvertImpl
                 {
                     for (size_t i = 0; i < size; ++i)
                     {
-                        if (null_map->getData()[i])
-                        {
-                            offsets_to[i] = write_buffer.count();
-                            continue;
-                        }
-                        if (!time_zone_column && arguments.size() > 1)
+                        if (!null_map->getData()[i] && !time_zone_column && arguments.size() > 1)
                         {
                             if (!arguments[1].column.get()->getDataAt(i).empty())
                                 time_zone = &DateLUT::instance(arguments[1].column.get()->getDataAt(i));
                             else
                                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
                         }
+                        const DateLUTImpl * effective_tz = time_zone ? time_zone : &DateLUT::instance("UTC");
                         bool is_ok = true;
                         if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
                         {
                             if (cut_trailing_zeros_align_to_groups_of_thousands)
-                                writeDateTimeTextCutTrailingZerosAlignToGroupOfThousands(DateTime64(vec_from[i]), type.getScale(), write_buffer, *time_zone);
+                                writeDateTimeTextCutTrailingZerosAlignToGroupOfThousands(DateTime64(vec_from[i]), type.getScale(), write_buffer, *effective_tz);
                             else
-                                is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                                is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, effective_tz);
                         }
                         else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>)
                         {
                             if (cut_trailing_zeros_align_to_groups_of_thousands)
                                 writeTime64TextCutTrailingZerosAlignToGroupOfThousands(Time64(vec_from[i]), type.getScale(), write_buffer);
                             else
-                                is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                                is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, effective_tz);
                         }
                         else
                         {
-                            is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                            is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, effective_tz);
                         }
                         null_map->getData()[i] |= !is_ok;
                         offsets_to[i] = write_buffer.count();
@@ -2591,9 +2587,11 @@ struct ConvertImpl
             auto res_col = IColumn::mutate(ColumnInt64::create(calc_num_rows));
             auto & res_data = assert_cast<ColumnInt64 &>(*res_col).getData();
 
+            /// interval_conversions[i] holds the factor between kind i and kind i-1,
+            /// so every boundary crossing between kinds i-1 and i uses interval_conversions[i]
             if (from_position < to_position)
             {
-                for (int i = from_position; i < to_position; ++i)
+                for (int i = from_position + 1; i <= to_position; ++i)
                     conversion_factor *= interval_conversions[i];
                 for (size_t row = 0; row < calc_num_rows; ++row)
                     res_data[row] = arguments[0].column->getInt(row) / conversion_factor;
