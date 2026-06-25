@@ -489,20 +489,14 @@ void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const ContextPtr 
         if (result.new_node != nullptr)
             new_root_arguments.push_back(std::move(result.new_node));
 
-        if (new_root_arguments.size() == 1 && new_root_arguments.front()->getResultType()->equals(*node->getResultType()))
+        if (new_root_arguments.size() == 1)
         {
             new_root_node = std::move(new_root_arguments.front());
         }
         else
         {
-            /// If only one argument remains but its ResultType does not match the original `or`
-            /// (e.g. a `Float64` column), leaving it bare may trigger a lossy `_CAST(arg, UInt8)`
-            /// below that truncates values like `0.5` to `0` instead of performing `!= 0`. Wrap as
-            /// `and(arg, 1)`: `x AND 1` is the boolean identity (semantics preserved), and the AND
-            /// function performs the `!= 0` on `arg` internally.
-            if (new_root_arguments.size() == 1)
-                new_root_arguments.push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(1)));
-
+            // The OR expression must be replaced by and AND expression that will contain the common expressions
+            // and the new_node, if it is not nullptr.
             auto new_function_node = std::make_shared<FunctionNode>("and");
             new_function_node->markAsOperator();
             new_function_node->getArguments().getNodes() = std::move(new_root_arguments);
@@ -551,29 +545,12 @@ void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const ContextPtr
     if (!extracted_something)
         return;
 
-    QueryTreeNodePtr new_root_node;
-
-    if (new_top_level_arguments.size() == 1 && new_top_level_arguments.front()->getResultType()->equals(*node->getResultType()))
-    {
-        new_root_node = std::move(new_top_level_arguments.front());
-    }
-    else
-    {
-        /// If only one argument remains but its ResultType does not match the original `and`
-        /// (e.g. a `Float64` column), leaving it bare may trigger a lossy `_CAST(arg, UInt8)`
-        /// below that truncates values like `0.5` to `0` instead of performing `!= 0`. Wrap as
-        /// `and(arg, 1)`: `x AND 1` is the boolean identity (semantics preserved), and the AND
-        /// function performs the `!= 0` on `arg` internally.
-        if (new_top_level_arguments.size() == 1)
-            new_top_level_arguments.push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(1)));
-
-        auto and_function_node = std::make_shared<FunctionNode>("and");
-        and_function_node->markAsOperator();
-        and_function_node->getArguments().getNodes() = std::move(new_top_level_arguments);
-        auto and_function_resolver = FunctionFactory::instance().get("and", context);
-        and_function_node->resolveAsFunction(and_function_resolver);
-        new_root_node = std::move(and_function_node);
-    }
+    auto and_function_node = std::make_shared<FunctionNode>("and");
+    and_function_node->markAsOperator();
+    and_function_node->getArguments().getNodes() = std::move(new_top_level_arguments);
+    auto and_function_resolver = FunctionFactory::instance().get("and", context);
+    and_function_node->resolveAsFunction(and_function_resolver);
+    QueryTreeNodePtr new_root_node = and_function_node;
 
     if (!new_root_node->getResultType()->equals(*node->getResultType()))
         new_root_node = buildCastFunction(new_root_node, node->getResultType(), context);

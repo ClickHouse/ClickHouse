@@ -12,7 +12,6 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
@@ -74,6 +73,12 @@ namespace
 
 // Initialized in StorageSystemStackTrace's ctor and used in signalHandler.
 std::atomic<pid_t> server_pid;
+
+#ifdef OS_LINUX
+const int STACK_TRACE_SERVICE_SIGNAL = SIGRTMIN;
+#else
+const int STACK_TRACE_SERVICE_SIGNAL = SIGUSR1;
+#endif
 
 std::atomic<int> sequence_num = 0;    /// For messages sent via pipe.
 std::atomic<int> data_ready_num = 0;
@@ -309,7 +314,7 @@ bool isSignalBlocked(UInt64 tid, int signal)
 
         UInt64 sig_blk;
         if (parseHexNumber(line, sig_blk))
-            return sig_blk & (1ULL << (signal - 1));
+            return sig_blk & signal;
     }
     catch (const Exception & e)
     {
@@ -377,7 +382,7 @@ ThreadIdToName getFilteredThreadNames(
 /// We must wait for every thread one by one sequentially,
 ///  because there is a limit on number of queued signals in OS and otherwise signals may get lost.
 /// Also, non-RT signals are not delivered if previous signal is handled right now (by default; but we use RT signals).
-class StackTraceSource final : public ISource
+class StackTraceSource : public ISource
 {
 public:
     StackTraceSource(
@@ -717,7 +722,7 @@ private:
 
 
 StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
     , log(getLogger("StorageSystemStackTrace"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -728,7 +733,6 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. Basically just an array of addresses."},
         {"untracked_memory", std::make_shared<DataTypeInt64>(), "Per-thread atomic-less counter of memory allocations not yet propagated to the parent MemoryTracker. May be negative if more was freed than allocated since the last flush."},
     }));
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 
     notification_pipe.open();
@@ -754,15 +758,7 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
 }
 
 
-VirtualColumnsDescription StorageSystemStackTrace::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
-}
-
-void StorageSystemStackTrace::readImpl(
+void StorageSystemStackTrace::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,

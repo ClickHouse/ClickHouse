@@ -103,17 +103,16 @@ protected:
             findMongoDBSecretArguments();
         }
         else if ((function->name() == "s3") || (function->name() == "cosn") || (function->name() == "oss") ||
-                 (function->name() == "deltaLake") || (function->name() == "deltaLakeS3") || (function->name() == "hudi") ||
-                 (function->name() == "iceberg") || (function->name() == "gcs") || (function->name() == "icebergS3") ||
-                 (function->name() == "paimon") || (function->name() == "paimonS3"))
+                 (function->name() == "deltaLake") || (function->name() == "hudi") || (function->name() == "iceberg") ||
+                 (function->name() == "gcs") || (function->name() == "icebergS3") || (function->name() == "paimon") ||
+                 (function->name() == "paimonS3"))
         {
             /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ false);
         }
         else if ((function->name() == "s3Cluster") || (function ->name() == "hudiCluster") ||
                  (function ->name() == "deltaLakeCluster") || (function ->name() == "deltaLakeS3Cluster") ||
-                 (function ->name() == "icebergS3Cluster") || (function ->name() == "icebergCluster") ||
-                 (function ->name() == "paimonCluster") || (function ->name() == "paimonS3Cluster"))
+                 (function ->name() == "icebergS3Cluster") || (function ->name() == "icebergCluster"))
         {
             /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ true);
@@ -124,8 +123,7 @@ protected:
             /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure)
             findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ false);
         }
-        else if ((function->name() == "azureBlobStorageCluster") || (function->name() == "icebergAzureCluster") ||
-                 (function->name() == "deltaLakeAzureCluster") || (function->name() == "paimonAzureCluster"))
+        else if ((function->name() == "azureBlobStorageCluster") || (function->name() == "icebergAzureCluster") || (function->name() == "deltaLakeAzureCluster"))
         {
             /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
             findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ true);

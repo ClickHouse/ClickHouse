@@ -42,7 +42,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int TOO_DEEP_RECURSION;
-    extern const int SYNTAX_ERROR;
 }
 
 template <size_t num_bytes, typename IteratorSrc, typename IteratorDst>
@@ -54,20 +53,9 @@ inline void parseHex(IteratorSrc src, IteratorDst dst)
         dst[dst_pos] = unhex2(reinterpret_cast<const char *>(&src[src_pos]));
 }
 
-/// Returns true if all bytes in [begin, end) are valid hexadecimal digits (0-9, a-f, A-F).
-static inline bool areHexChars(const UInt8 * begin, const UInt8 * end)
+UUID parseUUID(std::span<const UInt8> src)
 {
-    for (const UInt8 * p = begin; p != end; ++p)
-        if (unhex(static_cast<char>(*p)) == 0xff)
-            return false;
-    return true;
-}
-
-template <typename ReturnType>
-static ReturnType parseUUIDImpl(std::span<const UInt8> src, UUID & uuid)
-{
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
-
+    UUID uuid;
     const auto * src_ptr = src.data();
     const auto size = src.size();
 
@@ -78,21 +66,6 @@ static ReturnType parseUUIDImpl(std::span<const UInt8> src, UUID & uuid)
 #endif
     if (size == 36)
     {
-        /// Validate 8-4-4-4-12 layout: dashes at positions 8, 13, 18, 23 and hex digits in the rest.
-        if (src_ptr[8] != '-' || src_ptr[13] != '-' || src_ptr[18] != '-' || src_ptr[23] != '-'
-            || !areHexChars(src_ptr, src_ptr + 8)
-            || !areHexChars(src_ptr + 9, src_ptr + 13)
-            || !areHexChars(src_ptr + 14, src_ptr + 18)
-            || !areHexChars(src_ptr + 19, src_ptr + 23)
-            || !areHexChars(src_ptr + 24, src_ptr + 36))
-        {
-            if constexpr (throw_exception)
-                throw Exception(
-                    ErrorCodes::CANNOT_PARSE_UUID,
-                    "Cannot parse UUID from String: invalid format, expected 32 or 36 hexadecimal digits with dashes at positions 8, 13, 18, 23");
-            else
-                return ReturnType(false);
-        }
         parseHex<4>(src_ptr, dst + 8);
         parseHex<2>(src_ptr + 9, dst + 12);
         parseHex<2>(src_ptr + 14, dst + 14);
@@ -101,39 +74,13 @@ static ReturnType parseUUIDImpl(std::span<const UInt8> src, UUID & uuid)
     }
     else if (size == 32)
     {
-        if (!areHexChars(src_ptr, src_ptr + 32))
-        {
-            if constexpr (throw_exception)
-                throw Exception(
-                    ErrorCodes::CANNOT_PARSE_UUID,
-                    "Cannot parse UUID from String: invalid format, expected 32 hexadecimal digits");
-            else
-                return ReturnType(false);
-        }
         parseHex<8>(src_ptr, dst + 8);
         parseHex<8>(src_ptr + 16, dst);
     }
     else
-    {
-        if constexpr (throw_exception)
-            throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Unexpected length when trying to parse UUID ({})", size);
-        else
-            return ReturnType(false);
-    }
+        throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Unexpected length when trying to parse UUID ({})", size);
 
-    return ReturnType(true);
-}
-
-UUID parseUUID(std::span<const UInt8> src)
-{
-    UUID uuid;
-    parseUUIDImpl<void>(src, uuid);
     return uuid;
-}
-
-bool tryParseUUID(std::span<const UInt8> src, UUID & uuid)
-{
-    return parseUUIDImpl<bool>(src, uuid);
 }
 
 void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
@@ -2078,47 +2025,6 @@ void skipToNextLineOrEOF(ReadBuffer & buf)
             ++buf.position();
             return;
         }
-    }
-}
-
-
-void skipWhitespaceAndSQLComments(ReadBuffer & buf)
-{
-    while (true)
-    {
-        skipWhitespaceIfAny(buf);
-        if (buf.eof())
-            break;
-        if (buf.buffer().end() - buf.position() < 2)
-            break;
-        if (buf.position()[0] == '-' && buf.position()[1] == '-')
-        {
-            buf.position() += 2;
-            skipToNextLineOrEOF(buf);
-        }
-        else if (buf.position()[0] == '/' && buf.position()[1] == '*')
-        {
-            buf.position() += 2;
-            while (!buf.eof())
-            {
-                char * star = find_first_symbols<'*'>(buf.position(), buf.buffer().end());
-                buf.position() = star;
-                if (star == buf.buffer().end())
-                    continue;
-                ++buf.position();
-                if (buf.eof())
-                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Unterminated block comment: expected '*/' before end of input");
-                if (*buf.position() == '/')
-                {
-                    ++buf.position();
-                    break;
-                }
-            }
-            if (buf.eof())
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "Unterminated block comment: expected '*/' before end of input");
-        }
-        else
-            break;
     }
 }
 

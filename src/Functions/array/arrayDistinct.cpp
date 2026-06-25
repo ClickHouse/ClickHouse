@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 
 /// Find different elements in an array.
-class FunctionArrayDistinct final : public IFunction
+class FunctionArrayDistinct : public IFunction
 {
 public:
     static constexpr auto name = "arrayDistinct";

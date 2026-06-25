@@ -88,7 +88,11 @@ class BackgroundSchedulePoolTaskHolder;
 
 struct GetDatabasesOptions
 {
-    bool with_datalake_catalogs{false};
+    /// Include remote databases (data lake catalogs, MySQL, PostgreSQL).
+    /// These are excluded by default because listing their tables can be expensive
+    /// (network calls to remote services). Controlled by the
+    /// `show_remote_databases_in_system_tables` setting in system.tables/columns/completions.
+    bool with_remote_databases{false};
 };
 
 /// For some reason Context is required to get Storage from Database object.
@@ -153,14 +157,13 @@ public:
     DatabasePtr getDatabase(const UUID & uuid) const;
     DatabasePtr tryGetDatabase(const UUID & uuid) const;
     bool isDatabaseExist(std::string_view database_name) const;
-    /// Datalake catalogs are implement at IDatabase level in ClickHouse.
-    /// In general case Datalake catalog is a some remote service which contains iceberg/delta tables.
-    /// Sometimes this service charges money for requests. With this flag we explicitly protect ourself
-    /// to not accidentally query external non-free service for some trivial things like
-    /// autocompletion hints or system.tables / system.columns queries. We have a setting which allow to show
-    /// these databases everywhere, but user must explicitly specify it.
-    /// Note: system.databases always passes with_datalake_catalogs = true because listing a database name
-    /// is purely local metadata and never requires calls to an external catalog service.
+    /// Remote databases (data lake catalogs, MySQL, PostgreSQL) are implemented at IDatabase level in ClickHouse.
+    /// Listing their tables typically requires calls to a remote service (sometimes paid).
+    /// GetDatabasesOptions::with_remote_databases explicitly protects us from accidentally querying the remote service for trivial
+    /// things like autocompletion hints or system.tables / system.columns queries.
+    /// The `show_remote_databases_in_system_tables` setting allows the user to opt in.
+    /// Note: system.databases always passes with_remote_databases = true because listing a database
+    /// name is purely local metadata and never requires calls to a remote service.
     Databases getDatabases(GetDatabasesOptions options) const;
 
     /// Same as getDatabase(const String & database_name), but if database_name is empty, current database of local_context is used
@@ -187,12 +190,6 @@ public:
     /// View dependencies between a source table and its view.
     void removeViewDependency(const StorageID & source_table_id, const StorageID & view_id);
     std::vector<StorageID> getDependentViews(const StorageID & source_table_id) const;
-
-    /// Detach all source-side view-dependency edges of a source table (the table is the source of one
-    /// or more materialized views) and return the list of dependent views. Used by `RENAME TABLE`
-    /// to re-key these edges under the new storage id via `addSourceViewDependencies`.
-    std::vector<StorageID> takeSourceViewDependencies(const StorageID & source_table_id);
-    void addSourceViewDependencies(const StorageID & source_table_id, const std::vector<StorageID> & view_ids);
 
     /// Check that all dependent views of a streaming source table are ready.
     /// Returns the list of ready views, or empty if not all are ready yet.
@@ -230,8 +227,6 @@ public:
     void undropTable(StorageID table_id);
 
     void waitTableFinallyDropped(const UUID & uuid, std::function<void()> throw_if_cancelled = {});
-
-    bool isShuttingDown() const { return is_shutting_down.load(); }
 
     /// Referential dependencies between tables: table "A" depends on table "B"
     /// if "B" is referenced in the definition of "A".
@@ -276,8 +271,8 @@ public:
     bool canPerformReplicatedDDLQueries() const;
 
     void updateMetadataFile(const String & database_name, const ASTPtr & create_query);
-    bool hasDatalakeCatalogs() const;
-    bool isDatalakeCatalog(const String & database_name) const;
+    bool hasRemoteDatabases() const;
+    bool isRemoteDatabase(const String & database_name) const;
 
 private:
     // The global instance of database catalog. unique_ptr is to allow
@@ -311,8 +306,8 @@ private:
 
     time_t getMinDropTime() TSA_REQUIRES(tables_marked_dropped_mutex);
     std::tuple<size_t, size_t> getDroppedTablesCountAndInuseCount();
-    TablesMarkedAsDropped getTablesToDrop();
-    void dropTablesParallel(TablesMarkedAsDropped tables);
+    std::vector<TablesMarkedAsDropped::iterator> getTablesToDrop();
+    void dropTablesParallel(std::vector<TablesMarkedAsDropped::iterator> tables);
     void rescheduleDropTableTask();
 
     void cleanupStoreDirectoryTask();
@@ -325,7 +320,7 @@ private:
     mutable std::mutex databases_mutex;
 
     Databases databases TSA_GUARDED_BY(databases_mutex);
-    Databases databases_without_datalake_catalogs TSA_GUARDED_BY(databases_mutex);
+    Databases databases_without_remote TSA_GUARDED_BY(databases_mutex);
     UUIDToStorageMap uuid_map;
 
     /// Referential dependencies between tables: table "A" depends on table "B"

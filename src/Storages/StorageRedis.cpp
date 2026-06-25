@@ -3,13 +3,11 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/ISource.h>
@@ -32,9 +30,6 @@
 #include <Common/parseAddress.h>
 #include <Common/JSONBuilder.h>
 
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
-
 namespace DB
 {
 
@@ -45,7 +40,7 @@ namespace ErrorCodes
     extern const int INTERNAL_REDIS_ERROR;
 }
 
-class RedisDataSource final : public ISource
+class RedisDataSource : public ISource
 {
 public:
     RedisDataSource(
@@ -154,7 +149,7 @@ private:
 };
 
 
-class RedisSink final : public SinkToStorage
+class RedisSink : public SinkToStorage
 {
 public:
     RedisSink(StorageRedis & storage_, const StorageMetadataPtr & metadata_snapshot_);
@@ -214,22 +209,14 @@ StorageRedis::StorageRedis(
     ContextPtr context_,
     const StorageInMemoryMetadata & storage_metadata,
     const String & primary_key_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , configuration(configuration_)
     , log(getLogger("StorageRedis"))
     , primary_key(primary_key_)
 {
     pool = std::make_shared<RedisPool>(configuration.pool_size);
-    setInMemoryMetadata(storage_metadata.withVirtuals(createVirtuals()));
-}
-
-VirtualColumnsDescription StorageRedis::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
+    setInMemoryMetadata(storage_metadata);
 }
 
 class ReadFromRedis : public SourceStepWithFilter
@@ -267,7 +254,7 @@ private:
     bool all_scan = true;
 };
 
-void StorageRedis::readImpl(
+void StorageRedis::read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -424,7 +411,7 @@ namespace
         if (!args.storage_def->primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageRedis must require one column in primary key");
 
-        auto primary_key_desc = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, {}, args.getContext());
+        auto primary_key_desc = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
         auto primary_key_names = primary_key_desc.expression->getRequiredColumns();
 
         if (primary_key_names.size() != 1)
@@ -446,7 +433,7 @@ Chunk StorageRedis::getBySerializedKeys(const std::vector<std::string> & keys, P
 
 Chunk StorageRedis::getBySerializedKeys(const RedisArray & keys, PaddedPODArray<UInt8> * null_map) const
 {
-    Block sample_block = getInMemoryMetadataPtr(getContext(), false)->getSampleBlock();
+    Block sample_block = getInMemoryMetadataPtr()->getSampleBlock();
 
     size_t primary_key_pos = getPrimaryKeyPos(sample_block, getPrimaryKey());
     MutableColumns columns = sample_block.cloneEmptyColumns();
@@ -561,7 +548,7 @@ Chunk StorageRedis::getByKeys(const ColumnsWithTypeAndName & keys, const Names &
 
 Block StorageRedis::getSampleBlock(const Names &) const
 {
-    return getInMemoryMetadataPtr(getContext(), false)->getSampleBlock();
+    return getInMemoryMetadataPtr()->getSampleBlock();
 }
 
 SinkToStoragePtr StorageRedis::write(
@@ -610,8 +597,7 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
 
     assert(commands.size() == 1);
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
-    auto physical_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
+    auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context_);
 
@@ -621,7 +607,7 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
         settings.return_all_columns = true;
         settings.return_mutated_rows = true;
 
-        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, physical_columns, context_, settings);
+        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context_, settings);
         auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
 
@@ -652,15 +638,14 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
     }
 
     assert(commands.front().type == MutationCommand::Type::UPDATE);
-    auto alter = commands.front().ast();
-    if (getColumnToUpdateExpression(*alter).contains(primary_key))
+    if (commands.front().column_to_update_expression.contains(primary_key))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", primary_key);
 
     MutationsInterpreter::Settings settings(true);
     settings.return_all_columns = true;
     settings.return_mutated_rows = true;
 
-    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, physical_columns, context_, settings);
+    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context_, settings);
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
     PullingPipelineExecutor executor(pipeline);
 

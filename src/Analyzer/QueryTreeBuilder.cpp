@@ -856,7 +856,6 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
 
     result->setAlias(expression->tryGetAlias());
     result->setOriginalAST(expression);
-    result->setParenthesized(expression->isParenthesized());
 
     return result;
 }
@@ -1165,7 +1164,6 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                     result_join_strictness,
                     result_join_kind,
                     table_join.using_expression_list != nullptr);
-                join_node->as<JoinNode &>().setNatural(table_join.is_natural);
             }
 
             join_node->setOriginalAST(table_element.table_join);

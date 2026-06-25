@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <Common/re2.h>
+#include "config.h"
 
 namespace DB
 {

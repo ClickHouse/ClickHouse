@@ -1022,22 +1022,6 @@ void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const D
 namespace
 {
 
-/// Recursively check if an AST tree contains any subquery nodes at any depth.
-/// Used during DDL validation to reject subqueries nested inside function arguments
-/// in DEFAULT/ALIAS/MATERIALIZED expressions (e.g. `ALIAS toString((SELECT ...))`)
-/// that the previous shallow check on direct children would miss.
-bool hasSubqueryInTree(const ASTPtr & ast)
-{
-    if (!ast)
-        return false;
-    if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSubquery>())
-        return true;
-    for (const auto & child : ast->children)
-        if (hasSubqueryInTree(child))
-            return true;
-    return false;
-}
-
 void assertNoMatcherNodes(const QueryTreeNodePtr & node, const String & context_description)
 {
     if (node->getNodeType() == QueryTreeNodeType::MATCHER)
@@ -1220,7 +1204,7 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
     QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
-    GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+    GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
     QueryAnalyzer analyzer(/* only_analyze */ true);
@@ -1288,7 +1272,7 @@ std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(ASTPtr default
     }
 
     for (const auto & child : default_expr_list->children)
-        if (hasSubqueryInTree(child))
+        if (child->as<ASTSelectQuery>() || child->as<ASTSelectWithUnionQuery>() || child->as<ASTSubquery>())
             throw Exception(ErrorCodes::THERE_IS_NO_DEFAULT_VALUE, "Select query is not allowed in columns DEFAULT expression");
 
     try

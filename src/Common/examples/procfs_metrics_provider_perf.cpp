@@ -7,7 +7,7 @@
 
 
 #if defined(OS_LINUX)
-int mainEntryExampleProcfsMetricsProviderPerf(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     using namespace DB;
 
@@ -35,8 +35,7 @@ int mainEntryExampleProcfsMetricsProviderPerf(int argc, char ** argv)
     return 0;
 }
 #else
-int mainEntryExampleProcfsMetricsProviderPerf(int, char **)
+int main()
 {
-    return 0;
 }
 #endif
