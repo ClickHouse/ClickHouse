@@ -43,7 +43,6 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
