@@ -85,10 +85,6 @@ StorageSystemProjectionParts::StorageSystemProjectionParts(const StorageID & tab
         {"rows_where_ttl_info.min",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The minimum value of the calculated TTL expression within this part. Used to understand whether we have at least one row with expired TTL."},
         {"rows_where_ttl_info.max",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The maximum value of the calculated TTL expression within this part. Used to understand whether we have all rows with expired TTL."},
 
-        {"index_clear_ttl_info.index_name",             std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),   "The secondary index name targeted by a TTL CLEAR INDEX rule."},
-        {"index_clear_ttl_info.expression",             std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),   "The TTL expression for clearing secondary index files."},
-        {"index_clear_ttl_info.min",                    std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The minimum value of the calculated TTL expression within this part."},
-        {"index_clear_ttl_info.max",                    std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The maximum value of the calculated TTL expression within this part. Used to understand whether all rows are eligible for clearing the index files."},
 
         {"is_broken",                                   std::make_shared<DataTypeUInt8>(), "Whether projection part is broken"},
         {"exception_code",                              std::make_shared<DataTypeInt32>(), "Exception message explaining broken state of the projection part"},
@@ -276,51 +272,6 @@ void StorageSystemProjectionParts::processNextStorage(
         add_ttl_info_map(part->ttl_infos.recompression_ttl);
         add_ttl_info_map(part->ttl_infos.group_by_ttl);
         add_ttl_info_map(part->ttl_infos.rows_where_ttl);
-
-        auto add_index_clear_ttl_info_map = [&]()
-        {
-            const auto & ttl_info_map = part->ttl_infos.index_clear_ttl;
-            const auto index_clear_ttls = part->getMetadataSnapshot()->getIndexClearTTLs();
-
-            Array index_name_array;
-            Array expression_array;
-            Array min_array;
-            Array max_array;
-            if (columns_mask[src_index])
-                index_name_array.reserve(index_clear_ttls.size());
-            if (columns_mask[src_index + 1])
-                expression_array.reserve(index_clear_ttls.size());
-            if (columns_mask[src_index + 2])
-                min_array.reserve(index_clear_ttls.size());
-            if (columns_mask[src_index + 3])
-                max_array.reserve(index_clear_ttls.size());
-
-            for (const auto & ttl : index_clear_ttls)
-            {
-                auto ttl_info = ttl_info_map.find(ttl.result_column);
-                if (ttl_info == ttl_info_map.end())
-                    continue;
-
-                if (columns_mask[src_index])
-                    index_name_array.emplace_back(ttl.index_name);
-                if (columns_mask[src_index + 1])
-                    expression_array.emplace_back(ttl.result_column);
-                if (columns_mask[src_index + 2])
-                    min_array.push_back(static_cast<UInt32>(ttl_info->second.min));
-                if (columns_mask[src_index + 3])
-                    max_array.push_back(static_cast<UInt32>(ttl_info->second.max));
-            }
-
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(index_name_array);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(expression_array);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(min_array);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(max_array);
-        };
-        add_index_clear_ttl_info_map();
 
         {
             if (columns_mask[src_index++])
