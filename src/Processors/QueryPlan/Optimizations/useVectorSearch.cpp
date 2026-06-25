@@ -318,12 +318,13 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
     /// is slightly at odds with vector search optimizations. There are two optimizations in vector
     /// search -
     /// 1. Lookup the vector index and shortlist a handful of granules containing neighbours.
-    /// 2. The rescoring optimization goes even further and does not read the 'heavy' vector column at all and
-    ///    only sends the exact neighbour rows to the Sorting + Output step.
+    /// 2. Apply the candidate-row filter from the vector index before distance
+    ///    computation for rescoring queries, or use `_distance` from the index
+    ///    for non-rescoring queries.
     /// Thus, explicit or implicit PREWHERE after above two optimizations does not bring additional benefit. Also,
-    /// the PREWHERE filter implementation conflicts with rescoring optimization filter. If explicit PREWHERE is
-    /// requested, we turn the rescoring optimization off. If there is a WHERE clause and even with
-    /// optimize_move_to_prewhere = 1, we retain the rescoring optimization and disable the implicit PREWHERE
+    /// the PREWHERE filter implementation conflicts with the vector-search candidate-row filter. If explicit PREWHERE
+    /// is requested, we turn the vector-search optimization off. If there is a WHERE clause and even with
+    /// optimize_move_to_prewhere = 1, we retain vector-search optimization and disable the implicit PREWHERE
     /// optimization. (check optimizePrewhere.cpp)
     if (const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo())
         return false;
