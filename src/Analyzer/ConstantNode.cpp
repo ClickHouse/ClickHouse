@@ -225,15 +225,17 @@ ASTPtr makeASTFunctionFromList(std::string_view name, ASTs children)
 
 /// True if the constant may contain a decimal leaf: a static Decimal anywhere in the type
 /// (Array/Tuple/Map/Variant/Nullable/...), or a Dynamic whose runtime value can be a decimal that is
-/// not visible in the declared type. Used as a cheap guard to skip materializing the field for the
-/// common decimal-free constants; fieldContainsDecimal is the authoritative check on the value.
+/// not visible in the declared type. Time64 is also backed by a scaled decimal value and, unlike
+/// DateTime64, is not serialized as text by getFieldFromColumnForASTLiteral, so it needs the exact
+/// path too. Used as a cheap guard to skip materializing the field for the common decimal-free
+/// constants; fieldContainsDecimal is the authoritative check on the value.
 bool typeMayContainDecimal(const IDataType & type)
 {
     bool result = false;
     auto check = [&](const IDataType & nested)
     {
         WhichDataType which(nested);
-        result |= which.isDecimal() || which.isDynamic();
+        result |= which.isDecimal() || which.isTime64() || which.isDynamic();
     };
     check(type);
     type.forEachChild(check);

@@ -54,6 +54,11 @@ FROM remote('127.0.0.{1,2}', system.one);
 SELECT DISTINCT d, dynamicType(d)
 FROM (SELECT materialize(toDecimal64('123456789012.34567', 5)::Dynamic) AS d FROM remote('127.0.0.{1,2}', system.one));
 
+-- Time64 is backed by a scaled decimal but, unlike DateTime64, is not serialized as text, so a bare
+-- literal would be parsed as Float64 on the shard and lose ticks. It must reach the shard exactly.
+SELECT DISTINCT materialize(toDecimal64('999999999.123456789', 9)::Time64(9)) AS t
+FROM remote('127.0.0.{1,2}', system.one);
+
 DROP TABLE ts_data_94612;
 
 -- An OR chain of >= 3 equalities is rewritten to IN, whose RHS set is a constant with casts
