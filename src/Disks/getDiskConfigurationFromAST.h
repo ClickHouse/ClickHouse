@@ -35,10 +35,12 @@ struct DynamicS3DiskCredentialInfo
     /// The AST used `include`, so the resolved configuration may differ from the AST and its credential
     /// provenance cannot be trusted (an include can supply the type and credentials, e.g. via `from_env`).
     bool has_include = false;
-    /// The AST itself supplied a safe credential form (an explicit literal key pair, `no_sign_request`, an
-    /// explicit `use_environment_credentials = 0` without `role_arn`, or a complete explicit Google ADC
-    /// triple). Only these count as user-provided; values an `include` injects do not.
-    bool ast_has_explicit_credentials = false;
+    /// The SPECIFIC safe credential forms the AST itself supplied with literal values (no substitution/include).
+    /// The resolved auth mode is validated against these: only a form the AST proved counts as user-provided.
+    bool ast_has_explicit_key_pair = false;                 /// literal `access_key_id` + `secret_access_key`
+    bool ast_has_no_sign_request = false;                   /// literal `no_sign_request`
+    bool ast_has_use_environment_credentials_off = false;   /// literal `use_environment_credentials = 0`, no `role_arn`
+    bool ast_has_explicit_gcp_adc = false;                  /// complete literal Google ADC triple
 };
 
 /// The same as above function, but return XML::Document for easier modification of result configuration.

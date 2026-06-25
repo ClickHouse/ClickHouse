@@ -245,7 +245,10 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     if (info)
     {
         info->has_include = has_include;
-        info->ast_has_explicit_credentials = ast_has_explicit_credentials;
+        info->ast_has_explicit_key_pair = has_explicit_credentials;
+        info->ast_has_no_sign_request = has_no_sign_request;
+        info->ast_has_use_environment_credentials_off = allowed_anonymous;
+        info->ast_has_explicit_gcp_adc = has_explicit_gcp_adc;
     }
 
     if (maybe_s3_disk && context->shouldRestrictUserQueryS3Credentials())
@@ -302,18 +305,47 @@ void validateResolvedS3DiskCredentials(
 {
     /// Re-check the credential restriction AFTER `include`/`from_env`/`from_zk` are resolved, but only for an
     /// `include`d disk: an `include` can supply the type and credentials (e.g. `type = s3` plus
-    /// `access_key_id`/`secret_access_key` via `from_env`/`from_zk`), evading the pre-resolution check that ran
-    /// on a literal non-S3 type in the AST; the disk would then be built with `for_disk_s3 = true`, so the
-    /// central `getClient` restriction never applies. A disk without `include` is fully decided by the
-    /// pre-resolution check. The resolved values here are just concrete strings, so their provenance cannot be
-    /// trusted -- only credentials the AST itself supplied (`info.ast_has_explicit_credentials`) count as safe.
+    /// `access_key_id`/`secret_access_key` via `from_env`/`from_zk`, or `http_client = gcp_oauth`), evading the
+    /// pre-resolution check that ran on a literal non-S3 type in the AST; the disk would then be built with
+    /// `for_disk_s3 = true`, so the central `getClient` restriction never applies. A disk without `include` is
+    /// fully decided by the pre-resolution check. The resolved values here are just concrete strings whose
+    /// provenance cannot be trusted, so the resolved auth MODE is validated against the specific safe form the
+    /// AST itself proved: a value an `include`/substitution injected does not count.
     if (!info.has_include || !context->shouldRestrictUserQueryS3Credentials())
         return;
 
     auto is_s3_type = [](const String & t) { return t == "s3" || t.starts_with("s3_"); };
     const bool resolved_backend_is_s3
         = is_s3_type(config.getString("type", "")) || is_s3_type(config.getString("object_storage_type", ""));
-    if (!resolved_backend_is_s3 || info.ast_has_explicit_credentials)
+    if (!resolved_backend_is_s3)
+        return;
+
+    /// Match the resolved auth mode to the form the AST proved. `gcp_oauth` mints a bearer token (server GCP
+    /// metadata unless a complete ADC triple is given); a `role_arn` assumes a role and needs an explicit base
+    /// key pair; otherwise the disk is safe only if it is explicitly anonymous or carries an explicit key pair.
+    const bool resolved_wants_gcp_oauth = boost::iequals(config.getString("http_client", ""), "gcp_oauth");
+    const bool resolved_has_role_arn = !config.getString("role_arn", "").empty();
+    const bool resolved_has_key_pair
+        = !config.getString("access_key_id", "").empty() && !config.getString("secret_access_key", "").empty();
+    const bool resolved_no_sign = config.getBool("no_sign_request", false);
+    const bool resolved_use_env_off
+        = config.has("use_environment_credentials") && !config.getBool("use_environment_credentials", true);
+
+    bool safe;
+    if (resolved_wants_gcp_oauth)
+        safe = info.ast_has_explicit_gcp_adc;
+    else if (resolved_has_role_arn)
+        safe = info.ast_has_explicit_key_pair;
+    else if (resolved_has_key_pair)
+        safe = info.ast_has_explicit_key_pair;
+    else if (resolved_no_sign)
+        safe = info.ast_has_no_sign_request;
+    else if (resolved_use_env_off)
+        safe = info.ast_has_use_environment_credentials_off || info.ast_has_no_sign_request;
+    else
+        safe = false; /// resolved relies on the default `use_environment_credentials = 1` (server credentials)
+
+    if (safe)
         return;
 
     if (is_loading_from_existing_metadata
