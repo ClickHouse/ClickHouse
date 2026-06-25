@@ -4,6 +4,8 @@ vector_index_path_used
 1
 expected_top3_ids_for_reference_vec
 [6,7,8]
+pk_partial_adaptive_vector_index_used
+1
 pk_multi_granule_vector_index_used
 1
 pk_multi_granule_same_row_count_as_without_skip_indexes

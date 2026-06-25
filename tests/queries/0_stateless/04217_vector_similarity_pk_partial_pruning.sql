@@ -1,12 +1,6 @@
 -- Tags: no-fasttest, no-ordinary-database, no-random-merge-tree-settings
 --
--- Regression for partial PK + vector search.
--- Before this fix, if PK left only part of the marks in a part, vector index analysis was skipped.
--- Here we check:
--- 1) Case A: `use_skip_indexes = 1` and `use_skip_indexes = 0` return the same ids (single PK slice, clear ANN winners).
--- 2) vector path really runs (`USearchSearchCount > 0`).
--- 3) Cases D/E: partial PK + vector index across skip-index granules (index used, results respect WHERE; Case D also checks row count vs skip=0).
--- 4) Date-range PK filters + extra non-PK filters still work as expected.
+-- Partial PK pruning used to skip the vector similarity index; keep using it via filtered_search.
 
 SET allow_experimental_vector_similarity_index = 1;
 SET enable_analyzer = 1;
@@ -23,8 +17,7 @@ INSERT INTO tab_pk_partial VALUES
     (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [1.5, 0.0]),
     (6, [0.0, 2.0]), (7, [0.0, 2.1]), (8, [0.0, 2.2]), (9, [0.0, 2.3]), (10, [0.0, 2.4]), (11, [0.0, 2.5]);
 
--- Case A: simple PK partial range (`id >= 6`) with vector ORDER BY LIMIT.
--- Expected: same top-k ids with and without skip indexes.
+-- Case A: partial PK range with vector ORDER BY LIMIT.
 SELECT 'pk_partial_matches_exact_knn_without_skip_indexes';
 WITH [toFloat32(0.), toFloat32(2.)] AS reference_vec
 SELECT
@@ -62,7 +55,7 @@ FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
--- Case B: prove this query actually used the vector index path.
+-- Check USearchSearchCount for the query above.
 SELECT 'vector_index_path_used';
 SELECT max(ProfileEvents['USearchSearchCount'] > 0)
 FROM system.query_log
@@ -85,7 +78,46 @@ FROM
     SETTINGS use_skip_indexes = 0
 );
 
--- Case D: PK spans two skip-index granules (OR). Do not require exact id match vs skip=0 (ANN/bf16).
+-- Adaptive granularity: variable row sizes per mark.
+DROP TABLE IF EXISTS tab_pk_partial_adaptive;
+
+CREATE TABLE tab_pk_partial_adaptive(
+    id Int32,
+    pad String,
+    vec Array(Float32),
+    INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2) GRANULARITY 2
+) ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 3, index_granularity_bytes = 64, min_bytes_for_wide_part = 0;
+
+INSERT INTO tab_pk_partial_adaptive VALUES
+    (0, repeat('a', 0), [1.0, 0.0]), (1, repeat('a', 20), [1.1, 0.0]), (2, repeat('a', 40), [1.2, 0.0]),
+    (3, repeat('a', 60), [1.3, 0.0]), (4, repeat('a', 80), [1.4, 0.0]), (5, repeat('a', 100), [1.5, 0.0]),
+    (6, repeat('a', 120), [0.0, 2.0]), (7, repeat('a', 140), [0.0, 2.1]), (8, repeat('a', 160), [0.0, 2.2]),
+    (9, repeat('a', 180), [0.0, 2.3]), (10, repeat('a', 200), [0.0, 2.4]), (11, repeat('a', 220), [0.0, 2.5]);
+
+SELECT id
+FROM tab_pk_partial_adaptive
+WHERE id >= 6
+ORDER BY L2Distance(vec, [toFloat32(0.), toFloat32(2.)]) ASC
+LIMIT 3
+SETTINGS use_skip_indexes = 1, log_comment = '04217-adaptive-pk-partial'
+FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT 'pk_partial_adaptive_vector_index_used';
+-- Check USearchSearchCount for the adaptive-granularity query above.
+SELECT max(ProfileEvents['USearchSearchCount'] > 0)
+FROM system.query_log
+WHERE current_database = currentDatabase()
+    AND type = 'QueryFinish'
+    AND log_comment = '04217-adaptive-pk-partial'
+    AND event_date >= yesterday()
+    AND event_time >= now() - 600;
+
+DROP TABLE tab_pk_partial_adaptive;
+
+-- OR spans two skip-index granules; exact ids may differ from brute force.
 SELECT id
 FROM tab_pk_partial
 WHERE (id <= 2) OR (id >= 7)
@@ -145,7 +177,7 @@ FROM
     SETTINGS use_skip_indexes = 1
 );
 
--- Case E: disjoint PK ranges in one skip-index granule (OR). Same relaxed checks as Case D.
+-- OR with disjoint PK ranges in one skip-index granule.
 SELECT id
 FROM tab_pk_partial
 WHERE (id <= 1) OR (id >= 4 AND id <= 5)
