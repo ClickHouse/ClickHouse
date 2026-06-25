@@ -495,12 +495,14 @@ struct NameReinterpretAsUInt32      { static constexpr auto name = "reinterpretA
 struct NameReinterpretAsUInt64      { static constexpr auto name = "reinterpretAsUInt64"; };
 struct NameReinterpretAsUInt128     { static constexpr auto name = "reinterpretAsUInt128"; };
 struct NameReinterpretAsUInt256     { static constexpr auto name = "reinterpretAsUInt256"; };
+struct NameReinterpretAsUInt512     { static constexpr auto name = "reinterpretAsUInt512"; };
 struct NameReinterpretAsInt8        { static constexpr auto name = "reinterpretAsInt8"; };
 struct NameReinterpretAsInt16       { static constexpr auto name = "reinterpretAsInt16"; };
 struct NameReinterpretAsInt32       { static constexpr auto name = "reinterpretAsInt32"; };
 struct NameReinterpretAsInt64       { static constexpr auto name = "reinterpretAsInt64"; };
 struct NameReinterpretAsInt128      { static constexpr auto name = "reinterpretAsInt128"; };
 struct NameReinterpretAsInt256      { static constexpr auto name = "reinterpretAsInt256"; };
+struct NameReinterpretAsInt512      { static constexpr auto name = "reinterpretAsInt512"; };
 struct NameReinterpretAsFloat32     { static constexpr auto name = "reinterpretAsFloat32"; };
 struct NameReinterpretAsFloat64     { static constexpr auto name = "reinterpretAsFloat64"; };
 struct NameReinterpretAsDate        { static constexpr auto name = "reinterpretAsDate"; };
@@ -515,12 +517,14 @@ using FunctionReinterpretAsUInt32 = FunctionReinterpretAs<DataTypeUInt32, NameRe
 using FunctionReinterpretAsUInt64 = FunctionReinterpretAs<DataTypeUInt64, NameReinterpretAsUInt64>;
 using FunctionReinterpretAsUInt128 = FunctionReinterpretAs<DataTypeUInt128, NameReinterpretAsUInt128>;
 using FunctionReinterpretAsUInt256 = FunctionReinterpretAs<DataTypeUInt256, NameReinterpretAsUInt256>;
+using FunctionReinterpretAsUInt512 = FunctionReinterpretAs<DataTypeUInt512, NameReinterpretAsUInt512>;
 using FunctionReinterpretAsInt8 = FunctionReinterpretAs<DataTypeInt8, NameReinterpretAsInt8>;
 using FunctionReinterpretAsInt16 = FunctionReinterpretAs<DataTypeInt16, NameReinterpretAsInt16>;
 using FunctionReinterpretAsInt32 = FunctionReinterpretAs<DataTypeInt32, NameReinterpretAsInt32>;
 using FunctionReinterpretAsInt64 = FunctionReinterpretAs<DataTypeInt64, NameReinterpretAsInt64>;
 using FunctionReinterpretAsInt128 = FunctionReinterpretAs<DataTypeInt128, NameReinterpretAsInt128>;
 using FunctionReinterpretAsInt256 = FunctionReinterpretAs<DataTypeInt256, NameReinterpretAsInt256>;
+using FunctionReinterpretAsInt512 = FunctionReinterpretAs<DataTypeInt512, NameReinterpretAsInt512>;
 using FunctionReinterpretAsFloat32 = FunctionReinterpretAs<DataTypeFloat32, NameReinterpretAsFloat32>;
 using FunctionReinterpretAsFloat64 = FunctionReinterpretAs<DataTypeFloat64, NameReinterpretAsFloat64>;
 using FunctionReinterpretAsDate = FunctionReinterpretAs<DataTypeDate, NameReinterpretAsDate>;
@@ -726,6 +730,7 @@ SELECT
     FunctionDocumentation documentation_reinterpretAsUInt256 = {description_reinterpretAsUInt256, syntax_reinterpretAsUInt256, arguments_reinterpretAsUInt256, {}, returned_value_reinterpretAsUInt256, examples_reinterpretAsUInt256, introduced_in_reinterpretAsUInt256, category_reinterpretAsUInt256};
 
     factory.registerFunction<FunctionReinterpretAsUInt256>(documentation_reinterpretAsUInt256);
+    factory.registerFunction<FunctionReinterpretAsUInt512>({});
 
     FunctionDocumentation::Description description_reinterpretAsInt8 = R"(
 Reinterprets the input value as a value of type Int8.
@@ -918,6 +923,7 @@ SELECT
     FunctionDocumentation documentation_reinterpretAsInt256 = {description_reinterpretAsInt256, syntax_reinterpretAsInt256, arguments_reinterpretAsInt256, {}, returned_value_reinterpretAsInt256, examples_reinterpretAsInt256, introduced_in_reinterpretAsInt256, category_reinterpretAsInt256};
 
     factory.registerFunction<FunctionReinterpretAsInt256>(documentation_reinterpretAsInt256);
+    factory.registerFunction<FunctionReinterpretAsInt512>({});
 
     FunctionDocumentation::Description description_reinterpretAsFloat32 = R"(
 Reinterprets the input value as a value of type Float32.

@@ -47,6 +47,7 @@ GTEST_TEST(FieldBinaryEncoding, EncodeAndDecode)
     check(DecimalField<Decimal64>(4242, 3));
     check(DecimalField<Decimal128>(Int128(4242), 3));
     check(DecimalField<Decimal256>(Int256(4242), 3));
+    check(DecimalField<Decimal512>(Int512(4242), 3));
     check(AggregateFunctionStateData{.name="some_name", .data="some_data"});
     try
     {

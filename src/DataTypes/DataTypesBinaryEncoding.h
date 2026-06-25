@@ -71,11 +71,14 @@ enum class BinaryTypeIndex : uint8_t
     Please don't use 0x33 and 0x35, because older client might try to serialise data as TimeWithTimezone/Time64WithTimezone, and newer server would deserialise them as incorrect types. */
     Time64 = 0x34,
     /// reserved = 0x35
-    QBit = 0x36
+    QBit = 0x36,
+    UInt512 = 0x37,
+    Int512 = 0x38,
+    Decimal512 = 0x39
 };
 
 /// Maximum value of BinaryTypeIndex + 1, used for sizing the index array in SimpleDataTypesCache.
-inline constexpr size_t BINARY_TYPE_INDEX_SIZE = 0x37;
+inline constexpr size_t BINARY_TYPE_INDEX_SIZE = 0x3A;
 
 /**
 
@@ -136,6 +139,9 @@ Binary encoding for ClickHouse data types:
 | Time                                                                                                    | 0x32                                                                                                                                                                                                                                                                                                                                                                     |
 | Time64(P)                                                                                               | 0x34<uint8_precision>                                                                                                                                                                                                                                                                                                                                                    |
 | QBit(T, N)                                                                                              | 0x36<element_type_encoding><var_uint_dimension>                                                                                                                                                                                                                                                                                                                          |
+| UInt512                                                                                                 | 0x37                                                                                                                                                                                                                                                                                                                                                                     |
+| Int512                                                                                                  | 0x38                                                                                                                                                                                                                                                                                                                                                                     |
+| Decimal512(P, S)                                                                                        | 0x39<uint8_precision><uint8_scale>                                                                                                                                                                                                                                                                                                                                       |
 |---------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 
 Interval kind binary encoding:
@@ -181,6 +187,9 @@ Aggregate function parameter binary encoding (binary encoding of a Field, see sr
 | Bool                   | 0x13<bool_value>                                                                                                             |
 | Object                 | 0x14<var_uint_size><var_uint_key_size_1><key_data_1><value_encoding_1>...<var_uint_key_size_N><key_data_N><value_encoding_N> |
 | AggregateFunctionState | 0x15<var_uint_name_size><name_data><var_uint_data_size><data>                                                                |
+| Decimal512             | 0x16<var_uint_scale><int512_little_endian_value>                                                                             |
+| UInt512                 | 0x17<uint512_little_endian_value>                                                                                            |
+| Int512                  | 0x18<int512_little_endian_value>                                                                                             |
 | Negative infinity      | 0xFE                                                                                                                         |
 | Positive infinity      | 0xFF                                                                                                                         |
 |------------------------|------------------------------------------------------------------------------------------------------------------------------|

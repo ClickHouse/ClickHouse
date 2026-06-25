@@ -93,12 +93,23 @@ constexpr bool supportsBitInt256()
 #endif
 }
 
+constexpr bool supportsBitInt512()
+{
+#if defined(__x86_64__) && defined(__clang__) && __clang_major__ >= 15
+    return true;
+#else
+    return false;
+#endif
+}
+
 #if defined(__x86_64__)
 /// TODO C23 standardized _BitInt(N). Theoretically, it is not necessary to restrict the platform to x86.
 #    pragma clang diagnostic push
 #    pragma clang diagnostic ignored "-Wbit-int-extension"
 using BitInt256 = signed _BitInt(256);
 using BitUInt256 = unsigned _BitInt(256);
+using BitInt512 = signed _BitInt(512);
+using BitUInt512 = unsigned _BitInt(512);
 #    pragma clang diagnostic pop
 
 struct Error {};
@@ -121,6 +132,24 @@ struct ConstructBitInt256<unsigned>
     using Type = BitUInt256;
 };
 
+template <typename Signed>
+struct ConstructBitInt512
+{
+    using Type = BitInt512;
+};
+
+template <>
+struct ConstructBitInt512<signed>
+{
+    using Type = BitInt512;
+};
+
+template <>
+struct ConstructBitInt512<unsigned>
+{
+    using Type = BitUInt512;
+};
+
 /// Converts a 256-bit wide integer to Clang's built-in 256-bit integer representation.
 /// The source and target types have the same byte order.
 template <size_t Bits, typename Signed>
@@ -139,6 +168,24 @@ constexpr const auto & fromBitInt256(const T & n)
 {
     using Signed = std::conditional_t<std::is_same_v<T, BitInt256>, signed, unsigned>;
     return *reinterpret_cast<const wide::integer<256, Signed> *>(&n);
+}
+
+/// Converts a 512-bit wide integer to Clang's built-in 512-bit integer representation.
+template <size_t Bits, typename Signed>
+requires(Bits == 512)
+constexpr const auto & toBitInt512(const wide::integer<Bits, Signed> & n)
+{
+    using T = typename ConstructBitInt512<Signed>::Type;
+    return *reinterpret_cast<const T *>(&n);
+}
+
+/// Converts a Clang's built-in 512-bit integer representation to a 512-bit wide integer.
+template <typename T>
+requires(std::is_same_v<T, BitInt512> || std::is_same_v<T, BitUInt512>)
+constexpr const auto & fromBitInt512(const T & n)
+{
+    using Signed = std::conditional_t<std::is_same_v<T, BitInt512>, signed, unsigned>;
+    return *reinterpret_cast<const wide::integer<512, Signed> *>(&n);
 }
 #endif
 
@@ -301,6 +348,7 @@ struct integer<Bits, Signed>::_impl
     /// Not implemented for 128 bit types because performance benefits are negligible as of 2025:
     /// https://github.com/ClickHouse/ClickHouse/issues/70502
     static constexpr bool use_BitInt256 = supportsBitInt256() && Bits == 256;
+    static constexpr bool use_BitInt512 = supportsBitInt512() && Bits == 512;
 
     static_assert(Bits % base_bits == 0);
 
@@ -830,7 +878,17 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if constexpr (use_BitInt256)
+            if constexpr (use_BitInt512)
+            {
+                if constexpr (!std::same_as<T, integer<Bits, Signed>>)
+                {
+                    auto new_rhs = static_cast<integer<Bits, Signed>>(rhs);
+                    return fromBitInt512(toBitInt512(lhs) + toBitInt512(new_rhs));
+                }
+                else
+                    return fromBitInt512(toBitInt512(lhs) + toBitInt512(rhs));
+            }
+            else if constexpr (use_BitInt256)
             {
                 if constexpr (!std::same_as<T, integer<Bits, Signed>>)
                 {
@@ -861,7 +919,17 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if constexpr (use_BitInt256)
+            if constexpr (use_BitInt512)
+            {
+                if constexpr (!std::same_as<T, integer<Bits, Signed>>)
+                {
+                    auto new_rhs = static_cast<integer<Bits, Signed>>(rhs);
+                    return fromBitInt512(toBitInt512(lhs) - toBitInt512(new_rhs));
+                }
+                else
+                    return fromBitInt512(toBitInt512(lhs) - toBitInt512(rhs));
+            }
+            else if constexpr (use_BitInt256)
             {
                 if constexpr (!std::same_as<T, integer<Bits, Signed>>)
                 {
@@ -892,7 +960,17 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if constexpr (use_BitInt256)
+            if constexpr (use_BitInt512)
+            {
+                if constexpr (!std::same_as<T, integer<Bits, Signed>>)
+                {
+                    auto new_rhs = static_cast<integer<Bits, Signed>>(rhs);
+                    return fromBitInt512(toBitInt512(lhs) * toBitInt512(new_rhs));
+                }
+                else
+                    return fromBitInt512(toBitInt512(lhs) * toBitInt512(rhs));
+            }
+            else if constexpr (use_BitInt256)
             {
                 if constexpr (!std::same_as<T, integer<Bits, Signed>>)
                 {
@@ -1111,7 +1189,17 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if constexpr (use_BitInt256)
+            if constexpr (use_BitInt512)
+            {
+                if constexpr (!std::same_as<T, integer<Bits, Signed>>)
+                {
+                    auto new_rhs = static_cast<integer<Bits, Signed>>(rhs);
+                    return fromBitInt512(toBitInt512(lhs) / toBitInt512(new_rhs));
+                }
+                else
+                    return fromBitInt512(toBitInt512(lhs) / toBitInt512(rhs));
+            }
+            else if constexpr (use_BitInt256)
             {
                 if constexpr (!std::same_as<T, integer<Bits, Signed>>)
                 {
@@ -1144,7 +1232,17 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if constexpr (use_BitInt256)
+            if constexpr (use_BitInt512)
+            {
+                if constexpr (!std::same_as<T, integer<Bits, Signed>>)
+                {
+                    auto new_rhs = static_cast<integer<Bits, Signed>>(rhs);
+                    return fromBitInt512(toBitInt512(lhs) % toBitInt512(new_rhs));
+                }
+                else
+                    return fromBitInt512(toBitInt512(lhs) % toBitInt512(rhs));
+            }
+            else if constexpr (use_BitInt256)
             {
                 if constexpr (!std::same_as<T, integer<Bits, signed>>)
                 {

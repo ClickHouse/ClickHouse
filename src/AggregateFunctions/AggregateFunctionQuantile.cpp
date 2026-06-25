@@ -134,12 +134,15 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
     if (which.idx == TypeIndex::Decimal64) return std::make_shared<Function<Decimal64, false>>(argument_types, params);
     if (which.idx == TypeIndex::Decimal128) return std::make_shared<Function<Decimal128, false>>(argument_types, params);
     if (which.idx == TypeIndex::Decimal256) return std::make_shared<Function<Decimal256, false>>(argument_types, params);
+    if (which.idx == TypeIndex::Decimal512) return std::make_shared<Function<Decimal512, false>>(argument_types, params);
     if (which.idx == TypeIndex::DateTime64) return std::make_shared<Function<DateTime64, false>>(argument_types, params);
 
     if (which.idx == TypeIndex::Int128) return std::make_shared<Function<Int128, true>>(argument_types, params);
     if (which.idx == TypeIndex::UInt128) return std::make_shared<Function<UInt128, true>>(argument_types, params);
     if (which.idx == TypeIndex::Int256) return std::make_shared<Function<Int256, true>>(argument_types, params);
     if (which.idx == TypeIndex::UInt256) return std::make_shared<Function<UInt256, true>>(argument_types, params);
+    if (which.idx == TypeIndex::Int512) return std::make_shared<Function<Int512, true>>(argument_types, params);
+    if (which.idx == TypeIndex::UInt512) return std::make_shared<Function<UInt512, true>>(argument_types, params);
 
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
                     argument_type->getName(), name);

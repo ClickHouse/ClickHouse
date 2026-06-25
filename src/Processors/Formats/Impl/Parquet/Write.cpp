@@ -1301,6 +1301,7 @@ void writeColumnChunkBody(
         case TypeIndex::Decimal64:  D(Decimal64); break;
         case TypeIndex::Decimal128: D(Decimal128); break;
         case TypeIndex::Decimal256: D(Decimal256); break;
+        case TypeIndex::Decimal512: D(Decimal512); break;
         #undef D
 
         default:

@@ -1,0 +1,2 @@
+-- bson decimal512 roundtrip
+Decimal(154, 3)	0.125

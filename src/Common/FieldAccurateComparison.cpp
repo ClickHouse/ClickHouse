@@ -117,12 +117,12 @@ public:
                 return accurate::equalsOp(static_cast<Float64>(l), decimalFieldToFloat64(r));
             }
 
-            /// Decimal vs Integer: convert integer to Decimal256 for precise comparison.
+            /// Decimal vs Integer: convert integer to Decimal512 for precise comparison.
             if constexpr (is_decimal_field<T> && is_integer<U>)
-                return l == DecimalField<Decimal256>(Decimal256(r), 0);
+                return l == DecimalField<Decimal512>(Decimal512(r), 0);
 
             if constexpr (is_integer<T> && is_decimal_field<U>)
-                return DecimalField<Decimal256>(Decimal256(l), 0) == r;
+                return DecimalField<Decimal512>(Decimal512(l), 0) == r;
 
             if constexpr (std::is_same_v<T, String> && is_arithmetic_v<U>)
             {
@@ -214,12 +214,12 @@ public:
                 return accurate::lessOp(static_cast<Float64>(l), decimalFieldToFloat64(r));
             }
 
-            /// Decimal vs Integer: convert integer to Decimal256 for precise comparison.
+            /// Decimal vs Integer: convert integer to Decimal512 for precise comparison.
             if constexpr (is_decimal_field<T> && is_integer<U>)
-                return l < DecimalField<Decimal256>(Decimal256(r), 0);
+                return l < DecimalField<Decimal512>(Decimal512(r), 0);
 
             if constexpr (is_integer<T> && is_decimal_field<U>)
-                return DecimalField<Decimal256>(Decimal256(l), 0) < r;
+                return DecimalField<Decimal512>(Decimal512(l), 0) < r;
 
             if constexpr (std::is_same_v<T, String> && is_arithmetic_v<U>)
             {

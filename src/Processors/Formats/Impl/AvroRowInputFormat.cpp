@@ -653,6 +653,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 return createDecimalDeserializeFn<DataTypeDecimal128>(root_node, target_type, true);
             if (target.isDecimal256())
                 return createDecimalDeserializeFn<DataTypeDecimal256>(root_node, target_type, true);
+            if (target.isDecimal512())
+                return createDecimalDeserializeFn<DataTypeDecimal512>(root_node, target_type, true);
             if (target.isDateTime64())
                 return createDecimalDeserializeFn<DataTypeDateTime64>(root_node, target_type, true);
             break;

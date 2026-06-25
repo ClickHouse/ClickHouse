@@ -285,6 +285,8 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
                 minimize(min_bits_of_unsigned_integer, 128);
             else if (typeid_cast<const DataTypeUInt256 *>(type.get()))
                 minimize(min_bits_of_unsigned_integer, 256);
+            else if (typeid_cast<const DataTypeUInt512 *>(type.get()))
+                minimize(min_bits_of_unsigned_integer, 512);
             else if (typeid_cast<const DataTypeInt8 *>(type.get()))
                 minimize(min_bits_of_signed_integer, 8);
             else if (typeid_cast<const DataTypeInt16 *>(type.get()))
@@ -297,6 +299,8 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
                 minimize(min_bits_of_signed_integer, 128);
             else if (typeid_cast<const DataTypeInt256 *>(type.get()))
                 minimize(min_bits_of_signed_integer, 256);
+            else if (typeid_cast<const DataTypeInt512 *>(type.get()))
+                minimize(min_bits_of_signed_integer, 512);
             else if (typeid_cast<const DataTypeBFloat16 *>(type.get()))
                 minimize(min_mantissa_bits_of_floating, 8);
             else if (typeid_cast<const DataTypeFloat32 *>(type.get()))

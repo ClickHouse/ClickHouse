@@ -2394,6 +2394,8 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
             return std::make_unique<NumericNode<JSONParser, UInt128>>();
         case TypeIndex::UInt256:
             return std::make_unique<NumericNode<JSONParser, UInt256>>();
+        case TypeIndex::UInt512:
+            return std::make_unique<NumericNode<JSONParser, UInt512>>();
         case TypeIndex::Int8:
             return std::make_unique<NumericNode<JSONParser, Int8>>();
         case TypeIndex::Int16:
@@ -2406,6 +2408,8 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
             return std::make_unique<NumericNode<JSONParser, Int128>>();
         case TypeIndex::Int256:
             return std::make_unique<NumericNode<JSONParser, Int256>>();
+        case TypeIndex::Int512:
+            return std::make_unique<NumericNode<JSONParser, Int512>>();
         case TypeIndex::Float32:
             return std::make_unique<NumericNode<JSONParser, Float32>>();
         case TypeIndex::Float64:
@@ -2440,6 +2444,8 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
             return std::make_unique<DecimalNode<JSONParser, Decimal128>>(type);
         case TypeIndex::Decimal256:
             return std::make_unique<DecimalNode<JSONParser, Decimal256>>(type);
+        case TypeIndex::Decimal512:
+            return std::make_unique<DecimalNode<JSONParser, Decimal512>>(type);
         case TypeIndex::Enum8:
         {
             const auto & enum_type = assert_cast<const DataTypeEnum8 &>(*type);

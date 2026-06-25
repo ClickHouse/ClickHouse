@@ -112,6 +112,8 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
             return BinaryTypeIndex::UInt128;
         case TypeIndex::UInt256:
             return BinaryTypeIndex::UInt256;
+        case TypeIndex::UInt512:
+            return BinaryTypeIndex::UInt512;
         case TypeIndex::Int8:
             return BinaryTypeIndex::Int8;
         case TypeIndex::Int16:
@@ -124,6 +126,8 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
             return BinaryTypeIndex::Int128;
         case TypeIndex::Int256:
             return BinaryTypeIndex::Int256;
+        case TypeIndex::Int512:
+            return BinaryTypeIndex::Int512;
         case TypeIndex::BFloat16:
             return BinaryTypeIndex::BFloat16;
         case TypeIndex::Float32:
@@ -162,6 +166,8 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
             return BinaryTypeIndex::Decimal128;
         case TypeIndex::Decimal256:
             return BinaryTypeIndex::Decimal256;
+        case TypeIndex::Decimal512:
+            return BinaryTypeIndex::Decimal512;
         case TypeIndex::UUID:
             return BinaryTypeIndex::UUID;
         case TypeIndex::Array:
@@ -383,6 +389,11 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
             encodeDecimal<Decimal256>(type, buf);
             break;
         }
+        case BinaryTypeIndex::Decimal512:
+        {
+            encodeDecimal<Decimal512>(type, buf);
+            break;
+        }
         case BinaryTypeIndex::Array:
         {
             const auto & array_type = assert_cast<const DataTypeArray &>(*type);
@@ -582,12 +593,14 @@ static DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
         case BinaryTypeIndex::UInt64:
         case BinaryTypeIndex::UInt128:
         case BinaryTypeIndex::UInt256:
+        case BinaryTypeIndex::UInt512:
         case BinaryTypeIndex::Int8:
         case BinaryTypeIndex::Int16:
         case BinaryTypeIndex::Int32:
         case BinaryTypeIndex::Int64:
         case BinaryTypeIndex::Int128:
         case BinaryTypeIndex::Int256:
+        case BinaryTypeIndex::Int512:
         case BinaryTypeIndex::BFloat16:
         case BinaryTypeIndex::Float32:
         case BinaryTypeIndex::Float64:
@@ -646,6 +659,8 @@ static DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
             return decodeDecimal<Decimal128>(buf);
         case BinaryTypeIndex::Decimal256:
             return decodeDecimal<Decimal256>(buf);
+        case BinaryTypeIndex::Decimal512:
+            return decodeDecimal<Decimal512>(buf);
         case BinaryTypeIndex::Array:
             return std::make_shared<DataTypeArray>(decodeDataType(buf, complexity));
         case BinaryTypeIndex::NamedTuple:

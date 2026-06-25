@@ -320,6 +320,8 @@ AggregatedDataVariants::Type AggregatedDataVariants::chooseMethod(
                 return Type::nullable_keys128;
             if (std::tuple_size_v<KeysNullMap<UInt256>> + keys_bytes <= 32)
                 return Type::nullable_keys256;
+            if (std::tuple_size_v<KeysNullMap<UInt512>> + keys_bytes <= 64)
+                return Type::nullable_keys512;
         }
 
         if (has_low_cardinality && keys_size == 1)
@@ -371,7 +373,9 @@ AggregatedDataVariants::Type AggregatedDataVariants::chooseMethod(
                 return Type::low_cardinality_keys128;
             if (size_of_field == 32)
                 return Type::low_cardinality_keys256;
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "LowCardinality numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.");
+            if (size_of_field == 64)
+                return Type::low_cardinality_keys512;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "LowCardinality numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32, 64.");
         }
 
         if (size_of_field == 1)
@@ -386,7 +390,9 @@ AggregatedDataVariants::Type AggregatedDataVariants::chooseMethod(
             return Type::keys128;
         if (size_of_field == 32)
             return Type::keys256;
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.");
+        if (size_of_field == 64)
+            return Type::keys512;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32, 64.");
     }
 
     if (keys_size == 1 && isFixedString(types_removed_nullable[0]))
@@ -405,6 +411,8 @@ AggregatedDataVariants::Type AggregatedDataVariants::chooseMethod(
                 return Type::low_cardinality_keys128;
             if (keys_bytes <= 32)
                 return Type::low_cardinality_keys256;
+            if (keys_bytes <= 64)
+                return Type::low_cardinality_keys512;
         }
 
         if (keys_bytes <= 2)
@@ -417,6 +425,8 @@ AggregatedDataVariants::Type AggregatedDataVariants::chooseMethod(
             return Type::keys128;
         if (keys_bytes <= 32)
             return Type::keys256;
+        if (keys_bytes <= 64)
+            return Type::keys512;
     }
 
     /// If single string key - will use hash table with references to it. Strings itself are stored separately in Arena.

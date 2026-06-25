@@ -1,12 +1,12 @@
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
-#include <Core/Types.h>
-#include <Functions/FunctionHelpers.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
-#include <Columns/ColumnDecimal.h>
+#include <Core/Types.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
@@ -16,8 +16,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
-    extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
+extern const int ILLEGAL_COLUMN;
+extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
 }
 
 namespace
@@ -37,29 +37,28 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args = {
-            {"Value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
-            {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), &isColumnConst, "const Integer"}
-        };
+        FunctionArgumentDescriptors mandatory_args
+            = {{"Value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
+               {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), &isColumnConst, "const Integer"}};
 
         validateFunctionArguments(*this, arguments, mandatory_args, {});
 
         return std::make_shared<DataTypeString>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeString>(); }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
 private:
     /// For operations with Integer/Float
     template <typename FromVectorType>
-    void vectorConstant(const FromVectorType & vec_from, UInt8 precision,
-                        ColumnString::Chars & vec_to, ColumnString::Offsets & result_offsets,
-                        size_t input_rows_count) const
+    void vectorConstant(
+        const FromVectorType & vec_from,
+        UInt8 precision,
+        ColumnString::Chars & vec_to,
+        ColumnString::Offsets & result_offsets,
+        size_t input_rows_count) const
     {
         result_offsets.resize(input_rows_count);
 
@@ -77,21 +76,26 @@ private:
     }
 
     template <typename FirstArgVectorType>
-    void vectorVector(const FirstArgVectorType & vec_from, const ColumnVector<UInt8>::Container & vec_precision,
-                      ColumnString::Chars & vec_to, ColumnString::Offsets & result_offsets,
-                      size_t input_rows_count) const
+    void vectorVector(
+        const FirstArgVectorType & vec_from,
+        const ColumnVector<UInt8>::Container & vec_precision,
+        ColumnString::Chars & vec_to,
+        ColumnString::Offsets & result_offsets,
+        size_t input_rows_count) const
     {
         result_offsets.resize(input_rows_count);
 
         WriteBufferFromVector<ColumnString::Chars> buf_to(vec_to);
 
-        constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
+        constexpr size_t max_digits = std::numeric_limits<UInt512>::digits10;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             if (vec_precision[i] > max_digits)
-                throw DB::Exception(DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
-                                    "Too many fractional digits requested, shall not be more than {}", max_digits);
+                throw DB::Exception(
+                    DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
+                    "Too many fractional digits requested, shall not be more than {}",
+                    max_digits);
             format(vec_from[i], buf_to, vec_precision[i]);
             result_offsets[i] = buf_to.count();
         }
@@ -101,15 +105,21 @@ private:
 
     /// For operations with Decimal
     template <typename FirstArgVectorType>
-    void vectorConstant(const FirstArgVectorType & vec_from, UInt8 precision,
-                        ColumnString::Chars & vec_to, ColumnString::Offsets & result_offsets, UInt8 from_scale,
-                        size_t input_rows_count) const
+    void vectorConstant(
+        const FirstArgVectorType & vec_from,
+        UInt8 precision,
+        ColumnString::Chars & vec_to,
+        ColumnString::Offsets & result_offsets,
+        UInt8 from_scale,
+        size_t input_rows_count) const
     {
-        /// There are no more than 77 meaning digits (as it is the max length of UInt256). So we can limit it with 77.
-        constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
+        /// There are no more than 155 meaningful digits (which is the max length of UInt512). So we can limit it with 155.
+        constexpr size_t max_digits = std::numeric_limits<UInt512>::digits10;
         if (precision > max_digits)
-            throw DB::Exception(DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
-                                "Too many fractional digits requested for Decimal, must not be more than {}", max_digits);
+            throw DB::Exception(
+                DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
+                "Too many fractional digits requested for Decimal, must not be more than {}",
+                max_digits);
 
         WriteBufferFromVector<ColumnString::Chars> buf_to(vec_to);
         result_offsets.resize(input_rows_count);
@@ -123,21 +133,27 @@ private:
     }
 
     template <typename FirstArgVectorType>
-    void vectorVector(const FirstArgVectorType & vec_from, const ColumnVector<UInt8>::Container & vec_precision,
-                      ColumnString::Chars & vec_to, ColumnString::Offsets & result_offsets, UInt8 from_scale,
-                      size_t input_rows_count) const
+    void vectorVector(
+        const FirstArgVectorType & vec_from,
+        const ColumnVector<UInt8>::Container & vec_precision,
+        ColumnString::Chars & vec_to,
+        ColumnString::Offsets & result_offsets,
+        UInt8 from_scale,
+        size_t input_rows_count) const
     {
         result_offsets.resize(input_rows_count);
 
         WriteBufferFromVector<ColumnString::Chars> buf_to(vec_to);
 
-        constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
+        constexpr size_t max_digits = std::numeric_limits<UInt512>::digits10;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             if (vec_precision[i] > max_digits)
-                throw DB::Exception(DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
-                                    "Too many fractional digits requested for Decimal, must not be more than {}", max_digits);
+                throw DB::Exception(
+                    DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
+                    "Too many fractional digits requested for Decimal, must not be more than {}",
+                    max_digits);
             writeText(vec_from[i], from_scale, buf_to, true, true, vec_precision[i]);
             result_offsets[i] = buf_to.count();
         }
@@ -150,8 +166,10 @@ private:
         /// Maximum of 60 is hard-coded in 'double-conversion/double-conversion.h' for floating point values,
         /// Catch this here to give user a more reasonable error.
         if (precision > 60)
-            throw DB::Exception(DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
-                                "Too high precision requested for Float, must not be more than 60, got {}", Int8(precision));
+            throw DB::Exception(
+                DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
+                "Too high precision requested for Float, must not be more than 60, got {}",
+                Int8(precision));
 
         DB::DoubleConverter<false>::BufferType buffer;
         double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
@@ -167,11 +185,13 @@ private:
     template <is_integer T>
     static void format(T value, DB::WriteBuffer & out, UInt8 precision)
     {
-        /// Fractional part for Integer is just trailing zeros. Let's limit it with 77 (like with Decimals).
-        constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
+        /// Fractional part for Integer is just trailing zeros. Let's limit it with 154 (like with Decimals).
+        constexpr size_t max_digits = std::numeric_limits<UInt512>::digits10;
         if (precision > max_digits)
-            throw DB::Exception(DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
-                                "Too many fractional digits requested, shall not be more than {}", max_digits);
+            throw DB::Exception(
+                DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
+                "Too many fractional digits requested, shall not be more than {}",
+                max_digits);
         writeText(value, out);
         if (precision > 0) [[likely]]
         {
@@ -186,27 +206,51 @@ public:
     {
         switch (arguments[0].type->getTypeId())
         {
-            case TypeIndex::UInt8:      return executeType<UInt8>(arguments, input_rows_count);
-            case TypeIndex::UInt16:     return executeType<UInt16>(arguments, input_rows_count);
-            case TypeIndex::UInt32:     return executeType<UInt32>(arguments, input_rows_count);
-            case TypeIndex::UInt64:     return executeType<UInt64>(arguments, input_rows_count);
-            case TypeIndex::UInt128:    return executeType<UInt128>(arguments, input_rows_count);
-            case TypeIndex::UInt256:    return executeType<UInt256>(arguments, input_rows_count);
-            case TypeIndex::Int8:       return executeType<Int8>(arguments, input_rows_count);
-            case TypeIndex::Int16:      return executeType<Int16>(arguments, input_rows_count);
-            case TypeIndex::Int32:      return executeType<Int32>(arguments, input_rows_count);
-            case TypeIndex::Int64:      return executeType<Int64>(arguments, input_rows_count);
-            case TypeIndex::Int128:     return executeType<Int128>(arguments, input_rows_count);
-            case TypeIndex::Int256:     return executeType<Int256>(arguments, input_rows_count);
-            case TypeIndex::Float32:    return executeType<Float32>(arguments, input_rows_count);
-            case TypeIndex::Float64:    return executeType<Float64>(arguments, input_rows_count);
-            case TypeIndex::Decimal32:  return executeType<Decimal32>(arguments, input_rows_count);
-            case TypeIndex::Decimal64:  return executeType<Decimal64>(arguments, input_rows_count);
-            case TypeIndex::Decimal128: return executeType<Decimal128>(arguments, input_rows_count);
-            case TypeIndex::Decimal256: return executeType<Decimal256>(arguments, input_rows_count);
+            case TypeIndex::UInt8:
+                return executeType<UInt8>(arguments, input_rows_count);
+            case TypeIndex::UInt16:
+                return executeType<UInt16>(arguments, input_rows_count);
+            case TypeIndex::UInt32:
+                return executeType<UInt32>(arguments, input_rows_count);
+            case TypeIndex::UInt64:
+                return executeType<UInt64>(arguments, input_rows_count);
+            case TypeIndex::UInt128:
+                return executeType<UInt128>(arguments, input_rows_count);
+            case TypeIndex::UInt256:
+                return executeType<UInt256>(arguments, input_rows_count);
+            case TypeIndex::UInt512:
+                return executeType<UInt512>(arguments, input_rows_count);
+            case TypeIndex::Int8:
+                return executeType<Int8>(arguments, input_rows_count);
+            case TypeIndex::Int16:
+                return executeType<Int16>(arguments, input_rows_count);
+            case TypeIndex::Int32:
+                return executeType<Int32>(arguments, input_rows_count);
+            case TypeIndex::Int64:
+                return executeType<Int64>(arguments, input_rows_count);
+            case TypeIndex::Int128:
+                return executeType<Int128>(arguments, input_rows_count);
+            case TypeIndex::Int256:
+                return executeType<Int256>(arguments, input_rows_count);
+            case TypeIndex::Int512:
+                return executeType<Int512>(arguments, input_rows_count);
+            case TypeIndex::Float32:
+                return executeType<Float32>(arguments, input_rows_count);
+            case TypeIndex::Float64:
+                return executeType<Float64>(arguments, input_rows_count);
+            case TypeIndex::Decimal32:
+                return executeType<Decimal32>(arguments, input_rows_count);
+            case TypeIndex::Decimal64:
+                return executeType<Decimal64>(arguments, input_rows_count);
+            case TypeIndex::Decimal128:
+                return executeType<Decimal128>(arguments, input_rows_count);
+            case TypeIndex::Decimal256:
+                return executeType<Decimal256>(arguments, input_rows_count);
+            case TypeIndex::Decimal512:
+                return executeType<Decimal512>(arguments, input_rows_count);
             default:
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                                arguments[0].column->getName(), getName());
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
         }
     }
 
@@ -245,15 +289,25 @@ private:
             if (from_col)
             {
                 if (precision_col_const)
-                    vectorConstant(from_col->getData(), precision_col_const->template getValue<UInt8>(), result_chars, result_offsets, input_rows_count);
+                    vectorConstant(
+                        from_col->getData(),
+                        precision_col_const->template getValue<UInt8>(),
+                        result_chars,
+                        result_offsets,
+                        input_rows_count);
                 else if (precision_col)
                     vectorVector(from_col->getData(), precision_col->getData(), result_chars, result_offsets, input_rows_count);
                 else
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function formatDecimal", arguments[1].column->getName());
-
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_COLUMN,
+                        "Illegal column {} of second argument of function formatDecimal",
+                        arguments[1].column->getName());
             }
             else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function formatDecimal", arguments[0].column->getName());
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {} of first argument of function formatDecimal",
+                    arguments[0].column->getName());
         }
 
         return result_col;

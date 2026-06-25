@@ -132,12 +132,14 @@ private:
                     || levenshteinWeightedString<N, UInt64>(columns, res_values)
                     || levenshteinWeightedString<N, UInt128>(columns, res_values)
                     || levenshteinWeightedString<N, UInt256>(columns, res_values)
+                    || levenshteinWeightedString<N, UInt512>(columns, res_values)
                     || levenshteinWeightedString<N, Int8>(columns, res_values)
                     || levenshteinWeightedString<N, Int16>(columns, res_values)
                     || levenshteinWeightedString<N, Int32>(columns, res_values)
                     || levenshteinWeightedString<N, Int64>(columns, res_values)
                     || levenshteinWeightedString<N, Int128>(columns, res_values)
                     || levenshteinWeightedString<N, Int256>(columns, res_values)
+                    || levenshteinWeightedString<N, Int512>(columns, res_values)
                     || levenshteinWeightedString<N, Float32>(columns, res_values)
                     || levenshteinWeightedString<N, Float64>(columns, res_values)))
                     throw Exception(
@@ -197,12 +199,14 @@ private:
                     || levenshteinWeightedNumber<N, UInt64>(columns, res_values)
                     || levenshteinWeightedNumber<N, UInt128>(columns, res_values)
                     || levenshteinWeightedNumber<N, UInt256>(columns, res_values)
+                    || levenshteinWeightedNumber<N, UInt512>(columns, res_values)
                     || levenshteinWeightedNumber<N, Int8>(columns, res_values)
                     || levenshteinWeightedNumber<N, Int16>(columns, res_values)
                     || levenshteinWeightedNumber<N, Int32>(columns, res_values)
                     || levenshteinWeightedNumber<N, Int64>(columns, res_values)
                     || levenshteinWeightedNumber<N, Int128>(columns, res_values)
                     || levenshteinWeightedNumber<N, Int256>(columns, res_values)
+                    || levenshteinWeightedNumber<N, Int512>(columns, res_values)
                     || levenshteinWeightedNumber<N, Float32>(columns, res_values)
                     || levenshteinWeightedNumber<N, Float64>(columns, res_values)))
                     throw Exception(
@@ -443,6 +447,7 @@ private:
                 Decimal64,
                 Decimal128,
                 Decimal256,
+                Decimal512,
                 DateTime64>(columns, res_values)
             || tryLevenshteinString<ColumnUInt32, ColumnString, ColumnFixedString>(columns, res_values))
             return res;
@@ -496,6 +501,7 @@ private:
                 Decimal64,
                 Decimal128,
                 Decimal256,
+                Decimal512,
                 DateTime64>(columns, res_values)
             || tryLevenshteinString<ColumnFloat64, ColumnString, ColumnFixedString>(columns, res_values))
             return res;
@@ -602,9 +608,11 @@ ColumnPtr FunctionArrayLevenshtein<Similarity>::execute(VectorWithMemoryTracking
         similarity<UInt8>(columns, distance, res_values) || similarity<UInt16>(columns, distance, res_values)
         || similarity<UInt32>(columns, distance, res_values) || similarity<UInt64>(columns, distance, res_values)
         || similarity<UInt128>(columns, distance, res_values) || similarity<UInt256>(columns, distance, res_values)
+        || similarity<UInt512>(columns, distance, res_values)
         || similarity<Int8>(columns, distance, res_values) || similarity<Int16>(columns, distance, res_values)
         || similarity<Int32>(columns, distance, res_values) || similarity<Int64>(columns, distance, res_values)
         || similarity<Int128>(columns, distance, res_values) || similarity<Int256>(columns, distance, res_values)
+        || similarity<Int512>(columns, distance, res_values)
         || similarity<Float32>(columns, distance, res_values) || similarity<Float64>(columns, distance, res_values)))
         throw Exception(
                 ErrorCodes::LOGICAL_ERROR,

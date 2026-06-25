@@ -51,8 +51,10 @@ template <typename T> constexpr bool DecimalOrExtendedInt =
     is_decimal<T>
     || std::is_same_v<T, Int128>
     || std::is_same_v<T, Int256>
+    || std::is_same_v<T, Int512>
     || std::is_same_v<T, UInt128>
-    || std::is_same_v<T, UInt256>;
+    || std::is_same_v<T, UInt256>
+    || std::is_same_v<T, UInt512>;
 
 /**
  * Helper class to encapsulate values conversion for avg and avgWeighted.
@@ -308,7 +310,9 @@ private:
 
 template <typename T>
 using AvgFieldType = std::conditional_t<is_decimal<T>,
-    std::conditional_t<std::is_same_v<T, Decimal256>, Decimal256, Decimal128>,
+    std::conditional_t<
+        std::is_same_v<T, Decimal512>, Decimal512,
+        std::conditional_t<std::is_same_v<T, Decimal256>, Decimal256, Decimal128>>,
     NearestFieldType<T>>;
 
 template <typename T>

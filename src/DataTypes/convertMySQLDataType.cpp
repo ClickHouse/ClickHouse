@@ -119,6 +119,8 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
             res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
         else if (precision <= DataTypeDecimalBase<Decimal256>::maxPrecision())
             res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
+        else if (precision <= DataTypeDecimalBase<Decimal512>::maxPrecision())
+            res = std::make_shared<DataTypeDecimal<Decimal512>>(precision, scale);
     }
     else if (type_name == "point")
     {

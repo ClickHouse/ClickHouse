@@ -65,6 +65,12 @@ namespace
             hash.update(type);
             hash.update(x);
         }
+        void operator() (const UInt512 & x) const
+        {
+            UInt8 type = Field::Types::UInt512;
+            hash.update(type);
+            hash.update(x);
+        }
         void operator() (const Int64 & x) const
         {
             UInt8 type = Field::Types::Int64;
@@ -80,6 +86,12 @@ namespace
         void operator() (const Int256 & x) const
         {
             UInt8 type = Field::Types::Int256;
+            hash.update(type);
+            hash.update(x);
+        }
+        void operator() (const Int512 & x) const
+        {
+            UInt8 type = Field::Types::Int512;
             hash.update(type);
             hash.update(x);
         }
@@ -170,6 +182,12 @@ namespace
         void operator() (const DecimalField<Decimal256> & x) const
         {
             UInt8 type = Field::Types::Decimal256;
+            hash.update(type);
+            hash.update(x.getValue().value);
+        }
+        void operator() (const DecimalField<Decimal512> & x) const
+        {
+            UInt8 type = Field::Types::Decimal512;
             hash.update(type);
             hash.update(x.getValue().value);
         }

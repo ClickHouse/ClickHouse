@@ -1542,13 +1542,26 @@ T byteswap(T x)
         {
             std::swap(x.items[0], x.items[1]);
         }
-        else
+        else if constexpr (sizeof(T) == 32)
         {
-            static_assert(sizeof(T) == 32);
             x.items[2] = std::byteswap(x.items[2]);
             x.items[3] = std::byteswap(x.items[3]);
             std::swap(x.items[0], x.items[3]);
             std::swap(x.items[1], x.items[2]);
+        }
+        else
+        {
+            static_assert(sizeof(T) == 64);
+            x.items[2] = std::byteswap(x.items[2]);
+            x.items[3] = std::byteswap(x.items[3]);
+            x.items[4] = std::byteswap(x.items[4]);
+            x.items[5] = std::byteswap(x.items[5]);
+            x.items[6] = std::byteswap(x.items[6]);
+            x.items[7] = std::byteswap(x.items[7]);
+            std::swap(x.items[0], x.items[7]);
+            std::swap(x.items[1], x.items[6]);
+            std::swap(x.items[2], x.items[5]);
+            std::swap(x.items[3], x.items[4]);
         }
     }
     return x;
@@ -1606,6 +1619,7 @@ template struct BigEndianHelper<Int32>;
 template struct BigEndianHelper<Int64>;
 template struct BigEndianHelper<Int128>;
 template struct BigEndianHelper<Int256>;
+template struct BigEndianHelper<Int512>;
 
 template <typename T>
 void BigEndianDecimalFixedSizeConverter<T>::convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const
@@ -1635,6 +1649,7 @@ template struct BigEndianDecimalFixedSizeConverter<Int32>;
 template struct BigEndianDecimalFixedSizeConverter<Int64>;
 template struct BigEndianDecimalFixedSizeConverter<Int128>;
 template struct BigEndianDecimalFixedSizeConverter<Int256>;
+template struct BigEndianDecimalFixedSizeConverter<Int512>;
 
 template <typename T>
 void BigEndianDecimalStringConverter<T>::convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const
@@ -1668,6 +1683,7 @@ template struct BigEndianDecimalStringConverter<Int32>;
 template struct BigEndianDecimalStringConverter<Int64>;
 template struct BigEndianDecimalStringConverter<Int128>;
 template struct BigEndianDecimalStringConverter<Int256>;
+template struct BigEndianDecimalStringConverter<Int512>;
 
 Int96Converter::Int96Converter()
 {

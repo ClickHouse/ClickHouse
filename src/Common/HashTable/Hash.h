@@ -8,6 +8,7 @@
 #include <base/unaligned.h>
 
 #include <type_traits>
+#include <cstring>
 
 
 /** Hash functions that are better than the trivial function std::hash.
@@ -268,6 +269,18 @@ inline size_t DefaultHash64(T key)
             static_cast<UInt64>(key >> 128) ^
             static_cast<UInt64>(key >> 256));
     }
+    else if constexpr (is_big_int_v<T> && sizeof(T) == 64) // Int512
+    {
+        return intHash64(
+            static_cast<UInt64>(key) ^
+            static_cast<UInt64>(key >> 64) ^
+            static_cast<UInt64>(key >> 128) ^
+            static_cast<UInt64>(key >> 192) ^
+            static_cast<UInt64>(key >> 256) ^
+            static_cast<UInt64>(key >> 320) ^
+            static_cast<UInt64>(key >> 384) ^
+            static_cast<UInt64>(key >> 448));
+    }
     UNREACHABLE();
 }
 
@@ -325,12 +338,14 @@ DEFINE_HASH(UInt32)
 DEFINE_HASH(UInt64)
 DEFINE_HASH(UInt128)
 DEFINE_HASH(UInt256)
+DEFINE_HASH(UInt512)
 DEFINE_HASH(Int8)
 DEFINE_HASH(Int16)
 DEFINE_HASH(Int32)
 DEFINE_HASH(Int64)
 DEFINE_HASH(Int128)
 DEFINE_HASH(Int256)
+DEFINE_HASH(Int512)
 DEFINE_HASH(BFloat16)
 DEFINE_HASH(Float32)
 DEFINE_HASH(Float64)
@@ -423,6 +438,22 @@ struct UInt256Hash
     }
 };
 
+struct UInt512Hash
+{
+    size_t operator()(UInt512 x) const
+    {
+        /// NOTE suboptimal
+        return CityHash_v1_0_2::Hash128to64({
+            CityHash_v1_0_2::Hash128to64({
+                CityHash_v1_0_2::Hash128to64({x.items[0], x.items[1]}),
+                CityHash_v1_0_2::Hash128to64({x.items[2], x.items[3]})}),
+            CityHash_v1_0_2::Hash128to64({
+                CityHash_v1_0_2::Hash128to64({x.items[4], x.items[5]}),
+                CityHash_v1_0_2::Hash128to64({x.items[6], x.items[7]})})});
+    }
+};
+
+
 #ifdef __SSE4_2__
 
 struct UInt256HashCRC32
@@ -434,6 +465,23 @@ struct UInt256HashCRC32
         crc = _mm_crc32_u64(crc, x.items[1]);
         crc = _mm_crc32_u64(crc, x.items[2]);
         crc = _mm_crc32_u64(crc, x.items[3]);
+        return crc;
+    }
+};
+
+struct UInt512HashCRC32
+{
+    size_t operator()(UInt512 x) const
+    {
+        UInt64 crc = -1ULL;
+        crc = _mm_crc32_u64(crc, x.items[0]);
+        crc = _mm_crc32_u64(crc, x.items[1]);
+        crc = _mm_crc32_u64(crc, x.items[2]);
+        crc = _mm_crc32_u64(crc, x.items[3]);
+        crc = _mm_crc32_u64(crc, x.items[4]);
+        crc = _mm_crc32_u64(crc, x.items[5]);
+        crc = _mm_crc32_u64(crc, x.items[6]);
+        crc = _mm_crc32_u64(crc, x.items[7]);
         return crc;
     }
 };
@@ -453,6 +501,23 @@ struct UInt256HashCRC32
     }
 };
 
+struct UInt512HashCRC32
+{
+    size_t operator()(UInt512 x) const
+    {
+        UInt64 crc = -1ULL;
+        crc = __crc32cd(static_cast<UInt32>(crc), x.items[0]);
+        crc = __crc32cd(static_cast<UInt32>(crc), x.items[1]);
+        crc = __crc32cd(static_cast<UInt32>(crc), x.items[2]);
+        crc = __crc32cd(static_cast<UInt32>(crc), x.items[3]);
+        crc = __crc32cd(static_cast<UInt32>(crc), x.items[4]);
+        crc = __crc32cd(static_cast<UInt32>(crc), x.items[5]);
+        crc = __crc32cd(static_cast<UInt32>(crc), x.items[6]);
+        crc = __crc32cd(static_cast<UInt32>(crc), x.items[7]);
+        return crc;
+    }
+};
+
 #elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 struct UInt256HashCRC32
 {
@@ -466,10 +531,28 @@ struct UInt256HashCRC32
         return crc;
     }
 };
+
+struct UInt512HashCRC32
+{
+    size_t operator()(UInt512 x) const
+    {
+        UInt64 crc = -1ULL;
+        crc = s390x_crc32c(crc, x.items[UInt512::_impl::little(0)]);
+        crc = s390x_crc32c(crc, x.items[UInt512::_impl::little(1)]);
+        crc = s390x_crc32c(crc, x.items[UInt512::_impl::little(2)]);
+        crc = s390x_crc32c(crc, x.items[UInt512::_impl::little(3)]);
+        crc = s390x_crc32c(crc, x.items[UInt512::_impl::little(4)]);
+        crc = s390x_crc32c(crc, x.items[UInt512::_impl::little(5)]);
+        crc = s390x_crc32c(crc, x.items[UInt512::_impl::little(6)]);
+        crc = s390x_crc32c(crc, x.items[UInt512::_impl::little(7)]);
+        return crc;
+    }
+};
 #else
 
 /// We do not need to use CRC32 on other platforms. NOTE This can be confusing.
 struct UInt256HashCRC32 : public UInt256Hash {};
+struct UInt512HashCRC32 : public UInt512Hash {};
 
 #endif
 
@@ -478,6 +561,9 @@ struct DefaultHash<UInt128> : public UInt128Hash {};
 
 template <>
 struct DefaultHash<UInt256> : public UInt256Hash {};
+
+template <>
+struct DefaultHash<UInt512> : public UInt512Hash {};
 
 template <>
 struct DefaultHash<DB::UUID> : public UUIDHash {};

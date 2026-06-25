@@ -11,13 +11,15 @@ namespace DB
     M(Int32)  \
     M(Int64)  \
     M(Int128) \
-    M(Int256)
+    M(Int256) \
+    M(Int512)
 
 #define FOR_EACH_UNDERLYING_DECIMAL_TYPE_PASS(M, X) \
     M(Int32, X) \
     M(Int64, X) \
     M(Int128, X) \
-    M(Int256, X)
+    M(Int256, X) \
+    M(Int512, X)
 
 /// Decimal arithmetic in ClickHouse semantically allows wrap-around overflow for the
 /// overflow-dependent operators (`+=`, `-=`, `*=`, plus the free `+`, `-`, `*` and

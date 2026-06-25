@@ -307,6 +307,7 @@ public:
     M(Decimal64, Decimal64, INDEX) \
     M(Decimal128, Decimal128, INDEX) \
     M(Decimal256, Decimal256, INDEX) \
+    M(Decimal512, Decimal512, INDEX) \
     M(Date, UInt16, INDEX) \
     M(Date32, Int32, INDEX) \
     M(DateTime, UInt32, INDEX) \

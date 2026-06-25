@@ -61,6 +61,8 @@ template class ColumnUnique<ColumnInt128>;
 template class ColumnUnique<ColumnUInt128>;
 template class ColumnUnique<ColumnInt256>;
 template class ColumnUnique<ColumnUInt256>;
+template class ColumnUnique<ColumnInt512>;
+template class ColumnUnique<ColumnUInt512>;
 template class ColumnUnique<ColumnBFloat16>;
 template class ColumnUnique<ColumnFloat32>;
 template class ColumnUnique<ColumnFloat64>;
@@ -75,5 +77,6 @@ template class ColumnUnique<ColumnDecimal<Decimal32>>;
 template class ColumnUnique<ColumnDecimal<Decimal64>>;
 template class ColumnUnique<ColumnDecimal<Decimal128>>;
 template class ColumnUnique<ColumnDecimal<Decimal256>>;
+template class ColumnUnique<ColumnDecimal<Decimal512>>;
 
 }

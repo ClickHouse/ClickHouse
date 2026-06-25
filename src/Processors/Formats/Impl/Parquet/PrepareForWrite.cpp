@@ -477,6 +477,10 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
         case TypeIndex::Decimal64:  decimal(8, getDecimalPrecision(*type), getDecimalScale(*type)); break;
         case TypeIndex::Decimal128: decimal(16, getDecimalPrecision(*type), getDecimalScale(*type)); break;
         case TypeIndex::Decimal256: decimal(32, getDecimalPrecision(*type), getDecimalScale(*type)); break;
+        /// Arrow/parquet-cpp do not have a native Decimal512 type. Store as FIXED_LEN_BYTE_ARRAY(64)
+        /// (big-endian raw bytes, same layout as ConverterDecimal<Decimal512> in Write.cpp).
+        /// SchemaConverter.cpp recognizes this by the 64-byte length + Decimal512 type hint.
+        case TypeIndex::Decimal512: fixed_string(64); break;
 
         default:
             throw Exception(ErrorCodes::UNKNOWN_TYPE, "Internal type '{}' of column '{}' is not supported for conversion into Parquet data format.", type->getFamilyName(), name);

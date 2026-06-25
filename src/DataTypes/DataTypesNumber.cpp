@@ -85,7 +85,7 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
         Documentation{
             .description = R"DOCS_MD(
 ClickHouse offers a number of fixed-length integers,
-with a sign (`Int`) or without a sign (unsigned `UInt`) ranging from one byte to 32 bytes.
+with a sign (`Int`) or without a sign (unsigned `UInt`) ranging from one byte to 64 bytes.
 
 When creating tables, numeric parameters for integer numbers can be set (e.g. `TINYINT(8)`, `SMALLINT(16)`, `INT(32)`, `BIGINT(64)`), but ClickHouse ignores them.
 
@@ -101,6 +101,7 @@ Integer types have the following ranges:
 | `Int64`  | \[-9223372036854775808 : 9223372036854775807\]                                                                                                                     |
 | `Int128` | \[-170141183460469231731687303715884105728 : 170141183460469231731687303715884105727\]                                                                             |
 | `Int256` | \[-57896044618658097711785492504343953926634992332820282019728792003956564819968 : 57896044618658097711785492504343953926634992332820282019728792003956564819967\] |
+| `Int512` | \[-670390396497129854978701249910292306373968291029619668886178072186088201503677348840093714908345171384501592909324302542687694998777047030323311635978515456 : 670390396497129854978701249910292306373968291029619668886178072186088201503677348840093714908345171384501592909324302542687694998777047030323311635978515455\] |
 
 Unsigned integer types have the following ranges:
 
@@ -112,6 +113,7 @@ Unsigned integer types have the following ranges:
 | `UInt64`  | \[0 : 18446744073709551615\]                                                           |
 | `UInt128` | \[0 : 340282366920938463463374607431768211455\]                                        |
 | `UInt256` | \[0 : 115792089237316195423570985008687907853269984665640564039457584007913129639935\] |
+| `UInt512` | \[0 : 134078079299425970995740249982058461274793658205923933777235614437217640300735469768018742981669034276900318581864860508537538999755409406064662327195303935\] |
 
 ## Integer Aliases {#integer-aliases}
 
@@ -331,6 +333,12 @@ Most other operations are not supported.
             .syntax = "UInt256",
             .related = {"Int32"},
         });
+    factory.registerSimpleDataType("UInt512", [] { return DataTypePtr(std::make_shared<DataTypeUInt512>()); }, DataTypeFactory::Case::Sensitive,
+        Documentation{
+            .description = "A 512-bit unsigned integer. See the `Int32` entry for the full documentation of the integer types.",
+            .syntax = "UInt512",
+            .related = {"Int32"},
+        });
 
     factory.registerSimpleDataType("Int128", [] { return DataTypePtr(std::make_shared<DataTypeInt128>()); }, DataTypeFactory::Case::Sensitive,
         Documentation{
@@ -342,6 +350,12 @@ Most other operations are not supported.
         Documentation{
             .description = "A 256-bit signed integer. See the `Int32` entry for the full documentation of the integer types.",
             .syntax = "Int256",
+            .related = {"Int32"},
+        });
+    factory.registerSimpleDataType("Int512", [] { return DataTypePtr(std::make_shared<DataTypeInt512>()); }, DataTypeFactory::Case::Sensitive,
+        Documentation{
+            .description = "A 512-bit signed integer. See the `Int32` entry for the full documentation of the integer types.",
+            .syntax = "Int512",
             .related = {"Int32"},
         });
 
@@ -401,6 +415,8 @@ template class DataTypeNumber<Int128>;
 template class DataTypeNumber<UInt256>;
 template class DataTypeNumber<Int256>;
 
+template class DataTypeNumber<UInt512>;
+template class DataTypeNumber<Int512>;
 
 DataTypePtr getSmallestIndexesType(size_t num_indexes)
 {
