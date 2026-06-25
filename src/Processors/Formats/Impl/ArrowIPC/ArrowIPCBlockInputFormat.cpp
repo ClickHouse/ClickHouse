@@ -65,6 +65,11 @@ bool arrowFieldsEqual(const ArrowIPC::ArrowField & a, const ArrowIPC::ArrowField
     if (a.dictionary && (a.dictionary->id != b.dictionary->id || a.dictionary->index_bit_width != b.dictionary->index_bit_width
                          || a.dictionary->index_is_signed != b.dictionary->index_is_signed))
         return false;
+    /// Field metadata changes the mapped ClickHouse type for the same physical Arrow type (e.g. the Arrow
+    /// extension name maps `fixed_size_binary(16)` to `UUID` instead of `FixedString(16)`), so two fields
+    /// reusing a dictionary id must carry the same metadata, not only the same physical type.
+    if (a.custom_metadata != b.custom_metadata)
+        return false;
     return arrowTypesEqual(a.type, b.type);
 }
 
@@ -79,8 +84,10 @@ bool arrowTypesEqual(const ArrowIPC::ArrowType & a, const ArrowIPC::ArrowType & 
         || a.children.size() != b.children.size())
         return false;
     for (size_t i = 0; i < a.children.size(); ++i)
+    {
         if (!arrowFieldsEqual(a.children[i], b.children[i], /*compare_name=*/true))
             return false;
+    }
     return true;
 }
 }
@@ -299,8 +306,10 @@ void ArrowIPCBlockInputFormat::prepareReader()
     /// Reject duplicate column names, matching the Apache Arrow library based reader.
     UnorderedSetWithMemoryTracking<String> seen_names;
     for (const auto & field : arrow_schema->fields)
+    {
         if (!seen_names.insert(field.name).second)
             throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Duplicate column '{}' in the Arrow schema", field.name);
+    }
 
     collectDictionaryFields(arrow_schema->fields);
     decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
@@ -445,8 +454,12 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
             if (field_it == dictionary_value_fields.end())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow file dictionary batch for unknown id {}", id);
 
+            /// Reject a batch declaring buffers/nodes beyond its single value field before materializing the
+            /// body, so surplus buffers are never read or decompressed only to be ignored.
+            const ArrowIPC::ArrowFields value_fields{field_it->second};
+            temp_decoder->validateBatchLayout(*dict_batch->data(), value_fields);
             message_reader->readBody(*dict_batch->data(), msg.body_length, body_buffer);
-            auto decoded = temp_decoder->decodeColumns(*dict_batch->data(), body_buffer, {field_it->second});
+            auto decoded = temp_decoder->decodeColumns(*dict_batch->data(), body_buffer, value_fields);
             checkDictionaryUnique(decoded.at(0).column);
             dictionaries.set(id, decoded.at(0).column, dict_batch->isDelta());
         }
@@ -636,8 +649,10 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
                     /// — mirroring how the library reader reads the field with this type hint.
                     NamesAndTypesList nested_columns;
                     for (const auto & name_and_type : header.getNamesAndTypesList())
+                    {
                         if (name_and_type.name.starts_with(nested_table_name + "."))
                             nested_columns.push_back(name_and_type);
+                    }
 
                     auto & src = decoded[nested_it->second];
                     ColumnWithTypeAndName nested_column(src.column, src.type, nested_table_name);
@@ -815,8 +830,12 @@ Chunk ArrowIPCBlockInputFormat::readStream()
                     throw Exception(
                         ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch for unknown dictionary id {}", id);
 
+                /// Reject a batch declaring buffers/nodes beyond its single value field before materializing
+                /// the body, so surplus buffers are never read or decompressed only to be ignored.
+                const ArrowIPC::ArrowFields value_fields{field_it->second};
+                decoder->validateBatchLayout(*dict_batch->data(), value_fields);
                 message_reader->readBody(*dict_batch->data(), msg.body_length, body_buffer);
-                auto decoded = decoder->decodeColumns(*dict_batch->data(), body_buffer, {field_it->second});
+                auto decoded = decoder->decodeColumns(*dict_batch->data(), body_buffer, value_fields);
                 checkDictionaryUnique(decoded.at(0).column);
                 dictionaries.set(id, decoded.at(0).column, dict_batch->isDelta());
                 continue;

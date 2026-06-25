@@ -96,6 +96,12 @@ public:
     VectorWithMemoryTracking<char> reachableTopLevelBuffers(
         const flatbuf::RecordBatch & batch, const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields);
 
+    /// Verifies the batch declares exactly the FieldNodes, buffers and variadic counts that `fields` consume,
+    /// using the same cursor walk as decoding (`skipField`). Rejects a malformed batch (surplus or missing)
+    /// before its body is materialized, so a dictionary batch carrying buffers beyond its single value field
+    /// is not read or decompressed only to be ignored. Throws `INCORRECT_DATA` on a mismatch.
+    void validateBatchLayout(const flatbuf::RecordBatch & batch, const ArrowFields & fields);
+
 private:
     Slice nextBuffer();
     const flatbuf::FieldNode & nextNode();

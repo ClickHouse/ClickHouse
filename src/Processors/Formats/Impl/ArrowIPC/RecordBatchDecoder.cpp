@@ -905,10 +905,12 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
     /// child null-map lookup would then read past the child column. Dense unions are already bounded by the
     /// per-row offset check above, so this is needed only for the sparse layout.
     for (size_t l = 0; l < variant_columns.size(); ++l)
+    {
         if (variant_columns[l]->size() != rows)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Arrow IPC sparse union child {} has {} rows, expected {}", l, variant_columns[l]->size(), rows);
+    }
 
     MutableColumns compact;
     compact.reserve(variant_columns.size());
@@ -1159,6 +1161,7 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeColumns(
     variadic_index = 0;
     variadic_counts.clear();
     if (const auto * counts = batch.variadicBufferCounts())
+    {
         for (Int64 c : *counts)
         {
             /// Untrusted IPC metadata: a negative count would become a huge `size_t` when reserving the
@@ -1167,13 +1170,17 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeColumns(
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC variadic buffer count is negative ({})", c);
             variadic_counts.push_back(c);
         }
-    prepareBuffers(batch, body, reachable_buffers);
+    }
 
     /// Every top-level column must decode to the batch's row count; otherwise the returned `Chunk` would
     /// mix columns of different sizes (an internal inconsistency) instead of being rejected as bad data.
+    /// Validate this before `prepareBuffers`, so a negative length on the dictionary-batch path is rejected
+    /// before any (possibly large or compressed) buffer is allocated or decompressed from the batch metadata.
     if (batch.length() < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch has a negative length {}", batch.length());
     const size_t batch_rows = static_cast<size_t>(batch.length());
+
+    prepareBuffers(batch, body, reachable_buffers);
 
     const bool case_insensitive = settings.arrow.case_insensitive_column_matching;
     bool pruned = false;
@@ -1423,12 +1430,14 @@ VectorWithMemoryTracking<char> RecordBatchDecoder::reachableTopLevelBuffers(
     try
     {
         if (const auto * counts = batch.variadicBufferCounts())
+        {
             for (Int64 c : *counts)
             {
                 if (c < 0)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC variadic buffer count is negative ({})", c);
                 variadic_counts.push_back(c);
             }
+        }
 
         const bool case_insensitive = settings.arrow.case_insensitive_column_matching;
         for (const ArrowField & field : schema.fields)
@@ -1440,8 +1449,10 @@ VectorWithMemoryTracking<char> RecordBatchDecoder::reachableTopLevelBuffers(
             skipField(field);
             const size_t end = buffer_index;
             if (keep_top_level_fields->contains(normalized_name))
+            {
                 for (size_t i = start; i < end && i < num_buffers; ++i)
                     reachable[i] = 1;
+            }
         }
     }
     catch (const Exception &)
@@ -1458,6 +1469,51 @@ VectorWithMemoryTracking<char> RecordBatchDecoder::reachableTopLevelBuffers(
     variadic_counts.clear();
     buffer_slices.clear();
     return reachable;
+}
+
+void RecordBatchDecoder::validateBatchLayout(const flatbuf::RecordBatch & batch, const ArrowFields & fields)
+{
+    const size_t total_nodes = batch.nodes() ? batch.nodes()->size() : 0;
+    const size_t total_buffers = batch.buffers() ? batch.buffers()->size() : 0;
+
+    current_batch = &batch;
+    node_index = 0;
+    buffer_index = 0;
+    variadic_index = 0;
+    variadic_counts.clear();
+    if (const auto * counts = batch.variadicBufferCounts())
+    {
+        for (Int64 c : *counts)
+        {
+            if (c < 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC variadic buffer count is negative ({})", c);
+            variadic_counts.push_back(c);
+        }
+    }
+    /// `skipField` pops slices via `nextBuffer`; give it placeholders so the cursor can advance. A batch
+    /// declaring fewer buffers than the field needs makes `nextBuffer` throw here, before any materialization.
+    buffer_slices.assign(total_buffers, Slice{});
+
+    for (const ArrowField & field : fields)
+        skipField(field);
+
+    const bool exact = node_index == total_nodes && buffer_index == total_buffers
+        && variadic_index == variadic_counts.size();
+
+    current_batch = nullptr;
+    node_index = 0;
+    buffer_index = 0;
+    variadic_index = 0;
+    const size_t declared_variadic = variadic_counts.size();
+    variadic_counts.clear();
+    buffer_slices.clear();
+
+    if (!exact)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow IPC dictionary batch declares {} field nodes, {} buffers and {} variadic counts, which do "
+            "not match the dictionary value field's layout",
+            total_nodes, total_buffers, declared_variadic);
 }
 
 DataTypePtr RecordBatchDecoder::resolveTargetHint(const DataTypePtr & parent_hint, const String & path) const
