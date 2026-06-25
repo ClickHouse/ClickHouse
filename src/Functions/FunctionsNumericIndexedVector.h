@@ -435,7 +435,7 @@ public:
     template <typename VectorImpl>
     ColumnPtr executeBSI(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
-        bool is_column_const;
+        bool is_column_const = false;
         /// First argument
         const auto * column_ptr = getColumnData<ColumnAggregateFunction>(arguments[0].column, is_column_const);
         const PaddedPODArray<AggregateDataPtr> & container = column_ptr->getData();
@@ -599,7 +599,7 @@ public:
     template <typename VectorImpl>
     ColumnPtr executeBSI(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
-        bool is_column_const;
+        bool is_column_const = false;
         /// First argument
         const auto * column_ptr = getColumnData<ColumnAggregateFunction>(arguments[0].column, is_column_const);
         const PaddedPODArray<AggregateDataPtr> & container = column_ptr->getData();
@@ -687,7 +687,7 @@ public:
     template <typename VectorImpl>
     ColumnPtr executeBSI(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
-        bool is_column_const;
+        bool is_column_const = false;
         /// First argument
         const auto * column_ptr = getColumnData<ColumnAggregateFunction>(arguments[0].column, is_column_const);
         const PaddedPODArray<AggregateDataPtr> & container = column_ptr->getData();
@@ -758,7 +758,7 @@ public:
     template <typename VectorImpl>
     ColumnPtr executeBSI(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
-        bool is_column_const;
+        bool is_column_const = false;
         /// First argument
         const auto * column_ptr = getColumnData<ColumnAggregateFunction>(arguments[0].column, is_column_const);
         const PaddedPODArray<AggregateDataPtr> & container = column_ptr->getData();

@@ -94,13 +94,15 @@ SELECT
     /// numericIndexedVectorPointwiseMultiply
     {
         FunctionDocumentation::Description description = R"(
-Performs pointwise multiplication between a numericIndexedVector and either another numericIndexedVector, a numeric constant, or a Bitmap.
-When the second argument is a Bitmap, it acts as an index filter: each index present in the bitmap is treated as having value 1, so the result retains only the entries whose indices appear in the bitmap (with their original values).
+Performs pointwise multiplication between a `numericIndexedVector` and either another `numericIndexedVector`, a numeric constant, or a bitmap aggregate state.
+When the second argument is a bitmap aggregate state, it acts as an index filter: each index present in the bitmap is treated as having value 1, so the result retains only the entries whose indices appear in the bitmap (with their original values).
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseMultiply(v1, v2)";
         FunctionDocumentation::Arguments arguments
             = {{"v1", "", {"numericIndexedVector"}},
-               {"v2", "A numeric constant, numericIndexedVector, or Bitmap object. The Bitmap element type must match the index type of v1.", {"(U)Int*", "Float*", "numericIndexedVector", "Bitmap"}}};
+               {"v2",
+                "A numeric constant, numericIndexedVector, or bitmap aggregate state. The bitmap element type must match the index type of v1.",
+                {"(U)Int*", "Float*", "numericIndexedVector", "AggregateFunction(groupBitmap, UInt*)"}}};
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
         FunctionDocumentation::Examples examples
             = {{"",
