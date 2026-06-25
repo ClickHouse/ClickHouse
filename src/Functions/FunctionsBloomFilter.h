@@ -77,6 +77,15 @@ public:
                 "(AggregateFunction(groupBloomFilter, T)) but it has type {}",
                 getName(), arguments[0]->getName());
 
+        DataTypes arg_data_types = bloom_type->getArgumentsDataTypes();
+        const DataTypePtr & value_type = arg_data_types[0];
+        DataTypePtr dispatch_value_type = removeLowCardinalityAndNullable(value_type);
+
+        if (!canCastProbeType(arguments[1], dispatch_value_type))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Conversion from {} to Bloom filter value type {} is not supported for function {}",
+                arguments[1]->getName(), value_type->getName(), getName());
+
         return std::make_shared<DataTypeNumber<UInt8>>();
     }
 

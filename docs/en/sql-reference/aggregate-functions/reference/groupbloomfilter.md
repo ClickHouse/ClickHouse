@@ -58,8 +58,26 @@ The maximum allowed filter size is 256 MB.
 
 ## Returned value {#returned-value}
 
-- With `-State` combinator: returns the Bloom filter state as [`AggregateFunction(groupBloomFilter, T)`](/sql-reference/data-types/aggregatefunction).
+- With `-State` combinator: returns the Bloom filter state as [`AggregateFunction(groupBloomFilter, T)`](/sql-reference/data-types/aggregatefunction) for the default form, or as `AggregateFunction(groupBloomFilter(params...), T)` for parameterized forms, for example `AggregateFunction(groupBloomFilter(1000), String)`.
 - Without `-State` combinator: throws an exception. Use `groupBloomFilterState` or `groupBloomFilterMergeState` with `bloomFilterContains` instead.
+
+Parameterized state types must include the same aggregate parameters that are used to build the state. This is important when defining `AggregatingMergeTree` columns explicitly.
+
+```sql
+CREATE TABLE bloom_filter_by_key
+(
+    key String,
+    bf AggregateFunction(groupBloomFilter(1000), String)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY key;
+
+INSERT INTO bloom_filter_by_key
+SELECT
+    'group1' AS key,
+    groupBloomFilterState(1000)(toString(number)) AS bf
+FROM numbers(100);
+```
 
 ## Implementation details {#implementation-details}
 

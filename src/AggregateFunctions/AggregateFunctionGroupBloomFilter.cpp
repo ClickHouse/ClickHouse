@@ -31,6 +31,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -84,6 +85,22 @@ public:
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         this->data(place).read(buf);
+
+        const auto & deserialized_data = this->data(place);
+        if (deserialized_data.filter_size_bytes != filter_size_bytes
+            || deserialized_data.num_hashes != num_hashes
+            || deserialized_data.seed != seed)
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Bloom filter state parameters do not match declared aggregate function type: "
+                "serialized size {}, hashes {}, seed {}; declared size {}, hashes {}, seed {}",
+                deserialized_data.filter_size_bytes,
+                deserialized_data.num_hashes,
+                deserialized_data.seed,
+                filter_size_bytes,
+                num_hashes,
+                seed);
+        }
     }
 
     void insertResultInto(AggregateDataPtr __restrict /* place */, IColumn & /* to */, Arena *) const override

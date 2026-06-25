@@ -87,3 +87,11 @@ SELECT finalizeAggregation(CAST(unhex('08150000'), 'AggregateFunction(groupBloom
 
 -- Malformed serialized state: has_data must be 0 or 1.
 SELECT finalizeAggregation(CAST(unhex('08010002'), 'AggregateFunction(groupBloomFilter(1000), UInt64)')); -- { serverError INCORRECT_DATA }
+
+-- Forged serialized state: valid payload parameters must still match the declared aggregate type.
+-- groupBloomFilter(1000) expects size=960, hashes=5, seed=0, but the payload says size=8, hashes=1, seed=0.
+SELECT CAST(unhex('08010000'), 'AggregateFunction(groupBloomFilter(1000), UInt64)'); -- { serverError INCORRECT_DATA }
+
+-- Forged serialized state: seed must match the declared aggregate type.
+-- groupBloomFilter(4096, 5, 0) expects seed=0, but the payload says seed=42.
+SELECT CAST(unhex('8020052a00'), 'AggregateFunction(groupBloomFilter(4096, 5, 0), UInt64)'); -- { serverError INCORRECT_DATA }
