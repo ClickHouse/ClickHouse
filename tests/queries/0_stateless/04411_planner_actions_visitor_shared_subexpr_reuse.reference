@@ -1,0 +1,11 @@
+A	Alpha	1	100	one	1.5
+B	Beta	2	200	two	2.5
+C	Gamma	3	300	three	3.5
+D	Delta	4	400	four	4.5
+E	Epsilon	5	500	five	5.5
+F	Other	0	0	zero	0.5
+0	0
+2	4
+4	8
+1	2
+3	6
