@@ -18,7 +18,7 @@ PartitionPruner::PartitionPruner(
           partition_key.expression,
           true /* single_point */,
           skip_analysis)
-    , useless((strict && partition_condition.isRelaxed()) || partition_condition.alwaysUnknownOrTrue())
+    , useless((strict && partition_condition.legacyContainsRelaxedRPN()) || partition_condition.alwaysUnknownOrTrue())
 {
 }
 
