@@ -103,7 +103,12 @@ static std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressio
     DataTypePtr result_type;
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
-        result_name = ast->getColumnName();
+        /// In the analyzer code path `result_name` is only used for diagnostic messages below,
+        /// not to match the output column (unlike the non-analyzer path). Avoid calling
+        /// `getColumnName`, because it throws a logical error for arguments that are not
+        /// column expressions (e.g. `*` or an empty expression list coming from a table
+        /// function argument), while a regular exception is later produced by `buildQueryTree`.
+        result_name = ast->formatForLogging();
 
         auto execution_context = Context::createCopy(context);
         auto expression = buildQueryTree(ast, execution_context);
@@ -766,7 +771,7 @@ std::optional<ConstantVariants> evaluateExpressionOverConstantCondition(
     if (!predicate)
         return {};
 
-    ActionsDAGWithInversionPushDown filter_dag(predicate, context);
+    ActionsDAGWithInversionPushDown filter_dag(predicate, context, /* boolean_context */ true);
     auto matches = matchTrees(expr, *filter_dag.dag, false);
 
     auto predicates = analyze(filter_dag.predicate, matches, context, max_elements);
