@@ -827,8 +827,23 @@ def test_mysql_shared_connection_pool_limit(started_cluster):
         )
         assert len(successes) >= 1, f"Expected exactly one reload to succeed: {results}"
 
-        # The pool is free again; a subsequent load must succeed and return correct data.
-        instance.query("SYSTEM RELOAD DICTIONARY shared_pool_dict_a")
+        # The winning concurrent reload returns its single shared connection to the pool only
+        # after the client has already received the query result, so there is a brief window
+        # in which the connection is not recycled yet. Because these dictionaries use
+        # `connection_wait_timeout 0` (fail fast, never wait), a reload issued inside that
+        # window can still observe "Pool is full". Retry until the connection becomes available
+        # again (it always does shortly after the slow reload finishes); any other error is a
+        # real failure.
+        reloaded = False
+        for _ in range(60):
+            try:
+                instance.query("SYSTEM RELOAD DICTIONARY shared_pool_dict_a")
+                reloaded = True
+                break
+            except Exception as e:  # noqa: BLE001
+                assert "Pool is full" in str(e), f"Unexpected reload error: {e}"
+                time.sleep(0.5)
+        assert reloaded, "Shared connection pool never freed up after concurrent reloads"
         value = instance.query(
             "SELECT dictGetUInt32('shared_pool_dict_a', 'value', toUInt64(1))"
         ).strip()
