@@ -49,6 +49,7 @@
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
@@ -520,7 +521,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             actions_settings,
             reader_settings,
             index_build_context,
-            {},
+            LazyMaterializingRowsPtr{},
             &storage_snapshot->metadata->getColumns());
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
@@ -631,7 +632,7 @@ Pipe ReadFromMergeTree::readFromPool(
             actions_settings,
             reader_settings,
             index_build_context,
-            {},
+            LazyMaterializingRowsPtr{},
             &storage_snapshot->metadata->getColumns());
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
@@ -750,7 +751,7 @@ Pipe ReadFromMergeTree::readInOrder(
             actions_settings,
             reader_settings,
             index_build_context,
-            {},
+            LazyMaterializingRowsPtr{},
             &storage_snapshot->metadata->getColumns());
 
         processor->addPartLevelToChunk(isQueryWithFinal());
