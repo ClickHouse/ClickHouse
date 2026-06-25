@@ -2149,19 +2149,19 @@ private:
             }
             else
             {
-                static const std::array<String, 3> known_substream_suffixes = {"", ".dct", ".pst"};
-                static const std::array<String, 2> known_index_extensions = {".idx2", ".idx"};
-                const String index_file_name = getIndexFileName(idx.name, idx.escape_filenames);
-                for (const auto & suffix : known_substream_suffixes)
+                auto index_helper = MergeTreeIndexFactory::instance().get(idx, *ctx->data->getSettings());
+                const String index_file_name = index_helper->getFileName();
+                const auto index_format = index_helper->getDeserializedFormat(ctx->source_part->checksums, index_file_name);
+
+                for (const auto & substream : index_format.substreams)
                 {
-                    const String stream_name = index_file_name + suffix;
-                    for (const auto & extension : known_index_extensions)
-                    {
-                        if (auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, ctx->source_part->checksums))
-                            entries_to_hardlink.insert(*actual + extension);
-                    }
-                    if (auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, ctx->mrk_extension, ctx->source_part->checksums))
-                        entries_to_hardlink.insert(*actual + ctx->mrk_extension);
+                    const String stream_name = index_file_name + substream.suffix;
+
+                    if (auto data_file = IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, ctx->source_part->checksums))
+                        entries_to_hardlink.insert(*data_file + substream.extension);
+
+                    if (auto mark_file = IMergeTreeDataPart::getStreamNameOrHash(stream_name, ctx->mrk_extension, ctx->source_part->checksums))
+                        entries_to_hardlink.insert(*mark_file + ctx->mrk_extension);
                 }
             }
         }
