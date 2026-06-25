@@ -461,15 +461,15 @@ if __name__ == "__main__":
     # Lines in m1..mN-1 cancel from both sides; only PR vs mN contributes.
     # Use the union of both total-sets as the shared denominator so percentages
     # are comparable.
-    _all_tot = _stable_base_line_tot | _stable_pr_line_tot
-    _all_fn_tot = _stable_base_fn_tot | _stable_pr_fn_tot
-    b_lt = b_ft = len(_all_tot)   # same denominator for both sides
+    _all_tot    = _stable_base_line_tot | _stable_pr_line_tot
+    _all_fn_tot = _stable_base_fn_tot   | _stable_pr_fn_tot
+    b_lt = c_lt = len(_all_tot)       # shared line denominator
+    b_ft = c_ft = len(_all_fn_tot)    # shared function denominator (was wrongly using line total)
     b_lh = len(_stable_base_line_cov)
     b_fh = len(_stable_base_fn_cov)
-    c_lt = c_ft = len(_all_tot)
     c_lh = len(_stable_pr_line_cov)
     c_fh = len(_stable_pr_fn_cov)
-    # Fall back to raw line count if no extras (single-baseline mode).
+    # Fall back to primary-only counts if no extras (single-baseline mode).
     if not _all_tot:
         b_lt = c_lt = len(_stable_base_line_tot) or 1
         b_ft = c_ft = len(_stable_base_fn_tot) or 1
