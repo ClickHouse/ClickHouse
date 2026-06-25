@@ -21,11 +21,12 @@ ${CLICKHOUSE_CLIENT} --query "GRANT CLUSTER ON *.* TO ${user_cluster}"
 ${CLICKHOUSE_CLIENT} --user="${user_unpriv}" --query "SYSTEM RESET DDL WORKER" 2>&1 \
     | grep -q "ACCESS_DENIED" && echo "unprivileged: denied" || echo "unprivileged: NOT denied"
 
-# Local path: granted user passes the access check. On a server without a distributed DDL
-# configuration the command then fails with NO_ELEMENTS_IN_CONFIG (not ACCESS_DENIED),
-# which confirms the privilege check succeeded rather than blocking the user.
-${CLICKHOUSE_CLIENT} --user="${user_priv}" --query "SYSTEM RESET DDL WORKER" 2>&1 \
-    | grep -q "ACCESS_DENIED" && echo "granted: denied" || echo "granted: allowed"
+# Granted user holds the privilege. Use CHECK GRANT (non-mutating) instead of executing
+# SYSTEM RESET DDL WORKER: an actual reset mutates the shared stateless server's global DDL
+# worker state and can postpone ON CLUSTER DDL run by other concurrent tests. CHECK GRANT
+# returns 1 when the grant is held, with no side effect.
+${CLICKHOUSE_CLIENT} --user="${user_priv}" --query "CHECK GRANT SYSTEM RESET DDL WORKER ON *.*" \
+    | grep -q "^1$" && echo "granted: has privilege" || echo "granted: missing privilege"
 
 # ON CLUSTER path: a user that has CLUSTER (enough to issue ON CLUSTER DDL) but lacks
 # SYSTEM RESET DDL WORKER must still be denied before the query is enqueued. The denial
