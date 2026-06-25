@@ -308,7 +308,10 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
     if (read_context && !established)
     {
         /// Set was_cancelled, so the query won't be sent after creating connections.
-        was_cancelled = true;
+        {
+            LockAndBlocker lock(was_cancelled_mutex);
+            was_cancelled = true;
+        }
 
         /// Cancellation may throw (i.e. some timeout), and in case of pipeline
         /// had not been properly created properly (EXCEPTION_BEFORE_START)
