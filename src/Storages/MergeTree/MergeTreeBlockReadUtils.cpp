@@ -537,7 +537,8 @@ MergeTreeReadTaskColumns getReadTaskColumns(
             index_read_tasks,
             actions_settings,
             reader_settings.enable_multiple_prewhere_read_steps,
-            reader_settings.force_short_circuit_execution);
+            reader_settings.force_short_circuit_execution,
+            &storage_snapshot->metadata->getColumns());
 
         for (const auto & step : prewhere_actions.steps)
             add_step(*step);
