@@ -3,10 +3,14 @@
 does not store the time bounds (`store_min_time_and_max_time = 0`)."""
 
 import pytest
+import requests
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
-from .prometheus_test_utils import *
+from .prometheus_test_utils import (
+    convert_time_series_to_protobuf,
+    send_protobuf_to_remote_write,
+)
 
 
 cluster = ClickHouseCluster(__file__)

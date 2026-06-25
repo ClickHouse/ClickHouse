@@ -1,12 +1,14 @@
 """Tests for Prometheus HTTP API endpoints: /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values"""
 
-import json
 import pytest
-import time
+import requests
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
-from .prometheus_test_utils import *
+from .prometheus_test_utils import (
+    convert_time_series_to_protobuf,
+    send_protobuf_to_remote_write,
+)
 
 
 cluster = ClickHouseCluster(__file__)
@@ -224,3 +226,24 @@ def test_label_values_with_start_end_out_of_range():
     """GET /api/v1/label/<name>/values with an out-of-range [start, end] returns nothing."""
     data = get_json_from_api("/api/v1/label/host/values?start=100000&end=200000")
     assert data == []
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/series",
+        "/api/v1/labels",
+        "/api/v1/label/host/values",
+    ],
+)
+def test_start_after_end_is_rejected(path):
+    """A request with start > end must be rejected instead of matching long-lived series for an empty
+    interval (mirrors the PromQL query path which rejects start_time > end_time)."""
+    url = f"http://{node.ip_address}:9093{path}?start=2000&end=1000"
+    response = requests.get(url)
+    assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert data["status"] == "error", f"Expected error status, got: {data}"
+    assert (
+        "start_time must not be greater than end_time" in data["error"]
+    ), f"Unexpected error message: {data}"
