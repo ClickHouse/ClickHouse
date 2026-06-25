@@ -1192,6 +1192,29 @@ TEST_F(WBS3Test, S3ExpressHonorsExplicitUploadChecksumAlgorithm)
     ASSERT_TRUE(injection->put_object_request_checksum_required);
 }
 
+TEST_P(SyncAsync, S3ExpressDisabledChecksumKeepsMultipartChecksums)
+{
+    client = MockS3::Client::CreateClient(bucket, /* disable_checksum */ true, /* is_s3express_bucket */ true);
+
+    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
+    setInjectionModel(injection);
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0;
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+
+    auto buffer = getWriteBuffer("s3express_disabled_checksum_multipart");
+    writeAsOneBlock(*buffer, 10);
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::CRC32, injection->create_multipart_upload_algorithm);
+    ASSERT_THAT(injection->upload_part_algorithms, testing::Not(testing::IsEmpty()));
+    ASSERT_THAT(injection->upload_part_algorithms, testing::Each(Aws::S3::Model::ChecksumAlgorithm::CRC32));
+    ASSERT_EQ(injection->upload_part_crc32_checksums, injection->complete_part_crc32_checksums);
+    ASSERT_THAT(injection->complete_part_crc32_checksums, testing::Each(testing::Not(testing::IsEmpty())));
+}
+
 TEST_P(SyncAsync, ExceptionOnCompleteMPU) {
     setInjectionModel(std::make_shared<MockS3::CompleteMPUFailIngection>());
 
