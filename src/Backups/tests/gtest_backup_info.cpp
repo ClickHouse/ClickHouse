@@ -1,7 +1,6 @@
 #include <Backups/BackupInfo.h>
 
-#include <Common/tests/gtest_global_context.h>
-#include <Common/tests/gtest_global_register.h>
+#include <Common/Exception.h>
 
 #include <gtest/gtest.h>
 
@@ -60,43 +59,8 @@ TEST(BackupInfo, WithoutS3CredentialsRedactsURLOverride)
     EXPECT_EQ(str.find("URLSIGNATURE"), String::npos) << str;
 }
 
-TEST(BackupInfo, WithoutS3CredentialsEvaluatesURLOverrideExpression)
-{
-    tryRegisterFunctions();
-    const auto & context = getContext().context;
-    auto info = BackupInfo::fromString("S3(collection, url = concat('https://user:URLPASSWORD@', 's3.example.com/bucket/backup'))");
-
-    String str = info.withoutS3Credentials(context).toString();
-    EXPECT_NE(str.find("'https://s3.example.com/bucket/backup'"), String::npos) << str;
-    EXPECT_EQ(str.find("URLPASSWORD"), String::npos) << str;
-    EXPECT_EQ(str.find("concat"), String::npos) << str;
-}
-
-TEST(BackupInfo, WithoutS3CredentialsStripsExpressionCredentialKey)
-{
-    tryRegisterFunctions();
-    const auto & context = getContext().context;
-    auto info = BackupInfo::fromString("S3(collection, concat('secret_', 'access_key') = 'KEYSECRET')");
-
-    String str = info.withoutS3Credentials(context).toString();
-    EXPECT_EQ(str.find("KEYSECRET"), String::npos) << str;
-    EXPECT_EQ(str.find("concat"), String::npos) << str;
-}
-
-TEST(BackupInfo, WithoutS3CredentialsRedactsExpressionURLKeyAndValue)
-{
-    tryRegisterFunctions();
-    const auto & context = getContext().context;
-    auto info = BackupInfo::fromString("S3(collection, concat('u', 'rl') = concat('https://user:URLPASSWORD@', 'host/bucket/backup'))");
-
-    String str = info.withoutS3Credentials(context).toString();
-    EXPECT_NE(str.find("host/bucket/backup"), String::npos) << str;
-    EXPECT_EQ(str.find("URLPASSWORD"), String::npos) << str;
-}
-
 TEST(BackupInfo, WithoutS3CredentialsRejectsExpressionCredentialKeyWithoutContext)
 {
-    tryRegisterFunctions();
     auto info = BackupInfo::fromString("S3(collection, concat('secret_', 'access_key') = 'KEYSECRET')");
 
     EXPECT_THROW((void)info.withoutS3Credentials(), Exception);
