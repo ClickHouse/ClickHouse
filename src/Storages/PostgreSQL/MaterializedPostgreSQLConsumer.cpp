@@ -90,8 +90,7 @@ MaterializedPostgreSQLConsumer::StorageData::StorageData(const StorageInfo & sto
     if (columns_attributes.size() + 2 != columns_num)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Columns number mismatch for table {}. Attributes: {}, buffer: {}",
-                        storage_info.storage->getStorageID().getNameForLogs(),
+                        "Columns number mismatch. Attributes: {}, buffer: {}",
                         columns_attributes.size(), columns_num);
     }
 

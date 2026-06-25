@@ -1,6 +1,5 @@
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>

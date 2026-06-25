@@ -74,7 +74,7 @@ public:
     void addChains(std::vector<Chain> chains);
     void addChain(Chain chain);
 
-    using Transformer = std::function<Processors(const OutputPortRawPtrs & ports)>;
+    using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
     /// Transform pipeline in general way.
     void transform(const Transformer & transformer, bool check_ports = true);
 

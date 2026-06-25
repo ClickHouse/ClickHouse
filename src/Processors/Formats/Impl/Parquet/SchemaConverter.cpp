@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 
+#include <Common/checkStackSize.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -169,6 +170,21 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
 
 void SchemaConverter::processSubtree(TraversalNode & node)
 {
+    /// Reject deeply nested schemas before recursing. The def-level guard below (def == UINT8_MAX)
+    /// only counts OPTIONAL/REPEATED nodes, so a chain of REQUIRED groups would bypass it and
+    /// overflow the native stack. Track the real recursion depth unconditionally and reject early;
+    /// checkStackSize is a last-resort backstop if max_parser_depth is raised.
+    /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
+    checkStackSize();
+    ++recursion_depth;
+    SCOPE_EXIT({ --recursion_depth; });
+    if (options.format.max_parser_depth != 0 && recursion_depth > options.format.max_parser_depth)
+        throw Exception(
+            ErrorCodes::TOO_DEEP_RECURSION,
+            "Parquet schema is nested deeper than the limit ({}). It can be raised with the setting "
+            "'max_parser_depth', but a very deeply nested schema is rarely intentional",
+            options.format.max_parser_depth);
+
     if (node.type_hint)
         chassert(node.requested);
     if (schema_idx >= file_metadata.schema.size())
@@ -567,18 +583,6 @@ bool SchemaConverter::processSubtreeArrayInner(TraversalNode & node)
              node.element->num_children == 1); // caller checked this
     /// (type_hint is already unwrapped to be element type, because of REPEATED)
     TraversalNode subnode = node.prepareToRecurse(SchemaContext::ListElement, node.type_hint);
-
-    if (column_mapper && schema_idx < file_metadata.schema.size())
-    {
-        const auto & elem_schema = file_metadata.schema.at(schema_idx);
-        if (elem_schema.__isset.field_id)
-        {
-            const auto & field_id_map = column_mapper->getFieldIdToClickHouseName();
-            if (auto it = field_id_map.find(elem_schema.field_id); it != field_id_map.end())
-                subnode.name = std::string(it->second);
-        }
-    }
-
     processSubtree(subnode);
 
     if (!node.requested || !subnode.output_idx.has_value())
@@ -895,14 +899,6 @@ void SchemaConverter::processPrimitiveColumn(
 
         out_inferred_type = getGeoDataType(geo_metadata->type);
         out_decoder.string_converter = std::make_shared<GeoConverter>(*geo_metadata);
-        return;
-    }
-
-    if (type_hint && type_hint->getName() == "Geometry" && type == parq::Type::BYTE_ARRAY)
-    {
-        GeoColumnMetadata iceberg_geo{GeoEncoding::WKB, GeoType::Mixed};
-        out_inferred_type = getGeoDataType(GeoType::Mixed);
-        out_decoder.string_converter = std::make_shared<GeoConverter>(iceberg_geo);
         return;
     }
 

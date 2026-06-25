@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnString.h>
 #include <Common/OptimizedRegularExpression.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/re2.h>
 #include <Functions/Regexps.h>
 #include <Functions/ReplaceStringImpl.h>
@@ -71,7 +70,7 @@ struct ReplaceRegexpImpl
 
     /// Decomposes the replacement string into a sequence of substitutions and literals.
     /// E.g. "abc\1de\2fg\1\2" --> inst("abc"), inst(1), inst("de"), inst(2), inst("fg"), inst(1), inst(2)
-    using Instructions = VectorWithMemoryTracking<Instruction>;
+    using Instructions = std::vector<Instruction>;
 
     static constexpr int max_captures = 10;
 

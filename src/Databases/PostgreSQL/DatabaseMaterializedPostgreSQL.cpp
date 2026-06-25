@@ -7,7 +7,6 @@
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <Common/Macros.h>
 #include <Common/PoolId.h>
@@ -566,7 +565,6 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         .supports_settings = true,
         .supports_table_overrides = true,
         .is_external = true,
-        .source_access_type = AccessTypeObjects::Source::POSTGRES,
     });
 }
 }

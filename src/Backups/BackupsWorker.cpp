@@ -155,7 +155,7 @@ namespace
         addThrottler(read_settings.remote_throttler, context->getBackupsThrottler());
         addThrottler(read_settings.local_throttler, context->getBackupsThrottler());
         read_settings.enable_filesystem_cache = backup_settings.read_from_filesystem_cache;
-        read_settings.filesystem_cache_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = backup_settings.read_from_filesystem_cache;
+        read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = backup_settings.read_from_filesystem_cache;
         return read_settings;
     }
 
@@ -173,7 +173,7 @@ namespace
         addThrottler(read_settings.local_throttler, context->getBackupsThrottler());
         read_settings.enable_filesystem_cache = false;
         read_settings.read_through_distributed_cache = false;
-        read_settings.filesystem_cache_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
+        read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
         return read_settings;
     }
 

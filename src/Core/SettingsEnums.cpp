@@ -135,10 +135,6 @@ IMPLEMENT_SETTING_AUTO_ENUM(DefaultDatabaseEngine, ErrorCodes::BAD_ARGUMENTS)
 
 IMPLEMENT_SETTING_AUTO_ENUM(DefaultTableEngine, ErrorCodes::BAD_ARGUMENTS)
 
-IMPLEMENT_SETTING_ENUM(TextIndexPostingListApplyMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"materialize", TextIndexPostingListApplyMode::MATERIALIZE},
-     {"lazy", TextIndexPostingListApplyMode::LAZY}})
-
 IMPLEMENT_SETTING_AUTO_ENUM(CleanDeletedRows, ErrorCodes::BAD_ARGUMENTS)
 
 IMPLEMENT_SETTING_MULTI_ENUM(MySQLDataTypesSupport, ErrorCodes::UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL,
@@ -340,8 +336,7 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"Simple", MergeSelectorAlgorithm::SIMPLE},
      {"StochasticSimple", MergeSelectorAlgorithm::STOCHASTIC_SIMPLE},
-     {"Trivial", MergeSelectorAlgorithm::TRIVIAL},
-     {"Manual", MergeSelectorAlgorithm::MANUAL}})
+     {"Trivial", MergeSelectorAlgorithm::TRIVIAL}})
 
 IMPLEMENT_SETTING_ENUM(
     DatabaseDataLakeCatalogType,
@@ -437,12 +432,6 @@ IMPLEMENT_SETTING_ENUM(
     {{"any", SearchOrphanedPartsDisks::ANY},
      {"local", SearchOrphanedPartsDisks::LOCAL},
      {"none", SearchOrphanedPartsDisks::NONE}})
-
-IMPLEMENT_SETTING_ENUM(
-    MergeTreePartMinMaxIndexColumns,
-    ErrorCodes::BAD_ARGUMENTS,
-    {{"partition_key_only", MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY},
-     {"with_block_number_offset", MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET}})
 
 IMPLEMENT_SETTING_ENUM(
     DecorrelationJoinKind,

@@ -134,7 +134,7 @@ void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pi
     });
 
     Block input_header = pipeline.getHeader();
-    auto pipeline_transform = [&input_header, this](const OutputPortRawPtrs & ports)
+    auto pipeline_transform = [&input_header, this](OutputPortRawPtrs ports)
     {
         Processors result_transforms;
 

@@ -24,6 +24,7 @@
 #include <Interpreters/DeltaMetadataLog.h>
 
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 
@@ -317,7 +318,7 @@ struct DeltaLakeMetadataImpl
 
                 String path;
                 Poco::URI::decode(add_object->getValue<String>("path"), path);
-                auto full_path = fs::path(table_path) / path;
+                auto full_path = resolvePathInsideTable(table_path, path);
                 result.insert(full_path);
 
                 auto filename = fs::path(path).filename().string();
@@ -363,7 +364,7 @@ struct DeltaLakeMetadataImpl
 
                 String path;
                 Poco::URI::decode(remove_object->getValue<String>("path"), path);
-                result.erase(fs::path(table_path) / path);
+                result.erase(resolvePathInsideTable(table_path, path));
             }
         }
         insertDeltaRowToLogTable(context, sum_json, table_path, metadata_file_path);
@@ -491,7 +492,9 @@ struct DeltaLakeMetadataImpl
         /// Force nullable, because this parquet file for some reason does not have nullable
         /// in parquet file metadata while the type are in fact nullable.
         format_settings.schema_inference_make_columns_nullable = true;
-        auto columns = NativeParquetSchemaReader(*buf, format_settings).readSchema();
+        auto columns = format_settings.parquet.use_native_reader_v3
+            ? NativeParquetSchemaReader(*buf, format_settings).readSchema()
+            : ArrowParquetSchemaReader(*buf, format_settings).readSchema();
 
         /// Read only columns that we need.
         auto filter_column_names = NameSet{"add", "metaData"};
@@ -567,7 +570,7 @@ struct DeltaLakeMetadataImpl
                 continue;
 
             auto filename = fs::path(path).filename().string();
-            auto full_path = fs::path(table_path) / path;
+            auto full_path = resolvePathInsideTable(table_path, path);
             auto it = file_partition_columns.find(full_path);
             if (it == file_partition_columns.end())
             {
@@ -599,7 +602,7 @@ struct DeltaLakeMetadataImpl
             }
 
             LOG_TEST(log, "Adding {}", path);
-            const auto [_, inserted] = result.insert(std::filesystem::path(table_path) / path);
+            const auto [_, inserted] = result.insert(full_path);
             if (!inserted)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "File already exists {}", path);
         }

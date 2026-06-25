@@ -38,8 +38,7 @@ LimitByStep::LimitByStep(
 
 void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (!skip_stream_merging)
-        pipeline.resize(1);
+    pipeline.resize(1);
 
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
@@ -74,8 +73,6 @@ void LimitByStep::describeActions(FormatSettings & settings) const
 
     settings.out << prefix << "Length " << group_length << '\n';
     settings.out << prefix << "Offset " << group_offset << '\n';
-    if (skip_stream_merging)
-        settings.out << prefix << "Skip stream merging: 1\n";
 }
 
 void LimitByStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -87,8 +84,6 @@ void LimitByStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Columns", std::move(columns_array));
     map.add("Length", group_length);
     map.add("Offset", group_offset);
-    if (skip_stream_merging)
-        map.add("Skip stream merging", true);
 }
 
 void LimitByStep::serialize(Serialization & ctx) const

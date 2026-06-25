@@ -4,7 +4,6 @@
 #include <base/getThreadId.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/MemoryTracker.h>
 
 #include <Common/logger_useful.h>

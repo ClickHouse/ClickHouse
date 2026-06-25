@@ -54,7 +54,6 @@ private:
     std::vector<std::shared_ptr<Node>> root_nodes;
     Coordination::ACLs default_acls;
     TaggedPaths tagged_paths;
-    bool use_remove_recursive = true;
 };
 
 class Runner

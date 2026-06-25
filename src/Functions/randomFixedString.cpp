@@ -76,7 +76,7 @@ public:
     }
 };
 
-class FunctionRandomFixedString final : public FunctionRandomFixedStringImpl<TargetSpecific::Default::RandImpl>
+class FunctionRandomFixedString : public FunctionRandomFixedStringImpl<TargetSpecific::Default::RandImpl>
 {
 public:
     explicit FunctionRandomFixedString(ContextPtr context) : selector(context)

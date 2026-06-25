@@ -38,12 +38,7 @@ public:
     Impl impls[NUM_BUCKETS];
 
     TwoLevelStringHashTable() = default;
-
-    explicit TwoLevelStringHashTable(size_t size_hint)
-    {
-        for (auto & impl : impls)
-            impl.reserve(size_hint / NUM_BUCKETS);
-    }
+    TwoLevelStringHashTable(size_t ) {} /// NOLINT
 
     template <typename Source>
     explicit TwoLevelStringHashTable(const Source & src)
@@ -179,12 +174,6 @@ public:
     void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted)
     {
         dispatch(*this, key_holder, typename Impl::EmplaceCallable{it, inserted});
-    }
-
-    template <typename KeyHolder>
-    void ALWAYS_INLINE prefetch(KeyHolder && key_holder)
-    {
-        dispatch(*this, std::forward<KeyHolder>(key_holder), typename Impl::PrefetchCallable{});
     }
 
     LookupResult ALWAYS_INLINE find(const Key x)

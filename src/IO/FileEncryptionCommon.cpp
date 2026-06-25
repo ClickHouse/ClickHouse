@@ -299,8 +299,6 @@ void Encryptor::encrypt(const char * data, size_t size, WriteBuffer & out)
     auto current_iv = (init_vector + blocks(offset)).toString();
 
     auto evp_ctx_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&::EVP_CIPHER_CTX_free)>(EVP_CIPHER_CTX_new(), &EVP_CIPHER_CTX_free);
-    if (!evp_ctx_ptr)
-        throw Exception(DB::ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_new failed: {}", getOpenSSLErrors());
     auto * evp_ctx = evp_ctx_ptr.get();
 
     if (EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
@@ -349,8 +347,6 @@ void Encryptor::decrypt(const char * data, size_t size, char * out)
     auto current_iv = (init_vector + blocks(offset)).toString();
 
     auto evp_ctx_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&::EVP_CIPHER_CTX_free)>(EVP_CIPHER_CTX_new(), &EVP_CIPHER_CTX_free);
-    if (!evp_ctx_ptr)
-        throw Exception(DB::ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_new failed: {}", getOpenSSLErrors());
     auto * evp_ctx = evp_ctx_ptr.get();
 
     if (EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)

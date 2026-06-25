@@ -19,6 +19,7 @@
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
+#include <Processors/Transforms/DroppingTransform.h>
 #include <Processors/Transforms/InputSelectorTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/ExtremesTransform.h>
@@ -462,12 +463,12 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         auto filling_finish_counter = std::make_shared<FinishCounter>(max_streams);
 
         right->resize(max_streams);
-        auto concurrent_right_filling_transform = [&](const OutputPortRawPtrs & outports)
+        auto concurrent_right_filling_transform = [&](OutputPortRawPtrs outports)
         {
             Processors processors;
             if (min_block_size_rows > 0 || min_block_size_bytes > 0)
             {
-                for (const auto & outport : outports)
+                for (auto & outport : outports)
                 {
                     auto squashing = std::make_shared<SimpleSquashingChunksTransform>(right->getSharedHeader(), min_block_size_rows, min_block_size_bytes);
                     connect(*outport, squashing->getInputs().front());
@@ -479,7 +480,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             }
             else
             {
-                for (const auto & outport : outports)
+                for (auto & outport : outports)
                 {
                     auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getSharedHeader(), join, filling_finish_counter);
                     connect(*outport, adding_joined->getInputs().front());
@@ -787,13 +788,38 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
 }
 
 
+namespace
+{
+
+/// Drop the totals and extremes streams of `pipe` (which are irrelevant for set
+/// construction / CTE materialization) using a `DroppingTransform` instead of a
+/// `NullSink`. The transform consumes all output ports (data + totals + extremes),
+/// forwards the data streams and discards totals/extremes. Unlike a childless
+/// `NullSink`, it keeps the dropping node connected to the data path, so
+/// `ExecutingGraph::initializeExecution` does not seed it and does not pull the
+/// gated source sub-pipeline before its materialized CTE has been built.
+void dropTotalsAndExtremesViaTransform(Pipe & pipe, const SharedHeader & header)
+{
+    if (!pipe.getTotalsPort() && !pipe.getExtremesPort())
+        return;
+
+    bool has_totals = pipe.getTotalsPort() != nullptr;
+    bool has_extremes = pipe.getExtremesPort() != nullptr;
+    auto dropping = std::make_shared<DroppingTransform>(header, pipe.numOutputPorts(), has_totals, has_extremes);
+    auto * totals_in = dropping->getTotalsPort();
+    auto * extremes_in = dropping->getExtremesPort();
+    pipe.addTransform(std::move(dropping), totals_in, extremes_in);
+}
+
+}
+
 void QueryPipelineBuilder::addCreatingSetsTransform(
     SharedHeader res_header,
     SetAndKeyPtr set_and_key,
     const SizeLimits & limits,
     PreparedSetsCachePtr prepared_sets_cache)
 {
-    dropTotalsAndExtremes();
+    dropTotalsAndExtremesViaTransform(pipe, getSharedHeader());
     resize(1);
 
     auto transform = std::make_shared<CreatingSetsTransform>(
@@ -812,7 +838,7 @@ void QueryPipelineBuilder::addMaterializingCTETransform(
 )
 {
     checkInitializedAndNotCompleted();
-    dropTotalsAndExtremes();
+    dropTotalsAndExtremesViaTransform(pipe, getSharedHeader());
     resize(1);
 
     auto transform = std::make_shared<MaterializingCTETransform>(

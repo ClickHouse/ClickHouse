@@ -16,7 +16,7 @@ class ResponseForSession;
 
 struct CoordinationSettings;
 using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
-using KeeperResponseCallback = std::function<void(KeeperResponseForSession)>; // noexcept
+using ResponsesQueue = ConcurrentBoundedQueue<KeeperResponseForSession>;
 using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 
 struct KeeperStorageStats;
@@ -29,7 +29,7 @@ public:
     using CommitCallback = std::function<void(uint64_t, const KeeperRequestForSession &)>;
 
     IKeeperStateMachine(
-        KeeperResponseCallback response_callback_,
+        ResponsesQueue & responses_queue_,
         SnapshotsQueue & snapshots_queue_,
         const KeeperContextPtr & keeper_context_,
         KeeperSnapshotManagerS3 * snapshot_manager_s3_,
@@ -125,16 +125,12 @@ public:
 
     virtual void reconfigure(const KeeperRequestForSession& request_for_session) = 0;
 
-    /// Return a pin for `log_idx`, or `nullptr` if absent. The pin defers
-    /// unlink and cross-disk moves until the transfer releases it.
-    /// Caller must hold `snapshots_lock`.
-    virtual SnapshotFileInfoPtr getSnapshotPinUnlocked(uint64_t log_idx) const TSA_REQUIRES(snapshots_lock) = 0;
-
 protected:
     CommitCallback commit_callback;
 
     /// Latest snapshot metadata, stored on both leader/follower.
     SnapshotMetadataPtr latest_snapshot_meta TSA_GUARDED_BY(snapshots_lock) = nullptr;
+    std::shared_ptr<SnapshotFileInfo> latest_snapshot_info TSA_GUARDED_BY(snapshots_lock);
 
     /// Follower snapshot receive context.
     /// Kept for the duration of snapshot transfer, reset on completion/error.
@@ -145,10 +141,6 @@ protected:
     /// Reset when a new snapshot is created or when the loader encounters an error.
     std::shared_ptr<ISnapshotLoader> snapshot_loader_info TSA_GUARDED_BY(snapshots_lock);
 
-    /// `log_idx` for the cached remote `snapshot_loader_info`.
-    /// Requests for a different retained snapshot reset the cache.
-    uint64_t snapshot_loader_info_log_idx TSA_GUARDED_BY(snapshots_lock) = 0;
-
     /// Cached size of the latest snapshot file, updated atomically after each snapshot
     /// creation/save while snapshots_lock is held. Read lock-free by `getLatestSnapshotSize`
     /// (called from `mntr`) to avoid blocking on `snapshots_lock` during long-running
@@ -158,8 +150,9 @@ protected:
 
     CoordinationSettingsPtr coordination_settings;
 
-    /// Function to put processed responses into a queue for sending to the client.
-    KeeperResponseCallback response_callback;
+    /// Save/Load and Serialize/Deserialize logic for snapshots.
+    /// Put processed responses into this queue
+    ResponsesQueue & responses_queue;
 
     /// Snapshots to create by snapshot thread
     SnapshotsQueue & snapshots_queue;
@@ -171,7 +164,7 @@ protected:
     /// Storage works in thread-safe way ONLY for preprocessing/processing
     /// In any other case, unique storage lock needs to be taken
     mutable SharedMutex state_machine_storage_mutex;
-    /// Lock for processing and response_callback. It's important to process requests
+    /// Lock for processing and responses_queue. It's important to process requests
     /// and push them to the responses queue while holding this lock. Otherwise
     /// we can get strange cases when, for example client send read request with
     /// watch and after that receive watch response and only receive response
@@ -212,7 +205,7 @@ class KeeperStateMachine : public IKeeperStateMachine
 {
 public:
     KeeperStateMachine(
-        KeeperResponseCallback response_callback_,
+        ResponsesQueue & responses_queue_,
         SnapshotsQueue & snapshots_queue_,
         const KeeperContextPtr & keeper_context_,
         KeeperSnapshotManagerS3 * snapshot_manager_s3_,
@@ -286,8 +279,6 @@ public:
 
     /// Cancel an in-progress snapshot receive: remove partial files and reset the context.
     void cancelIfHasUnfinishedSnapshotReceive() TSA_REQUIRES(snapshots_lock);
-
-    SnapshotFileInfoPtr getSnapshotPinUnlocked(uint64_t log_idx) const override TSA_REQUIRES(snapshots_lock);
 
 private:
     /// Main state machine logic
