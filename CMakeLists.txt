@@ -348,8 +348,10 @@ if (ARCH_AMD64)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
 endif()
 
-# Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
-set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
+# EXPERIMENT: enable fast-math-style floating-point optimizations globally to identify
+# places where they help. NOTE: this changes numeric results and breaks cross-platform
+# determinism (it replaces the usual -ffp-contract=off); do not merge as-is.
+set (COMPILER_FLAGS "${COMPILER_FLAGS} -fassociative-math -freciprocal-math -fno-signed-zeros -fno-trapping-math -fno-math-errno -ffp-contract=fast -fno-rounding-math -ffp-exception-behavior=ignore")
 
 set (DEBUG_INFO_FLAGS "-g")
 if (DISABLE_ALL_DEBUG_SYMBOLS)
