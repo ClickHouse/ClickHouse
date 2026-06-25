@@ -8,9 +8,19 @@ SELECT bloomFilterContains(bf, toUInt64(42)) AS result;
 WITH (SELECT groupBloomFilterState(1000)(toString(number)) FROM numbers(100)) AS bf
 SELECT bloomFilterContains(bf, '42') AS result;
 
+-- Const String bloom state with non-const String probe column
+WITH (SELECT groupBloomFilterState(1000)(toString(number)) FROM numbers(100)) AS bf
+SELECT sum(bloomFilterContains(bf, toString(number))) AS result
+FROM numbers(10);
+
 -- Const DateTime64 bloom state from WITH clause
 WITH (SELECT groupBloomFilterState(1000)(toDateTime64('2023-01-01 12:00:00.123', 3)) FROM numbers(1)) AS bf
 SELECT bloomFilterContains(bf, toDateTime64('2023-01-01 12:00:00.123', 3)) AS result;
+
+-- Const DateTime64 bloom state with non-const DateTime64 probe column
+WITH (SELECT groupBloomFilterState(1000)(toDateTime64('2023-01-01 12:00:00.123', 3)) FROM numbers(1)) AS bf
+SELECT sum(bloomFilterContains(bf, toDateTime64('2023-01-01 12:00:00.123', 3) + toIntervalMillisecond(number - number))) AS result
+FROM numbers(10);
 
 -- Bloom is column, value is column (per-row check)
 SELECT bloomFilterContains(bf, val) AS result

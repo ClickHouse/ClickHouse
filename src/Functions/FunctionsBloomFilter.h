@@ -36,6 +36,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -165,7 +166,7 @@ public:
         else if (which.isEnum16())
             executeNumericType<Int16>(casted_arguments, input_rows_count, vec_to);
         else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Unexpected value type {} for function {}",
                 value_type->getName(), getName());
 
@@ -242,14 +243,7 @@ private:
             bloom_col = typeid_cast<const ColumnAggregateFunction *>(arguments[0].column.get());
         }
 
-        if (bloom_is_const)
-        {
-            if (!bloom_col_const)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} must be a Bloom filter state column, got {}",
-                    getName(), arguments[0].column->getName());
-        }
-        else if (!bloom_col)
+        if (!bloom_is_const && !bloom_col)
         {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument for function {} must be a Bloom filter state column, got {}",
@@ -257,22 +251,9 @@ private:
         }
 
         /// Second argument: value to check
-        const ColumnVector<T> * value_col = nullptr;
-        T value_const{};
-        bool value_is_const = false;
-
-        if (const auto * col_const = checkAndGetColumnConst<ColumnVector<T>>(arguments[1].column.get()))
-        {
-            value_const = col_const->template getValue<T>();
-            value_is_const = true;
-        }
-        else
-        {
-            value_col = checkAndGetColumn<ColumnVector<T>>(arguments[1].column.get());
-        }
-
-        if (!value_is_const && !value_col)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+        const ColumnVector<T> * value_col = checkAndGetColumn<ColumnVector<T>>(arguments[1].column.get());
+        if (!value_col)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Second argument for function {} must be a column of type {}, got {}",
                 getName(), arguments[1].type->getName(), arguments[1].column->getName());
 
@@ -284,7 +265,7 @@ private:
                 ? getBloomFilterData(*bloom_col_const, 0, bloom_data_offset)
                 : getBloomFilterData(*bloom_col, i, bloom_data_offset);
 
-            T value = canonicalizeGroupBloomFilterValue(value_is_const ? value_const : value_col->getData()[i]);
+            T value = canonicalizeGroupBloomFilterValue(value_col->getData()[i]);
 
             vec_to[i] = bloom_data.contains(reinterpret_cast<const char *>(&value), sizeof(T)) ? 1 : 0;
         }
@@ -310,14 +291,7 @@ private:
             bloom_col = typeid_cast<const ColumnAggregateFunction *>(arguments[0].column.get());
         }
 
-        if (bloom_is_const)
-        {
-            if (!bloom_col_const)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} must be a Bloom filter state column, got {}",
-                    getName(), arguments[0].column->getName());
-        }
-        else if (!bloom_col)
+        if (!bloom_is_const && !bloom_col)
         {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument for function {} must be a Bloom filter state column, got {}",
@@ -358,14 +332,7 @@ private:
             bloom_col = typeid_cast<const ColumnAggregateFunction *>(arguments[0].column.get());
         }
 
-        if (bloom_is_const)
-        {
-            if (!bloom_col_const)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} must be a Bloom filter state column, got {}",
-                    getName(), arguments[0].column->getName());
-        }
-        else if (!bloom_col)
+        if (!bloom_is_const && !bloom_col)
         {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument for function {} must be a Bloom filter state column, got {}",
@@ -373,22 +340,9 @@ private:
         }
 
         /// Second argument: value to check
-        const ColumnDecimal<T> * value_col = nullptr;
-        T value_const{};
-        bool value_is_const = false;
-
-        if (const auto * col_const = checkAndGetColumnConst<ColumnDecimal<T>>(arguments[1].column.get()))
-        {
-            value_const = col_const->template getValue<T>();
-            value_is_const = true;
-        }
-        else
-        {
-            value_col = checkAndGetColumn<ColumnDecimal<T>>(arguments[1].column.get());
-        }
-
-        if (!value_is_const && !value_col)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+        const ColumnDecimal<T> * value_col = checkAndGetColumn<ColumnDecimal<T>>(arguments[1].column.get());
+        if (!value_col)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Second argument for function {} must be a column of type {}, got {}",
                 getName(), arguments[1].type->getName(), arguments[1].column->getName());
 
@@ -400,7 +354,7 @@ private:
                 ? getBloomFilterData(*bloom_col_const, 0, bloom_data_offset)
                 : getBloomFilterData(*bloom_col, i, bloom_data_offset);
 
-            T value = value_is_const ? value_const : value_col->getData()[i];
+            T value = value_col->getData()[i];
 
             vec_to[i] = bloom_data.contains(reinterpret_cast<const char *>(&value), sizeof(T)) ? 1 : 0;
         }

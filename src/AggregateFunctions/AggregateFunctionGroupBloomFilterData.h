@@ -55,8 +55,6 @@ inline size_t bloomFilterOptimalSizeBytes(size_t expected_elements, double false
     size_t bytes = static_cast<size_t>(bytes_double);
     /// Round up to multiple of 8 bytes (64 bits) for alignment
     bytes = ((bytes + 7) / 8) * 8;
-    if (bytes == 0)
-        bytes = 8;
     return bytes;
 }
 
