@@ -1119,8 +1119,7 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
     /// Guard snapshot cleanup until responsibility transfers to the task.
     bool snapshot_cleanup_transferred = false;
     SCOPE_EXIT({
-        if (!snapshot_cleanup_transferred
-            && std::visit([](const auto & snap) { return snap != nullptr; }, snapshot_task.snapshot))
+        if (!snapshot_cleanup_transferred && snapshot_task.snapshot != nullptr)
         {
             KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
             snapshot_task.snapshot = KeeperStorageSnapshotPtr{};

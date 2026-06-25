@@ -152,7 +152,7 @@ struct SnapshotMaintenanceTasks
     std::vector<SnapshotMoveCandidate> move_candidates;
 };
 
-using KeeperStorageSnapshotPtr = std::shared_ptr<KeeperStorageSnapshot<KeeperMemoryStorage>>;
+using KeeperStorageSnapshotPtr = std::shared_ptr<KeeperStorageSnapshot>;
 using CreateSnapshotCallback = std::function<SnapshotFileInfoPtr(KeeperStorageSnapshotPtr &&, bool)>;
 
 /// In-progress chunked snapshot receive state on the follower side.
@@ -209,7 +209,7 @@ public:
     nuraft::ptr<nuraft::buffer> serializeSnapshotToBuffer(const KeeperStorageSnapshot & snapshot) const;
 
     /// Write helpers do disk I/O under a fresh unique name and do not publish metadata.
-    SnapshotFileInfoPtr writeSnapshotFile(const KeeperStorageSnapshot<Storage> & snapshot);
+    SnapshotFileInfoPtr writeSnapshotFile(const KeeperStorageSnapshot & snapshot);
     SnapshotFileInfoPtr writeSnapshotBufferToFile(nuraft::buffer & buffer, uint64_t up_to_log_idx);
 
     /// Returns the already-registered entry for `up_to_log_idx` so the caller can skip rewriting.

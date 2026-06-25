@@ -1089,7 +1089,7 @@ static void saveSingleObjectSnapshot(
 namespace
 {
 nuraft::ptr<nuraft::buffer> makeInstallBuffer(
-    DB::KeeperMemoryStorage & storage, uint64_t idx, const DB::KeeperContextPtr & version_ctx);
+    DB::KeeperStorage & storage, uint64_t idx, const DB::KeeperContextPtr & version_ctx);
 }
 
 static nuraft::ptr<nuraft::buffer> makeSingleNodeSnapshotBuffer(
@@ -1098,7 +1098,7 @@ static nuraft::ptr<nuraft::buffer> makeSingleNodeSnapshotBuffer(
     const std::string & node_path,
     const std::string & node_data)
 {
-    DB::KeeperMemoryStorage storage(500, "", ctx);
+    DB::KeeperStorage storage(500, "", ctx);
     addNode(storage, node_path, node_data);
     return makeInstallBuffer(storage, log_idx, ctx);
 }
@@ -2087,21 +2087,21 @@ TEST(KeeperSnapshotManagerCleanupTest, ReceiveDuplicateSnapshotRepublishIsIdempo
     ChangelogDirTest rocks("./rocksdb");
 
     auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb");
-    DB::KeeperMemoryStorage storage(500, "", ctx);
+    DB::KeeperStorage storage(500, "", ctx);
 
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, ctx, true);
+    DB::KeeperSnapshotManager manager(3, ctx, true);
     /// Only one `KeeperStorageSnapshot` may be alive per storage at a time (it holds snapshot
     /// mode on), so scope each one before creating the next.
     nuraft::ptr<nuraft::buffer> buf;
     {
-        DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snapshot(&storage, 100, nullptr, ctx->getWriteSnapshotVersion());
+        DB::KeeperStorageSnapshot snapshot(&storage, 100, nullptr, ctx->getWriteSnapshotVersion());
         buf = manager.serializeSnapshotToBuffer(snapshot);
     }
 
     addNode(storage, "/after_duplicate", "must not be written");
     nuraft::ptr<nuraft::buffer> changed_buf;
     {
-        DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> changed_snapshot(&storage, 100, nullptr, ctx->getWriteSnapshotVersion());
+        DB::KeeperStorageSnapshot changed_snapshot(&storage, 100, nullptr, ctx->getWriteSnapshotVersion());
         changed_buf = manager.serializeSnapshotToBuffer(changed_snapshot);
     }
 
@@ -2154,7 +2154,7 @@ TEST(KeeperSnapshotManagerCleanupTest, StartupScanKeepsOneRegisteredSnapshotPerI
     }
     writeSnapshotBufferToFile(disk, "snapshot_99_cccccccc.bin.zstd", buf_88);
 
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, ctx, true);
+    DB::KeeperSnapshotManager manager(3, ctx, true);
     EXPECT_EQ(manager.totalSnapshots(), 3);
     EXPECT_EQ(manager.getLatestSnapshotIndex(), 88);
     /// idx 55 left the retained window: duplicate deleted by dedup, registered file
@@ -2213,7 +2213,7 @@ TEST(KeeperSnapshotManagerCleanupTest, StartupScanKeepsLatestIndexDuplicatesForR
         out->finalize();
     }
 
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, ctx, true);
+    DB::KeeperSnapshotManager manager(3, ctx, true);
     EXPECT_EQ(manager.totalSnapshots(), 2);
     EXPECT_EQ(manager.getLatestSnapshotIndex(), 90);
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 80).size(), 2);
@@ -2239,7 +2239,7 @@ TEST(KeeperSnapshotManagerCleanupTest, StartupScanKeepsLatestIndexDuplicatesForR
     if (!registered_copy_is_valid)
     {
         disk->removeFileIfExists("snapshot_90_corrupt0.bin.zstd");
-        DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> recovered_manager(3, ctx, true);
+        DB::KeeperSnapshotManager recovered_manager(3, ctx, true);
         EXPECT_EQ(recovered_manager.getLatestSnapshotIndex(), 90);
         auto restored = recovered_manager.deserializeSnapshotFromBuffer(recovered_manager.deserializeSnapshotBufferFromDisk(90));
         ASSERT_NE(restored.storage, nullptr);
@@ -2275,7 +2275,7 @@ TEST(KeeperSnapshotManagerCleanupTest, StartupScanKeepsRetainedIndexDuplicatesFo
     }
 
     {
-        DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, ctx, true);
+        DB::KeeperSnapshotManager manager(3, ctx, true);
         EXPECT_EQ(manager.totalSnapshots(), 2);
         EXPECT_EQ(manager.getLatestSnapshotIndex(), 90);
         /// Both retained idx-80 copies must survive the first scan — in particular the
@@ -2288,7 +2288,7 @@ TEST(KeeperSnapshotManagerCleanupTest, StartupScanKeepsRetainedIndexDuplicatesFo
     /// restarts; idx 80 becomes the latest.
     disk->removeFileIfExists("snapshot_90_corrupt0.bin.zstd");
 
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, ctx, true);
+    DB::KeeperSnapshotManager manager(3, ctx, true);
     EXPECT_EQ(manager.getLatestSnapshotIndex(), 80);
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 80).size(), 2);
 
@@ -2310,7 +2310,7 @@ TEST(KeeperSnapshotManagerCleanupTest, StartupScanKeepsRetainedIndexDuplicatesFo
     if (!registered_copy_is_valid)
     {
         disk->removeFileIfExists("snapshot_80_corrupt0.bin.zstd");
-        DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> recovered_manager(3, ctx, true);
+        DB::KeeperSnapshotManager recovered_manager(3, ctx, true);
         EXPECT_EQ(recovered_manager.getLatestSnapshotIndex(), 80);
         auto restored = recovered_manager.deserializeSnapshotFromBuffer(recovered_manager.deserializeSnapshotBufferFromDisk(80));
         ASSERT_NE(restored.storage, nullptr);
@@ -2334,7 +2334,7 @@ TEST(KeeperSnapshotManagerCleanupTest, RetainedDuplicateAgesOutWithoutRestart)
     writeSnapshotBufferToFile(disk, "snapshot_80_bbbbbbbb.bin.zstd", buf_80);
     writeSnapshotBufferToFile(disk, "snapshot_90_cccccccc.bin.zstd", buf_90);
 
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, ctx, true);
+    DB::KeeperSnapshotManager manager(3, ctx, true);
     EXPECT_EQ(manager.totalSnapshots(), 2);
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 80).size(), 2);
 
@@ -2356,7 +2356,7 @@ TEST(KeeperSnapshotManagerCleanupTest, QueuePushFailureCleansSnapshotAndCallsWhe
     ctx->setServerState(DB::KeeperContext::Phase::RUNNING);
 
     DB::SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, ctx, nullptr);
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
     state_machine->init();
 
     auto request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
@@ -2399,7 +2399,7 @@ TEST(KeeperSnapshotManagerCleanupTest, SameIndexReceiveDuringLocalCreate)
         "SnapshotDisk", "./snapshots", "snapshot_1_", block_state));
 
     DB::SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, ctx, nullptr);
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
     state_machine->init();
 
     auto request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
@@ -2469,7 +2469,7 @@ TEST(KeeperSnapshotManagerCleanupTest, SameIndexReceiveDuringLocalCreate)
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 1, /*include_tmp_markers=*/true).size(), 1);
 
     /// Published bytes were never rewritten — a fresh manager restores the receive's data.
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, ctx, true);
+    DB::KeeperSnapshotManager manager(3, ctx, true);
     auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(1));
     ASSERT_NE(restored.storage, nullptr);
     EXPECT_TRUE(restored.storage->container.contains("/from_receive"));
@@ -2484,10 +2484,10 @@ TEST(KeeperSnapshotManagerCleanupTest, ChunkedSameIndexReceiveDoesNotRewritePubl
     ctx->setServerState(DB::KeeperContext::Phase::RUNNING);
 
     DB::SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, ctx, nullptr);
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
     state_machine->init();
 
-    DB::KeeperMemoryStorage original_storage(500, "", ctx);
+    DB::KeeperStorage original_storage(500, "", ctx);
     addNode(original_storage, "/original", "original");
     auto original_buf = makeSnapshotBufferFromStorage(original_storage, 10, ctx);
     nuraft::snapshot snapshot(10, 0, std::make_shared<nuraft::cluster_config>());
@@ -2498,7 +2498,7 @@ TEST(KeeperSnapshotManagerCleanupTest, ChunkedSameIndexReceiveDoesNotRewritePubl
     const fs::path published_snapshot_path = fs::path("./snapshots") / published_files[0];
     const auto published_snapshot_size = fs::file_size(published_snapshot_path);
 
-    DB::KeeperMemoryStorage duplicate_storage(500, "", ctx);
+    DB::KeeperStorage duplicate_storage(500, "", ctx);
     addNode(duplicate_storage, "/duplicate", "duplicate");
     auto duplicate_buf = makeSnapshotBufferFromStorage(duplicate_storage, 10, ctx);
     ASSERT_GT(duplicate_buf->size(), 1);
@@ -2518,7 +2518,7 @@ TEST(KeeperSnapshotManagerCleanupTest, ChunkedSameIndexReceiveDoesNotRewritePubl
     EXPECT_EQ(fs::file_size(published_snapshot_path), published_snapshot_size);
 
     nuraft::snapshot other_snapshot(11, 0, std::make_shared<nuraft::cluster_config>());
-    DB::KeeperMemoryStorage other_storage(500, "", ctx);
+    DB::KeeperStorage other_storage(500, "", ctx);
     /// Serialize over an isolated disk: a throwaway manager over `./snapshots` would run its
     /// ctor incomplete-pair scan and delete the idx-10 receive that is mid-flight here.
     auto other_buf = makeInstallBuffer(other_storage, 11, ctx);
@@ -2557,7 +2557,7 @@ TEST(KeeperSnapshotManagerCleanupTest, ChunkedSameIndexReceiveDoesNotRewritePubl
     EXPECT_EQ(fs::file_size(published_snapshot_path), published_snapshot_size);
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 10).size(), 1);
 
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, ctx, true);
+    DB::KeeperSnapshotManager manager(3, ctx, true);
     auto restored_buf = manager.deserializeSnapshotBufferFromDisk(10);
     auto restored = manager.deserializeSnapshotFromBuffer(restored_buf);
     ASSERT_NE(restored.storage, nullptr);
@@ -2579,7 +2579,7 @@ TEST(KeeperSnapshotManagerCleanupTest, ApplySnapshotDoesNotWaitForLocalCreate)
         "SnapshotDisk", "./snapshots", "snapshot_1_", block_state));
 
     DB::SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, ctx, nullptr);
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
     state_machine->init();
 
     auto request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
@@ -2668,7 +2668,7 @@ TEST(KeeperSnapshotManagerCleanupTest, CreateLosesRaceToNewerSnapshotRetiresWrit
         "SnapshotDisk", "./snapshots", "snapshot_1_", block_state));
 
     DB::SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, ctx, nullptr);
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
     state_machine->init();
 
     auto request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
@@ -2735,7 +2735,7 @@ TEST(KeeperSnapshotManagerCleanupTest, CreateForOlderRetainedIndexAdoptsLatestSn
     ctx->setServerState(DB::KeeperContext::Phase::RUNNING);
 
     DB::SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, ctx, nullptr);
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
     state_machine->init();
 
     auto buf_idx_3 = makeSingleNodeSnapshotBuffer(ctx, 3, "/from_receive_3", "three");
@@ -2792,7 +2792,7 @@ TEST(KeeperSnapshotManagerCleanupTest, CreateRacingNewerReceiveWithRetainedSameI
         "SnapshotDisk", "./snapshots", "snapshot_3_", block_state));
 
     DB::SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, ctx, nullptr);
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
     state_machine->init();
 
     auto buf_idx_3 = makeSingleNodeSnapshotBuffer(ctx, 3, "/from_receive_3", "three");
@@ -2856,7 +2856,7 @@ TEST(KeeperSnapshotManagerCleanupTest, PublishSnapshotFileReusesExistingAndRetir
     auto buf_a = makeSingleNodeSnapshotBuffer(ctx, 100, "/from_a", "a");
     auto buf_b = makeSingleNodeSnapshotBuffer(ctx, 100, "/from_b", "b");
 
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, ctx, true);
+    DB::KeeperSnapshotManager manager(3, ctx, true);
 
     auto first_file_info = manager.writeSnapshotBufferToFile(*buf_a, 100);
     EXPECT_EQ(manager.publishSnapshotFile(100, first_file_info), first_file_info);
@@ -2889,7 +2889,7 @@ TEST(KeeperSnapshotManagerCleanupTest, MovePublicationRejectionBranches)
     auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb");
     auto buf = makeSingleNodeSnapshotBuffer(ctx, 10, "/move_me", "data");
 
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, ctx, true);
+    DB::KeeperSnapshotManager manager(3, ctx, true);
     manager.serializeSnapshotBufferToDisk(*buf, 10);
 
     DB::SnapshotMoveCandidate candidate;
@@ -2964,7 +2964,7 @@ TEST(KeeperSnapshotManagerCleanupTest, MoveSnapshotCandidateHonorsBoolPublishCal
     auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb");
     auto buf = makeSingleNodeSnapshotBuffer(ctx, 10, "/move_me", "data");
 
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, ctx, true);
+    DB::KeeperSnapshotManager manager(3, ctx, true);
     manager.serializeSnapshotBufferToDisk(*buf, 10);
 
     auto target_disk = std::make_shared<DB::DiskLocal>("MoveTargetDisk", "./snapshots_move_target");
