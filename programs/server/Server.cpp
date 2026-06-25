@@ -2947,6 +2947,26 @@ try
             /* start_servers= */ false);
     }
 
+    {
+        std::lock_guard lock(servers_lock);
+        /// Start the Prometheus endpoint together with the `servers_to_start_before_tables`, i.e. before
+        /// tables are loaded and (more importantly) keep it up until after tables are shut down. This way
+        /// metrics (memory usage, errors, profile events) stay observable during the potentially long
+        /// metadata loading and shutdown phases, when the regular `servers` are not running yet / anymore.
+        /// Asynchronous metrics are empty until `async_metrics` is started later, but the rest are
+        /// available immediately. Prometheus is therefore excluded from the `servers` created below.
+        createServers(
+            config(),
+            server_settings,
+            listen_hosts,
+            listen_try,
+            server_pool,
+            *async_metrics,
+            servers_to_start_before_tables,
+            /* start_servers= */ false,
+            ServerType(ServerType::Type::PROMETHEUS));
+    }
+
 #if USE_SSL
     /// We may notice that try to reload certificates twice within this function.
     /// First time here before starting the `servers_to_start_before_tables`, and then
@@ -3122,6 +3142,17 @@ try
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_database cannot be empty");
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
 
+    /// Start collecting asynchronous metrics before loading tables, so that the Prometheus endpoint
+    /// (started earlier together with `servers_to_start_before_tables`) exposes meaningful values
+    /// during the potentially long metadata loading phase. This includes the OS/jemalloc metrics and
+    /// the per-table metrics such as `TotalIndexGranularityBytesInMemoryAllocated`, which let one
+    /// observe memory growth as tables are loaded. The metric computation skips not-yet-loaded tables
+    /// (just like with `async_load_databases`), and writing to `system.asynchronous_metric_log` is
+    /// skipped until the system logs are initialized below. The asynchronous metrics thread reads the
+    /// `servers` lists under `servers_lock`, so it is safe to start before the main `servers` exist.
+    async_metrics->start();
+    global_context->setAsynchronousMetrics(async_metrics.get());
+
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
     LoadTaskPtrs load_system_metadata_tasks;
@@ -3237,7 +3268,11 @@ try
 
         {
             std::lock_guard lock(servers_lock);
-            createServers(config(), server_settings, listen_hosts, listen_try, server_pool, *async_metrics, servers);
+            /// Prometheus is started earlier together with `servers_to_start_before_tables`, so exclude it here.
+            createServers(
+                config(), server_settings, listen_hosts, listen_try, server_pool, *async_metrics, servers,
+                /* start_servers= */ false,
+                ServerType(ServerType::Type::QUERIES_ALL, "", {ServerType::Type::PROMETHEUS}));
             if (servers.empty())
                 throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
                                 "No servers started (add valid listen_host and 'tcp_port' or 'http_port' "
@@ -3254,10 +3289,6 @@ try
         CertificateReloader::instance().tryLoad(config());
         CertificateReloader::instance().tryLoadClient(config());
 #endif
-
-        /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
-        async_metrics->start();
-        global_context->setAsynchronousMetrics(async_metrics.get());
 
         main_config_reloader->start();
         access_control.startPeriodicReloading();
@@ -4153,8 +4184,13 @@ void Server::updateServers(
         }
     }
 
-    createServers(config, server_settings, listen_hosts, listen_try, server_pool, async_metrics, servers, /* start_servers= */ true);
+    /// Prometheus lives in `servers_to_start_before_tables` (see the startup code), so exclude it here
+    /// and reconfigure it together with the other servers started before tables.
+    createServers(config, server_settings, listen_hosts, listen_try, server_pool, async_metrics, servers, /* start_servers= */ true,
+        ServerType(ServerType::Type::QUERIES_ALL, "", {ServerType::Type::PROMETHEUS}));
     createInterserverServers(config, server_settings, interserver_listen_hosts, listen_try, server_pool, async_metrics, servers_to_start_before_tables, /* start_servers= */ true);
+    createServers(config, server_settings, listen_hosts, listen_try, server_pool, async_metrics, servers_to_start_before_tables, /* start_servers= */ true,
+        ServerType(ServerType::Type::PROMETHEUS));
 
     std::erase_if(servers, std::bind_front(check_server, ""));
     std::erase_if(servers_to_start_before_tables, std::bind_front(check_server, ""));
