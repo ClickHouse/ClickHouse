@@ -21,6 +21,8 @@
 #include <Common/setThreadName.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/SharedLockGuard.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/thread_local_rng.h>
 
@@ -58,6 +60,11 @@ namespace ProfileEvents
     extern const Event KeeperWatchTriggeredNodeDeleted;
     extern const Event KeeperWatchTriggeredNodeDataChanged;
     extern const Event KeeperWatchTriggeredNodeChildrenChanged;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric KeeperTTLNodes;
 }
 
 
@@ -340,6 +347,10 @@ uint64_t calculateDigest(std::string_view path, const Node & node)
     hash.update(node.numChildren());
     hash.update(node.stats.pzxid);
 
+    hash.update(node.stats.isTTL());
+    if (node.stats.isTTL())
+        hash.update(node.stats.ttl());
+
     auto digest = hash.get64();
 
     /// 0 means no cached digest
@@ -437,6 +448,7 @@ KeeperMemNode & KeeperMemNode::operator=(const KeeperMemNode & other)
     stats = other.stats;
     acl_id = other.acl_id;
     num_children = other.num_children;
+    cached_digest = other.cached_digest;
 
     if (stats.data_size != 0)
     {
@@ -461,6 +473,7 @@ KeeperMemNode & KeeperMemNode::operator=(KeeperMemNode && other) noexcept
     stats = other.stats;
     acl_id = other.acl_id;
     num_children = other.num_children;
+    cached_digest = other.cached_digest;
 
     data = std::move(other.data);
 
@@ -569,6 +582,7 @@ struct CreateNodeDelta
     Coordination::Stat stat;
     ACLId acl_id;
     String data;
+    std::optional<int64_t> ttl;
 };
 
 struct RemoveNodeDelta
@@ -1221,7 +1235,7 @@ Coordination::Error KeeperStorage<Container>::commit(KeeperStorageBase::DeltaRan
             {
                 if constexpr (std::same_as<DeltaType, CreateNodeDelta>)
                 {
-                    if (!createNode(path, operation.data, operation.stat, operation.acl_id, digest_on_commit))
+                    if (!createNode(path, operation.data, operation.stat, operation.acl_id, digest_on_commit, operation.ttl))
                         onStorageInconsistency("Failed to create a node");
 
                     return Coordination::Error::ZOK;
@@ -1330,7 +1344,12 @@ Coordination::Error KeeperStorage<Container>::commit(KeeperStorageBase::DeltaRan
 
 template <typename Container>
 bool KeeperStorage<Container>::createNode(
-    const std::string & path, String data, const Coordination::Stat & stat, ACLId acl_id, bool update_digest)
+    const std::string & path,
+    String data,
+    const Coordination::Stat & stat,
+    ACLId acl_id,
+    bool update_digest,
+    std::optional<int64_t> ttl) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     auto parent_path = Coordination::parentNodePath(path);
     auto node_it = container.find(parent_path);
@@ -1349,6 +1368,12 @@ bool KeeperStorage<Container>::createNode(
     created_node.acl_id = acl_id;
     created_node.copyStats(stat);
     created_node.setData(data);
+    if (ttl)
+    {
+        created_node.stats.setTTL(*ttl);
+        ttl_paths.insert(path);
+        committed_ttl_nodes.fetch_add(1);
+    }
 
     if constexpr (use_rocksdb)
     {
@@ -1383,7 +1408,7 @@ bool KeeperStorage<Container>::createNode(
 };
 
 template<typename Container>
-bool KeeperStorage<Container>::removeNode(const std::string & path, int32_t version, bool update_digest)
+bool KeeperStorage<Container>::removeNode(const std::string & path, int32_t version, bool update_digest) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     auto node_it = container.find(path);
     if (node_it == container.end())
@@ -1394,6 +1419,12 @@ bool KeeperStorage<Container>::removeNode(const std::string & path, int32_t vers
     KeeperStorage::Node prev_node;
     prev_node.shallowCopy(node_it->value);
     acl_map.removeUsage(node_it->value.acl_id);
+
+    if (node_it->value.stats.isTTL())
+    {
+        ttl_paths.erase(path);
+        committed_ttl_nodes.fetch_sub(1);
+    }
 
     if constexpr (use_rocksdb)
         container.erase(path);
@@ -1438,6 +1469,7 @@ auto callOnConcreteRequestType(Coordination::ZooKeeperRequest & zk_request, F fu
         case Coordination::OpNum::Create:
         case Coordination::OpNum::Create2:
         case Coordination::OpNum::CreateIfNotExists:
+        case Coordination::OpNum::CreateTTL:
             return function(static_cast<Coordination::ZooKeeperCreateRequest &>(zk_request));
         case Coordination::OpNum::Remove:
             return function(static_cast<Coordination::ZooKeeperRemoveRequest &>(zk_request));
@@ -1637,6 +1669,9 @@ Coordination::Error preprocess(
     if (parent_node->stats.isEphemeral())
         return Coordination::Error::ZNOCHILDRENFOREPHEMERALS;
 
+    if (parent_node->stats.isTTL())
+        return Coordination::Error::ZBADARGUMENTS;
+
     std::string path_created = zk_request.path;
     if (zk_request.is_sequential)
     {
@@ -1676,6 +1711,18 @@ Coordination::Error preprocess(
     if (!fixupACL(zk_request.acls, session_id, storage.uncommitted_state, keeper_context.shouldBlockACL(), node_acls))
         return Coordination::Error::ZINVALIDACL;
 
+    /// Validate TTL flags BEFORE mutating uncommitted_state to avoid orphan
+    /// ephemeral entries on rejected requests (e.g. inside a failed `Multi`).
+    if (zk_request.include_ttl)
+    {
+        if (zk_request.is_ephemeral)
+            return Coordination::Error::ZBADARGUMENTS;
+        /// Reject non-positive or unbounded TTL — matches ZK's MAX_TTL bound and
+        /// prevents `time + ttl` overflow when computing destroy_time.
+        if (zk_request.ttl <= 0 || zk_request.ttl > MAX_KEEPER_TTL_MS)
+            return Coordination::Error::ZBADARGUMENTS;
+    }
+
     if (zk_request.is_ephemeral)
         storage.uncommitted_state.ephemerals[session_id].emplace(path_created);
 
@@ -1710,7 +1757,8 @@ Coordination::Error preprocess(
 
     storage.prepareCreateNode(
         parent_path, parent_node_ref, new_parent_stats, new_parent_num_children,
-        path_created, child_node_ref, stat, acl_id, zk_request.data);
+        path_created, child_node_ref, stat, acl_id, zk_request.data,
+        zk_request.include_ttl ? std::optional(zk_request.ttl) : std::nullopt);
 
     return Coordination::Error::ZOK;
 }
@@ -1720,17 +1768,7 @@ Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRe
 {
     ProfileEvents::increment(ProfileEvents::KeeperCreateRequest);
 
-    std::shared_ptr<Coordination::ZooKeeperCreateResponse> response;
-
-    if (zk_request.include_stats)
-    {
-        auto create2response = std::make_shared<Coordination::ZooKeeperCreate2Response>();
-        response = create2response;
-    }
-    else if (zk_request.not_exists)
-        response = std::make_shared<Coordination::ZooKeeperCreateIfNotExistsResponse>();
-    else
-        response = std::make_shared<Coordination::ZooKeeperCreateResponse>();
+    auto response = std::static_pointer_cast<Coordination::ZooKeeperCreateResponse>(zk_request.makeResponse());
 
     if (deltas.empty())
     {
@@ -1750,7 +1788,7 @@ Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRe
     if (create_delta_it != deltas.end())
     {
         created_path = create_delta_it->path;
-        if (response->getOpNum() == Coordination::OpNum::Create2)
+        if (response->getOpNum() == Coordination::OpNum::Create2 || response->getOpNum() == Coordination::OpNum::CreateTTL)
             static_cast<Coordination::ZooKeeperCreate2Response &>(*response).zstat = std::get<CreateNodeDelta>(create_delta_it->operation).stat;
     }
     if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
@@ -1816,11 +1854,17 @@ Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperGetReque
 template <typename Storage>
 std::pair<KeeperResponsesForSessions, Int64> processWatches(
     const Coordination::ZooKeeperRemoveRequest & zk_request,
-    KeeperStorageBase::DeltaRange /*deltas*/,
+    KeeperStorageBase::DeltaRange deltas,
     Storage & storage,
     int64_t /*session_id*/)
 {
-    return processWatchesImpl(zk_request.getPath(), storage, Coordination::Event::DELETED);
+    for (const auto & delta : deltas)
+    {
+        if (std::holds_alternative<RemoveNodeDelta>(delta.operation))
+            return processWatchesImpl(zk_request.getPath(), storage, Coordination::Event::DELETED);
+    }
+
+    return {};
 }
 
 template <typename Storage>
@@ -1829,7 +1873,7 @@ Coordination::Error preprocess(
     Storage & storage,
     int64_t session_id,
     bool check_acl,
-    int64_t /* time */,
+    int64_t time,
     const KeeperContext & keeper_context)
 {
     if (Coordination::matchPath(zk_request.path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
@@ -1840,6 +1884,10 @@ Coordination::Error preprocess(
         return Coordination::Error::ZBADARGUMENTS;
     }
 
+    /// The internal TTL garbage collector session has no ACLs and is server-issued;
+    /// it must be allowed to expire a node regardless of user-level Delete ACLs.
+    const bool is_ttl_gc_remove = zk_request.try_remove && session_id == keeper_internal_ttl_garbage_collector_session_id;
+
     auto parent_path = Coordination::parentNodePath(zk_request.path);
     auto parent_node_ref = storage.uncommitted_state.getNode(parent_path);
     auto parent_node = parent_node_ref.get();
@@ -1847,7 +1895,7 @@ Coordination::Error preprocess(
     if (!parent_node)
         return zk_request.try_remove ? Coordination::Error::ZOK : Coordination::Error::ZNONODE;
 
-    if (check_acl && !storage.checkACL(parent_node->acl_id, Coordination::ACL::Delete, session_id, /*committed=*/ false))
+    if (check_acl && !is_ttl_gc_remove && !storage.checkACL(parent_node->acl_id, Coordination::ACL::Delete, session_id, /*committed=*/ false))
         return Coordination::Error::ZNOAUTH;
 
     NodeStats new_parent_stats = parent_node->stats;
@@ -1873,7 +1921,7 @@ Coordination::Error preprocess(
         return Coordination::Error::ZNONODE;
     }
 
-    if (check_acl &&
+    if (check_acl && !is_ttl_gc_remove &&
         storage.keeper_context->getCoordinationSettings()[CoordinationSetting::check_node_acl_on_remove] &&
         !storage.checkACL(node->acl_id, Coordination::ACL::Delete, session_id, /*committed=*/ false))
         return Coordination::Error::ZNOAUTH;
@@ -1884,6 +1932,14 @@ Coordination::Error preprocess(
             return {};
 
         return Coordination::Error::ZBADVERSION;
+    }
+    /// ZK `deleteContainer` semantics: re-check the node is still a TTL node and
+    /// still expired. Catches delete+recreate (same version=0) and Set-refreshed
+    /// destroy_time, which the plain version check above misses.
+    if (is_ttl_gc_remove)
+    {
+        if (!node->stats.isTTL() || time < node->stats.destroyTime())
+            return {};
     }
     if (node->numChildren() != 0)
     {
@@ -3470,8 +3526,9 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
 
     KeeperResponsesForSessions results;
 
-    /// ZooKeeper update sessions expirity for each request, not only for heartbeats
-    session_expiry_queue.addNewSessionOrUpdate(session_id, session_and_timeout[session_id]);
+    /// ZooKeeper update sessions expiry for each request, not only for heartbeats.
+    if (session_id >= 0)
+        session_expiry_queue.addNewSessionOrUpdate(session_id, session_and_timeout[session_id]);
 
     if (zk_request->getOpNum() == Coordination::OpNum::Close) /// Close request is special
     {
@@ -3962,6 +4019,48 @@ uint64_t KeeperStorage<Container>::getNodesCount() const
     return container.size();
 }
 
+
+template<typename Container>
+std::vector<std::pair<std::string, Int32>> KeeperStorage<Container>::collectExpiredTTLPaths(int64_t now_ms, size_t batch_size) const
+{
+    std::vector<String> expired_nodes;
+    std::unordered_map<String, Int32> versions;
+
+    {
+        /// `ttl_paths` and `container` are mutated by commit under exclusive
+        /// `storage_mutex`. Take it shared to read them consistently.
+        SharedLockGuard storage_lock(storage_mutex);
+
+        for (const auto & ttl_path : ttl_paths)
+        {
+            auto node_it = container.find(ttl_path);
+            if (node_it == container.end())
+                continue;
+            const Node & node = node_it->value;
+            if (node.stats.isTTL() && now_ms >= node.stats.destroyTime())
+            {
+                expired_nodes.push_back(ttl_path);
+                versions[ttl_path] = node.stats.version;
+            }
+            if (expired_nodes.size() >= batch_size)
+                break;
+        }
+    }
+
+    std::vector<std::pair<std::string, Int32>> result;
+    result.reserve(expired_nodes.size());
+    for (auto & path : expired_nodes)
+        result.emplace_back(std::move(path), versions.at(path));
+    return result;
+}
+
+template<typename Container>
+bool KeeperStorage<Container>::containsTTLPath(const std::string & path) const
+{
+    SharedLockGuard storage_lock(storage_mutex);
+    return ttl_paths.contains(path);
+}
+
 template<typename Container>
 uint64_t KeeperStorage<Container>::getApproximateDataSize() const
 {
@@ -4149,6 +4248,8 @@ void KeeperStorage<Container>::updateStats()
     stats.session_with_ephemeral_nodes_count.store(getSessionWithEphemeralNodesCount(), std::memory_order_relaxed);
     stats.total_emphemeral_nodes_count.store(getTotalEphemeralNodesCount(), std::memory_order_relaxed);
     stats.last_zxid.store(getZXID(), std::memory_order_relaxed);
+
+    CurrentMetrics::set(CurrentMetrics::KeeperTTLNodes, committed_ttl_nodes.load());
 }
 
 const KeeperStorageStats & KeeperStorageBase::getStorageStats() const
@@ -4415,7 +4516,7 @@ void KeeperStorage<Container>::prepareCreateNode(
     std::string_view parent_path, UncommittedNodeRef parent,
     const NodeStats & new_parent_stats, int32_t new_parent_num_children,
     std::string_view path, UncommittedNodeRef node, const Coordination::Stat & stat,
-    ACLId acl_id, std::string_view data)
+    ACLId acl_id, std::string_view data, std::optional<int64_t> ttl)
 {
     /// (prepareCreateNode combines parent node update and new node creation. Currently these
     ///  operations are independent here, and we could equally well remove the parent update from
@@ -4434,7 +4535,7 @@ void KeeperStorage<Container>::prepareCreateNode(
     staging_deltas.emplace_back(
         std::string{path},
         staging_zxid,
-        CreateNodeDelta{stat, acl_id, std::string{data}});
+        CreateNodeDelta{stat, acl_id, std::string{data}, ttl});
 
     auto node_it = *node.it;
     chassert(!node_it->second.node);
@@ -4443,6 +4544,8 @@ void KeeperStorage<Container>::prepareCreateNode(
     node_ptr->copyStats(stat);
     node_ptr->setData(String{data});
     node_ptr->acl_id = acl_id;
+    if (ttl)
+        node_ptr->stats.setTTL(*ttl);
 }
 
 template<typename Container>
