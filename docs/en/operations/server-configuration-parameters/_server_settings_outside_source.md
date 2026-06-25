@@ -142,6 +142,10 @@ A value of `0` (the default) means no limit, preserving the previous behavior. A
 <max_concurrent_bcrypt_authentications>0</max_concurrent_bcrypt_authentications>
 ```
 
+:::note
+Like [`bcrypt_workfactor`](#bcrypt_workfactor), this setting is read once at server startup and is not re-applied by `SYSTEM RELOAD CONFIG`. A server restart is required for a change to take effect.
+:::
+
 ## table_engines_require_grant {#table_engines_require_grant}
 
 If set to true, users require a grant to create a table with a specific engine e.g. `GRANT TABLE ENGINE ON TinyLog to user`.
