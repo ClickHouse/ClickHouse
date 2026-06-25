@@ -331,8 +331,6 @@ static SkipIndexClearFiles getClearIndexFilesToClear(
         part->getDataPartStorage());
 }
 
-}
-
 /// Manages the "rows_sources" temporary file that is used during vertical merge.
 class RowsSourcesTemporaryFile : public ITemporaryFileLookup
 {
