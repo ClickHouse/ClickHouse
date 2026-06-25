@@ -141,10 +141,26 @@ function configure
     fi
 }
 
+# PR builds compile with -g0 (DISABLE_ALL_DEBUG_SYMBOLS), so the patched (right)
+# binary has no DWARF and symbolizes addresses differently from the reference
+# (left, master) build that keeps debug info, which makes flamegraph tooling fail
+# to match the frames. Strip the reference to match. Merge-to-master keeps debug
+# info on both sides; detect it on the patched binary and skip. Both binaries are
+# already decompressed here (configure ran the reference, install the patched).
+function match_reference_debug_info
+{
+    if readelf -S right/clickhouse | grep -q '\.debug_info'; then
+        return
+    fi
+    strip --strip-debug left/clickhouse
+}
+
 function restart
 {
     while pkill -f clickhouse-serv ; do echo . ; sleep 1 ; done
     echo all killed
+
+    match_reference_debug_info
 
     set -m # Spawn servers in their own process groups
 
