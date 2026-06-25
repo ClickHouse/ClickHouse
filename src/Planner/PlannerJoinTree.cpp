@@ -1630,6 +1630,21 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             read_context->setSetting("max_result_bytes", Field(0));
                             read_context->setSetting("extremes", Field(false));
 
+                            /// Disable the GROUP BY / DISTINCT / LIMIT BY sharding-key aggregation
+                            /// optimization (optimize_distributed_group_by_sharding_key) for this read.
+                            /// StorageDistributed::getOptimizedQueryProcessingStageAnalyzer compares the
+                            /// shipped query's GROUP BY columns with the underlying table's sharding key
+                            /// by name; when it matches it returns the Complete stage and skips the
+                            /// coordinator merge. After inlining, a view that rewrites the sharding-key
+                            /// column but keeps its name (e.g. `SELECT intDiv(id, 2) AS id FROM dist`,
+                            /// sharded by `id`) would fool that name comparison: the view-output group can
+                            /// span multiple shards, so skipping the merge returns per-shard partial
+                            /// groups instead of one merged group. Clearing filter_actions_dag above only
+                            /// handles shard pruning, not this stage decision, so disable the optimization
+                            /// here to force the merge. The pushdown still ships the GROUP BY to the shards
+                            /// (partial aggregation); only the unsafe merge-skipping is suppressed.
+                            read_context->setSetting("optimize_distributed_group_by_sharding_key", Field(false));
+
                             /// StorageDistributed::read rewrites the shard query using
                             /// table_expression_query_info.planner_context's query context (see
                             /// buildQueryTreeForShard); rewrites such as ReplaceLongConstWithScalar
