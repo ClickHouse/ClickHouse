@@ -1091,7 +1091,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
     }
     else if (serialization_version.value == SerializationVersion::MAP_WITH_BUCKETS)
     {
-        std::vector<ColumnPtr> shared_data_buckets(buckets);
+        Columns shared_data_buckets(buckets);
         for (size_t bucket = 0; bucket != buckets; ++bucket)
         {
             settings.path.push_back(Substream::Bucket);

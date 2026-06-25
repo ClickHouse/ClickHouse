@@ -20,7 +20,6 @@ from .flight_sql_client import (
 
 
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path
-from helpers.test_tools import TSV
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
