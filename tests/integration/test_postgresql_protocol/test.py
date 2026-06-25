@@ -432,12 +432,16 @@ def test_execute_no_sql_injection(started_cluster):
     cur.execute("EXECUTE by_name('alice');")
     assert cur.fetchall() == [(1,)]
 
-    # Injection attempt: the argument must be re-quoted as one string literal,
-    # so the UNION never executes and the secret table is not read.
+    # The vulnerable shape: the prepared body wraps the placeholder in quotes
+    # (WHERE name = '$1'), exactly how a client expects to pass a string. The
+    # argument must be escaped before substitution; otherwise a doubled quote
+    # closes the literal and the UNION leaks the secret table.
+    cur.execute("PREPARE by_name_q AS SELECT id FROM exec_users WHERE name = '$1';")
     cur.execute(
-        "EXECUTE by_name('x'' UNION ALL SELECT secret FROM exec_secret -- ');"
+        "EXECUTE by_name_q('bob'' UNION ALL SELECT secret FROM exec_secret -- ');"
     )
-    assert cur.fetchall() == []
+    rows = cur.fetchall()
+    assert ("TOP_SECRET",) not in rows
 
     # An argument containing a single quote round-trips as data.
     cur.execute("PREPARE echo_one AS SELECT $1 AS v;")
@@ -446,6 +450,7 @@ def test_execute_no_sql_injection(started_cluster):
 
     cur.execute("DEALLOCATE by_id;")
     cur.execute("DEALLOCATE by_name;")
+    cur.execute("DEALLOCATE by_name_q;")
     cur.execute("DEALLOCATE echo_one;")
     cur.execute("DROP TABLE exec_users;")
     cur.execute("DROP TABLE exec_secret;")
