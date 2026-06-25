@@ -6,7 +6,6 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Backups/SettingsFieldOptionalUUID.h>
-#include <Common/FieldVisitorToString.h>
 
 
 namespace DB
@@ -174,8 +173,10 @@ std::map<String, String> BackupSettings::getSerializedSettings() const
 {
     std::map<String, String> res;
 
+    /// Serialize via the setting field's own `toString` (the canonical representation, consistent with
+    /// `system.query_log.Settings` and `engine_settings`) rather than going through `FieldVisitorToString`.
 #define SERIALIZE_BACKUP_SETTING(TYPE, NAME) \
-    res[#NAME] = convertFieldToString(static_cast<Field>(SettingField##TYPE{NAME}));
+    res[#NAME] = SettingField##TYPE{NAME}.toString();
 
     LIST_OF_BACKUP_SETTINGS(SERIALIZE_BACKUP_SETTING)
 #undef SERIALIZE_BACKUP_SETTING

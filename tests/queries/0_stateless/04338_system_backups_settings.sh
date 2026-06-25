@@ -30,3 +30,16 @@ select
     length(engine_settings)
 from system.backups where name='Disk(\'backups\', \'$backup_id\')'
 "
+
+# String-valued settings are stored verbatim, without SQL-literal quoting: the value of
+# 'compression_method' must equal zstd (not the quoted literal 'zstd'), so the equality holds.
+backup_zip="Disk('backups', '${backup_id}.zip')";
+${CLICKHOUSE_CLIENT} --query "
+backup table ${CLICKHOUSE_DATABASE}.\`04338_t\` to $backup_zip
+settings compression_method='zstd';
+" | grep -o "BACKUP_CREATED"
+
+${CLICKHOUSE_CLIENT} -m --query "
+select settings['compression_method'] = 'zstd'
+from system.backups where name='Disk(\'backups\', \'${backup_id}.zip\')'
+"
