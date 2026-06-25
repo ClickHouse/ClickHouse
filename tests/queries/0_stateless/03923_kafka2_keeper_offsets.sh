@@ -38,13 +38,20 @@ trap 'exit 143' TERM
 # failure path always runs instead of the test silently timing out.
 
 # End offset (high-watermark) of partition 0, i.e. the number of committed
-# records. Returns 0 if the topic is missing or the broker is unreachable.
+# records. On success prints the offset and returns 0. When the offset cannot be
+# read (topic missing, broker unreachable, metadata not yet propagated) it fails
+# closed: prints the rpk output and returns non-zero so the caller retries the
+# read instead of assuming offset 0 (which would re-produce committed ids).
 topic_end_offset() {
-    local v
-    v=$(timeout 10 rpk topic describe "$KAFKA_TOPIC" -p --brokers "$KAFKA_BROKER" 2>/dev/null \
-        | awk '$1=="0" {print $NF}')
-    [[ "$v" =~ ^[0-9]+$ ]] || v=0
-    echo "$v"
+    local out v
+    out=$(timeout 10 rpk topic describe "$KAFKA_TOPIC" -p --brokers "$KAFKA_BROKER" 2>&1)
+    v=$(echo "$out" | awk '$1=="0" {print $NF}')
+    if [[ "$v" =~ ^[0-9]+$ ]]; then
+        echo "$v"
+        return 0
+    fi
+    echo "$out"
+    return 1
 }
 
 # Produce ids [first..last] into the single-partition topic, idempotently.
@@ -56,9 +63,15 @@ topic_end_offset() {
 produce_ids() {
     local first=$1 last=$2 prefix=$3
     local deadline=$((SECONDS + 60))
-    local out hw start
+    local out hw start last_err=""
     while [ "$SECONDS" -lt "$deadline" ]; do
-        hw=$(topic_end_offset)
+        # Fail closed on an unreadable end offset: retry the read without
+        # producing. Treating it as 0 would re-send already-committed ids.
+        if ! hw=$(topic_end_offset); then
+            last_err=$hw
+            sleep 1
+            continue
+        fi
         if [ "$hw" -ge "$last" ]; then
             return 0
         fi
@@ -68,7 +81,7 @@ produce_ids() {
             | timeout 30 rpk topic produce "$KAFKA_TOPIC" --brokers "$KAFKA_BROKER" 2>&1)
         sleep 1
     done
-    echo "Failed to produce ids [$first..$last] within budget. Last rpk output: $out" >&2
+    echo "Failed to produce ids [$first..$last] within budget. Last rpk output: ${out:-$last_err}" >&2
     exit 1
 }
 
