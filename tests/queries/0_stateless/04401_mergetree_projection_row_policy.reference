@@ -1,0 +1,11 @@
+=== baseline: row policy is enforced on a normal SELECT ===
+Alice
+Carol
+=== mergeTreeProjection with a row policy: denied ===
+ACCESS_DENIED
+=== mergeTreeProjection without a row policy: allowed ===
+4
+=== mergeTreeIndex: denied when a requested index column is referenced by the policy ===
+ACCESS_DENIED
+=== mergeTreeIndex: allowed when no requested index column is referenced by the policy ===
+1

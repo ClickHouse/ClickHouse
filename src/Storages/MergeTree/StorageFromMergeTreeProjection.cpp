@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/StorageFromMergeTreeProjection.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
@@ -9,6 +10,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ACCESS_DENIED;
+}
 
 StorageFromMergeTreeProjection::StorageFromMergeTreeProjection(
     StorageID storage_id_, StoragePtr parent_storage_, StorageMetadataPtr parent_metadata_, ProjectionDescriptionRawPtr projection_)
@@ -31,7 +37,19 @@ void StorageFromMergeTreeProjection::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    context->checkAccess(AccessType::SELECT, parent_storage->getStorageID());
+    const auto parent_id = parent_storage->getStorageID();
+    context->checkAccess(AccessType::SELECT, parent_id);
+
+    /// Projection parts hold materialized rows of the parent table, so returning them directly
+    /// would bypass a SELECT row policy on the parent. The policy cannot be re-applied here:
+    /// a projection may aggregate rows or omit the policy's filter columns entirely, so hidden
+    /// rows still leak even when those columns are absent. Deny when a non-trivial policy exists.
+    auto row_policy_filter = context->getRowPolicyFilter(
+        parent_id.getDatabaseName(), parent_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot read from `mergeTreeProjection`: a row policy is applied on table {}, "
+            "and reading projection data directly would bypass it", parent_id.getNameForLogs());
 
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
     const auto & parts = snapshot_data.parts;
