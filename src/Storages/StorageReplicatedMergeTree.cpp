@@ -6813,9 +6813,10 @@ void StorageReplicatedMergeTree::alter(
         /// scope's destructor rolls the new disk back from `DiskSelector` /
         /// `FileCacheFactory`. See `MergeTreeData::changeSettings` and issue #63019.
         DiskFromAST::CustomDiskRegistrationScope disk_scope(query_context);
-        /// Snapshot the live metadata before `changeSettings` mutates `storage_settings`, so the
-        /// failure path can restore it before `disk_scope` rolls the new inline disk back.
-        StorageInMemoryMetadata old_metadata = *metadata_snapshot;
+        /// `metadata_snapshot` already holds the immutable entry-time metadata (kept alive for the
+        /// whole function), so a reference to it is a valid snapshot the failure path restores
+        /// before `disk_scope` rolls the new inline disk back.
+        const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
 
         try
         {
@@ -6871,9 +6872,10 @@ void StorageReplicatedMergeTree::alter(
         /// rolls the new disk back from `DiskSelector` / `FileCacheFactory`. Mirrors the
         /// `isSettingsAlter` branch above. See `MergeTreeData::changeSettings` and issue #63019.
         DiskFromAST::CustomDiskRegistrationScope disk_scope(query_context);
-        /// Snapshot the live metadata before `changeSettings` mutates `storage_settings`, so the
-        /// failure path can restore it before `disk_scope` rolls the new inline disk back.
-        StorageInMemoryMetadata old_metadata = *metadata_snapshot;
+        /// `metadata_snapshot` already holds the immutable entry-time metadata (kept alive for the
+        /// whole function), so a reference to it is a valid snapshot the failure path restores
+        /// before `disk_scope` rolls the new inline disk back.
+        const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
 
         try
         {
