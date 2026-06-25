@@ -80,7 +80,13 @@ jobs:
         shell: bash
         run: |
           if [ ${{ inputs.only-repo }} == "true" ] || [ ${{ inputs.only-docker }} == "true" ]; then
-              git tag -l ${{ inputs.ref }} || { echo "With only-repo/docker option ref must be a valid release tag"; exit 1; }
+              # `git tag -l <ref>` lists matching tags and exits 0 even when none
+              # match, so it does not actually validate the ref. Resolve the ref
+              # as a tag instead and fail closed when it is not one — otherwise an
+              # arbitrary commit could be released to repos/docker, especially now
+              # that recovery runs skip the out-of-order check.
+              git rev-parse --verify --quiet "refs/tags/${{ inputs.ref }}^{commit}" > /dev/null \
+                  || { echo "With only-repo/only-docker option ref must be a valid release tag"; exit 1; }
           fi
           python3 ./tests/ci/create_release.py --prepare-release-info \
             --ref ${{ inputs.ref }} --release-type ${{ inputs.type }} \
