@@ -57,6 +57,7 @@ namespace Setting
 {
     extern const SettingsUInt64 distributed_connections_pool_size;
     extern const SettingsLoadBalancing load_balancing;
+    extern const SettingsString log_comment;
     extern const SettingsBool log_queries;
     extern const SettingsMilliseconds log_queries_min_query_duration_ms;
     extern const SettingsLogQueriesType log_queries_min_type;
@@ -487,6 +488,7 @@ private:
         elem.query_duration_ms = duration_ms;
         elem.query = job.query;
         elem.current_database = job.database;
+        elem.log_comment = settings[Setting::log_comment];
         elem.client_info = job_context->getClientInfo();
         elem.is_internal = true;
 
