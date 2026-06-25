@@ -1,14 +1,9 @@
 # coding: utf-8
 
-import datetime
-import logging
-import math
 import os
-import time
 
 import docker
 import pytest
-from docker.models.containers import Container
 
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
 

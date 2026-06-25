@@ -150,6 +150,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
     std::unordered_set<Type> queries_with_on_cluster_at_end = {
         Type::CLEAR_FILESYSTEM_CACHE,
+        Type::CLEAR_DISTRIBUTED_CACHE,
         Type::SYNC_FILESYSTEM_CACHE,
         Type::CLEAR_QUERY_CACHE,
     };
@@ -361,7 +362,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             if (distributed_cache_drop_connections)
                 print_keyword(" CONNECTIONS");
             else if (!distributed_cache_server_id.empty())
-                ostr << " " << distributed_cache_server_id;
+                ostr << " " << quoteString(distributed_cache_server_id);
             break;
         }
         case Type::CLEAR_QUERY_CACHE:
