@@ -878,19 +878,16 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
     return result;
 }
 
-VectorWithMemoryTracking<String> DatabaseDataLake::getAllTableNames(ContextPtr /*context*/) const
+Strings DatabaseDataLake::getAllTableNames(ContextPtr /*context*/) const
 {
-    VectorWithMemoryTracking<String> result;
+    Strings result;
 
     /// Do not throw here, because this is called from the typo-hint path
     /// (IDatabase::getTable -> TableNameHints -> getAllRegisteredNames) which
     /// must not fail even when the catalog is temporarily unreachable.
     try
     {
-        Names tables = getCatalog()->getTables();
-        result.reserve(tables.size());
-        for (auto & table : tables)
-            result.push_back(std::move(table));
+        result = getCatalog()->getTables();
     }
     catch (...)
     {

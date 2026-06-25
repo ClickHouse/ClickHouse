@@ -161,24 +161,6 @@ To exit the client, press `Ctrl+D`, or enter one of the following instead of a q
 - `q`, `Q` or `:q`
 - `logout` or `logout;`
 
-### Getting help {#getting-help}
-
-You can look up the documentation of any function, table engine, data type, format, setting and other component of the system without leaving the client. Enter `help` followed by a name (the equivalent forms `/help`, `man` and `/man` also work):
-
-```text
-help domainWithoutWWW
-```
-
-The lookup is case-insensitive and queries the [`system.documentation`](../operations/system-tables/documentation.md) table. The matching documentation is rendered from Markdown in the terminal, with bold/italic text, tables, and syntax-highlighted code blocks. When a name is shared by several components (for example `file`, which is both a function and a table engine), all of them are shown.
-
-When nothing matches exactly, the client lists similar names (allowing for typos) and the components whose documentation mentions the word:
-
-```text
-help maxx_threads
-```
-
-Entering `help` on its own prints a short usage summary.
-
 ### Query processing information {#processing-info}
 
 When processing a query, the client shows:
@@ -468,9 +450,7 @@ For more control over AI settings, configure them in your ClickHouse Client conf
             <enable_schema_access>true</enable_schema_access>
 
             <!-- Generation parameters -->
-            <!-- Optional: temperature is only sent to the model when set here.
-                 It is omitted by default because some models reject this parameter. -->
-            <!-- <temperature>0.0</temperature> -->
+            <temperature>0.0</temperature>
             <max_tokens>1000</max_tokens>
             <timeout_seconds>30</timeout_seconds>
             <max_steps>10</max_steps>
@@ -500,9 +480,7 @@ For more control over AI settings, configure them in your ClickHouse Client conf
       enable_schema_access: true
 
       # Generation parameters
-      # temperature is only sent to the model when set here; omitted by default
-      # because some models reject this parameter.
-      # temperature: 0.0    # Controls randomness (0.0 = deterministic)
+      temperature: 0.0      # Controls randomness (0.0 = deterministic)
       max_tokens: 1000      # Maximum response length
       timeout_seconds: 30   # Request timeout
       max_steps: 10         # Maximum schema exploration steps
@@ -587,7 +565,7 @@ ai:
 <details>
 <summary>Generation parameters</summary>
 
-- `temperature` - Controls randomness, 0.0 = deterministic, 1.0 = creative. Omitted by default and only sent to the model when explicitly set, because some models reject this parameter.
+- `temperature` - Controls randomness, 0.0 = deterministic, 1.0 = creative (default: `0.0`)
 - `max_tokens` - Maximum response length in tokens (default: `1000`)
 - `system_prompt` - Custom instructions for the AI (optional)
 

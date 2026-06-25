@@ -2232,7 +2232,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     if (index_helper->isTextIndex())
     {
         MergeTreeIndexGranulePtr granule;
-        reader.read(0, condition.get(), granule, all_match ? nullptr : &ranges);
+        reader.read(0, condition.get(), granule);
         auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
 
         for (const auto & range : ranges)
@@ -2326,7 +2326,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
             {
                 if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 {
-                    reader.read(index_mark, condition.get(), granule, /*readable_ranges=*/ nullptr);
+                    reader.read(index_mark, condition.get(), granule);
                 }
 
                 if (index_helper->isVectorSimilarityIndex())

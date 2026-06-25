@@ -107,9 +107,9 @@ void MySQLSettings::loadFromQueryContext(ContextPtr context, ASTStorage & storag
     }
 }
 
-VectorWithMemoryTracking<std::string_view> MySQLSettings::getAllRegisteredNames() const
+std::vector<std::string_view> MySQLSettings::getAllRegisteredNames() const
 {
-    VectorWithMemoryTracking<std::string_view> all_settings;
+    std::vector<std::string_view> all_settings;
     for (const auto & setting_field : impl->all())
         all_settings.push_back(setting_field.getName());
     return all_settings;

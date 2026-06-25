@@ -44,11 +44,6 @@ class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 class ProcessListEntry;
 
-/// Forward-declare to avoid pulling the whole scheduler stack into every TU that includes this header.
-/// The unique_ptr destructor is instantiated only in ProcessList.cpp where MemoryReservation.h is included.
-struct MemoryReservation;
-using MemoryReservationPtr = std::unique_ptr<MemoryReservation>;
-
 enum CancelReason
 {
     UNDEFINED,
@@ -106,9 +101,8 @@ protected:
     UInt64 normalized_query_hash;
     ClientInfo client_info;
 
-    /// Acquired workload resources
+    /// Query slot scheduling for workloads
     QuerySlotPtr query_slot;
-    MemoryReservationPtr memory_reservation;
 
     /// Info about all threads involved in query execution
     ThreadGroupPtr thread_group;
@@ -211,7 +205,6 @@ public:
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_,
         QuerySlotPtr && query_slot_,
-        MemoryReservationPtr && memory_reservation_,
         ThreadGroupPtr && thread_group_,
         IAST::QueryKind query_kind_,
         const Settings & query_settings_,
@@ -238,11 +231,6 @@ public:
     ThrottlerPtr getUserNetworkThrottler();
 
     MemoryTracker * getMemoryTracker() const;
-
-    MemoryReservation * getMemoryReservation() const
-    {
-        return memory_reservation.get();
-    }
 
     bool hasThreadGroup() const
     {
@@ -293,8 +281,8 @@ public:
         return is_internal;
     }
 
-    /// Manually release all acquired workload resources.
-    void releaseWorkloadResources();
+    /// Manually release query slot (if any).
+    void releaseQuerySlot() { query_slot.reset(); }
 };
 
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;

@@ -81,7 +81,6 @@ void moveChangelogBetweenDisks(
                     description->disk = disk_to;
                     description->path = path_to;
                 });
-            return true;
         },
         getLogger("Changelog"),
         keeper_context);
