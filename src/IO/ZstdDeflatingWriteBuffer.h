@@ -43,14 +43,14 @@ private:
     /// Flush all pending data and write zstd footer to the underlying buffer.
     /// After the first call to this function, subsequent calls will have no effect and
     /// an attempt to write to this buffer will result in exception.
-    void finalFlushBefore() override;
-    void finalFlushAfter() override;
+    void finalizeBefore() override;
+    void finalizeAfter() override;
 
     void flush(ZSTD_EndDirective mode);
 
-    ZSTD_CCtx * cctx{};
-    ZSTD_inBuffer input{};
-    ZSTD_outBuffer output{};
+    ZSTD_CCtx * cctx;
+    ZSTD_inBuffer input;
+    ZSTD_outBuffer output;
 
     size_t total_out = 0;
     bool compress_empty = true;

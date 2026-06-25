@@ -3,7 +3,6 @@
 #include <Disks/TemporaryFileOnDisk.h>
 
 #include <fcntl.h>
-#include <Common/ErrnoException.h>
 
 
 namespace DB

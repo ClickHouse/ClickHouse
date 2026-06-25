@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 from os import path as p
 from pathlib import Path
 from time import sleep
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, Callable, List, Optional, Tuple, Union
 
 import github
 import requests
@@ -137,8 +137,6 @@ class GitHub(github.Github):
             order="asc",
             label="release",
         )
-        # All PRs should belong to the repo_name
-        prs = [pr for pr in prs if pr.head.repo.full_name == repo_name]
         # Ensure that the answer from GitHub is correct (we should always have some releases)
         assert prs
         return prs

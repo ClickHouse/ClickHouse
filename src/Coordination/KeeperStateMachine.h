@@ -4,12 +4,10 @@
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Coordination/KeeperContext.h>
 #include <Common/SharedMutex.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <base/defines.h>
 #include <libnuraft/nuraft.hxx>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <optional>
 
 namespace DB
 {
@@ -17,22 +15,10 @@ class ResponseForSession;
 
 struct CoordinationSettings;
 using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
-using KeeperResponseCallback = std::function<void(KeeperResponseForSession)>; // noexcept
+using ResponsesQueue = ConcurrentBoundedQueue<KeeperResponseForSession>;
 using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 
 struct KeeperStorageStats;
-class KeeperLogStore;
-
-struct ISnapshotLoader;
-
-struct KeeperSnapshotStatus
-{
-    uint64_t last_log_index;
-    String path;
-    DiskPtr disk;
-    SnapshotFileInfoPtr pin;
-    bool is_received;
-};
 
 class IKeeperStateMachine : public nuraft::state_machine
 {
@@ -40,7 +26,7 @@ public:
     using CommitCallback = std::function<void(uint64_t, const KeeperRequestForSession &)>;
 
     IKeeperStateMachine(
-        KeeperResponseCallback response_callback_,
+        ResponsesQueue & responses_queue_,
         SnapshotsQueue & snapshots_queue_,
         const KeeperContextPtr & keeper_context_,
         KeeperSnapshotManagerS3 * snapshot_manager_s3_,
@@ -50,16 +36,12 @@ public:
     /// Read state from the latest snapshot
     virtual void init() = 0;
 
-    void setLogStore(KeeperLogStore * log_store_);
-    KeeperLogStore * getLogStore() { return log_store; }
-
     enum ZooKeeperLogSerializationVersion
     {
         INITIAL = 0,
         WITH_TIME = 1,
         WITH_ZXID_DIGEST = 2,
         WITH_XID_64 = 3,
-        WITH_OPTIONAL_TRACING_CONTEXT = 4,
     };
 
     /// lifetime of a parsed request is:
@@ -78,7 +60,7 @@ public:
 
     static nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(const KeeperRequestForSession & request_for_session);
 
-    virtual std::optional<KeeperDigest> preprocess(const KeeperRequestForSession & request_for_session, bool lock_mutex) = 0;
+    virtual std::optional<KeeperDigest> preprocess(const KeeperRequestForSession & request_for_session) = 0;
 
     void commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf) override; /// NOLINT
 
@@ -101,13 +83,11 @@ public:
     int read_logical_snp_obj(
         nuraft::snapshot & s, void *& user_snp_ctx, uint64_t obj_id, nuraft::ptr<nuraft::buffer> & data_out, bool & is_last_obj) override;
 
-    void free_user_snp_ctx(void *& user_snp_ctx) override;
-
     virtual void shutdownStorage() = 0;
 
     ClusterConfigPtr getClusterConfig() const;
 
-    virtual void processReadRequests(const KeeperRequestsForSessions & requests) = 0;
+    virtual void processReadRequest(const KeeperRequestForSession & request_for_session) = 0;
 
     virtual std::vector<int64_t> getDeadSessions() = 0;
 
@@ -116,9 +96,9 @@ public:
     virtual KeeperDigest getNodesDigest() const = 0;
 
     /// Introspection functions for 4lw commands
-    virtual int64_t getLastProcessedZxid() const = 0;
+    virtual uint64_t getLastProcessedZxid() const = 0;
 
-    virtual KeeperStorageStats getStorageStats() const = 0;
+    virtual const KeeperStorageStats & getStorageStats() const = 0;
 
     virtual uint64_t getNodesCount() const = 0;
     virtual uint64_t getTotalWatchesCount() const = 0;
@@ -138,57 +118,20 @@ public:
     virtual void recalculateStorageStats() = 0;
 
     virtual void reconfigure(const KeeperRequestForSession& request_for_session) = 0;
-    virtual std::vector<std::pair<std::string, Int32>> getExpiredTTLPathsForGarbageCollector(size_t batch_size) const = 0;
-
-    virtual std::vector<KeeperSnapshotStatus> getSnapshotsStatus() const = 0;
-
-    /// Return a pin for `log_idx`, or `nullptr` if absent. The pin defers
-    /// unlink and cross-disk moves until the transfer releases it.
-    /// Caller must hold `snapshots_lock`.
-    virtual SnapshotFileInfoPtr getSnapshotPinUnlocked(uint64_t log_idx) const TSA_REQUIRES(snapshots_lock) = 0;
-
-    /// Call after loading `storage` from snapshot.
-    /// Does preprocessRequest on log entries to populate storage's UncommittedState.
-    virtual void preprocessUncommittedLogEntries(uint64_t start_idx, uint64_t end_idx, bool lock_mutex) = 0;
 
 protected:
     CommitCallback commit_callback;
-
-    /// Monotonic high-water mark reported to NuRaft via `last_snapshot`. Advanced only via
-    /// `advanceLatestSnapshotMeta`; never regresses; retention pins its registry entry.
-    /// A saved-but-not-applied install does not advance it, so the manager's map max may
-    /// exceed it; `init` adopts the newest disk snapshot.
+    /// In our state machine we always have a single snapshot which is stored
+    /// in memory in compressed (serialized) format.
     SnapshotMetadataPtr latest_snapshot_meta TSA_GUARDED_BY(snapshots_lock) = nullptr;
-
-    /// Per-install context: stamped by the `save_logical_snp_obj` tail, validated and
-    /// consumed by the matching `apply_snapshot` on every exit (identity =
-    /// (last_log_idx, last_log_term)). May move to ANY index — a lower-index re-install
-    /// after leadership churn is valid. A lingering value is harmless; the next stamp
-    /// overwrites it.
-    SnapshotMetadataPtr pending_snapshot_to_apply TSA_GUARDED_BY(snapshots_lock) = nullptr;
-
-    /// Follower snapshot receive context.
-    /// Kept for the duration of snapshot transfer, reset on completion/error.
-    std::unique_ptr<SnapshotReceiveCtx> snapshot_receive_ctx TSA_GUARDED_BY(snapshots_lock);
-
-    /// Leader snapshot loader info, stored only in case of remote disk.
-    /// Shared across concurrent followers transferring the same snapshot.
-    /// Reset when a new snapshot is created or when the loader encounters an error.
-    std::shared_ptr<ISnapshotLoader> snapshot_loader_info TSA_GUARDED_BY(snapshots_lock);
-
-    /// `log_idx` for the cached remote `snapshot_loader_info`.
-    /// Requests for a different retained snapshot reset the cache.
-    uint64_t snapshot_loader_info_log_idx TSA_GUARDED_BY(snapshots_lock) = 0;
-
-    /// Cached size of the newest REGISTERED snapshot (the manager's map max). Updated under
-    /// `snapshots_lock` only when the written index is the map max; read lock-free by
-    /// `getLatestSnapshotSize` (`mntr`). Stale values self-correct on the next snapshot.
-    std::atomic<uint64_t> latest_snapshot_size{0};
+    std::shared_ptr<SnapshotFileInfo> latest_snapshot_info TSA_GUARDED_BY(snapshots_lock);
+    nuraft::ptr<nuraft::buffer> latest_snapshot_buf TSA_GUARDED_BY(snapshots_lock) = nullptr;
 
     CoordinationSettingsPtr coordination_settings;
 
-    /// Function to put processed responses into a queue for sending to the client.
-    KeeperResponseCallback response_callback;
+    /// Save/Load and Serialize/Deserialize logic for snapshots.
+    /// Put processed responses into this queue
+    ResponsesQueue & responses_queue;
 
     /// Snapshots to create by snapshot thread
     SnapshotsQueue & snapshots_queue;
@@ -199,8 +142,8 @@ protected:
     /// Lock for the storage
     /// Storage works in thread-safe way ONLY for preprocessing/processing
     /// In any other case, unique storage lock needs to be taken
-    mutable SharedMutex state_machine_storage_mutex;
-    /// Lock for processing and response_callback. It's important to process requests
+    mutable SharedMutex storage_mutex;
+    /// Lock for processing and responses_queue. It's important to process requests
     /// and push them to the responses queue while holding this lock. Otherwise
     /// we can get strange cases when, for example client send read request with
     /// watch and after that receive watch response and only receive response
@@ -230,8 +173,6 @@ protected:
 
     KeeperSnapshotManagerS3 * snapshot_manager_s3;
 
-    KeeperLogStore * log_store = nullptr;
-
     virtual KeeperResponseForSession processReconfiguration(const KeeperRequestForSession & request_for_session)
         = 0;
 };
@@ -243,8 +184,9 @@ class KeeperStateMachine : public IKeeperStateMachine
 {
 public:
     KeeperStateMachine(
-        KeeperResponseCallback response_callback_,
+        ResponsesQueue & responses_queue_,
         SnapshotsQueue & snapshots_queue_,
+        /// const CoordinationSettingsPtr & coordination_settings_,
         const KeeperContextPtr & keeper_context_,
         KeeperSnapshotManagerS3 * snapshot_manager_s3_,
         CommitCallback commit_callback_ = {},
@@ -253,7 +195,7 @@ public:
     /// Read state from the latest snapshot
     void init() override;
 
-    std::optional<KeeperDigest> preprocess(const KeeperRequestForSession & request_for_session, bool lock_mutex) override;
+    std::optional<KeeperDigest> preprocess(const KeeperRequestForSession & request_for_session) override;
 
     nuraft::ptr<nuraft::buffer> pre_commit(uint64_t log_idx, nuraft::buffer & data) override;
 
@@ -277,14 +219,13 @@ public:
     // in a reasonable way.
     Storage & getStorageUnsafe()
     {
-        chassert(storage);
         return *storage;
     }
 
     void shutdownStorage() override;
 
-    /// Process local read requests
-    void processReadRequests(const KeeperRequestsForSessions & requests) override;
+    /// Process local read request
+    void processReadRequest(const KeeperRequestForSession & request_for_session) override;
 
     std::vector<int64_t> getDeadSessions() override;
 
@@ -293,9 +234,9 @@ public:
     KeeperDigest getNodesDigest() const override;
 
     /// Introspection functions for 4lw commands
-    int64_t getLastProcessedZxid() const override;
+    uint64_t getLastProcessedZxid() const override;
 
-    KeeperStorageStats getStorageStats() const override;
+    const KeeperStorageStats & getStorageStats() const override;
 
     uint64_t getNodesCount() const override;
     uint64_t getTotalWatchesCount() const override;
@@ -315,56 +256,13 @@ public:
     void recalculateStorageStats() override;
 
     void reconfigure(const KeeperRequestForSession& request_for_session) override;
-    std::vector<std::pair<std::string, Int32>> getExpiredTTLPathsForGarbageCollector(size_t batch_size) const override;
-
-    std::vector<KeeperSnapshotStatus> getSnapshotsStatus() const override;
-
-    /// Cancel an in-progress snapshot receive: remove partial files and reset the context.
-    void cancelIfHasUnfinishedSnapshotReceive() TSA_REQUIRES(snapshots_lock);
-
-    SnapshotFileInfoPtr getSnapshotPinUnlocked(uint64_t log_idx) const override TSA_REQUIRES(snapshots_lock);
-
-    void preprocessUncommittedLogEntries(uint64_t start_idx, uint64_t end_idx, bool lock_mutex) override;
 
 private:
-    struct DetachedSnapshotReceiveFiles
-    {
-        DiskPtr disk;
-        std::string snapshot_file_name;
-        uint64_t log_idx = 0;
-    };
-
-    std::optional<DetachedSnapshotReceiveFiles> detachUnfinishedSnapshotReceiveForCleanup() TSA_REQUIRES(snapshots_lock);
-    void cleanupDetachedSnapshotReceive(const DetachedSnapshotReceiveFiles & files);
-    void runSnapshotMaintenance(SnapshotMaintenanceTasks && tasks);
-
-    /// Phase 2 of the create task: write+sync under a fresh unique name, outside `snapshots_lock`.
-    SnapshotFileInfoPtr writeSnapshotToDisk(const KeeperStorageSnapshot<Storage> & snapshot);
-
-    struct LocalSnapshotPublishOutcome
-    {
-        SnapshotFileInfoPtr published;       /// entry to report to NuRaft / S3
-        SnapshotFileInfoPtr loser_to_remove; /// retired; unlinked outside the lock when the last ref drops
-        bool won = false;                    /// true iff our written file became the registered entry
-    };
-
-    /// Phase 3: metadata-only publication with adopt-on-conflict. No disk IO.
-    /// Adopt-on-conflict: the caller unlinks loser_to_remove outside the lock.
-    LocalSnapshotPublishOutcome publishWrittenSnapshot(
-        const SnapshotFileInfoPtr & written_file_info,
-        const SnapshotMetadataPtr & written_snapshot_meta,
-        std::optional<uint64_t> written_size) TSA_REQUIRES(snapshots_lock);
-
-    /// Main state machine logic. Swapped by `apply_snapshot` under the exclusive
-    /// storage lock; in-flight create tasks capture their own reference.
-    std::shared_ptr<Storage> storage;
+    /// Main state machine logic
+    std::unique_ptr<Storage> storage;
 
     /// Save/Load and Serialize/Deserialize logic for snapshots.
     KeeperSnapshotManager<Storage> snapshot_manager;
-
-    /// Advance the mark (no-op if older; LOGICAL_ERROR backstop on equal index with a
-    /// different term) and re-point retention protection at its backing snapshot file.
-    void advanceLatestSnapshotMeta(const SnapshotMetadataPtr & candidate) TSA_REQUIRES(snapshots_lock);
 
     KeeperResponseForSession processReconfiguration(const KeeperRequestForSession & request_for_session) override;
 };

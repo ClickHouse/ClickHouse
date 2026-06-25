@@ -106,12 +106,6 @@ inline bool isAlphaNumericASCII(char c)
         || isNumericASCII(c);
 }
 
-inline bool isTokenSeparator(char c)
-{
-    /// `splitByNonAlpha` tokenizer semantics
-    return isASCII(c) && !isAlphaNumericASCII(c);
-}
-
 inline bool isWordCharASCII(char c)
 {
     return isAlphaNumericASCII(c)
@@ -355,7 +349,3 @@ inline bool isValidIdentifier(std::string_view str)
             && toLowerIfAlphaASCII(str[2]) == 'l'
             && toLowerIfAlphaASCII(str[3]) == 'l');
 }
-
-std::tuple<String, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
-
-String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & prefix);

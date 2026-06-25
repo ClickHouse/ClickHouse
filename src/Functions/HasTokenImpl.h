@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnString.h>
 #include <Common/StringSearcher.h>
-#include <Common/StringUtils.h>
 #include <Core/ColumnNumbers.h>
 
 
@@ -14,6 +13,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
 }
 
 /** Token search the string, means that needle must be surrounded by some separator chars, like whitespace or puctuation.
@@ -48,16 +48,7 @@ struct HasTokenImpl
         const UInt8 * const end = haystack_data.data() + haystack_data.size();
         const UInt8 * pos = begin;
 
-        /// Empty pattern is intended to match nothing without exceptions
-        if (pattern.empty())
-        {
-            std::ranges::fill(res, 0);
-            if (res_null)
-                std::ranges::fill(res_null->getData(), false);
-            return;
-        }
-
-        if (std::ranges::any_of(pattern, isTokenSeparator))
+        if (const auto has_separator = std::any_of(pattern.cbegin(), pattern.cend(), isTokenSeparator); has_separator || pattern.empty())
         {
             if (res_null)
             {
@@ -65,7 +56,11 @@ struct HasTokenImpl
                 std::ranges::fill(res_null->getData(), true);
                 return;
             }
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needle must not contain whitespace or separator characters");
+            if (has_separator)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needle must not contain whitespace or separator characters");
+            if (pattern.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needle cannot be empty, because empty string isn't a token");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected internal state");
         }
 
         size_t pattern_size = pattern.size();
@@ -140,6 +135,11 @@ struct HasTokenImpl
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support FixedString haystack argument", name);
     }
 
+private:
+    static bool isTokenSeparator(UInt8 c)
+    {
+        return isASCII(c) && !isAlphaNumericASCII(c);
+    }
 };
 
 }
