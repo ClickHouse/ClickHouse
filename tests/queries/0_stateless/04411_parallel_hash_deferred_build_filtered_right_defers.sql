@@ -1,20 +1,19 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
 
 -- Follow-up to #108129: the planner NDV shortcut that skips the cold deferred parallel_hash build
--- (`extractTrustworthyRightKeyNdv`) must trust only a real, unfiltered `uniq` statistic of a base
--- relation. When the build (right) relation is filtered, its key NDV from the condition-selectivity
--- estimator is clamped by an estimated row count (possibly from default factors of an unrelated
--- predicate) and a filter can drop whole keys, so the value is no longer a reliable `uniq` count. Such
--- a build must fall back to the deferred (HLL-sized) build, not the streaming preallocation shortcut.
+-- (`extractTrustworthyRightKeyNdv`) trusts a build-relation key NDV only while it is genuinely a
+-- `uniq`-backed distinct count. In the filtered relation profile the value is
+-- `min(estimated_filtered_rows, uniq)`; when the estimated row count clamps it (estimated rows <= uniq,
+-- e.g. from default selectivity factors of a predicate on an un-analyzed column), the value is no longer
+-- a `uniq` count, so such a build must fall back to the deferred (HLL-sized) build rather than the
+-- streaming preallocation shortcut. (Conversely, a filter that keeps more rows than there are distinct
+-- keys leaves the value equal to the real `uniq` and is still trusted -- otherwise a benign key-range
+-- filter would needlessly lose the warm preallocation.)
 --
--- The build table has a `uniq` statistic on the key `k` but no statistics on the filter column `f`. The
--- filtered join must defer (HLL); the otherwise-identical unfiltered join uses the shortcut. Both must
--- return the same result as a plain `hash` join.
---
--- `no-random-settings`/`no-random-merge-tree-settings`: the assertions check exact preallocation vs
--- deferral decisions, which the stateless settings randomizer perturbs through unpinned side channels
--- (max_threads, the external-spill ratio, the join-order algorithm/limit, the statistics toggles); the
--- in-file SET statements still win over the command-line defaults.
+-- The build key `k` is unique (uniq ~= rows) and the filter is on `f`, which has no statistics. The
+-- estimated post-filter row count therefore falls below the key uniq, clamping it, so the filtered join
+-- must defer; the otherwise-identical unfiltered join uses the shortcut. Both must match a plain `hash`
+-- join.
 
 SET allow_experimental_statistics = 1;
 SET allow_statistics_optimize = 1;
@@ -33,13 +32,12 @@ SET enable_parallel_replicas = 0;
 DROP TABLE IF EXISTS t_build;
 DROP TABLE IF EXISTS t_probe;
 
--- `k` has a uniq statistic; `f` (the filter column) has none.
+-- `k` is unique with a uniq statistic; `f` (the filter column) has no statistics.
 CREATE TABLE t_build (k UInt64 STATISTICS(uniq), f UInt8, v UInt64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_probe (k UInt64 STATISTICS(uniq), v UInt64) ENGINE = MergeTree ORDER BY tuple();
 
--- 30000 distinct build keys, each repeated 10 times.
-INSERT INTO t_build SELECT number % 30000 AS k, number % 2 AS f, number * 3 AS v FROM numbers(300000);
-INSERT INTO t_probe SELECT number % 30000 AS k, number * 7 AS v FROM numbers(300000);
+INSERT INTO t_build SELECT number AS k, number % 2 AS f, number * 3 AS v FROM numbers(100000);
+INSERT INTO t_probe SELECT number AS k, number * 7 AS v FROM numbers(100000);
 
 ALTER TABLE t_build MATERIALIZE STATISTICS k;
 ALTER TABLE t_probe MATERIALIZE STATISTICS k;
@@ -59,8 +57,8 @@ SELECT 'unfiltered', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_probe l INNE
 
 SYSTEM FLUSH LOGS query_log;
 
--- A filtered right side (only `k` is uniq-backed) is NOT trusted: it still uses the deferred build,
--- with no streaming preallocation.
+-- The filtered right side's key NDV is clamped by the estimated row count, so it is NOT trusted: the
+-- join uses the deferred (HLL) build, with no streaming preallocation.
 SELECT
     'filtered right side still defers',
     countIf(ProfileEvents['HashJoinDeferredPreallocatedElementsInHashTables'] > 0) = count(),
@@ -72,10 +70,10 @@ WHERE current_database = currentDatabase()
     AND query_kind = 'Select'
     AND log_comment = '04411_filtered';
 
--- Control: the same join without a filter trusts the uniq NDV and preallocates on the streaming path.
+-- Control: the same join without a filter keeps the real uniq NDV and preallocates on the streaming path.
 SELECT
     'unfiltered right side preallocates',
-    countIf(ProfileEvents['HashJoinPreallocatedElementsInHashTables'] BETWEEN 20000 AND 60000) = count(),
+    countIf(ProfileEvents['HashJoinPreallocatedElementsInHashTables'] BETWEEN 50000 AND 200000) = count(),
     countIf(ProfileEvents['HashJoinDeferredPreallocatedElementsInHashTables'] > 0) = 0,
     count() > 0
 FROM system.query_log

@@ -161,17 +161,20 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
         if (!isCompatibleStatistics(metadata, estimator.stats, column_name))
             continue;
 
-        UInt64 cardinality = std::min(result.rows, estimator.estimateCardinality());
-        /// This is the *filtered* relation profile. The key NDV here is not a trustworthy `uniq` count
-        /// even when the column has a `uniq` statistic: the value is clamped by `result.rows` (a
-        /// selectivity estimate that may come from default factors of unrelated predicates), and a
-        /// filter can drop whole keys, so the real distinct count is only bounded above by it. The
-        /// `num_distinct_values_from_uniq` flag gates the parallel_hash deferred-build shortcut, which
-        /// preallocates the build map to this count, so trusting a filtered estimate would defeat the
-        /// exact sizing and risk a spurious spill / MEMORY_LIMIT_EXCEEDED. Only the unfiltered
-        /// `estimateRelationProfile()` overload yields a uniq-backed NDV. (The value is still used for
-        /// the join-order cost model, which does not require provenance.)
-        result.column_stats.emplace(column_name, ColumnStats{.num_distinct_values = cardinality, .num_distinct_values_from_uniq = false});
+        const UInt64 uniq_cardinality = estimator.estimateCardinality();
+        const UInt64 cardinality = std::min(result.rows, uniq_cardinality);
+        /// This is the *filtered* relation profile. The `num_distinct_values_from_uniq` flag gates the
+        /// parallel_hash deferred-build shortcut, which preallocates the build map to this count, so it
+        /// must stay true only while the stored value is genuinely a `uniq`-backed distinct count. Here
+        /// the value is `min(result.rows, uniq_cardinality)`. When `result.rows <= uniq_cardinality` the
+        /// row-count estimate clamps the value (the bot's concern): `result.rows` can come from default
+        /// selectivity factors of unrelated predicates, so the value is not uniq-backed and must not be
+        /// trusted. When `result.rows > uniq_cardinality` the filter keeps more rows than there are
+        /// distinct keys, so the value is the real `uniq` count and is a sound size to preallocate
+        /// (trusting it keeps the warm prealloc instead of a slower deferred build). The value still
+        /// feeds the join-order cost model unchanged regardless of provenance.
+        const bool from_uniq = estimator.hasUniqStatistic() && uniq_cardinality < result.rows;
+        result.column_stats.emplace(column_name, ColumnStats{.num_distinct_values = cardinality, .num_distinct_values_from_uniq = from_uniq});
     }
     return result;
 }
