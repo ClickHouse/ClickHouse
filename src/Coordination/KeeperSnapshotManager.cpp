@@ -103,39 +103,38 @@ namespace
         }
     }
 
-    template<typename Node>
-    void writeNode(const Node & node, SnapshotVersion version, WriteBuffer & out)
+    void writeNode(std::string_view data, const KeeperNodeStats & stats, SnapshotVersion version, WriteBuffer & out)
     {
-        writeBinary(node.getData(), out);
+        writeBinary(data, out);
 
         /// Serialize ACL
         if (version >= SnapshotVersion::V7)
-            writeBinary(node.stats.acl_id, out);
+            writeBinary(stats.acl_id, out);
         else
-            writeBinary(static_cast<uint64_t>(node.stats.acl_id), out);
+            writeBinary(static_cast<uint64_t>(stats.acl_id), out);
         /// Write is_sequential for backwards compatibility
         if (version < SnapshotVersion::V6)
             writeBinary(false, out);
 
         /// Serialize stat
-        writeBinary(node.stats.czxid, out);
-        writeBinary(node.stats.mzxid, out);
-        writeBinary(node.stats.ctime, out);
-        writeBinary(node.stats.mtime, out);
-        writeBinary(node.stats.version, out);
-        writeBinary(node.stats.cversion, out);
-        writeBinary(node.stats.aversion, out);
-        writeBinary(node.stats.getEphemeralOwner(), out);
+        writeBinary(stats.czxid, out);
+        writeBinary(stats.mzxid, out);
+        writeBinary(stats.ctime, out);
+        writeBinary(stats.mtime, out);
+        writeBinary(stats.version, out);
+        writeBinary(stats.cversion, out);
+        writeBinary(stats.aversion, out);
+        writeBinary(stats.getEphemeralOwner(), out);
         if (version < SnapshotVersion::V6)
-            writeBinary(static_cast<int32_t>(node.stats.data_size), out);
-        writeBinary(node.stats.getNumChildren(), out);
-        writeBinary(node.stats.pzxid, out);
+            writeBinary(static_cast<int32_t>(stats.data_size), out);
+        writeBinary(stats.getNumChildren(), out);
+        writeBinary(stats.pzxid, out);
 
         if (version >= SnapshotVersion::V7)
-            writeBinary(node.stats.getSeqNum(), out);
+            writeBinary(stats.getSeqNum(), out);
         else
         {
-            auto seq_num = node.stats.getSeqNum();
+            auto seq_num = stats.getSeqNum();
             if (seq_num < std::numeric_limits<int32_t>::min() || seq_num > std::numeric_limits<int32_t>::max())
                 throw Exception(ErrorCodes::KEEPER_EXCEPTION,
                     "Sequential node counter {} overflows int32, upgrade to snapshot version >= V7", seq_num);
@@ -143,13 +142,16 @@ namespace
         }
 
         if (version >= SnapshotVersion::V4 && version <= SnapshotVersion::V5)
-            writeBinary(node.sizeInBytes(), out);
+        {
+            size_t approx_size_in_memory = sizeof(KeeperNodeStats) + stats.data_size + stats.getNumChildren() * 20;
+            writeBinary(approx_size_in_memory, out);
+        }
 
         if (version >= SnapshotVersion::V8)
         {
-            writeBinary(node.stats.isTTL(), out);
-            if (node.stats.isTTL())
-                writeBinary(node.stats.getTTL(), out);
+            writeBinary(stats.isTTL(), out);
+            if (stats.isTTL())
+                writeBinary(stats.getTTL(), out);
         }
     }
 
@@ -224,40 +226,28 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
     }
 
     /// Serialize data tree
-    writeBinary(snapshot.snapshot_container_size - keeper_context->getSystemNodesWithData().size(), out);
-    size_t counter = 0;
-    for (auto it = snapshot.begin; counter < snapshot.snapshot_container_size; ++counter)
+    writeBinary(snapshot.node_stream->node_count - keeper_context->getSystemNodesWithData().size(), out);
+    std::string_view node_path;
+    std::string_view node_data;
+    KeeperNodeStats node_stats;
+    size_t nodes_seen = 0;
+    while (snapshot.node_stream->next(node_path, node_data, node_stats))
     {
-        const auto & path = it->key;
-
+        ++nodes_seen;
         // write only the root system path because of digest
-        if (Coordination::matchPath(path, keeper_system_path) == Coordination::PathMatchResult::IS_CHILD)
-        {
-            if (counter == snapshot.snapshot_container_size - 1)
-                break;
-
-            ++it;
+        if (Coordination::matchPath(node_path, keeper_system_path) == Coordination::PathMatchResult::IS_CHILD)
             continue;
-        }
-
-        const auto & node = it->value;
 
         /// (This is guaranteed because KeeperStorageSnapshot constructor is called with nuraft's
         ///  commit_lock_ held, and therefore storage can't change between when we get storage->zxid
-        ///  and when we call storage->enableSnapshotMode().)
-        if (node.stats.mzxid > snapshot.zxid)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to serialize node with mzxid {}, but last snapshot index {}", node.stats.mzxid, snapshot.zxid);
+        ///  and when we call storage->beginWritingSnapshot().)
+        if (node_stats.mzxid > snapshot.zxid)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to serialize node with mzxid {}, but last snapshot index {}", node_stats.mzxid, snapshot.zxid);
 
-        writeBinary(path, out);
-        writeNode(node, snapshot.version, out);
-
-        /// Last iteration: check and exit here without iterator increment. Otherwise
-        /// false positive race condition on list end is possible.
-        if (counter == snapshot.snapshot_container_size - 1)
-            break;
-
-        ++it;
+        writeBinary(node_path, out);
+        writeNode(node_data, node_stats, snapshot.version, out);
     }
+    chassert(nodes_seen == snapshot.node_stream->node_count);
 
     /// Session must be saved in a sorted order,
     /// otherwise snapshots will be different
@@ -304,11 +294,8 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t 
     , zxid(storage->zxid)
     , nodes_digest(storage->nodes_digest)
 {
-    auto [size, ver] = storage->container.snapshotSizeWithVersion();
-    snapshot_container_size = size;
-    storage->enableSnapshotMode(ver);
-    scope_guard snapshot_mode_guard([&] { storage->disableSnapshotMode(); });
-    begin = storage->getSnapshotIteratorBegin();
+    node_stream = storage->beginWritingSnapshot();
+    scope_guard snapshot_mode_guard([&] { storage->finishWritingSnapshot(std::move(node_stream)); });
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();
     session_and_auth = storage->committed_session_and_auth;
@@ -325,11 +312,8 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(
     , zxid(storage->zxid)
     , nodes_digest(storage->nodes_digest)
 {
-    auto [size, ver] = storage->container.snapshotSizeWithVersion();
-    snapshot_container_size = size;
-    storage->enableSnapshotMode(ver);
-    scope_guard snapshot_mode_guard([&] { storage->disableSnapshotMode(); });
-    begin = storage->getSnapshotIteratorBegin();
+    node_stream = storage->beginWritingSnapshot();
+    scope_guard snapshot_mode_guard([&] { storage->finishWritingSnapshot(std::move(node_stream)); });
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();
     session_and_auth = storage->committed_session_and_auth;
@@ -338,7 +322,8 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(
 
 KeeperStorageSnapshot::~KeeperStorageSnapshot()
 {
-    storage->disableSnapshotMode();
+    if (node_stream)
+        storage->finishWritingSnapshot(std::move(node_stream));
 }
 
 SnapshotFileInfoPtr

@@ -630,6 +630,7 @@ void StorageRunner::runBenchmark()
     Stopwatch period_watch;
     size_t period_idx = 0;
     bool period_had_snapshot = false;
+    std::unique_ptr<DB::KeeperNodeStreamForSnapshot> stream_for_snapshot;
     while (!shutdown.load(std::memory_order_relaxed))
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -649,14 +650,12 @@ void StorageRunner::runBenchmark()
                 std::lock_guard lock(state_machine_storage_mutex);
                 if (snapshot_enabled.load())
                 {
-                    storage->disableSnapshotMode();
-                    storage->clearGarbageAfterSnapshot();
+                    storage->finishWritingSnapshot(std::move(stream_for_snapshot));
                     snapshot_enabled.store(false);
                 }
                 else
                 {
-                    auto version = storage->container.snapshotSizeWithVersion().second;
-                    storage->enableSnapshotMode(version);
+                    stream_for_snapshot = storage->beginWritingSnapshot();
                     snapshot_enabled.store(true);
                 }
             }
@@ -682,8 +681,7 @@ void StorageRunner::runBenchmark()
     /// destructor asserts !snapshot_mode via clearOutdatedNodes.
     if (snapshot_enabled.load())
     {
-        storage->disableSnapshotMode();
-        storage->clearGarbageAfterSnapshot();
+        storage->finishWritingSnapshot(std::move(stream_for_snapshot));
         snapshot_enabled.store(false);
     }
 

@@ -1119,11 +1119,10 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
     /// Guard snapshot cleanup until responsibility transfers to the task.
     bool snapshot_cleanup_transferred = false;
     SCOPE_EXIT({
-        if (!snapshot_cleanup_transferred && snapshot_task.snapshot != nullptr)
+        if (!snapshot_cleanup_transferred)
         {
             KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
             snapshot_task.snapshot = KeeperStorageSnapshotPtr{};
-            captured_storage->clearGarbageAfterSnapshot();
         }
     });
 
@@ -1243,8 +1242,8 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
             /// Destroy snapshot under storage lock against the captured storage (member may differ after `apply_snapshot`).
             KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
             LOG_TRACE(log, "Clearing garbage after snapshot");
-            snapshot.reset(); /// ~KeeperStorageSnapshot -> disableSnapshotMode() on captured storage
-            captured_storage->clearGarbageAfterSnapshot();
+            /// Turn off "snapshot mode" and clear outdated part of storage state
+            snapshot.reset();
             LOG_TRACE(log, "Cleared garbage after snapshot");
         }
 
