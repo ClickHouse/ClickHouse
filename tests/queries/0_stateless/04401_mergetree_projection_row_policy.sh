@@ -20,7 +20,9 @@ INSERT INTO users VALUES (1,'Alice','engineering',100000),(2,'Bob','finance',120
 -- Projection that drops the policy column 'department' on purpose: the column-overlap
 -- heuristic would let it through, but whole-row data still leaks, so the read must be denied.
 ALTER TABLE users ADD PROJECTION proj (SELECT id, name, salary ORDER BY id);
-ALTER TABLE users MATERIALIZE PROJECTION proj;
+-- mutations_sync=2: MATERIALIZE PROJECTION is async by default, so without it the
+-- direct projection read below can race the mutation and see no projection part.
+ALTER TABLE users MATERIALIZE PROJECTION proj SETTINGS mutations_sync = 2;
 OPTIMIZE TABLE users FINAL;
 GRANT SELECT ON ${CLICKHOUSE_DATABASE}.users TO ${user};
 CREATE ROW POLICY rp ON users FOR SELECT USING department = 'engineering' TO ${user};
@@ -40,7 +42,7 @@ ${CLICKHOUSE_CLIENT} -q "
 CREATE TABLE users_open (id UInt64, name String, department String, salary UInt64) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO users_open VALUES (1,'Alice','engineering',100000),(2,'Bob','finance',120000),(3,'Carol','engineering',110000),(4,'Dave','hr',90000);
 ALTER TABLE users_open ADD PROJECTION proj (SELECT id, name, salary ORDER BY id);
-ALTER TABLE users_open MATERIALIZE PROJECTION proj;
+ALTER TABLE users_open MATERIALIZE PROJECTION proj SETTINGS mutations_sync = 2;
 OPTIMIZE TABLE users_open FINAL;
 GRANT SELECT ON ${CLICKHOUSE_DATABASE}.users_open TO ${user};
 "
