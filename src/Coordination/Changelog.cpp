@@ -2466,6 +2466,13 @@ LogEntryStorage::acquireReaderLocked(int32_t peer_id, const LogReadPlan & plan, 
         new_reader->decoded_front_index = plan.start_index;
         per_peer_readers[peer_id] = new_reader;
 
+        // readahead_pool can be null if shutdown() set is_shutdown before this call.
+        if (!readahead_pool)
+        {
+            per_peer_readers.erase(peer_id);
+            return nullptr;
+        }
+
         try
         {
             readahead_pool->scheduleOrThrowOnError([this, new_reader]() mutable { fillTask(new_reader); });

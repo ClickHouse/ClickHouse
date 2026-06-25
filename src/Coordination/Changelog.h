@@ -428,7 +428,7 @@ private:
     /// terms are monotonically increasing so first index is enough
     std::deque<LogTermInfo> log_term_infos;
 
-    bool is_shutdown = false;
+    std::atomic<bool> is_shutdown{false};
     KeeperContextPtr keeper_context;
     LoggerPtr log;
 

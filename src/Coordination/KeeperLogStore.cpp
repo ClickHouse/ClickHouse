@@ -73,7 +73,15 @@ void KeeperLogStore::write_at(uint64_t index, nuraft::ptr<nuraft::log_entry> & e
 
 nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> KeeperLogStore::log_entries(uint64_t start, uint64_t end)
 {
-    return log_entries_ext(start, end, /*batch_size_hint_in_bytes=*/0, NO_PEER_ID);
+    // Unlike log_entries_ext, log_entries must never return nullptr — callers such as
+    // KeeperStateMachine::preprocessUncommittedLogEntries dereference the result immediately.
+    // Build the plan under a shared lock and execute without catching exceptions.
+    LogReadPlan plan;
+    {
+        ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+        plan = changelog.getReadPlan(start, end, /*batch_size_hint_in_bytes=*/0);
+    }
+    return changelog.executeReadPlan(plan);
 }
 
 nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>
