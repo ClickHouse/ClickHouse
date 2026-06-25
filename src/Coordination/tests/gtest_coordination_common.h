@@ -52,53 +52,83 @@ struct ChangelogDirTest
     }
 };
 
-/// TODO: Try to remove the TStorage template and make all tests use virtual methods of KeeperStorage instead.
-template <typename TStorage, bool enable_compression_param>
-struct TestParam
-{
-    using Storage = TStorage;
-    static constexpr bool enable_compression = enable_compression_param;
-};
+DB::KeeperContextPtr makeKeeperContext(bool use_lsmt_storage, std::shared_ptr<DB::CoordinationSettings> settings = nullptr);
 
-template<typename TestType>
-class CoordinationTest : public ::testing::Test
+/// Shared fixture logic. Not instantiated directly: the concrete fixtures below pick the parameter
+/// set (storage implementation, optionally times compression).
+class CoordinationTestBase
 {
 public:
-    using Storage = typename TestType::Storage;
-    static constexpr bool enable_compression = TestType::enable_compression;
-    std::string extension;
-
     DB::KeeperContextPtr keeper_context;
     LoggerPtr log{getLogger("CoordinationTest")};
+    bool use_lsmt_storage = false;
 
-    void SetUp() override
+    /// A fully-operational fixture context (logs already preprocessed).
+    DB::KeeperContextPtr makeKeeperContext(std::shared_ptr<DB::CoordinationSettings> settings = nullptr) const
+    {
+        auto context = ::makeKeeperContext(use_lsmt_storage, std::move(settings));
+        context->setLocalLogsPreprocessed();
+        return context;
+    }
+
+    void commonSetup()
     {
         Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
         Poco::Logger::root().setChannel(channel);
         const char * log_level = std::getenv("TEST_LOG_LEVEL"); // NOLINT(concurrency-mt-unsafe)
         Poco::Logger::root().setLevel(log_level ? log_level : "none");
-
-        auto settings = std::make_shared<DB::CoordinationSettings>();
-        keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
-        keeper_context->setLocalLogsPreprocessed();
-        extension = enable_compression ? ".zstd" : "";
+        keeper_context = makeKeeperContext();
     }
 
-    void setLogDirectory(const std::string & path) { keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", path)); }
+    void setLogDirectory(const std::string & path) const { keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", path)); }
 
-    void setSnapshotDirectory(const std::string & path)
+    void setSnapshotDirectory(const std::string & path) const
     {
         keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", path));
     }
 
-    void setStateFileDirectory(const std::string & path)
+    void setStateFileDirectory(const std::string & path) const
     {
         keeper_context->setStateFileDisk(std::make_shared<DB::DiskLocal>("StateFile", path));
     }
 };
 
+/// Parametrized by storage implementation.
+class CoordinationTest : public CoordinationTestBase, public ::testing::TestWithParam</*use_lsmt_storage*/ bool>
+{
+    void SetUp() override
+    {
+        use_lsmt_storage = GetParam();
+        commonSetup();
+    }
+};
+
+struct StorageTypeAndCompression
+{
+    bool use_lsmt_storage = false;
+    bool enable_compression = false;
+};
+
+/// Parametrized by storage implementation times snapshot/log compression. Use for tests that read
+/// `enable_compression` / `extension`.
+class CoordinationTestWithCompression : public CoordinationTestBase, public ::testing::TestWithParam<StorageTypeAndCompression>
+{
+public:
+    bool enable_compression = false;
+    std::string extension;
+
+private:
+    void SetUp() override
+    {
+        use_lsmt_storage = GetParam().use_lsmt_storage;
+        enable_compression = GetParam().enable_compression;
+        extension = enable_compression ? ".zstd" : "";
+        commonSetup();
+    }
+};
+
 /// Creates a committed node.
-void addNode(DB::KeeperStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner = 0, DB::ACLId acl_id = 0);
+void addNode(DB::KeeperStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner = 0, DB::ACLId acl_id = 0, int64_t seq_num = 0);
 
 Coordination::ACLs getUncommittedACLs(DB::KeeperStorage & storage, std::string_view path);
 
@@ -106,9 +136,8 @@ Coordination::ACLs getUncommittedACLs(DB::KeeperStorage & storage, std::string_v
 bool committedNodeExists(DB::KeeperStorage & storage, std::string_view path);
 /// Returns "<NO NODE>" if node doesn't exist.
 std::string committedNodeData(DB::KeeperStorage & storage, std::string_view path);
-
-using Implementation = testing::Types<TestParam<DB::KeeperMemoryStorage, true>, TestParam<DB::KeeperMemoryStorage, false>>;
-TYPED_TEST_SUITE(CoordinationTest, Implementation);
+/// Returns "<NO NODE>" if node doesn't exist.
+std::string uncommittedNodeData(DB::KeeperStorage & storage, std::string_view path);
 
 using LogEntryPtr = nuraft::ptr<nuraft::log_entry>;
 

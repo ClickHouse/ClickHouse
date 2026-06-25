@@ -10,7 +10,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <unordered_set>
 
-TYPED_TEST(CoordinationTest, TestSystemNodeModify)
+TEST_P(CoordinationTest, TestSystemNodeModify)
 {
     using namespace Coordination;
     int64_t zxid{0};
@@ -43,7 +43,7 @@ TYPED_TEST(CoordinationTest, TestSystemNodeModify)
     assert_create("/keeper1/test", Error::ZOK);
 }
 
-TYPED_TEST(CoordinationTest, TestCheckNotExistsRequest)
+TEST_P(CoordinationTest, TestCheckNotExistsRequest)
 {
     using namespace DB;
     using namespace Coordination;
@@ -117,7 +117,7 @@ TYPED_TEST(CoordinationTest, TestCheckNotExistsRequest)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestDeterministicPreprocess)
+TEST_P(CoordinationTest, TestDeterministicPreprocess)
 {
     using namespace DB;
     using namespace Coordination;
@@ -201,7 +201,7 @@ TYPED_TEST(CoordinationTest, TestDeterministicPreprocess)
     ASSERT_TRUE(children1_set == children2_set);
 }
 
-TYPED_TEST(CoordinationTest, TestRemoveRecursiveRequest)
+TEST_P(CoordinationTest, TestRemoveRecursiveRequest)
 {
     using namespace DB;
     using namespace Coordination;
@@ -370,7 +370,7 @@ Coordination::RequestPtr makeRemoveRecursiveRequest(const std::string & path, ui
 }
 }
 
-TYPED_TEST(CoordinationTest, TestRemoveRecursiveInMultiRequest)
+TEST_P(CoordinationTest, TestRemoveRecursiveInMultiRequest)
 {
     using namespace DB;
     using namespace Coordination;
@@ -578,7 +578,7 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveInMultiRequest)
 
 }
 
-TYPED_TEST(CoordinationTest, TestRemoveRecursiveWatches)
+TEST_P(CoordinationTest, TestRemoveRecursiveWatches)
 {
     using namespace DB;
     using namespace Coordination;
@@ -682,7 +682,7 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveWatches)
     ASSERT_EQ(storage.list_watches.size(), 0);
 }
 
-TYPED_TEST(CoordinationTest, TestRemoveRecursiveAcls)
+TEST_P(CoordinationTest, TestRemoveRecursiveAcls)
 {
     using namespace DB;
     using namespace Coordination;
@@ -742,7 +742,7 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveAcls)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestListRequestTypes)
+TEST_P(CoordinationTest, TestListRequestTypes)
 {
     using namespace DB;
     using namespace Coordination;
@@ -827,7 +827,7 @@ TYPED_TEST(CoordinationTest, TestListRequestTypes)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestGetChildrenWithStatsAndData)
+TEST_P(CoordinationTest, TestGetChildrenWithStatsAndData)
 {
     using namespace DB;
     using namespace Coordination;
@@ -1025,7 +1025,7 @@ TYPED_TEST(CoordinationTest, TestGetChildrenWithStatsAndData)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestUncommittedStateBasicCrud)
+TEST_P(CoordinationTest, TestUncommittedStateBasicCrud)
 {
     using namespace DB;
     using namespace Coordination;
@@ -1144,7 +1144,7 @@ TYPED_TEST(CoordinationTest, TestUncommittedStateBasicCrud)
     ASSERT_EQ(get_committed_data(), std::nullopt);
 }
 
-TYPED_TEST(CoordinationTest, TestBlockACL)
+TEST_P(CoordinationTest, TestBlockACL)
 {
     using namespace DB;
     using namespace Coordination;
@@ -1159,6 +1159,13 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
 
     static constexpr int64_t session_id = 42;
     storage.committed_session_and_auth[session_id].push_back(KeeperStorage::AuthID{.scheme = "digest", .id = std::string{digest}});
+
+    const auto committed_acl_id = [&](std::string_view node_path)
+    {
+        DB::KeeperNodeStats stats;
+        EXPECT_TRUE(storage.nodes_storage->getCommittedNodeSimple(node_path, &stats));
+        return stats.acl_id;
+    };
     {
         static constexpr std::string_view path = "/test";
 
@@ -1171,9 +1178,7 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
         ASSERT_EQ(acls.size(), 1);
         ASSERT_EQ(acls[0].id, digest);
         storage.processRequest(create_request, session_id, req_zxid);
-        DB::KeeperNodeStats stats;
-        ASSERT_TRUE(storage.nodes_storage->getCommittedNodeSimple(path, &stats));
-        ASSERT_NE(stats.acl_id, 0);
+        ASSERT_NE(committed_acl_id(path), 0);
 
         req_zxid = zxid++;
         const auto set_acl_request = std::make_shared<ZooKeeperSetACLRequest>();
@@ -1184,8 +1189,7 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
         ASSERT_EQ(acls.size(), 1);
         ASSERT_EQ(acls[0].id, new_digest);
         storage.processRequest(set_acl_request, session_id, req_zxid);
-        ASSERT_TRUE(storage.nodes_storage->getCommittedNodeSimple(path, &stats));
-        ASSERT_NE(stats.acl_id, 0);
+        ASSERT_NE(committed_acl_id(path), 0);
     }
 
     {
@@ -1200,9 +1204,7 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
         auto acls = getUncommittedACLs(storage, path);
         ASSERT_EQ(acls.size(), 0);
         storage.processRequest(create_request, session_id, req_zxid);
-        DB::KeeperNodeStats stats;
-        ASSERT_TRUE(storage.nodes_storage->getCommittedNodeSimple(path, &stats));
-        ASSERT_EQ(stats.acl_id, 0);
+        ASSERT_EQ(committed_acl_id(path), 0);
 
         req_zxid = zxid++;
         const auto set_acl_request = std::make_shared<ZooKeeperSetACLRequest>();
@@ -1212,12 +1214,11 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
         acls = getUncommittedACLs(storage, path);
         ASSERT_EQ(acls.size(), 0);
         storage.processRequest(set_acl_request, session_id, req_zxid);
-        ASSERT_TRUE(storage.nodes_storage->getCommittedNodeSimple(path, &stats));
-        ASSERT_EQ(stats.acl_id, 0);
+        ASSERT_EQ(committed_acl_id(path), 0);
     }
 }
 
-TYPED_TEST(CoordinationTest, TestMultiWatches)
+TEST_P(CoordinationTest, TestMultiWatches)
 {
     using namespace DB;
     using namespace Coordination;
@@ -1313,7 +1314,7 @@ TYPED_TEST(CoordinationTest, TestMultiWatches)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestCheckStat)
+TEST_P(CoordinationTest, TestCheckStat)
 {
     using namespace DB;
     using namespace Coordination;
@@ -1396,7 +1397,7 @@ TYPED_TEST(CoordinationTest, TestCheckStat)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestTryRemove)
+TEST_P(CoordinationTest, TestTryRemove)
 {
     using namespace DB;
     using namespace Coordination;
@@ -1497,7 +1498,7 @@ TYPED_TEST(CoordinationTest, TestTryRemove)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestListRecursiveRequest)
+TEST_P(CoordinationTest, TestListRecursiveRequest)
 {
     using namespace DB;
     using namespace Coordination;
@@ -1681,7 +1682,7 @@ TYPED_TEST(CoordinationTest, TestListRecursiveRequest)
 
 }
 
-TYPED_TEST(CoordinationTest, TestListRecursiveInMultiRequest)
+TEST_P(CoordinationTest, TestListRecursiveInMultiRequest)
 {
     using namespace DB;
     using namespace Coordination;
@@ -1749,7 +1750,7 @@ TYPED_TEST(CoordinationTest, TestListRecursiveInMultiRequest)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestListRecursiveAcls)
+TEST_P(CoordinationTest, TestListRecursiveAcls)
 {
     using namespace DB;
     using namespace Coordination;
@@ -1799,7 +1800,7 @@ TYPED_TEST(CoordinationTest, TestListRecursiveAcls)
 }
 
 
-TYPED_TEST(CoordinationTest, TestTTLNodeExpiry)
+TEST_P(CoordinationTest, TestTTLNodeExpiry)
 {
     using namespace DB;
     using namespace Coordination;
@@ -1846,7 +1847,7 @@ TYPED_TEST(CoordinationTest, TestTTLNodeExpiry)
     EXPECT_TRUE(storage.collectExpiredTTLPaths(ttl_ms + 1, 1000000).empty());
 }
 
-TYPED_TEST(CoordinationTest, TestTTLNodeSetRefreshesUncommittedDestroyTime)
+TEST_P(CoordinationTest, TestTTLNodeSetRefreshesUncommittedDestroyTime)
 {
     using namespace DB;
     using namespace Coordination;
@@ -1898,7 +1899,7 @@ TYPED_TEST(CoordinationTest, TestTTLNodeSetRefreshesUncommittedDestroyTime)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestTTLGCVersionCheckPreventsStaleRemoval)
+TEST_P(CoordinationTest, TestTTLGCVersionCheckPreventsStaleRemoval)
 {
     using namespace DB;
     using namespace Coordination;
@@ -1948,7 +1949,7 @@ TYPED_TEST(CoordinationTest, TestTTLGCVersionCheckPreventsStaleRemoval)
     EXPECT_TRUE(storage.containsTTLPath("/ttl_node"));
 }
 
-TYPED_TEST(CoordinationTest, TestTTLGCDoesNotRemoveRecreatedNode)
+TEST_P(CoordinationTest, TestTTLGCDoesNotRemoveRecreatedNode)
 {
     using namespace DB;
     using namespace Coordination;
@@ -2021,7 +2022,7 @@ TYPED_TEST(CoordinationTest, TestTTLGCDoesNotRemoveRecreatedNode)
 /// A no-op TryRemove from the TTL GC (the node was recreated and is no longer TTL-eligible)
 /// must not fire a spurious DELETED watch: the node still exists, so watchers must not be told
 /// it was deleted.
-TYPED_TEST(CoordinationTest, TestTTLGCNoOpDoesNotFireDeleteWatch)
+TEST_P(CoordinationTest, TestTTLGCNoOpDoesNotFireDeleteWatch)
 {
     using namespace DB;
     using namespace Coordination;
@@ -2085,7 +2086,7 @@ TYPED_TEST(CoordinationTest, TestTTLGCNoOpDoesNotFireDeleteWatch)
 
 /// A genuine TTL GC removal must still fire the DELETED watch — the no-op suppression above must
 /// not over-suppress watches on real removals.
-TYPED_TEST(CoordinationTest, TestTTLGCRemovalFiresDeleteWatch)
+TEST_P(CoordinationTest, TestTTLGCRemovalFiresDeleteWatch)
 {
     using namespace DB;
     using namespace Coordination;
@@ -2145,7 +2146,7 @@ TYPED_TEST(CoordinationTest, TestTTLGCRemovalFiresDeleteWatch)
 }
 
 /// B4: invalid TTL values must be rejected with ZBADARGUMENTS.
-TYPED_TEST(CoordinationTest, TestCreateTTLRejectsInvalidValues)
+TEST_P(CoordinationTest, TestCreateTTLRejectsInvalidValues)
 {
     using namespace DB;
     using namespace Coordination;
@@ -2176,7 +2177,7 @@ TYPED_TEST(CoordinationTest, TestCreateTTLRejectsInvalidValues)
 
 /// B7: a failed `Create` with include_ttl && is_ephemeral inside a Multi
 /// must not leave an entry in uncommitted_state.ephemerals.
-TYPED_TEST(CoordinationTest, TestCreateTTLAndEphemeralDoesNotLeakEphemeral)
+TEST_P(CoordinationTest, TestCreateTTLAndEphemeralDoesNotLeakEphemeral)
 {
     using namespace DB;
     using namespace Coordination;
@@ -2202,7 +2203,7 @@ TYPED_TEST(CoordinationTest, TestCreateTTLAndEphemeralDoesNotLeakEphemeral)
 
 /// B8: a failed Multi with Set on a TTL node must not leak the refreshed
 /// destroy_time into uncommitted state.
-TYPED_TEST(CoordinationTest, TestFailedMultiRollsBackTTLDestroyTime)
+TEST_P(CoordinationTest, TestFailedMultiRollsBackTTLDestroyTime)
 {
     using namespace DB;
     using namespace Coordination;
