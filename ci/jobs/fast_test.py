@@ -1,7 +1,6 @@
 import argparse
 import os
 import platform
-import time
 import sys
 from pathlib import Path
 
@@ -15,7 +14,7 @@ from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
-from ci.praktika.utils import ContextManager, MetaClasses, Shell, Utils
+from ci.praktika.utils import MetaClasses, Shell, Utils
 
 current_directory = Utils.cwd()
 build_dir = f"{current_directory}/ci/tmp/fast_build"
@@ -32,16 +31,12 @@ def clone_submodules():
         "contrib/zlib-ng",
         "contrib/libxml2",
         "contrib/fmtlib",
-        "contrib/base64",
         "contrib/cctz",
-        "contrib/libcpuid",
         "contrib/libdivide",
         "contrib/double-conversion",
         "contrib/llvm-project",
         "contrib/lz4",
         "contrib/zstd",
-        "contrib/fastops",
-        "contrib/rapidjson",
         "contrib/re2",
         "contrib/sparsehash-c11",
         "contrib/croaring",
@@ -57,7 +52,6 @@ def clone_submodules():
         "contrib/morton-nd",
         "contrib/xxHash",
         "contrib/simdjson",
-        "contrib/simdcomp",
         "contrib/liburing",
         "contrib/libfiu",
         "contrib/yaml-cpp",

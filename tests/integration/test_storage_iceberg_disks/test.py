@@ -14,7 +14,6 @@ from helpers.s3_tools import (
     prepare_s3_bucket,
 )
 from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
-from helpers.test_tools import TSV
 
 from helpers.iceberg_utils import (
     default_upload_directory,
@@ -387,7 +386,7 @@ def test_cluster_table_function(started_cluster, storage_type, with_cache):
     logging.info(f"Setup complete. files: {files}")
     assert len(files) == 5 + 4 * (len(started_cluster.instances) - 1)
 
-    clusters = instance.query(f"SELECT * FROM system.clusters")
+    clusters = instance.query("SELECT * FROM system.clusters")
     logging.info(f"Clusters setup: {clusters}")
 
     # Regular Query only node1
