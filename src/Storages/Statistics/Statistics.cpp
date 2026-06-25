@@ -600,6 +600,14 @@ Estimates ColumnsStatistics::getEstimates() const
     return estimates;
 }
 
+size_t ColumnsStatistics::getStatisticsCount() const
+{
+    size_t result = 0;
+    for (const auto & [_, stat] : *this)
+        result += stat->getStats().size();
+    return result;
+}
+
 void MergeTreeStatisticsFactory::registerCreator(StatisticsType stats_type, Creator creator)
 {
     if (!creators.emplace(stats_type, std::move(creator)).second)

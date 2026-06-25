@@ -536,6 +536,12 @@
     \
     M(MergeTreeDataWriterSkipIndicesCalculationMicroseconds, "Time spent calculating skip indices", ValueType::Microseconds) \
     M(MergeTreeDataWriterStatisticsCalculationMicroseconds, "Time spent calculating statistics", ValueType::Microseconds) \
+    M(MergeTreeDataWriterInsertStatisticsCalculationMicroseconds, "Time spent calculating statistics for level-zero parts created by `INSERT` into `MergeTree` tables.", ValueType::Microseconds) \
+    M(MergeTreeDataWriterInsertStatisticsBlocks, "Number of blocks inserted into `MergeTree` tables for which statistics were calculated.", ValueType::Number) \
+    M(MergeTreeDataWriterInsertStatisticsRows, "Number of rows in blocks inserted into `MergeTree` tables for which statistics were calculated.", ValueType::Number) \
+    M(MergeTreeDataWriterInsertStatisticsColumns, "Number of columns for which statistics were calculated during `INSERT` into `MergeTree` tables.", ValueType::Number) \
+    M(MergeTreeDataWriterInsertStatisticsObjects, "Number of individual statistics objects calculated during `INSERT` into `MergeTree` tables.", ValueType::Number) \
+    M(MergeTreeDataWriterInsertStatisticsBytes, "Bytes written to filesystem for statistics calculated during `INSERT` into `MergeTree` tables.", ValueType::Bytes) \
     M(MergeTreeDataWriterSortingBlocksMicroseconds, "Time spent sorting blocks", ValueType::Microseconds) \
     M(MergeTreeDataWriterMergingBlocksMicroseconds, "Time spent merging input blocks (for special MergeTree engines)", ValueType::Microseconds) \
     M(MergeTreeDataWriterProjectionsCalculationMicroseconds, "Time spent calculating projections", ValueType::Microseconds) \

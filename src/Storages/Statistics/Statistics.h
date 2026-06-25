@@ -163,6 +163,7 @@ public:
     void buildIfExists(const Block & block);
     void merge(const ColumnsStatistics & other);
     Estimates getEstimates() const;
+    size_t getStatisticsCount() const;
 };
 
 struct ColumnDescription;
