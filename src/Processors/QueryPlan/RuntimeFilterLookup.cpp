@@ -7,6 +7,7 @@
 #include <Common/SharedMutex.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 #include <algorithm>
 #include <vector>
 
