@@ -985,13 +985,19 @@ def test_mysql_metadata_commands_access_control(started_cluster):
     # COM_FIELD_LIST (mysql_list_fields) and COM_INIT_DB (USE db) over the MySQL wire protocol
     # must enforce the same access control as the equivalent SQL statements (DESCRIBE / USE).
     node = cluster.instances["node"]
-    node.query("DROP USER IF EXISTS mysql_lowpriv")
+    # The `default` user in this test's users.xml has password 123, so native queries need it.
+    creds = {"password": "123"}
+    node.query("DROP USER IF EXISTS mysql_lowpriv", settings=creds)
     node.query(
         "CREATE TABLE IF NOT EXISTS default.mysql_acl_employees "
-        "(id UInt64, name String, salary UInt64, ssn String) ENGINE=MergeTree ORDER BY id"
+        "(id UInt64, name String, salary UInt64, ssn String) ENGINE=MergeTree ORDER BY id",
+        settings=creds,
     )
-    node.query("CREATE USER mysql_lowpriv IDENTIFIED WITH no_password")
-    node.query("GRANT SELECT(id, name) ON default.mysql_acl_employees TO mysql_lowpriv")
+    node.query("CREATE USER mysql_lowpriv IDENTIFIED WITH no_password", settings=creds)
+    node.query(
+        "GRANT SELECT(id, name) ON default.mysql_acl_employees TO mysql_lowpriv",
+        settings=creds,
+    )
 
     client = pymysql.connections.Connection(
         host=started_cluster.get_instance_ip("node"),
@@ -1018,7 +1024,10 @@ def test_mysql_metadata_commands_access_control(started_cluster):
     client.close()
 
     # A user that is granted the table fully can still use both commands.
-    node.query("GRANT SHOW COLUMNS ON default.mysql_acl_employees TO mysql_lowpriv")
+    node.query(
+        "GRANT SHOW COLUMNS ON default.mysql_acl_employees TO mysql_lowpriv",
+        settings=creds,
+    )
     granted = pymysql.connections.Connection(
         host=started_cluster.get_instance_ip("node"),
         user="mysql_lowpriv",
@@ -1034,8 +1043,8 @@ def test_mysql_metadata_commands_access_control(started_cluster):
     ]
     granted.close()
 
-    node.query("DROP USER mysql_lowpriv")
-    node.query("DROP TABLE default.mysql_acl_employees")
+    node.query("DROP USER mysql_lowpriv", settings=creds)
+    node.query("DROP TABLE default.mysql_acl_employees", settings=creds)
 
 
 def _mysql_recv_packet(sock):
@@ -1060,19 +1069,21 @@ def _mysql_send_packet(sock, seq, body):
     sock.sendall(bytes([length & 0xFF, (length >> 8) & 0xFF, (length >> 16) & 0xFF, seq]) + body)
 
 
-def test_mysql_handshake_database_access_control(started_cluster):
-    # A database selected in the initial handshake (CLIENT_CONNECT_WITH_DB) must enforce the same
-    # SHOW_DATABASES check as COM_INIT_DB / the SQL `USE` statement. On denial the handshake must
-    # cleanly fail: the server must NOT send an OK packet after the error and must NOT enter the
-    # command loop, otherwise a client that ignores the error still proceeds on an authenticated
-    # session. We drive the protocol over a raw socket precisely to mimic such a lenient client.
+def test_mysql_handshake_database_does_not_leak_columns(started_cluster):
+    # The initial database in the MySQL handshake (CLIENT_CONNECT_WITH_DB) behaves like the
+    # connection-time database of every other protocol (native --database, HTTP database=,
+    # PostgreSQL startup): it is set without a SHOW_DATABASES check, so a connection succeeds even
+    # to a database the user cannot otherwise see (only the explicit `USE` / COM_INIT_DB statement
+    # is access-checked, matching InterpreterUseQuery). Selecting a database in the handshake must
+    # not become a way to bypass COM_FIELD_LIST access control: even when connected to `system`,
+    # COM_FIELD_LIST on a system table the user lacks SHOW COLUMNS on must still be rejected.
+    # We drive the handshake over a raw socket so we can request a database with no grants on it.
     node = cluster.instances["node"]
-    node.query("DROP USER IF EXISTS mysql_handshake_lowpriv")
+    creds = {"password": "123"}
+    node.query("DROP USER IF EXISTS mysql_handshake_lowpriv", settings=creds)
     node.query(
-        "CREATE TABLE IF NOT EXISTS default.mysql_acl_handshake (id UInt64) ENGINE=MergeTree ORDER BY id"
+        "CREATE USER mysql_handshake_lowpriv IDENTIFIED WITH no_password", settings=creds
     )
-    node.query("CREATE USER mysql_handshake_lowpriv IDENTIFIED WITH no_password")
-    node.query("GRANT SELECT(id) ON default.mysql_acl_handshake TO mysql_handshake_lowpriv")
 
     CLIENT_LONG_PASSWORD = 0x1
     CLIENT_LONG_FLAG = 0x4
@@ -1081,7 +1092,7 @@ def test_mysql_handshake_database_access_control(started_cluster):
     CLIENT_SECURE_CONNECTION = 0x8000
     CLIENT_PLUGIN_AUTH = 0x80000
 
-    def handshake_with_db(database):
+    def open_handshake(database):
         sock = socket.create_connection(
             (started_cluster.get_instance_ip("node"), server_port), timeout=10
         )
@@ -1104,49 +1115,30 @@ def test_mysql_handshake_database_access_control(started_cluster):
         body += database.encode() + b"\x00"
         body += b"mysql_native_password\x00"
         _mysql_send_packet(sock, 1, body)
-        # Read every packet the server sends, leniently (do not abort on an ERR packet) until it
-        # stops sending (the connection is closed or it blocks waiting for a command).
-        packets = []
-        sock.settimeout(5)
-        while True:
-            try:
-                pkt = _mysql_recv_packet(sock)
-            except socket.timeout:
-                packets.append("WAITING_FOR_COMMAND")
-                break
-            if pkt is None:
-                packets.append("CLOSED")
-                break
-            if pkt and pkt[0] == 0xFF:
-                packets.append("ERR")
-            elif pkt and pkt[0] == 0x00:
-                packets.append("OK")
-            else:
-                packets.append("OTHER")
-            if pkt and pkt[0] == 0x00:
-                # An OK packet completes the handshake: a usable command loop follows. Confirm by
-                # issuing COM_QUERY `SELECT 1` and seeing whether the server answers.
-                _mysql_send_packet(sock, 0, bytes([0x03]) + b"SELECT 1")
-                try:
-                    resp = _mysql_recv_packet(sock)
-                    packets.append("SESSION_USABLE" if resp is not None else "CLOSED")
-                except socket.timeout:
-                    packets.append("NO_RESPONSE")
-                break
-        sock.close()
-        return packets
+        # The handshake completes with an OK packet (no SHOW_DATABASES check on the initial db).
+        ok = _mysql_recv_packet(sock)
+        assert ok is not None and ok[0] == 0x00, ok
+        return sock
 
-    # Denied database: the handshake must fail. The server may send an ERR; it must NOT then send
-    # an OK / leave a usable session.
-    denied = handshake_with_db("system")
-    assert "OK" not in denied, denied
-    assert "SESSION_USABLE" not in denied, denied
-    assert "ERR" in denied, denied
+    def com_field_list(sock, table):
+        # COM_FIELD_LIST (0x04): NUL-terminated table name + empty field wildcard.
+        _mysql_send_packet(sock, 0, bytes([0x04]) + table.encode() + b"\x00")
+        # On access denial the server replies with a single ERR packet (first byte 0xFF).
+        pkt = _mysql_recv_packet(sock)
+        assert pkt is not None, "connection closed instead of replying to COM_FIELD_LIST"
+        return pkt
 
-    # Sanity: a database the user can access completes the handshake normally and yields a usable
-    # session (no regression for the allowed path).
-    allowed = handshake_with_db("default")
-    assert "OK" in allowed and "SESSION_USABLE" in allowed, allowed
+    # Connecting to `system` in the handshake succeeds (parity with other protocols).
+    sock = open_handshake("system")
+    # ... but COM_FIELD_LIST on a system table the user cannot see is still rejected: the handshake
+    # database is not a way around the COM_FIELD_LIST access check.
+    pkt = com_field_list(sock, "users")
+    assert pkt[0] == 0xFF, pkt  # ERR packet
+    assert b"ACCESS_DENIED" in pkt or b"SHOW COLUMNS" in pkt, pkt
+    sock.close()
 
-    node.query("DROP USER mysql_handshake_lowpriv")
-    node.query("DROP TABLE default.mysql_acl_handshake")
+    # Connecting to `default` (the user's accessible database) also succeeds.
+    sock = open_handshake("default")
+    sock.close()
+
+    node.query("DROP USER mysql_handshake_lowpriv", settings=creds)

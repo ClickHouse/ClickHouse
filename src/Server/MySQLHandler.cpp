@@ -291,19 +291,12 @@ void MySQLHandler::run()
             session->makeSessionContext();
             session->sessionContext()->setDefaultFormat("MySQLWire");
             if (!handshake_response.database.empty())
-            {
-                /// Mirror the access check of the SQL `USE database` statement (InterpreterUseQuery).
-                session->sessionContext()->checkAccess(AccessType::SHOW_DATABASES, handshake_response.database);
                 session->sessionContext()->setCurrentDatabase(handshake_response.database);
-            }
         }
         catch (const Exception & exc)
         {
             log->log(exc);
             packet_endpoint->sendPacket(ERRPacket(exc.code(), mysql_error_code, exc.message()));
-            /// Session setup failed: fail the handshake. Do not send the OK packet or enter the
-            /// command loop, which would leave an unauthorized initial database on a usable session.
-            return;
         }
 
         OKPacket ok_packet(0, handshake_response.capability_flags, 0, 0, 0);
