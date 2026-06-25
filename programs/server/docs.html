@@ -461,6 +461,12 @@
     /// Used to discard responses of queries that were superseded by a newer keystroke.
     let request_seq = 0;
 
+    /// Bumped whenever the connection (server URL, user, or password) changes. `loadAllNames`
+    /// snapshots it before the request and only publishes the result into `all_names` if it is
+    /// still current, so an in-flight request that resolves after a connection change cannot
+    /// repopulate the cross-link cache with names from the previous server or user.
+    let connection_seq = 0;
+
     /// A distinct accent color per entity type, so the kinds of entities are visually
     /// distinguishable in the result list (used for the left stripe and a faint, theme-blended
     /// row tint). Keyed by the `type` enum values of `system.documentation`.
@@ -1003,6 +1009,10 @@
 
     async function loadAllNames() {
         if (all_names) return all_names;
+        /// Snapshot the connection generation this request belongs to. If the user changes the
+        /// connection while the request is in flight, `connection_seq` is bumped and we must not
+        /// publish this response into the shared cache (the names would belong to the old server).
+        const seq = connection_seq;
         const map = new Map();
         try {
             const response = await fetch(buildURL(), { method: 'POST', body: 'SELECT name, type FROM system.documentation', headers: { 'Authorization': 'never' } });
@@ -1023,8 +1033,12 @@
             console.log(e); /// Without this map, links simply fall back to clickhouse.com/docs.
             return map; /// Network error: same as above — do not cache, retry on the next call.
         }
-        all_names = map;
-        return all_names;
+        /// Publish only if the connection has not changed since this request started; otherwise the
+        /// caller still gets this response, but the stale names are not cached for later searches.
+        if (seq === connection_seq) {
+            all_names = map;
+        }
+        return map;
     }
 
     /* ----------------------------------------------------------------------------------------
@@ -1047,7 +1061,7 @@
     /// cache, so it is rebuilt against the new connection on the next search instead of keeping a
     /// map (possibly empty) fetched with the previous credentials.
     for (const $input of [$url, $user, $password]) {
-        $input.addEventListener('change', () => { all_names = null; });
+        $input.addEventListener('change', () => { all_names = null; ++connection_seq; });
     }
 
     /// Up/Down arrows navigate the list of matches, regardless of where focus is (except when the
