@@ -5,7 +5,13 @@ Carol
 ACCESS_DENIED
 === mergeTreeProjection without a row policy: allowed ===
 4
-=== mergeTreeIndex: denied when a requested index column is referenced by the policy ===
+=== mergeTreeIndex with a row policy: denied (primary key column read) ===
 ACCESS_DENIED
-=== mergeTreeIndex: allowed when no requested index column is referenced by the policy ===
+=== mergeTreeIndex with a row policy: denied (with_minmax exposes minmax_id) ===
+ACCESS_DENIED
+=== mergeTreeIndex with a row policy: denied (part metadata, no policy column requested) ===
+ACCESS_DENIED
+=== mergeTreeIndex with a column-independent policy (USING 0): denied ===
+ACCESS_DENIED
+=== mergeTreeIndex without a row policy: allowed ===
 1

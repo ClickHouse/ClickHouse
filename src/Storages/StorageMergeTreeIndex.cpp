@@ -22,7 +22,6 @@
 #include <Common/HashTable/HashSet.h>
 #include <Common/escapeForFileName.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/ISource.h>
@@ -406,26 +405,18 @@ void StorageMergeTreeIndex::readImpl(
     auto source_storage_id = source_table->getStorageID();
     context->checkAccess(AccessType::SELECT, source_storage_id, columns_from_storage);
 
-    /// The index table exposes per-granule metadata (marks, min/max of the primary key and
-    /// other storage columns). If a row policy filters on any of those columns, that metadata
-    /// reveals values the policy is meant to hide, so deny in that case (mirrors the text index).
+    /// The index table exposes per-granule metadata (marks, primary key values, min/max of the
+    /// partition key) that reveals values and row existence a SELECT row policy is meant to hide.
+    /// A column-overlap check is not enough: `with_minmax` exposes `minmax_<col>` columns that map
+    /// back to source columns, and a column-independent policy (e.g. `USING 0`) hides all rows
+    /// while referencing no column at all. Deny whenever a non-trivial policy exists (mirrors
+    /// `mergeTreeProjection`).
     auto row_policy_filter = context->getRowPolicyFilter(
         source_storage_id.getDatabaseName(), source_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
     if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
-    {
-        RequiredSourceColumnsVisitor::Data columns_context;
-        RequiredSourceColumnsVisitor(columns_context).visit(row_policy_filter->expression);
-        NameSet row_policy_columns = columns_context.requiredColumns();
-
-        for (const auto & column_name : columns_from_storage)
-        {
-            if (row_policy_columns.contains(column_name))
-                throw Exception(ErrorCodes::ACCESS_DENIED,
-                    "Cannot read from `mergeTreeIndex` because a row policy on column `{}` "
-                    "is applied on table {}. Reading index metadata could violate the row policy",
-                    column_name, source_storage_id.getNameForLogs());
-        }
-    }
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot read from `mergeTreeIndex`: a row policy is applied on table {}, "
+            "and reading index metadata directly would bypass it", source_storage_id.getNameForLogs());
 
     auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
 
