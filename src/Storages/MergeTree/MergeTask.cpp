@@ -35,6 +35,7 @@
 #include <Processors/QueryPlan/ExtractColumnsStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TemporaryFiles.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -355,6 +356,34 @@ static String getColumnNameInStorage(const String & column_name, const NameSet &
 
     /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
     return String(Nested::getColumnFromSubcolumn(column_name, storage_columns));
+}
+
+/// A `TTL ... GROUP BY ... SET col = agg(...)` clause can assign a column that the table's
+/// sorting key depends on (directly, or through an expression such as `toStartOfDay(ts)`).
+/// `TTLAggregationAlgorithm` emits aggregated groups in the input (already-sorted) order, so
+/// when such a SET rewrites a sort-key column the produced stream is no longer ordered by the
+/// sorting key. The merge writer trusts the stream order, so the resulting part would have a
+/// primary index inconsistent with the data (a debug-only `CheckSortedTransform` catches it as
+/// a LOGICAL_ERROR; release builds write a corrupt part). Detect this so we can re-sort.
+static bool groupByTTLAssignsSortKeyColumn(const StorageMetadataPtr & metadata_snapshot)
+{
+    if (!metadata_snapshot->hasSortingKey())
+        return false;
+
+    const auto group_by_ttls = metadata_snapshot->getGroupByTTLs();
+    if (group_by_ttls.empty())
+        return false;
+
+    NameSet sort_key_dependencies;
+    for (const auto & column : metadata_snapshot->getSortingKey().expression->getRequiredColumns())
+        sort_key_dependencies.insert(column);
+
+    for (const auto & ttl : group_by_ttls)
+        for (const auto & set_part : ttl.set_parts)
+            if (sort_key_dependencies.contains(set_part.column_name))
+                return true;
+
+    return false;
 }
 
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
@@ -3160,6 +3189,78 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));
+
+        /// `TTL ... GROUP BY ... SET` can assign a column that the sorting key depends on.
+        /// The aggregation emits groups in input order, so after such a SET the stream is no
+        /// longer ordered by the sorting key, and the materialized sort-key expression columns
+        /// (e.g. `toStartOfDay(ts)`) still hold their pre-SET values. Recompute the sort-key
+        /// expression from the updated columns and re-sort, so the written part is consistent
+        /// with its primary index. Gated so it is a no-op for every other merge.
+        if (groupByTTLAssignsSortKeyColumn(global_ctx->metadata_snapshot))
+        {
+            /// Recompute the sorting-key expression columns from the post-SET values, overwriting
+            /// the now-stale ones already present in the stream.
+            const auto & sorting_key_expression = global_ctx->metadata_snapshot->getSortingKey().expression;
+            auto sorting_key_expression_dag = sorting_key_expression->getActionsDAG().clone();
+
+            /// Drop the stale materialized sort-key expression columns first; otherwise
+            /// re-applying the expression would leave duplicate columns of the same name in the
+            /// block. Only the computed (non-storage) sort-key columns are dropped: the storage
+            /// columns the expression reads from (e.g. `ts`, `k`) must stay so they can feed the
+            /// recomputation.
+            const auto & current_header = *merge_parts_query_plan.getCurrentHeader();
+            const auto storage_column_names = global_ctx->storage_columns.getNameSet();
+            const auto sort_key_expression_results = sorting_key_expression_dag.getNames();
+            NameSet columns_to_recompute;
+            for (const auto & name : sort_key_expression_results)
+                if (!storage_column_names.contains(name))
+                    columns_to_recompute.insert(name);
+
+            ActionsDAG drop_stale_dag(current_header.getColumnsWithTypeAndName());
+            ActionsDAG::NodeRawConstPtrs kept_outputs;
+            kept_outputs.reserve(drop_stale_dag.getOutputs().size());
+            for (const auto * output : drop_stale_dag.getOutputs())
+                if (!columns_to_recompute.contains(output->result_name))
+                    kept_outputs.push_back(output);
+            drop_stale_dag.getOutputs() = std::move(kept_outputs);
+
+            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(
+                current_header, sorting_key_expression_dag.getRequiredColumnsNames(), global_ctx->data->getContext());
+
+            auto recalculate_sorting_key_step = std::make_unique<ExpressionStep>(
+                merge_parts_query_plan.getCurrentHeader(),
+                ActionsDAG::merge(
+                    std::move(drop_stale_dag),
+                    ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(sorting_key_expression_dag))));
+            recalculate_sorting_key_step->setStepDescription("Recalculate sorting key after TTL GROUP BY SET");
+            merge_parts_query_plan.addStep(std::move(recalculate_sorting_key_step));
+
+            SortDescription ttl_sort_description;
+            {
+                Names sort_columns = global_ctx->metadata_snapshot->getSortingKeyColumns();
+                std::vector<bool> reverse_flags = global_ctx->metadata_snapshot->getSortingKeyReverseFlags();
+                ttl_sort_description.compile_sort_description
+                    = global_ctx->data->getContext()->getSettingsRef()[Setting::compile_sort_description];
+                ttl_sort_description.min_count_to_compile_sort_description
+                    = global_ctx->data->getContext()->getSettingsRef()[Setting::min_count_to_compile_sort_description];
+                ttl_sort_description.reserve(sort_columns.size());
+                for (size_t i = 0; i < sort_columns.size(); ++i)
+                {
+                    if (!reverse_flags.empty() && reverse_flags[i])
+                        ttl_sort_description.emplace_back(sort_columns[i], -1, 1);
+                    else
+                        ttl_sort_description.emplace_back(sort_columns[i], 1, 1);
+                }
+            }
+
+            auto resort_step = std::make_unique<SortingStep>(
+                merge_parts_query_plan.getCurrentHeader(),
+                ttl_sort_description,
+                /*limit_=*/0,
+                SortingStep::Settings(global_ctx->context->getSettingsRef()));
+            resort_step->setStepDescription("Re-sort after TTL GROUP BY SET on sorting key column");
+            merge_parts_query_plan.addStep(std::move(resort_step));
+        }
     }
 
     /// Secondary indices expressions
