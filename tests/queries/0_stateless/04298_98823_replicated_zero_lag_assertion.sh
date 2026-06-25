@@ -15,11 +15,11 @@
 # tolerance, which is impossible to satisfy under concurrent commits), so
 # the fix forbids it at parse time. Switching the setting type to
 # `NonZeroUInt64` makes the parser reject `0` everywhere the value can be
-# supplied (`CREATE DATABASE ... SETTINGS`, `ALTER DATABASE`, and the
-# `<database_replicated>` server-config block), in `ATTACH` replay, and on
-# upgrade from older versions whose metadata persists `0`. `1` is the
-# smallest meaningful value: it means "consider the replica unsynced as
-# soon as there is at least one new entry to apply".
+# supplied (`CREATE DATABASE ... SETTINGS` and the `<database_replicated>`
+# server-config block), in `ATTACH` replay, and on upgrade from older
+# versions whose metadata persists `0`. `1` is the smallest meaningful
+# value: it means "consider the replica unsynced as soon as there is at
+# least one new entry to apply".
 
 # Keep server logs forwarded to client stderr quiet so the rejection error
 # is the only content in the captured stream. Must be set before sourcing
