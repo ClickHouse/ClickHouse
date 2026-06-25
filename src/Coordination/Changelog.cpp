@@ -1654,19 +1654,17 @@ LogReadPlan LogEntryStorage::getReadPlan(uint64_t start, uint64_t end, int64_t m
 namespace
 {
 
-enum class DecodeRecordStatus { Ok, IndexMismatch };
-
 /// Decode one record from buf, validate the index, and emit the entry.
 /// IO errors propagate as exceptions (caller decides the policy).
-/// Index mismatches return IndexMismatch without throwing or logging.
-DecodeRecordStatus decodeOneRecord(ReadBuffer & buf, const String & path, uint64_t expected_index, LogEntryPtr & out)
+/// Returns false on index mismatch without throwing or logging.
+bool decodeOneRecord(ReadBuffer & buf, const String & path, uint64_t expected_index, LogEntryPtr & out)
 {
     auto record = readChangelogRecord(buf, path);
     if (record.header.index != expected_index)
-        return DecodeRecordStatus::IndexMismatch;
+        return false;
     out = logEntryFromRecord(record);
     ProfileEvents::increment(ProfileEvents::KeeperLogsEntryReadFromFile);
-    return DecodeRecordStatus::Ok;
+    return true;
 }
 
 } // namespace
@@ -1719,7 +1717,7 @@ LogEntriesPtr LogEntryStorage::executeReadPlan(const LogReadPlan & plan, uint64_
                         return;
                     }
                     LogEntryPtr entry;
-                    if (decodeOneRecord(*raw_file, path, expected, entry) == DecodeRecordStatus::IndexMismatch)
+                    if (!decodeOneRecord(*raw_file, path, expected, entry))
                         throw Exception(
                             ErrorCodes::LOGICAL_ERROR, "Index mismatch while reading from {}, expected index {}", path, expected);
                     ret->push_back(std::move(entry));
@@ -2109,7 +2107,7 @@ DecodeChunkResult decodeChunk(
                 try
                 {
                     LogEntryPtr entry;
-                    if (decodeOneRecord(*reader.held_buf, cur_path, expected_idx, entry) == DecodeRecordStatus::IndexMismatch)
+                    if (!decodeOneRecord(*reader.held_buf, cur_path, expected_idx, entry))
                     {
                         LOG_ERROR(log, "Index mismatch while reading from {}, expected index {}", cur_path, expected_idx);
                         return DecodeChunkStatus::Error;
