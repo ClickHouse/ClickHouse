@@ -21,4 +21,5 @@ $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT --query "
 SELECT count() > 0
 FROM system.query_log
-WHERE is_initial_query = 0 AND is_internal = 1 AND log_comment = '$CLICKHOUSE_TEST_UNIQUE_NAME'"
+WHERE is_initial_query = 0 AND is_internal = 1 AND log_comment = '$CLICKHOUSE_TEST_UNIQUE_NAME'
+  AND current_database IN ['default', currentDatabase()]"
