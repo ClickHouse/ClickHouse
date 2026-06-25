@@ -427,6 +427,10 @@ public:
     size_t getDistributedReadBucketCount() const { return distributed_read_bucket_count; }
     bool getEnableVerticalFinal() const { return enable_vertical_final; }
 
+    /// Whether a FINAL read must merge parts within each partition independently instead of globally
+    /// (the `do_not_merge_across_partitions_select_final` rule, which may also be decided automatically).
+    bool doNotMergePartsAcrossPartitionsFinal() const;
+
     /// Throws if this is a bucketed distributed read using a feature it cannot reproduce from pinned
     /// marks (read-in-order, deferred FINAL filters, a projection, or direct text index tasks).
     void verifyBucketedReadSupported() const;
@@ -550,8 +554,6 @@ private:
         const Names & column_names,
         std::optional<ActionsDAG> & out_projection,
         const InputOrderInfoPtr & input_order_info);
-
-    bool doNotMergePartsAcrossPartitionsFinal() const;
 
     Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
