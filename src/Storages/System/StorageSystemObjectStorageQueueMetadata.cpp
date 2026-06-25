@@ -91,8 +91,34 @@ void StorageSystemObjectStorageQueueMetadata<type>::fillData(
 
         const std::filesystem::path base_path(zookeeper_path);
         const bool unordered = metadata->getTableMetadata().mode == "unordered";
+        const size_t batch_size = std::max<size_t>(1, metadata->getKeeperMultireadBatchSize());
 
         auto zk_retries = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+
+        /// Read the data of `paths` in batches, to avoid building a single huge
+        /// multiread request that could exceed keeper limits.
+        auto batched_get = [&](const std::vector<std::string> & paths)
+        {
+            std::vector<std::optional<std::string>> data(paths.size());
+            for (size_t offset = 0; offset < paths.size(); offset += batch_size)
+            {
+                const std::vector<std::string> batch(
+                    paths.begin() + offset,
+                    paths.begin() + std::min(offset + batch_size, paths.size()));
+
+                zkutil::ZooKeeper::MultiTryGetResponse responses;
+                zk_retries.resetFailures();
+                zk_retries.retryLoop([&] { responses = metadata->getZooKeeper()->tryGet(batch); });
+
+                for (size_t i = 0; i < batch.size(); ++i)
+                {
+                    /// A node may have been removed between listing and reading it.
+                    if (responses[i].error == Coordination::Error::ZOK)
+                        data[offset + i] = responses[i].data;
+                }
+            }
+            return data;
+        };
 
         /// Read a `processed`/`processing`/`failed` folder of per-file nodes.
         /// When only the count is needed, reading the stat is enough; the
@@ -130,16 +156,13 @@ void StorageSystemObjectStorageQueueMetadata<type>::fillData(
             for (const auto & node : nodes)
                 node_paths.push_back(base_path / folder / node);
 
-            zkutil::ZooKeeper::MultiTryGetResponse responses;
-            zk_retries.resetFailures();
-            zk_retries.retryLoop([&] { responses = metadata->getZooKeeper()->tryGet(node_paths); });
+            const auto data = batched_get(node_paths);
 
             contents_out.reserve(nodes.size());
             for (size_t i = 0; i < nodes.size(); ++i)
             {
-                /// A node may have been removed between listing and reading it.
-                if (responses[i].error == Coordination::Error::ZOK)
-                    contents_out.emplace_back(nodes[i], responses[i].data);
+                if (data[i].has_value())
+                    contents_out.emplace_back(nodes[i], *data[i]);
             }
         };
 
@@ -187,17 +210,15 @@ void StorageSystemObjectStorageQueueMetadata<type>::fillData(
             if (leaf_paths.empty())
                 return {};
 
-            zkutil::ZooKeeper::MultiTryGetResponse responses;
-            zk_retries.resetFailures();
-            zk_retries.retryLoop([&] { responses = metadata->getZooKeeper()->tryGet(leaf_paths); });
+            const auto data = batched_get(leaf_paths);
 
             std::vector<std::pair<String, String>> result;
             result.reserve(leaf_paths.size());
             for (size_t i = 0; i < leaf_paths.size(); ++i)
             {
-                if (responses[i].error != Coordination::Error::ZOK || responses[i].data.empty())
+                if (!data[i].has_value() || data[i]->empty())
                     continue;
-                const auto node = ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(responses[i].data);
+                const auto node = ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(*data[i]);
                 auto key = std::filesystem::path(leaf_paths[i]).lexically_relative(base_path).string();
                 result.emplace_back(std::move(key), node.file_path);
             }

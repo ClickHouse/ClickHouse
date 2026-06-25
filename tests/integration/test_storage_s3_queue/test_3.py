@@ -521,6 +521,8 @@ def test_system_queue_metadata_ordered(started_cluster):
             # A single processed pointer (no buckets) keeps the test deterministic.
             "s3queue_buckets": 1,
             "s3queue_processing_threads_num": 1,
+            # Pin processing-node persistence so the counts are deterministic.
+            "use_persistent_processing_nodes": False,
         },
     )
     create_mv(node, table_name, dst_table_name)
@@ -586,5 +588,164 @@ def test_system_queue_metadata_ordered(started_cluster):
         """
     )
     assert files_path in processed_path_value
+
+    node.query(f"DROP TABLE {table_name} SYNC")
+
+
+def test_system_queue_metadata_ordered_buckets(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_system_queue_metadata_buckets_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 100
+    buckets = 4
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_buckets": buckets,
+            "s3queue_processing_threads_num": buckets,
+            # Pin processing-node persistence so the counts are deterministic.
+            "use_persistent_processing_nodes": False,
+        },
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    generate_random_files(started_cluster, files_path, files_to_generate, row_num=1)
+
+    for _ in range(60):
+        if files_to_generate == int(
+            node.query(f"SELECT count() FROM {dst_table_name}")
+        ):
+            break
+        time.sleep(1)
+    assert files_to_generate == int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    # processed_nodes is NULL in ordered mode.
+    assert (
+        "1"
+        == node.query(
+            f"""
+            SELECT processed_nodes IS NULL
+            FROM system.s3_queue_metadata
+            WHERE zookeeper_path ilike '%{keeper_path}%'
+            """
+        ).strip()
+    )
+
+    # With buckets, each bucket that processed a file keeps its own pointer,
+    # so processed_path is keyed by `buckets/<n>/processed`.
+    keys = (
+        node.query(
+            f"""
+            SELECT arrayJoin(mapKeys(processed_path))
+            FROM system.s3_queue_metadata
+            WHERE zookeeper_path ilike '%{keeper_path}%'
+            ORDER BY 1
+            """
+        )
+        .strip()
+        .split("\n")
+    )
+    assert 2 <= len(keys) <= buckets
+    for key in keys:
+        assert key.startswith("buckets/") and key.endswith("/processed"), key
+
+    processed_path_values = node.query(
+        f"""
+        SELECT arrayJoin(mapValues(processed_path))
+        FROM system.s3_queue_metadata
+        WHERE zookeeper_path ilike '%{keeper_path}%'
+        """
+    )
+    for value in processed_path_values.strip().split("\n"):
+        assert files_path in value
+
+    node.query(f"DROP TABLE {table_name} SYNC")
+
+
+def test_system_queue_metadata_ordered_partitioned(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_system_queue_metadata_partitioned_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+
+    partition_regex = r"(?P<hostname>[^_]+)_(?P<timestamp>\d{8}T\d{6}\.\d{6}Z)_(?P<sequence>\d+)"
+    partition_component = "hostname"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            # No buckets, so the pointers live directly under `processed/<partition>`.
+            "s3queue_buckets": 1,
+            "s3queue_processing_threads_num": 1,
+            # Pin processing-node persistence so the counts are deterministic.
+            "use_persistent_processing_nodes": False,
+        },
+        partitioning_mode="regex",
+        partition_regex=partition_regex,
+        partition_component=partition_component,
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    hostnames = ["server-1", "server-2", "server-3"]
+    for hostname in hostnames:
+        put_s3_file_content(
+            started_cluster,
+            f"{files_path}/{hostname}_20251217T100000.000000Z_0001.csv",
+            b"1,1,1\n",
+        )
+
+    for _ in range(60):
+        if len(hostnames) == int(
+            node.query(f"SELECT count() FROM {dst_table_name}")
+        ):
+            break
+        time.sleep(1)
+    assert len(hostnames) == int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    # processed_nodes is NULL in ordered mode.
+    assert (
+        "1"
+        == node.query(
+            f"""
+            SELECT processed_nodes IS NULL
+            FROM system.s3_queue_metadata
+            WHERE zookeeper_path ilike '%{keeper_path}%'
+            """
+        ).strip()
+    )
+
+    # With partitioning there is one processed pointer per partition,
+    # keyed by `processed/<partition>`.
+    keys = (
+        node.query(
+            f"""
+            SELECT arrayJoin(mapKeys(processed_path))
+            FROM system.s3_queue_metadata
+            WHERE zookeeper_path ilike '%{keeper_path}%'
+            ORDER BY 1
+            """
+        )
+        .strip()
+        .split("\n")
+    )
+    assert len(keys) == len(hostnames)
+    for key in keys:
+        assert key.startswith("processed/"), key
 
     node.query(f"DROP TABLE {table_name} SYNC")

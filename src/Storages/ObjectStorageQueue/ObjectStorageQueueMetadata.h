@@ -196,6 +196,8 @@ public:
     bool usePersistentProcessingNode() const { return use_persistent_processing_nodes; }
     size_t getPersistentProcessingNodeTTLSeconds() const { return persistent_processing_node_ttl_seconds; }
 
+    size_t getKeeperMultireadBatchSize() const { return keeper_multiread_batch_size; }
+
 private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
