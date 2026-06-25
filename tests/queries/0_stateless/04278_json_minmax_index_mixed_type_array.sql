@@ -1,7 +1,3 @@
--- Tags: zookeeper, no-replicated-database, no-shared-merge-tree
--- Tag no-replicated-database: covers ReplicatedMergeTree-specific metadata replay behavior.
--- Tag no-shared-merge-tree: covers ReplicatedMergeTree-specific metadata replay behavior.
-
 -- Test for https://github.com/ClickHouse/ClickHouse/issues/106088
 -- JSON (Object) column should be forbidden in minmax skip index by default.
 -- The MergeTree setting or query-level setting allow_minmax_index_for_json can suppress
