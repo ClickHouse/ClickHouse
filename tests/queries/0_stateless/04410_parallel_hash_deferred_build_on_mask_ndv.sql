@@ -42,6 +42,7 @@ SET log_comment = '04410_on_mask';
 SELECT 'mask', count(), sum(cityHash64(l.k, l.v, r.k, r.keep, r.v))
 FROM t_probe l LEFT JOIN t_build r ON l.k = r.k AND r.keep = 1;
 
+SET log_comment = ''; -- so the assertion SELECTs below are not themselves matched by the filter
 SYSTEM FLUSH LOGS query_log;
 
 -- The deferred reserve is sized by the inserted (keep = 1) keys (~2000), not by all 200000 build keys.

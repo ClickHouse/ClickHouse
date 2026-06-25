@@ -55,6 +55,7 @@ SELECT 'filtered', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_probe l INNER 
 SET log_comment = '04411_unfiltered';
 SELECT 'unfiltered', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_probe l INNER JOIN t_build r ON l.k = r.k;
 
+SET log_comment = ''; -- so the assertion SELECTs below are not themselves matched by the filter
 SYSTEM FLUSH LOGS query_log;
 
 -- The filtered right side's key NDV is clamped by the estimated row count, so it is NOT trusted: the

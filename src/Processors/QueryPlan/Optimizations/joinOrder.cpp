@@ -86,12 +86,13 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
             UInt64 min_ndv = std::min(left_it->second.num_distinct_values, right_it->second.num_distinct_values);
             left_it->second.num_distinct_values = min_ndv;
             right_it->second.num_distinct_values = min_ndv;
-            /// The combined distinct count is trustworthy only if both sides were uniq-backed: a min
-            /// against a mock-derived count is itself a guess. Keep the flag conservative.
-            const bool both_from_uniq
-                = left_it->second.num_distinct_values_from_uniq && right_it->second.num_distinct_values_from_uniq;
-            left_it->second.num_distinct_values_from_uniq = both_from_uniq;
-            right_it->second.num_distinct_values_from_uniq = both_from_uniq;
+            /// `min(left, right)` is only an upper bound on the joined distinct keys (partial key overlap
+            /// makes the real count lower), so the result is an estimate, not a measured `uniq`. Clear the
+            /// provenance flag: the value must not later be trusted as a `uniq`-backed build-map size by
+            /// `extractTrustworthyRightKeyNdv` if this join's column stats ever reach it. (The value still
+            /// feeds the join-order cost model, which does not require provenance.)
+            left_it->second.num_distinct_values_from_uniq = false;
+            right_it->second.num_distinct_values_from_uniq = false;
         }
     }
 

@@ -140,9 +140,10 @@ public:
     /// Column statistics of the right (build) input relation, before this join's `min(left, right)`
     /// equi-key clamp. Used to size the build hash map: `result_column_stats` holds the post-join output
     /// stats, which underestimate the build-side distinct-key count when the probe side has fewer
-    /// distinct keys. Populated only when the build input is a base relation (a DP leaf); empty for
-    /// derived/joined build inputs, so the deferred-build NDV shortcut stays restricted to the simple,
-    /// reliable case (see `extractTrustworthyRightKeyNdv`).
+    /// distinct keys. Populated only when the build input is a single DP leaf (a base relation, or a
+    /// derived/subquery input whose stats carry no `uniq` provenance); empty for join sub-tree build
+    /// inputs, so the deferred-build NDV shortcut stays restricted to the simple, reliable case (see
+    /// `extractTrustworthyRightKeyNdv`).
     const std::unordered_map<String, ColumnStats> & getRightInputColumnStats() const { return right_input_column_stats; }
     void setOptimized(
         std::optional<UInt64> estimated_rows_ = {},
