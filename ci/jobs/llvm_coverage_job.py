@@ -658,6 +658,27 @@ if __name__ == "__main__":
                 results.append(nc_res)
                 _nc_info = nc_res.ext.get("comment", "") or ""
                 _nc_top_files = list(nc_res.ext.get("newly_covered_top_files", []))
+
+                # Override the lcov --summary line/function percentages with the
+                # stable-union values computed in print_newly_covered_code.py.
+                # These use Union(m1..m5,PR) vs Union(m1..m6) which is much less
+                # noisy than the single-run comparison. Branches are not tracked
+                # in the stable sets so we keep the raw lcov branch numbers.
+                if nc_res.ext.get("stable_b_line_cov") is not None:
+                    b_line_cov      = nc_res.ext["stable_b_line_cov"]
+                    c_line_cov      = nc_res.ext["stable_c_line_cov"]
+                    b_function_cov  = nc_res.ext["stable_b_func_cov"]
+                    c_function_cov  = nc_res.ext["stable_c_func_cov"]
+                    b_line_hit      = nc_res.ext["stable_b_line_hit"]
+                    b_line_total    = nc_res.ext["stable_b_line_tot"]
+                    c_line_hit      = nc_res.ext["stable_c_line_hit"]
+                    c_line_total    = nc_res.ext["stable_c_line_tot"]
+                    b_func_hit      = nc_res.ext["stable_b_func_hit"]
+                    b_func_total    = nc_res.ext["stable_b_func_tot"]
+                    c_func_hit      = nc_res.ext["stable_c_func_hit"]
+                    c_func_total    = nc_res.ext["stable_c_func_tot"]
+                    delta           = c_line_cov - b_line_cov
+                    print(f"Using stable-union coverage delta for comment: {delta:+.4f} pp")
                 _nc_log_name = f"{Utils.normalize_string(nc_res.name)}.log"
                 _nc_url = (
                     f"{_s3_base}/llvm_coverage/"

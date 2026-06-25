@@ -692,6 +692,21 @@ if __name__ == "__main__":
     r.ext["newly_covered_files"] = total_files
     r.ext["lbc_lines"] = lbc_total_lines
     r.ext["lbc_fns"] = lbc_total_fns
+    # Stable-union coverage delta for the GitHub comment table.
+    # These replace the noisy single-run lcov --summary numbers with the
+    # noise-reduced Union(m1..m5,PR) vs Union(m1..m6) comparison.
+    r.ext["stable_b_line_cov"] = b_lp
+    r.ext["stable_c_line_cov"] = c_lp
+    r.ext["stable_b_func_cov"] = b_fp
+    r.ext["stable_c_func_cov"] = c_fp
+    r.ext["stable_b_line_hit"]  = b_lh
+    r.ext["stable_b_line_tot"]  = b_lt
+    r.ext["stable_c_line_hit"]  = c_lh
+    r.ext["stable_c_line_tot"]  = c_lt
+    r.ext["stable_b_func_hit"]  = b_fh
+    r.ext["stable_b_func_tot"]  = b_ft
+    r.ext["stable_c_func_hit"]  = c_fh
+    r.ext["stable_c_func_tot"]  = c_ft
     # Snapshot the top files into the result for inline rendering in the GH comment.
     r.ext["newly_covered_top_files"] = [
         {"rel": rel, "lines": lc, "fns": fc}
