@@ -99,3 +99,25 @@ lat2_count 3 1
 lat2_count 5 2
 
 # EOF
+m_inf +Inf
+
+m_nan NaN
+
+m_ninf -Inf
+
+m_pinf +Inf
+
+# EOF
+foo_total	5	total foos	counter	bars
+foo_total	5	
+x_created	7	
+lonely_total	9	
+# TYPE h histogram
+h_bucket{le="+Inf"} 1
+h_count 1
+
+# EOF
+# TYPE s summary
+s{quantile="0.5"} 1
+
+# EOF

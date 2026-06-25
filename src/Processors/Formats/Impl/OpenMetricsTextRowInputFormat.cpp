@@ -40,6 +40,7 @@ using OpenMetricsText::FORMAT_NAME;
 using OpenMetricsText::throwIncorrect;
 using OpenMetricsText::isValidName;
 using OpenMetricsText::readQuotedLabelValue;
+using OpenMetricsText::equalsIgnoreCaseAscii;
 using OpenMetricsText::isStrictRealNumberToken;
 using OpenMetricsText::secondsTokenToMillis;
 using OpenMetricsText::sampleKindCount;
@@ -139,12 +140,25 @@ Float64 parseRealNumber(std::string_view token, const String & line)
     return v;
 }
 
-/// OpenMetrics `number`: real number, NaN, ±Inf. Requires full-token consumption.
+/// OpenMetrics `number`: a real number, or the special values NaN / ±Inf. Special values are ASCII
+/// case-insensitive, and infinity may be spelled `inf` or `infinity` with an optional leading sign
+/// (`nan` carries no sign). Requires full-token consumption for the real-number path.
 Float64 parseSampleValue(std::string_view token)
 {
-    if (token == "NaN")                    return std::numeric_limits<double>::quiet_NaN();
-    if (token == "+Inf" || token == "Inf") return std::numeric_limits<double>::infinity();
-    if (token == "-Inf")                   return -std::numeric_limits<double>::infinity();
+    if (equalsIgnoreCaseAscii(token, "nan"))
+        return std::numeric_limits<double>::quiet_NaN();
+
+    std::string_view inf_token = token;
+    bool inf_negative = false;
+    if (!inf_token.empty() && (inf_token.front() == '+' || inf_token.front() == '-'))
+    {
+        inf_negative = inf_token.front() == '-';
+        inf_token.remove_prefix(1);
+    }
+    if (equalsIgnoreCaseAscii(inf_token, "inf") || equalsIgnoreCaseAscii(inf_token, "infinity"))
+        return inf_negative
+            ? -std::numeric_limits<double>::infinity()
+            : std::numeric_limits<double>::infinity();
 
     if (!isStrictRealNumberToken(token))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse float value '{}' in OpenMetrics format", token);
@@ -473,9 +487,41 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
             break;
         }
 
+        /// A `counter` family `foo` exposes its sample as `foo_total`. Unlike the histogram/summary
+        /// siblings folded above, the `_total` suffix is NOT dropped: the emitted name stays
+        /// `foo_total`, but the row inherits the base family's type/help/unit. Decouple the
+        /// metadata-family lookup from `logical_name` so the name round-trips unchanged while the
+        /// metadata comes from the base family.
+        String meta_family_name = logical_name;
+        {
+            static constexpr std::string_view total_suffix = "_total";
+            if (stem.ends_with(total_suffix) && stem.size() > total_suffix.size() && !family_meta.contains(stem))
+            {
+                const String base = stem.substr(0, stem.size() - total_suffix.size());
+                if (auto it = family_meta.find(base); it != family_meta.end() && it->second.type == "counter")
+                    meta_family_name = base;
+            }
+
+            /// Sibling suffixes ClickHouse does not model: reject them when the base is a declared
+            /// family, but leave a standalone `x_created` (no declared base family) to ingest as an
+            /// ordinary metric named `x_created`.
+            static constexpr std::array<std::string_view, 3> unsupported_suffixes = {"_created", "_gcount", "_gsum"};
+            for (const auto & suffix : unsupported_suffixes)
+            {
+                if (!stem.ends_with(suffix) || stem.size() <= suffix.size())
+                    continue;
+                const String base = stem.substr(0, stem.size() - suffix.size());
+                if (family_meta.contains(base))
+                    throwIncorrect(
+                        fmt::format("Unsupported OpenMetrics sibling suffix '{}' for family '{}'", suffix, base),
+                        line);
+                break;
+            }
+        }
+
         /// Don't `operator[]` on lookup — that would grow the map for every unseen family name.
         static const FamilyMeta empty_meta;
-        const auto meta_it = family_meta.find(logical_name);
+        const auto meta_it = family_meta.find(meta_family_name);
         const FamilyMeta & fm = (meta_it == family_meta.end()) ? empty_meta : meta_it->second;
 
         if (fm.type == "histogram" || fm.type == "summary")

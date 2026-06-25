@@ -209,6 +209,26 @@ inline void writeQuotedLabelValue(std::string_view s, WriteBuffer & buf)
     writeChar('"', buf);
 }
 
+/// ASCII case-insensitive equality. OpenMetrics `number` special values (`nan`, `inf`, `infinity`)
+/// and the histogram `+Inf` bucket label are matched case-insensitively per the spec.
+inline bool equalsIgnoreCaseAscii(std::string_view a, std::string_view b)
+{
+    if (a.size() != b.size())
+        return false;
+    for (size_t i = 0; i < a.size(); ++i)
+    {
+        char ca = a[i];
+        char cb = b[i];
+        if (ca >= 'A' && ca <= 'Z')
+            ca = static_cast<char>(ca - 'A' + 'a');
+        if (cb >= 'A' && cb <= 'Z')
+            cb = static_cast<char>(cb - 'A' + 'a');
+        if (ca != cb)
+            return false;
+    }
+    return true;
+}
+
 /// `tryReadFloatText` accepts tokens like `.` and `1e+` that OpenMetrics `realnumber` forbids.
 inline bool isStrictRealNumberToken(std::string_view token)
 {

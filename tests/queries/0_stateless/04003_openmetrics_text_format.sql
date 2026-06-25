@@ -205,3 +205,41 @@ SELECT * FROM (
     UNION ALL
     SELECT 'lat2', 5.0, '', 'histogram', map('count', ''), CAST(2000 AS Nullable(Int64)), ''
 ) ORDER BY timestamp FORMAT OpenMetrics;
+
+-- ===== Reviewer findings (round 2): case-insensitive `number`, counter `_total` metadata, boundary-label validation =====
+
+-- M1: OpenMetrics `number` special values are ASCII case-insensitive, and inf may be spelled inf/infinity
+-- with an optional sign; `m nan`, `m +infinity`, `m -INFINITY`, `m InF` parse and round-trip to the
+-- canonical NaN / +Inf / -Inf on output.
+SELECT name, value FROM format(OpenMetrics, 'name String, value Float64', concat('m_nan nan', char(10), 'm_pinf +infinity', char(10), 'm_ninf -INFINITY', char(10), 'm_inf InF', char(10), '# EOF', char(10))) ORDER BY name FORMAT OpenMetrics;
+-- M1: the case-insensitive `number` rule must NOT leak into the timestamp position — `realnumber` stays
+-- strict and keeps rejecting NaN / Inf in every spelling.
+SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 NaN', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 nan', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 infinity', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 -inf', char(10))); -- { serverError INCORRECT_DATA }
+
+-- M2: a `counter` family `foo` exposes its sample as `foo_total`; the row inherits type/help/unit from
+-- the base family but keeps the name `foo_total` (the `_total` suffix is not dropped).
+SELECT name, value, help, type, unit FROM format(OpenMetrics, 'name String, value Float64, help String, type String, labels Map(String, String), timestamp Nullable(Int64), unit String', concat('# HELP foo total foos', char(10), '# TYPE foo counter', char(10), '# UNIT foo bars', char(10), 'foo_total 5', char(10), '# EOF', char(10))) FORMAT TSV;
+-- M2: inheritance is counter-only — a `_total` under a non-counter family stays an ordinary metric with no metadata.
+SELECT name, value, type FROM format(OpenMetrics, 'name String, value Float64, help String, type String, labels Map(String, String), timestamp Nullable(Int64), unit String', concat('# TYPE foo gauge', char(10), 'foo_total 5', char(10), '# EOF', char(10))) FORMAT TSV;
+-- M2: unsupported sibling suffixes (`_created` / `_gcount` / `_gsum`) under a declared family are rejected.
+SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('# TYPE foo counter', char(10), 'foo_created 5', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('# TYPE foo gauge', char(10), 'foo_gcount 5', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('# TYPE foo summary', char(10), 'foo_gsum 5', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+-- M2: do NOT over-reject — a standalone `_created` / `_total` whose base family is undeclared ingests as an ordinary metric.
+SELECT name, value, type FROM format(OpenMetrics, 'name String, value Float64, help String, type String, labels Map(String, String), timestamp Nullable(Int64), unit String', concat('x_created 7', char(10), '# EOF', char(10))) FORMAT TSV;
+SELECT name, value, type FROM format(OpenMetrics, 'name String, value Float64, help String, type String, labels Map(String, String), timestamp Nullable(Int64), unit String', concat('lonely_total 9', char(10), '# EOF', char(10))) FORMAT TSV;
+
+-- M3: histogram `le` / summary `quantile` boundary labels are validated with a strict parse BEFORE the
+-- numeric sort (the sort's lenient parse would silently map garbage to 0). Invalid boundaries are
+-- rejected; the canonical `+Inf` bucket and an in-range quantile still succeed.
+SELECT 'h' AS name, 1.0 AS value, '' AS help, 'histogram' AS type, map('le', 'NaN') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+SELECT 'h' AS name, 1.0 AS value, '' AS help, 'histogram' AS type, map('le', '-Inf') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+SELECT 'h' AS name, 1.0 AS value, '' AS help, 'histogram' AS type, map('le', 'garbage') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+SELECT 's' AS name, 1.0 AS value, '' AS help, 'summary' AS type, map('quantile', 'bogus') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+SELECT 's' AS name, 1.0 AS value, '' AS help, 'summary' AS type, map('quantile', '2') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+SELECT 's' AS name, 1.0 AS value, '' AS help, 'summary' AS type, map('quantile', 'NaN') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+SELECT 'h' AS name, 1.0 AS value, '' AS help, 'histogram' AS type, map('le', '+Inf') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics;
+SELECT 's' AS name, 1.0 AS value, '' AS help, 'summary' AS type, map('quantile', '0.5') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics;
