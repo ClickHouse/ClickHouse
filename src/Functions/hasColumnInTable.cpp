@@ -1,3 +1,5 @@
+#include <Access/Common/AccessFlags.h>
+#include <Access/Common/AccessType.h>
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -33,10 +35,13 @@ public:
     static constexpr auto name = "hasColumnInTable";
     static FunctionPtr create(ContextPtr context_)
     {
-        return std::make_shared<FunctionHasColumnInTable>(context_->getGlobalContext());
+        return std::make_shared<FunctionHasColumnInTable>(context_);
     }
 
-    explicit FunctionHasColumnInTable(ContextPtr global_context_) : WithContext(global_context_)
+    /// Holds the query context for the access check in executeImpl. The check must not run
+    /// against the global context, which has full access by construction.
+    explicit FunctionHasColumnInTable(ContextPtr context_)
+        : WithContext(context_)
     {
     }
 
@@ -118,6 +123,11 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     bool has_alias_column = false;
     if (host_name.empty())
     {
+        /// Check access on the raw names before resolving the table, so denial does not
+        /// depend on the table/database existing (no existence oracle). SHOW_COLUMNS is the
+        /// same grant required by DESCRIBE and SHOW CREATE TABLE.
+        getContext()->checkAccess(AccessType::SHOW_COLUMNS, database_name, table_name);
+
         // FIXME this (probably) needs a non-constant access to query context,
         // because it might initialized a storage. Ideally, the tables required
         // by the query should be initialized at an earlier stage.
