@@ -19,7 +19,7 @@
 
 # 2026 Changelog
 
-### <a id="266"></a> ClickHouse release 26.6, 2026-06-25. [Presentation](https://presentations.clickhouse.com/2026-release-26.6/), [Video](https://www.youtube.com/@ClickHouseDB)
+### <a id="266"></a> ClickHouse release 26.6, 2026-06-25. [Presentation](https://presentations.clickhouse.com/2026-release-26.6/), [Video](https://www.youtube.com/watch?v=-NmqMH9y4EY)
 
 #### Backward Incompatible Change
 * The change removes `allow_experimental_query_deduplication` feature. The feature was experimental for a long time, has no tests and not going to be supported (initial tests were unstable and has been removed in [#49579](https://github.com/ClickHouse/ClickHouse/pull/49579)). [#99398](https://github.com/ClickHouse/ClickHouse/pull/99398) ([Igor Nikonov](https://github.com/devcrafter)).
