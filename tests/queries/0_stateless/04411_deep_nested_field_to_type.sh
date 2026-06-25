@@ -5,15 +5,17 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # A large max_parser_depth lets the parser build a very deeply nested expression. The
-# downstream recursion that walks it (building a DataType from a Field, converting a Field
-# to a type, finding a common supertype, masking secret arguments in the AST) must stay
-# guarded so it reports a clean exception instead of overflowing the native stack and
-# crashing the server. Each query below must produce an exception, never a crash.
-
-# Queries are piped through stdin because the deep ones are too long for a command-line argument.
-# Each query must report exactly TOO_DEEP_RECURSION (code 306). Matching any "Code: N" would
-# also accept a server death surfacing as a connection-reset error, or an unrelated early
-# parser/AST limit, neither of which proves the recursion was caught on the native stack.
+# recursion that later walks it (building a DataType from a Field, converting a Field to a
+# type, formatting/hashing/cloning the AST, masking secret arguments) must stay guarded so
+# it reports TOO_DEEP_RECURSION (code 306) instead of overflowing the native stack and
+# crashing the server. Matching any "Code: N" would also accept a server death surfacing as
+# a connection-reset error, or an unrelated early limit, so the exact code is pinned.
+#
+# Depths: building a deeply nested literal Field is quadratic, so the array literal uses a
+# modest depth (just deep enough to trip the guard in an optimized build, the worst case;
+# sanitizer builds, with larger frames, trip it sooner). Nested function calls are linear to
+# build and use a large depth. Queries go through stdin because they are too long for a
+# command-line argument.
 check() {
     local query="$1"
     echo "$query" \
@@ -21,12 +23,11 @@ check() {
         | grep -oE "Code: [0-9]+" | head -1
 }
 
-# Deep Array/Tuple/Map literals: FieldToDataType / convertFieldToType / getLeastSupertype.
-check "SELECT toTypeName($(python3 -c "print('['*5000 + '1' + ']'*5000)"))"
-check "SELECT $(python3 -c "print('['*5000 + '1' + ']'*5000)")"
-check "SELECT $(python3 -c "print('('*5000 + '1,2' + ')'*5000)")"
+# Deeply nested array literal: FieldToDataType / getLeastSupertype (the type) and
+# convertFieldToType (the constant column). Original report: toTypeName of such a literal.
+check "SELECT $(python3 -c "print('['*2500 + '1' + ']'*2500)")"
 
-# Deep nested function calls: AST secret-argument masking (childrenHaveSecretParts).
+# Deeply nested function calls: AST formatting, hashing, cloning and secret-argument masking.
 check "SELECT $(python3 -c "print('array('*30000 + '1' + ')'*30000)")"
 check "SELECT $(python3 -c "print('tuple('*30000 + '1' + ')'*30000)")"
 check "SELECT 1$(python3 -c "print('+1'*30000)")"

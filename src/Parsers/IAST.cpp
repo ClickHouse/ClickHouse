@@ -151,6 +151,7 @@ IASTHash IAST::getTreeHash(bool ignore_aliases) const
 
 void IAST::updateTreeHash(SipHash & hash_state, bool ignore_aliases) const
 {
+    checkStackSize();
     updateTreeHashImpl(hash_state, ignore_aliases);
     hash_state.update(children.size());
     for (const auto & child : children)
@@ -268,6 +269,7 @@ bool IAST::childrenHaveSecretParts() const
 
 void IAST::cloneChildren()
 {
+    checkStackSize();
     for (auto & child : children)
         child = child->clone();
 }
@@ -349,6 +351,7 @@ void IAST::FormatSettings::checkIdentifier(const String & name) const
 
 void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const
 {
+    checkStackSize();
     String indent_str(indent, '-');
     ostr << indent_str << getID() << ", ";
     writePointerHex(this, ostr);
@@ -477,6 +480,7 @@ void IAST::format(WriteBuffer & ostr, const FormatSettings & settings) const
 
 void IAST::format(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    checkStackSize();
     const bool parens = decideParensEmission(*this, frame);
     if (parens)
         ostr.write('(');
@@ -487,6 +491,7 @@ void IAST::format(WriteBuffer & ostr, const FormatSettings & settings, FormatSta
 
 void IAST::format(FormattingBuffer out) const
 {
+    checkStackSize();
     const bool parens = decideParensEmission(*this, out.frame);
     if (parens)
         out.ostr.write('(');
