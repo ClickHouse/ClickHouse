@@ -11,6 +11,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <Common/Arena.h>
 #include <Common/FieldBinaryEncoding.h>
+#include <Common/SipHash.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Field.h>
 
@@ -365,9 +366,13 @@ struct AggregateFunctionMergedJSONPatchData
     {
         const auto & object_column = assert_cast<const ColumnObject &>(json_column);
 
-        const char * begin = nullptr;
-        auto serialized = object_column.serializeValueIntoArena(row_num, arena, begin, nullptr);
-        SortKey sort_key = SortKey(Field(String(serialized)));
+        /// Hash the row into a temporary SipHash rather than serializing into the aggregate arena.
+        /// serializeValueIntoArena would leave the full serialized JSON in the arena for the
+        /// lifetime of the aggregate state, even for rows that are later shadowed. The 16-byte
+        /// hash digest lives entirely on the stack and produces no arena allocation.
+        SipHash hash;
+        object_column.updateHashWithValue(row_num, hash);
+        SortKey sort_key = SortKey(Field(hash.get128()));
 
         addKeyValuePairs(object_column, row_num, sort_key, arena);
     }
