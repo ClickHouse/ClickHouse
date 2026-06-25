@@ -61,15 +61,22 @@ TEST(BcryptConcurrencyLimiter, MoveTransfersOwnership)
     BcryptConcurrencyLimiter limiter;
     limiter.setLimit(1);
 
-    auto g1 = limiter.tryAcquire();
-    EXPECT_TRUE(g1.acquired());
-    EXPECT_EQ(limiter.getInFlight(), 1u);
+    auto g2 = [&]
+    {
+        auto g1 = limiter.tryAcquire();
+        EXPECT_TRUE(g1.acquired());
+        EXPECT_EQ(limiter.getInFlight(), 1u);
+        return g1; /// move out; ownership of the single slot transfers to g2
+    }();
 
-    auto g2 = std::move(g1);
+    /// The moved-from g1 went out of scope and released nothing: the slot is still held exactly once.
     EXPECT_TRUE(g2.acquired());
-    EXPECT_FALSE(g1.acquired()); /// NOLINT(bugprone-use-after-move)
-    /// Moved-from guard releases nothing; the single slot is still held exactly once.
     EXPECT_EQ(limiter.getInFlight(), 1u);
+    EXPECT_FALSE(limiter.tryAcquire().acquired());
+
+    /// Destroying the owner frees the slot, confirming the move transferred ownership rather than copying it.
+    g2 = BcryptConcurrencyLimiter::Guard{};
+    EXPECT_EQ(limiter.getInFlight(), 0u);
 }
 
 TEST(BcryptConcurrencyLimiter, LimitCanBeRaisedAndLowered)

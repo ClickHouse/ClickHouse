@@ -131,7 +131,8 @@ namespace
     /// being cached (the cache only stores values the load function returns), so a later retry under
     /// lower load is not poisoned by a "wrong" entry. checkPasswordBcrypt catches it and reports a
     /// failed bcrypt method (see the catch site for why this must not propagate).
-    struct BcryptThrottled
+    /// Derives from std::exception only to satisfy hicpp-exception-baseclass; it never reaches a client.
+    struct BcryptThrottled : std::exception
     {
     };
 #endif
