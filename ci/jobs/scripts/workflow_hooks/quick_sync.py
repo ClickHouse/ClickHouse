@@ -5,7 +5,6 @@ import traceback
 from ci.defs.defs import SYNC
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
-from ci.praktika.result import Result
 from ci.praktika.utils import Shell
 
 
@@ -24,18 +23,18 @@ def check():
 
     if not Shell.check(cmd):
         GH.post_commit_status(
-            name=SYNC, status=Result.Status.ERROR, description="failed to start the sync", url=""
+            name=SYNC, status="error", description="failed to start the sync", url=""
         )
     else:
         GH.post_commit_status(
-            name=SYNC, status=Result.Status.PENDING, description="sync started", url=""
+            name=SYNC, status="pending", description="sync started", url=""
         )
 
 
 if __name__ == "__main__":
     try:
         check()
-    except Exception:
+    except Exception as e:
         print("Failed to initiate sync")
         traceback.print_exc()
         sys.exit(1)

@@ -14,24 +14,13 @@ namespace DB
 /// Serialization (writing) is not supported because subcolumns are read-only.
 class SerializationMapKeyValue final : public SerializationWrapper
 {
-private:
+public:
     SerializationMapKeyValue(
         const SerializationPtr & value_serialization_,
         const SerializationPtr & map_nested_serialization_,
         MergeTreeMapSerializationVersion serialization_version_,
         ColumnPtr key_,
         const DataTypePtr & nested_type_);
-
-public:
-    static SerializationPtr create(
-        const SerializationPtr & value_serialization_,
-        const SerializationPtr & map_nested_serialization_,
-        MergeTreeMapSerializationVersion serialization_version_,
-        ColumnPtr key_,
-        const DataTypePtr & nested_type_);
-
-    /// Does not support pooling because it stores runtime data (ColumnPtr key).
-    bool supportsPooling() const override { return false; }
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
