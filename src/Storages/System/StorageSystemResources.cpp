@@ -65,13 +65,13 @@ void StorageSystemResources::fillData(MutableColumns & res_columns, ContextPtr c
 
 void StorageSystemResources::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-    backup_entries_collector.getContext()->getWorkloadEntityStorage().backup(
+    backup_entries_collector.getContext()->getWorkloadEntityStoragePtr()->backup(
         backup_entries_collector, data_path_in_backup, WorkloadEntityType::Resource);
 }
 
 void StorageSystemResources::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-    restorer.getContext()->getWorkloadEntityStorage().restore(restorer, data_path_in_backup, WorkloadEntityType::Resource);
+    restorer.getContext()->getWorkloadEntityStoragePtr()->restore(restorer, data_path_in_backup, WorkloadEntityType::Resource);
 }
 
 }
