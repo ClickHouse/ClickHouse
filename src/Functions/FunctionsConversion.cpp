@@ -71,6 +71,20 @@ static MutableColumnPtr cloneEmptyFromFirstConvertedColumn(const VectorWithMemor
     return nullptr;
 }
 
+/// Row-wise source null map (ColumnUInt8, 1 = source value is NULL), or nullptr when the column
+/// cannot hold NULLs. Dynamic/Variant encode NULLs via NULL_DISCRIMINATOR rather than a separate
+/// null map, so reconstruct it via createNullMap() (the same way FunctionConvert does).
+static ColumnPtr getSourceNullMap(const IColumn & src_col)
+{
+    if (const auto * src_nullable = checkAndGetColumn<ColumnNullable>(&src_col))
+        return src_nullable->getNullMapColumnPtr();
+    if (const auto * src_dynamic = checkAndGetColumn<ColumnDynamic>(&src_col))
+        return src_dynamic->getVariantColumn().createNullMap();
+    if (const auto * src_variant = checkAndGetColumn<ColumnVariant>(&src_col))
+        return src_variant->createNullMap();
+    return nullptr;
+}
+
 ColumnPtr ConvertImplFromDynamicToColumn::execute(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & result_type,
@@ -1011,14 +1025,15 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
                 {
                     /// Nullable target with a source element: only NULLs that are NEW
                     /// (present in result but not in source) are conversion failures.
+                    /// Source may be ColumnNullable, ColumnLowCardinality wrapping, or a
+                    /// Dynamic/Variant whose NULLs are encoded by NULL_DISCRIMINATOR.
                     size_t from_idx = *to_reverse_index[i];
-                    /// Source may be ColumnNullable or ColumnLowCardinality wrapping
                     auto src_col = column_tuple.getColumns()[from_idx]->convertToFullColumnIfLowCardinality();
-                    const auto * src_nullable = checkAndGetColumn<ColumnNullable>(src_col.get());
+                    auto source_null_map_col = getSourceNullMap(*src_col);
 
-                    if (src_nullable)
+                    if (source_null_map_col)
                     {
-                        const auto & source_null_map = src_nullable->getNullMapData();
+                        const auto & source_null_map = assert_cast<const ColumnUInt8 &>(*source_null_map_col).getData();
                         for (size_t row = 0; row < input_rows_count; ++row)
                             null_map_data[row] |= result_null_map[row] & ~source_null_map[row];
                     }
