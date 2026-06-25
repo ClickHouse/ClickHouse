@@ -37,3 +37,15 @@ $CLICKHOUSE_CLIENT "${client_opts[@]}" -m -q "
         (select engine_settings['allow_native_copy'] from system.backups where id = '$rid_native')
         != (select engine_settings['allow_native_copy'] from system.backups where id = '$rid_no_native');
 "
+
+# An incremental restore reads from more than one backup (the base backup and the incremental one),
+# which can have different endpoint settings. engine_settings cannot represent multiple readers, so it
+# is omitted (empty) for such restores rather than reporting only the top-level reader's settings.
+$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "INSERT INTO \`04410_t\` SELECT * FROM numbers(10, 10)"
+$CLICKHOUSE_CLIENT --format Null "${client_opts[@]}" -q "BACKUP TABLE \`04410_t\` TO S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/${CLICKHOUSE_TEST_UNIQUE_NAME}_inc') SETTINGS base_backup = S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/${CLICKHOUSE_TEST_UNIQUE_NAME}_data')"
+
+rid_inc="${CLICKHOUSE_TEST_UNIQUE_NAME}_ri"
+$CLICKHOUSE_CLIENT --format Null "${client_opts[@]}" -q "RESTORE TABLE \`04410_t\` AS \`04410_t_inc\` FROM S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/${CLICKHOUSE_TEST_UNIQUE_NAME}_inc') SETTINGS id='$rid_inc'"
+
+$CLICKHOUSE_CLIENT "${client_opts[@]}" -q "
+    select length(engine_settings) = 0 from system.backups where id = '$rid_inc'"

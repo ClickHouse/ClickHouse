@@ -337,8 +337,13 @@ std::map<String, String> BackupImpl::getEngineSettings() const
 {
     if (writer)
         return writer->getSerializedSettings();
-    if (reader)
+
+    /// A RESTORE can read from more than one reader with different endpoint settings (the base backup for
+    /// incremental restores and the lightweight snapshot reader), which a flat map cannot represent. Report
+    /// the reader's settings only when the top-level backup is the only reader; otherwise omit them.
+    if (reader && !base_backup_info && !lightweight_snapshot_reader)
         return reader->getSerializedSettings();
+
     return {};
 }
 
