@@ -362,13 +362,25 @@ avro::ValidSchema compileAvroSchema(const String & schema_json)
 static void extendSchemaForPartitions(
     String & schema,
     const std::vector<String> & partition_columns,
-    const DataTypes & partition_types)
+    const DataTypes & partition_types,
+    const Poco::JSON::Array::Ptr & partition_spec_fields)
 {
+    /// The manifest's `partition` struct must use the SAME field-ids as the table's partition
+    /// spec: Iceberg projects the manifest partition values onto the spec by field-id. The ids
+    /// are not a fixed `1000 + i` offset — they depend on who created the table (ClickHouse and
+    /// Spark start numbering differently), so read them from the actual persisted spec.
+    if (partition_spec_fields->size() != partition_columns.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Partition spec has {} fields but {} partition columns were provided",
+            partition_spec_fields->size(),
+            partition_columns.size());
+
     Poco::JSON::Array::Ptr partition_fields = new Poco::JSON::Array;
     for (size_t i = 0; i < partition_columns.size(); ++i)
     {
         Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
-        field->set(Iceberg::f_field_id, 1000 + i);
+        field->set(Iceberg::f_field_id, partition_spec_fields->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_field_id));
         field->set(Iceberg::f_name, partition_columns[i]);
         field->set(Iceberg::f_type, getAvroType(partition_types[i]));
         partition_fields->add(field);
@@ -456,7 +468,7 @@ void generateManifestFile(
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported iceberg format-version {}", version);
 
-    extendSchemaForPartitions(schema_representation, partition_columns, partition_types);
+    extendSchemaForPartitions(schema_representation, partition_columns, partition_types, partition_spec->getArray(Iceberg::f_fields));
     auto schema = avro::compileJsonSchemaFromString(schema_representation);
 
     const avro::NodePtr & root_schema = schema.root(); // NOLINT
@@ -736,7 +748,7 @@ void generateExistingManifestFile(
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown iceberg version {}", version);
 
-    extendSchemaForPartitions(schema_representation, partition_columns, partition_types);
+    extendSchemaForPartitions(schema_representation, partition_columns, partition_types, partition_spec->getArray(Iceberg::f_fields));
     auto schema = avro::compileJsonSchemaFromString(schema_representation);
 
     if (schema.root()->type() != avro::AVRO_RECORD)
