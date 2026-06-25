@@ -11,7 +11,7 @@
 # asserts never happens.
 import socket
 
-from bottle import request, response, route, run
+from bottle import response, route, run
 
 # Resolve our own container IP. It is reachable (same container) but is a different
 # "host" from the allow-listed name "resolver", so the host filter must deny it.
