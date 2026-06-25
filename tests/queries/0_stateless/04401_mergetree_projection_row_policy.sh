@@ -35,7 +35,16 @@ SELECT name, salary FROM mergeTreeProjection(currentDatabase(), users, proj)
 " 2>&1 | grep -o 'ACCESS_DENIED' | head -1
 
 echo "=== mergeTreeProjection without a row policy: allowed ==="
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM mergeTreeProjection(currentDatabase(), users, proj)"
+# A separate table with no row policy at all: the guard must let the projection read through.
+${CLICKHOUSE_CLIENT} -q "
+CREATE TABLE users_open (id UInt64, name String, department String, salary UInt64) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO users_open VALUES (1,'Alice','engineering',100000),(2,'Bob','finance',120000),(3,'Carol','engineering',110000),(4,'Dave','hr',90000);
+ALTER TABLE users_open ADD PROJECTION proj (SELECT id, name, salary ORDER BY id);
+ALTER TABLE users_open MATERIALIZE PROJECTION proj;
+OPTIMIZE TABLE users_open FINAL;
+GRANT SELECT ON ${CLICKHOUSE_DATABASE}.users_open TO ${user};
+"
+${CLICKHOUSE_CLIENT} --user "${user}" -q "SELECT count() FROM mergeTreeProjection(currentDatabase(), users_open, proj)"
 
 ${CLICKHOUSE_CLIENT} -q "
 CREATE TABLE idx (id UInt64, secret UInt64) ENGINE = MergeTree() ORDER BY id;
