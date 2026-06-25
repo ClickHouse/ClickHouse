@@ -390,18 +390,9 @@ std::unordered_map<std::string, std::vector<size_t>> DeduplicationInfo::buildBlo
     std::unordered_map<std::string, std::vector<size_t>> result;
 
     for (size_t offset = 0; offset < offsets.size(); ++offset)
-    {
-        for (auto & block_hash : chooseDeduplicationHashes(offset, partition_id))
-            result[block_hash.getBlockId()].push_back(offset);
-    }
+        result[getBlockUnifiedHash(offset, partition_id).getBlockId()].push_back(offset);
 
     return result;
-}
-
-
-std::vector<DeduplicationHash> DeduplicationInfo::chooseDeduplicationHashes(size_t offset, const std::string & partition_id) const
-{
-    return {getBlockUnifiedHash(offset, partition_id)};
 }
 
 
@@ -411,13 +402,10 @@ std::vector<DeduplicationHash> DeduplicationInfo::getDeduplicationHashes(const s
         return {};
 
     std::vector<DeduplicationHash> result;
-    result.reserve(2*offsets.size());
+    result.reserve(offsets.size());
 
     for (size_t offset = 0; offset < offsets.size(); ++offset)
-    {
-        for (auto & block_hash : chooseDeduplicationHashes(offset, partition_id))
-            result.push_back(std::move(block_hash));
-    }
+        result.push_back(getBlockUnifiedHash(offset, partition_id));
 
     /// Release block columns now that all hashes are cached.
     /// The block data is no longer needed — hashes are stored in tokens.

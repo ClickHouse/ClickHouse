@@ -118,7 +118,6 @@ private:
     /// Column-major hash: for each column, hash the row range. Used by the unified path.
     UInt128 calculateDataHashColumnWise(size_t offset, const Block & block) const;
     DeduplicationHash getBlockUnifiedHash(size_t offset, const std::string & partition_) const;
-    std::vector<DeduplicationHash> chooseDeduplicationHashes(size_t offset, const std::string & partition_id) const;
 
 
     Ptr cloneSelfFilterImpl() const;
