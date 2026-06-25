@@ -534,12 +534,14 @@ def main():
         step(
             name="Set up Docker buildx (multi-arch)",
             command=[
-                # The legacy `release-maker` runner had QEMU/binfmt and a
-                # `docker-container` builder pre-provisioned out-of-band; the
-                # ephemeral `release-maker-asg` runners do not. Without an
-                # up-to-date QEMU the cross-built linux/amd64 layer cannot run
-                # the ClickHouse binary (it aborts on the missing SSSE3
-                # instruction set), so the package postinst and the build fail.
+                # The ephemeral runner is not pre-provisioned for multi-arch
+                # docker builds (the legacy dedicated runner was). The release
+                # images are built for both linux/amd64 and linux/arm64 in one
+                # buildx invocation, so each run must register QEMU/binfmt (to
+                # emulate the non-native arch — the runner is x86_64, so amd64
+                # is native and arm64 is emulated) and create a
+                # `docker-container` builder (the default `docker` driver cannot
+                # produce a multi-platform image or push to a registry).
                 "docker run --privileged --rm tonistiigi/binfmt --install all",
                 "docker buildx inspect mybuilder >/dev/null 2>&1"
                 " || docker buildx create --name mybuilder --driver docker-container",
