@@ -46,12 +46,15 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    /// Documentation-only — `catboostEvaluate(model_path, feature1, ..., featureN)`
-    /// returns either `Float64` or `Tuple(Float64, Float64, ...)` depending on
-    /// the model's tree count, resolved at query time via the library bridge.
+    /// No declarative signature yet. `catboostEvaluate(model_path, feature1, ..., featureN)`
+    /// returns either `Float64` or `Tuple(Float64, Float64, ...)` depending on the model's
+    /// tree count, resolved at query time via the library bridge. The DSL has no return-type
+    /// union, so a documentation-only `... -> Float64 | Tuple` cannot be parsed — it raises
+    /// `SYNTAX_ERROR` on the types-only path. Keep it empty until return-type unions are
+    /// supported; the `getReturnTypeImpl(ColumnsWithTypeAndName)` override resolves the shape.
     String getSignatureString() const override
     {
-        return "(const String, Any, ...) -> Float64 | Tuple";
+        return "";
     }
 
     void initBridge(const ColumnConst * name_col) const
