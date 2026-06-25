@@ -1780,26 +1780,6 @@ void Counters::incrementNoTrace(Event event, Count amount)
     } while (current != nullptr);
 }
 
-void incrementForLogMessage(Poco::Message::Priority priority)
-{
-    switch (priority)
-    {
-        case Poco::Message::PRIO_TEST: increment(LogTest); break;
-        case Poco::Message::PRIO_TRACE: increment(LogTrace); break;
-        case Poco::Message::PRIO_DEBUG: increment(LogDebug); break;
-        case Poco::Message::PRIO_INFORMATION: increment(LogInfo); break;
-        case Poco::Message::PRIO_WARNING: increment(LogWarning); break;
-        case Poco::Message::PRIO_ERROR: increment(LogError); break;
-        case Poco::Message::PRIO_FATAL: increment(LogFatal); break;
-        default: break;
-    }
-}
-
-void incrementLoggerElapsedNanoseconds(UInt64 ns)
-{
-    increment(LoggerElapsedNanoseconds, ns);
-}
-
 CountersIncrement::CountersIncrement(Counters::Snapshot const & snapshot)
 {
     init();
