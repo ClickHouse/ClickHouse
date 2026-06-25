@@ -2,7 +2,7 @@
 
 -- A qualified matcher (`t.*`) over a JOIN USING key must keep the matched column's own
 -- type, not the merged key's. Otherwise it can wrongly become Nullable (join_use_nulls = 0,
--- outer JOIN against a Nullable key) and an aggregate over it aborts with
+-- outer JOIN against a Nullable key) and an aggregate over it throws the exception
 -- "Bad cast from type DB::IColumn const* to DB::ColumnNullable const*".
 
 DROP TABLE IF EXISTS t_jn1;
@@ -19,7 +19,7 @@ INSERT INTO t_jn3 VALUES (0, 'g'), (2, 'h'), (4, 'i');
 
 SET enable_analyzer = 1;
 
--- The aggregation over the qualified matcher used to crash the server.
+-- The aggregation over the qualified matcher used to throw a Bad cast exception.
 SELECT count() FROM
 (
     SELECT anyHeavy(sipHash64(t2.*))
@@ -72,7 +72,7 @@ LIMIT 1
 SETTINGS join_use_nulls = 0;
 
 -- Aggregating over a qualified matcher whose USING key both widens (UInt8 -> Int64) and
--- gains nullability on the other side must not crash with join_use_nulls = 0.
+-- gains nullability on the other side must not throw the Bad cast exception with join_use_nulls = 0.
 SELECT count() FROM
 (
     SELECT anyHeavy(sipHash64(t1.*))
@@ -84,7 +84,7 @@ SETTINGS join_use_nulls = 0;
 -- USING key. When a sibling USING table is Nullable, the inner-merged key (and the runtime
 -- column) is Nullable, so the matcher type must be Nullable too, matching the explicit
 -- reference. The matcher used to wrongly take the matched column's own (non-Nullable) type,
--- and an `-OrNull` aggregate over it aborted with the opposite Bad cast
+-- and an `-OrNull` aggregate over it threw the opposite Bad cast exception
 -- "from type DB::ColumnNullable to DB::ColumnVector<unsigned long>".
 DROP TABLE IF EXISTS t_jn1_nullable;
 DROP TABLE IF EXISTS t_jn3_nullable;
@@ -114,8 +114,8 @@ SETTINGS join_use_nulls = 0;
 -- join, or an outer ON join). The qualified matcher must then still adopt the type of the
 -- explicit reference, since inspecting only the top node would skip the type correction and
 -- leave the matched column with its non-Nullable table type while the runtime column is
--- Nullable, aborting an aggregate over it with a Bad cast. The type equality must hold and
--- the aggregate must not crash for every wrapping join shape.
+-- Nullable, throwing a Bad cast exception from an aggregate over it. The type equality must hold
+-- and the aggregate must not throw the exception for every wrapping join shape.
 
 -- PASTE JOIN wrapping the USING join.
 SELECT toTypeName(sipHash64(t2.*)) = toTypeName(sipHash64(t2.id, t2.value))
@@ -191,7 +191,7 @@ DROP TABLE t_c;
 -- join, after the join-tree walk that counts USING joins has already run. The qualified matcher
 -- must still adopt the type the synthesized key gives the explicit reference; otherwise `t1.*`
 -- keeps the table (non-Nullable) type while the runtime column is Nullable, and an aggregate over
--- it aborts with the same Bad cast. The type equality must hold and the aggregate must not crash.
+-- it throws the same Bad cast exception. The type equality must hold and the aggregate must not throw it.
 DROP TABLE IF EXISTS nt1;
 DROP TABLE IF EXISTS nt2;
 CREATE TABLE nt1 (id UInt64, x String) ENGINE = MergeTree ORDER BY tuple();
@@ -223,7 +223,7 @@ DROP TABLE nt2;
 -- child scope, but still expands `t.*` from the parent query's join tree. The USING-join presence
 -- check must look at that parent query scope, not the lambda's (whose counter is zero); otherwise
 -- the matcher keeps the table (non-Nullable) type while the explicit reference is Nullable, and an
--- aggregate over it aborts with the same Bad cast.
+-- aggregate over it throws the same Bad cast exception.
 DROP TABLE IF EXISTS lt2;
 DROP TABLE IF EXISTS lt1_nullable;
 DROP TABLE IF EXISTS lt3_nullable;
