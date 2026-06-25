@@ -4,6 +4,7 @@
 #include <Columns/ColumnsDateTime.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/array/arraySort.h>
+#include <Functions/castTypeToEither.h>
 #include <Common/iota.h>
 
 #include <limits>
@@ -56,6 +57,7 @@ struct NullableLess
         bool lhs_is_null = null_map[lhs];
         bool rhs_is_null = null_map[rhs];
 
+        /// Nulls always go to the end, independent of the sort direction.
         if (lhs_is_null) [[unlikely]]
             return false;
         if (rhs_is_null) [[unlikely]]
@@ -85,6 +87,61 @@ struct GenericLess
     }
 };
 
+/// Reads limit[row] from the limit column and rejects a negative value for a signed column.
+size_t readLimit(const IColumn & limit_column, bool limit_is_signed, size_t row, const char * function_name)
+{
+    const UInt64 limit = limit_column.getUInt(row);
+    /// For a signed limit column a negative value is reinterpreted as a huge UInt64 with the high bit set;
+    /// detect that and throw, like arrayTopK does for its K argument.
+    if (limit_is_signed && limit > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Argument limit of function {} must be non-negative, got {}",
+            function_name,
+            static_cast<Int64>(limit));
+    return limit;
+}
+
+/// Builds and returns a permutation that sorts (or partially sorts, when `is_partial`) every array
+/// row using `cmp`. The limit (how many elements to partially sort) may differ from row to row when
+/// it is passed as a non-constant column, so it is read per-row inside the loop.
+template <bool is_partial, typename Comparator>
+IColumn::Permutation applyComparator(
+    const Comparator & cmp,
+    const IColumn * limit_column,
+    bool limit_is_signed,
+    const ColumnArray::Offsets & offsets,
+    const char * function_name)
+{
+    const size_t nested_size = offsets.empty() ? 0 : offsets.back();
+    IColumn::Permutation permutation(nested_size);
+    iota(permutation.data(), nested_size, IColumn::Permutation::value_type(0));
+
+    const size_t size = offsets.size();
+    ColumnArray::Offset current_offset = 0;
+    for (size_t i = 0; i < size; ++i)
+    {
+        const auto next_offset = offsets[i];
+        if constexpr (is_partial)
+        {
+            const size_t limit = readLimit(*limit_column, limit_is_signed, i, function_name);
+            /// With limit == 0 there is nothing to sort, the row keeps its original order.
+            if (limit)
+            {
+                const auto effective_limit = std::min<size_t>(limit, next_offset - current_offset);
+                ::partial_sort(&permutation[current_offset], &permutation[current_offset + effective_limit], &permutation[next_offset], cmp);
+            }
+        }
+        else
+        {
+            ::sort(&permutation[current_offset], &permutation[next_offset], cmp);
+        }
+        current_offset = next_offset;
+    }
+
+    return permutation;
+}
+
 }
 
 template <bool positive, bool is_partial>
@@ -93,11 +150,9 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
     ColumnPtr mapped,
     const ColumnWithTypeAndName * fixed_arguments)
 {
-    /// The limit (how many elements to partially sort) may differ from row to row when it is passed
-    /// as a non-constant column, so it is read per-row inside the loop below.
-    [[maybe_unused]] const IColumn * limit_column = nullptr;
-    [[maybe_unused]] bool limit_is_signed = false;
-    [[maybe_unused]] const char * function_name = positive ? "arrayPartialSort" : "arrayPartialReverseSort";
+    const IColumn * limit_column = nullptr;
+    bool limit_is_signed = false;
+    const char * function_name = positive ? "arrayPartialSort" : "arrayPartialReverseSort";
     if constexpr (is_partial)
     {
         if (!fixed_arguments)
@@ -111,112 +166,56 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
 
     const ColumnArray::Offsets & offsets = array.getOffsets();
 
-    size_t size = offsets.size();
-    size_t nested_size = array.getData().size();
-    IColumn::Permutation permutation(nested_size);
-    iota(permutation.data(), nested_size, IColumn::Permutation::value_type(0));
+    /// Peel `Nullable` so the specialized comparator matches the underlying type. A non-nullable column
+    /// uses `Less<T>`; a nullable column uses `NullableLess<T>`, which sorts nulls to the end.
+    const IColumn * mapped_column = mapped.get();
+    const auto * nullable = checkAndGetColumn<ColumnNullable>(mapped_column);
+    const IColumn & dispatch_column = nullable ? nullable->getNestedColumn() : *mapped_column;
+    const NullMap * null_map = nullable ? &nullable->getNullMapData() : nullptr;
 
-    ColumnArray::Offset current_offset = 0;
-
-#define APPLY_COMPARATOR(CMP) \
-    for (size_t i = 0; i < size; ++i) \
-    { \
-        auto next_offset = offsets[i]; \
-        if constexpr (is_partial) \
-        { \
-            const UInt64 raw_limit = limit_column->getUInt(i); \
-            /* For a signed limit column a negative value is reinterpreted as a huge UInt64 with the */ \
-            /* high bit set; detect that and throw, like arrayTopK does for its K argument. */ \
-            if (limit_is_signed && raw_limit > static_cast<UInt64>(std::numeric_limits<Int64>::max())) \
-                throw Exception( \
-                    ErrorCodes::BAD_ARGUMENTS, \
-                    "Argument limit of function {} must be non-negative, got {}", \
-                    function_name, \
-                    static_cast<Int64>(raw_limit)); \
-            const size_t limit = raw_limit; \
-            /* With limit == 0 there is nothing to sort, the row keeps its original order. */ \
-            if (limit) \
-            { \
-                const auto effective_limit = std::min<size_t>(limit, next_offset - current_offset); \
-                ::partial_sort(&permutation[current_offset], &permutation[current_offset + effective_limit], &permutation[next_offset], CMP); \
-            } \
-        } \
-        else \
-            ::sort(&permutation[current_offset], &permutation[next_offset], CMP); \
-        current_offset = next_offset; \
-    }
-
-#define DISPATCH_FOR_NONNULLABLE_COLUMN(TYPE) \
-    else if (checkAndGetColumn<TYPE>(mapped.get())) \
-    { \
-        Less<positive, TYPE> cmp(*mapped); \
-        APPLY_COMPARATOR(cmp) \
-    }
-
-    if (false)
-        ;
-    DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnUInt8)
-    DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnUInt16)
-    DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnUInt32)
-    DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnUInt64)
-    DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnInt8)
-    DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnInt16)
-    DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnInt32)
-    DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnInt64)
-    DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnFloat32)
-    DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnFloat64)
-    DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnDateTime64)
-    DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnDecimal<Decimal32>)
-    DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnDecimal<Decimal64>)
-    DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnDecimal<Decimal128>)
-    DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnDecimal<Decimal256>)
-    DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnString)
-    DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnFixedString)
-#undef DISPATCH_FOR_NONNULLABLE_COLUMN
-
-    else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(mapped.get()))
-    {
-        const auto & null_map = nullable->getNullMapData();
-
-#define DISPATCH_FOR_NULLABLE_COLUMN(TYPE) \
-    else if (checkAndGetColumn<TYPE>(&nullable->getNestedColumn())) \
-    { \
-        NullableLess<positive, TYPE> cmp(nullable->getNestedColumn(), null_map); \
-        APPLY_COMPARATOR(cmp) \
-    }
-
-        if (false)
-            ;
-        DISPATCH_FOR_NULLABLE_COLUMN(ColumnUInt8)
-        DISPATCH_FOR_NULLABLE_COLUMN(ColumnUInt16)
-        DISPATCH_FOR_NULLABLE_COLUMN(ColumnUInt32)
-        DISPATCH_FOR_NULLABLE_COLUMN(ColumnUInt64)
-        DISPATCH_FOR_NULLABLE_COLUMN(ColumnInt8)
-        DISPATCH_FOR_NULLABLE_COLUMN(ColumnInt16)
-        DISPATCH_FOR_NULLABLE_COLUMN(ColumnInt32)
-        DISPATCH_FOR_NULLABLE_COLUMN(ColumnInt64)
-        DISPATCH_FOR_NULLABLE_COLUMN(ColumnFloat32)
-        DISPATCH_FOR_NULLABLE_COLUMN(ColumnFloat64)
-        DISPATCH_FOR_NULLABLE_COLUMN(ColumnDateTime64)
-        DISPATCH_FOR_NULLABLE_COLUMN(ColumnDecimal<Decimal32>)
-        DISPATCH_FOR_NULLABLE_COLUMN(ColumnDecimal<Decimal64>)
-        DISPATCH_FOR_NULLABLE_COLUMN(ColumnDecimal<Decimal128>)
-        DISPATCH_FOR_NULLABLE_COLUMN(ColumnDecimal<Decimal256>)
-        DISPATCH_FOR_NULLABLE_COLUMN(ColumnString)
-        DISPATCH_FOR_NULLABLE_COLUMN(ColumnFixedString)
-        else
+    /// Try a comparator specialized on the concrete column type so `compareAt` is devirtualized.
+    IColumn::Permutation permutation;
+    bool dispatched = castTypeToEither<
+        ColumnUInt8,
+        ColumnUInt16,
+        ColumnUInt32,
+        ColumnUInt64,
+        ColumnInt8,
+        ColumnInt16,
+        ColumnInt32,
+        ColumnInt64,
+        ColumnFloat32,
+        ColumnFloat64,
+        ColumnDateTime64,
+        ColumnDecimal<Decimal32>,
+        ColumnDecimal<Decimal64>,
+        ColumnDecimal<Decimal128>,
+        ColumnDecimal<Decimal256>,
+        ColumnString,
+        ColumnFixedString>(
+        &dispatch_column,
+        [&](const auto & column)
         {
-            GenericLess<positive> cmp(*mapped);
-            APPLY_COMPARATOR(cmp)
-        }
-#undef DISPATCH_FOR_NULLABLE_COLUMN
-    }
-    else
+            using ColumnT = std::decay_t<decltype(column)>;
+            if (null_map)
+            {
+                NullableLess<positive, ColumnT> cmp(column, *null_map);
+                permutation = applyComparator<is_partial>(cmp, limit_column, limit_is_signed, offsets, function_name);
+            }
+            else
+            {
+                Less<positive, ColumnT> cmp(column);
+                permutation = applyComparator<is_partial>(cmp, limit_column, limit_is_signed, offsets, function_name);
+            }
+            return true;
+        });
+
+    /// Fall back to the generic comparator for column types not covered above.
+    if (!dispatched)
     {
         GenericLess<positive> cmp(*mapped);
-        APPLY_COMPARATOR(cmp)
+        permutation = applyComparator<is_partial>(cmp, limit_column, limit_is_signed, offsets, function_name);
     }
-#undef APPLY_COMPARATOR
 
     return ColumnArray::create(array.getData().permute(permutation, 0), array.getOffsetsPtr());
 }
