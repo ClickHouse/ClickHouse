@@ -368,90 +368,148 @@ inline String millisToSecondsString(Int64 ms)
     return out;
 }
 
-/// Reader side of the timestamp contract: convert an OpenMetrics `realnumber` token (epoch seconds,
-/// possibly fractional) to the millisecond representation stored in the `timestamp` column. Integer
-/// and decimal forms (no exponent) use exact unsigned 64-bit arithmetic so the writer's tokens
-/// round-trip back to the same `Int64`, including the `Int64::min`/`Int64::max` boundaries. The
-/// exponent form (never emitted by the writer) falls back to `Float64` with a strict range guard.
-inline Int64 secondsTokenToMillis(std::string_view token, Float64 ts_value, const String & line)
+/// Exact base-10 decomposition of a finite numeric token of the grammar
+/// `[+-]? digits ('.' digits)? ([eE][+-]? digits)?` (at least one mantissa digit). The literal
+/// exponent is folded into `point_exponent`, so the value equals
+/// `(neg ? -1 : 1) * <digits as integer> * 10^point_exponent`. `digits` is canonical — leading and
+/// trailing zeros removed — so numerically-equal tokens share one decomposition: "5", "5.0", "5e0"
+/// and "50e-1" all yield neg=false, digits="5", point_exponent=0, and a zero value yields an empty
+/// `digits` with point_exponent=0. Returns false for tokens outside the grammar (`inf`, `nan`, an
+/// empty mantissa, a `1e+`-style dangling exponent) and for an exponent magnitude beyond 10^9, which
+/// no finite value needs and which keeps the `point_exponent` arithmetic clear of overflow.
+inline bool decomposeNumber(std::string_view token, bool & neg, String & digits, Int64 & point_exponent)
 {
-    const bool has_exp = token.find('e') != std::string_view::npos || token.find('E') != std::string_view::npos;
+    neg = false;
+    digits.clear();
+    point_exponent = 0;
 
-    if (has_exp)
+    size_t i = 0;
+    if (i < token.size() && (token[i] == '+' || token[i] == '-'))
     {
-        const Float64 ms_f = ts_value * 1000.0;
-        const Float64 upper = std::ldexp(1.0, 63);
-        if (!(ms_f > -upper && ms_f < upper))
-            throwIncorrect("Timestamp value out of Int64 millisecond range", line);
-        return static_cast<Int64>(ms_f);
+        neg = token[i] == '-';
+        ++i;
     }
 
-    /// Strip optional sign once; the caller already accepted the token, so the body below is
-    /// `[digits]` or `[digits].[digits]` with at least one digit overall.
-    std::string_view body = token;
-    bool neg = false;
-    if (!body.empty() && (body.front() == '+' || body.front() == '-'))
+    String mantissa;
+    Int64 frac_len = 0;
+    bool has_digit = false;
+    while (i < token.size() && token[i] >= '0' && token[i] <= '9')
     {
-        neg = body.front() == '-';
-        body.remove_prefix(1);
+        mantissa.push_back(token[i++]);
+        has_digit = true;
     }
-
-    const size_t dot_pos = body.find('.');
-    const std::string_view int_part = (dot_pos == std::string_view::npos) ? body : body.substr(0, dot_pos);
-    const std::string_view frac_part = (dot_pos == std::string_view::npos) ? std::string_view{} : body.substr(dot_pos + 1);
-
-    UInt64 abs_seconds = 0;
-    for (char c : int_part)
+    if (i < token.size() && token[i] == '.')
     {
-        if (c < '0' || c > '9')
-            throwIncorrect("Invalid timestamp token", line);
-        UInt64 next = abs_seconds * 10u + static_cast<UInt64>(c - '0');
-        if (next < abs_seconds)
-            throwIncorrect("Timestamp value out of Int64 millisecond range", line);
-        abs_seconds = next;
-    }
-
-    /// Pack the first three fractional digits into ms; anything beyond is sub-millisecond and
-    /// silently truncated (still validated as digits). The writer never emits >3 frac digits.
-    UInt64 abs_frac_ms = 0;
-    size_t taken = 0;
-    for (char c : frac_part)
-    {
-        if (c < '0' || c > '9')
-            throwIncorrect("Invalid timestamp token", line);
-        if (taken < 3)
+        ++i;
+        while (i < token.size() && token[i] >= '0' && token[i] <= '9')
         {
-            abs_frac_ms = abs_frac_ms * 10u + static_cast<UInt64>(c - '0');
-            ++taken;
+            mantissa.push_back(token[i++]);
+            ++frac_len;
+            has_digit = true;
         }
     }
-    while (taken < 3)
+    if (!has_digit)
+        return false;
+
+    Int64 exponent = 0;
+    if (i < token.size() && (token[i] == 'e' || token[i] == 'E'))
     {
-        abs_frac_ms *= 10u;
-        ++taken;
+        ++i;
+        bool exp_neg = false;
+        if (i < token.size() && (token[i] == '+' || token[i] == '-'))
+        {
+            exp_neg = token[i] == '-';
+            ++i;
+        }
+        bool exp_digit = false;
+        while (i < token.size() && token[i] >= '0' && token[i] <= '9')
+        {
+            if (exponent > 100000000)
+                return false;
+            exponent = exponent * 10 + (token[i++] - '0');
+            exp_digit = true;
+        }
+        if (!exp_digit)
+            return false;
+        if (exp_neg)
+            exponent = -exponent;
     }
 
-    UInt64 abs_ms_high = 0;
-    if (common::mulOverflow(abs_seconds, static_cast<UInt64>(1000u), abs_ms_high))
-        throwIncorrect("Timestamp value out of Int64 millisecond range", line);
-    UInt64 abs_total = abs_ms_high + abs_frac_ms;
-    if (abs_total < abs_ms_high)
-        throwIncorrect("Timestamp value out of Int64 millisecond range", line);
+    if (i != token.size())
+        return false;
+
+    /// Fold the explicit exponent and the fraction length into a single base-10 point exponent.
+    point_exponent = exponent - frac_len;
+
+    size_t start = 0;
+    while (start < mantissa.size() && mantissa[start] == '0')
+        ++start;
+    size_t end = mantissa.size();
+    while (end > start && mantissa[end - 1] == '0')
+    {
+        --end;
+        ++point_exponent;
+    }
+    if (start == end)
+    {
+        /// All-zero mantissa: canonical zero carries no sign and no exponent.
+        neg = false;
+        point_exponent = 0;
+        return true;
+    }
+    digits.assign(mantissa, start, end - start);
+    return true;
+}
+
+/// Reader side of the timestamp contract: convert an OpenMetrics `realnumber` token (epoch seconds,
+/// possibly fractional and/or in exponent form) to the millisecond representation stored in the
+/// `timestamp` column. The token is decomposed into exact base-10 digits, the seconds->milliseconds
+/// scale (10^3) is folded into its exponent, and the result is evaluated with overflow-checked
+/// unsigned 64-bit arithmetic so the writer's tokens round-trip back to the same `Int64` across the
+/// whole `Int64::min`/`Int64::max` boundary — whether written as `<seconds>.<ms>` or an equivalent
+/// exponent form. Sub-millisecond digits are truncated toward zero (the writer never emits >3).
+inline Int64 secondsTokenToMillis(std::string_view token, const String & line)
+{
+    bool neg = false;
+    String digits;
+    Int64 point_exponent = 0;
+    if (!decomposeNumber(token, neg, digits, point_exponent))
+        throwIncorrect("Invalid timestamp token", line);
+
+    const Int64 ms_exponent = point_exponent + 3;
+
+    /// Digits left of the millisecond point form the integer ms magnitude; a negative `ms_exponent`
+    /// drops the sub-millisecond remainder (truncating toward zero), a non-negative one scales up.
+    size_t keep = digits.size();
+    if (ms_exponent < 0)
+    {
+        const UInt64 drop = static_cast<UInt64>(-ms_exponent);
+        keep = drop < digits.size() ? digits.size() - static_cast<size_t>(drop) : 0;
+    }
+
+    UInt64 magnitude = 0;
+    for (size_t k = 0; k < keep; ++k)
+        if (common::mulOverflow(magnitude, static_cast<UInt64>(10u), magnitude)
+            || common::addOverflow(magnitude, static_cast<UInt64>(digits[k] - '0'), magnitude))
+            throwIncorrect("Timestamp value out of Int64 millisecond range", line);
+    for (Int64 e = 0; magnitude != 0 && e < ms_exponent; ++e)
+        if (common::mulOverflow(magnitude, static_cast<UInt64>(10u), magnitude))
+            throwIncorrect("Timestamp value out of Int64 millisecond range", line);
 
     constexpr UInt64 INT64_MIN_ABS = static_cast<UInt64>(std::numeric_limits<Int64>::max()) + 1u;
     constexpr UInt64 INT64_MAX_ABS = static_cast<UInt64>(std::numeric_limits<Int64>::max());
 
     if (neg)
     {
-        if (abs_total > INT64_MIN_ABS)
+        if (magnitude > INT64_MIN_ABS)
             throwIncorrect("Timestamp value out of Int64 millisecond range", line);
-        if (abs_total == INT64_MIN_ABS)
+        if (magnitude == INT64_MIN_ABS)
             return std::numeric_limits<Int64>::min();
-        return -static_cast<Int64>(abs_total);
+        return -static_cast<Int64>(magnitude);
     }
-    if (abs_total > INT64_MAX_ABS)
+    if (magnitude > INT64_MAX_ABS)
         throwIncorrect("Timestamp value out of Int64 millisecond range", line);
-    return static_cast<Int64>(abs_total);
+    return static_cast<Int64>(magnitude);
 }
 
 }

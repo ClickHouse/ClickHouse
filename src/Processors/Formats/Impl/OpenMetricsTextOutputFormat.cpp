@@ -52,6 +52,7 @@ using OpenMetricsText::isValidLabelName;
 using OpenMetricsText::isEmptyMarker;
 using OpenMetricsText::sampleKindCount;
 using OpenMetricsText::hasReservedMarkerLabelWithValue;
+using OpenMetricsText::decomposeNumber;
 using OpenMetricsText::histogramSeriesLabels;
 using OpenMetricsText::checkBoundaryLabel;
 using OpenMetricsText::validateLabelValue;
@@ -109,6 +110,24 @@ Float64 tryParseFloat(const String & s)
     ReadBufferFromString buf(s);
     tryReadFloatText(t, buf);
     return t;
+}
+
+/// Exact numeric equality for two serialized sample values, used to check the histogram `+Inf` bucket
+/// against the `_count` total. `Float64` collapses distinct integers above 2^53 to the same value
+/// (e.g. 9007199254740992 and 9007199254740993), so compare the exact base-10 decompositions: equal
+/// values share one canonical (sign, digits, exponent). Values that are not finite decimals
+/// (`inf` / `nan`) have no such decomposition and fall back to the lenient float comparison.
+bool sampleValuesEqual(const String & lhs, const String & rhs)
+{
+    bool lhs_neg = false;
+    bool rhs_neg = false;
+    String lhs_digits;
+    String rhs_digits;
+    Int64 lhs_exp = 0;
+    Int64 rhs_exp = 0;
+    if (decomposeNumber(lhs, lhs_neg, lhs_digits, lhs_exp) && decomposeNumber(rhs, rhs_neg, rhs_digits, rhs_exp))
+        return lhs_neg == rhs_neg && lhs_digits == rhs_digits && lhs_exp == rhs_exp;
+    return tryParseFloat(lhs) == tryParseFloat(rhs);
 }
 
 void validateOpenMetricsMetricName(const String & name)
@@ -259,7 +278,7 @@ void OpenMetricsTextOutputFormat::fixupBucketLabels(CurrentMetric & metric)
             }
             else if (state.has_count_marker && state.has_inf_bucket
                 && state.count_marker_row && state.inf_bucket_row
-                && tryParseFloat(state.inf_bucket_row->value) != tryParseFloat(state.count_marker_row->value))
+                && !sampleValuesEqual(state.inf_bucket_row->value, state.count_marker_row->value))
             {
                 /// When a series already exposes both the `+Inf` bucket and the `_count` marker, the
                 /// histogram contract requires them to carry the same value: the `+Inf` bucket is the

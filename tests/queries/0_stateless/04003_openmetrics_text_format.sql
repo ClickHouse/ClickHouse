@@ -110,6 +110,11 @@ SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullabl
 -- One ms past the boundary on either side throws.
 SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 9223372036854775.808', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 -9223372036854775.809', char(10))); -- { serverError INCORRECT_DATA }
+-- Exponent-form realnumber timestamps take the same exact path: the Int64::max / Int64::min ms
+-- boundaries spelled with `e0` round-trip and are accepted; one ms past is still rejected.
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 9223372036854775.807e0', char(10), '# EOF', char(10))) FORMAT TSV;
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 -9223372036854775.808e0', char(10), '# EOF', char(10))) FORMAT TSV;
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 9223372036854775.808e0', char(10))); -- { serverError INCORRECT_DATA }
 -- Sub-millisecond fractional digits beyond the third are truncated, not rejected.
 SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 1.7895', char(10), '# EOF', char(10))) FORMAT TSV;
 
@@ -159,6 +164,10 @@ SELECT name FROM format(OpenMetrics, concat('m 1 1e20', char(10), '# EOF', char(
 -- marker synthesized for that series, so it is rejected (was: emitted `_count`/`_sum` for the wrong series).
 SELECT 'h' AS name, 9.0 AS value, '' AS help, 'histogram' AS type, map('count', 'partition', 'le', '+Inf') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
 SELECT 'h' AS name, 9.0 AS value, '' AS help, 'histogram' AS type, map('sum', 'x', 'le', '1') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+-- The reader mirrors that rejection: a typed histogram/summary row whose labels carry a non-empty
+-- reserved `count` / `sum` value is exposition the writer cannot emit, so it is rejected on input too.
+SELECT * FROM format(OpenMetrics, concat('# TYPE h histogram', char(10), 'h_bucket{le="+Inf",count="partition"} 5', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, concat('# TYPE s summary', char(10), 's{quantile="0.5",sum="x"} 5', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
 -- (2) A typed histogram/summary row with no sample kind (no bucket/quantile, no `_sum`/`_count` marker) is rejected on output and input.
 SELECT 'h' AS name, 3.0 AS value, '' AS help, 'histogram' AS type, CAST(map(), 'Map(String, String)') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
 SELECT 's' AS name, 3.0 AS value, '' AS help, 'summary' AS type, CAST(map(), 'Map(String, String)') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
@@ -205,6 +214,14 @@ SELECT * FROM (
     SELECT 'h' AS name, 5.0 AS value, '' AS help, 'histogram' AS type, map('le', '+Inf') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
     UNION ALL
     SELECT 'h', 7.0, '', 'histogram', map('count', ''), CAST(NULL AS Nullable(Int64)), ''
+) ORDER BY value FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+-- The equality is exact: two distinct integers above 2^53 (9007199254740992 vs 9007199254740993)
+-- collapse to one Float64, so a Float64 compare would wrongly accept the mismatch; the exact compare
+-- still rejects it.
+SELECT * FROM (
+    SELECT 'h' AS name, 9007199254740992 AS value, '' AS help, 'histogram' AS type, map('le', '+Inf') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
+    UNION ALL
+    SELECT 'h', 9007199254740993, '', 'histogram', map('count', ''), CAST(NULL AS Nullable(Int64)), ''
 ) ORDER BY value FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
 
 -- Output label serialization: only `\\`,`\"`,`\n` escapes; other control chars / duplicate keys / bad names rejected.

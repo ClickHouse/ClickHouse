@@ -44,6 +44,7 @@ using OpenMetricsText::equalsIgnoreCaseAscii;
 using OpenMetricsText::isStrictRealNumberToken;
 using OpenMetricsText::secondsTokenToMillis;
 using OpenMetricsText::sampleKindCount;
+using OpenMetricsText::hasReservedMarkerLabelWithValue;
 using OpenMetricsText::checkBoundaryLabel;
 
 void skipAsciiSpaces(std::string_view s, size_t & pos)
@@ -464,13 +465,14 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
         const Float64 value = parseSampleValue(value_tok);
 
         bool has_ts = false;
-        Float64 ts_value = 0;
         std::string_view ts_token;
         skipAsciiSpaces(sv, pos);
         if (pos < sv.size() && sv[pos] != '#')
         {
             ts_token = readToken(sv, pos);
-            ts_value = parseRealNumber(ts_token, line);
+            /// Enforce the strict `realnumber` grammar (rejects NaN / Inf and Float64-overflowing
+            /// tokens); the exact millisecond conversion below re-tokenizes for value.
+            parseRealNumber(ts_token, line);
             has_ts = true;
         }
 
@@ -481,7 +483,7 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
 
         std::optional<Int64> parsed_timestamp_ms;
         if (has_ts)
-            parsed_timestamp_ms = secondsTokenToMillis(ts_token, ts_value, line);
+            parsed_timestamp_ms = secondsTokenToMillis(ts_token, line);
 
         /// Fold `_bucket`/`_sum`/`_count` siblings into their `# TYPE` family (see SUFFIX_RULES for
         /// the type-specific contract). Folding a suffix synthesizes the empty marker label
@@ -572,6 +574,17 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
                         "Sample for family '{}' with type '{}' must carry exactly one histogram/summary sample kind "
                         "(a bucket/quantile sample or a '_sum' / '_count' marker), but has {}",
                         logical_name, fm.type, kinds),
+                    line);
+
+            /// `count` / `sum` are reserved markers in a histogram/summary family: meaningful only as
+            /// the empty-value synth markers the suffix fold sets for `_count` / `_sum`. A non-empty
+            /// value collides with that mechanism, so the writer rejects such a row in
+            /// `hasReservedMarkerLabelWithValue`; reject it symmetrically on input (the empty synth
+            /// marker stays allowed — the predicate only flags a non-empty value).
+            String offending_key;
+            if (hasReservedMarkerLabelWithValue(labels, offending_key))
+                throwIncorrect(
+                    fmt::format("Label '{}' is a reserved histogram/summary marker and must have an empty value", offending_key),
                     line);
 
             /// Validate the bucket/quantile boundary value with the same strict rule the writer
