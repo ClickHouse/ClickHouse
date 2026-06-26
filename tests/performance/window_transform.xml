@@ -26,5 +26,14 @@ FROM numbers_mt(10000000);
         SELECT *, sum(v) OVER () AS w FROM window_transform_wide_lc FORMAT Null;
     ]]></query>
 
+    <!-- cume_dist over a low-cardinality ORDER BY. -->
+    <query><![CDATA[
+        SELECT cume_dist() OVER (ORDER BY k) FROM (SELECT number % 5000 AS k FROM numbers(1000000)) FORMAT Null;
+    ]]></query>
+
+    <query><![CDATA[
+        SELECT cume_dist() OVER (ORDER BY k) FROM (SELECT number % 2000 AS k FROM numbers(1000000)) FORMAT Null;
+    ]]></query>
+
     <drop_query>DROP TABLE IF EXISTS window_transform_wide_lc</drop_query>
 </test>
