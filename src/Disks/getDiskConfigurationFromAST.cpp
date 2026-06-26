@@ -18,6 +18,8 @@
 #include <Poco/DOM/Text.h>
 #include <Common/StringUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
+
+#include <vector>
 #include <boost/algorithm/string/trim.hpp>
 
 
@@ -290,42 +292,49 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
 
 void forceAnonymousS3DiskConfig(Poco::Util::AbstractConfiguration & config)
 {
+    forceAnonymousS3DiskConfigAtPrefix(config, "");
+}
+
+void forceAnonymousS3DiskConfigAtPrefix(Poco::Util::AbstractConfiguration & config, const String & prefix)
+{
     /// Force the S3 client unsigned: clear `http_client` (which would mint a GCP token regardless of the
-    /// credentials provider) and set `no_sign_request = 1`. `setString` overwrites any inherited value.
-    config.setString("http_client", "");
-    config.setString("no_sign_request", "1");
+    /// credentials provider) and set `no_sign_request = 1`. `setString` overwrites any inherited value. The
+    /// `prefix` selects the backend: empty for the disk root, or `locations.<name>.` for a multi-location child.
+    config.setString(prefix + "http_client", "");
+    config.setString(prefix + "no_sign_request", "1");
 
     /// The disk is intentionally inaccessible, so skip the startup access check: the table must load (and
-    /// merely be inaccessible on query) rather than fail to attach.
+    /// merely be inaccessible on query) rather than fail to attach. `skip_access_check` is read from the disk
+    /// root and applied to every location child, so set it once at the root regardless of `prefix`.
     config.setString("skip_access_check", "1");
 }
 
-void validateResolvedS3DiskCredentials(
-    Poco::Util::AbstractConfiguration & config, ContextPtr context, bool is_loading_from_existing_metadata, const DynamicS3DiskCredentialInfo & info)
+namespace
 {
-    /// Re-check after `include` is resolved: an `include` can inject an S3 type and credentials past the
-    /// pre-resolution check (the disk is then built with `for_disk_s3 = true`, bypassing `getClient`). Only an
-    /// `include`d disk needs this; the resolved auth mode is validated against the form the AST itself proved.
-    /// `restriction_exempt` carries a pre-resolution exemption (e.g. a server-internal `system`-database disk).
-    if (!info.has_include || !context->shouldRestrictUserQueryS3Credentials() || info.restriction_exempt)
-        return;
 
+/// Whether one resolved object-storage backend (the disk root, or a single `locations.<name>` child selected by
+/// `prefix`) is an S3 backend that resolved to credentials the AST did not prove explicit, and so must be
+/// downgraded to anonymous or rejected. Returns false for a non-S3 backend or one whose resolved auth is safe.
+bool resolvedS3BackendIsRestricted(
+    const Poco::Util::AbstractConfiguration & config, const String & prefix, const DynamicS3DiskCredentialInfo & info)
+{
+    auto key = [&](const String & k) { return prefix + k; };
     auto is_s3_type = [](const String & t) { return t == "s3" || t.starts_with("s3_"); };
     const bool resolved_backend_is_s3
-        = is_s3_type(config.getString("type", "")) || is_s3_type(config.getString("object_storage_type", ""));
+        = is_s3_type(config.getString(key("type"), "")) || is_s3_type(config.getString(key("object_storage_type"), ""));
     if (!resolved_backend_is_s3)
-        return;
+        return false;
 
     /// Match the resolved auth mode to the form the AST proved. `gcp_oauth` mints a bearer token (server GCP
     /// metadata unless a complete ADC triple is given); a `role_arn` assumes a role and needs an explicit base
     /// key pair; otherwise the disk is safe only if it is explicitly anonymous or carries an explicit key pair.
-    const bool resolved_wants_gcp_oauth = boost::iequals(config.getString("http_client", ""), "gcp_oauth");
-    const bool resolved_has_role_arn = !config.getString("role_arn", "").empty();
+    const bool resolved_wants_gcp_oauth = boost::iequals(config.getString(key("http_client"), ""), "gcp_oauth");
+    const bool resolved_has_role_arn = !config.getString(key("role_arn"), "").empty();
     const bool resolved_has_key_pair
-        = !config.getString("access_key_id", "").empty() && !config.getString("secret_access_key", "").empty();
-    const bool resolved_no_sign = config.getBool("no_sign_request", false);
+        = !config.getString(key("access_key_id"), "").empty() && !config.getString(key("secret_access_key"), "").empty();
+    const bool resolved_no_sign = config.getBool(key("no_sign_request"), false);
     const bool resolved_use_env_off
-        = config.has("use_environment_credentials") && !config.getBool("use_environment_credentials", true);
+        = config.has(key("use_environment_credentials")) && !config.getBool(key("use_environment_credentials"), true);
 
     bool safe = false;
     if (resolved_wants_gcp_oauth)
@@ -341,7 +350,39 @@ void validateResolvedS3DiskCredentials(
     else
         safe = false; /// resolved relies on the default `use_environment_credentials = 1` (server credentials)
 
-    if (safe)
+    return !safe;
+}
+
+}
+
+void validateResolvedS3DiskCredentials(
+    Poco::Util::AbstractConfiguration & config, ContextPtr context, bool is_loading_from_existing_metadata, const DynamicS3DiskCredentialInfo & info)
+{
+    /// Re-check after `include` is resolved: an `include` can inject an S3 type and credentials past the
+    /// pre-resolution check (the disk is then built with `for_disk_s3 = true`, bypassing `getClient`). Only an
+    /// `include`d disk needs this; the resolved auth mode is validated against the form the AST itself proved.
+    /// `restriction_exempt` carries a pre-resolution exemption (e.g. a server-internal `system`-database disk).
+    if (!info.has_include || !context->shouldRestrictUserQueryS3Credentials() || info.restriction_exempt)
+        return;
+
+    /// Check the disk root and every `locations.<name>` child: a multi-location `DiskObjectStorage` builds one
+    /// object storage per child, each with its own `object_storage_type`, so an `include` can hide an S3 child
+    /// (built with `for_disk_s3 = true`) behind a root that proves non-S3.
+    std::vector<String> prefixes{""};
+    if (config.has("locations"))
+    {
+        Poco::Util::AbstractConfiguration::Keys locations;
+        config.keys("locations", locations);
+        for (const auto & location : locations)
+            prefixes.push_back("locations." + location + ".");
+    }
+
+    std::vector<String> restricted_prefixes;
+    for (const auto & prefix : prefixes)
+        if (resolvedS3BackendIsRestricted(config, prefix, info))
+            restricted_prefixes.push_back(prefix);
+
+    if (restricted_prefixes.empty())
         return;
 
     if (is_loading_from_existing_metadata
@@ -353,7 +394,8 @@ void validateResolvedS3DiskCredentials(
             "not provided explicitly in the SQL definition, so they may be server-managed, which is restricted for "
             "user queries (s3_allow_server_credentials_in_user_queries = 0). The disk will be inaccessible. Set the "
             "server setting s3_load_table_anonymously_if_credentials_restricted = 0 to fail loading instead.");
-        forceAnonymousS3DiskConfig(config);
+        for (const auto & prefix : restricted_prefixes)
+            forceAnonymousS3DiskConfigAtPrefix(config, prefix);
     }
     else
         throw Exception(

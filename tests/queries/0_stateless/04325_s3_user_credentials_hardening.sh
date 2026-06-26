@@ -237,14 +237,15 @@ else
     for label in $describe_labels; do echo "${label}: fail (${describe_out})"; done
 fi
 
-# Run `query` and emit `label: pass` unless the output contains ACCESS_DENIED. The
-# operation may legitimately fail later (contacting S3, minting a token), but the
-# server-managed-credentials check must not reject it.
+# Run `query` and emit `label: pass` unless the server-managed-credentials check rejected it. The operation may
+# legitimately fail later (contacting S3, minting a token); in particular an anonymous/NOSIGN request to the
+# private test bucket gets an S3 `403` whose message carries `error type: ACCESS_DENIED` but the exception code
+# `(S3_ERROR)`. Match only the restriction's own exception code `(ACCESS_DENIED)` so that S3 `403`s do not count.
 expect_not_denied() {
     local label="$1"
     local out
     out="$($CLICKHOUSE_CLIENT -q "$2" 2>&1)"
-    if echo "${out}" | grep -q "ACCESS_DENIED"; then
+    if echo "${out}" | grep -q "(ACCESS_DENIED)"; then
         echo "${label}: fail (${out//$'\n'/ })"
     else
         echo "${label}: pass"

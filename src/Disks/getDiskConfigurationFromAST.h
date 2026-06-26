@@ -62,6 +62,10 @@ struct DynamicS3DiskCredentialInfo
 /// Rewrite a dynamic disk configuration so its S3 client is built anonymously (see `getDiskConfigurationFromASTImpl`).
 void forceAnonymousS3DiskConfig(Poco::Util::AbstractConfiguration & config);
 
+/// As `forceAnonymousS3DiskConfig`, but for a single backend selected by `prefix` (empty for the disk root, or
+/// `locations.<name>.` for one child of a multi-location `DiskObjectStorage`).
+void forceAnonymousS3DiskConfigAtPrefix(Poco::Util::AbstractConfiguration & config, const String & prefix);
+
 /// Re-apply the credential restriction after `include` is resolved, so an `include` cannot inject an S3
 /// backend with server-managed auth past the pre-resolution check. Throws `ACCESS_DENIED`, or forces the disk
 /// anonymous when loading from existing metadata (see `s3_load_table_anonymously_if_credentials_restricted`).

@@ -323,6 +323,10 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = "";
             s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = "";
             s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = "";
+            /// The move uses its own explicit keys, so also drop the request-auth material (headers/access
+            /// headers and SSE-C/SSE-KMS keys) merged from the server `<s3>` config: otherwise the server's
+            /// headers or encryption keys would be sent to the user-supplied move destination.
+            s3_settings->auth_settings.clearServerManagedRequestAuth();
             std::shared_ptr<S3::Client> dst_client = getClient(
                 move_uri,
                 *s3_settings,

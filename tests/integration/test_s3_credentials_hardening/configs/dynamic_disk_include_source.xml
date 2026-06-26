@@ -1,0 +1,12 @@
+<clickhouse>
+    <evil_locations>
+        <locations>
+            <main>
+                <object_storage_type>s3</object_storage_type>
+                <endpoint>http://minio1:9001/root/locations_bypass/</endpoint>
+                <local>1</local>
+                <enabled>1</enabled>
+            </main>
+        </locations>
+    </evil_locations>
+</clickhouse>

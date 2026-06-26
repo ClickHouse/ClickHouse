@@ -57,6 +57,46 @@ node_with_server_session_token = cluster.add_instance(
     },
 )
 
+# A separate instance whose server <s3> config carries a per-endpoint gcp_oauth plus a complete Google ADC
+# triple, to verify that an explicit-key user query/backup does not inherit (and use) the server gcp_oauth.
+node_with_server_gcp_oauth = cluster.add_instance(
+    "node_with_server_gcp_oauth",
+    with_minio=True,
+    main_configs=["configs/named_collections.xml", "configs/s3_gcp_oauth.xml"],
+    user_configs=["configs/users.xml"],
+    env_variables={
+        "AWS_EC2_METADATA_DISABLED": "true",
+    },
+)
+
+# A separate instance whose server <s3> config carries an SSE-C customer key for an endpoint, to verify that a
+# named collection with its own keys does not inherit (and send) the server's encryption key material.
+node_with_server_sse = cluster.add_instance(
+    "node_with_server_sse",
+    with_minio=True,
+    main_configs=["configs/named_collections.xml", "configs/s3_sse_c.xml"],
+    user_configs=["configs/users.xml"],
+    env_variables={
+        "AWS_EC2_METADATA_DISABLED": "true",
+    },
+)
+
+# A separate instance that allows `include` substitutions in dynamic disk definitions, to verify the
+# post-include re-check inspects `locations.*` children (not only the disk root).
+node_with_includes = cluster.add_instance(
+    "node_with_includes",
+    with_minio=True,
+    main_configs=[
+        "configs/named_collections.xml",
+        "configs/dynamic_disk_include.xml",
+        "configs/dynamic_disk_include_source.xml",
+    ],
+    user_configs=["configs/users.xml"],
+    env_variables={
+        "AWS_EC2_METADATA_DISABLED": "true",
+    },
+)
+
 ALLOW = "SETTINGS s3_allow_server_credentials_in_user_queries = 1"
 
 
@@ -344,6 +384,103 @@ def test_backup_named_collection_does_not_inherit_server_keys():
     ), error
 
     node_with_server_keys.query("DROP TABLE t_backup_keys SYNC")
+
+
+def test_backup_named_collection_non_overridable_key_cannot_be_redirected():
+    # A backup named collection with operator-provisioned keys and a non-overridable `url` must not let a user
+    # redirect the endpoint while keeping the collection's keys. The override permission is enforced like the
+    # table-function/storage paths (`tryGetNamedCollectionWithOverrides`), not bypassed -- otherwise a user
+    # could point the operator keys at an arbitrary endpoint.
+    node.query("DROP TABLE IF EXISTS t_backup_locked SYNC")
+    node.query("CREATE TABLE t_backup_locked (x UInt8) ENGINE = MergeTree ORDER BY tuple()")
+    node.query("INSERT INTO t_backup_locked SELECT 1")
+
+    error = node.query_and_get_error(
+        "BACKUP TABLE t_backup_locked TO "
+        "S3(nc_backup_locked_url, url = 'http://minio1:9001/root/backup_redirected/', 'b1')"
+    )
+    assert "Override not allowed" in error and "url" in error, error
+
+    node.query("DROP TABLE t_backup_locked SYNC")
+
+
+def test_backup_explicit_keys_drop_inherited_gcp_oauth():
+    # The server <s3> endpoint config carries `gcp_oauth` plus a complete Google ADC triple. A BACKUP TO
+    # S3(url, ak, sk) with explicit keys must not inherit that gcp_oauth (which would mint a server bearer
+    # token to the user-chosen endpoint); it must use only the explicit keys. The backup succeeding proves the
+    # inherited gcp_oauth/ADC was dropped -- otherwise the GCP OAuth client is used instead of the keys and the
+    # backup fails. (The earlier strip only fired when the server config had no complete ADC triple.)
+    node_with_server_gcp_oauth.query("DROP TABLE IF EXISTS t_backup_gcp_inherit SYNC")
+    node_with_server_gcp_oauth.query(
+        "CREATE TABLE t_backup_gcp_inherit (x UInt8) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    node_with_server_gcp_oauth.query("INSERT INTO t_backup_gcp_inherit SELECT 1")
+
+    node_with_server_gcp_oauth.query(
+        f"BACKUP TABLE t_backup_gcp_inherit TO "
+        f"S3('http://minio1:9001/root/gcpoauth/backup1', '{minio_access_key}', '{minio_secret_key}')"
+    )
+
+    node_with_server_gcp_oauth.query("DROP TABLE t_backup_gcp_inherit SYNC")
+
+
+def test_dynamic_disk_include_locations_child_is_restricted():
+    # An `include` can inject a `locations.<name>` child object storage. A disk root that proves non-S3
+    # (object_storage with local_blob_storage) bypasses the pre-resolution check, so the post-`include`
+    # re-check must inspect each `locations.*` child and reject an S3 child that resolves server credentials --
+    # otherwise the child is built with `for_disk_s3 = true`, bypassing the central restriction.
+    node_with_includes.query("DROP TABLE IF EXISTS t_loc SYNC")
+    error = node_with_includes.query_and_get_error(
+        "CREATE TABLE t_loc (x UInt8) ENGINE = MergeTree ORDER BY tuple() "
+        "SETTINGS disk = disk(type = object_storage, object_storage_type = local_blob_storage, "
+        "include = 'evil_locations')",
+        settings={"dynamic_disk_allow_include": 1},
+    )
+    assert "ACCESS_DENIED" in error or "must provide its credentials explicitly" in error, error
+
+
+def test_persistent_table_does_not_reuse_credentialed_client_across_sessions():
+    # A persistent S3 table whose credentials are server-managed (use_environment_credentials) is non-static, so
+    # its client is rebuilt per query. An opt-in session reading it builds a credentialed client in the shared
+    # object storage; a later restricted session must NOT reuse that client. The restriction mode is part of the
+    # client's identity, so the restricted session rebuilds an (anonymous) client and is still refused.
+    url = "http://minio1:9001/root/persistent_env/data.tsv"
+    node.query(
+        f"INSERT INTO FUNCTION s3('{url}', '{minio_access_key}', '{minio_secret_key}', 'TSV', 'x UInt8') "
+        "SELECT 7 SETTINGS s3_truncate_on_insert = 1"
+    )
+    node.query("DROP TABLE IF EXISTS t_persistent_env SYNC")
+    # The S3 engine resolves credentials at CREATE, so create it with the opt-in (the operator owns the table).
+    node.query(
+        "CREATE TABLE t_persistent_env (x UInt8) ENGINE = S3(nc_persistent_env)",
+        settings={"s3_allow_server_credentials_in_user_queries": 1},
+    )
+
+    # Opt-in: succeeds, building a credentialed client in the shared object storage.
+    assert node.query(f"SELECT * FROM t_persistent_env {ALLOW}").strip() == "7"
+    # Restricted (default): must be refused -- the credentialed client primed by the opt-in session above is not
+    # reused across the restriction-mode change.
+    assert "ACCESS_DENIED" in node.query_and_get_error("SELECT * FROM t_persistent_env")
+    # Opt-in again: still works (the restricted query did not poison the storage either).
+    assert node.query(f"SELECT * FROM t_persistent_env {ALLOW}").strip() == "7"
+
+    node.query("DROP TABLE t_persistent_env SYNC")
+
+
+def test_named_collection_does_not_inherit_server_sse():
+    # The server <s3> endpoint config carries an SSE-C customer key. A named collection with its own explicit
+    # keys must not inherit that server-managed key (which getClient would send to the endpoint): reading a
+    # plaintext object via the collection must succeed. If the SSE-C key leaks in, the GET sends SSE-C headers
+    # for an object that is not SSE-C encrypted and S3 rejects it -- and the server's key would reach the
+    # collection's endpoint.
+    url = "http://minio1:9001/root/sse_test/data.tsv"
+    # Write a plaintext object using explicit keys from a node without the SSE config.
+    node.query(
+        f"INSERT INTO FUNCTION s3('{url}', '{minio_access_key}', '{minio_secret_key}', 'TSV', 'x UInt8') "
+        "SELECT 11 SETTINGS s3_truncate_on_insert = 1"
+    )
+
+    assert node_with_server_sse.query("SELECT * FROM s3(nc_sse_keys)").strip() == "11"
 
 
 def test_server_data_disk_unaffected():

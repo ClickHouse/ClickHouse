@@ -236,16 +236,19 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     String server_side_encryption_customer_key_base64 = auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64];
     auto server_side_encryption_kms_config = auth_settings.server_side_encryption_kms_config;
 
-    /// When a restricted client resolves to anonymous, drop the server `<s3>` `access_header` and SSE material
-    /// (merged from config) so they cannot keep authorizing with the server identity; keep only the headers
-    /// from the stored user definition. This covers a persistent S3-engine table on metadata load and any
-    /// forced-anonymous dynamic S3 disk (forceAnonymousS3DiskConfig sets `no_sign_request`); the disk path
-    /// reaches `getClient` with `for_disk_s3` but no metadata-load flag, so do not require it here.
+    /// When a restricted client resolves to anonymous, drop the request-auth material merged from the server
+    /// `<s3>`/endpoint config (generic headers and per-request access headers -- either can carry an
+    /// `Authorization` -- and the SSE-C/SSE-KMS keys) so they cannot keep authorizing with the server identity.
+    /// `auth_settings.headers` is the merged result of the stored definition and the server config and they
+    /// cannot be told apart here, so all of them are cleared (the disk is anonymous and inaccessible anyway).
+    /// This covers a persistent S3-engine table on metadata load and any forced-anonymous dynamic S3 disk
+    /// (forceAnonymousS3DiskConfig sets `no_sign_request`); the disk path reaches `getClient` with `for_disk_s3`
+    /// but no metadata-load flag, so do not require it here.
     if (context->shouldRestrictUserQueryS3Credentials()
         && (credentials_configuration.no_sign_request || credentials_configuration.anonymous_fallback_for_server_credentials)
         && (is_loading_from_existing_metadata || for_disk_s3))
     {
-        headers = auth_settings.headers;
+        headers.clear();
         server_side_encryption_customer_key_base64.clear();
         server_side_encryption_kms_config = {};
     }

@@ -229,6 +229,14 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
     }
 
+    /// Under the restriction the collection must fully define its request-auth material, so drop the
+    /// headers/access-headers and SSE-C/SSE-KMS keys merged from the server `<s3>`/endpoint config above.
+    /// Otherwise a URL-only collection would still send the server's headers (which can include `Authorization`)
+    /// or encryption keys to its endpoint, breaking the contract that such a collection reads anonymously. With
+    /// the opt-in (`s3_allow_server_credentials_in_user_queries = 1`) the server material is kept.
+    if (context->shouldRestrictUserQueryS3Credentials())
+        s3_settings->auth_settings.clearServerManagedRequestAuth();
+
     s3_settings->auth_settings[S3AuthSetting::access_key_id] = collection.getOrDefault<String>("access_key_id", "");
     s3_settings->auth_settings[S3AuthSetting::secret_access_key] = collection.getOrDefault<String>("secret_access_key", "");
     /// Default to 0 so a URL-only collection reads anonymously instead of using the server's identity; a

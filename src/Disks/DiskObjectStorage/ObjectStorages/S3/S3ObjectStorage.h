@@ -165,6 +165,12 @@ private:
     std::string disk_name;
 
     mutable MultiVersion<S3::Client> client;
+    /// The user-query credential restriction mode the current `client` was built under. Used by
+    /// `applyNewSettings` to rebuild the client when a session with a different restriction mode accesses the
+    /// storage, so a restricted session never reuses a credentialed client built for an opt-in session (and
+    /// vice versa). Defaults to restricted (the server default and the mode the initial client is loaded under);
+    /// an opt-in session that accesses the storage first triggers one rebuild to the credentialed mode.
+    mutable bool client_restricts_server_credentials = true;
     MultiVersion<S3Settings> s3_settings;
     S3Capabilities s3_capabilities;
 

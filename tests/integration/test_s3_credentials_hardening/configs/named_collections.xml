@@ -19,6 +19,11 @@
             <access_key_id>minio</access_key_id>
             <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
         </nc_backup_with_keys>
+        <nc_backup_locked_url>
+            <url overridable="0">http://minio1:9001/root/backup_nc_locked_url/</url>
+            <access_key_id>minio</access_key_id>
+            <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+        </nc_backup_locked_url>
         <nc_with_keys>
             <url>http://minio1:9001/root/nc_role_override/data.tsv</url>
             <access_key_id>minio</access_key_id>
@@ -28,5 +33,18 @@
             <url>http://minio1:9001/root/db_s3_env_test/</url>
             <use_environment_credentials>1</use_environment_credentials>
         </nc_db_use_env>
+        <nc_persistent_env>
+            <url>http://minio1:9001/root/persistent_env/data.tsv</url>
+            <use_environment_credentials>1</use_environment_credentials>
+            <format>TSV</format>
+            <structure>x UInt8</structure>
+        </nc_persistent_env>
+        <nc_sse_keys>
+            <url>http://minio1:9001/root/sse_test/data.tsv</url>
+            <access_key_id>minio</access_key_id>
+            <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            <format>TSV</format>
+            <structure>x UInt8</structure>
+        </nc_sse_keys>
     </named_collections>
 </clickhouse>

@@ -217,12 +217,13 @@ private:
         client_configuration.google_adc_client_secret = settings.auth_settings[S3AuthSetting::google_adc_client_secret];
         client_configuration.google_adc_refresh_token = settings.auth_settings[S3AuthSetting::google_adc_refresh_token];
 
-        /// Drop only a server-inherited `gcp_oauth` (so the backup uses its explicit keys); a query-supplied
-        /// `gcp_oauth` without an ADC triple is left to reach the central `getCredentialsProvider` rejection.
-        const bool has_explicit_gcp_adc = !client_configuration.google_adc_client_id.empty()
-            && !client_configuration.google_adc_client_secret.empty()
-            && !client_configuration.google_adc_refresh_token.empty();
-        if (boost::iequals(client_configuration.http_client, "gcp_oauth") && !has_explicit_gcp_adc
+        /// Drop a server-inherited `gcp_oauth` (so the backup uses its explicit keys). The ADC triple is only
+        /// ever supplied by a named collection, which also sets `gcp_oauth_supplied_by_query`; so when the
+        /// `gcp_oauth` is not query-supplied, the triple here is server config too and must be dropped with it.
+        /// Otherwise a server `<s3>` `gcp_oauth` plus a full ADC triple would be treated as explicit and mint a
+        /// server bearer token to the user-chosen endpoint. A query-supplied `gcp_oauth` is left in place (and
+        /// reaches the central `getCredentialsProvider` rejection when it has no ADC triple).
+        if (boost::iequals(client_configuration.http_client, "gcp_oauth")
             && !gcp_oauth_supplied_by_query && context->shouldRestrictUserQueryS3Credentials())
         {
             client_configuration.http_client.clear();
