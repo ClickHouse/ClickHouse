@@ -78,6 +78,35 @@ SELECT
 
 DROP TABLE IF EXISTS amt_skew;
 
+-- An aggregating projection writes its own AggregateFunction state column, through a separate
+-- write-path granularity site, so it must honor index_granularity_bytes too. use_const_adaptive_granularity
+-- forces that site to size the projection part (otherwise the per-block adaptive site recomputes it),
+-- so a regression there (e.g. reverting to Block::bytes()) keeps one oversized projection granule.
+DROP TABLE IF EXISTS amt_proj;
+
+CREATE TABLE amt_proj
+(
+    g UInt64,
+    v UInt64,
+    PROJECTION p (SELECT g, uniqExactState(v) GROUP BY g)
+)
+ENGINE = MergeTree ORDER BY g
+SETTINGS index_granularity = 8192, index_granularity_bytes = 65536, min_bytes_for_wide_part = 0,
+         materialize_projections_on_insert = 1, use_const_adaptive_granularity = 1;
+
+INSERT INTO amt_proj SELECT number % 2000 AS g, number AS v FROM numbers(1000000);
+
+SELECT
+    max(data_uncompressed_bytes / marks) <= 65536 AS bytes_per_granule_within_cap,
+    any(marks) > 10 AS split_into_many_granules
+FROM system.projection_parts
+WHERE table = 'amt_proj' AND active AND database = currentDatabase();
+
+SELECT min(u) = 500 AND max(u) = 500 AS all_groups_correct
+FROM (SELECT g, uniqExact(v) AS u FROM amt_proj GROUP BY g);
+
+DROP TABLE IF EXISTS amt_proj;
+
 -- Control: an ordinary String column of comparable per-row size already honors the cap.
 DROP TABLE IF EXISTS str_granule;
 
