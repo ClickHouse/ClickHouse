@@ -198,10 +198,9 @@ SET enable_materialized_cte = 0;
 
 -- Note: the focused db-qualified `TableNode` source case (where the canonical projection
 -- name retains the `db.table.column` form because two unaliased tables share a name
--- across databases) is exercised in the sibling `.sh` test
--- `04340_short_column_names_db_table.sh`. It needs `${CLICKHOUSE_DATABASE}`-derived
--- unique database names to be parallel-safe (`DATABASE_ALREADY_EXISTS` race under the
--- flaky check), which a pure-`.sql` test can't express without `no-parallel`.
+-- across databases) is exercised in `04411_short_column_names_db_table.sql`, which is
+-- tagged `no-parallel` because database names are server-global and the assertion
+-- genuinely requires two side-by-side databases with the same table name.
 
 SELECT '-- on: explicit dotted alias on a resolved column does NOT expose a short name';
 

@@ -1,4 +1,3 @@
--- short-name f1 resolves via the new db.table source match:
+db04411_a.t.f1	UInt8					
 10
--- canonical dotted form keeps working:
 10
