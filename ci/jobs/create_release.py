@@ -998,12 +998,15 @@ class PackageDownloader:
         return res
 
     def run(self):
-        Shell.check(f"mkdir -p {self.LOCAL_DIR}")
+        # Start from a clean package directory. Package filenames carry the
+        # version but not the commit_sha, and a partial/interrupted download
+        # leaves a truncated file, so a leftover from an earlier release or a
+        # different commit on a reused runner must not be reused — always
+        # re-download from S3 for this release commit.
+        Shell.check(f"rm -rf {self.LOCAL_DIR}", strict=True)
+        Shell.check(f"mkdir -p {self.LOCAL_DIR}", strict=True)
         for package_file in self.deb_package_files + self.rpm_package_files + self.tgz_package_files:
             local_path = self.LOCAL_DIR + "/" + package_file
-            if Path(local_path).is_file():
-                print(f"Already downloaded, skip: [{package_file}]")
-                continue
             print(f"Downloading: [{package_file}]")
             s3_path = "/".join([
                 self.s3_release_prefix,
