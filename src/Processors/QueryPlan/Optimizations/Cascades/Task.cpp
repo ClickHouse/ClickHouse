@@ -100,7 +100,13 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
                     /// dropped by Group::addPhysicalExpression (structural dedup), while sources
                     /// that differ in sort direction or distribution keep their own enforced
                     /// alternative (e.g. a sorted gather for each requested direction).
+                    /// Enforcers return only the expressions they actually inserted (structural
+                    /// duplicates are dropped), so duplicate enforcer outputs are neither scheduled
+                    /// nor counted as progress — they cannot exhaust the task budget.
                     auto new_expressions = enforcer->apply(expression, required_properties, optimizer_context.getMemo());
+                    if (new_expressions.empty())
+                        continue;
+
                     for (const auto & new_expression : new_expressions)
                     {
                         LOG_TEST(optimizer_context.log, "Enforcer '{}' on group #{} expression '{}' -> '{}'",

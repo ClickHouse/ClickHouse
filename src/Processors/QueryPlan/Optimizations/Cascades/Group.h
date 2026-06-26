@@ -36,7 +36,10 @@ public:
     {}
 
     void addLogicalExpression(GroupExpressionPtr group_expression);
-    void addPhysicalExpression(GroupExpressionPtr group_expression);
+    /// Returns true if the expression was inserted, false if it was dropped as a structural
+    /// duplicate. Callers that schedule follow-up work should do so only for inserted
+    /// expressions, so duplicates do not consume optimizer task budget.
+    bool addPhysicalExpression(GroupExpressionPtr group_expression);
     bool isExplored() const { return is_explored; }
     void setExplored() { is_explored = true; }
     bool isOptimizedFor(const ExpressionProperties & required_properties) const;

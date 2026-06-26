@@ -14,7 +14,7 @@ void Group::addLogicalExpression(GroupExpressionPtr group_expression)
     logical_expressions.push_back(std::move(group_expression));
 }
 
-void Group::addPhysicalExpression(GroupExpressionPtr group_expression)
+bool Group::addPhysicalExpression(GroupExpressionPtr group_expression)
 {
     group_expression->group_id = group_id;
 
@@ -23,11 +23,12 @@ void Group::addPhysicalExpression(GroupExpressionPtr group_expression)
     for (const auto * existing : same_fingerprint)
     {
         if (existing->structurallyEqualTo(*group_expression))
-            return;
+            return false;
     }
 
     same_fingerprint.push_back(group_expression.get());
     physical_expressions.push_back(std::move(group_expression));
+    return true;
 }
 
 bool Group::isOptimizedFor(const ExpressionProperties & required_properties) const

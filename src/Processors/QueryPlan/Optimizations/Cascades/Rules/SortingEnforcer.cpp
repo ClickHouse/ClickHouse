@@ -61,7 +61,9 @@ std::vector<GroupExpressionPtr> SortingEnforcer::applyImpl(GroupExpressionPtr ex
     sort_expr->properties.sorting = sort_desc;
 
     sort_expr->setApplied(*this, required_properties);
-    memo.getGroup(expression->group_id)->addPhysicalExpression(sort_expr);
+    /// Skip scheduling a structural duplicate so it does not consume optimizer task budget.
+    if (!memo.getGroup(expression->group_id)->addPhysicalExpression(sort_expr))
+        return {};
     return {sort_expr};
 }
 

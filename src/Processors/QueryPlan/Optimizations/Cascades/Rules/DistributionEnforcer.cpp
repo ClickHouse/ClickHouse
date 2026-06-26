@@ -68,8 +68,8 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
             enforcer_expr->properties.distribution = required_properties.distribution;
 
             enforcer_expr->setApplied(*this, required_properties);
-            memo.getGroup(expression->group_id)->addPhysicalExpression(enforcer_expr);
-            result.push_back(enforcer_expr);
+            if (memo.getGroup(expression->group_id)->addPhysicalExpression(enforcer_expr))
+                result.push_back(enforcer_expr);
         }
         else if (required_properties.distribution.node_count == 1
                  && expression->properties.distribution.node_count > 1
@@ -91,8 +91,8 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
                 /// Sorting is destroyed by a regular gather.
 
                 enforcer_expr->setApplied(*this, required_properties);
-                memo.getGroup(expression->group_id)->addPhysicalExpression(enforcer_expr);
-                result.push_back(enforcer_expr);
+                if (memo.getGroup(expression->group_id)->addPhysicalExpression(enforcer_expr))
+                    result.push_back(enforcer_expr);
             }
 
             /// Sorted-merge gather: N nodes -> 1 node, sorting PRESERVED.
@@ -116,8 +116,8 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
                 enforcer_expr->properties.sorting = expression->properties.sorting;
 
                 enforcer_expr->setApplied(*this, required_properties);
-                memo.getGroup(expression->group_id)->addPhysicalExpression(enforcer_expr);
-                result.push_back(enforcer_expr);
+                if (memo.getGroup(expression->group_id)->addPhysicalExpression(enforcer_expr))
+                    result.push_back(enforcer_expr);
             }
         }
     }
@@ -187,8 +187,8 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
         /// Shuffle/scatter destroys sorting.
 
         enforcer_expr->setApplied(*this, required_properties);
-        memo.getGroup(expression->group_id)->addPhysicalExpression(enforcer_expr);
-        result.push_back(enforcer_expr);
+        if (memo.getGroup(expression->group_id)->addPhysicalExpression(enforcer_expr))
+            result.push_back(enforcer_expr);
     }
 
     return result;
