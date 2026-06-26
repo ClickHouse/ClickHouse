@@ -943,8 +943,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     auto compression_codec = data.getCompressionCodecForPart(0, {}, time(nullptr));
 
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
-        block.rows(),
-        getBlockSizeForGranularity(block),
+        block,
         *data_settings,
         new_data_part->index_granularity_info,
         /*blocks_are_granules=*/ false);
@@ -1144,8 +1143,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     auto compression_codec = data.getCompressionCodecForPart(0, {}, time(nullptr));
 
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
-        block.rows(),
-        getBlockSizeForGranularity(block),
+        block,
         *data_settings,
         new_data_part->index_granularity_info,
         /*blocks_are_granules=*/ false);

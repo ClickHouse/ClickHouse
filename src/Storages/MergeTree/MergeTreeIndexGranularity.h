@@ -103,4 +103,13 @@ MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
     const MergeTreeIndexGranularityInfo & info,
     bool blocks_are_granules);
 
+/// Overload for the write path: computes the block size (which serializes AggregateFunction
+/// states) only when the constant-granularity path will use it, avoiding a wasted sizing pass
+/// on the non-const adaptive path where the per-block writer recomputes it anyway.
+MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
+    const Block & block,
+    const MergeTreeSettings & settings,
+    const MergeTreeIndexGranularityInfo & info,
+    bool blocks_are_granules);
+
 }
