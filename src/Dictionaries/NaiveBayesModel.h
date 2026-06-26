@@ -14,8 +14,8 @@
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
-#include <Common/isValidUTF8.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/isValidUTF8.h>
 
 namespace DB
 {
@@ -27,24 +27,23 @@ struct NaiveBayesScratch
 {
     /// Byte and code point modes build the padded input here and slice n-grams out of it as views.
     PaddedPODArray<char> padded;
+
     /// Code point mode: byte offset of each code point in `padded`, with a trailing sentinel equal to its size.
     PODArray<UInt32> code_point_offsets;
+
     /// Token mode: the word tokens of one input (views into the input) and the buffer the current n-gram is joined into.
     VectorWithMemoryTracking<std::string_view> tokens;
     std::string ngram_buffer;
-    /// The per-class score accumulator, indexed by dense class index.
+
+    /// The per-class score accumulator, indexed by dense class index (0 .. num_classes).
     PODArray<Float64> scores;
-    /// Reused output for the probability-returning entry points, indexed by dense class index.
+
+    /// Reused output for the probability-returning entry points, indexed by dense class index (0 .. num_classes).
     std::vector<std::pair<UInt32, double>> probabilities;
 };
 
-/// A tokenizer policy turns an input string into the n-grams to look up. Each policy enumerates the n-grams
-/// of an input through `enumerateNgrams`, which invokes a callback once per n-gram and returns their total
-/// count. The start and end tokens pad the input so that the leading and trailing n-grams carry positional
-/// information, exactly as the model was trained.
 template <class T>
-concept Tokenizer = requires
-{
+concept Tokenizer = requires {
     { T::start_token } -> std::convertible_to<std::string_view>;
     { T::end_token } -> std::convertible_to<std::string_view>;
 };
@@ -68,15 +67,17 @@ struct BytePolicy
     /// Builds `(n - 1)` start bytes, the input, then `(n - 1)` end bytes, and yields every length-`n` window
     /// as a contiguous view into that buffer. Returns the number of n-grams.
     template <typename Visit>
-    size_t enumerateNgrams(
-        std::string_view text, UInt32 n, std::string_view start, std::string_view end, NaiveBayesScratch & scratch, Visit && visit) const
+    size_t enumerateNgrams(std::string_view text, UInt32 n, std::string_view start, std::string_view end, NaiveBayesScratch & scratch, Visit && visit) const
     {
         const size_t pad = n - 1;
         auto & buf = scratch.padded;
         buf.resize(pad + text.size() + pad);
+
         for (size_t i = 0; i < pad; ++i)
             buf[i] = start[0];
+
         memcpy(buf.data() + pad, text.data(), text.size());
+
         for (size_t i = 0; i < pad; ++i)
             buf[pad + text.size() + i] = end[0];
 
@@ -91,10 +92,7 @@ struct BytePolicy
 
     /// Returns the key to store for `s` and its token count (one per byte). Byte n-grams are stored verbatim:
     /// every byte is significant, so the source key already matches what a query looks up.
-    PreparedNgram prepareNgram(std::string_view s, NaiveBayesScratch &) const
-    {
-        return {s, s.size()};
-    }
+    PreparedNgram prepareNgram(std::string_view s, NaiveBayesScratch &) const { return {s, s.size()}; }
 };
 
 /// CodePoint-level tokenizer: each token is a single Unicode (UTF-8) code point.
@@ -160,6 +158,7 @@ struct CodePointPolicy
         size_t count = 0;
         for (size_t at = 0; at < s.size(); at += DB::UTF8::seqLength(static_cast<UInt8>(s[at])))
             ++count;
+
         return {s, count};
     }
 };
@@ -305,9 +304,9 @@ struct NaiveBayesEntry
 /// How class prior probabilities are determined when finalizing a model.
 enum class PriorsMode : uint8_t
 {
-    Uniform,        /// Equal probability for every class.
-    Proportional,   /// Probability proportional to each class's total n-gram count.
-    Explicit,       /// Probabilities given explicitly per class.
+    Uniform, /// Equal probability for every class.
+    Proportional, /// Probability proportional to each class's total n-gram count.
+    Explicit, /// Probabilities given explicitly per class.
 };
 
 /// Holds all of the state of a Naive Bayes model for one tokenizer policy. It is accumulated by a trainer,
@@ -335,14 +334,15 @@ struct NaiveBayesData
     UInt32 n;
     /// Laplace smoothing parameter.
     double alpha;
-    /// Start / end padding tokens, kept so the query path pads exactly as the model was built.
+
+    /// Start / end padding tokens.
     String start_token;
     String end_token;
     Tok tokenizer;
 
     /// Arena owning all the n-gram key bytes that `ngram_to_index` views into.
     Arena pool;
-    /// N-gram -> its dense index (also the row index of the CSR arrays).
+    /// N-gram -> its dense index. The first inserted n-gram gets index 0, the next unique one gets 1, etc.
     NGramIndexMap ngram_to_index;
     /// One row per observation. Sorted and grouped into the CSR arrays at finalize, then freed.
     PODArray<NaiveBayesEntry> entries;

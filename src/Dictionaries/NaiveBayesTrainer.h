@@ -1,10 +1,10 @@
 #pragma once
 
 #include <map>
+#include <Dictionaries/NaiveBayesModel.h>
 #include <base/sort.h>
 #include <fmt/ranges.h>
 #include <Common/Exception.h>
-#include <Dictionaries/NaiveBayesModel.h>
 
 namespace DB
 {
@@ -25,14 +25,14 @@ public:
     {
     }
 
-    /// Adds a single observation of a class, an n-gram already in canonical form (see `prepareNgram`), and its
+    /// Adds a single observation of a class, an n-gram already in normalized form (see `prepareNgram`), and its
     /// count.
     void addNgram(UInt32 class_id, std::string_view ngram, UInt64 count)
     {
-        /// A zero-count row records no observation, so it must not enter the vocabulary: the vocabulary size is
-        /// the Laplace smoothing denominator, and counting an unobserved n-gram there would shift every class
-        /// score. Its entry would also be equivalent to an absent one (a delta of log(alpha) - log(alpha) = 0),
-        /// so dropping it changes nothing for the n-grams that do occur.
+        /// A zero-count row records no observation, so it does not enter the vocabulary. The vocabulary size
+        /// scales the Laplace smoothing term (alpha * vocabulary size) in every class's denominator, so
+        /// admitting an unobserved n-gram would shift every class score. Zero-count rows are ignored rather
+        /// than rejected because some generated sources emit them.
         if (count == 0)
             return;
 
@@ -51,18 +51,14 @@ public:
         auto & class_total = data->class_totals[class_id];
         if (count > std::numeric_limits<UInt64>::max() - class_total)
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "NaiveBayes dictionary: the total count for class {} overflows a 64-bit integer", class_id);
+                ErrorCodes::BAD_ARGUMENTS, "NaiveBayes dictionary: the total count for class {} overflows a 64-bit integer", class_id);
         class_total += count;
     }
 
     /// Returns the canonical key to store for `ngram`, its token count (for validating against n), and whether
     /// it is well-formed for the tokenizer. The key is built in a reused scratch buffer, so it stays valid only
     /// until the next call.
-    PreparedNgram prepareNgram(std::string_view ngram)
-    {
-        return data->tokenizer.prepareNgram(ngram, canonicalization_scratch);
-    }
+    PreparedNgram prepareNgram(std::string_view ngram) { return data->tokenizer.prepareNgram(ngram, canonicalization_scratch); }
 
     /// Computes the class priors according to the given mode, compiles the accumulated counts into the flat CSR
     /// arrays (reusing the existing n-gram index and arena), frees the accumulation buffers (`entries` and
@@ -78,15 +74,9 @@ public:
         LogProbabilityMap log_class_priors;
         switch (mode)
         {
-            case PriorsMode::Uniform:
-                computeUniformPriors(log_class_priors);
-                break;
-            case PriorsMode::Proportional:
-                computeProportionalPriors(log_class_priors);
-                break;
-            case PriorsMode::Explicit:
-                setExplicitPriors(explicit_priors, log_class_priors);
-                break;
+            case PriorsMode::Uniform: computeUniformPriors(log_class_priors); break;
+            case PriorsMode::Proportional: computeProportionalPriors(log_class_priors); break;
+            case PriorsMode::Explicit: setExplicitPriors(explicit_priors, log_class_priors); break;
         }
 
         const size_t vocabulary_size = data->ngram_to_index.size();
