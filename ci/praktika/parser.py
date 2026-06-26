@@ -53,6 +53,7 @@ class WorkflowYaml:
     secret_names_gh: List[str]
     variable_names_gh: List[str]
     cron_schedules: List[str]
+    cancel_intersecting_runs: bool
     dispatch_inputs: List[Workflow.Config.InputConfig]
     config: Workflow.Config
 
@@ -81,6 +82,7 @@ class WorkflowConfigParser:
             job_to_config={},
             artifact_to_config={},
             cron_schedules=config.cron_schedules,
+            cancel_intersecting_runs=config.cancel_intersecting_runs,
             dispatch_inputs=config.inputs,
             config=self.config,
         )

@@ -19,6 +19,7 @@ from pr_version_info import (
     original_pr_number_from_backport_ref,
     partition_merged_prs,
     release_from_backport_ref,
+    render_issue_comment,
     render_section,
     upsert_section,
     version_key,
@@ -89,6 +90,24 @@ class TestUpsertSection(unittest.TestCase):
         self.assertTrue(updated.startswith("Before."))
         self.assertTrue(updated.endswith("After."))
         self.assertNotIn("old", updated)
+
+
+class TestRenderIssueComment(unittest.TestCase):
+    def test_wraps_section_with_markers_and_credit(self):
+        section = render_section("26.6.1.1", ["25.12.1.100"])
+        comment = render_issue_comment(12345, section)
+        self.assertTrue(comment.startswith(SECTION_START))
+        self.assertTrue(comment.endswith(SECTION_END))
+        self.assertIn("Resolved by #12345.", comment)
+        self.assertIn("Merged into: `26.6.1.1`", comment)
+        self.assertIn("Backported to: `25.12.1.100`", comment)
+
+    def test_idempotent_markers(self):
+        # The markers must match the PR-body section markers so the comment can
+        # be found and updated on later runs.
+        comment = render_issue_comment(1, render_section("26.6.1.1", []))
+        self.assertEqual(comment.count(SECTION_START), 1)
+        self.assertEqual(comment.count(SECTION_END), 1)
 
 
 class TestVersionKey(unittest.TestCase):

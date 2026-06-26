@@ -6,9 +6,11 @@ from ci.defs.defs import BASE_BRANCH, SECRETS, RunnerLabels
 # release version a PR shipped in from the CIDB `version_history` table. See
 # tests/ci/pr_version_info.py for details.
 #
-# Runs hourly with a 10-day lookback: each run reconciles PRs merged in the last
-# 10 days, plus any original pulled in by a backport merged in that window. A
-# manual run can widen the lookback via the `days` input (e.g. 100 to backfill).
+# Runs every 30 minutes with a 10-day lookback: each run reconciles PRs merged in
+# the last 10 days, plus any original pulled in by a backport merged in that
+# window. A manual run can widen the lookback via the `days` input (e.g. 100 to
+# backfill). A new run cancels any still-running one (cancel_intersecting_runs),
+# since only the latest reconciliation matters.
 
 workflow = Workflow.Config(
     name="PRVersionInfo",
@@ -35,7 +37,8 @@ workflow = Workflow.Config(
     secrets=SECRETS,
     enable_report=True,
     enable_cidb=False,
-    cron_schedules=["0 * * * *"],
+    cron_schedules=["*/30 * * * *"],
+    cancel_intersecting_runs=True,
 )
 
 WORKFLOWS = [

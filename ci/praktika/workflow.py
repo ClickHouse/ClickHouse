@@ -41,6 +41,11 @@ class Workflow:
         enable_cidb: bool = False
         enable_merge_commit: bool = False
         cron_schedules: List[str] = field(default_factory=list)
+        # Schedule workflows only: cancel an in-progress run when a new one is
+        # triggered, instead of letting it finish (emits GitHub Actions
+        # `concurrency.cancel-in-progress: true`). Useful for a frequently
+        # scheduled reconciler where only the latest run matters.
+        cancel_intersecting_runs: bool = False
         inputs: List["Workflow.Config.InputConfig"] = field(default_factory=list)
         pre_hooks: List[Union[str, callable]] = field(default_factory=list)
         workflow_filter_hooks: List[callable] = field(default_factory=list)
