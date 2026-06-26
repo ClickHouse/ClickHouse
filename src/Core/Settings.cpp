@@ -7424,9 +7424,9 @@ Defines a rows limit for a single inserted data file in delta lake.
     DECLARE(NonZeroUInt64, delta_lake_insert_max_bytes_in_data_file, 1_GiB, R"(
 Defines a bytes limit for a single inserted data file in delta lake.
 )", 0) \
-    DECLARE(Bool, allow_experimental_delta_lake_writes, false, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_delta_lake_writes, false, R"(
 Enables delta-kernel writes feature.
-)", EXPERIMENTAL) \
+)", BETA, allow_delta_lake_writes) \
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
@@ -8524,14 +8524,14 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
     /// This is a common source of mistake (user don't know where to write user-level setting).
     static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
 
-    std::vector<String> getAllRegisteredNames() const override;
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
     void set(std::string_view name, const Field & value) override;
 
 private:
     void applyCompatibilitySetting(const String & compatibility);
 
-    std::unordered_set<std::string_view> settings_changed_by_compatibility_setting;
+    UnorderedSetWithMemoryTracking<std::string_view> settings_changed_by_compatibility_setting;
 };
 
 /** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).
@@ -8639,9 +8639,9 @@ void SettingsImpl::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfi
     }
 }
 
-std::vector<String> SettingsImpl::getAllRegisteredNames() const
+VectorWithMemoryTracking<String> SettingsImpl::getAllRegisteredNames() const
 {
-    std::vector<String> all_settings;
+    VectorWithMemoryTracking<String> all_settings;
     for (const auto & setting_field : all())
         all_settings.push_back(setting_field.getName());
     return all_settings;
@@ -8788,7 +8788,7 @@ void Settings::setDefaultValue(std::string_view name)
     impl->resetToDefault(name);
 }
 
-std::vector<String> Settings::getHints(const String & name) const
+VectorWithMemoryTracking<String> Settings::getHints(const String & name) const
 {
     return impl->getHints(name);
 }
@@ -8808,9 +8808,9 @@ void Settings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
-std::vector<std::string_view> Settings::getAllRegisteredNames() const
+VectorWithMemoryTracking<std::string_view> Settings::getAllRegisteredNames() const
 {
-    std::vector<std::string_view> setting_names;
+    VectorWithMemoryTracking<std::string_view> setting_names;
     for (const auto & setting : impl->all())
     {
         setting_names.emplace_back(setting.getName());
@@ -8818,9 +8818,9 @@ std::vector<std::string_view> Settings::getAllRegisteredNames() const
     return setting_names;
 }
 
-std::vector<std::string_view> Settings::getAllAliasNames() const
+VectorWithMemoryTracking<std::string_view> Settings::getAllAliasNames() const
 {
-    std::vector<std::string_view> alias_names;
+    VectorWithMemoryTracking<std::string_view> alias_names;
     const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();
     for (const auto & [_, aliases] : settings_to_aliases)
     {
@@ -8829,9 +8829,9 @@ std::vector<std::string_view> Settings::getAllAliasNames() const
     return alias_names;
 }
 
-std::vector<std::string_view> Settings::getChangedAndObsoleteNames() const
+VectorWithMemoryTracking<std::string_view> Settings::getChangedAndObsoleteNames() const
 {
-    std::vector<std::string_view> setting_names;
+    VectorWithMemoryTracking<std::string_view> setting_names;
     for (const auto & setting : impl->allChanged())
     {
         if (setting.getTier() == SettingsTierType::OBSOLETE)
@@ -8840,9 +8840,9 @@ std::vector<std::string_view> Settings::getChangedAndObsoleteNames() const
     return setting_names;
 }
 
-std::vector<std::string_view> Settings::getUnchangedNames() const
+VectorWithMemoryTracking<std::string_view> Settings::getUnchangedNames() const
 {
-    std::vector<std::string_view> setting_names;
+    VectorWithMemoryTracking<std::string_view> setting_names;
     for (const auto & setting : impl->allUnchanged())
     {
         setting_names.emplace_back(setting.getName());
