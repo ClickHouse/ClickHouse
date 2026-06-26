@@ -3,6 +3,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/Exception.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/config_version.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
@@ -302,6 +303,13 @@ OneLakeCatalog::OneLakeCatalog(
         access_token.set(std::make_unique<AccessToken>(retrieveAccessToken()));
     }
     config = loadConfig();
+}
+
+DB::HTTPHeaderEntries OneLakeCatalog::getAuthHeaders(bool update_token) const
+{
+    auto headers = RestCatalog::getAuthHeaders(update_token);
+    headers.emplace_back("User-Agent", fmt::format("ClickHouse/{}{} OneLake-Catalog", VERSION_STRING, VERSION_OFFICIAL));
+    return headers;
 }
 
 AccessToken RestCatalog::retrieveAccessToken() const

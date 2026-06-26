@@ -687,6 +687,10 @@ namespace ErrorCodes
     Default posting list codec for text indexes.
     Can be overridden by explicit `posting_list_codec` index argument.
     )", 0) \
+    DECLARE(Bool, allow_experimental_text_index_positions, false, R"(
+    Allow creating text indexes with the experimental `positions` argument which
+    stores token positions to support exact phrase matching.
+    )", EXPERIMENTAL) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
     Minimum time to wait before trying to select parts to merge again after no
     parts were selected. A lower setting will trigger selecting tasks in
@@ -2729,9 +2733,9 @@ void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_v
     }
 }
 
-std::vector<std::string_view> MergeTreeSettings::getAllRegisteredNames() const
+VectorWithMemoryTracking<std::string_view> MergeTreeSettings::getAllRegisteredNames() const
 {
-    std::vector<std::string_view> setting_names;
+    VectorWithMemoryTracking<std::string_view> setting_names;
     for (const auto & setting : impl->all())
     {
         setting_names.emplace_back(setting.getName());
@@ -2751,6 +2755,16 @@ std::vector<std::string_view> MergeTreeSettings::getAllAliasNames() const
 std::string_view MergeTreeSettings::getDescription(std::string_view name) const
 {
     return impl->getDescription(name);
+}
+
+std::string_view MergeTreeSettings::getTypeName(std::string_view name) const
+{
+    return impl->getTypeName(name);
+}
+
+String MergeTreeSettings::getDefaultValueString(std::string_view name) const
+{
+    return impl->getDefaultValueString(name);
 }
 
 SettingsTierType MergeTreeSettings::getTier(std::string_view name) const

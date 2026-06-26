@@ -198,6 +198,8 @@ public:
 
     String getTenantId() const { return tenant_id; }
 
+    DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const override;
+
 protected:
     /// Parameters for OneLake OAuth.
     const std::string tenant_id;
