@@ -82,6 +82,28 @@ namespace ErrorCodes
     extern const int TABLE_UUID_MISMATCH;
 }
 
+namespace
+{
+
+/// Build the dependency StorageIDs, resolving unqualified names against the view's database.
+/// An empty database would later throw from StorageID::getFullTableName() during scheduling.
+std::vector<StorageID> parseRefreshDependencies(const ASTRefreshStrategy & strategy, const String & default_database)
+{
+    std::vector<StorageID> deps;
+    if (!strategy.dependencies)
+        return deps;
+    for (auto && dependency : strategy.dependencies->children)
+    {
+        StorageID id = dependency->as<const ASTTableIdentifier &>();
+        if (id.database_name.empty() && !default_database.empty())
+            id.database_name = default_database;
+        deps.push_back(std::move(id));
+    }
+    return deps;
+}
+
+}
+
 RefreshTask::RefreshTask(
     StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, std::vector<StorageID> initial_dependencies_, bool attach, bool coordinated, bool empty, bool is_restore_from_backup)
     : view(view_)
@@ -193,10 +215,7 @@ OwnedRefreshTask RefreshTask::create(
     bool empty,
     bool is_restore_from_backup)
 {
-    std::vector<StorageID> deps;
-    if (strategy.dependencies)
-        for (auto && dependency : strategy.dependencies->children)
-            deps.emplace_back(dependency->as<const ASTTableIdentifier &>());
+    std::vector<StorageID> deps = parseRefreshDependencies(strategy, view->getStorageID().database_name);
 
     auto task = std::make_shared<RefreshTask>(view, context, strategy, std::move(deps), attach, coordinated, empty, is_restore_from_backup);
 
@@ -207,8 +226,6 @@ OwnedRefreshTask RefreshTask::create(
 
     task->watch_callback = std::make_shared<Coordination::WatchCallback>([w = task->coordination.watches, task_waker = task->scheduling_task->getWatchCallback()](const Coordination::WatchResponse & response)
     {
-        w->root_watch_active.store(false);
-        w->children_watch_active.store(false);
         w->should_reread_znodes.store(true);
         (*task_waker)(response);
     });
@@ -380,10 +397,8 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
         std::lock_guard guard(mutex);
 
         refresh_schedule = RefreshSchedule(new_strategy);
-        std::vector<StorageID> deps;
-        if (new_strategy.dependencies)
-            for (auto && dependency : new_strategy.dependencies->children)
-                deps.emplace_back(dependency->as<const ASTTableIdentifier &>());
+        std::vector<StorageID> deps = parseRefreshDependencies(
+            new_strategy, view ? view->getStorageID().database_name : String{});
 
         /// Update dependency graph.
         if (set_handle)
@@ -1360,20 +1375,13 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
     if (!zookeeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Keeper server doesn't support multi-reads. Refreshable materialized views won't work.");
 
-    /// Set watches. (This is a lot of code, is there a better way?)
+    /// Do separate requests just to add watches.
     Coordination::WatchCallbackPtrOrEventPtr labelled_watch{
         watch_callback, ProfileEvents::ZooKeeperWatchTriggeredMaterializedViewRefresh};
-    if (!coordination.watches->root_watch_active.load())
-    {
-        coordination.watches->root_watch_active.store(true);
-        zookeeper->existsWatch(coordination.path, nullptr, labelled_watch);
-    }
-    if (!coordination.watches->children_watch_active.load())
-    {
-        coordination.watches->children_watch_active.store(true);
-        zookeeper->getChildrenWatch(coordination.path, nullptr, labelled_watch);
-    }
+    zookeeper->existsWatch(coordination.path, nullptr, labelled_watch);
+    zookeeper->getChildrenWatch(coordination.path, nullptr, labelled_watch);
 
+    /// Do an atomic multi-read.
     Strings paths {coordination.path, coordination.path + "/running", coordination.path + "/paused"};
     auto responses = zookeeper->tryGet(paths.begin(), paths.end());
 

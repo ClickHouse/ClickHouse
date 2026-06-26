@@ -5,6 +5,7 @@
 #include <Client/InternalTextLogs.h>
 #include <Client/LineReader.h>
 #include <Client/TerminalKeystrokeInterceptor.h>
+#include <Client/TerminalMarkdownRenderer.h>
 #include <Client/TestHint.h>
 #include <Client/TestTags.h>
 #include <Core/SortDescription.h>
@@ -102,6 +103,7 @@
 #include <mutex>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <csignal>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -1592,9 +1594,6 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
 
     switch (packet.type)
     {
-        case Protocol::Server::PartUUIDs:
-            return true;
-
         case Protocol::Server::Data:
             if (!cancelled_)
                 onData(packet.block, parsed_query);
@@ -3280,6 +3279,21 @@ bool ClientBase::processQueryText(const String & text)
         return executeMultiQuery(ls_query);
     }
 
+    /// Interactive `help`/`man` command (in all of the forms `help`, `/help`, `man`, `/man`): render the
+    /// embedded documentation for a word from `system.documentation`. Gated like the other meta-commands,
+    /// so that batch `clickhouse-client` still parses a query starting with `help`/`man` as SQL.
+    if (is_interactive || supportsLocalMetaCommands())
+    {
+        for (const std::string_view prefix : {"help", "/help", "man", "/man"})
+        {
+            if (boost::iequals(trimmed_input, prefix))
+                return processHelpCommand({});
+            if (trimmed_input.size() > prefix.size() && boost::istarts_with(trimmed_input, prefix)
+                && isWhitespaceASCII(trimmed_input[prefix.size()]))
+                return processHelpCommand(trimmed_input.substr(prefix.size()));
+        }
+    }
+
 
 #if USE_CLIENT_AI
     // Handle "?? <free_text>" command
@@ -3553,7 +3567,205 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
         return "";
     }
 }
+#endif
 
+Block ClientBase::fetchDocumentation(const String & query, const String & word)
+{
+    const NameToNameMap query_parameters_for_help{{"word", word}};
+
+    connection->sendQuery(
+        connection_parameters.timeouts,
+        query,
+        query_parameters_for_help,
+        "", /// query_id
+        QueryProcessingStage::Complete,
+        nullptr, /// settings
+        &client_context->getClientInfo(), /// a valid client info (with a query kind) is required by the TCP server
+        false, /// with_pending_data
+        {}, /// external_roles
+        {} /// process_progress_callback
+    );
+
+    Blocks blocks;
+    while (true)
+    {
+        Packet packet = connection->receivePacket();
+        switch (packet.type)
+        {
+            case Protocol::Server::Data:
+                /// The first data block is the empty header; only blocks with rows carry results.
+                if (packet.block.rows() > 0)
+                    blocks.push_back(std::move(packet.block));
+                continue;
+
+            case Protocol::Server::EndOfStream: return blocks.empty() ? Block{} : concatenateBlocks(blocks);
+
+            case Protocol::Server::Exception: packet.exception->rethrow(); break; /// unreachable: `rethrow` always throws
+
+            case Protocol::Server::Progress:
+            case Protocol::Server::ProfileInfo:
+            case Protocol::Server::ProfileEvents:
+            case Protocol::Server::Totals:
+            case Protocol::Server::Extremes:
+            case Protocol::Server::Log:
+            case Protocol::Server::TimezoneUpdate:
+            case Protocol::Server::PartUUIDs: continue;
+
+            default:
+                throw Exception(
+                    ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}", packet.type, connection->getDescription());
+        }
+    }
+}
+
+bool ClientBase::processHelpCommand(const String & word_arg)
+{
+    const String word = trim(word_arg, [](char c) { return isWhitespaceASCII(c); });
+
+    if (word.empty())
+    {
+        output_stream << "\nUsage: help <name>   (also: /help <name>, man <name>, /man <name>)\n"
+                         "\n"
+                         "Searches the embedded documentation (the system.documentation table) for <name> and\n"
+                         "renders it in the terminal, formatted from Markdown. When several entities share the\n"
+                         "name (e.g. `file`), all of them are shown. When nothing matches, similar names and\n"
+                         "entities whose documentation mentions the word are listed.\n"
+                         "\n"
+                         "Examples: help MergeTree, help domainWithoutWWW, help max_threads\n"
+                      << std::endl;
+        return true;
+    }
+
+    if (!connection)
+    {
+        error_stream << "The help command is not available: not connected to a server." << std::endl;
+        return true;
+    }
+
+    TerminalMarkdownRenderer renderer;
+    renderer.ansi = stdout_is_a_tty;
+    if (renderer.ansi)
+    {
+        try
+        {
+            /// Wrap to the real terminal width (the renderer clamps very narrow terminals to a minimum).
+            const uint16_t detected_width = getTerminalWidth();
+            if (detected_width >= 20)
+                renderer.width = detected_width;
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+            /// Ok: if the terminal width cannot be determined, the default is used.
+        }
+    }
+#if USE_REPLXX
+    /// Documentation snippets are often query fragments, not complete queries, so fall back to
+    /// lexer-based highlighting when the parser cannot parse them.
+    if (renderer.ansi && client_context)
+        renderer.highlight_sql = [this](const String & sql)
+        { return highlighted(sql, *client_context, /*rainbow_parentheses=*/false, /*lexer_fallback=*/true); };
+#endif
+
+    try
+    {
+        const Block exact = fetchDocumentation(
+            "SELECT name, toString(type) AS type, description FROM system.documentation "
+            "WHERE lower(name) = lower({word:String}) ORDER BY type, name",
+            word);
+
+        if (exact.rows() > 0)
+        {
+            const auto & names = typeid_cast<const ColumnString &>(*exact.getByName("name").column);
+            const auto & types = typeid_cast<const ColumnString &>(*exact.getByName("type").column);
+            const auto & descriptions = typeid_cast<const ColumnString &>(*exact.getByName("description").column);
+            /// Frame the output with blank lines (before, between entries, and after) for readability.
+            output_stream << '\n';
+            for (size_t i = 0; i < exact.rows(); ++i)
+            {
+                if (i)
+                    output_stream << '\n';
+                output_stream << renderer.renderEntry(
+                    String(names.getDataAt(i)), String(types.getDataAt(i)), String(descriptions.getDataAt(i)));
+            }
+            output_stream << '\n';
+            output_stream << std::flush;
+            return true;
+        }
+
+        /// Nothing matched exactly: offer suggestions by similar name (substring or small edit distance),
+        /// and by entities whose documentation mentions the word.
+        /// `lower` (not `lowerUTF8`) is used deliberately: entity names are ASCII, and `lowerUTF8`
+        /// requires ICU, which is not available in every build (e.g. the Fast test build).
+        const Block by_name = fetchDocumentation(
+            "SELECT DISTINCT name, toString(type) AS type FROM system.documentation "
+            "WHERE (lengthUTF8({word:String}) >= 3 AND positionCaseInsensitive(name, {word:String}) > 0) "
+            "   OR editDistanceUTF8(lower(name), lower({word:String})) "
+            "      <= greatest(1, intDiv(lengthUTF8({word:String}), 3)) "
+            "ORDER BY editDistanceUTF8(lower(name), lower({word:String})), lengthUTF8(name), name "
+            "LIMIT 30",
+            word);
+
+        const Block by_content = fetchDocumentation(
+            "SELECT DISTINCT name, toString(type) AS type FROM system.documentation "
+            "WHERE lengthUTF8({word:String}) >= 3 AND positionCaseInsensitive(description, {word:String}) > 0 "
+            "  AND lower(name) != lower({word:String}) "
+            "ORDER BY name LIMIT 30",
+            word);
+
+        output_stream << "\nNo documentation found for '" << word << "'.\n";
+
+        std::unordered_set<String> shown_names;
+        auto print_suggestions = [&](const Block & block, std::string_view header, bool record)
+        {
+            if (block.rows() == 0)
+                return false;
+
+            const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
+            const auto & types = typeid_cast<const ColumnString &>(*block.getByName("type").column);
+
+            bool printed_header = false;
+            for (size_t i = 0; i < block.rows(); ++i)
+            {
+                String name = String(names.getDataAt(i));
+                if (!record && shown_names.contains(name))
+                    continue;
+                if (record)
+                    shown_names.insert(name);
+
+                if (!printed_header)
+                {
+                    output_stream << '\n' << header << '\n';
+                    printed_header = true;
+                }
+
+                output_stream << "    ";
+                if (stdout_is_a_tty)
+                    output_stream << "\033[1m" << name << "\033[0m";
+                else
+                    output_stream << name;
+                output_stream << "  (" << String(types.getDataAt(i)) << ")\n";
+            }
+            return printed_header;
+        };
+
+        const bool any_name = print_suggestions(by_name, "Maybe you meant:", /*record=*/true);
+        const bool any_content = print_suggestions(by_content, "Found in the documentation of:", /*record=*/false);
+
+        if (!any_name && !any_content)
+            output_stream << "Nothing similar found. Try the name of a function, table engine, data type, format or setting.\n";
+
+        output_stream << '\n';
+        output_stream << std::flush;
+    }
+    catch (...)
+    {
+        error_stream << "The help command failed: " << getCurrentExceptionMessage(false) << std::endl;
+    }
+
+    return true;
+}
+
+#if USE_CLIENT_AI
 bool ClientBase::checkAIProviderAcknowledgment()
 {
     // If API key came from environment and user hasn't acknowledged yet, ask for confirmation
