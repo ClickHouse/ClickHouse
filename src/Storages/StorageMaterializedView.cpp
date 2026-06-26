@@ -192,6 +192,11 @@ StorageMaterializedView::StorageMaterializedView(
     {
         fixed_uuid = query.refresh_strategy->append;
 
+        /// The temporary view of a CREATE OR REPLACE shares the target with the view being replaced.
+        /// Start its refresh paused so it cannot touch the target before the rename commits.
+        const bool is_create_or_replace_temp = (query.create_or_replace || query.replace_view)
+            && TemporaryReplaceTableName::fromString(table_id_.table_name).has_value();
+
         /// Decide whether to enable coordination.
         if (is_replicated_db)
         {
@@ -222,11 +227,8 @@ StorageMaterializedView::StorageMaterializedView(
             }
             else
             {
-                /// During CREATE OR REPLACE the view is built under a temporary name while the replaced
-                /// view still owns the target. The precise ownership check runs in doCreateOrReplaceTable.
-                /// A plain CREATE never goes through that path, so require an actual replacement query too.
-                bool is_create_or_replace_temp = (query.create_or_replace || query.replace_view)
-                    && TemporaryReplaceTableName::fromString(table_id_.table_name).has_value();
+                /// The replacement temp's target ownership is checked in doCreateOrReplaceTable, so
+                /// skip the guard here for it (a plain CREATE still goes through this check).
                 if (!is_create_or_replace_temp)
                     if (auto task = getContext()->getRefreshSet().tryGetTaskForInnerTable(to_table_id))
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is already a target of another refreshable materialized view: {}", to_table_id.getFullTableName(), task->getInfo().view_id.getFullTableName());
@@ -262,7 +264,7 @@ StorageMaterializedView::StorageMaterializedView(
             }
         }
 
-        refresher = RefreshTask::create(this, getContext(), *query.refresh_strategy, mode >= LoadingStrictnessLevel::ATTACH, refresh_coordinated, query.is_create_empty, is_restore_from_backup);
+        refresher = RefreshTask::create(this, getContext(), *query.refresh_strategy, mode >= LoadingStrictnessLevel::ATTACH, refresh_coordinated, query.is_create_empty, is_create_or_replace_temp, is_restore_from_backup);
     }
 
     if (!fixed_uuid)

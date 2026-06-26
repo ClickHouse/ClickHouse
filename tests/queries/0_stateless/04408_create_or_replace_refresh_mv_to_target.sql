@@ -10,6 +10,10 @@ DROP TABLE IF EXISTS tgt SYNC;
 DROP TABLE IF EXISTS rmv SYNC;
 DROP TABLE IF EXISTS rmv_other SYNC;
 DROP TABLE IF EXISTS rmv_plain SYNC;
+DROP TABLE IF EXISTS dep SYNC;
+DROP TABLE IF EXISTS dep_tgt SYNC;
+DROP TABLE IF EXISTS mv_dep SYNC;
+DROP TABLE IF EXISTS tgt_dep SYNC;
 
 CREATE TABLE src (x UInt32) ENGINE = MergeTree ORDER BY x;
 INSERT INTO src VALUES (1), (2), (3);
@@ -27,6 +31,16 @@ CREATE OR REPLACE MATERIALIZED VIEW rmv REFRESH EVERY 2 HOUR TO tgt AS SELECT x 
 SYSTEM WAIT VIEW rmv;
 SELECT 'replace', sum(x) FROM tgt;
 
+-- A dependent replacement refreshes through normal scheduling after the rename, like a plain
+-- CREATE: the dependency already refreshed, so the dependent refreshes too (not delayed).
+CREATE TABLE dep_tgt (x UInt32) ENGINE = MergeTree ORDER BY x;
+CREATE MATERIALIZED VIEW dep REFRESH EVERY 1 YEAR TO dep_tgt AS SELECT x FROM src;
+SYSTEM WAIT VIEW dep;
+CREATE TABLE tgt_dep (x UInt32) ENGINE = MergeTree ORDER BY x;
+CREATE OR REPLACE MATERIALIZED VIEW mv_dep REFRESH EVERY 1 YEAR DEPENDS ON dep TO tgt_dep AS SELECT x FROM src;
+SYSTEM WAIT VIEW mv_dep;
+SELECT 'deps', count() FROM tgt_dep;
+
 -- A different view must not take over a target that another refreshable MV owns,
 -- both via a plain CREATE and via CREATE OR REPLACE.
 CREATE MATERIALIZED VIEW rmv_plain REFRESH EVERY 1 HOUR TO tgt AS SELECT x FROM src; -- { serverError BAD_ARGUMENTS }
@@ -36,6 +50,10 @@ CREATE OR REPLACE MATERIALIZED VIEW rmv_other REFRESH EVERY 1 HOUR TO tgt AS SEL
 -- target exclusively, so it must not bypass the check either.
 CREATE MATERIALIZED VIEW `_tmp_replace_a_b` REFRESH EVERY 1 HOUR TO tgt AS SELECT x FROM src; -- { serverError BAD_ARGUMENTS }
 
+DROP TABLE IF EXISTS mv_dep SYNC;
+DROP TABLE IF EXISTS tgt_dep SYNC;
+DROP TABLE IF EXISTS dep SYNC;
+DROP TABLE IF EXISTS dep_tgt SYNC;
 DROP TABLE IF EXISTS rmv SYNC;
 DROP TABLE IF EXISTS tgt SYNC;
 DROP TABLE IF EXISTS src SYNC;
