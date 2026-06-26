@@ -351,6 +351,13 @@ endif()
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 
+# Do not maintain `errno` for math functions (`sqrt`, `log`, `pow`, ...). This changes no
+# computed result - `errno` is the only observable difference and ClickHouse never reads it
+# after a libm call - but it lets the compiler emit math instructions directly instead of
+# guarding each call with a branch to a libm wrapper, which also unblocks vectorization.
+# Clang's default on Linux is `-fmath-errno` (errno-setting), so this is not already implied.
+set (COMPILER_FLAGS "${COMPILER_FLAGS} -fno-math-errno")
+
 set (DEBUG_INFO_FLAGS "-g")
 if (DISABLE_ALL_DEBUG_SYMBOLS)
     set (DEBUG_INFO_FLAGS "-g0")
