@@ -15,3 +15,9 @@ ACCESS_DENIED
 ACCESS_DENIED
 === mergeTreeIndex without a row policy: allowed ===
 1
+=== mergeTreeTextIndex with a row policy on a non-indexed column: denied ===
+ACCESS_DENIED
+=== mergeTreeTextIndex with a column-independent policy (USING 0): denied ===
+ACCESS_DENIED
+=== mergeTreeTextIndex without a row policy: allowed ===
+1

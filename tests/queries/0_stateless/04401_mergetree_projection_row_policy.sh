@@ -100,4 +100,42 @@ GRANT SELECT ON ${CLICKHOUSE_DATABASE}.idx_open TO ${user};
 "
 ${CLICKHOUSE_CLIENT} --user "${user}" -q "SELECT count() > 0 FROM mergeTreeIndex(currentDatabase(), idx_open, with_minmax = 1)"
 
+# A text index on `name` whose policy filters on a different column (`department`): the
+# text index dictionary still exposes tokens and part metadata for the hidden rows, so the
+# read must be denied even though `department` is not the indexed column.
+${CLICKHOUSE_CLIENT} -q "
+CREATE TABLE txt (id UInt64, name String, department String, INDEX idx_name name TYPE text(tokenizer = splitByNonAlpha)) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO txt VALUES (1,'alice secret','engineering'),(2,'bob hidden','finance'),(3,'carol public','engineering');
+OPTIMIZE TABLE txt FINAL;
+GRANT SELECT ON ${CLICKHOUSE_DATABASE}.txt TO ${user};
+CREATE ROW POLICY rp_txt ON txt FOR SELECT USING department = 'engineering' TO ${user};
+"
+
+echo "=== mergeTreeTextIndex with a row policy on a non-indexed column: denied ==="
+${CLICKHOUSE_CLIENT} --user "${user}" -q "
+SELECT token FROM mergeTreeTextIndex(currentDatabase(), txt, idx_name)
+" 2>&1 | grep -o 'ACCESS_DENIED' | head -1
+
+${CLICKHOUSE_CLIENT} -q "
+CREATE TABLE txt_all_hidden (id UInt64, name String, INDEX idx_name name TYPE text(tokenizer = splitByNonAlpha)) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO txt_all_hidden VALUES (1,'alice secret'),(2,'bob hidden'),(3,'carol public');
+OPTIMIZE TABLE txt_all_hidden FINAL;
+GRANT SELECT ON ${CLICKHOUSE_DATABASE}.txt_all_hidden TO ${user};
+CREATE ROW POLICY rp_txt_all_hidden ON txt_all_hidden FOR SELECT USING 0 TO ${user};
+"
+
+echo "=== mergeTreeTextIndex with a column-independent policy (USING 0): denied ==="
+${CLICKHOUSE_CLIENT} --user "${user}" -q "
+SELECT part_name FROM mergeTreeTextIndex(currentDatabase(), txt_all_hidden, idx_name)
+" 2>&1 | grep -o 'ACCESS_DENIED' | head -1
+
+echo "=== mergeTreeTextIndex without a row policy: allowed ==="
+${CLICKHOUSE_CLIENT} -q "
+CREATE TABLE txt_open (id UInt64, name String, INDEX idx_name name TYPE text(tokenizer = splitByNonAlpha)) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO txt_open VALUES (1,'alice secret'),(2,'bob public');
+OPTIMIZE TABLE txt_open FINAL;
+GRANT SELECT ON ${CLICKHOUSE_DATABASE}.txt_open TO ${user};
+"
+${CLICKHOUSE_CLIENT} --user "${user}" -q "SELECT count() > 0 FROM mergeTreeTextIndex(currentDatabase(), txt_open, idx_name)"
+
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}"
