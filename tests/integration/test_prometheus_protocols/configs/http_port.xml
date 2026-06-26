@@ -22,7 +22,7 @@
             </handler>
         </rule>
         <!-- Deferred-table handlers: no <table> element, so the target TimeSeries table is taken
-             from the X-ClickHouse-Database / X-ClickHouse-Table headers (or ?database=&table=). -->
+             from the X-ClickHouse-Table header (or ?database=&table=). -->
         <rule>
             <url>/prometheus_deferred/api/v1/write</url>
             <handler>

@@ -232,13 +232,14 @@ def test_main_http_prefixed_and_bare_share_table():
 def test_deferred_handler_targets_table_from_headers():
     timestamp = 1_700_002_000.0
     metric_name = "deferred_header_target"
-    headers = {"X-ClickHouse-Database": "otherdb", "X-ClickHouse-Table": "hdr_target"}
+    # An unqualified 'X-ClickHouse-Table' header resolves to the table in the 'default' database.
+    headers = {"X-ClickHouse-Table": "hdr_target"}
 
-    before = int(
-        node.query("SELECT count() FROM timeSeriesData(otherdb.hdr_target)").strip()
-    )
     default_before = int(
         node.query("SELECT count() FROM timeSeriesData(default.hdr_target)").strip()
+    )
+    other_before = int(
+        node.query("SELECT count() FROM timeSeriesData(otherdb.hdr_target)").strip()
     )
 
     send_with_headers(
@@ -247,16 +248,16 @@ def test_deferred_handler_targets_table_from_headers():
         headers,
     )
 
-    after = int(
-        node.query("SELECT count() FROM timeSeriesData(otherdb.hdr_target)").strip()
-    )
     default_after = int(
         node.query("SELECT count() FROM timeSeriesData(default.hdr_target)").strip()
     )
+    other_after = int(
+        node.query("SELECT count() FROM timeSeriesData(otherdb.hdr_target)").strip()
+    )
 
-    # The header-named table received the sample, and the same-named table in another database did not.
-    assert after > before
-    assert default_after == default_before
+    # The unqualified header targeted default.hdr_target; the same-named table in another database did not.
+    assert default_after > default_before
+    assert other_after == other_before
 
     metric_names = read_metric_names_with_headers(
         metric_name, timestamp - 1, timestamp + 1, DEFERRED_READ_PATH, headers
@@ -291,48 +292,6 @@ def test_deferred_handler_targets_qualified_table_header():
     assert metric_name in metric_names
 
 
-def test_deferred_handler_qualified_table_param_ignores_database_header():
-    timestamp = 1_700_002_300.0
-    metric_name = "deferred_qualified_param_vs_db_header"
-    # The 'table' query parameter carries a qualified `database.table` name while a conflicting
-    # 'X-ClickHouse-Database' header is also sent. The qualified parameter outranks the lower-priority
-    # header, so the sample must land in default.hdr_target -- not otherdb.hdr_target, and not the bogus
-    # lookup otherdb."default.hdr_target" (which would make the write fail outright).
-    headers = {"X-ClickHouse-Database": "otherdb"}
-    write_path = f"{DEFERRED_WRITE_PATH}?table=default.hdr_target"
-    read_path = f"{DEFERRED_READ_PATH}?table=default.hdr_target"
-
-    default_before = int(
-        node.query("SELECT count() FROM timeSeriesData(default.hdr_target)").strip()
-    )
-    other_before = int(
-        node.query("SELECT count() FROM timeSeriesData(otherdb.hdr_target)").strip()
-    )
-
-    send_with_headers(
-        [({"__name__": metric_name}, {timestamp: 24.0})],
-        write_path,
-        headers,
-    )
-
-    default_after = int(
-        node.query("SELECT count() FROM timeSeriesData(default.hdr_target)").strip()
-    )
-    other_after = int(
-        node.query("SELECT count() FROM timeSeriesData(otherdb.hdr_target)").strip()
-    )
-
-    # The qualified table parameter won: the sample is in default.hdr_target and the header database
-    # was ignored (otherdb.hdr_target is untouched).
-    assert default_after > default_before
-    assert other_after == other_before
-
-    metric_names = read_metric_names_with_headers(
-        metric_name, timestamp - 1, timestamp + 1, read_path, headers
-    )
-    assert metric_name in metric_names
-
-
 def test_deferred_handler_without_target_fails():
     timestamp = 1_700_002_200.0
     metric_name = "deferred_no_target"
@@ -351,7 +310,7 @@ def test_deferred_handler_without_target_fails():
 def test_deferred_handler_query_api_targets_table_from_headers():
     timestamp = 1_700_002_400.0
     metric_name = "deferred_query_header_target"
-    headers = {"X-ClickHouse-Database": "otherdb", "X-ClickHouse-Table": "hdr_target"}
+    headers = {"X-ClickHouse-Table": "otherdb.hdr_target"}
 
     # Land a sample in the header-selected table via the deferred write handler.
     send_with_headers(
@@ -368,8 +327,8 @@ def test_deferred_handler_query_api_targets_table_from_headers():
 def test_pinned_handler_ignores_targeting_headers():
     timestamp = 1_700_002_500.0
     metric_name = "pinned_ignores_headers_target"
-    # The handler pins default.prometheus_http, so these headers must be ignored entirely.
-    headers = {"X-ClickHouse-Database": "otherdb", "X-ClickHouse-Table": "hdr_target"}
+    # The handler pins default.prometheus_http, so this header must be ignored entirely.
+    headers = {"X-ClickHouse-Table": "otherdb.hdr_target"}
 
     pinned_before = int(
         node.query(

@@ -555,13 +555,13 @@ The target `TimeSeries` table can be pinned in the handler with a `<table>` elem
 </http_handlers>
 ```
 
-When `<table>` is omitted, the target table is resolved per request. Each of the database and table names is taken, in order of priority, from:
+When `<table>` is omitted, the target table is resolved per request. The table name is taken, in order of priority, from:
 
-1. the handler configuration (`<database>` / `<table>`);
-2. the `database` / `table` URL query parameters;
-3. the `X-ClickHouse-Database` / `X-ClickHouse-Table` HTTP headers.
+1. the handler configuration (`<table>`);
+2. the `table` URL query parameter;
+3. the `X-ClickHouse-Table` HTTP header.
 
-A name pinned in the configuration cannot be overridden by a query parameter (a conflicting parameter is an error). The headers have the lowest priority and are consulted only for a name still unset by both the configuration and the query parameters; they never error on a conflict. A qualified `database.table` (from the configuration or the `table` query parameter) is split into its database and table before the `X-ClickHouse-Database` header is consulted. If no database is resolved by any source it falls back to `default`; if no table is resolved the request fails.
+The database is taken from the handler configuration (`<database>`) or the `database` URL query parameter. A name pinned in the configuration cannot be overridden by a query parameter (a conflicting parameter is an error). The `X-ClickHouse-Table` header has the lowest priority and is consulted only for a table still unset by both the configuration and the query parameter; it never errors on a conflict. The table name may be a qualified `database.table` (from any source): if the database is not otherwise set it is taken from the qualified name, falling back to `default`. If no table is resolved the request fails.
 
 ## http_server_default_response {#http_server_default_response}
 

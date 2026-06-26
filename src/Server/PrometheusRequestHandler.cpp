@@ -238,16 +238,13 @@ protected:
         return value;
     }
 
-    /// Resolves the time series table for the current request. Each of the database and table names comes
-    /// from the configuration, the URL query parameter 'database'/'table', or the
-    /// 'X-ClickHouse-Database'/'X-ClickHouse-Table' HTTP header, in that order of priority.
-    /// A query parameter can't override a value set in the configuration; the headers are consulted only
-    /// for a name that is still unset by both the configuration and the query parameters, and never error.
-    /// The table name may be a possibly-qualified `database.table`: a table supplied by the configuration
-    /// or the query parameter is split into database and table before the lower-priority
-    /// 'X-ClickHouse-Database' header is consulted, so a qualified table provides its own database instead
-    /// of being paired with the header database. If the database is still unset the table name is parsed
-    /// the same way, and if it is not qualified the database falls back to "default".
+    /// Resolves the time series table for the current request. The table name comes from the configuration,
+    /// the URL query parameter 'table', or the 'X-ClickHouse-Table' HTTP header, in that order of priority;
+    /// the database from the configuration or the 'database' query parameter. A query parameter can't
+    /// override a value set in the configuration; the header is consulted only for a table still unset by
+    /// both the configuration and the query parameter, and never errors. The table name may be a
+    /// possibly-qualified `database.table` (from any source): if the database is still unset the table name
+    /// is parsed for one, and if it is not qualified the database falls back to "default".
     StorageID getTimeSeriesTableID(const HTTPServerRequest & request)
     {
         QualifiedTableName full_name;
@@ -270,20 +267,6 @@ protected:
             full_name.table = params->get("table");
         }
 
-        /// A 'table' supplied by the configuration or the query parameter may be a qualified
-        /// `database.table`. Split it before consulting the lower-priority 'X-ClickHouse-Database'
-        /// header, otherwise a qualified table such as `?table=default.events` would be paired with
-        /// the header database and looked up as `<header_db>."default.events"`.
-        if (full_name.database.empty() && !full_name.table.empty())
-        {
-            QualifiedTableName qualified = QualifiedTableName::parseFromString(full_name.table);
-            if (!qualified.database.empty())
-                full_name = qualified;
-        }
-
-        if (full_name.database.empty())
-            full_name.database = getSanitizedHeaderValue(request, "X-ClickHouse-Database");
-
         if (full_name.table.empty())
             full_name.table = getSanitizedHeaderValue(request, "X-ClickHouse-Table");
 
@@ -292,6 +275,7 @@ protected:
                 "The time series table name is not set; specify it in the configuration, the 'table' query parameter, "
                 "or the 'X-ClickHouse-Table' header");
 
+        /// The table from any source may be a qualified `database.table`.
         if (full_name.database.empty())
         {
             full_name = QualifiedTableName::parseFromString(full_name.table);
