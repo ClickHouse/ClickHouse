@@ -535,7 +535,7 @@ S3::UploadPartRequest WriteBufferFromS3::getUploadRequest(size_t part_number, Pa
         if (!checksum)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing flexible checksum for part #{} of multipart upload", part_number);
 
-        S3::RequestChecksum::setRequestChecksum(req, *checksum_algorithm, *checksum);
+        S3::RequestChecksum::setChecksum(req, *checksum_algorithm, *checksum);
         multipart_checksums.push_back(std::move(*checksum));
     }
 
@@ -670,7 +670,7 @@ bool WriteBufferFromS3::completeMultipartUpload()
         Aws::S3::Model::CompletedPart part;
         part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1));
         if (checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*checksum_algorithm))
-            S3::RequestChecksum::setPartChecksum(part, *checksum_algorithm, multipart_checksums.at(i));
+            S3::RequestChecksum::setChecksum(part, *checksum_algorithm, multipart_checksums.at(i));
         multipart_upload.AddParts(part);
     }
 

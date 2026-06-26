@@ -204,7 +204,7 @@ namespace
                 Aws::S3::Model::CompletedPart part;
                 part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1));
                 if (usesFlexibleUploadChecksumHeader())
-                    S3::RequestChecksum::setPartChecksum(part, *upload_checksum_algorithm, multipart_checksums.at(i));
+                    S3::RequestChecksum::setChecksum(part, *upload_checksum_algorithm, multipart_checksums.at(i));
                 multipart_upload.AddParts(part);
             }
 
@@ -402,7 +402,7 @@ namespace
             if (!checksum)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing flexible checksum for multipart upload request");
 
-            S3::RequestChecksum::setRequestChecksum(upload_part_request, *upload_checksum_algorithm, *checksum);
+            S3::RequestChecksum::setChecksum(upload_part_request, *upload_checksum_algorithm, *checksum);
             return *checksum;
         }
 
@@ -429,8 +429,9 @@ namespace
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
                 part_tag = std::move(tag);
-                if (usesFlexibleUploadChecksumHeader())
-                    part_checksum = std::move(checksum);
+                /// Empty unless a flexible checksum was requested; `prepareUploadPartRequest` guarantees a
+                /// non-empty value in that case (it throws otherwise), so there is nothing to re-check here.
+                part_checksum = std::move(checksum);
                 auto finished_count = ++num_finished_parts;
 
                 LOG_TRACE(log, "Finished writing part #{}. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Finished parts: {} of {}",

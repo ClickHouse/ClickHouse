@@ -999,7 +999,7 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmValidationAndNormalization)
         catch (const DB::Exception & e)
         {
             ASSERT_EQ(ErrorCodes::INVALID_SETTING_VALUE, e.code());
-            EXPECT_THAT(e.what(), testing::HasSubstr("only supports CRC32, SHA256 and MD5"));
+            EXPECT_THAT(e.what(), testing::HasSubstr("only supports MD5, CRC32, SHA256"));
             throw;
         }
     }, DB::Exception);
@@ -1062,7 +1062,7 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmRuntimeValidation)
         catch (const DB::Exception & e)
         {
             ASSERT_EQ(ErrorCodes::INVALID_SETTING_VALUE, e.code());
-            EXPECT_THAT(e.what(), testing::HasSubstr("only supports CRC32, SHA256 and MD5"));
+            EXPECT_THAT(e.what(), testing::HasSubstr("only supports MD5, CRC32, SHA256"));
             throw;
         }
     }, DB::Exception);

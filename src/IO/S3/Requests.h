@@ -6,6 +6,7 @@
 
 #include <IO/S3/URI.h>
 #include <IO/S3/ProviderType.h>
+#include <IO/S3/ChecksumAlgorithm.h>
 
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/s3/model/HeadObjectRequest.h>
@@ -38,23 +39,9 @@ namespace Model = Aws::S3::Model;
 struct S3RequestSettings;
 
 /// Used for `S3Express` and user-requested upload checksums.
+/// `Algorithm` and the SDK-free helpers live in `IO/S3/ChecksumAlgorithm.h`.
 namespace RequestChecksum
 {
-enum class Algorithm
-{
-    /// User-visible `MD5` mode. AWS represents it through the SDK `Content-MD5` path,
-    /// not through `ChecksumAlgorithm` / `x-amz-checksum-*`.
-    /// With checksums disabled it means no checksum at all.
-    MD5,
-    CRC32,
-    SHA256,
-};
-
-inline bool usesFlexibleChecksumHeader(Algorithm algorithm)
-{
-    return algorithm == Algorithm::CRC32 || algorithm == Algorithm::SHA256;
-}
-
 inline std::optional<Aws::S3::Model::ChecksumAlgorithm> toSDKFlexibleChecksumAlgorithm(Algorithm algorithm)
 {
     switch (algorithm)
@@ -69,31 +56,17 @@ inline std::optional<Aws::S3::Model::ChecksumAlgorithm> toSDKFlexibleChecksumAlg
     UNREACHABLE();
 }
 
-inline void setPartChecksum(Model::CompletedPart & part, Algorithm algorithm, const std::string & checksum)
+/// Set the flexible checksum on a request or a completed part; both expose `SetChecksumCRC32`/`SetChecksumSHA256`.
+template <typename T>
+inline void setChecksum(T & target, Algorithm algorithm, const std::string & checksum)
 {
     switch (algorithm)
     {
         case Algorithm::CRC32:
-            part.SetChecksumCRC32(checksum);
+            target.SetChecksumCRC32(checksum);
             return;
         case Algorithm::SHA256:
-            part.SetChecksumSHA256(checksum);
-            return;
-        case Algorithm::MD5:
-            return;
-    }
-    UNREACHABLE();
-}
-
-inline void setRequestChecksum(Model::UploadPartRequest & req, Algorithm algorithm, const std::string & checksum)
-{
-    switch (algorithm)
-    {
-        case Algorithm::CRC32:
-            req.SetChecksumCRC32(checksum);
-            return;
-        case Algorithm::SHA256:
-            req.SetChecksumSHA256(checksum);
+            target.SetChecksumSHA256(checksum);
             return;
         case Algorithm::MD5:
             return;
