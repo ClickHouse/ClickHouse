@@ -588,9 +588,9 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotSimple)
     /// snapshots (ephemeral nodes always report seq_num 0, so this can't reuse /hello1 or /hello2).
     const int64_t large_seq_num = static_cast<int64_t>(std::numeric_limits<int32_t>::max()) + 100;
     DB::KeeperNodeStats stats;
-    ASSERT_TRUE(storage.nodes_storage->getCommittedNodeSimple("/", &stats));
+    ASSERT_TRUE(storage.nodes_storage->getCommittedNodeSimple("/", &stats, /*out_data=*/nullptr));
     stats.setSeqNum(large_seq_num);
-    storage.nodes_storage->updateCommittedNode("/", &stats);
+    storage.nodes_storage->updateCommittedNode("/", &stats, /*new_data=*/std::nullopt, /*out_digest=*/nullptr);
     storage.session_id_counter = 5;
     TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 2;
     storage.committed_ephemerals[3] = {"/hello2"};
@@ -630,16 +630,16 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotSimple)
     EXPECT_EQ(restored_storage->session_and_timeout.size(), 2);
 
     /// Verify ACL round-trip
-    ASSERT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/hello1", &stats));
+    ASSERT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/hello1", &stats, /*out_data=*/nullptr));
     EXPECT_EQ(stats.acl_id, acl_id1);
-    ASSERT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/hello2", &stats));
+    ASSERT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/hello2", &stats, /*out_data=*/nullptr));
     EXPECT_EQ(stats.acl_id, acl_id2);
     auto restored_acls = restored_storage->acl_map.convertNumber(acl_id2);
     EXPECT_EQ(restored_acls.size(), 1);
     EXPECT_EQ(restored_acls[0].scheme, "digest");
 
     /// Verify seq_num round-trip (int64_t, value > INT32_MAX)
-    ASSERT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/", &stats));
+    ASSERT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/", &stats, /*out_data=*/nullptr));
     EXPECT_EQ(stats.getSeqNum(), large_seq_num);
 }
 
@@ -748,7 +748,7 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotMode)
         DB::KeeperStorageSnapshot snapshot(&storage, 50, nullptr, this->keeper_context->getWriteSnapshotVersion());
         for (size_t i = 0; i < 50; ++i)
         {
-            storage.nodes_storage->updateCommittedNode(fmt::format("/hello_{}", i), std::nullopt, std::string_view(fmt::format("wrld_{}", i)));
+            storage.nodes_storage->updateCommittedNode(fmt::format("/hello_{}", i), std::nullopt, std::string_view(fmt::format("wrld_{}", i)), /*out_digest=*/nullptr);
         }
         for (size_t i = 0; i < 50; ++i)
         {
@@ -780,7 +780,7 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotMode)
         if (i % 2 != 0)
             EXPECT_EQ(committedNodeData(storage, fmt::format("/hello_{}", i)), fmt::format("wrld_{}", i));
         else
-            EXPECT_FALSE(storage.nodes_storage->getCommittedNodeSimple(fmt::format("/hello_{}", i)));
+            EXPECT_FALSE(storage.nodes_storage->getCommittedNodeSimple(fmt::format("/hello_{}", i), /*out_stats=*/nullptr, /*out_data=*/nullptr));
     }
 
     auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/ false);
@@ -938,7 +938,7 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotBlockACL)
 
         EXPECT_EQ(restored_storage->getStorageStats().nodes_count, 5);
         DB::KeeperNodeStats stats;
-        ASSERT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple(path, &stats));
+        ASSERT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple(path, &stats, /*out_data=*/nullptr));
         EXPECT_EQ(stats.acl_id, acl_id);
     }
 
@@ -950,7 +950,7 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotBlockACL)
 
         EXPECT_EQ(restored_storage->getStorageStats().nodes_count, 5);
         DB::KeeperNodeStats stats;
-        ASSERT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple(path, &stats));
+        ASSERT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple(path, &stats, /*out_data=*/nullptr));
         EXPECT_EQ(stats.acl_id, 0);
     }
 }
@@ -1842,7 +1842,7 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotTTLRoundTrip)
     create_request->include_ttl = true;
     create_request->ttl = ttl_ms;
 
-    storage.preprocessRequest(create_request, session_id, /*time=*/0, ++zxid);
+    storage.preprocessRequest(create_request, session_id, /*time=*/0, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
     auto responses = storage.processRequest(create_request, session_id, zxid);
     ASSERT_EQ(responses[0].response->error, Error::ZOK);
 
@@ -1859,7 +1859,7 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotTTLRoundTrip)
     EXPECT_TRUE(restored->containsTTLPath("/ttl_node"));
 
     DB::KeeperNodeStats stats;
-    ASSERT_TRUE(restored->nodes_storage->getCommittedNodeSimple("/ttl_node", &stats));
+    ASSERT_TRUE(restored->nodes_storage->getCommittedNodeSimple("/ttl_node", &stats, /*out_data=*/nullptr));
     ASSERT_TRUE(stats.isTTL());
     EXPECT_EQ(stats.destroyTime(), ttl_ms);
 
@@ -2114,8 +2114,8 @@ TEST_P(CoordinationTest, ReceiveDuplicateSnapshotRepublishIsIdempotent)
     auto restored_buf = manager.deserializeSnapshotBufferFromDisk(100);
     auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /* initialize_system_nodes */ false);
     auto restored = manager.deserializeSnapshotFromBuffer(restored_buf, *restored_storage);
-    EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/"));
-    EXPECT_FALSE(restored_storage->nodes_storage->getCommittedNodeSimple("/after_duplicate"));
+    EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/", /*out_stats=*/nullptr, /*out_data=*/nullptr));
+    EXPECT_FALSE(restored_storage->nodes_storage->getCommittedNodeSimple("/after_duplicate", /*out_stats=*/nullptr, /*out_data=*/nullptr));
 }
 
 TEST_P(CoordinationTest, StartupScanKeepsOneRegisteredSnapshotPerIndex)
@@ -2167,17 +2167,17 @@ TEST_P(CoordinationTest, StartupScanKeepsOneRegisteredSnapshotPerIndex)
     {
         auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /* initialize_system_nodes */ false);
         auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(66), *restored_storage);
-        EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/kept66"));
+        EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/kept66", /*out_stats=*/nullptr, /*out_data=*/nullptr));
     }
     {
         auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /* initialize_system_nodes */ false);
         auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(77), *restored_storage);
-        EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/kept77"));
+        EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/kept77", /*out_stats=*/nullptr, /*out_data=*/nullptr));
     }
     {
         auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /* initialize_system_nodes */ false);
         auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(88), *restored_storage);
-        EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/kept88"));
+        EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/kept88", /*out_stats=*/nullptr, /*out_data=*/nullptr));
     }
 
     /// Parser pins: unique and legacy names parse to the same index.
@@ -2227,7 +2227,7 @@ TEST_P(CoordinationTest, StartupScanKeepsLatestIndexDuplicatesForRecovery)
     {
         auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /* initialize_system_nodes */ false);
         auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(90), *restored_storage);
-        EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/latest_valid"));
+        EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/latest_valid", /*out_stats=*/nullptr, /*out_data=*/nullptr));
     }
     catch (...) // Ok: exception means the registered copy is corrupt; we use the boolean to drive the recovery path below
     {
@@ -2241,7 +2241,7 @@ TEST_P(CoordinationTest, StartupScanKeepsLatestIndexDuplicatesForRecovery)
         EXPECT_EQ(recovered_manager.getLatestSnapshotIndex(), 90);
         auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /* initialize_system_nodes */ false);
         auto restored = recovered_manager.deserializeSnapshotFromBuffer(recovered_manager.deserializeSnapshotBufferFromDisk(90), *restored_storage);
-        EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/latest_valid"));
+        EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/latest_valid", /*out_stats=*/nullptr, /*out_data=*/nullptr));
     }
 }
 
@@ -2298,7 +2298,7 @@ TEST_P(CoordinationTest, StartupScanKeepsRetainedIndexDuplicatesForDrillRecovery
     {
         auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /* initialize_system_nodes */ false);
         auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(80), *restored_storage);
-        EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/drill_valid"));
+        EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/drill_valid", /*out_stats=*/nullptr, /*out_data=*/nullptr));
     }
     catch (...) // Ok: exception means the registered copy is corrupt; we use the boolean to drive the recovery path below
     {
@@ -2312,7 +2312,7 @@ TEST_P(CoordinationTest, StartupScanKeepsRetainedIndexDuplicatesForDrillRecovery
         EXPECT_EQ(recovered_manager.getLatestSnapshotIndex(), 80);
         auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /* initialize_system_nodes */ false);
         auto restored = recovered_manager.deserializeSnapshotFromBuffer(recovered_manager.deserializeSnapshotBufferFromDisk(80), *restored_storage);
-        EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/drill_valid"));
+        EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/drill_valid", /*out_stats=*/nullptr, /*out_data=*/nullptr));
     }
 }
 
@@ -2470,7 +2470,7 @@ TEST_P(CoordinationTest, SameIndexReceiveDuringLocalCreate)
     DB::KeeperSnapshotManager manager(3, ctx, true);
     auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /* initialize_system_nodes */ false);
     auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(1), *restored_storage);
-    EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/from_receive"));
+    EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/from_receive", /*out_stats=*/nullptr, /*out_data=*/nullptr));
 }
 
 TEST_P(CoordinationTest, ChunkedSameIndexReceiveDoesNotRewritePublishedSnapshot)
@@ -2559,8 +2559,8 @@ TEST_P(CoordinationTest, ChunkedSameIndexReceiveDoesNotRewritePublishedSnapshot)
     auto restored_buf = manager.deserializeSnapshotBufferFromDisk(10);
     auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /* initialize_system_nodes */ false);
     auto restored = manager.deserializeSnapshotFromBuffer(restored_buf, *restored_storage);
-    EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/original"));
-    EXPECT_FALSE(restored_storage->nodes_storage->getCommittedNodeSimple("/duplicate"));
+    EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/original", /*out_stats=*/nullptr, /*out_data=*/nullptr));
+    EXPECT_FALSE(restored_storage->nodes_storage->getCommittedNodeSimple("/duplicate", /*out_stats=*/nullptr, /*out_data=*/nullptr));
 }
 
 TEST_P(CoordinationTest, ApplySnapshotDoesNotWaitForLocalCreate)
@@ -2636,8 +2636,8 @@ TEST_P(CoordinationTest, ApplySnapshotDoesNotWaitForLocalCreate)
         block_state->release();
     ASSERT_EQ(apply_status, std::future_status::ready);
     EXPECT_TRUE(apply_future.get());
-    EXPECT_TRUE(state_machine->getStorageUnsafe().nodes_storage->getCommittedNodeSimple("/replacement"));
-    EXPECT_FALSE(state_machine->getStorageUnsafe().nodes_storage->getCommittedNodeSimple("/old_node"));
+    EXPECT_TRUE(state_machine->getStorageUnsafe().nodes_storage->getCommittedNodeSimple("/replacement", /*out_stats=*/nullptr, /*out_data=*/nullptr));
+    EXPECT_FALSE(state_machine->getStorageUnsafe().nodes_storage->getCommittedNodeSimple("/old_node", /*out_stats=*/nullptr, /*out_data=*/nullptr));
 
     /// The old storage stayed alive via the task's captured reference; the task's
     /// cleanup runs against it and the task adopts the newer published snapshot.
@@ -2874,8 +2874,8 @@ TEST_P(CoordinationTest, PublishSnapshotFileReusesExistingAndRetiredLoserIsRemov
 
     auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /* initialize_system_nodes */ false);
     auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(100), *restored_storage);
-    EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/from_a"));
-    EXPECT_FALSE(restored_storage->nodes_storage->getCommittedNodeSimple("/from_b"));
+    EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/from_a", /*out_stats=*/nullptr, /*out_data=*/nullptr));
+    EXPECT_FALSE(restored_storage->nodes_storage->getCommittedNodeSimple("/from_b", /*out_stats=*/nullptr, /*out_data=*/nullptr));
 }
 
 TEST_P(CoordinationTest, MovePublicationRejectionBranches)
@@ -2939,7 +2939,7 @@ TEST_P(CoordinationTest, MovePublicationRejectionBranches)
     {
         auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /* initialize_system_nodes */ false);
         auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(10), *restored_storage);
-        EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/move_me"));
+        EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/move_me", /*out_stats=*/nullptr, /*out_data=*/nullptr));
     }
 
     /// (d) Metadata replaced: remove + republish a fresh file for the same index;
@@ -3002,7 +3002,7 @@ TEST_P(CoordinationTest, MoveSnapshotCandidateHonorsBoolPublishCallback)
     /// The manager reads the moved snapshot from its new location.
     auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /* initialize_system_nodes */ false);
     auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(10), *restored_storage);
-    EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/move_me"));
+    EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/move_me", /*out_stats=*/nullptr, /*out_data=*/nullptr));
 }
 
 TEST(KeeperSnapshotFileNameTest, CanonicalSnapshotS3Name)

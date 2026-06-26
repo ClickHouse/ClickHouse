@@ -20,11 +20,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 disk_move_retries_during_init;

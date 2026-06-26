@@ -42,22 +42,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event KeeperCreateRequest;
-    extern const Event KeeperRemoveRequest;
-    extern const Event KeeperSetRequest;
-    extern const Event KeeperCheckRequest;
-    extern const Event KeeperMultiRequest;
-    extern const Event KeeperMultiReadRequest;
-    extern const Event KeeperGetRequest;
-    extern const Event KeeperListRequest;
-    extern const Event KeeperListRecursiveRequest;
-    extern const Event KeeperExistsRequest;
-    extern const Event KeeperPreprocessElapsedMicroseconds;
-    extern const Event KeeperProcessElapsedMicroseconds;
-    extern const Event KeeperSetWatchesRequest;
-    extern const Event KeeperCheckWatchRequest;
-    extern const Event KeeperRemoveWatchRequest;
-    extern const Event KeeperAddWatchRequest;
     extern const Event KeeperWatchesTriggered;
     extern const Event KeeperWatchTriggeredNodeCreated;
     extern const Event KeeperWatchTriggeredNodeDeleted;
@@ -688,7 +672,7 @@ bool KeeperStorage::checkCommittedACL(std::string_view path, int32_t permission,
     {
         std::shared_lock lock(storage_mutex);
         KeeperNodeStats stats;
-        if (nodes_storage->getCommittedNodeSimple(path, &stats))
+        if (nodes_storage->getCommittedNodeSimple(path, &stats, /*out_data=*/nullptr))
             acl_id = stats.acl_id;
     }
 
@@ -807,7 +791,7 @@ std::vector<std::pair<std::string, Int32>> KeeperStorage::collectExpiredTTLPaths
     for (const auto & ttl_path : ttl_paths)
     {
         KeeperNodeStats stats;
-        bool exists = nodes_storage->getCommittedNodeSimple(ttl_path, &stats);
+        bool exists = nodes_storage->getCommittedNodeSimple(ttl_path, &stats, /*out_data=*/nullptr);
         if (!exists || !stats.isTTL())
         {
             LOG_ERROR(
@@ -1111,7 +1095,7 @@ KeeperResponsesForSessions KeeperStorage::setWatches(
     for (const auto & path : watches_paths)
     {
         KeeperNodeStats stats;
-        if (!nodes_storage->getCommittedNodeSimple(path, &stats))
+        if (!nodes_storage->getCommittedNodeSimple(path, &stats, /*out_data=*/nullptr))
             add_watch_response(path, Coordination::Event::DELETED);
         else if (stats.mzxid <= last_zxid)
             add_watch(path, watches, WatchType::WATCH);
@@ -1122,7 +1106,7 @@ KeeperResponsesForSessions KeeperStorage::setWatches(
     for (const auto & path : list_watches_paths)
     {
         KeeperNodeStats stats;
-        if (!nodes_storage->getCommittedNodeSimple(path, &stats))
+        if (!nodes_storage->getCommittedNodeSimple(path, &stats, /*out_data=*/nullptr))
             add_watch_response(path, Coordination::Event::DELETED);
         else if (stats.pzxid <= last_zxid)
             add_watch(path, list_watches, WatchType::LIST_WATCH);
@@ -1132,7 +1116,7 @@ KeeperResponsesForSessions KeeperStorage::setWatches(
 
     for (const auto & path : exist_watches_paths)
     {
-        if (nodes_storage->getCommittedNodeSimple(path))
+        if (nodes_storage->getCommittedNodeSimple(path, /*out_stats=*/nullptr, /*out_data=*/nullptr))
             add_watch_response(path, Coordination::Event::CREATED);
         else
             add_watch(path, watches, WatchType::WATCH);

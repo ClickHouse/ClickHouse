@@ -83,8 +83,8 @@ struct KeeperMemNodesStorage final : public KeeperNodesStorage
 {
     /// ========== KeeperNodesStorage virtual methods ==========
 
-    bool getCommittedNodeSimple(std::string_view path, KeeperNodeStats * out_stats = nullptr, std::string * out_data = nullptr) override;
-    bool getUncommittedNodeSimple(std::string_view path, KeeperNodeStats * out_stats = nullptr, std::string * out_data = nullptr) override;
+    bool getCommittedNodeSimple(std::string_view path, KeeperNodeStats * out_stats, std::string * out_data) override;
+    bool getUncommittedNodeSimple(std::string_view path, KeeperNodeStats * out_stats, std::string * out_data) override;
 
     std::vector<std::string> listCommittedChildrenNames(std::string_view path) const override;
 

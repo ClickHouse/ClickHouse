@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 KeeperMemNode & KeeperMemNode::operator=(const KeeperMemNode & other)
 {
     if (this == &other)

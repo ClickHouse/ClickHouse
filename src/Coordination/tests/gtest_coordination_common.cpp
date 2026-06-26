@@ -86,14 +86,14 @@ Coordination::ACLs getUncommittedACLs(DB::KeeperStorage & storage, std::string_v
 {
     Coordination::ACLId acl_id = 0;
     DB::KeeperNodeStats stats;
-    if (storage.nodes_storage->getUncommittedNodeSimple(path, &stats))
+    if (storage.nodes_storage->getUncommittedNodeSimple(path, &stats, /*out_data=*/nullptr))
         acl_id = stats.acl_id;
     return storage.acl_map.convertNumber(acl_id);
 }
 
 bool committedNodeExists(DB::KeeperStorage & storage, std::string_view path)
 {
-    return storage.nodes_storage->getCommittedNodeSimple(path);
+    return storage.nodes_storage->getCommittedNodeSimple(path, /*out_stats=*/nullptr, /*out_data=*/nullptr);
 }
 
 std::string committedNodeData(DB::KeeperStorage & storage, std::string_view path)

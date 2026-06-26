@@ -19,15 +19,15 @@ public:
 
     KeeperResponsesForSessions processLocalRequests(
         const KeeperRequestsForSessions & requests,
-        bool check_acl = true) override;
+        bool check_acl) override;
     KeeperDigest preprocessRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,
         int64_t time,
         int64_t new_last_zxid,
-        bool check_acl = true,
-        std::optional<KeeperDigest> digest = std::nullopt,
-        int64_t log_idx = 0) override;
+        bool check_acl,
+        std::optional<KeeperDigest> digest,
+        int64_t log_idx) override;
     KeeperResponsesForSessions processRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,

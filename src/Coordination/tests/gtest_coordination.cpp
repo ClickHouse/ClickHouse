@@ -497,13 +497,13 @@ TEST_P(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecommitte
     state_machine->pre_commit(2, create_entry->get_buf());
 
     auto & storage = state_machine->getStorageUnsafe();
-    ASSERT_TRUE(storage.nodes_storage->getUncommittedNodeSimple(node_path));
+    ASSERT_TRUE(storage.nodes_storage->getUncommittedNodeSimple(node_path, /*out_stats=*/nullptr, /*out_data=*/nullptr));
 
     // commit log entries
     state_machine->commit(1, auth_entry->get_buf());
     state_machine->commit(2, create_entry->get_buf());
 
-    ASSERT_TRUE(storage.nodes_storage->getUncommittedNodeSimple(node_path));
+    ASSERT_TRUE(storage.nodes_storage->getUncommittedNodeSimple(node_path, /*out_stats=*/nullptr, /*out_data=*/nullptr));
     auto acls = getUncommittedACLs(storage, node_path);
     ASSERT_EQ(acls.size(), 1);
     EXPECT_EQ(acls[0].scheme, "digest");
@@ -787,7 +787,7 @@ TEST_P(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitted)
     state_machine->commit(3, set_acl_entry->get_buf());
 
     auto & storage = state_machine->getStorageUnsafe();
-    ASSERT_TRUE(storage.nodes_storage->getUncommittedNodeSimple(node_path));
+    ASSERT_TRUE(storage.nodes_storage->getUncommittedNodeSimple(node_path, /*out_stats=*/nullptr, /*out_data=*/nullptr));
 
     auto acls = getUncommittedACLs(storage, node_path);
     ASSERT_EQ(acls.size(), 1);

@@ -81,8 +81,9 @@ struct KeeperNodesStorage
 
     /// (A little slower than getCommittedNode/getUncommittedNode, so most request processing should
     ///  be a template and use getCommittedNode instead.)
-    virtual bool getCommittedNodeSimple(std::string_view path, KeeperNodeStats * out_stats = nullptr, std::string * out_data = nullptr) = 0;
-    virtual bool getUncommittedNodeSimple(std::string_view path, KeeperNodeStats * out_stats = nullptr, std::string * out_data = nullptr) = 0;
+    /// (No default arguments: clang-tidy's google-default-arguments prohibits them on virtual methods.)
+    virtual bool getCommittedNodeSimple(std::string_view path, KeeperNodeStats * out_stats, std::string * out_data) = 0;
+    virtual bool getUncommittedNodeSimple(std::string_view path, KeeperNodeStats * out_stats, std::string * out_data) = 0;
 
     /// List children names without data.
     /// (Implementation should not rely on getNumChildren() stat because it may be inaccurate for system nodes.)
@@ -90,7 +91,7 @@ struct KeeperNodesStorage
 
     /// Directly create or mutate a committed node. Used to set up system nodes and by tests.
     virtual bool addCommittedNodeIfNotExists(std::string_view path, const KeeperNodeStats & stats, std::string_view data, bool update_parent_num_children, uint64_t * out_digest) = 0;
-    virtual void updateCommittedNode(std::string_view path, std::optional<const KeeperNodeStats *> new_stats, std::optional<std::string_view> new_data = std::nullopt, uint64_t * out_digest = nullptr) = 0;
+    virtual void updateCommittedNode(std::string_view path, std::optional<const KeeperNodeStats *> new_stats, std::optional<std::string_view> new_data, uint64_t * out_digest) = 0;
     virtual void removeCommittedNode(std::string_view path) = 0;
 
     /// Caller must hold storage mutex.

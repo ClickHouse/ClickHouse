@@ -278,17 +278,18 @@ public:
     /// Process a batch of local read requests (no deltas, no commit).
     virtual KeeperResponsesForSessions processLocalRequests(
         const KeeperRequestsForSessions & requests,
-        bool check_acl = true) = 0;
+        bool check_acl) = 0;
     /// Pre-validate uncommitted request and apply it to uncommitted state.
     /// check_acl = false only when converting data from ZooKeeper.
+    /// (No default arguments: clang-tidy's google-default-arguments prohibits them on virtual methods.)
     virtual KeeperDigest preprocessRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,
         int64_t time,
         int64_t new_last_zxid,
-        bool check_acl = true,
-        std::optional<KeeperDigest> digest = std::nullopt,
-        int64_t log_idx = 0) = 0;
+        bool check_acl,
+        std::optional<KeeperDigest> digest,
+        int64_t log_idx) = 0;
     /// Commit a previously preprocessed request. Apply the changes to the committed state.
     /// Produce response for the request + triggered watch notifications.
     virtual KeeperResponsesForSessions processRequest(

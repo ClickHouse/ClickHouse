@@ -211,7 +211,7 @@ void StorageRunner::setupStorage()
         int64_t zxid = next_zxid.fetch_add(1);
         try
         {
-            storage->preprocessRequest(request, setup_session_id, 0, zxid);
+            storage->preprocessRequest(request, setup_session_id, 0, zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
             auto responses = storage->processRequest(request, setup_session_id, zxid);
             for (const auto & response : responses)
             {
@@ -359,7 +359,7 @@ void StorageRunner::preprocessThread()
         try
         {
             std::shared_lock lock(state_machine_storage_mutex);
-            storage->preprocessRequest(item.request, item.session_id, /*time=*/0, item.zxid);
+            storage->preprocessRequest(item.request, item.session_id, /*time=*/0, item.zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
         }
         catch (...)
         {
