@@ -218,8 +218,9 @@ concept HasPrefetchMemberFunc = requires
 
 size_t getMinBytesForPrefetch()
 {
-    /// 4 is empirical constant.
-    return 4 * getL2CacheSize();
+    /// Enable prefetch once the hash table no longer fits in L2; below that it
+    /// is cache resident and prefetching is pure overhead.
+    return getL2CacheSize();
 }
 
 UInt64 & getCountState(DB::AggregateDataPtr __restrict place) /// NOLINT(readability-non-const-parameter)
