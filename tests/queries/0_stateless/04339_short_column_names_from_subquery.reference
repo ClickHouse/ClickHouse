@@ -30,8 +30,8 @@ f1	b.f1
 1
 -- on: db-qualified TableNode source — qualifier matches `db.table` for an unaliased cross-database reference
 db04339_a.t.f1	UInt8					
-db04339_b.t.f1	UInt8					
-10	20
+10
+10
 -- on: explicit dotted alias on a resolved column does NOT expose a short name
 1
 2

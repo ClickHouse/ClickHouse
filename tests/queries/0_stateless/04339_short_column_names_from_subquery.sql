@@ -203,6 +203,14 @@ SELECT '-- on: db-qualified TableNode source — qualifier matches `db.table` fo
 -- previous `TableNode` branch compared the canonical's qualifier prefix only against
 -- `getStorageID().getTableName()` (`t`), so it missed the `db1.t` form. Accept the
 -- `db.table` form too.
+--
+-- To exercise the new code path specifically (https://github.com/ClickHouse/ClickHouse/pull/107449#discussion_r3483004360),
+-- the inner subquery has BOTH unaliased `db04339_a.t` and `db04339_b.t` in scope so the
+-- analyzer keeps the qualifier alive in the canonical projection name (DESCRIBE below),
+-- but projects only ONE of those columns so the short-name `f1` is unambiguous and the
+-- outer query actually exercises the short-name fallback. Without the `db.table` source
+-- check this assertion returns `UNKNOWN_IDENTIFIER`; with it, the short-name resolves
+-- to the projected db-qualified column.
 SET single_join_prefer_left_table = 0;
 DROP DATABASE IF EXISTS db04339_a;
 DROP DATABASE IF EXISTS db04339_b;
@@ -213,14 +221,19 @@ CREATE TABLE db04339_b.t (f1 UInt8) ENGINE = Memory;
 INSERT INTO db04339_a.t VALUES (10);
 INSERT INTO db04339_b.t VALUES (20);
 
--- DESCRIBE confirms both canonical names retain the `db.table.column` form:
-DESCRIBE (SELECT db04339_a.t.f1, db04339_b.t.f1 FROM db04339_a.t, db04339_b.t);
+-- DESCRIBE confirms the canonical name retains the `db.table.column` form:
+DESCRIBE (SELECT db04339_a.t.f1 FROM db04339_a.t, db04339_b.t);
 
--- Each db-qualified short-name still resolves via the canonical (dotted) form. The
--- short-name lookup `f1` against both is ambiguous (both register `f1`), so we assert
--- the disambiguation works rather than trying to bind `f1` unambiguously.
-SELECT `db04339_a.t.f1`, `db04339_b.t.f1` FROM (
-    SELECT db04339_a.t.f1, db04339_b.t.f1 FROM db04339_a.t, db04339_b.t
+-- Focused short-name assertion: outer `f1` resolves to the projected db-qualified
+-- column via the new `db.table` source-name match. The expected result is `10` (the
+-- single value from db04339_a.t crossed with the single row in db04339_b.t).
+SELECT f1 FROM (
+    SELECT db04339_a.t.f1 FROM db04339_a.t, db04339_b.t
+);
+
+-- Canonical (dotted) name also resolves, as always:
+SELECT `db04339_a.t.f1` FROM (
+    SELECT db04339_a.t.f1 FROM db04339_a.t, db04339_b.t
 );
 
 DROP TABLE db04339_a.t;
