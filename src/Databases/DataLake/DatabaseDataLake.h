@@ -60,7 +60,7 @@ public:
         bool skip_not_loaded,
         const TablesFilter & tables_filter) const override;
 
-    Strings getAllTableNames(ContextPtr context) const override;
+    VectorWithMemoryTracking<String> getAllTableNames(ContextPtr context) const override;
 
     void checkDatabase() const override;
 
