@@ -444,7 +444,7 @@ class ReleaseInfo:
             print(json.dumps(dataclasses.asdict(self), indent=2), file=f)
         return self
 
-    def prepare(self, commit_ref: str, release_type: str, _skip_tag_check: bool) -> "ReleaseInfo":
+    def prepare(self, commit_ref: str, release_type: str, _skip_out_of_order_check: bool) -> "ReleaseInfo":
         assert release_type in ("patch", "new")
         version = None
         release_branch = None
@@ -499,7 +499,7 @@ class ReleaseInfo:
             # file at `origin/<release_branch>` HEAD, a release has been made on
             # a later commit — tagging `commit_ref` now would create an
             # out-of-order release.
-            if _skip_tag_check:
+            if _skip_out_of_order_check:
                 # Recovery run (only-repo / only-docker) against an already
                 # released tag: origin/<release_branch> has since been
                 # version-bumped, so the out-of-order comparison below would
@@ -507,7 +507,7 @@ class ReleaseInfo:
                 # an existing release tag rather than an arbitrary commit.
                 assert Shell.check(
                     f"git rev-parse --verify --quiet refs/tags/{release_tag}^{{commit}}"
-                ), f"--skip-tag-check requires an existing release tag [{release_tag}]"
+                ), f"--skip-out-of-order-check requires an existing release tag [{release_tag}]"
             else:
                 ref_cmake = Shell.get_output_or_raise(
                     f"git show {commit_ref}:{FILE_WITH_VERSION_PATH}"
@@ -537,7 +537,7 @@ class ReleaseInfo:
             ):
                 pass
             # TODO: uncomment and check with dry-run
-            # elif not _skip_tag_check:
+            # elif not _skip_out_of_order_check:
             #     assert False, f"BUG: Unexpected latest tag [{git.latest_tag}] expected [{expected_tag_prefix}*{expected_tag_suffix}]. Already Released?"
 
             assert previous_release_tag, (
@@ -1077,9 +1077,13 @@ def parse_args() -> argparse.Namespace:
         help="Initial step to prepare info like release branch, release tag, etc.",
     )
     parser.add_argument(
-        "--skip-tag-check",
+        "--skip-out-of-order-check",
         action="store_true",
-        help="To skip check against latest git tag on a release branch",
+        help="Skip the out-of-order release check. Used by recovery runs "
+        "(only-repo/only-docker), which rebuild repos/docker for an "
+        "already-released tag whose branch has since been version-bumped, so "
+        "the check would always trip. The recovery ref is instead validated to "
+        "be an existing release tag.",
     )
     parser.add_argument(
         "--push-release-tag",
@@ -1168,7 +1172,7 @@ if __name__ == "__main__":
             release_info.prepare(
                 commit_ref=args.ref,
                 release_type=args.release_type,
-                _skip_tag_check=args.skip_tag_check,
+                _skip_out_of_order_check=args.skip_out_of_order_check,
             )
 
     if args.download_packages:

@@ -231,15 +231,15 @@ def main():
     # only-repo / only-docker are recovery runs against an already-released tag:
     # origin/<release_branch> has been version-bumped since, so prepare's
     # out-of-order guard must be relaxed (as the legacy workflow did).
-    skip_tag_check_flag = (
-        "--skip-tag-check" if (args.only_repo or args.only_docker) else ""
+    skip_out_of_order_check_flag = (
+        "--skip-out-of-order-check" if (args.only_repo or args.only_docker) else ""
     )
     step(
         name="Prepare Release Info",
         command=[
             f"python3 ./ci/jobs/create_release.py --prepare-release-info"
             f" --ref {args.ref} --release-type {args.release_type}"
-            f" {skip_tag_check_flag} {dry_run_flag}".strip()
+            f" {skip_out_of_order_check_flag} {dry_run_flag}".strip()
         ],
         workdir=REPO_PATH,
     )
