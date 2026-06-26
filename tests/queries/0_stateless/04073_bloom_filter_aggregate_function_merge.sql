@@ -1,32 +1,16 @@
 -- Tests for groupBloomFilter aggregate function -- empty/boundary data and merge
 
--- Aggregation over empty set: bloomFilterContains must return 0
-SELECT bloomFilterContains(
-    groupBloomFilterState(1000)(number),
-    toUInt64(42)
-) AS result
-FROM numbers(0);
-
--- Empty string not in filter (filter built from toString(0..9))
-SELECT bloomFilterContains(
-    groupBloomFilterState(1000)(toString(number)),
-    ''
-) AS result
-FROM numbers(10);
-
--- Empty string explicitly inserted into filter
-SELECT bloomFilterContains(
-    groupBloomFilterState(1000)(s),
-    ''
-) AS result
-FROM (SELECT '' AS s);
-
--- Very long string (1000 chars)
-SELECT bloomFilterContains(
-    groupBloomFilterState(1000)(repeat('x', 1000)),
-    repeat('x', 1000)
-) AS result
-FROM numbers(1);
+-- Empty and boundary values
+WITH
+    (SELECT groupBloomFilterState(1000)(number) FROM numbers(0)) AS empty_bf,
+    (SELECT groupBloomFilterState(1000)(toString(number)) FROM numbers(10)) AS string_bf,
+    (SELECT groupBloomFilterState(1000)(s) FROM (SELECT '' AS s)) AS empty_string_bf,
+    (SELECT groupBloomFilterState(1000)(repeat('x', 1000)) FROM numbers(1)) AS long_string_bf
+SELECT
+    bloomFilterContains(empty_bf, toUInt64(42)),
+    bloomFilterContains(string_bf, ''),
+    bloomFilterContains(empty_string_bf, ''),
+    bloomFilterContains(long_string_bf, repeat('x', 1000));
 
 -- Merge of incompatible filters (different size) must throw.
 -- New analyzer: UNION ALL produces a Variant, rejected by groupBloomFilterMerge (ILLEGAL_TYPE_OF_ARGUMENT).
@@ -51,27 +35,29 @@ SELECT groupBloomFilterMerge(1000)(state) FROM (
     SELECT groupBloomFilterState(1000)(number + 10) AS state FROM numbers(10)
 ); -- { serverError BAD_ARGUMENTS }
 
--- Merge with empty rhs: result equals lhs
-SELECT bloomFilterContains(
-    groupBloomFilterMergeState(1000)(state),
-    toUInt64(42)
-) AS result
-FROM (
-    SELECT groupBloomFilterState(1000)(number) AS state FROM numbers(100)
-    UNION ALL
-    SELECT groupBloomFilterState(1000)(number) AS state FROM numbers(0)
-);
-
--- Merge into empty lhs: result equals rhs
-SELECT bloomFilterContains(
-    groupBloomFilterMergeState(1000)(state),
-    toUInt64(42)
-) AS result
-FROM (
-    SELECT groupBloomFilterState(1000)(number) AS state FROM numbers(0)
-    UNION ALL
-    SELECT groupBloomFilterState(1000)(number) AS state FROM numbers(100)
-);
+-- Merge with empty rhs/lhs
+WITH
+    (
+        SELECT groupBloomFilterMergeState(1000)(state)
+        FROM
+        (
+            SELECT groupBloomFilterState(1000)(number) AS state FROM numbers(100)
+            UNION ALL
+            SELECT groupBloomFilterState(1000)(number) AS state FROM numbers(0)
+        )
+    ) AS merge_with_empty_rhs_bf,
+    (
+        SELECT groupBloomFilterMergeState(1000)(state)
+        FROM
+        (
+            SELECT groupBloomFilterState(1000)(number) AS state FROM numbers(0)
+            UNION ALL
+            SELECT groupBloomFilterState(1000)(number) AS state FROM numbers(100)
+        )
+    ) AS merge_into_empty_lhs_bf
+SELECT
+    bloomFilterContains(merge_with_empty_rhs_bf, toUInt64(42)),
+    bloomFilterContains(merge_into_empty_lhs_bf, toUInt64(42));
 
 -- Malformed serialized state: filter_size_bytes = 0 must throw.
 SELECT finalizeAggregation(CAST(unhex('00010000'), 'AggregateFunction(groupBloomFilter(1000), UInt64)')); -- { serverError INCORRECT_DATA }

@@ -1,26 +1,22 @@
 -- Tests for groupBloomFilter aggregate function -- const/non-const arguments and main use case
 
--- Both arguments are constants (bloom from WITH clause, value is literal)
-WITH (SELECT groupBloomFilterState(1000)(number) FROM numbers(100)) AS bf
-SELECT bloomFilterContains(bf, toUInt64(42)) AS result;
+-- Const bloom states from WITH clauses
+WITH
+    (SELECT groupBloomFilterState(1000)(number) FROM numbers(100)) AS uint64_bf,
+    (SELECT groupBloomFilterState(1000)(toString(number)) FROM numbers(100)) AS string_bf,
+    (SELECT groupBloomFilterState(1000)(toDateTime64('2023-01-01 12:00:00.123', 3)) FROM numbers(1)) AS datetime64_bf
+SELECT
+    bloomFilterContains(uint64_bf, toUInt64(42)),
+    bloomFilterContains(string_bf, '42'),
+    bloomFilterContains(datetime64_bf, toDateTime64('2023-01-01 12:00:00.123', 3));
 
--- Const String bloom state from WITH clause
-WITH (SELECT groupBloomFilterState(1000)(toString(number)) FROM numbers(100)) AS bf
-SELECT bloomFilterContains(bf, '42') AS result;
-
--- Const String bloom state with non-const String probe column
-WITH (SELECT groupBloomFilterState(1000)(toString(number)) FROM numbers(100)) AS bf
-SELECT sum(bloomFilterContains(bf, toString(number))) AS result
-FROM numbers(10);
-
--- Const DateTime64 bloom state from WITH clause
-WITH (SELECT groupBloomFilterState(1000)(toDateTime64('2023-01-01 12:00:00.123', 3)) FROM numbers(1)) AS bf
-SELECT bloomFilterContains(bf, toDateTime64('2023-01-01 12:00:00.123', 3)) AS result;
-
--- Const DateTime64 bloom state with non-const DateTime64 probe column
-WITH (SELECT groupBloomFilterState(1000)(toDateTime64('2023-01-01 12:00:00.123', 3)) FROM numbers(1)) AS bf
-SELECT sum(bloomFilterContains(bf, toDateTime64('2023-01-01 12:00:00.123', 3) + toIntervalMillisecond(number - number))) AS result
-FROM numbers(10);
+-- Const bloom states with non-const probe columns
+WITH
+    (SELECT groupBloomFilterState(1000)(toString(number)) FROM numbers(100)) AS string_bf,
+    (SELECT groupBloomFilterState(1000)(toDateTime64('2023-01-01 12:00:00.123', 3)) FROM numbers(1)) AS datetime64_bf
+SELECT
+    (SELECT sum(bloomFilterContains(string_bf, toString(number))) FROM numbers(10)),
+    (SELECT sum(bloomFilterContains(datetime64_bf, toDateTime64('2023-01-01 12:00:00.123', 3) + toIntervalMillisecond(number - number))) FROM numbers(10));
 
 -- Bloom is column, value is column (per-row check)
 SELECT bloomFilterContains(bf, val) AS result
@@ -31,22 +27,14 @@ FROM (
     FROM numbers(100)
 );
 
--- Count values in 100..199 that are absent from filter built on 0..99
+-- Values in 100..199 are absent from filter built on 0..99
 WITH (
     SELECT groupBloomFilterState(1000)(number)
     FROM numbers(100)
 ) AS old_bloom
-SELECT count() AS new_values_count
-FROM numbers(200)
-WHERE number >= 100
-  AND NOT (bloomFilterContains(old_bloom, number));
-
--- All 100 values from 100..199 must be found as new (no false negatives)
-WITH (
-    SELECT groupBloomFilterState(1000)(number)
-    FROM numbers(100)
-) AS old_bloom
-SELECT count() = 100 AS all_new_values_found
+SELECT
+    count() AS new_values_count,
+    count() = 100 AS all_new_values_found
 FROM numbers(200)
 WHERE number >= 100
   AND NOT (bloomFilterContains(old_bloom, number));

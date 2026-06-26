@@ -1,20 +1,16 @@
 -- Tests for groupBloomFilter aggregate function and bloomFilterContains scalar function
 -- Basic functionality
 
--- Value present in filter
-SELECT bloomFilterContains(groupBloomFilterState(1000)(number), toUInt64(42)) AS result
-FROM numbers(100);
-
--- Value absent from filter (definitely not present)
-SELECT bloomFilterContains(groupBloomFilterState(1000)(number), toUInt64(200)) AS result
-FROM numbers(100);
-
--- State from subquery used directly with bloomFilterContains
-SELECT bloomFilterContains(state, toUInt64(42)) AS result
-FROM (
-    SELECT groupBloomFilterState(1000)(number) AS state
-    FROM numbers(100)
-);
+-- Positive checks and state type name
+WITH
+    (SELECT groupBloomFilterState(1000)(number) FROM numbers(100)) AS bf,
+    (SELECT groupBloomFilterState(1000)(number) AS state FROM numbers(100)) AS subquery_bf,
+    (SELECT groupBloomFilterState(1000)(number) FROM numbers(10)) AS type_bf
+SELECT
+    bloomFilterContains(bf, toUInt64(42)),
+    bloomFilterContains(bf, toUInt64(200)),
+    bloomFilterContains(subquery_bf, toUInt64(42)),
+    toTypeName(type_bf) LIKE 'AggregateFunction(groupBloomFilter%';
 
 -- groupBloomFilter without -State combinator has no meaningful scalar result.
 SELECT groupBloomFilter(1000)(number) AS result
@@ -43,7 +39,3 @@ FROM numbers(1); -- { serverError BAD_ARGUMENTS }
 -- groupBloomFilterIfOrDefault must not synthesize a default scalar when all rows are filtered out.
 SELECT groupBloomFilterIfOrDefault(1000)(number, 0)
 FROM numbers(1); -- { serverError BAD_ARGUMENTS }
-
--- Type name of state is AggregateFunction(groupBloomFilter...)
-SELECT toTypeName(groupBloomFilterState(1000)(number)) LIKE 'AggregateFunction(groupBloomFilter%' AS is_correct_type
-FROM numbers(10);

@@ -1,47 +1,37 @@
 -- Tests for groupBloomFilter aggregate function -- parameters and validation
 
--- Explicit false positive rate
-SELECT bloomFilterContains(groupBloomFilterState(1000, 0.01)(number), toUInt64(50)) AS result
-FROM numbers(100);
-
--- Explicit filter size and num hashes
-SELECT bloomFilterContains(groupBloomFilterState(4096, 5)(number), toUInt64(50)) AS result
-FROM numbers(100);
-
--- Explicit seed parameter
-SELECT bloomFilterContains(groupBloomFilterState(1000, 0.01, 42)(number), toUInt64(50)) AS result
-FROM numbers(100);
-
--- No parameters: uses defaults (expected_elements=10000, false_positive_rate=0.025)
-SELECT bloomFilterContains(groupBloomFilterState(number), toUInt64(42)) AS result
-FROM numbers(100);
-
--- No parameters: value absent from filter
-SELECT bloomFilterContains(groupBloomFilterState(number), toUInt64(200)) AS result
-FROM numbers(100);
-
--- No parameters: type name is still correct
-SELECT toTypeName(groupBloomFilterState(number)) LIKE 'AggregateFunction(groupBloomFilter%' AS is_correct_type
-FROM numbers(10);
-
--- groupBloomFilter() with same params are merge-compatible
-SELECT bloomFilterContains(
-    groupBloomFilterMergeState(state),
-    toUInt64(5)
-) AS result
-FROM (
-    SELECT groupBloomFilterState(toUInt64(number)) AS state FROM numbers(10)
-    UNION ALL
-    SELECT groupBloomFilterState(toUInt64(number + 100)) AS state FROM numbers(10)
-);
-
--- (1000, 1): second param is integer >= 1, treated as num_hashes (not false_positive_rate)
-SELECT bloomFilterContains(groupBloomFilterState(1000, 1)(number), toUInt64(50)) AS result
-FROM numbers(100);
-
--- (1000, 0.999): second param is float in (0,1), treated as false_positive_rate (very high FPR = tiny filter)
-SELECT toTypeName(groupBloomFilterState(1000, 0.999)(number)) LIKE 'AggregateFunction(groupBloomFilter%' AS is_valid
-FROM numbers(10);
+-- Accepted parameter forms
+WITH
+    (SELECT groupBloomFilterState(1000, 0.01)(number) FROM numbers(100)) AS explicit_fpr_bf,
+    (SELECT groupBloomFilterState(4096, 5)(number) FROM numbers(100)) AS explicit_size_bf,
+    (SELECT groupBloomFilterState(1000, 0.01, 42)(number) FROM numbers(100)) AS explicit_seed_bf,
+    (SELECT groupBloomFilterState(number) FROM numbers(100)) AS default_bf,
+    (SELECT groupBloomFilterState(number) FROM numbers(10)) AS default_type_bf,
+    (
+        SELECT groupBloomFilterMergeState(state)
+        FROM
+        (
+            SELECT groupBloomFilterState(toUInt64(number)) AS state FROM numbers(10)
+            UNION ALL
+            SELECT groupBloomFilterState(toUInt64(number + 100)) AS state FROM numbers(10)
+        )
+    ) AS merged_default_bf,
+    (SELECT groupBloomFilterState(1000, 1)(number) FROM numbers(100)) AS integer_second_param_bf,
+    (SELECT groupBloomFilterState(1000, 0.999)(number) FROM numbers(10)) AS high_fpr_bf,
+    (SELECT groupBloomFilterState(4096, 20)(number) FROM numbers(100)) AS max_hashes_bf,
+    (SELECT groupBloomFilterState(100, 1e-10)(number) FROM numbers(100)) AS tiny_fpr_bf
+SELECT
+    bloomFilterContains(explicit_fpr_bf, toUInt64(50)),
+    bloomFilterContains(explicit_size_bf, toUInt64(50)),
+    bloomFilterContains(explicit_seed_bf, toUInt64(50)),
+    bloomFilterContains(default_bf, toUInt64(42)),
+    bloomFilterContains(default_bf, toUInt64(200)),
+    toTypeName(default_type_bf) LIKE 'AggregateFunction(groupBloomFilter%',
+    bloomFilterContains(merged_default_bf, toUInt64(5)),
+    bloomFilterContains(integer_second_param_bf, toUInt64(50)),
+    toTypeName(high_fpr_bf) LIKE 'AggregateFunction(groupBloomFilter%',
+    bloomFilterContains(max_hashes_bf, toUInt64(50)),
+    bloomFilterContains(tiny_fpr_bf, toUInt64(42));
 
 -- expected_elements = 0 must throw
 SELECT groupBloomFilterState(0)(number) FROM numbers(10); -- { serverError BAD_ARGUMENTS }
@@ -51,10 +41,6 @@ SELECT groupBloomFilterState(0, 5)(number) FROM numbers(10); -- { serverError BA
 
 -- num_hashes = 0 must throw
 SELECT groupBloomFilterState(1000, 0)(number) FROM numbers(10); -- { serverError BAD_ARGUMENTS }
-
--- num_hashes at the maximum allowed value is accepted
-SELECT bloomFilterContains(groupBloomFilterState(4096, 20)(number), toUInt64(50)) AS result
-FROM numbers(100);
 
 -- num_hashes above the maximum allowed value must throw
 SELECT groupBloomFilterState(4096, 21)(number) FROM numbers(10); -- { serverError BAD_ARGUMENTS }
@@ -73,9 +59,3 @@ SELECT groupBloomFilterState(200000000, 0.0001)(number) FROM numbers(10); -- { s
 
 -- Explicit filter size above the maximum allowed size must throw
 SELECT groupBloomFilterState(268435464, 5)(number) FROM numbers(10); -- { serverError BAD_ARGUMENTS }
-
--- Auto-sized parameters with very small false_positive_rate (k_opt > BLOOM_FILTER_MAX_HASHES):
--- the filter must be enlarged to honour the FPR contract rather than silently cap k.
--- Value inserted into filter must be found (no false negative).
-SELECT bloomFilterContains(groupBloomFilterState(100, 1e-10)(number), toUInt64(42)) AS result
-FROM numbers(100);
