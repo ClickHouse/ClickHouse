@@ -5,13 +5,14 @@
 # no-replicated-database: uses an explicit ReplicatedMergeTree ZooKeeper path that conflicts
 #   with the DDL replication mechanism of DatabaseReplicated.
 #
-# Regression test for a server abort (LOGICAL_ERROR "Part with name ... is already written by
+# Regression test for a LOGICAL_ERROR exception ("Part with name ... is already written by
 # concurrent request") in ReplicatedMergeTreeSink::commitPart. When the ZooKeeper block-number
 # counter is reset while a local part at the same block number survives (Keeper metadata loss,
 # replica re-creation, or a DROP/lost-replica race), the next INSERT re-issues an already-used
 # block number and renameTempPartAndAdd finds the surviving part. The sink used to treat this as
-# an impossible LOGICAL_ERROR and abort the server. It must instead fail the INSERT with a normal
-# (non-fatal) DUPLICATE_DATA_PART error and keep the server alive.
+# an impossible condition and throw LOGICAL_ERROR. In debug/sanitizer builds (abort_on_logical_error)
+# this aborts the server; in release builds it is a catchable exception. It must instead fail the
+# INSERT with a normal (non-fatal) DUPLICATE_DATA_PART error.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -44,7 +45,8 @@ $CLICKHOUSE_KEEPER_CLIENT -q "rmr '$ZK_PATH/block_numbers/all'" >/dev/null 2>&1
 $CLICKHOUSE_KEEPER_CLIENT -q "touch '$ZK_PATH/block_numbers/all'" >/dev/null 2>&1
 
 # The next INSERT re-issues block number 0 and collides with the surviving local all_0_0_0.
-# It must fail with DUPLICATE_DATA_PART, NOT abort the server with a LOGICAL_ERROR.
+# It must fail with DUPLICATE_DATA_PART, NOT raise a LOGICAL_ERROR (which aborts the server in
+# debug/sanitizer builds).
 $CLICKHOUSE_CLIENT --async_insert 0 --query "INSERT INTO rmt VALUES (99)" 2>&1 \
     | grep -o -m1 "DUPLICATE_DATA_PART" || echo "NO_EXPECTED_ERROR"
 
