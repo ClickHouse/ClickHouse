@@ -52,6 +52,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsOverflowMode read_overflow_mode;
+    extern const SettingsBool apply_deleted_mask;
 }
 
 namespace ErrorCodes
@@ -345,6 +346,8 @@ bool tryEstimateEmpirical(
     ReadFromMergeTree * read_step,
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & saved_parts,
+    UInt64 & total_rows_read,
+    UInt64 & total_bytes_read,
     ContextPtr context)
 {
     const auto & data = read_step->getMergeTreeData();
@@ -371,8 +374,8 @@ bool tryEstimateEmpirical(
         limit_settings[Setting::max_rows_to_read],
         limit_settings[Setting::max_bytes_to_read],
         limit_settings[Setting::read_overflow_mode]);
-    UInt64 total_rows_read = 0;
-    UInt64 total_bytes_read = 0;
+    /// total_rows_read / total_bytes_read are query-level (shared across all candidates),
+    /// so max_rows_to_read / max_bytes_to_read cap the whole EXPLAIN WHATIF, not each scan
 
     const size_t skip_index_granularity = index_helper->index.granularity;
     auto index_expression = index_helper->index.expression;
@@ -419,7 +422,9 @@ bool tryEstimateEmpirical(
                 index_columns,
                 MarkRanges{read_range},
                 std::make_shared<std::atomic<size_t>>(0),
-                false,
+                /// (Mirror the real read) apply the lightweight-delete mask so the
+                /// candidate does not aggregate rows the SELECT would not see
+                context->getSettingsRef()[Setting::apply_deleted_mask],
                 false,
                 false);
 
@@ -548,6 +553,8 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & saved_parts,
     const WhatIfSettings & settings,
+    UInt64 & total_rows_read,
+    UInt64 & total_bytes_read,
     ContextPtr context)
 {
     const auto & data = read_step->getMergeTreeData();
@@ -556,7 +563,12 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     result.index_name = index_desc.name;
     result.index_type = index_desc.type;
     result.total_parts = data.getActivePartsCount();
-    result.total_marks = data.getTotalMarksCount();
+    /// Count marks over the active snapshot only, so the denominator matches total_parts
+    /// (getTotalMarksCount also counts outdated parts left in memory after merges/mutations)
+    size_t active_marks = 0;
+    for (const auto & active_part : data.getDataPartsVectorForInternalUsage())
+        active_marks += active_part->getMarksCount();
+    result.total_marks = active_marks;
 
     /// `context` already has the inner-SELECT settings applied, so these checks match a real read
     if (!context->getSettingsRef()[Setting::use_skip_indexes])
@@ -678,7 +690,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
 
     if (settings.empirical)
     {
-        if (tryEstimateEmpirical(result, index_helper, condition, read_step, analysis, saved_parts, context))
+        if (tryEstimateEmpirical(result, index_helper, condition, read_step, analysis, saved_parts, total_rows_read, total_bytes_read, context))
             return result;
         result.empirical_status = WhatIfIndexEstimator::IndexResult::Unsupported;
     }
@@ -834,6 +846,11 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     const auto & store = context->getHypotheticalIndexStore();
     auto hypo_indexes = store.getForTable(data.getStorageID());
 
+    /// Cumulative across every candidate's empirical scan so max_rows_to_read /
+    /// max_bytes_to_read cap the whole EXPLAIN WHATIF
+    UInt64 total_rows_read = 0;
+    UInt64 total_bytes_read = 0;
+
     if (hypo_indexes.empty())
     {
         IndexResult no_index;
@@ -860,7 +877,7 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
             continue;
         }
 
-        auto index_result = evaluateIndex(index_desc, read_step, analysis, baseline_parts, settings, plan_context);
+        auto index_result = evaluateIndex(index_desc, read_step, analysis, baseline_parts, settings, total_rows_read, total_bytes_read, plan_context);
         result.index_results.push_back(std::move(index_result));
     }
 
