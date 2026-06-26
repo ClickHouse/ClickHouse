@@ -114,6 +114,63 @@ public:
         }
     }
 
+    /// Vectorizable fast path for the common single-argument, unconditional case.
+    /// The per-row `add` reduces into a single moment state, which serializes the loop and
+    /// blocks auto-vectorization. Here we accumulate into `unroll` independent partial states
+    /// (no cross-iteration dependency) directly off the typed column pointer, then merge them.
+    /// This changes summation order relative to a strict sequential sum (last-bit float
+    /// differences), but the result is identical across builds and platforms - consistent with
+    /// how `merge` already tree-reduces partial states across blocks. Conditional aggregation
+    /// (`if_argument_pos >= 0`) and the two-argument kinds fall back to the scalar base loop.
+    void addBatchSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** __restrict columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        if constexpr (StatFunc::num_args == 1)
+        {
+            if (if_argument_pos < 0)
+            {
+                const auto & vec = static_cast<const ColVecT1 &>(*columns[0]).getData();
+                const T1 * __restrict ptr = vec.data();
+
+                static constexpr size_t unroll = 4;
+                typename StatFunc::Data partial[unroll];
+
+                size_t i = row_begin;
+                const size_t unrolled_end = row_begin + (row_end - row_begin) / unroll * unroll;
+
+                for (; i < unrolled_end; i += unroll)
+                    for (size_t s = 0; s < unroll; ++s)
+                    {
+                        if constexpr (is_decimal<T1>)
+                            partial[s].add(convertFromDecimal<DataTypeDecimal<T1>, DataTypeFloat64>(ptr[i + s], src_scale));
+                        else
+                            partial[s].add(static_cast<ResultType>(ptr[i + s]));
+                    }
+
+                auto & data = this->data(place);
+                for (const auto & p : partial)
+                    data.merge(p);
+
+                for (; i < row_end; ++i)
+                {
+                    if constexpr (is_decimal<T1>)
+                        data.add(convertFromDecimal<DataTypeDecimal<T1>, DataTypeFloat64>(ptr[i], src_scale));
+                    else
+                        data.add(static_cast<ResultType>(ptr[i]));
+                }
+                return;
+            }
+        }
+
+        IAggregateFunctionDataHelper<typename StatFunc::Data, AggregateFunctionVarianceSimple<StatFunc>>::addBatchSinglePlace(
+            row_begin, row_end, place, columns, arena, if_argument_pos);
+    }
+
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
