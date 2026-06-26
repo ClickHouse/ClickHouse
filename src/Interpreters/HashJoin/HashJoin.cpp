@@ -1,6 +1,7 @@
 #include <any>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include <base/getL2CacheSize.h>
@@ -125,27 +126,14 @@ HashJoin::HashJoin(
             column.column = column.type->createColumn();
     }
 
-    LOG_TEST(
-        log,
-        "{}Keys: {}, datatype: {}, kind: {}, strictness: {}, right header: {}",
-        instance_log_id,
-        TableJoin::formatClauses(table_join->getClauses(), true),
-        data->type,
-        kind,
-        strictness,
-        right_sample_block.dumpStructure());
-
     validateAdditionalFilterExpression(table_join->getMixedJoinExpression());
 
     used_flags = std::make_unique<JoinStuff::JoinUsedFlags>();
 
     if (table_join->getClauses().empty())
-    {
-        data->type = Type::EMPTY;
-        /// We might need to insert default values into the right columns, materialize them
-        sample_block_with_columns_to_add = materializeBlock(right_sample_block);
-    }
-    else if (table_join->oneDisjunct())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin cannot execute JOIN without keys");
+
+    if (table_join->oneDisjunct())
     {
         const auto & key_names_right = table_join->getOnlyClause().key_names_right;
         JoinCommon::splitAdditionalColumns(key_names_right, right_sample_block, right_table_keys, sample_block_with_columns_to_add);
@@ -166,6 +154,15 @@ HashJoin::HashJoin(
     size_t disjuncts_num = table_join->getClauses().size();
     data->maps.resize(disjuncts_num);
     key_sizes.reserve(disjuncts_num);
+
+    std::optional<Type> selected_join_method;
+    auto setJoinMethod = [&](Type current_join_method)
+    {
+        if (!selected_join_method)
+            selected_join_method = current_join_method;
+        else if (*selected_join_method != current_join_method)
+            selected_join_method = Type::hashed;
+    };
 
     for (const auto & clause : table_join->getClauses())
     {
@@ -193,19 +190,31 @@ HashJoin::HashJoin(
             /// Therefore, add it back in such that it can be extracted appropriately from the full stored
             /// key_columns and key_sizes
             auto & asof_key_sizes = key_sizes.emplace_back();
-            data->type = chooseMethod(key_columns, asof_key_sizes, use_two_level_maps);
+            setJoinMethod(chooseMethod(key_columns, asof_key_sizes, use_two_level_maps));
             asof_key_sizes.push_back(asof_size);
         }
         else
         {
             /// Choose data structure to use for JOIN.
             auto current_join_method = chooseMethod(key_columns, key_sizes.emplace_back(), use_two_level_maps);
-            if (data->type == Type::EMPTY)
-                data->type = current_join_method;
-            else if (data->type != current_join_method)
-                data->type = Type::hashed;
+            setJoinMethod(current_join_method);
         }
     }
+
+    if (!selected_join_method)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin cannot choose JOIN method without keys");
+
+    data->type = *selected_join_method;
+
+    LOG_TEST(
+        log,
+        "{}Keys: {}, datatype: {}, kind: {}, strictness: {}, right header: {}",
+        instance_log_id,
+        TableJoin::formatClauses(table_join->getClauses(), true),
+        data->type,
+        kind,
+        strictness,
+        right_sample_block.dumpStructure());
 
     for (auto & maps : data->maps)
         dataMapInit(maps);
@@ -259,7 +268,7 @@ static HashJoin::Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & ke
     size_t keys_size = key_columns.size();
 
     if (keys_size == 0)
-        return Type::EMPTY;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin cannot choose JOIN method without keys");
 
     bool all_fixed = true;
     size_t keys_bytes = 0;
@@ -383,11 +392,6 @@ bool HashJoin::preferUseMapsAll() const
     return all_join_was_promoted_to_right_any // It means that we built hash tables for ALL strictness, but upon finishing found out that we can switch to RIGHT ANY.
                                               // In this case we still have to use ALL maps.
         || table_join->getMixedJoinExpression() != nullptr;
-}
-
-bool HashJoin::empty() const
-{
-    return data->type == Type::EMPTY;
 }
 
 bool HashJoin::alwaysReturnsEmptySet() const
@@ -1067,8 +1071,8 @@ bool HashJoin::hasNonJoinedRows()
     if (!needUsedFlagsForPerRightTableRow(table_join))
         return false;
 
-    /// if the hash table is empty, we have no non-joined rows
-    if (data->type == Type::EMPTY || empty())
+    /// If the right table is empty, we have no non-joined rows.
+    if (data->rows_to_join == 0)
         return false;
 
     updateNonJoinedRowsStatus();
@@ -1081,7 +1085,7 @@ void HashJoin::updateNonJoinedRowsStatus()
         return;
 
     bool found_non_joined = false;
-    if (!empty())
+    if (data->rows_to_join != 0)
     {
         // 1) There are masks for NULL-keys/ON? -> we have nonJoined rows
         if (!data->nullmaps.empty())
@@ -1155,7 +1159,6 @@ public:
         , flag_per_row(flag_per_row_)
         , bucket_idx(bucket_idx_)
         , num_buckets(num_buckets_)
-        , current_block_start(0)
     {
         if (parent.data == nullptr)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
@@ -1166,19 +1169,12 @@ public:
     size_t fillColumns(MutableColumns & columns_right) override
     {
         size_t rows_added = 0;
-        if (unlikely(parent.data->type == HashJoin::Type::EMPTY))
-        {
-            rows_added = fillColumnsFromData(parent.data->columns, columns_right);
-        }
-        else
-        {
-            auto fill_callback = [&](auto, auto, auto & map) { rows_added = fillColumnsFromMap(map, columns_right); };
+        auto fill_callback = [&](auto, auto, auto & map) { rows_added = fillColumnsFromMap(map, columns_right); };
 
-            const bool prefer_use_maps_all = parent.preferUseMapsAll();
-            if (!joinDispatch(parent.kind, parent.strictness, parent.data->maps.front(), prefer_use_maps_all, fill_callback))
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Unknown JOIN strictness '{}' (must be on of: ANY, ALL, ASOF)", parent.strictness);
-        }
+        const bool prefer_use_maps_all = parent.preferUseMapsAll();
+        if (!joinDispatch(parent.kind, parent.strictness, parent.data->maps.front(), prefer_use_maps_all, fill_callback))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Unknown JOIN strictness '{}' (must be on of: ANY, ALL, ASOF)", parent.strictness);
 
         if (!flag_per_row)
         {
@@ -1195,8 +1191,6 @@ private:
     size_t bucket_idx;
     size_t num_buckets;
 
-    size_t current_block_start;
-
     std::any position;
     std::optional<HashJoin::NullmapList::const_iterator> nulls_position;
     std::optional<HashJoin::ScatteredColumnsList::const_iterator> used_position;
@@ -1204,51 +1198,6 @@ private:
     bool isBucketInRange(size_t bucket) const
     {
         return num_buckets <= 1 || (bucket % num_buckets) == bucket_idx;
-    }
-
-    size_t fillColumnsFromData(const HashJoin::ScatteredColumnsList & columns, MutableColumns & columns_right)
-    {
-        if (!position.has_value())
-            position = std::make_any<HashJoin::ScatteredColumnsList::const_iterator>(columns.begin());
-
-        auto & block_it = std::any_cast<HashJoin::ScatteredColumnsList::const_iterator &>(position);
-        auto end = columns.end();
-
-        size_t rows_added = 0;
-        for (; block_it != end; ++block_it)
-        {
-            size_t rows_from_block = std::min<size_t>(max_block_size - rows_added, block_it->columns_info.columns.at(0)->size() - current_block_start);
-            for (size_t j = 0; j < columns_right.size(); ++j)
-            {
-                if (const auto * replicated_column = block_it->columns_info.replicated_columns[j])
-                {
-                    size_t current_block_end = current_block_start + rows_from_block;
-                    for (size_t row = current_block_start; row < current_block_end; ++row)
-                        columns_right[j]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(row));
-                }
-                else
-                {
-                    const auto & col = block_it->columns_info.columns[j];
-                    columns_right[j]->insertRangeFrom(*col, current_block_start, rows_from_block);
-                }
-            }
-            rows_added += rows_from_block;
-
-            if (rows_added >= max_block_size)
-            {
-                /// How many rows have been read
-                current_block_start += rows_from_block;
-                if (block_it->columns_info.columns.at(0)->size() <= current_block_start)
-                {
-                    /// current block was fully read
-                    ++block_it;
-                    current_block_start = 0;
-                }
-                break;
-            }
-            current_block_start = 0;
-        }
-        return rows_added;
     }
 
     template <typename Maps>
@@ -1261,9 +1210,8 @@ private:
         return fillColumns(*maps.TYPE, columns_keys_and_right);
             APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
-            default:
-                throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys (type: {})", parent.data->type);
         }
+        UNREACHABLE();
     }
 
     template <typename Map>
@@ -1679,8 +1627,6 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
     }
                 APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
-                default:
-                    break;
             }
         };
         ScatteredColumnsList sorted_columns;

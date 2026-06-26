@@ -1,10 +1,13 @@
 #pragma once
 
+#include <atomic>
 #include <list>
 #include <memory>
 #include <optional>
+#include <vector>
 
 #include <Core/Block.h>
+#include <Core/Field.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/RowRefs.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -15,16 +18,17 @@ namespace DB
 
 class TableJoin;
 
-/** Implements `CROSS JOIN` and comma joins.
-  * It stores right-side blocks without hash keys and emits the cartesian product for each left-side input block.
+/** Implements joins with constant predicates, including `CROSS JOIN` and comma joins.
+  * It stores right-side blocks without hash keys and emits cartesian or default rows according to the join kind,
+  * strictness, and constant predicate value.
   * Right-side blocks may be compressed or spilled to a temporary block stream when join limits are exceeded.
   */
-class CrossJoin final : public IJoin
+class ConstantJoin final : public IJoin
 {
 public:
-    CrossJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block_);
+    ConstantJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block_);
 
-    std::string getName() const override { return "CrossJoin"; }
+    std::string getName() const override { return "ConstantJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     bool isCloneSupported() const override
@@ -37,7 +41,7 @@ public:
         SharedHeader,
         SharedHeader right_sample_block_) const override
     {
-        return std::make_shared<CrossJoin>(table_join_, right_sample_block_);
+        return std::make_shared<ConstantJoin>(table_join_, right_sample_block_);
     }
 
     bool addBlockToJoin(const Block & source_block, bool check_limits) override;
@@ -50,12 +54,13 @@ public:
     size_t getTotalRowCount() const override { return in_memory_rows; }
     size_t getTotalByteCount() const override;
 
-    bool alwaysReturnsEmptySet() const override { return total_rows_to_join == 0; }
+    bool alwaysReturnsEmptySet() const override { return false; }
 
-    IBlocksStreamPtr getNonJoinedBlocks(const Block &, const Block &, UInt64) const override { return {}; }
+    IBlocksStreamPtr getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
 private:
-    friend class CrossJoinResult;
+    friend class ConstantJoinResult;
+    friend class ConstantJoinNotJoinedRightFiller;
 
     struct StoredBlock
     {
@@ -73,6 +78,13 @@ private:
 
     using StoredBlocks = std::list<StoredBlock>;
 
+    enum class PredicateKind
+    {
+        True,
+        False,
+        CompareConstantKeys,
+    };
+
     std::shared_ptr<TableJoin> table_join;
 
     Block right_sample_block;
@@ -88,6 +100,14 @@ private:
     size_t in_memory_rows = 0;
     size_t allocated_size = 0;
     bool have_compressed = false;
+    std::optional<ColumnsInfo> first_right_columns_info;
+
+    PredicateKind predicate_kind = PredicateKind::True;
+    std::optional<String> left_constant_key_name;
+    std::optional<String> right_constant_key_name;
+    std::optional<Field> right_constant_key_value;
+    mutable std::atomic<Int32> constant_predicate_match = -1;
+    mutable std::atomic_bool right_rows_matched = false;
 
     size_t max_joined_block_rows = 0;
     size_t max_joined_block_bytes = 0;
@@ -98,6 +118,7 @@ private:
     LoggerPtr log;
 
     Block materializeColumnsFromRightBlock(Block block) const;
+    bool constantPredicateMatches(const Block & left_block);
     void shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize = false);
     void doDebugAsserts() const;
 };

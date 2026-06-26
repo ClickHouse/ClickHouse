@@ -29,7 +29,7 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/CrossJoin.h>
+#include <Interpreters/ConstantJoin.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DirectJoin.h>
 #include <Interpreters/ExpressionActions.h>
@@ -1006,13 +1006,13 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     if (analyzed_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(analyzed_join, right_sample_block);
 
-    /// Historically cross join was handled by HashJoin, so let's keep the same behavior for backward compatibility.
+    /// Preserve the set of algorithms that accepted CROSS and comma joins before they were handled by ConstantJoin.
     const auto is_cross_join_compatible = algorithm == JoinAlgorithm::DEFAULT || algorithm == JoinAlgorithm::AUTO
         || algorithm == JoinAlgorithm::HASH || algorithm == JoinAlgorithm::PARALLEL_HASH
         || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE;
 
     if (is_cross_join_compatible && isCrossOrComma(analyzed_join->kind()))
-        return std::make_shared<CrossJoin>(analyzed_join, right_sample_block);
+        return std::make_shared<ConstantJoin>(analyzed_join, right_sample_block);
 
     if (algorithm == JoinAlgorithm::DIRECT || algorithm == JoinAlgorithm::DEFAULT)
     {
@@ -1024,6 +1024,10 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             return direct_join;
         }
     }
+
+    if (analyzed_join->isJoinWithConstant()
+        || (!isCrossOrComma(analyzed_join->kind()) && analyzed_join->getClauses().empty() && analyzed_join->strictness() != JoinStrictness::Asof))
+        return std::make_shared<ConstantJoin>(analyzed_join, right_sample_block);
 
     if (algorithm == JoinAlgorithm::PARTIAL_MERGE ||
         algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE)

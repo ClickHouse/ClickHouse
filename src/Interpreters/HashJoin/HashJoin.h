@@ -251,7 +251,6 @@ public:
 
     enum class Type : uint8_t
     {
-        EMPTY,
         #define M(NAME) NAME,
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
@@ -320,9 +319,6 @@ public:
 
                 APPLY_FOR_JOIN_VARIANTS(M)
             #undef M
-
-                default:
-                    break;
             }
         }
 
@@ -330,8 +326,6 @@ public:
         {
             switch (which)
             {
-                case Type::EMPTY:            return 0;
-
             #define M(NAME) \
                 case Type::NAME: return NAME ? NAME->size() : 0;
                 APPLY_FOR_JOIN_VARIANTS(M)
@@ -343,8 +337,6 @@ public:
         {
             switch (which)
             {
-                case Type::EMPTY:            return 0;
-
             #define M(NAME) \
                 case Type::NAME: return NAME ? NAME->getBufferSizeInBytes() : 0;
                 APPLY_FOR_JOIN_VARIANTS(M)
@@ -356,8 +348,6 @@ public:
         {
             switch (which)
             {
-                case Type::EMPTY:            return 0;
-
             #define M(NAME) \
                 case Type::NAME: return NAME ? NAME->getBufferSizeInCells() : 0;
                 APPLY_FOR_JOIN_VARIANTS(M)
@@ -404,7 +394,7 @@ public:
 
     struct RightTableData
     {
-        Type type = Type::EMPTY;
+        Type type = Type::hashed;
 
         /// tab1 join tab2 on t1.x = t2.x or t1.y = t2.y
         /// =>
@@ -577,8 +567,6 @@ private:
     void initRightBlockStructure(Block & saved_block_sample);
 
     bool preferUseMapsAll() const;
-
-    bool empty() const;
 
     bool isUsedByAnotherAlgorithm() const;
     bool canRemoveColumnsFromLeftBlock() const;
