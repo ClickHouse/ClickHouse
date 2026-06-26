@@ -50,11 +50,10 @@ public:
 
     void listFiles(const String & path, std::vector<String> & file_names) const override { delegate->listFiles(path, file_names); }
 
-    void prepareRead(
+    std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        ReadPipeline & pipeline) const override { delegate->prepareRead(path, settings, read_hint, pipeline); }
+        std::optional<size_t> read_hint) const override { return delegate->readFile(path, settings, read_hint); }
 
     time_t getLastChanged(const String & path) const override { return delegate->getLastChanged(path); }
     Poco::Timestamp getLastModified(const String & path) const override { return delegate->getLastModified(path); }

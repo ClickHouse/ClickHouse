@@ -1,16 +1,24 @@
+import io
 import json
 import logging
+import random
+import string
 import time
 import uuid
+from multiprocessing.dummy import Pool
 
 import pytest
+from kazoo.exceptions import NoNodeError
 
-from helpers.cluster import ClickHouseCluster
+from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.config_cluster import minio_secret_key
 from helpers.s3_queue_common import (
     run_query,
+    random_str,
     generate_random_files,
     put_s3_file_content,
+    put_azure_file_content,
     create_table,
     create_mv,
     generate_random_string,
@@ -527,7 +535,7 @@ def test_max_set_size(started_cluster):
 
 def test_drop_table(started_cluster):
     node = started_cluster.instances["instance"]
-    table_name = "test_drop"
+    table_name = f"test_drop"
     dst_table_name = f"{table_name}_dst"
     # A unique path is necessary for repeatable tests
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
@@ -545,11 +553,11 @@ def test_drop_table(started_cluster):
             "s3queue_processing_threads_num": 5,
         },
     )
-    generate_random_files(
+    total_values = generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=100000
     )
     create_mv(node, table_name, dst_table_name)
-    node.wait_for_log_line("rows from file test_drop_data")
+    node.wait_for_log_line(f"rows from file test_drop_data")
     node.query(f"DROP TABLE {table_name} SYNC")
     assert node.contains_in_log(
         f"StorageS3Queue (default.{table_name}): Table is being dropped"
@@ -560,7 +568,7 @@ def test_drop_table(started_cluster):
 
 def test_s3_client_reused(started_cluster):
     node = started_cluster.instances["instance"]
-    table_name = "test_s3_client_reused"
+    table_name = f"test_s3_client_reused"
     dst_table_name = f"{table_name}_dst"
     files_path = f"{table_name}_data"
     # A unique path is necessary for repeatable tests
@@ -569,7 +577,7 @@ def test_s3_client_reused(started_cluster):
 
     def get_created_s3_clients_count():
         value = node.query(
-            "SELECT value FROM system.events WHERE event='S3Clients'"
+            f"SELECT value FROM system.events WHERE event='S3Clients'"
         ).strip()
         return int(value) if value != "" else 0
 
