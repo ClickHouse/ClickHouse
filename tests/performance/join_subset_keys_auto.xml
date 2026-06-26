@@ -27,7 +27,7 @@
           high_card NDV = 10_000_000 (near-unique)
           low_card  NDV =  1_000_000 (intDiv(number, 10))
 
-        Plain join on both keys; the query opts in to `query_plan_join_subset_keys_auto`
+        Plain join on both keys; the query opts in to `query_plan_hash_join_subset_keys_auto`
         explicitly because the setting is off by default. On master / without the
         setting, both keys go into the hash table (~10M entries). With the setting,
         the planner keeps `low_card` and pushes `high_card` to a residual probe-time
@@ -43,7 +43,7 @@
     <query>
         SELECT count() FROM jks_perf_left l JOIN jks_perf_right r
             ON l.high_card = r.high_card AND l.low_card = r.low_card
-        SETTINGS query_plan_join_subset_keys_auto = 1
+        SETTINGS query_plan_hash_join_subset_keys_auto = 1
         FORMAT Null
     </query>
 

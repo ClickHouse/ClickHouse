@@ -876,7 +876,7 @@ static bool demoteLowNdvKeysToResidual(
     JoinKind kind,
     JoinStrictness strictness)
 {
-    if (!join_settings.query_plan_join_subset_keys_auto)
+    if (!join_settings.query_plan_hash_join_subset_keys_auto)
         return false;
     /// Demotion installs `mixed_join_expression` (see caller); `chooseJoinAlgorithm` only
     /// accepts mixed conditions for hash / parallel-hash / grace-hash (or `default`, which
@@ -937,7 +937,7 @@ static bool demoteLowNdvKeysToResidual(
 
     /// Bail out if the right side is too small for the optimization to pay off —
     /// the residual probe-time filter only helps when the avoided hash table is large.
-    if (profile->rows < join_settings.query_plan_join_subset_keys_min_rows)
+    if (profile->rows < join_settings.query_plan_hash_join_subset_keys_min_rows)
         return false;
 
     /// Resolve right-side DAG nodes once; the join key names may live in DAG outputs (when
@@ -1045,7 +1045,7 @@ static bool demoteLowNdvKeysToResidual(
         candidates.end());
 
     const Float64 rows_f = static_cast<Float64>(profile->rows);
-    const Float64 target_ndv = rows_f * join_settings.query_plan_join_subset_keys_min_kept_selectivity;
+    const Float64 target_ndv = rows_f * join_settings.query_plan_hash_join_subset_keys_min_kept_selectivity;
 
     /// Sort by NDV ascending, breaking ties toward fewer kept keys (cheaper per-row hashing).
     std::sort(candidates.begin(), candidates.end(),

@@ -114,15 +114,15 @@ struct JoinSettings
     bool use_hash_table_stats_for_join_reordering;
 
     bool enable_join_fixed_hash_table_conversion;
-    bool enable_join_runtime_filter_shared_fixed_hash_table;
+    bool join_runtime_filter_from_fixed_hash_table;
 
     /// Enable cardinality-driven automatic demotion of high-NDV equality keys to a residual filter.
-    bool query_plan_join_subset_keys_auto;
-    /// Minimum estimated right-side row count for `query_plan_join_subset_keys_auto` to apply.
-    UInt64 query_plan_join_subset_keys_min_rows;
-    /// Target `NDV(kept_keys) / total_rows` for `query_plan_join_subset_keys_auto`.
+    bool query_plan_hash_join_subset_keys_auto;
+    /// Minimum estimated right-side row count for `query_plan_hash_join_subset_keys_auto` to apply.
+    UInt64 query_plan_hash_join_subset_keys_min_rows;
+    /// Target `NDV(kept_keys) / total_rows` for `query_plan_hash_join_subset_keys_auto`.
     /// The smallest hash key subset reaching this selectivity is selected.
-    Float64 query_plan_join_subset_keys_min_kept_selectivity;
+    Float64 query_plan_hash_join_subset_keys_min_kept_selectivity;
 
     explicit JoinSettings(const Settings & query_settings);
     explicit JoinSettings(const QueryPlanSerializationSettings & settings);

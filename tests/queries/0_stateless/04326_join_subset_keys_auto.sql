@@ -32,9 +32,9 @@ OPTIMIZE TABLE jks_right FINAL;
 -- Sanity: result count must not depend on the optimization (one matched pair per row).
 SELECT 'count_on' AS label, count() FROM jks_left l JOIN jks_right r
     ON l.user_id = r.user_id AND l.request_id = r.request_id
-SETTINGS query_plan_join_subset_keys_auto = 1,
-    query_plan_join_subset_keys_min_rows = 0,
-    query_plan_join_subset_keys_min_kept_selectivity = 0.001;
+SETTINGS query_plan_hash_join_subset_keys_auto = 1,
+    query_plan_hash_join_subset_keys_min_rows = 0,
+    query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001;
 
 -- With the optimization off, both columns are hash keys.
 SELECT trimLeft(explain) FROM
@@ -42,7 +42,7 @@ SELECT trimLeft(explain) FROM
     EXPLAIN actions = 1
     SELECT count() FROM jks_left l JOIN jks_right r
         ON l.user_id = r.user_id AND l.request_id = r.request_id
-    SETTINGS query_plan_join_subset_keys_auto = 0
+    SETTINGS query_plan_hash_join_subset_keys_auto = 0
 )
 WHERE explain ILIKE '%Clauses%' OR explain ILIKE '%Residual filter%' OR explain ILIKE '%Mixed condition%';
 
@@ -53,9 +53,9 @@ SELECT trimLeft(explain) FROM
     EXPLAIN actions = 1
     SELECT count() FROM jks_left l JOIN jks_right r
         ON l.user_id = r.user_id AND l.request_id = r.request_id
-    SETTINGS query_plan_join_subset_keys_auto = 1,
-    query_plan_join_subset_keys_min_rows = 0,
-    query_plan_join_subset_keys_min_kept_selectivity = 0.001
+    SETTINGS query_plan_hash_join_subset_keys_auto = 1,
+    query_plan_hash_join_subset_keys_min_rows = 0,
+    query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001
 )
 WHERE explain ILIKE '%Clauses%' OR explain ILIKE '%Residual filter%' OR explain ILIKE '%Mixed condition%';
 
@@ -65,7 +65,7 @@ SELECT 'rows_gate' AS label, trimLeft(explain) FROM
     EXPLAIN actions = 1
     SELECT count() FROM jks_left l JOIN jks_right r
         ON l.user_id = r.user_id AND l.request_id = r.request_id
-    SETTINGS query_plan_join_subset_keys_auto = 1, query_plan_join_subset_keys_min_rows = 100000
+    SETTINGS query_plan_hash_join_subset_keys_auto = 1, query_plan_hash_join_subset_keys_min_rows = 100000
 )
 WHERE explain ILIKE '%Clauses%' OR explain ILIKE '%Residual filter%';
 
@@ -76,8 +76,8 @@ SELECT 'selectivity_gate' AS label, trimLeft(explain) FROM
     EXPLAIN actions = 1
     SELECT count() FROM jks_left l JOIN jks_right r
         ON l.user_id = r.user_id AND l.request_id = r.request_id
-    SETTINGS query_plan_join_subset_keys_auto = 1, query_plan_join_subset_keys_min_rows = 0,
-    query_plan_join_subset_keys_min_kept_selectivity = 2.0
+    SETTINGS query_plan_hash_join_subset_keys_auto = 1, query_plan_hash_join_subset_keys_min_rows = 0,
+    query_plan_hash_join_subset_keys_min_kept_selectivity = 2.0
 )
 WHERE explain ILIKE '%Clauses%' OR explain ILIKE '%Residual filter%';
 
@@ -90,9 +90,9 @@ SELECT 'algo_gate' AS label, trimLeft(explain) FROM
     SELECT count() FROM jks_left l JOIN jks_right r
         ON l.user_id = r.user_id AND l.request_id = r.request_id
     SETTINGS join_algorithm = 'full_sorting_merge',
-        query_plan_join_subset_keys_auto = 1,
-        query_plan_join_subset_keys_min_rows = 0,
-        query_plan_join_subset_keys_min_kept_selectivity = 0.001
+        query_plan_hash_join_subset_keys_auto = 1,
+        query_plan_hash_join_subset_keys_min_rows = 0,
+        query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001
 )
 WHERE explain ILIKE '%Clauses%' OR explain ILIKE '%Residual filter%' OR explain ILIKE '%Mixed condition%';
 
@@ -102,9 +102,9 @@ WHERE explain ILIKE '%Clauses%' OR explain ILIKE '%Residual filter%' OR explain 
 SELECT 'algo_gate_auto_count' AS label, count() FROM jks_left l JOIN jks_right r
     ON l.user_id = r.user_id AND l.request_id = r.request_id
 SETTINGS join_algorithm = 'auto',
-    query_plan_join_subset_keys_auto = 1,
-    query_plan_join_subset_keys_min_rows = 0,
-    query_plan_join_subset_keys_min_kept_selectivity = 0.001;
+    query_plan_hash_join_subset_keys_auto = 1,
+    query_plan_hash_join_subset_keys_min_rows = 0,
+    query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001;
 
 SELECT 'algo_gate_auto_plan' AS label, trimLeft(explain) FROM
 (
@@ -112,9 +112,9 @@ SELECT 'algo_gate_auto_plan' AS label, trimLeft(explain) FROM
     SELECT count() FROM jks_left l JOIN jks_right r
         ON l.user_id = r.user_id AND l.request_id = r.request_id
     SETTINGS join_algorithm = 'auto',
-        query_plan_join_subset_keys_auto = 1,
-        query_plan_join_subset_keys_min_rows = 0,
-        query_plan_join_subset_keys_min_kept_selectivity = 0.001
+        query_plan_hash_join_subset_keys_auto = 1,
+        query_plan_hash_join_subset_keys_min_rows = 0,
+        query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001
 )
 WHERE explain ILIKE '%Clauses%' OR explain ILIKE '%Residual filter%' OR explain ILIKE '%Mixed condition%';
 
@@ -124,9 +124,9 @@ WHERE explain ILIKE '%Clauses%' OR explain ILIKE '%Residual filter%' OR explain 
 SELECT 'right_any_count' AS label, count() FROM jks_left l ANY LEFT JOIN jks_right r
     ON l.user_id = r.user_id AND l.request_id = r.request_id
 SETTINGS any_join_distinct_right_table_keys = 1,
-    query_plan_join_subset_keys_auto = 1,
-    query_plan_join_subset_keys_min_rows = 0,
-    query_plan_join_subset_keys_min_kept_selectivity = 0.001;
+    query_plan_hash_join_subset_keys_auto = 1,
+    query_plan_hash_join_subset_keys_min_rows = 0,
+    query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001;
 
 SELECT 'right_any_plan' AS label, trimLeft(explain) FROM
 (
@@ -134,9 +134,9 @@ SELECT 'right_any_plan' AS label, trimLeft(explain) FROM
     SELECT count() FROM jks_left l ANY LEFT JOIN jks_right r
         ON l.user_id = r.user_id AND l.request_id = r.request_id
     SETTINGS any_join_distinct_right_table_keys = 1,
-        query_plan_join_subset_keys_auto = 1,
-        query_plan_join_subset_keys_min_rows = 0,
-        query_plan_join_subset_keys_min_kept_selectivity = 0.001
+        query_plan_hash_join_subset_keys_auto = 1,
+        query_plan_hash_join_subset_keys_min_rows = 0,
+        query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001
 )
 WHERE explain ILIKE '%Clauses%' OR explain ILIKE '%Residual filter%' OR explain ILIKE '%Mixed condition%';
 
@@ -162,25 +162,25 @@ SELECT 'filtered_picks_real_discriminator' AS label, trimLeft(explain) FROM
     SELECT count() FROM jks_left l
     JOIN (SELECT * FROM jks_right_filtered WHERE keep_col = 5) r
         ON l.user_id = r.keep_col AND l.request_id = r.drop_col
-    SETTINGS query_plan_join_subset_keys_auto = 1,
-        query_plan_join_subset_keys_min_rows = 0,
-        query_plan_join_subset_keys_min_kept_selectivity = 0.05
+    SETTINGS query_plan_hash_join_subset_keys_auto = 1,
+        query_plan_hash_join_subset_keys_min_rows = 0,
+        query_plan_hash_join_subset_keys_min_kept_selectivity = 0.05
 )
 WHERE explain ILIKE '%Clauses%' OR explain ILIKE '%Residual filter%' OR explain ILIKE '%Mixed condition%';
 
 DROP TABLE jks_right_filtered;
 
 -- filter-aware profile: when the right side is wrapped in a WHERE that drops it below
--- `query_plan_join_subset_keys_min_rows`, demotion must bail. The raw table has 5000 rows
+-- `query_plan_hash_join_subset_keys_min_rows`, demotion must bail. The raw table has 5000 rows
 -- but the filter selects ~10% (~500 rows), below min_rows=4000.
 SELECT 'filtered_below_min_rows' AS label, trimLeft(explain) FROM
 (
     EXPLAIN actions = 1
     SELECT count() FROM jks_left l JOIN (SELECT * FROM jks_right WHERE extra < 500) r
         ON l.user_id = r.user_id AND l.request_id = r.request_id
-    SETTINGS query_plan_join_subset_keys_auto = 1,
-        query_plan_join_subset_keys_min_rows = 4000,
-        query_plan_join_subset_keys_min_kept_selectivity = 0.001
+    SETTINGS query_plan_hash_join_subset_keys_auto = 1,
+        query_plan_hash_join_subset_keys_min_rows = 4000,
+        query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001
 )
 WHERE explain ILIKE '%Clauses%' OR explain ILIKE '%Residual filter%' OR explain ILIKE '%Mixed condition%';
 

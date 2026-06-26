@@ -1,3 +1,4 @@
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 #include <base/defines.h>
 #include <DataTypes/DataTypeString.h>
 #include <base/sleep.h>
@@ -79,6 +80,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
+#include <Common/FieldVisitorToString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
@@ -542,7 +544,10 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
         std::nullopt,
         std::nullopt);
 
-    chassert(persistent_components.format_version == metadata_object->getValue<int>(f_format_version));
+    /// The Iceberg `format-version` in the metadata file may differ from the value cached in
+    /// `persistent_components` when an external tool (e.g. Spark) upgrades the table between
+    /// queries. Downstream parsers determine the version they need from the Avro metadata of
+    /// each manifest list / manifest file, so we do not update the shared cached value here.
 
     std::tie(data_snapshot, table_state_snapshot.schema_id) = getStateImpl(local_context, metadata_object);
     table_state_snapshot.snapshot_id = data_snapshot ? std::optional{data_snapshot->snapshot_id} : std::nullopt;
@@ -835,7 +840,6 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
 
     auto metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, persistent_components.metadata_cache, local_context, log, compression_method, persistent_components.table_uuid);
-    chassert(persistent_components.format_version == metadata_object->getValue<int>(f_format_version));
 
     /// History
     std::vector<Iceberg::IcebergHistoryRecord> iceberg_history;
@@ -876,15 +880,20 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
         history_record.snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
         history_record.manifest_list_path = IcebergPathFromMetadata::deserialize(snapshot->getValue<String>(f_manifest_list));
-        const auto summary = snapshot->getObject(f_summary);
-        if (summary->has(f_added_data_files))
-            history_record.added_files = summary->getValue<Int64>(f_added_data_files);
-        if (summary->has(f_added_records))
-            history_record.added_records = summary->getValue<Int64>(f_added_records);
-        if (summary->has(f_added_files_size))
-            history_record.added_files_size = summary->getValue<Int64>(f_added_files_size);
-        if (summary->has(f_changed_partition_count))
-            history_record.num_partitions = summary->getValue<Int64>(f_changed_partition_count);
+
+        if (const auto summary = snapshot->getObject(f_summary))
+        {
+            auto snapshot_summary = SnapshotSummary::fromJSON(*summary, /*with_extra_fields=*/true);
+
+            if (snapshot_summary)
+                history_record.snapshot_summary = std::move(snapshot_summary.value());
+            else
+                LOG_ERROR(
+                    log,
+                    "Error '{}' while parsing snapshot's summary with snapshot_id={}",
+                    snapshot_summary.error(),
+                    history_record.snapshot_id);
+        }
 
         if (snapshot->has(f_parent_snapshot_id) && !snapshot->isNull(f_parent_snapshot_id))
             history_record.parent_id = snapshot->getValue<Int64>(f_parent_snapshot_id);
@@ -915,6 +924,83 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
     }
 
     return iceberg_history;
+}
+
+namespace
+{
+
+String formatPartitionKeyValue(const DB::Row & partition_key_value)
+{
+    if (partition_key_value.empty())
+        return "{}";
+
+    String result = "{";
+    for (size_t i = 0; i < partition_key_value.size(); ++i)
+    {
+        if (i)
+            result += ", ";
+        result += applyVisitor(FieldVisitorToString(), partition_key_value[i]);
+    }
+    result += "}";
+    return result;
+}
+
+IcebergFileRecord buildIcebergFileRecord(
+    const Iceberg::ProcessedManifestFileEntryPtr & processed,
+    Int64 inherited_snapshot_id,
+    const Iceberg::IcebergPathResolver & path_resolver)
+{
+    const auto & parsed = *processed->parsed_entry;
+
+    IcebergFileRecord record;
+    record.snapshot_id = parsed.parsed_snapshot_id.value_or(inherited_snapshot_id);
+    record.content = parsed.content_type;
+    record.file_path = path_resolver.resolve(parsed.file_path_key);
+    record.file_format = parsed.file_format;
+    record.record_count = parsed.record_count;
+    record.file_size_in_bytes = parsed.file_size_in_bytes;
+    record.partition = formatPartitionKeyValue(parsed.partition_key_value);
+    record.schema_id = processed->resolved_schema_id;
+    record.sequence_number = processed->sequence_number;
+    record.sort_order_id = parsed.sort_order_id;
+
+    for (const auto & [column_id, info] : parsed.columns_infos)
+    {
+        if (info.bytes_size.has_value())
+            record.column_sizes.emplace(column_id, *info.bytes_size);
+        if (info.rows_count.has_value())
+            record.value_counts.emplace(column_id, *info.rows_count);
+        if (info.nulls_count.has_value())
+            record.null_value_counts.emplace(column_id, *info.nulls_count);
+    }
+
+    record.equality_ids = parsed.equality_ids.value_or(std::vector<Int32>{});
+
+    return record;
+}
+
+}
+
+IcebergMetadata::IcebergFiles IcebergMetadata::getFilesForManifest(
+    const Iceberg::IcebergDataSnapshotPtr & data_snapshot,
+    const Iceberg::TableStateSnapshot & table_state,
+    size_t manifest_index,
+    ContextPtr local_context) const
+{
+    chassert(data_snapshot);
+    chassert(manifest_index < data_snapshot->manifest_list_entries.size());
+
+    const auto & manifest_list_entry = data_snapshot->manifest_list_entries[manifest_index];
+    auto handle = getManifestFileEntriesHandle(
+        object_storage, persistent_components, local_context, log, manifest_list_entry, table_state.schema_id);
+
+    IcebergFiles result;
+    for (auto content_type : {FileContentType::DATA, FileContentType::POSITION_DELETE, FileContentType::EQUALITY_DELETE})
+    {
+        for (const auto & processed : handle.getFilesWithoutDeleted(content_type))
+            result.push_back(buildIcebergFileRecord(processed, manifest_list_entry.added_snapshot_id, persistent_components.path_resolver));
+    }
+    return result;
 }
 
 bool IcebergMetadata::isDataSortedBySortingKey(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const
