@@ -105,6 +105,7 @@ public:
     }
     bool complete() const override;
     size_t write(ChainedBuffers data) override;
+    size_t writeStreaming(ChainedBuffers data) override;
     ChainedBuffers read(ByteRange sub) override;
     void electDownloaders(ByteRange range,
         VectorWithMemoryTracking<ByteRange> & led,
@@ -114,6 +115,11 @@ public:
     CacheWriter::CacheSegmentPin pin(size_t frontier) const override;
 
 private:
+    /// `streaming`: keep the downloader role across calls (wake waiters via
+    /// `notifyDownloadProgress` instead of `completePartAndResetDownloader`), so one
+    /// downloader can fill a segment progressively while readers consume the prefix; the
+    /// caller finalizes via `releaseElectedDownloaders`.
+    size_t writeImpl(ChainedBuffers data, bool streaming);
     bool tryWriteToSegment(FileSegment & segment, char * data, size_t size, size_t offset);
 
     FileCachePtr cache;

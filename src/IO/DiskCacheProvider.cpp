@@ -287,6 +287,16 @@ bool DiskCacheWriter::complete() const
 
 size_t DiskCacheWriter::write(ChainedBuffers data)
 {
+    return writeImpl(std::move(data), /*streaming=*/false);
+}
+
+size_t DiskCacheWriter::writeStreaming(ChainedBuffers data)
+{
+    return writeImpl(std::move(data), /*streaming=*/true);
+}
+
+size_t DiskCacheWriter::writeImpl(ChainedBuffers data, bool streaming)
+{
     if (cache_settings.read_if_exists_otherwise_bypass)
         return 0;
     if (!holder)
@@ -341,7 +351,10 @@ size_t DiskCacheWriter::write(ChainedBuffers data)
         /// failure would otherwise leave the segment DOWNLOADING — and since this
         /// buffer is the sole holder, the holder dtor's `complete` would trip
         /// `chassert(!is_last_holder)` / leak the segment. SAFE: swallow on unwind.
-        SCOPE_EXIT_SAFE({ if (segment.isDownloader()) segment.completePartAndResetDownloader(); });
+        /// Streaming holds the downloader across tiles (see `writeStreaming`); the caller's
+        /// `releaseElectedDownloaders` resets every still-held segment, including on an exception
+        /// unwind, so the per-iteration reset is skipped here for the streaming path.
+        SCOPE_EXIT_SAFE({ if (!streaming && segment.isDownloader()) segment.completePartAndResetDownloader(); });
 
         /// Append-only: start at the live `cwo`.
         const size_t write_offset = segment.getCurrentWriteOffset();
@@ -349,7 +362,8 @@ size_t DiskCacheWriter::write(ChainedBuffers data)
         const size_t write_end_max = std::min<size_t>(seg_end, miss_obj_end);
         if (write_offset >= write_end_max || write_offset < miss_obj_off)
         {
-            segment.completePartAndResetDownloader();
+            if (!streaming)
+                segment.completePartAndResetDownloader();
             continue;
         }
 
@@ -364,7 +378,8 @@ size_t DiskCacheWriter::write(ChainedBuffers data)
         }
         if (contiguous == 0)
         {
-            segment.completePartAndResetDownloader();
+            if (!streaming)
+                segment.completePartAndResetDownloader();
             continue;
         }
 
@@ -390,15 +405,20 @@ size_t DiskCacheWriter::write(ChainedBuffers data)
         {
             LOG_TRACE(log, "DiskCacheWriter::write: reserve failed for [{}, {}]: {}",
                 seg_range.left, seg_range.right, failure_reason);
-            segment.completePartAndResetDownloader();
+            if (!streaming)
+                segment.completePartAndResetDownloader();
             continue;
         }
 
         const bool written_ok = tryWriteToSegment(segment, flat_buf.data(), contiguous, write_offset);
-        /// NEVER completeAndPopFront: keep the segment in our holder, appendable
-        /// next window. `completePartAndResetDownloader` releases the downloader
-        /// and leaves it PARTIALLY_DOWNLOADED (if bytes landed).
-        segment.completePartAndResetDownloader();
+        /// NEVER completeAndPopFront: keep the segment in our holder, appendable next window.
+        /// Non-streaming releases the downloader and leaves the segment PARTIALLY_DOWNLOADED;
+        /// streaming KEEPS the downloader (it fills more tiles of this segment) and only wakes
+        /// readers waiting on the prefix, finalizing later via `releaseElectedDownloaders`.
+        if (streaming)
+            segment.notifyDownloadProgress();
+        else
+            segment.completePartAndResetDownloader();
 
         if (!written_ok)
             continue;

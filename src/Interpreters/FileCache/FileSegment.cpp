@@ -675,6 +675,16 @@ void FileSegment::setDownloadFailedUnlocked(const FileSegmentGuard::Lock & lock)
     remote_file_reader.reset();
 }
 
+void FileSegment::notifyDownloadProgress()
+{
+    /// Keep the downloader role and the DOWNLOADING state; only wake waiters so a reader
+    /// streaming the committed prefix re-checks `offset < getCurrentWriteOffset()` and proceeds.
+    auto lk = lock();
+    assertNotDetachedUnlocked(lk);
+    assertIsDownloaderUnlocked("notifyDownloadProgress", lk);
+    cv.notify_all();
+}
+
 void FileSegment::completePartAndResetDownloader()
 {
     auto lk = lock();

@@ -70,6 +70,14 @@ public:
     /// bypass - NEVER throws on those, degrades to a partial or zero return.
     virtual size_t write(ChainedBuffers data) = 0;
 
+    /// Like `write`, but the caller is STREAMING a segment progressively across several calls
+    /// and stays its downloader: advance the committed prefix and wake any reader waiting on it,
+    /// but do NOT relinquish the downloader role between calls. The caller MUST finalize with
+    /// `releaseElectedDownloaders` (or let the held-buffer teardown complete it). Default: the
+    /// same as `write` - tiers that do not stream a partial prefix (page cache) or do not
+    /// coordinate downloaders just commit per call.
+    virtual size_t writeStreaming(ChainedBuffers data) { return write(std::move(data)); }
+
     /// Serve an already-committed sub-range from this buffer's own held
     /// segments/cells, without a source round-trip.
     virtual ChainedBuffers read(ByteRange sub) = 0;
