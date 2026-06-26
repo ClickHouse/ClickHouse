@@ -130,6 +130,7 @@ size_t IAST::size() const
 
 size_t IAST::checkSize(size_t max_size) const
 {
+    checkStackSize();
     size_t res = 1;
     for (const auto & child : children)
         res += child->checkSize(max_size);
