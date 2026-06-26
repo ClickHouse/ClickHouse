@@ -23,7 +23,7 @@ The table below shows which features are currently supported:
 | `ROWS` frame                                                                        | ✅         |                                                                                                                                                                                                                                                                                                                                                                                           |
 | `RANGE` frame                                                                       | ✅         | Used by default when a frame is not specified explicitly (`RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`).                                                                                                                                                                                                                                                                           |
 | `INTERVAL` syntax for `DateTime` `RANGE OFFSET` frame                               | ❌         | Specify the number of seconds instead (`RANGE` works with any numeric type).                                                                                                                                                                                                                                                                                                              |
-| `GROUPS` frame                                                                      | ❌         |                                                                                                                                                                                                                                                                                                                                                                                           |
+| `GROUPS` frame                                                                      | ✅         | Frame boundaries count whole peer groups (rows equal on the `ORDER BY` key); `N PRECEDING` and `N FOLLOWING` count `N` peer groups before and after the current row's peer group. |
 | Calculating aggregate functions over a frame (`sum(value) OVER (ORDER BY time)`)    | ✅         | All aggregate functions are supported.                                                                                                                                                                                                                                                                                                                                                    |
 | `rank()`, `dense_rank()`/`denseRank()`, `row_number()`                              | ✅         |                                                                                                                                                                                                                                                                                                                                                                                           |
 | `percent_rank()`/`percentRank()`                                                    | ✅         | Efficiently computes the relative standing of a value within a partition. It replaces the more verbose and computationally intensive manual SQL calculation expressed as `ifNull((rank() OVER (PARTITION BY x ORDER BY y) - 1) / nullif(count(1) OVER (PARTITION BY x) - 1, 0), 0)`.                                                                                                      |
@@ -36,18 +36,18 @@ The table below shows which features are currently supported:
 ```text
 aggregate_function (column_name)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
-        [ROWS or RANGE expression_to_bound_rows_within_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([
   [PARTITION BY grouping_column]
   [ORDER BY sorting_column]
-  [ROWS or RANGE expression_to_bound_rows_within_the_group]
+  [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]
 ])
 ```
 
 - `PARTITION BY` - defines how to break a resultset into groups.
 - `ORDER BY` - defines how to order rows inside the group during calculation aggregate_function.
-- `ROWS or RANGE` - defines bounds of a frame, aggregate_function is calculated within a frame.
+- `ROWS`, `RANGE`, or `GROUPS` - defines bounds of a frame, aggregate_function is calculated within a frame. `ROWS` counts physical rows, `RANGE` counts `ORDER BY` values, and `GROUPS` counts peer groups (rows equal on the `ORDER BY` key).
 - `WINDOW` - allows multiple expressions to use the same window definition.
 
 ```text
@@ -506,6 +506,42 @@ ORDER BY
 │ [2,3,4,5]      │            3 │
 └────────────────┴──────────────┘
 ```
+
+### GROUPS frame {#groups-frame}
+
+A `GROUPS` frame counts whole *peer groups* — sets of rows that are equal on the `ORDER BY` key — rather than physical rows (`ROWS`) or `ORDER BY` values (`RANGE`). `N PRECEDING` and `N FOLLOWING` count `N` peer groups before and after the current row's peer group, and an included peer group always contributes all of its rows.
+
+The query below applies the same `1 PRECEDING AND 1 FOLLOWING` bounds as a `ROWS`, a `RANGE`, and a `GROUPS` frame. The `order` column contains duplicate and non-consecutive values, so the three modes cover different rows:
+
+```sql
+CREATE TABLE wf_frame_groups (`order` UInt64, value UInt64) ENGINE = Memory;
+INSERT INTO wf_frame_groups FORMAT Values (10, 1), (10, 2), (20, 3), (30, 4), (30, 5);
+
+SELECT
+    order,
+    value,
+    groupArray(value) OVER (ORDER BY order ROWS   BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS rows_frame,
+    groupArray(value) OVER (ORDER BY order RANGE  BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS range_frame,
+    groupArray(value) OVER (ORDER BY order GROUPS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS groups_frame
+FROM wf_frame_groups
+ORDER BY order, value;
+```
+
+```response
+┌─order─┬─value─┬─rows_frame─┬─range_frame─┬─groups_frame─┐
+│    10 │     1 │ [1,2]      │ [1,2]       │ [1,2,3]      │
+│    10 │     2 │ [1,2,3]    │ [1,2]       │ [1,2,3]      │
+│    20 │     3 │ [2,3,4]    │ [3]         │ [1,2,3,4,5]  │
+│    30 │     4 │ [3,4,5]    │ [4,5]       │ [3,4,5]      │
+│    30 │     5 │ [4,5]      │ [4,5]       │ [3,4,5]      │
+└───────┴───────┴────────────┴─────────────┴──────────────┘
+```
+
+Each mode interprets the bounds differently:
+
+- `ROWS` counts physical rows, so the frame is at most three adjacent rows: the current row plus one on each side.
+- `RANGE` counts `order` values, so `1 PRECEDING` and `1 FOLLOWING` cover rows whose `order` is within 1 of the current row's. With gaps of 10, no neighbouring row qualifies, so the frame holds only the rows that share the current `order`.
+- `GROUPS` counts peer groups, so `1 PRECEDING` and `1 FOLLOWING` always include the adjacent groups in full, whatever the gaps between `order` values.
 
 ## Real world examples {#real-world-examples}
 
