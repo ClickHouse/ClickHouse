@@ -2527,9 +2527,13 @@ void ReaderExecutor::collectInFlightInto(size_t ri)
     bool collected_is_plaintext = false;
     if (tryCollectMachine(collected, collected_is_plaintext))
     {
+        /// A populatable retrieve's worker committed its led cells inline, so the serve reads
+        /// the bytes back from the cache (the cache IS the buffer); banking them too would just
+        /// hold a redundant in-memory copy. Only a bypass gap keeps the bank.
+        const bool populatable = !read_plan.schedule.retrieves[ri].into.empty();
         /// `collected` is logical (the I/O leaf already shifted + sliced to `position`);
         /// `ready_bytes` is logical too, so bank it directly - no shift, no round-trip.
-        if (!collected.empty())
+        if (!populatable && !collected.empty())
         {
             /// `decrypt_ahead` is constant for an executor, so every collect for a given
             /// retrieve banks the same kind of bytes - the flag never flips mid-stream.
@@ -2599,6 +2603,11 @@ ChainedBuffers ReaderExecutor::serveRetrieveForeground(size_t ri, size_t positio
 
 ChainedBuffers ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step, size_t ri, size_t position_phys, size_t to_read)
 {
+    /// A populatable retrieve (it fills a cache cell) serves from the committed cell - the
+    /// cache is the buffer. Only a bypass gap (no fillable tier, empty `into`) keeps the bank.
+    if (!read_plan.schedule.retrieves[ri].into.empty())
+        return serveRetrievePopulatable(step, ri, position_phys, to_read);
+
     auto & st = read_plan.retrieve_status[ri];
     const size_t pos = position_phys - data_start_offset;  /// `ready_bytes` is logical
     /// Coverage-driven: a job can be partially banked AND still have a window in flight,
@@ -2622,6 +2631,77 @@ ChainedBuffers ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step
     if (!out.empty())
         promoteFetchedToUpper(ByteRange{out.range().offset + data_start_offset, out.range().size}, stats);
     return out;
+}
+
+bool ReaderExecutor::committedCellCovers(ByteRange window_phys) const
+{
+    /// Mirrors the committed-range computation in `recreditCommittedPrefixes` but only
+    /// accumulates coverage - no `read`, no stats - so the serve can poll the fill front.
+    IntervalSet covered;
+    for (const auto & buf : read_plan.bufs)
+    {
+        if (!buf.provider)
+            continue;
+        for (const auto & w : buf.writers)
+        {
+            if (!w.writer)
+                continue;
+            const size_t lo = std::max(w.writer->range().offset, window_phys.offset);
+            const size_t hi = std::min(w.writer->range().end(), window_phys.end());
+            if (lo >= hi)
+                continue;
+            const ByteRange clamped{lo, hi - lo};
+            IntervalSet uncommitted;
+            for (const auto & gap : w.writer->committed().subtract(clamped))
+                uncommitted.add(gap);
+            for (const auto & committed_part : uncommitted.subtract(clamped))
+                covered.add(committed_part);
+        }
+    }
+    return covered.subtract(window_phys).empty();
+}
+
+ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step & step, size_t ri, size_t position_phys, size_t to_read)
+{
+    auto & st = read_plan.retrieve_status[ri];
+    const MemoryPressureLevel level = read_plan.geometry()->pressure_level;
+    /// One window of THIS step only (the bank path's bound): a bridged retrieve can span
+    /// several steps, and reading past an embedded faster-tier hit would break the 1:1
+    /// serve-to-schedule mapping.
+    const size_t step_end = step.output.end();
+    const size_t want = std::min({to_read, step_end - position_phys, boundedReadSize(effectiveWindowSize(level))});
+    if (want == 0)
+        return {};
+    const ByteRange window_phys{position_phys, want};
+
+    /// Drain the single in-flight machine for this retrieve FIRST - even though its worker
+    /// already committed the led cell inline. The collect is what runs the deferred put (which
+    /// rebuilds the in-flight-segment pin) and frees the slot for the next launch; gating it on
+    /// cell coverage would strand an uncollected machine - lost pin, half-filled cache. Single
+    /// in-flight, so one collect drains it; the next launch happens in `readNextWindow`. A
+    /// populatable collect banks nothing - the cache holds the bytes.
+    if (st.machine)
+        collectInFlightInto(ri);
+
+    /// The run-ahead (or this collect) filled the cell: read it back from the cache and promote
+    /// the served run up into the faster tiers (pc trails the serve cursor).
+    if (committedCellCovers(window_phys))
+    {
+        ChainedBuffers out;
+        IntervalSet covered;
+        recreditCommittedPrefixes(window_phys, out, covered, stats);
+        if (data_start_offset)
+            out.shift(-static_cast<ssize_t>(data_start_offset));
+        if (!out.empty())
+            promoteFetchedToUpper(window_phys, stats);
+        return out;
+    }
+
+    /// The cursor caught the fill front, or the cell will not commit (cache full / refused):
+    /// fetch the minimum to serve here and return the bytes in hand. The fetch also writes the
+    /// cell (so a later re-read finds it); this fallback is the only populatable path that
+    /// still banks - transiently, one window.
+    return serveRetrieveForeground(ri, position_phys, to_read);
 }
 
 ChainedBuffers ReaderExecutor::serveHitStep(const PlanSchedule::Step & step, size_t position_phys, size_t to_read)

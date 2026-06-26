@@ -851,6 +851,14 @@ private:
     ChainedBuffers interpretStep(size_t position_phys, size_t to_read);
     ChainedBuffers serveHitStep(const PlanSchedule::Step & step, size_t position_phys, size_t to_read);
     ChainedBuffers serveRetrieveStep(const PlanSchedule::Step & step, size_t ri, size_t position_phys, size_t to_read);
+    /// Serve a populatable retrieve (one that fills a cache cell) from the committed cell -
+    /// the cache is the buffer, so no in-memory bank is held. Drives the in-flight worker
+    /// (or a foreground fallback) until the bottom cell covers the window, reads it back via
+    /// `recreditCommittedPrefixes`, and promotes the served run up. A bypass gap keeps the bank.
+    ChainedBuffers serveRetrievePopulatable(const PlanSchedule::Step & step, size_t ri, size_t position_phys, size_t to_read);
+    /// Read-only: do the plan's held write buffers commit-cover the whole physical window?
+    /// The read-only twin of `recreditCommittedPrefixes`'s coverage computation (no read, no stats).
+    bool committedCellCovers(ByteRange window_phys) const;
     ChainedBuffers serveStepFromBanked(const PlanSchedule::Step & step, RetrieveStatus & st, size_t position_phys, size_t to_read) const;
     ChainedBuffers serveRetrieveForeground(size_t ri, size_t position_phys, size_t to_read);
     void collectInFlightInto(size_t ri);
