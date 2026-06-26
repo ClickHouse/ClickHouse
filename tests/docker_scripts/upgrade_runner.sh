@@ -396,6 +396,18 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       regex in the secondary pipe below to require BOTH the `SystemLog` flush wrapper for `metric_log` AND
 #       the `DEADLOCK_AVOIDED` error code together, so unrelated lock-timeout errors and unrelated
 #       `metric_log` errors are not masked.
+# The PostgreSQL and MySQL matchers below filter background/startup connection failures of remote database
+#       engines that point at an unreachable host. Test `04210_show_remote_databases_in_system_tables` creates
+#       `ENGINE = PostgreSQL('192.0.2.1:5432', ...)` and `ENGINE = MySQL('192.0.2.1:3306', ...)` (192.0.2.1 is
+#       RFC5737 TEST-NET-1, deliberately unreachable). For PostgreSQL, `DatabasePostgreSQL::loadStoredObjects`
+#       activates the `removeOutdatedTables` cleaner task whose periodic `pool->get()` keeps timing out; for MySQL,
+#       the engine probes the server while loading the persisted object after the upgrade restart. Both log
+#       `<Error>` lines for the expected connection failure. The upgrade-test environment has no real PostgreSQL
+#       or MySQL server, so any connection error against this fixture host is noise, never a compatibility
+#       regression (real PostgreSQL/MySQL regressions are covered by integration tests with a live server).
+#       Filtered via regex in the secondary pipe below to require the component AND the connection-failure symptom
+#       together, so other `DatabasePostgreSQL`/`DatabaseMySQL` errors (logic, parsing, a different error code)
+#       still surface.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -479,6 +491,11 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
     | grep -av -e "SystemLog.*Failed to flush system log system\.metric_log.*DEADLOCK_AVOIDED" \
+    | grep -av -e "PostgreSQLConnectionPool.*Connection error" \
+    | grep -av -e "DatabasePostgreSQL::removeOutdatedTables.*Connection to.*failed with error" \
+    | grep -av -e "mysqlxx::Pool.*Failed to connect to MySQL" \
+    | grep -av -e "Application: Connection to mysql failed" \
+    | grep -av -e "DatabaseMySQL.*Connections to mysql failed" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
