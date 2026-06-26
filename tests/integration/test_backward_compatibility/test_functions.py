@@ -61,9 +61,25 @@ def test_aggregate_states(start_cluster):
     aggregate_functions = list(aggregate_functions)
     logging.info("Got %s aggregate functions", len(aggregate_functions))
 
-    skipped = 0
-    failed = 0
-    passed = 0
+    allowed_errors = [
+        "ILLEGAL_TYPE_OF_ARGUMENT",
+        # sequenceNextNode() and friends
+        "UNKNOWN_AGGREGATE_FUNCTION",
+        # Function X takes exactly one parameter:
+        "NUMBER_OF_ARGUMENTS_DOESNT_MATCH",
+        # Function X takes at least one argument
+        "TOO_FEW_ARGUMENTS_FOR_FUNCTION",
+        # Function X accepts at most 3 arguments, Y given
+        "TOO_MANY_ARGUMENTS_FOR_FUNCTION",
+        # The function 'X' can only be used as a window function
+        "BAD_ARGUMENTS",
+        # aggThrow
+        "AGGREGATE_FUNCTION_THROW",
+        # Numerically-stable variants (stddevPopStable, varSampStable, ...) reject a String argument
+        "NOT_IMPLEMENTED",
+        # Introspection aggregates (flameGraph) are disabled by default
+        "FUNCTION_NOT_ALLOWED",
+    ]
 
     def get_aggregate_state_hex(node, function_name):
         return node.query(
@@ -75,39 +91,18 @@ def test_aggregate_states(start_cluster):
             f"select finalizeAggregation(unhex('{value}')::AggregateFunction({function_name}, String))"
         ).strip()
 
-    for aggregate_function in aggregate_functions:
+    def check_aggregate(aggregate_function):
         logging.info("Checking %s", aggregate_function)
 
         try:
             backward_state = get_aggregate_state_hex(backward, aggregate_function)
         except QueryRuntimeException as e:
             error_message = str(e)
-            allowed_errors = [
-                "ILLEGAL_TYPE_OF_ARGUMENT",
-                # sequenceNextNode() and friends
-                "UNKNOWN_AGGREGATE_FUNCTION",
-                # Function X takes exactly one parameter:
-                "NUMBER_OF_ARGUMENTS_DOESNT_MATCH",
-                # Function X takes at least one argument
-                "TOO_FEW_ARGUMENTS_FOR_FUNCTION",
-                # Function X accepts at most 3 arguments, Y given
-                "TOO_MANY_ARGUMENTS_FOR_FUNCTION",
-                # The function 'X' can only be used as a window function
-                "BAD_ARGUMENTS",
-                # aggThrow
-                "AGGREGATE_FUNCTION_THROW",
-                # Numerically-stable variants (stddevPopStable, varSampStable, ...) reject a String argument
-                "NOT_IMPLEMENTED",
-                # Introspection aggregates (flameGraph) are disabled by default
-                "FUNCTION_NOT_ALLOWED",
-            ]
             if any(map(lambda x: x in error_message, allowed_errors)):
                 logging.info("Skipping %s", aggregate_function)
-                skipped += 1
-                continue
+                return "skipped"
             logging.exception("Failed %s", aggregate_function)
-            failed += 1
-            continue
+            return "failed"
 
         upstream_state = get_aggregate_state_hex(upstream, aggregate_function)
         if upstream_state != backward_state:
@@ -125,28 +120,34 @@ def test_aggregate_states(start_cluster):
                     logging.info(
                         "OK %s (but different intermediate states)", aggregate_function
                     )
-                    passed += 1
-                else:
-                    logging.error(
-                        "Failed %s, Intermediate: %s (backward) != %s (upstream). Final from intermediate: %s (backward from upstream state) != %s (upstream from backward state)",
-                        aggregate_function,
-                        backward_state,
-                        upstream_state,
-                        backward_final_from_upstream,
-                        upstream_final_from_backward,
-                    )
-                    failed += 1
-            else:
+                    return "passed"
                 logging.error(
-                    "Failed %s, %s (backward) != %s (upstream)",
+                    "Failed %s, Intermediate: %s (backward) != %s (upstream). Final from intermediate: %s (backward from upstream state) != %s (upstream from backward state)",
                     aggregate_function,
                     backward_state,
                     upstream_state,
+                    backward_final_from_upstream,
+                    upstream_final_from_backward,
                 )
-                failed += 1
-        else:
-            logging.info("OK %s", aggregate_function)
-            passed += 1
+                return "failed"
+            logging.error(
+                "Failed %s, %s (backward) != %s (upstream)",
+                aggregate_function,
+                backward_state,
+                upstream_state,
+            )
+            return "failed"
+        logging.info("OK %s", aggregate_function)
+        return "passed"
+
+    # The work is dominated by per-query round-trip latency rather than server
+    # CPU, so run the independent per-function checks concurrently.
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        outcomes = list(executor.map(check_aggregate, aggregate_functions))
+
+    skipped = outcomes.count("skipped")
+    failed = outcomes.count("failed")
+    passed = outcomes.count("passed")
 
     logging.info(
         "Aggregate functions: %s, Failed: %s, skipped: %s, passed: %s",
