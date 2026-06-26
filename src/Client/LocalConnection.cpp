@@ -1,4 +1,6 @@
 #include <Client/LocalConnection.h>
+#include <chrono>
+#include <future>
 #include <memory>
 #include <Client/ClientBase.h>
 #include <Client/ClientApplicationBase.h>
@@ -6,7 +8,9 @@
 #include <Core/Settings.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/detachQuery.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
@@ -17,9 +21,11 @@
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/IStorage.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
 #include <Common/config_version.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Common/CurrentThread.h>
+#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Parsers/ParserQuery.h>
@@ -27,6 +33,7 @@
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
+#include <Common/CurrentThread.h>
 
 namespace ProfileEvents
 {
@@ -38,6 +45,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsBool async_insert;
+    extern const SettingsBool allow_experimental_detach_queries;
     extern const SettingsDialect dialect;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
@@ -64,13 +73,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
+
+LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool send_progress_, bool send_profile_events_, const String & server_display_name_, bool is_interactive_)
     : WithContext(context_)
     , session(std::make_unique<Session>(getContext(), ClientInfo::Interface::LOCAL))
     , send_progress(send_progress_)
     , send_profile_events(send_profile_events_)
     , server_display_name(server_display_name_)
     , in(in_)
+    , is_interactive(is_interactive_)
 {
     /// Authenticate and create a context to execute queries.
     session->authenticate("default", "", Poco::Net::SocketAddress{});
@@ -80,18 +91,32 @@ LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool sen
 }
 
 LocalConnection::LocalConnection(
-    std::unique_ptr<Session> && session_, ReadBuffer * in_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
+    std::unique_ptr<Session> && session_, ReadBuffer * in_, bool send_progress_, bool send_profile_events_, const String & server_display_name_, bool is_interactive_)
     : WithContext(session_->sessionContext())
     , session(std::move(session_))
     , send_progress(send_progress_)
     , send_profile_events(send_profile_events_)
     , server_display_name(server_display_name_)
     , in(in_)
+    , is_interactive(is_interactive_)
 {
 }
 
 LocalConnection::~LocalConnection()
 {
+    /// Wait for any detached query to complete so data is persisted before process exit.
+    /// Discard any post-start exception — there is no client to surface it to at this point.
+    if (detached_query_completion && detached_query_completion->valid())
+    {
+        try
+        {
+            detached_query_completion->get();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("LocalConnection", "Detached query exception observed during shutdown");
+        }
+    }
     /// Last query may not have been finished or cancelled due to exception on client side.
     if (state && !state->is_finished && !state->is_cancelled)
     {
@@ -218,6 +243,103 @@ void LocalConnection::sendQuery(
         state->after_send_profile_events.restart();
 
     next_packet_type.reset();
+
+    /// If a previous detached query has already finished, observe its result now: clear the handle
+    /// and rethrow any stored post-start exception so the user sees the failure on this interaction.
+    /// If it is still running, leave it in the background — blocking here would serialize every
+    /// follow-up command behind the detached query and defeat the point of detaching. The
+    /// destructor waits for any still-running detached query before the process exits.
+    if (detached_query_completion && detached_query_completion->valid()
+        && detached_query_completion->wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+    {
+        /// Take ownership so the handle is cleared even if `get()` rethrows.
+        auto completion = std::move(detached_query_completion);
+        completion->get();
+    }
+
+    /// Detach path (interactive mode only): when `allow_experimental_detach_queries` is on and
+    /// the query is detachable, dispatch it in the background and reply with a one-row block
+    /// holding the `query_id`.
+    if (is_interactive)
+    {
+        String detach_query_id;
+        /// `detach_attempted` flips immediately before the `detachQuery` call, `detach_started`
+        /// only after it returns. The catch below keys the sync fallback off `detach_attempted`
+        /// so that a failure raised by `detachQuery` itself never re-executes the query.
+        bool detach_attempted = false;
+        bool detach_started = false;
+
+        try
+        {
+            const auto & settings_ref = query_context->getSettingsRef();
+            const size_t max_query_size_val = settings_ref[Setting::max_query_size]
+                ? settings_ref[Setting::max_query_size]
+                : std::numeric_limits<size_t>::max();
+            const char * begin = state->query.data();
+            const char * end = begin + state->query.size();
+            ParserQuery parser(end, settings_ref[Setting::allow_settings_after_format_in_insert], settings_ref[Setting::implicit_select]);
+            ASTPtr ast = parseQuery(parser, begin, end, "", max_query_size_val, settings_ref[Setting::max_parser_depth], settings_ref[Setting::max_parser_backtracks]);
+
+            /// Apply inline SETTINGS before the detach check so they can trigger the detach path.
+            /// `settings_ref` is a reference to `query_context`, so changes are visible immediately.
+            InterpreterSetQuery::applySettingsFromQuery(ast, query_context);
+
+            const bool want_detach = settings_ref[Setting::allow_experimental_detach_queries];
+            if (want_detach && settings_ref[Setting::async_insert])
+            {
+                LOG_WARNING(
+                    getLogger("LocalConnection"),
+                    "Both `allow_experimental_detach_queries` and `async_insert` are enabled; running synchronously via the async-insert path. "
+                    "These settings are mutually exclusive — set only one.");
+            }
+            if (want_detach && !settings_ref[Setting::async_insert] && ast && IAST::isDetachableQuery(ast.get()))
+            {
+                const auto * insert_ast = ast->as<ASTInsertQuery>();
+                const bool insert_needs_client_data = insert_ast && !insert_ast->select && !insert_ast->hasInlinedData();
+                if (!insert_needs_client_data)
+                {
+                    ContextMutablePtr async_context = Context::createCopy(query_context);
+                    /// The background thread inherits the session path and current database.
+                    String path = query_context->getPath();
+                    if (!path.empty())
+                        async_context->setPath(path);
+                    String db = query_context->getCurrentDatabase();
+                    if (!db.empty())
+                        async_context->setCurrentDatabase(db);
+
+                    detach_attempted = true;
+                    auto handle = detachQuery(state->query, async_context);
+                    detach_query_id = std::move(handle.query_id);
+                    detached_query_completion = std::move(handle.completion);
+                    detach_started = true;
+                }
+            }
+        }
+        catch (...)
+        {
+            /// A failure raised by `detachQuery` itself (pre-start: duplicate query_id, quota,
+            /// permission) must propagate. Never fall back to sync here: that would re-execute the
+            /// query and is racy for non-idempotent statements. `detach_attempted` is set for
+            /// exactly those failures; earlier mechanism failures (parse error) fall back to sync.
+            if (detach_attempted)
+                throw;
+            tryLogCurrentException("LocalConnection", "Cannot run local query in detach mode, falling back to sync");
+        }
+
+        if (detach_started)
+        {
+            auto col = ColumnString::create();
+            col->insertData(detach_query_id.data(), detach_query_id.size());
+            state->block = Block({{std::move(col), std::make_shared<DataTypeString>(), "query_id"}});
+            next_packet_type = Protocol::Server::Data;
+            state->is_finished = true;
+            state->sent_totals = true;
+            state->sent_extremes = true;
+            state->sent_profile_info = true;
+            state->sent_profile_events = true;
+            return;
+        }
+    }
 
     /// Prepare input() function
     query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
@@ -830,23 +952,25 @@ void LocalConnection::sendMergeTreeReadTaskResponse(const ParallelReadResponse &
 ServerConnectionPtr LocalConnection::createConnection(
     const ConnectionParameters &,
     ContextPtr current_context,
-    ReadBuffer * in,
-    bool send_progress,
-    bool send_profile_events,
-    const String & server_display_name)
+    ReadBuffer * in_buffer,
+    bool send_progress_val,
+    bool send_profile_events_val,
+    const String & server_display_name_val,
+    bool is_interactive_val)
 {
-    return std::make_unique<LocalConnection>(current_context, in, send_progress, send_profile_events, server_display_name);
+    return std::make_unique<LocalConnection>(current_context, in_buffer, send_progress_val, send_profile_events_val, server_display_name_val, is_interactive_val);
 }
 
 ServerConnectionPtr LocalConnection::createConnection(
     const ConnectionParameters &,
-    std::unique_ptr<Session> && session,
-    ReadBuffer * in,
-    bool send_progress,
-    bool send_profile_events,
-    const String & server_display_name)
+    std::unique_ptr<Session> && session_ptr,
+    ReadBuffer * in_buffer,
+    bool send_progress_val,
+    bool send_profile_events_val,
+    const String & server_display_name_val,
+    bool is_interactive_val)
 {
-    return std::make_unique<LocalConnection>(std::move(session), in, send_progress, send_profile_events, server_display_name);
+    return std::make_unique<LocalConnection>(std::move(session_ptr), in_buffer, send_progress_val, send_profile_events_val, server_display_name_val, is_interactive_val);
 }
 
 

@@ -1101,6 +1101,7 @@ static BlockIO executeQueryImpl(
     ASTPtr & out_ast,
     ImplicitTransactionControlExecutorPtr implicit_tcl_executor,
     HTTPContinueCallback http_continue_callback,
+    QueryStartedCallback on_query_started,
     QueryResultDetails & result_details)
 {
     const bool internal = flags.internal;
@@ -1908,6 +1909,13 @@ static BlockIO executeQueryImpl(
             pipeline.setProcessListElement(context->getProcessListElement());
         }
 
+        /// Notify caller that the query has passed all pre-execution checks and is about to start.
+        /// interpreter->execute() has returned successfully: permissions are verified, the pipeline
+        /// is built (for INSERT...SELECT) or the DDL has already executed. After this point
+        /// ExceptionBeforeStart can no longer occur.
+        if (on_query_started)
+            on_query_started();
+
         /// Everything related to query log.
         {
             QueryLogElement elem = logQueryStart(
@@ -2192,7 +2200,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     std::string_view query,
     ContextMutablePtr context,
     QueryFlags flags,
-    QueryProcessingStage::Enum stage)
+    QueryProcessingStage::Enum stage,
+    QueryStartedCallback on_query_started)
 {
     if (isCrashed())
         throw Exception(ErrorCodes::ABORTED, "The server is shutting down due to a fatal error");
@@ -2207,7 +2216,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
     ReadBufferUniquePtr no_input_buffer;
     QueryResultDetails result_details;
-    res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, no_input_buffer, ast, implicit_tcl_executor, {}, result_details);
+    res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, no_input_buffer, ast, implicit_tcl_executor, {}, std::move(on_query_started), result_details);
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
         String format_name = ast_query_with_output->format_ast
@@ -2286,11 +2295,13 @@ void executeQuery(
     const std::optional<FormatSettings> & output_format_settings,
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format,
     QueryFinishCallback query_finish_callback,
-    HTTPContinueCallback http_continue_callback)
+    HTTPContinueCallback http_continue_callback,
+    QueryStartedCallback on_query_started)
 {
     executeQuery(
         wrapReadBufferReference(istr), ostr, context, std::move(set_result_details), flags,
-        output_format_settings, std::move(handle_exception_in_output_format), std::move(query_finish_callback), std::move(http_continue_callback));
+        output_format_settings, std::move(handle_exception_in_output_format), std::move(query_finish_callback),
+        std::move(http_continue_callback), std::move(on_query_started));
 }
 
 void executeQuery(
@@ -2302,7 +2313,8 @@ void executeQuery(
     const std::optional<FormatSettings> & output_format_settings,
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format,
     QueryFinishCallback query_finish_callback,
-    HTTPContinueCallback http_continue_callback)
+    HTTPContinueCallback http_continue_callback,
+    QueryStartedCallback on_query_started)
 {
     if (isCrashed())
         throw Exception(ErrorCodes::ABORTED, "The server is shutting down due to a fatal error");
@@ -2428,7 +2440,7 @@ void executeQuery(
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
     try
     {
-        streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, istr, ast, implicit_tcl_executor, http_continue_callback, result_details);
+        streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, istr, ast, implicit_tcl_executor, http_continue_callback, on_query_started, result_details);
     }
     catch (...)
     {

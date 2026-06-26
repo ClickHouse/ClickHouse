@@ -1,0 +1,8 @@
+=== Local: Detach mode: INSERT-SELECT returns query_id ===
+Detach returned query_id: yes
+=== Local: ExceptionBeforeStart — error returned when query fails before start ===
+Error returned to client: yes
+=== Local: SELECT is detached when allow_experimental_detach_queries=1 ===
+SELECT returned query_id: yes
+Follow-up sync SELECT returned: yes
+OK

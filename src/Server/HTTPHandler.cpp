@@ -7,89 +7,105 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Disks/StoragePolicy.h>
+#include <Formats/FormatFactory.h>
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/ConcatReadBuffer.h>
+#include <IO/LimitReadBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/TemporaryDataOnDisk.h>
-#include <Parsers/Lexer.h>
-#include <Parsers/QueryParameterVisitor.h>
-#include <Interpreters/executeQuery.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/Session.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
+#include <Interpreters/detachQuery.h>
+#include <Interpreters/executeQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/IAST.h>
+#include <Parsers/Lexer.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/QueryParameterVisitor.h>
+#include <Parsers/parseQuery.h>
+#include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Port.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
 #include <Common/CurrentThread.h>
 #include <Common/Logger.h>
-#include <Common/logger_useful.h>
 #include <Common/SettingsChanges.h>
 #include <Common/StringUtils.h>
+#include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
-#include <Parsers/ASTSetQuery.h>
-#include <Processors/Formats/IOutputFormat.h>
-#include <Formats/FormatFactory.h>
 
-#include <base/getFQDNOrHostName.h>
-#include <base/isSharedPtrUnique.h>
 #include <Server/HTTP/HTTPResponse.h>
 #include <Server/HTTP/authenticateUserByHTTP.h>
 #include <Server/HTTP/deferHTTP100Continue.h>
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
+#include <base/getFQDNOrHostName.h>
+#include <base/isSharedPtrUnique.h>
 
 #include <Poco/Net/HTTPMessage.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <algorithm>
-#include <boost/algorithm/string/trim.hpp>
 #include <memory>
 #include <optional>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
+#include <boost/algorithm/string/trim.hpp>
 
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool add_http_cors_header;
-    extern const SettingsBool cancel_http_readonly_queries_on_client_close;
-    extern const SettingsBool enable_http_compression;
-    extern const SettingsUInt64 http_headers_progress_interval_ms;
-    extern const SettingsUInt64 http_max_request_param_data_size;
-    extern const SettingsBool http_native_compression_disable_checksumming_on_decompress;
-    extern const SettingsUInt64 http_response_buffer_size;
-    extern const SettingsBool http_wait_end_of_query;
-    extern const SettingsBool http_write_exception_in_output_format;
-    extern const SettingsInt64 http_zlib_compression_level;
-    extern const SettingsUInt64 input_format_max_block_wait_ms;
-    extern const SettingsUInt64 readonly;
-    extern const SettingsBool send_progress_in_http_headers;
-    extern const SettingsInt64 zstd_window_log_max;
+extern const SettingsBool add_http_cors_header;
+extern const SettingsBool allow_settings_after_format_in_insert;
+extern const SettingsBool async_insert;
+extern const SettingsBool cancel_http_readonly_queries_on_client_close;
+extern const SettingsBool enable_http_compression;
+extern const SettingsBool allow_experimental_detach_queries;
+extern const SettingsBool implicit_select;
+extern const SettingsUInt64 http_headers_progress_interval_ms;
+extern const SettingsUInt64 http_max_request_param_data_size;
+extern const SettingsUInt64 max_parser_backtracks;
+extern const SettingsUInt64 max_parser_depth;
+extern const SettingsUInt64 max_query_size;
+extern const SettingsBool http_native_compression_disable_checksumming_on_decompress;
+extern const SettingsUInt64 http_response_buffer_size;
+extern const SettingsBool http_wait_end_of_query;
+extern const SettingsBool http_write_exception_in_output_format;
+extern const SettingsInt64 http_zlib_compression_level;
+extern const SettingsUInt64 input_format_max_block_wait_ms;
+extern const SettingsUInt64 readonly;
+extern const SettingsBool send_progress_in_http_headers;
+extern const SettingsInt64 zstd_window_log_max;
 }
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 
-    extern const int NO_ELEMENTS_IN_CONFIG;
+extern const int NO_ELEMENTS_IN_CONFIG;
 
-    extern const int INVALID_SESSION_TIMEOUT;
-    extern const int INVALID_CONFIG_PARAMETER;
-    extern const int HTTP_LENGTH_REQUIRED;
-    extern const int SESSION_ID_EMPTY;
+extern const int INVALID_SESSION_TIMEOUT;
+extern const int INVALID_CONFIG_PARAMETER;
+extern const int HTTP_LENGTH_REQUIRED;
+extern const int SESSION_ID_EMPTY;
 }
 
 namespace
 {
+
+
 bool tryAddHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
 {
     if (config.has("http_options_response"))
@@ -104,9 +120,9 @@ bool tryAddHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco
                 if (config.getString("http_options_response." + config_key + ".name", "").empty())
                     LOG_WARNING(getLogger("processOptionsRequest"), "Empty header was found in config. It will not be processed.");
                 else
-                    response.add(config.getString("http_options_response." + config_key + ".name", ""),
-                                 config.getString("http_options_response." + config_key + ".value", ""));
-
+                    response.add(
+                        config.getString("http_options_response." + config_key + ".name", ""),
+                        config.getString("http_options_response." + config_key + ".value", ""));
             }
         }
         return true;
@@ -127,9 +143,7 @@ void processOptionsRequest(HTTPServerResponse & response, const Poco::Util::Laye
 }
 }
 
-static std::chrono::steady_clock::duration parseSessionTimeout(
-    const Poco::Util::AbstractConfiguration & config,
-    const HTMLForm & params)
+static std::chrono::steady_clock::duration parseSessionTimeout(const Poco::Util::AbstractConfiguration & config, const HTMLForm & params)
 {
     unsigned session_timeout = config.getInt("default_session_timeout", 60);
 
@@ -143,24 +157,33 @@ static std::chrono::steady_clock::duration parseSessionTimeout(
             throw Exception(ErrorCodes::INVALID_SESSION_TIMEOUT, "Invalid session timeout: '{}'", session_timeout_str);
 
         if (session_timeout > max_session_timeout)
-            throw Exception(ErrorCodes::INVALID_SESSION_TIMEOUT, "Session timeout '{}' is larger than max_session_timeout: {}. "
+            throw Exception(
+                ErrorCodes::INVALID_SESSION_TIMEOUT,
+                "Session timeout '{}' is larger than max_session_timeout: {}. "
                 "Maximum session timeout could be modified in configuration file.",
-                session_timeout_str, max_session_timeout);
+                session_timeout_str,
+                max_session_timeout);
     }
 
     return std::chrono::seconds(session_timeout);
 }
 
-HTTPHandlerConnectionConfig::HTTPHandlerConnectionConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+HTTPHandlerConnectionConfig::HTTPHandlerConnectionConfig(
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {
     if (config.has(config_prefix + ".handler.password"))
-        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "{}.handler.password will be ignored. Please remove it from config.", config_prefix);
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER, "{}.handler.password will be ignored. Please remove it from config.", config_prefix);
     if (config.has(config_prefix + ".handler.user"))
         credentials.emplace(config.getString(config_prefix + ".handler.user", "default"));
 }
 
 
-HTTPHandler::HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & connection_config_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_)
+HTTPHandler::HTTPHandler(
+    IServer & server_,
+    const HTTPHandlerConnectionConfig & connection_config_,
+    const std::string & name,
+    const HTTPResponseHeaderSetup & http_response_headers_override_)
     : log(getLogger(name))
     , server(server_)
     , default_settings(server.context()->getSettingsRef())
@@ -263,7 +286,7 @@ void HTTPHandler::processQuery(
 
     bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
 
-    auto param_could_be_skipped = [&] (const String & name)
+    auto param_could_be_skipped = [&](const String & name)
     {
         /// Empty parameter appears when URL like ?&a=b or a=b&&c=d. Just skip them for user's convenience.
         if (name.empty())
@@ -271,9 +294,25 @@ void HTTPHandler::processQuery(
 
         /// Some parameters (database, default_format, everything used in the code above) do not
         /// belong to the Settings class.
-        static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace", "role",
-            "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version", "close_session",
-            "database", "default_format"};
+        static const NameSet reserved_param_names{
+            "compress",
+            "decompress",
+            "user",
+            "password",
+            "quota_key",
+            "query_id",
+            "query",
+            "stacktrace",
+            "role",
+            "buffer_size",
+            "wait_end_of_query",
+            "session_id",
+            "session_timeout",
+            "session_check",
+            "client_protocol_version",
+            "close_session",
+            "database",
+            "default_format"};
 
         if (reserved_param_names.contains(name))
             return true;
@@ -352,11 +391,8 @@ void HTTPHandler::processQuery(
     Int64 http_zlib_compression_level
         = params.getParsed<Int64>("http_zlib_compression_level", settings[Setting::http_zlib_compression_level]);
 
-    used_output.out_holder =
-        std::make_shared<WriteBufferFromHTTPServerResponse>(
-            response,
-            request.getMethod() == HTTPRequest::HTTP_HEAD,
-            write_event);
+    used_output.out_holder
+        = std::make_shared<WriteBufferFromHTTPServerResponse>(response, request.getMethod() == HTTPRequest::HTTP_HEAD, write_event);
     used_output.out_maybe_compressed = used_output.out_holder;
     used_output.out = used_output.out_holder;
 
@@ -394,14 +430,12 @@ void HTTPHandler::processQuery(
         if (wait_end_of_query)
         {
             auto tmp_data = server.context()->getTempDataOnDisk();
-            cascade_buffers_lazy.emplace_back([tmp_data](const WriteBufferPtr &) -> WriteBufferPtr
-            {
-                return std::make_unique<TemporaryDataBuffer>(tmp_data);
-            });
+            cascade_buffers_lazy.emplace_back(
+                [tmp_data](const WriteBufferPtr &) -> WriteBufferPtr { return std::make_unique<TemporaryDataBuffer>(tmp_data); });
         }
         else
         {
-            auto push_memory_buffer_and_continue = [next_buffer = used_output.out] (const WriteBufferPtr & prev_buf)
+            auto push_memory_buffer_and_continue = [next_buffer = used_output.out](const WriteBufferPtr & prev_buf)
             {
                 auto * prev_memory_buffer = typeid_cast<MemoryWriteBuffer *>(prev_buf.get());
                 if (!prev_memory_buffer)
@@ -416,7 +450,8 @@ void HTTPHandler::processQuery(
             cascade_buffers_lazy.emplace_back(push_memory_buffer_and_continue);
         }
 
-        used_output.out_delayed_and_compressed_holder = std::make_unique<CascadeWriteBuffer>(std::move(cascade_buffers), std::move(cascade_buffers_lazy));
+        used_output.out_delayed_and_compressed_holder
+            = std::make_unique<CascadeWriteBuffer>(std::move(cascade_buffers), std::move(cascade_buffers_lazy));
         used_output.out_maybe_delayed_and_compressed = used_output.out_delayed_and_compressed_holder;
     }
     else
@@ -430,9 +465,7 @@ void HTTPHandler::processQuery(
     /// TODO check
     /// input stream are hold inside in_post instance
     auto in_post = wrapReadBufferWithCompressionMethod(
-        wrapReadBufferPointer(request.getStream()),
-        chooseCompressionMethod({}, http_request_compression_method_str),
-        zstd_window_log_max);
+        wrapReadBufferPointer(request.getStream()), chooseCompressionMethod({}, http_request_compression_method_str), zstd_window_log_max);
     LOG_DEBUG(getLogger("HTTPServerRequest"), "creating in_post id {}", size_t(in_post.get()));
 
 
@@ -442,7 +475,8 @@ void HTTPHandler::processQuery(
     bool is_in_post_compressed = false;
     if (params.getParsedLast<bool>("decompress", false))
     {
-        in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(std::move(in_post), /* allow_different_codecs_ = */ false, /* external_data_ = */ true);
+        in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(
+            std::move(in_post), /* allow_different_codecs_ = */ false, /* external_data_ = */ true);
         is_in_post_compressed = true;
     }
     else
@@ -453,7 +487,27 @@ void HTTPHandler::processQuery(
     /// NOTE: this may create pretty huge allocations that will not be accounted in trace_log,
     /// because memory_profiler_sample_probability/memory_profiler_step are not applied yet,
     /// they will be applied in ProcessList::insert() from executeQuery() itself.
-    const auto & query = getQuery(request, params, context);
+    constexpr size_t max_post_body_size = 128 * 1024 * 1024; // 128 MiB
+    String query = getQuery(request, params, context);
+    /// When query is only in POST body (no ?query= in URL), getQuery() returns empty because
+    /// HTMLForm only parses the URI. Read the body once here so the rest of the handler (and detach path) can use it.
+    /// Skip when decompress=1: the body is in compressed format and must be consumed by the normal pipeline, not as raw query text.
+    /// Skip when async_insert=1: the body is query+data for the async-insert queue and must be read by that pipeline.
+    bool query_from_body = false;
+    if (query.empty() && request.getMethod() == HTTPServerRequest::HTTP_POST && !has_external_data
+        && !params.getParsedLast<bool>("decompress", false) && !settings[Setting::async_insert])
+    {
+        WriteBufferFromOwnString body_query;
+        LimitReadBuffer limit(*in_post_maybe_compressed, LimitReadBuffer::Settings{.read_no_more = max_post_body_size});
+        copyData(limit, body_query);
+        query = body_query.str();
+        /// Treat a body that is only whitespace as "no query in body", but do NOT trim `query`
+        /// itself: for `INSERT ... FORMAT ...` sent in the body, trailing bytes can be part of the
+        /// data and `query` is handed to the executor verbatim. Trimming for parsing happens later
+        /// on a temporary copy (`query_to_parse`).
+        if (std::any_of(query.begin(), query.end(), [](char c) { return !isWhitespaceASCII(c); }))
+            query_from_body = true;
+    }
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
 
     used_output.out_holder->setSendProgress(settings[Setting::send_progress_in_http_headers]);
@@ -470,38 +524,210 @@ void HTTPHandler::processQuery(
     if (settings[Setting::add_http_cors_header] && !request.get("Origin", "").empty() && !config.has("http_options_response"))
         used_output.out_holder->addHeaderCORS(true);
 
-    auto append_callback = [my_context = context] (ProgressCallback callback)
+    auto append_callback = [my_context = context](ProgressCallback callback)
     {
         auto prev = my_context->getProgressCallback();
 
-        my_context->setProgressCallback([prev, callback] (const Progress & progress)
-        {
-            if (prev)
-                prev(progress);
+        my_context->setProgressCallback(
+            [prev, callback](const Progress & progress)
+            {
+                if (prev)
+                    prev(progress);
 
-            callback(progress);
-        });
+                callback(progress);
+            });
     };
 
     /// While still no data has been sent, we will report about query execution progress by sending HTTP headers.
     /// Note that we add it unconditionally so the progress is available for `X-ClickHouse-Summary`
-    append_callback([&used_output, &context](const Progress & progress)
-    {
-        used_output.out_holder->onProgress(progress, context);
-    });
+    append_callback([&used_output, &context](const Progress & progress) { used_output.out_holder->onProgress(progress, context); });
 
     if (settings[Setting::readonly] > 0 && settings[Setting::cancel_http_readonly_queries_on_client_close])
     {
-        append_callback([&context, &request](const Progress &)
-        {
-            /// Assume that at the point this method is called no one is reading data from the socket any more:
-            /// should be true for read-only queries.
-            if (!request.checkPeerConnected())
-                context->killCurrentQuery();
-        });
+        append_callback(
+            [&context, &request](const Progress &)
+            {
+                /// Assume that at the point this method is called no one is reading data from the socket any more:
+                /// should be true for read-only queries.
+                if (!request.checkPeerConnected())
+                    context->killCurrentQuery();
+            });
     }
 
-    customizeContext(request, context, *in_post_maybe_compressed);
+    /// Apply SETTINGS embedded in the query text itself (e.g. `INSERT ... SETTINGS allow_experimental_detach_queries=1`)
+    /// before the detach decision so that inline settings can trigger the detach path.
+    /// `settings` is a reference to `context->getSettingsRef()`, so it reflects changes made here.
+    /// `executeQueryImpl` will call `applySettingsFromQuery` again — that call is idempotent.
+    /// Guard: only pre-parse when the setting is already on (session/URL-level) OR the query text
+    /// references it inline — avoids an unconditional extra parse on every request on the hot path.
+    if (!query.empty()
+        && (settings[Setting::allow_experimental_detach_queries]
+            || params.has("allow_experimental_detach_queries")
+            || query.find("allow_experimental_detach_queries") != std::string::npos))
+    {
+        ParserQuery parser_for_inline_settings(
+            query.data() + query.size(),
+            settings[Setting::allow_settings_after_format_in_insert],
+            settings[Setting::implicit_select]);
+        const size_t max_query_size_for_settings
+            = settings[Setting::max_query_size] ? settings[Setting::max_query_size] : std::numeric_limits<size_t>::max();
+        const char * query_pos = query.data();
+        std::string parse_error;
+        if (ASTPtr inline_ast = tryParseQuery(
+                parser_for_inline_settings,
+                query_pos,
+                query.data() + query.size(),
+                parse_error,
+                /*hilite=*/false,
+                /*description=*/"",
+                /*allow_multi_statements=*/false,
+                max_query_size_for_settings,
+                settings[Setting::max_parser_depth],
+                settings[Setting::max_parser_backtracks],
+                /*skip_insignificant=*/true))
+            InterpreterSetQuery::applySettingsFromQuery(inline_ast, context);
+    }
+
+    /// Detach path: when `allow_experimental_detach_queries` is on, dispatch the query to a
+    /// background thread and return its `query_id` immediately. The data for `INSERT ... FORMAT ...`
+    /// arrives in the same POST body, so HTTP can detach those too — we concatenate URL query
+    /// and body and hand the full text to `detachQuery`.
+    ///
+    /// Skipped (with a one-line WARN) when `async_insert=1`: the async-insert queue owns the
+    /// wait semantics for `INSERT`s, and they are mutually exclusive by design.
+    const bool want_detach
+        = settings[Setting::allow_experimental_detach_queries]
+        || params.getParsedLast<bool>("allow_experimental_detach_queries", false);
+    /// Tracks whether the detach path already ran `customizeContext` on `context`.
+    /// `Context::setQueryParameter` throws on duplicate names, so the sync fallback
+    /// below must skip its own call when this is set.
+    bool context_customized = false;
+    if (want_detach && settings[Setting::async_insert])
+    {
+        LOG_WARNING(
+            log,
+            "Both `allow_experimental_detach_queries` and `async_insert` are enabled; running synchronously via the async-insert path. "
+            "These settings are mutually exclusive — set only one.");
+    }
+    if (want_detach && !settings[Setting::async_insert] && request.getMethod() == HTTPServerRequest::HTTP_POST && !has_external_data)
+    {
+        String detach_query_id;
+        /// `detach_attempted` flips immediately before the `detachQuery` call, `detach_started`
+        /// only after it returns. The catch below keys the sync fallback off `detach_attempted`
+        /// so that a failure raised by `detachQuery` itself never re-executes the query.
+        bool detach_attempted = false;
+        bool detach_started = false;
+        PODArray<char> body_data;
+        const bool query_was_in_body = query_from_body;
+
+        try
+        {
+            const size_t max_query_size_val
+                = settings[Setting::max_query_size] ? settings[Setting::max_query_size] : std::numeric_limits<size_t>::max();
+            if (query.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty query");
+            if (query_from_body)
+                body_data.insert(body_data.end(), query.data(), query.data() + query.size());
+
+            String query_to_parse = query;
+            boost::trim_right(query_to_parse);
+            if (query_to_parse.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty query after trim");
+
+            if (!query_from_body)
+            {
+                LimitReadBuffer limit(*in_post_maybe_compressed, LimitReadBuffer::Settings{.read_no_more = max_post_body_size});
+                WriteBufferFromVector<PODArray<char>> body_buf(body_data);
+                copyData(limit, body_buf);
+            }
+
+            ParserQuery parser(
+                query_to_parse.data() + query_to_parse.size(),
+                settings[Setting::allow_settings_after_format_in_insert],
+                settings[Setting::implicit_select]);
+            ASTPtr ast;
+            if (query_was_in_body)
+            {
+                const char * pos = query_to_parse.data();
+                const char * end = pos + query_to_parse.size();
+                ast = parseQueryAndMovePosition(
+                    parser, pos, end, "", false,
+                    max_query_size_val,
+                    settings[Setting::max_parser_depth],
+                    settings[Setting::max_parser_backtracks]);
+            }
+            else
+                ast = parseQuery(
+                    parser,
+                    query_to_parse.data(),
+                    query_to_parse.data() + query_to_parse.size(),
+                    "",
+                    max_query_size_val,
+                    settings[Setting::max_parser_depth],
+                    settings[Setting::max_parser_backtracks]);
+
+            if (ast && IAST::isDetachableQuery(ast.get()))
+            {
+                /// Populate query parameters from URL/header regex captures and `_request_body`
+                /// before forking, so `PredefinedQueryHandler` routes see the same context as
+                /// the sync path. Running this on the parent `context` means the copy below
+                /// inherits the parameters.
+                ReadBufferFromString body_buf_for_customize(std::string_view(body_data.data(), body_data.size()));
+                customizeContext(request, context, body_buf_for_customize);
+                context_customized = true;
+
+                String full_input = query_was_in_body
+                    ? String(body_data.data(), body_data.size())
+                    : (body_data.empty() ? query : query + String(body_data.data(), body_data.size()));
+
+                ContextMutablePtr async_context = Context::createCopy(context);
+                detach_attempted = true;
+                detach_query_id = detachQuery(std::move(full_input), async_context).query_id;
+                detach_started = true;
+            }
+        }
+        catch (...)
+        {
+            /// A failure raised by `detachQuery` itself (pre-start: duplicate query_id, quota,
+            /// permission) must propagate to the client through the normal HTTP error path. Never
+            /// fall back to sync here: that would re-execute the query and is racy for
+            /// non-idempotent statements (a duplicate query_id could succeed if the first query
+            /// finishes before the fallback). `detach_attempted` is set for exactly those failures.
+            if (detach_attempted)
+                throw;
+            /// Mechanism failure before the detach attempt (parse error, empty query): fall back to sync.
+            tryLogCurrentException(log, "Cannot run HTTP query in detach mode, falling back to sync");
+        }
+
+        if (detach_started)
+        {
+            in_post_maybe_compressed.reset();
+            applyHTTPResponseHeaders(response, http_response_headers_override);
+            response.setStatus(HTTPResponse::HTTP_OK);
+            response.add("X-ClickHouse-Query-Id", detach_query_id);
+            response.setContentType("text/plain; charset=UTF-8");
+            response.sendBuffer(detach_query_id.data(), detach_query_id.size());
+            used_output.cancel();
+            releaseOrCloseSession(session_id, close_session);
+            return;
+        }
+
+        /// Restore the input streams for the sync fallback. The body was drained into
+        /// `body_data` above (or already was the query); rebuild what the sync path expects.
+        if (query_was_in_body)
+        {
+            in_param = std::make_unique<ReadBufferFromString>(String(body_data.data(), body_data.size()));
+            in_post_maybe_compressed = std::make_unique<ReadBufferFromString>(String());
+        }
+        else if (!body_data.empty())
+        {
+            in_param = std::make_unique<ReadBufferFromString>(query);
+            in_post_maybe_compressed = std::make_unique<ReadBufferFromString>(String(body_data.data(), body_data.size()));
+        }
+    }
+
+    if (!context_customized)
+        customizeContext(request, context, *in_post_maybe_compressed);
     std::unique_ptr<ReadBuffer> in;
     if (has_external_data)
     {
@@ -515,7 +741,7 @@ void HTTPHandler::processQuery(
 
     applyHTTPResponseHeaders(response, http_response_headers_override);
 
-    auto set_query_result = [&response, this] (const QueryResultDetails & details)
+    auto set_query_result = [&response, this](const QueryResultDetails & details)
     {
         response.add("X-ClickHouse-Query-Id", details.query_id);
 
@@ -530,7 +756,12 @@ void HTTPHandler::processQuery(
             response.add("X-ClickHouse-Timezone", *details.timezone);
 
         if (details.query_cache_entry_created_at)
-            response.add("Age", std::to_string(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - *details.query_cache_entry_created_at).count()));
+            response.add(
+                "Age",
+                std::to_string(
+                    std::chrono::duration_cast<std::chrono::seconds>(
+                        std::chrono::system_clock::now() - *details.query_cache_entry_created_at)
+                        .count()));
 
         if (details.query_cache_entry_expires_at)
             response.add("Expires", std::format("{:%a, %d %b %Y %H:%M:%S} GMT", *details.query_cache_entry_expires_at));
@@ -539,7 +770,8 @@ void HTTPHandler::processQuery(
             response.set(name, value);
     };
 
-    auto handle_exception_in_output_format = [&, session_id, close_session](IOutputFormat & current_output_format,
+    auto handle_exception_in_output_format = [&, session_id, close_session](
+                                                 IOutputFormat & current_output_format,
                                                  const String & format_name,
                                                  const ContextPtr & context_,
                                                  const std::optional<FormatSettings> & format_settings)
@@ -553,7 +785,8 @@ void HTTPHandler::processQuery(
             if (wait_end_of_query)
             {
                 auto header = current_output_format.getPort(IOutputFormat::PortKind::Main).getHeader();
-                used_output.exception_writer = [&, format_name, header, context_, format_settings, session_id, close_session](WriteBuffer & buf, int code, const String & message)
+                used_output.exception_writer = [&, format_name, header, context_, format_settings, session_id, close_session](
+                                                   WriteBuffer & buf, int code, const String & message)
                 {
                     if (used_output.out_holder->isCanceled())
                     {
@@ -577,7 +810,8 @@ void HTTPHandler::processQuery(
                 if (used_output.out_holder->isCanceled())
                     return;
 
-                bool with_stacktrace = (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true));
+                bool with_stacktrace
+                    = (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true));
                 ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
 
                 drainRequestIfNeeded(request, response);
@@ -756,10 +990,8 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
         // Setup tracing context for this thread
         auto context = session->sessionOrGlobalContext();
-        thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("HTTPHandler",
-            client_trace_context,
-            context->getSettingsRef(),
-            context->getOpenTelemetrySpanLog());
+        thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>(
+            "HTTPHandler", client_trace_context, context->getSettingsRef(), context->getOpenTelemetrySpanLog());
         thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
         thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
         thread_trace_context->root_span.addAttribute("http.referer", request.get("Referer", ""));
@@ -767,7 +999,10 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
 
         response.setContentType("text/plain; charset=UTF-8");
-        response.add("Access-Control-Expose-Headers", "X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-ClickHouse-Exception-Code,X-ClickHouse-Exception-Tag");
+        response.add(
+            "Access-Control-Expose-Headers",
+            "X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-"
+            "ClickHouse-Exception-Code,X-ClickHouse-Exception-Tag");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
 
         if (!request.get("Origin", "").empty())
@@ -786,9 +1021,10 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /// Workaround. Poco does not detect 411 Length Required case.
         if (request.getMethod() == HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() && !request.hasContentLength())
         {
-            throw Exception(ErrorCodes::HTTP_LENGTH_REQUIRED,
-                            "The Transfer-Encoding is not chunked and there "
-                            "is no Content-Length header for POST request");
+            throw Exception(
+                ErrorCodes::HTTP_LENGTH_REQUIRED,
+                "The Transfer-Encoding is not chunked and there "
+                "is no Content-Length header for POST request");
         }
 
         processQuery(request, params, response, used_output, query_scope, write_event);
@@ -800,7 +1036,8 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     catch (...)
     {
         SCOPE_EXIT({
-            request_credentials.reset(); // ...so that the next requests on the connection have to always start afresh in case of exceptions.
+            request_credentials
+                .reset(); // ...so that the next requests on the connection have to always start afresh in case of exceptions.
         });
 
         tryLogCurrentException(log);
@@ -815,7 +1052,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         used_output.cancel();
 
         if (!error_sent && thread_trace_context)
-                thread_trace_context->root_span.addAttribute("clickhouse.exception", "Cannot flush data to client");
+            thread_trace_context->root_span.addAttribute("clickhouse.exception", "Cannot flush data to client");
 
         if (thread_trace_context)
             thread_trace_context->root_span.addAttribute(status);
@@ -846,7 +1083,7 @@ DynamicQueryHandler::DynamicQueryHandler(
 bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value)
 {
     if (key == param_name)
-        return true;    /// do nothing
+        return true; /// do nothing
 
     if (startsWith(key, QUERY_PARAMETER_NAME_PREFIX))
     {
@@ -993,7 +1230,8 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
     return predefined_query;
 }
 
-HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
+HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(
+    IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     std::unordered_map<String, String> & common_headers)

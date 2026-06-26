@@ -1,12 +1,16 @@
 #include <algorithm>
 #include <exception>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string_view>
+#include <thread>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Columns/ColumnBLOB.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
@@ -20,6 +24,7 @@
 #include <Formats/NativeWriter.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/Progress.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromPocoSocket.h>
@@ -30,10 +35,15 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/Squashing.h>
 #include <Interpreters/TablesStatus.h>
+#include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/detachQuery.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/IAST.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserQuery.h>
 #include <Server/TCPServer.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -91,6 +101,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool async_insert;
@@ -99,8 +110,12 @@ namespace Setting
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
     extern const SettingsUInt64 idle_connection_timeout;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
+    extern const SettingsBool implicit_select;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsBool low_cardinality_allow_in_native_format;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
     extern const SettingsString network_compression_method;
     extern const SettingsInt64 network_zstd_compression_level;
     extern const SettingsBool partial_result_on_first_cancel;
@@ -119,6 +134,7 @@ namespace Setting
     extern const SettingsSeconds wait_for_async_insert_timeout;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool apply_settings_from_server;
+    extern const SettingsBool allow_experimental_detach_queries;
 }
 
 namespace ServerSetting
@@ -205,6 +221,7 @@ void correctQueryClientInfo(const ClientInfo & session_client_info, ClientInfo &
         client_info.client_name = "ClickHouse client";
     }
 }
+
 
 void validateClientInfo(const ClientInfo & session_client_info, const ClientInfo & client_info)
 {
@@ -627,6 +644,128 @@ void TCPHandler::runImpl()
             /// If query received, then settings in query_context has been updated.
             /// So it's better to update the connection settings for flexibility.
             extractConnectionSettingsFromContext(query_state->query_context);
+
+            /// Apply SETTINGS embedded in the query text (e.g. `INSERT ... SETTINGS allow_experimental_detach_queries=1`)
+            /// before the detach decision so that inline settings can trigger the detach path.
+            /// `settings_ref` reflects changes made here. `executeQueryImpl` will call
+            /// `applySettingsFromQuery` again — that call is idempotent.
+            /// Guard: only pre-parse when the setting is already on (session/client-level) OR the
+            /// query text references it inline — avoids an unconditional extra parse on the hot path.
+            {
+                const auto & pre_settings = query_state->query_context->getSettingsRef();
+                if (pre_settings[Setting::allow_experimental_detach_queries]
+                    || query_state->query.find("allow_experimental_detach_queries") != std::string::npos)
+                {
+                    const size_t max_query_size_pre
+                        = pre_settings[Setting::max_query_size] ? pre_settings[Setting::max_query_size] : std::numeric_limits<size_t>::max();
+                    ParserQuery parser_pre(
+                        query_state->query.data() + query_state->query.size(),
+                        pre_settings[Setting::allow_settings_after_format_in_insert],
+                        pre_settings[Setting::implicit_select]);
+                    const char * query_pos_pre = query_state->query.data();
+                    std::string parse_error_pre;
+                    if (ASTPtr inline_ast = tryParseQuery(
+                            parser_pre,
+                            query_pos_pre,
+                            query_state->query.data() + query_state->query.size(),
+                            parse_error_pre,
+                            /*hilite=*/false,
+                            /*description=*/"",
+                            /*allow_multi_statements=*/false,
+                            max_query_size_pre,
+                            pre_settings[Setting::max_parser_depth],
+                            pre_settings[Setting::max_parser_backtracks],
+                            /*skip_insignificant=*/true))
+                        InterpreterSetQuery::applySettingsFromQuery(inline_ast, query_state->query_context);
+                }
+            }
+
+            /// Detach path: when `allow_experimental_detach_queries` is on, dispatch the query to
+            /// a background thread and reply with a one-row block holding the `query_id`. Skipped
+            /// (with a one-line WARN) when `async_insert=1` — the async-insert queue owns the wait
+            /// semantics for `INSERT`s. Skipped for `INSERT ... FORMAT ...` queries that read data
+            /// from a separate native packet — the background thread can't drain that packet.
+            const auto & settings_ref = query_state->query_context->getSettingsRef();
+            const bool want_detach = settings_ref[Setting::allow_experimental_detach_queries];
+            if (want_detach && settings_ref[Setting::async_insert])
+            {
+                LOG_WARNING(
+                    log,
+                    "Both `allow_experimental_detach_queries` and `async_insert` are enabled; running synchronously via the async-insert path. "
+                    "These settings are mutually exclusive — set only one.");
+            }
+            if (want_detach && !settings_ref[Setting::async_insert])
+            {
+                String detach_query_id;
+                /// `detach_attempted` flips immediately before the `detachQuery` call, `detach_started`
+                /// only after it returns. The catch below keys the sync fallback off `detach_attempted`
+                /// so that a failure raised by `detachQuery` itself never re-executes the query.
+                bool detach_attempted = false;
+                bool detach_started = false;
+
+                try
+                {
+                    const size_t max_query_size = settings_ref[Setting::max_query_size]
+                        ? settings_ref[Setting::max_query_size]
+                        : std::numeric_limits<size_t>::max();
+                    ParserQuery parser(
+                        query_state->query.data() + query_state->query.size(),
+                        settings_ref[Setting::allow_settings_after_format_in_insert],
+                        settings_ref[Setting::implicit_select]);
+                    ASTPtr ast = parseQuery(
+                        parser,
+                        query_state->query.data(),
+                        query_state->query.data() + query_state->query.size(),
+                        "",
+                        max_query_size,
+                        settings_ref[Setting::max_parser_depth],
+                        settings_ref[Setting::max_parser_backtracks]);
+
+                    if (ast && IAST::isDetachableQuery(ast.get()))
+                    {
+                        const auto * insert_ast = ast->as<ASTInsertQuery>();
+                        const bool insert_needs_client_data = insert_ast && !insert_ast->select && !insert_ast->hasInlinedData();
+                        if (!insert_needs_client_data)
+                        {
+                            ContextMutablePtr async_context = Context::createCopy(query_state->query_context);
+                            detach_attempted = true;
+                            detach_query_id = detachQuery(query_state->query, async_context).query_id;
+                            detach_started = true;
+                        }
+                    }
+                }
+                catch (...)
+                {
+                    /// A failure raised by `detachQuery` itself (pre-start: duplicate query_id,
+                    /// quota, permission) must propagate to the client via `runImpl`'s
+                    /// `sendException`. Never fall back to sync here: that would re-execute the
+                    /// query and is racy for non-idempotent statements. `detach_attempted` is set
+                    /// for exactly those failures; mechanism failures before the detach attempt
+                    /// (parse error) fall back to sync execution.
+                    if (detach_attempted)
+                        throw;
+                    tryLogCurrentException(log, "Cannot run native query in detach mode, falling back to sync");
+                }
+
+                if (detach_started)
+                {
+                    auto col = ColumnString::create();
+                    col->insertData(detach_query_id.data(), detach_query_id.size());
+                    Block block({{std::move(col), std::make_shared<DataTypeString>(), "query_id"}});
+
+                    {
+                        std::lock_guard lock(*callback_mutex);
+                        sendData(*query_state, block);
+                        sendLogs(*query_state);
+                        sendEndOfStream(*query_state);
+                        query_state->finalizeOut(out);
+                    }
+                    /// Treat this like a normally completed query: go back to the connection loop
+                    /// so that session state (session_id, temporary tables, per-connection settings,
+                    /// interactive `clickhouse-client` flow) survives a detached response.
+                    continue;
+                }
+            }
 
             /// Sync timeouts on client and server during current query to avoid dangling queries on server.
             /// It should be reset at the end of query.

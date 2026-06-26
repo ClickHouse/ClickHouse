@@ -365,6 +365,56 @@ std::string IAST::dumpTree(size_t indent) const
     return wb.str();
 }
 
+// Exhaustive switch (no `default`): adding a new QueryKind must force an explicit decision here.
+bool IAST::isDetachableQuery(const IAST * ast)
+{
+    if (!ast)
+        return false;
+    switch (ast->getQueryKind())
+    {
+        case QueryKind::Select:
+        case QueryKind::Insert:
+        case QueryKind::Delete:
+        case QueryKind::Update:
+        case QueryKind::Create:
+        case QueryKind::Drop:
+        case QueryKind::Undrop:
+        case QueryKind::Rename:
+        case QueryKind::Alter:
+        case QueryKind::Grant:
+        case QueryKind::Revoke:
+        case QueryKind::Move:
+        case QueryKind::Optimize:
+        case QueryKind::Backup:
+        case QueryKind::Restore:
+        case QueryKind::Copy:
+        case QueryKind::Snapshot:
+        case QueryKind::Check:
+        case QueryKind::System:
+        case QueryKind::Show:
+        case QueryKind::Exists:
+        case QueryKind::Describe:
+        case QueryKind::Explain:
+        case QueryKind::ExternalDDL:
+            return true;
+
+        /// Session-mutating: would silently no-op on a detached context.
+        case QueryKind::Set:
+        case QueryKind::Use:
+        case QueryKind::Begin:
+        case QueryKind::Commit:
+        case QueryKind::Rollback:
+        case QueryKind::SetTransactionSnapshot:
+        case QueryKind::KillQuery:
+        /// Internal kinds:
+        case QueryKind::AsyncInsertFlush:
+        case QueryKind::ParallelWithQuery:
+        case QueryKind::None:
+            return false;
+    }
+    UNREACHABLE();
+}
+
 /// Decide how to emit `parenthesized` parens. When the node has an alias and we are not in an
 /// operator-chain context (`frame.need_parens == false`), defer to `ASTWithAlias::formatImpl` so
 /// it can emit `(expr) AS alias` instead of `(expr AS alias)` — only the former re-formats to

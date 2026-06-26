@@ -6,6 +6,8 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Common/QueryScope.h>
+#include <future>
+#include <memory>
 #include <Common/ThreadStatus.h>
 
 
@@ -75,14 +77,16 @@ public:
         ReadBuffer * in_,
         bool send_progress_,
         bool send_profile_events_,
-        const String & server_display_name_);
+        const String & server_display_name_,
+        bool is_interactive_ = false);
 
     explicit LocalConnection(
         std::unique_ptr<Session> && session_,
         ReadBuffer * in_,
         bool send_progress_ = false,
         bool send_profile_events_ = false,
-        const String & server_display_name_ = "");
+        const String & server_display_name_ = "",
+        bool is_interactive_ = false);
 
     ~LocalConnection() override;
 
@@ -94,15 +98,17 @@ public:
         ReadBuffer * in = nullptr,
         bool send_progress = false,
         bool send_profile_events = false,
-        const String & server_display_name = "");
+        const String & server_display_name = "",
+        bool is_interactive = false);
 
     static ServerConnectionPtr createConnection(
         const ConnectionParameters & connection_parameters,
         std::unique_ptr<Session> && session,
-        ReadBuffer * in_,
+        ReadBuffer * in,
         bool send_progress = false,
         bool send_profile_events = false,
-        const String & server_display_name = "");
+        const String & server_display_name = "",
+        bool is_interactive = false);
 
     void setDefaultDatabase(const String & database) override;
 
@@ -202,6 +208,14 @@ private:
     ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
 
     ReadBuffer * in;
+
+    bool is_interactive = false;
+
+    /// When `allow_experimental_detach_queries` is used in interactive mode, the query runs on
+    /// `GlobalThreadPool` and this future tracks its completion. Waited on at the start of the
+    /// next `sendQuery` (rethrowing any post-start exception) and in the destructor (logging
+    /// any exception, since there is no client to surface it to at shutdown).
+    std::shared_ptr<std::future<void>> detached_query_completion;
 };
 
 }
