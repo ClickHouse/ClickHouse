@@ -477,13 +477,20 @@ def main():
                         continue
                     version_suffix = "" if variant == "ubuntu" else f"-{variant}"
                     label_version = f"{version_string}{version_suffix}"
-                    tags = [
-                        f"--tag={image}:{version_string}{version_suffix}",
-                        f"--tag={image}:{version_minor}{version_suffix}",
-                        f"--tag={image}:{version_major}{version_suffix}",
-                    ]
-                    if is_latest:
-                        tags.append(f"--tag={image}:latest{version_suffix}")
+                    # Always publish the exact version tag.
+                    tags = [f"--tag={image}:{version_string}{version_suffix}"]
+                    # Floating tags (minor/major/latest) must move only on a
+                    # normal release. A recovery run (only-repo / only-docker)
+                    # rebuilds an already-released tag that may no longer be the
+                    # current release on its branch, so moving the floating tags
+                    # would point them back to an older image. Skip them.
+                    if not (args.only_repo or args.only_docker):
+                        tags += [
+                            f"--tag={image}:{version_minor}{version_suffix}",
+                            f"--tag={image}:{version_major}{version_suffix}",
+                        ]
+                        if is_latest:
+                            tags.append(f"--tag={image}:latest{version_suffix}")
 
                     # The multi-arch buildx log is large; praktika captures and
                     # truncates the tail of a step's output, which hides the
