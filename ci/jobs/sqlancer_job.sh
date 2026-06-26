@@ -145,13 +145,31 @@ for _ in $(seq 1 60); do if [[ $(wget -q 'localhost:8123' -O- 2>/dev/null) == 'O
 cd /sqlancer/sqlancer-main
 
 # Run all oracles in a single invocation bounded by one wall-clock timeout,
-# matching the upstream `.claude/run-sqlancer.sh` reference run. The provider
-# now uses the `com.clickhouse:client-v2` transport, pins its own per-request
-# settings (`max_execution_time`, `wait_end_of_query`, `max_result_rows`, ...),
-# and additionally randomizes a curated subset of session settings.
+# matching the upstream `.claude/run-sqlancer.sh --oracles all` reference run.
+# The provider uses the `com.clickhouse:client-v2` transport and pins its own
+# per-request settings (`max_execution_time`, `wait_end_of_query`,
+# `max_result_rows`, ...).
+#
+# Derive the oracle list from the provider's own curated `ALL_ORACLES` (its
+# `--oracles all` set) instead of hardcoding it here: the list changes between
+# sqlancer revisions (oracles are added, and noisy ones such as `RowPolicy` are
+# dropped), so reading it from the pinned image keeps it in sync with whatever
+# commit the Dockerfile builds. Fail closed if it cannot be parsed -- an empty
+# `--oracle` would otherwise make sqlancer error out cryptically.
+#
+# `--random-session-settings` is intentionally NOT passed: it is rejected in
+# combination with the `SEMR`/`SEMRMulti` oracles (which toggle session settings
+# themselves), and those oracles are part of the curated list and already
+# provide setting-differential coverage.
 TIMEOUT=3000
 NUM_THREADS=10
-ORACLES="TLPWhere,TLPDistinct,TLPGroupBy,TLPAggregate,TLPHaving,NoREC,PQS,CERT,CODDTest,SEMR,SEMRMulti,EET,SetOpTLP,CombinatorTLP,QccCache,SortedUnionLimitBy,RowPolicy,SchemaRoundtrip,JoinAlgorithm,Cast,Parallelism,PartitionMirror,KeyCondition,TableFunctionIN,ViewEquivalence"
+ORACLES=$(grep -E '^ALL_ORACLES=' /sqlancer/sqlancer-main/.claude/run-sqlancer.sh | head -1 | cut -d'"' -f2)
+if [ -z "$ORACLES" ]; then
+    OVERALL_STATUS="ERROR"
+    RESULT_INFO="Could not parse ALL_ORACLES from the sqlancer run script"
+    echo "$RESULT_INFO" >&2
+    exit 1
+fi
 echo "$ORACLES"
 
 OVERALL_STATUS=OK
@@ -168,8 +186,6 @@ if [[ $(wget -q 'localhost:8123' -O- 2>/dev/null) == 'Ok.' ]]; then
         --timeout-seconds "$TIMEOUT" \
         --use-connection-test false \
         --print-progress-summary true \
-        --random-session-settings true \
-        --random-session-settings-budget 5 \
         --host 127.0.0.1 --port 8123 \
         --username default --password "" \
         clickhouse --oracle "$ORACLES" 2>&1 | tee "$output_file" || java_exit=${PIPESTATUS[0]}
