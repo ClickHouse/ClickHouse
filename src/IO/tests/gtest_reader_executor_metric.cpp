@@ -24,6 +24,7 @@
 #include <IO/ICacheProvider.h>
 #include <IO/DiskCacheProvider.h>
 #include <IO/PageCacheProvider.h>
+#include <IO/PrefetchThreadPool.h>
 #include <IO/LongConnectionLimit.h>
 #include <IO/ReadSettings.h>
 #include <IO/ChainedBuffers.h>
@@ -830,4 +831,73 @@ TEST_F(ReaderExecutorMetric, ReverseSequential)
     EXPECT_EQ(live.incomplete, 1u) << "live: an over-reaching chunk connection is abandoned at the backward seek (accepted, re-tuned in a follow-up)";
     EXPECT_EQ(live.over_read, 749568u) << "full-segment prefill from the wide cold fetch (stopgap pending the net-waste over_read metric)";
     EXPECT_EQ(stateless.incomplete, 0u);
+}
+
+/// Real thread pool + real FileCache (fs tier): the worker fills the fill-ahead lead on ANOTHER
+/// thread, committing window-sized tiles while HOLDING the segment downloader across tiles, and
+/// the serve reads the committed prefix live (the progressive run-ahead of stage 2b-3). The other
+/// tests use an inline pool, so this cross-thread streaming path - `DiskCacheWriter::writeStreaming`
+/// + `FileSegment::notifyDownloadProgress` + the frontier wait - is exercised ONLY here. The lead
+/// spans several segments, so each segment is filled by multiple tile writes with the downloader
+/// held. Asserts the cold sequential read streams the correct bytes, and that the cold pass
+/// populated the cache (the warm re-read is served without touching the source - proving the
+/// streamed tiles actually committed). Under TSan/ASan in CI this also covers the worker/serve race.
+TEST_F(ReaderExecutorMetric, AsyncRunAheadStreamsCorrectBytesAndPopulates)
+{
+    const String content = makePattern(FILE_SIZE);
+    const std::unordered_map<String, String> data{{"obj", content}};
+    StoredObjects objects;
+    objects.emplace_back("obj", "", FILE_SIZE);
+
+    auto fc = makeFileCache("async_runahead", SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
+    auto src = std::make_shared<MemBoundedSource>(data);
+    auto pool = std::make_shared<PrefetchThreadPool>(4);
+
+    auto make_exec = [&]()
+    {
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+        caches.push_back(makeDiskProvider(fc));
+        ReaderExecutor::Options opts;
+        opts.window_size = WINDOW;
+        opts.min_bytes_for_seek = MIN_BYTES_FOR_SEEK;
+        opts.block_size = BLOCK;
+        opts.max_tail_for_drain = MAX_TAIL_FOR_DRAIN;
+        opts.prefetch_pool = pool;
+        opts.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+        opts.fill_ahead_lead = 4 * SEGMENT;   /// lead spans 4 segments -> several tiles per segment
+        return std::make_unique<ReaderExecutor>(src, objects, std::move(caches), opts);
+    };
+
+    auto read_all = [](ReaderExecutor & ex)
+    {
+        String out;
+        while (true)
+        {
+            auto chain = ex.readNextWindow();
+            if (chain.empty())
+                break;
+            for (const auto & node : chain.getNodes())
+                out.append(node.data(), node.size);
+        }
+        return out;
+    };
+
+    /// Cold pass: streams from the source through the run-ahead, populating the fs cache.
+    {
+        auto ex = make_exec();
+        EXPECT_EQ(read_all(*ex), content) << "cold run-ahead must stream the correct bytes";
+    }
+
+    /// Warm pass: fully cached now, so it is served from the cache with no source reads (the
+    /// streamed tiles committed). `MetricScope` is declared before the executor so its dtor reads
+    /// the deltas AFTER the executor flushes its counters.
+    {
+        CostVector warm;
+        {
+            MetricScope scope(warm);
+            auto ex = make_exec();
+            EXPECT_EQ(read_all(*ex), content) << "warm read must return the same bytes";
+        }
+        EXPECT_EQ(warm.fetched, 0u) << "warm pass must be served from the cache: the cold run-ahead populated it";
+    }
 }

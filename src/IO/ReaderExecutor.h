@@ -84,6 +84,13 @@ public:
     /// deferred until the generalized planning + reuse are the default.)
     static constexpr size_t DEFAULT_LONG_CONNECTION_OPEN_RANGE = 16 * 1024 * 1024; /// 16 MiB
     static constexpr size_t DEFAULT_LONG_CONNECTION_MAX_BOUND = 128 * 1024 * 1024; /// 128 MiB
+    /// How far the in-order fill front runs AHEAD of the serve cursor (the cache-as-buffer
+    /// lead): the single in-flight machine fetches up to this much into a disk (`FilesystemCache`)
+    /// bottom tier, committing cells progressively, while the serve reads the committed prefix.
+    /// Held cheaply on disk, so it is flat. Only a disk bottom tier exposes the partial-prefix
+    /// read + frontier wait the run-ahead needs; a page-cache-only or bypass read stays one
+    /// window. Distinct from the plan window (the geometry/pin horizon).
+    static constexpr size_t DEFAULT_FILL_AHEAD_LEAD = 16 * 1024 * 1024;     /// 16 MiB (disk-backed bottom, flat)
 
     /// Everything configurable beyond the data path itself: the executor is
     /// fully wired at construction, there are no post-construction setters.
@@ -112,6 +119,8 @@ public:
         /// `DEFAULT_LONG_CONNECTION_MAX_BOUND`).
         size_t long_connection_open_range = DEFAULT_LONG_CONNECTION_OPEN_RANGE;
         size_t long_connection_max_bound = DEFAULT_LONG_CONNECTION_MAX_BOUND;
+        /// Fill-ahead lead for a disk bottom tier (see `DEFAULT_FILL_AHEAD_LEAD`).
+        size_t fill_ahead_lead = DEFAULT_FILL_AHEAD_LEAD;
         /// Decrypt prefetched bytes on the read-ahead worker instead of at the serve
         /// boundary (encrypted sources, prefetch path only). See `decryptFetchedAhead`.
         bool decrypt_ahead = false;
@@ -682,13 +691,16 @@ private:
     /// schedule-filtered) writer. `interrupt` (nullable) is polled between
     /// writers - the put step's stop point; remaining writers are left untouched
     /// for the caller's abandon path.
+    /// `streaming`: the worker is filling the lead progressively and stays the segments'
+    /// downloader across tiles - write via `CacheWriter::writeStreaming` (wake prefix readers,
+    /// keep the downloader) instead of completing per write.
     void pushChainToWriters(const VectorWithMemoryTracking<WriterView> & views, ByteRange window,
-        const ChainedBuffers & chain, const std::atomic<bool> * interrupt, Stats & out_stats);
+        const ChainedBuffers & chain, const std::atomic<bool> * interrupt, Stats & out_stats, bool streaming = false);
 
     /// Write `chain ∩ writer-range ∩ window` into ONE writer (the body of the
     /// loops above).
     void writeSliceToWriter(CacheWriter * writer, ByteRange window, const ChainedBuffers & chain,
-        Stats & out_stats);
+        Stats & out_stats, bool streaming = false);
 
     /// Whether the plan schedule designates `(entry, cell)` a fill target for a
     /// retrieve overlapping `window`. A cell holding the request is a target in
@@ -859,6 +871,11 @@ private:
     /// Read-only: do the plan's held write buffers commit-cover the whole physical window?
     /// The read-only twin of `recreditCommittedPrefixes`'s coverage computation (no read, no stats).
     bool committedCellCovers(ByteRange window_phys) const;
+    /// Serve a populatable window from the cells: the committed prefix, then (when `allow_wait`)
+    /// the still-uncommitted bytes the in-flight worker is downloading, waited on per-frontier
+    /// via the worker's OWN target writers (`waitAndReadSiblingLed`). Accumulates into `out` /
+    /// `covered`; the caller checks full coverage and falls back to a foreground fetch otherwise.
+    void serveWindowFromCells(ByteRange window_phys, bool allow_wait, ChainedBuffers & out, IntervalSet & covered, Stats & out_stats);
     ChainedBuffers serveStepFromBanked(const PlanSchedule::Step & step, RetrieveStatus & st, size_t position_phys, size_t to_read) const;
     ChainedBuffers serveRetrieveForeground(size_t ri, size_t position_phys, size_t to_read);
     void collectInFlightInto(size_t ri);
@@ -932,6 +949,11 @@ private:
     /// speculative, so once memory is tight it stops entirely.
     size_t effectivePrefetchWindowSize(MemoryPressureLevel level) const;
 
+    /// How far the in-order fill front runs ahead of the serve cursor: the bottom populatable
+    /// tier's lead. A disk-backed (`FilesystemCache`) bottom is flat (`fill_ahead_lead`); a
+    /// RAM-backed (`PageCache`-only) bottom or a bypass gap is pressure-scaled (`fill_ahead_lead_ram`).
+    size_t fillAheadLead(MemoryPressureLevel level) const;
+
     /// Shrink `win_size` so the read does not pass `read_extent_end`.
     /// Saturates to 0 once `position` reaches the extent (recoverable:
     /// extending the extent resumes).
@@ -978,6 +1000,8 @@ private:
     /// Long-connection sizing bounds (Options): open range floor and hard cap.
     size_t long_connection_open_range;
     size_t long_connection_max_bound;
+    /// Fill-ahead lead for a disk bottom tier (Options).
+    size_t fill_ahead_lead;
 
     /// Cursor state.
     size_t position = 0;

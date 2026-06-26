@@ -256,6 +256,7 @@ ReaderExecutor::ReaderExecutor(
     , plan_look_ahead_max_window(std::max(options.plan_look_ahead_max_window, options.window_size))
     , long_connection_open_range(options.long_connection_open_range)
     , long_connection_max_bound(options.long_connection_max_bound)
+    , fill_ahead_lead(options.fill_ahead_lead)
     , prefetch_pool(std::move(options.prefetch_pool))
     , runner(prefetch_pool ? std::make_unique<FetchMachineRunner>(prefetch_pool) : nullptr)
     , long_connection_limit(std::move(options.long_connection_limit))
@@ -1434,26 +1435,38 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
     /// guard over ALL writer views, with a `nullptr` interrupt so it never stops half-done.
     ChainedBuffers led_bytes;
     SCOPE_EXIT_SAFE({
-        pushChainToWriters(m.writer_views, window, led_bytes,
-            /*interrupt=*/nullptr, m.stats);
-        /// `pushChainToWriters` completes only writers it had fetched bytes for; a writer the
-        /// interrupted fetch never reached keeps its elected segment DOWNLOADING. We are the
-        /// downloader (this worker thread), so reset those here - the foreground that tears the
-        /// plan down cannot (cross-thread `complete()` won't reset a foreign downloader), and a
-        /// leaked DOWNLOADING segment aborts the writer's holder dtor (`!is_last_holder`).
+        /// The per-tile `pushChainToWriters` below already committed the fetched bytes; here we
+        /// only finish the segments. `pushChainToWriters` completes a segment once its bytes are
+        /// written; a segment the interrupted/EOF fetch never reached keeps its elected segment
+        /// DOWNLOADING. We are the downloader (this worker thread), so reset those - the
+        /// foreground that tears the plan down cannot (cross-thread `complete()` won't reset a
+        /// foreign downloader), and a leaked DOWNLOADING segment aborts the writer's holder dtor.
         for (const auto & view : m.writer_views)
             if (view.writer)
                 view.writer->releaseElectedDownloaders();
         m.fetched = std::move(led_bytes);
     });
+    /// Fill the LEAD progressively: tile each led run into window-sized pieces and COMMIT each to
+    /// the cells as it lands (`pushChainToWriters` per tile), so the foreground serve sees the
+    /// committed prefix grow and reads it while this worker keeps fetching ahead - the lead is one
+    /// GET (the long connection persists across the tiles). Without per-tile commit the serve would
+    /// block on the whole lead. `led_bytes` is still accumulated for `m.fetched` (the bypass bank
+    /// and the collect-time pin frontier).
+    const size_t tile = std::max<size_t>(effectiveWindowSize(level), 1);
     for (const auto & led : mergeRanges(led_disjoint, min_bytes_for_seek))
     {
-        if (m.reached_eof)
-            break;
-        led_bytes.append(fetchGapsFromSource(led, /*from_prefetch=*/true, m.reached_eof, level,
-            m.extent_snapshot, &m.long_conn, &m, m.stats));
+        for (size_t off = led.offset; off < led.end() && !m.reached_eof; off += tile)
+        {
+            const ByteRange piece{off, std::min(tile, led.end() - off)};
+            ChainedBuffers run = fetchGapsFromSource(piece, /*from_prefetch=*/true, m.reached_eof, level,
+                m.extent_snapshot, &m.long_conn, &m, m.stats);
+            pushChainToWriters(m.writer_views, piece, run, /*interrupt=*/nullptr, m.stats, /*streaming=*/true);
+            led_bytes.append(std::move(run));
+            if (m.interrupt_requested.load(std::memory_order_relaxed))
+                break;  /// stop-short on cancel; the scope guard still finishes every elected segment
+        }
         if (m.interrupt_requested.load(std::memory_order_relaxed))
-            break;  /// stop-short on cancel; the scope guard still completes every elected segment
+            break;
     }
 }
 
@@ -1638,7 +1651,7 @@ bool ReaderExecutor::isScheduledFillTarget(ByteRange window, size_t entry, ByteR
 }
 
 void ReaderExecutor::writeSliceToWriter(CacheWriter * writer, ByteRange window, const ChainedBuffers & chain,
-    Stats & out_stats)
+    Stats & out_stats, bool streaming)
 {
     chassert(writer);
     /// Clamp the write target to the window's served portion and the buffer's own
@@ -1668,14 +1681,17 @@ void ReaderExecutor::writeSliceToWriter(CacheWriter * writer, ByteRange window, 
             continue;
         out_stats.add(Stats::CachePopulateRequests);
         StatTimer put_scope(out_stats, Stats::CachePopulateMicroseconds);
-        out_stats.add(Stats::BytesPushedToCacheSync, writer->write(std::move(slice)));
+        /// Streaming keeps the segment's downloader across tiles so a reader can consume the
+        /// committed prefix while this worker fills more (see `CacheWriter::writeStreaming`).
+        out_stats.add(Stats::BytesPushedToCacheSync,
+            streaming ? writer->writeStreaming(std::move(slice)) : writer->write(std::move(slice)));
         HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
             static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
     }
 }
 
 void ReaderExecutor::pushChainToWriters(const VectorWithMemoryTracking<WriterView> & views, ByteRange window,
-    const ChainedBuffers & chain, const std::atomic<bool> * interrupt, Stats & out_stats)
+    const ChainedBuffers & chain, const std::atomic<bool> * interrupt, Stats & out_stats, bool streaming)
 {
     for (const auto & view : views)
     {
@@ -1684,7 +1700,7 @@ void ReaderExecutor::pushChainToWriters(const VectorWithMemoryTracking<WriterVie
         /// `interrupt_requested` is cleared in `schedulePutStep`.)
         if (interrupt && interrupt->load(std::memory_order_relaxed))
             break;
-        writeSliceToWriter(view.writer, window, chain, out_stats);
+        writeSliceToWriter(view.writer, window, chain, out_stats, streaming);
     }
 }
 
@@ -2411,11 +2427,12 @@ void ReaderExecutor::launchRetrieve(size_t ri)
     auto & st = read_plan.retrieve_status[ri];
     const MemoryPressureLevel level = read_plan.geometry()->pressure_level;
 
-    /// ONE window within the job range at its launch frontier - never `r.range` itself
-    /// (a coalesced connection can be a whole column). The long connection keeps the GET
-    /// open across these windows, so the job is still one GET.
+    /// Fetch the fill-ahead LEAD within the job range at its launch frontier - never `r.range`
+    /// itself (a coalesced connection can be a whole column). The single in-flight machine runs
+    /// the lead ahead of the serve in one GET (the long connection keeps it open), committing
+    /// cells progressively; the serve reads the committed prefix.
     const size_t base = r.range.offset + st.fetched;
-    const size_t chunk = std::min(r.range.end() - base, boundedReadSize(effectivePrefetchWindowSize(level)));
+    const size_t chunk = std::min(r.range.end() - base, boundedReadSize(fillAheadLead(level)));
     if (chunk == 0)
         return;
     const ByteRange next_physical_window{base, chunk};
@@ -2475,8 +2492,24 @@ void ReaderExecutor::launchRetrieve(size_t ri)
 
 void ReaderExecutor::maybeLaunchAhead()
 {
-    if (!prefetch_pool || machine || atEnd())
-        return;  /// one machine in flight (the cap for this stage)
+    if (!prefetch_pool)
+        return;
+    /// Finalize a done in-flight machine FIRST - before the `atEnd()` early-return below, so the
+    /// machine that fills the tail up to the extent/EOF is still collected. "Done" = the cursor
+    /// consumed the lead, or we reached the extent/EOF; the collect runs the deferred put (which
+    /// rebuilds the in-flight pin), reclaims the connection, and frees the slot for the next lead.
+    /// While the cursor is still inside the lead the serve reads the committed cells live, so keep
+    /// the machine running ahead. The cursor cannot pass the worker's committed frontier (the
+    /// serve waits on it), so by the time it reaches the window end the collect does not block.
+    if (machine)
+    {
+        const size_t cursor_phys = position + data_start_offset;
+        if (!reached_eof && !atEnd() && cursor_phys < machine->physical_window.end())
+            return;  /// still filling ahead of the cursor
+        collectInFlightInto(machine->retrieve_index);
+    }
+    if (atEnd())
+        return;
     drainAbandonedMachines();
 
     const size_t position_phys = position + data_start_offset;
@@ -2674,34 +2707,88 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step
         return {};
     const ByteRange window_phys{position_phys, want};
 
-    /// Drain the single in-flight machine for this retrieve FIRST - even though its worker
-    /// already committed the led cell inline. The collect is what runs the deferred put (which
-    /// rebuilds the in-flight-segment pin) and frees the slot for the next launch; gating it on
-    /// cell coverage would strand an uncollected machine - lost pin, half-filled cache. Single
-    /// in-flight, so one collect drains it; the next launch happens in `readNextWindow`. A
-    /// populatable collect banks nothing - the cache holds the bytes.
-    if (st.machine)
-        collectInFlightInto(ri);
-
-    /// The run-ahead (or this collect) filled the cell: read it back from the cache and promote
-    /// the served run up into the faster tiers (pc trails the serve cursor).
-    if (committedCellCovers(window_phys))
+    /// The in-flight machine fills the LEAD ahead of the cursor, committing cells progressively.
+    /// Read the committed prefix LIVE - never block on the whole lead. The machine "leads" this
+    /// window when its fill range covers it; then the still-uncommitted frontier bytes can be
+    /// waited on individually (a `FileSegment` condition wait), the worker keeps running, and the
+    /// done machine is finalized later in `maybeLaunchAhead`.
+    const bool machine_leads = st.machine && machine
+        && machine->physical_window.offset <= window_phys.offset
+        && window_phys.end() <= machine->physical_window.end();
+    if (machine_leads || committedCellCovers(window_phys))
     {
         ChainedBuffers out;
         IntervalSet covered;
-        recreditCommittedPrefixes(window_phys, out, covered, stats);
-        if (data_start_offset)
-            out.shift(-static_cast<ssize_t>(data_start_offset));
-        if (!out.empty())
-            promoteFetchedToUpper(window_phys, stats);
-        return out;
+        /// Credit the cell-read bytes into a LOCAL Stats and fold them into `stats` only if the
+        /// window is FULLY served from the cells. On a short read (raced reset / EOF) the partial
+        /// `out` is discarded and the foreground fallback re-reads the window, so folding here
+        /// would double-count the discarded prefix against the cache counters.
+        Stats cell_stats;
+        serveWindowFromCells(window_phys, /*allow_wait=*/machine_leads, out, covered, cell_stats);
+        if (covered.subtract(window_phys).empty())   /// fully served from the cells
+        {
+            stats += cell_stats;
+            if (data_start_offset)
+                out.shift(-static_cast<ssize_t>(data_start_offset));
+            if (!out.empty())
+                promoteFetchedToUpper(window_phys, stats);
+            return out;
+        }
     }
 
-    /// The cursor caught the fill front, or the cell will not commit (cache full / refused):
-    /// fetch the minimum to serve here and return the bytes in hand. The fetch also writes the
-    /// cell (so a later re-read finds it); this fallback is the only populatable path that
-    /// still banks - transiently, one window.
+    /// The cell is short and no in-flight machine is filling this exact window (the cursor caught
+    /// a front for another retrieve, or the cache refused the write): drain any in-flight machine
+    /// for THIS retrieve (finalize + free the slot), then fetch the minimum to serve here. This
+    /// fallback is the only populatable path that still banks - transiently, one window.
+    if (st.machine)
+        collectInFlightInto(ri);
     return serveRetrieveForeground(ri, position_phys, to_read);
+}
+
+void ReaderExecutor::serveWindowFromCells(
+    ByteRange window_phys, bool allow_wait, ChainedBuffers & out, IntervalSet & covered, Stats & out_stats)
+{
+    /// The committed prefix first (fastest resident tier first, under the shared `covered`).
+    recreditCommittedPrefixes(window_phys, out, covered, out_stats);
+    if (!allow_wait || !machine)
+        return;
+
+    /// The still-uncommitted bytes of `window_phys` are being downloaded by the in-flight worker.
+    /// Wait on the frontier and read them - but ONLY on the worker's OWN download targets
+    /// (`machine->writer_views`): a faster-tier (page) cell here is filled by promotion at the
+    /// serve, not by the worker, so it has no downloader and a wait on it would never wake.
+    auto is_worker_target = [&](CacheWriter * w)
+    {
+        for (const auto & v : machine->writer_views)
+            if (v.writer == w)
+                return true;
+        return false;
+    };
+    for (const auto & buf : read_plan.bufs)
+    {
+        if (!buf.provider)
+            continue;
+        const bool is_page = buf.provider->tier() == CacheTier::PageCache;
+        const Stats::Counter tier_counter = is_page ? Stats::BytesFromPageCache : Stats::BytesFromFilesystemCache;
+        for (const auto & w : buf.writers)
+        {
+            if (!w.writer || !is_worker_target(w.writer.get()))
+                continue;
+            const size_t lo = std::max(w.writer->range().offset, window_phys.offset);
+            const size_t hi = std::min(w.writer->range().end(), window_phys.end());
+            if (lo >= hi)
+                continue;
+            for (const auto & u : covered.subtract(ByteRange{lo, hi - lo}))
+            {
+                ChainedBuffers c = w.writer->waitAndReadSiblingLed(u);
+                if (!c.covers(u))
+                    continue;   /// raced reset/short - the foreground fallback re-fetches it
+                out.append(c.extract(u));
+                covered.add(u);
+                out_stats.add(tier_counter, u.size);
+            }
+        }
+    }
 }
 
 ChainedBuffers ReaderExecutor::serveHitStep(const PlanSchedule::Step & step, size_t position_phys, size_t to_read)
@@ -3268,6 +3355,21 @@ size_t ReaderExecutor::effectivePrefetchWindowSize(MemoryPressureLevel level) co
         return 0;
     /// Prefetch reads the same window as a synchronous read; under High/Critical it
     /// is suppressed entirely (above) rather than shrunk.
+    return effectiveWindowSize(level);
+}
+
+size_t ReaderExecutor::fillAheadLead(MemoryPressureLevel level) const
+{
+    /// The run-ahead serves committed cells LIVE while the worker fills the lead, which needs a
+    /// tier that exposes a partially-downloaded prefix AND a frontier wait - only the disk
+    /// (`FilesystemCache`) tier does (`readable()` tracks the live write offset;
+    /// `waitAndReadSiblingLed` waits on it). With a disk bottom tier the lead is flat
+    /// (`fill_ahead_lead`, held cheaply on disk). A page-cache-only bottom (whole-block,
+    /// first-writer-wins, no partial read) or a bypass gap (no cell) cannot serve a prefix
+    /// ahead, so the prefetch stays one window - the same per-window cadence as before.
+    for (const auto & cache : caches)
+        if (cache->populatesOnMiss() && cache->tier() == CacheTier::FilesystemCache)
+            return fill_ahead_lead;
     return effectiveWindowSize(level);
 }
 

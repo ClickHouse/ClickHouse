@@ -2042,6 +2042,10 @@ TEST(ReaderExecutor, PrefetchConsumeRebuildsPinAcrossSegmentBoundary)
     executor_options.min_bytes_for_seek = 0;
     executor_options.prefetch_pool = pool;
     executor_options.long_connection_limit = limit;
+    /// Pin the fill-ahead lead to one window so the prefetch advances window-by-window: this
+    /// test validates the cross-segment-boundary pin rebuild on the COLLECT path, which needs a
+    /// fresh PARTIAL segment 1 at W3 - the larger default lead would fetch the whole file at once.
+    executor_options.fill_ahead_lead = 1000;
     auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, executor_options);
 
     String result;
