@@ -7,6 +7,8 @@ title: 'SELECT Query'
 doc_type: 'reference'
 ---
 
+# SELECT Query
+
 `SELECT` queries perform data retrieval. By default, the requested data is returned to the client, while in conjunction with [INSERT INTO](../../../sql-reference/statements/insert-into.md) it can be forwarded to a different table.
 
 ## Syntax {#syntax}
@@ -122,40 +124,6 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 In this example, `COLUMNS('a')` returns two columns: `aa` and `ab`. `COLUMNS('c')` returns the `bc` column. The `+` operator can't apply to 3 arguments, so ClickHouse throws an exception with the relevant message.
 
 Columns that matched the `COLUMNS` expression can have different data types. If `COLUMNS` does not match any columns and is the only expression in `SELECT`, ClickHouse throws an exception.
-
-#### Select columns with `LIKE` or `ILIKE` {#select-columns-with-like-or-ilike}
-
-You can also select columns by matching their names against a pattern after `*`, using a case-sensitive `LIKE` or a case-insensitive `ILIKE`:
-
-```sql
-SELECT * ILIKE 'a%' FROM col_names
-```
-
-```text
-┌─aa─┬─ab─┐
-│  1 │  1 │
-└────┴────┘
-```
-
-The `LIKE` and `ILIKE` patterns follow `LIKE` semantics, not regular expression semantics. The `%` character matches any sequence of characters, the `_` character matches any single character, and `\` escapes `%`, `_`, and `\`. The only difference between the two is that `LIKE` matches column names case-sensitively, while `ILIKE` is case-insensitive. For example:
-
-```sql
-SELECT * ILIKE 'a_' FROM col_names
-```
-
-The query selects columns with two-character names that start with `a`, such as `aa` and `ab`.
-
-`* LIKE` and `* ILIKE` also support qualified asterisks and column transformers:
-
-```sql
-SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
-```
-
-```text
-┌─aa─┐
-│  1 │
-└────┘
-```
 
 ### Asterisk {#asterisk}
 
