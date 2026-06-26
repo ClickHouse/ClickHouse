@@ -24,6 +24,7 @@
 #include <libnuraft/ptr.hxx>
 #include <libnuraft/peer.hxx>
 #include <libnuraft/raft_server.hxx>
+#include <libnuraft/snapshot_sync_ctx.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Common/Exception.h>
@@ -70,7 +71,6 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 configuration_change_tries_count;
     extern const CoordinationSettingsMilliseconds election_timeout_lower_bound_ms;
     extern const CoordinationSettingsMilliseconds election_timeout_upper_bound_ms;
-    extern const CoordinationSettingsBool experimental_use_rocksdb;
     extern const CoordinationSettingsUInt64 fresh_log_gap;
     extern const CoordinationSettingsMilliseconds heart_beat_interval_ms;
     extern const CoordinationSettingsMilliseconds leadership_expiry_ms;
@@ -87,6 +87,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 stale_log_gap;
     extern const CoordinationSettingsMilliseconds startup_timeout;
     extern const CoordinationSettingsBool nuraft_test_mode;
+    extern const CoordinationSettingsBool nuraft_use_bg_thread_for_snapshot_io;
     extern const CoordinationSettingsBool nuraft_streaming_mode;
     extern const CoordinationSettingsUInt64 nuraft_max_log_gap_in_stream;
     extern const CoordinationSettingsUInt64 nuraft_max_bytes_in_flight_in_stream;
@@ -229,6 +230,17 @@ void setSSLParams(nuraft::asio_service::options & asio_opts)
     const Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
     asio_opts.ssl_context_provider_server_ = getSslContextProvider(config, "server");
     asio_opts.ssl_context_provider_client_ = getSslContextProvider(config, "client");
+
+    const String client_verification_mode_property = "openSSL.client.verificationMode";
+    if (config.has(client_verification_mode_property))
+    {
+        /// `NuRaft` overrides the client `SSL_CTX` verify mode per connection.
+        /// Only an explicitly configured `none` disables peer verification;
+        /// an absent key keeps the historical secure-by-default behavior.
+        asio_opts.skip_verification_
+            = Poco::Net::Utility::convertVerificationMode(config.getString(client_verification_mode_property))
+                == Poco::Net::Context::VERIFY_NONE;
+    }
 }
 #endif
 
@@ -271,7 +283,7 @@ KeeperServer::KeeperServer(
     SnapshotsQueue & snapshots_queue_,
     KeeperContextPtr keeper_context_,
     KeeperSnapshotManagerS3 & snapshot_manager_s3,
-    IKeeperStateMachine::CommitCallback commit_callback)
+    KeeperStateMachine::CommitCallback commit_callback)
     : server_id(server_config->server_id)
     , log(getLogger("KeeperServer"))
     , is_recovering(config.getBool("keeper_server.force_recovery", false))
@@ -284,27 +296,13 @@ KeeperServer::KeeperServer(
     if (coordination_settings[CoordinationSetting::quorum_reads])
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
 
-#if USE_ROCKSDB
-    if (coordination_settings[CoordinationSetting::experimental_use_rocksdb])
-    {
-        state_machine = nuraft::cs_new<KeeperStateMachine<KeeperRocksStorage>>(
-            response_callback_,
-            snapshots_queue_,
-            keeper_context,
-            config.getBool("keeper_server.upload_snapshot_on_exit", false) ? &snapshot_manager_s3 : nullptr,
-            commit_callback,
-            checkAndGetSuperdigest(server_config->super_digest));
-        LOG_WARNING(log, "Use RocksDB as Keeper backend storage.");
-    }
-    else
-#endif
-        state_machine = nuraft::cs_new<KeeperStateMachine<KeeperMemoryStorage>>(
-            response_callback_,
-            snapshots_queue_,
-            keeper_context,
-            config.getBool("keeper_server.upload_snapshot_on_exit", false) ? &snapshot_manager_s3 : nullptr,
-            commit_callback,
-            checkAndGetSuperdigest(server_config->super_digest));
+    state_machine = nuraft::cs_new<KeeperStateMachine>(
+        response_callback_,
+        snapshots_queue_,
+        keeper_context,
+        config.getBool("keeper_server.upload_snapshot_on_exit", false) ? &snapshot_manager_s3 : nullptr,
+        commit_callback,
+        checkAndGetSuperdigest(server_config->super_digest));
 
     state_manager = nuraft::cs_new<KeeperStateManager>(
         server_id,
@@ -579,6 +577,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::max_requests_append_size], "max_requests_append_size", log);
     params.max_append_size_bytes_ = coordination_settings[CoordinationSetting::max_requests_append_bytes_size];
 
+    params.use_bg_thread_for_snapshot_io_ = coordination_settings[CoordinationSetting::nuraft_use_bg_thread_for_snapshot_io];
     params.max_log_gap_in_stream_
         = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::nuraft_max_log_gap_in_stream], "nuraft_max_log_gap_in_stream", log);
     params.max_bytes_in_flight_in_stream_
@@ -616,6 +615,10 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     {
 #if USE_SSL
         setSSLParams(asio_opts);
+        if (asio_opts.skip_verification_)
+            LOG_WARNING(
+                log,
+                "Keeper Raft peer certificate verification is disabled because `openSSL.client.verificationMode` is set to `none`");
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for NuRaft is disabled because ClickHouse was built without SSL support.");
 #endif
@@ -703,6 +706,8 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 
     state_manager->loadLogStore(state_machine->last_commit_index(), coordination_settings[CoordinationSetting::reserved_log_items]);
 
+    state_machine->setLogStore(state_manager->getLogStore().get());
+
     auto log_store = state_manager->load_log_store();
     last_log_idx_on_disk = log_store->next_slot() - 1;
     LOG_TRACE(log, "Last local log idx {}", last_log_idx_on_disk.load());
@@ -772,6 +777,7 @@ void KeeperServer::shutdownRaftServer()
 void KeeperServer::shutdown()
 {
     shutdownRaftServer();
+    nuraft::snapshot_io_mgr::shutdown_instance();
     state_manager->flushAndShutDownLogStore();
     state_machine->shutdownStorage();
 }
@@ -792,7 +798,7 @@ RaftAppendResult KeeperServer::putRequestBatch(const KeeperRequestsForSessions &
     std::vector<nuraft::ptr<nuraft::buffer>> entries;
     entries.reserve(requests_for_sessions.size());
     for (const auto & request_for_session : requests_for_sessions)
-        entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(request_for_session));
+        entries.push_back(KeeperStateMachine::getZooKeeperLogEntry(request_for_session));
 
     return raft_instance->append_entries(entries);
 }
@@ -886,6 +892,36 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
         }
     }
 
+    /// On startup we usually have a snapshot followed by lots of log entries (~snapshot_distance).
+    /// Logically, startup is supposed to apply snapshot and `preprocess` all log entries above
+    /// it, adding the requests to KeeperStorage's UncommittedState. Then let nuraft's commit
+    /// callback eventually tells us which (what prefix) of the entries are committed, and we
+    /// `process` them, moving nodes from UncommittedState into the main container.
+    /// But there's a problem: preprocessing lots of requests without committing them makes
+    /// UncommittedState use a lot of memory. Usually almost all entries that we need to
+    /// preprocess on startup have already been committed before this server restarted
+    /// (uncommitted entries are usually limited by nuraft_max_uncommitted_log_entries);
+    /// but we don't store commit point persistently, so we don't know how many entries are safe
+    /// to commit right away.
+    /// So we do this hacky dance:
+    ///  1. Apply snapshot and start nuraft server without preprocessing uncommitted requests.
+    ///     !keeper_context->localLogsPreprocessed() indicates that we're in this state.
+    ///  2. In this state, we reject or manipulate NuRaft's requests to mostly avoid appending new
+    ///     log entries to our log store, while still allowing nuraft to successfully elect a leader
+    ///     and commit (or discard) our pre-existing log entries. During this phase, commit callback
+    ///     runs both `preprocess` and `process`.
+    ///  3. When nuraft reports that all pre-existing log entries were committed, we preprocess the
+    ///     remaining log entries (if any were added after startup, despite the above), set
+    ///     keeper_context->localLogsPreprocessed() to true, and the server becomes fully operational.
+    /// This code right here does (2) and (3).
+    /// TODO: A probably-simpler way to solve this is to store last committed log_idx inside log entry.
+    ///       Then on startup we can read the last log entry, get commit point from it, and
+    ///       prepare+commit entries up to that point, and prepare entries above.
+    ///       Then in commit callback skip processing the entries that were already processed at startup.
+    ///       Remove localLogsPreprocessed and the whole dance.
+    ///       The serialization format change can be piggy-backed to the planned change
+    ///       where nuraft log entry would represent a whole batch of keeper requests
+    ///       instead of one request (for performance and easier flow control).
     if (!keeper_context->localLogsPreprocessed())
     {
         const auto preprocess_logs = [&]
@@ -897,29 +933,9 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
             keeper_context->setLocalLogsPreprocessed();
             auto log_store = state_manager->load_log_store();
-            auto log_entries = log_store->log_entries(state_machine->last_commit_index() + 1, log_store->next_slot());
-
-            if (log_entries->empty())
-            {
-                LOG_INFO(log, "All local log entries preprocessed");
-                return;
-            }
-
-            size_t preprocessed = 0;
-            LOG_INFO(log, "Preprocessing {} log entries", log_entries->size());
-            auto idx = state_machine->last_commit_index() + 1;
-            for (const auto & entry : *log_entries)
-            {
-                if (entry && entry->get_val_type() == nuraft::log_val_type::app_log)
-                    state_machine->pre_commit(idx, entry->get_buf());
-
-                ++idx;
-                ++preprocessed;
-
-                if (preprocessed % 50000 == 0)
-                    LOG_TRACE(log, "Preprocessed {}/{} entries", preprocessed, log_entries->size());
-            }
-            LOG_INFO(log, "Preprocessing done");
+            chassert(state_machine->getLogStore() != nullptr);
+            state_machine->preprocessUncommittedLogEntries(
+                state_machine->last_commit_index() + 1, log_store->next_slot(), /*lock_mutex=*/true);
         };
 
         switch (type)
@@ -985,6 +1001,14 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
                 /// we need to rollback some local logs so we set last_log_idx_on_disk
                 /// to the last common log index from leader
+                ///
+                /// This is not ideal: the entries don't actually get removed from log store until
+                /// after preprocess_logs() preprocesses them. raft_server::handle_append_entries
+                /// doesn't truncate the log if log_entries() is empty, and we clear() it below.
+                /// So we waste time preprocessing entries that are doomed to be rolled back by the
+                /// next append_entries message from leader. At least the number of such entries is
+                /// roughly upper-bounded by nuraft_max_uncommitted_log_entries (only truly
+                /// uncommitted entries can be rolled back).
                 if (req.get_last_log_idx() < last_log_idx_on_disk)
                     last_log_idx_on_disk = req.get_last_log_idx();
 
@@ -1040,11 +1064,11 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
                 auto entry_buf = entry->get_buf_ptr();
 
-                IKeeperStateMachine::ZooKeeperLogSerializationVersion serialization_version = {};
+                KeeperStateMachine::ZooKeeperLogSerializationVersion serialization_version = {};
                 size_t request_end_position = 0;
                 auto request_for_session = state_machine->parseRequest(*entry_buf, /*final=*/false, &serialization_version, &request_end_position);
                 request_for_session->zxid = next_zxid;
-                auto digest_after_preprocessing = state_machine->preprocess(*request_for_session);
+                auto digest_after_preprocessing = state_machine->preprocess(*request_for_session, /*lock_mutex=*/ true);
                 if (!digest_after_preprocessing)
                     return nuraft::cb_func::ReturnCode::ReturnNull;
 
@@ -1052,10 +1076,10 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
                 /// older versions of Keeper can send logs that are missing some fields
                 size_t bytes_missing = 0;
-                if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
+                if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
                     bytes_missing += sizeof(request_for_session->time);
 
-                if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_ZXID_DIGEST)
+                if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_ZXID_DIGEST)
                     bytes_missing += sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version) + sizeof(request_for_session->digest->value);
 
                 if (bytes_missing != 0)
@@ -1069,7 +1093,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 size_t write_buffer_header_size = sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version)
                     + sizeof(request_for_session->digest->value);
 
-                if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
+                if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
                     write_buffer_header_size += sizeof(request_for_session->time);
                 else
                     request_end_position += sizeof(request_for_session->time);
@@ -1078,7 +1102,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
                 WriteBufferFromPointer write_buf(buffer_start, write_buffer_header_size);
 
-                if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
+                if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
                     writeIntBinary(request_for_session->time, write_buf);
 
                 writeIntBinary(request_for_session->zxid, write_buf);
@@ -1460,6 +1484,14 @@ KeeperLogInfo KeeperServer::getKeeperLogInfo()
     return log_info;
 }
 
+std::vector<KeeperChangelogStatus> KeeperServer::getChangelogsStatus() const
+{
+    auto log_store = state_manager->load_log_store();
+    if (log_store)
+        return static_cast<const KeeperLogStore &>(*log_store).getChangelogsStatus();
+    return {};
+}
+
 bool KeeperServer::requestLeader()
 {
     return isLeader() || raft_instance->request_leadership();
@@ -1468,6 +1500,32 @@ bool KeeperServer::requestLeader()
 int64_t KeeperServer::getLeaderID() const
 {
     return raft_instance->get_leader();
+}
+
+std::vector<KeeperClusterMemberInfo> KeeperServer::getClusterMembersInfo() const
+{
+    const auto cluster_config = state_manager->getClusterConfig();
+    const auto & servers = cluster_config->get_servers();
+
+    const int32_t leader_id = static_cast<int32_t>(raft_instance->get_leader());
+    const uint64_t self_log_idx = raft_instance->get_last_log_idx();
+
+    std::vector<KeeperClusterMemberInfo> result;
+    result.reserve(servers.size());
+    for (const auto & cfg : servers)
+    {
+        KeeperClusterMemberInfo info;
+        info.server_id = cfg->get_id();
+        info.endpoint = cfg->get_endpoint();
+        info.is_observer = cfg->is_learner();
+        info.priority = cfg->get_priority();
+        info.is_leader = (cfg->get_id() == leader_id);
+        info.is_self = (cfg->get_id() == server_id);
+        if (info.is_self)
+            info.last_log_index = self_log_idx;
+        result.push_back(std::move(info));
+    }
+    return result;
 }
 
 void KeeperServer::yieldLeadership()
@@ -1479,6 +1537,11 @@ void KeeperServer::yieldLeadership()
 void KeeperServer::recalculateStorageStats()
 {
     state_machine->recalculateStorageStats();
+}
+
+std::vector<std::pair<std::string, Int32>> KeeperServer::getExpiredTTLPathsForGarbageCollector(size_t batch_size) const
+{
+    return state_machine->getExpiredTTLPathsForGarbageCollector(batch_size);
 }
 
 }

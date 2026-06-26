@@ -1,4 +1,6 @@
--- Tags: no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage
+-- Tags: no-parallel, no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage
+-- no-parallel: ATTACHes a table with a fixed UUID (item 10c), which collides
+-- across concurrent runs of this test (e.g. the flaky check's parallel workers).
 -- UNIQUE KEY DDL + metadata.
 -- Runtime dedup is out of scope; this test only exercises parsing, metadata,
 -- round-trip, guards, and restart survival.
@@ -109,6 +111,56 @@ ALTER TABLE uk_t RENAME COLUMN id TO id2; -- { serverError ALTER_OF_COLUMN_IS_FO
 -- 10. ALTER ADD PROJECTION on a unique-key table -> error.
 ALTER TABLE uk_t ADD PROJECTION p (SELECT id, user_id); -- { serverError SUPPORT_IS_DISABLED }
 
+-- 10a. CREATE TABLE with a projection on a unique-key table -> error.
+-- The read path through a projection part bypasses the delete-bitmap filter,
+-- so the combination is rejected at CREATE (mirrors the ALTER gate above).
+CREATE TABLE uk_t_proj (id UInt64, user_id UInt32, PROJECTION p (SELECT id, user_id))
+ENGINE = MergeTree
+UNIQUE KEY (id)
+ORDER BY (id, user_id); -- { serverError SUPPORT_IS_DISABLED }
+
+-- 10b. Streaming read (FROM ... STREAM) on a unique-key table -> error.
+-- The streaming source does not apply the delete-bitmap filter; reject rather
+-- than serve logically-deleted rows.
+SET enable_streaming_queries = 1;
+-- On Linux the UK guard rejects with NOT_IMPLEMENTED; on macOS streaming is
+-- disabled platform-wide (SUPPORT_IS_DISABLED) and fires first. Either way STREAM
+-- on a UK table is rejected.
+SELECT * FROM uk_t STREAM; -- { serverError NOT_IMPLEMENTED, SUPPORT_IS_DISABLED }
+SET enable_streaming_queries = 0;
+
+-- 10c. A unique-key table that also carries a projection must never read
+-- through the projection part (that would bypass the delete-bitmap filter).
+-- CREATE/ALTER reject the combination, but ATTACH (and other secondary-create
+-- paths) still load existing metadata. The read-path optimizer
+-- (canUseProjectionForReadingStep) declines the projection so reads fall back
+-- to the correctly-filtered base table; a genuine projection-part read is
+-- hard-rejected downstream (MergeTreeDataSelectExecutor, exercised in 10d).
+-- ATTACH (with an explicit UUID, required for the Atomic database engine)
+-- builds the combination. The UUID is derived from the test number to avoid
+-- collisions (cf. 01601_detach_permanently).
+DROP TABLE IF EXISTS uk_t_attach_proj SYNC;
+ATTACH TABLE uk_t_attach_proj UUID '00000000-0000-0000-0000-000000004046'
+(id UInt64, user_id UInt32, PROJECTION p (SELECT user_id, count() GROUP BY user_id))
+ENGINE = MergeTree
+UNIQUE KEY (id)
+ORDER BY (id, user_id);
+-- Need parts for the projection optimizer to consider the projection.
+INSERT INTO uk_t_attach_proj VALUES (1, 10), (2, 10), (3, 20);
+-- Plain base-table reads still work: the projection is declined, not the read.
+SELECT id, user_id FROM uk_t_attach_proj ORDER BY id;
+-- An aggregating query the optimizer would route through the projection falls
+-- back to the (delete-bitmap-filtered) base table and succeeds, rather than
+-- failing the read.
+SET optimize_use_projections = 1;
+SELECT user_id, count() FROM uk_t_attach_proj GROUP BY user_id ORDER BY user_id;
+SET optimize_use_projections = 0;
+-- 10d. The mergeTreeProjection table function reads the projection part directly,
+-- bypassing the optimizer guard. The MergeTreeDataSelectExecutor chokepoint still
+-- fails closed for a UNIQUE KEY parent.
+SELECT * FROM mergeTreeProjection(currentDatabase(), uk_t_attach_proj, p); -- { serverError NOT_IMPLEMENTED }
+DROP TABLE uk_t_attach_proj SYNC;
+
 -- 11. ALTER MODIFY ORDER BY on a unique-key table -> error.
 ALTER TABLE uk_t MODIFY ORDER BY (id); -- { serverError SUPPORT_IS_DISABLED }
 
@@ -117,6 +169,18 @@ ALTER TABLE uk_t MODIFY ORDER BY (id); -- { serverError SUPPORT_IS_DISABLED }
 -- 13. ALTER DELETE / ALTER UPDATE on a unique-key table -> error.
 ALTER TABLE uk_t DELETE WHERE id = 1; -- { serverError SUPPORT_IS_DISABLED }
 ALTER TABLE uk_t UPDATE v = 'x' WHERE id = 1; -- { serverError SUPPORT_IS_DISABLED }
+
+-- 13a. Full-part rewrite mutations rebuild parts without preserving the
+-- delete-bitmap sidecars, so the whole family must be rejected on a unique-key
+-- table. MATERIALIZE INDEX/STATISTICS/PROJECTION reach the same rewrite path via
+-- MutateAllPartColumnsTask for compact or non-full parts (the guard in
+-- checkMutationIsPossible fires before name resolution, so the names need not exist).
+ALTER TABLE uk_t REWRITE PARTS; -- { serverError SUPPORT_IS_DISABLED }
+ALTER TABLE uk_t APPLY DELETED MASK; -- { serverError SUPPORT_IS_DISABLED }
+ALTER TABLE uk_t APPLY PATCHES; -- { serverError SUPPORT_IS_DISABLED }
+ALTER TABLE uk_t MATERIALIZE INDEX idx; -- { serverError SUPPORT_IS_DISABLED }
+ALTER TABLE uk_t MATERIALIZE STATISTICS v; -- { serverError SUPPORT_IS_DISABLED }
+ALTER TABLE uk_t MATERIALIZE PROJECTION proj; -- { serverError SUPPORT_IS_DISABLED }
 
 -- 14. All ALTER ... PARTITION operations are blocked on UK tables.
 CREATE TABLE uk_t_src (id UInt64, user_id UInt32, v String)
@@ -207,6 +271,40 @@ INSERT INTO uk_src_for_plain VALUES (1, 10, 'a');
 ALTER TABLE plain_dst_from_uk ATTACH PARTITION 10 FROM uk_src_for_plain;  -- { serverError SUPPORT_IS_DISABLED }
 ALTER TABLE plain_dst_from_uk REPLACE PARTITION 10 FROM uk_src_for_plain; -- { serverError SUPPORT_IS_DISABLED }
 
+-- 22. Regression for https://github.com/ClickHouse/ClickHouse/issues/104963:
+-- CREATE combining UNIQUE KEY and TTL aborted the debug server with `Inconsistent
+-- AST formatting` (ParserStorage::parseImpl / ASTStorage::clone / formatImpl set
+-- storage children in different orders). UNIQUE KEY + TTL is now rejected at CREATE
+-- (see 04159), but the statement must still parse and round-trip cleanly first —
+-- the crash was an AST round-trip failure during parsing, before the reject — so
+-- these still guard the regression: a reappearance surfaces a parse error / abort,
+-- not SUPPORT_IS_DISABLED.
+DROP TABLE IF EXISTS uk_ttl_inline_pk;
+DROP TABLE IF EXISTS uk_ttl_storage_pk;
+DROP TABLE IF EXISTS uk_ttl_full;
+
+-- 22a. Constant TTL: the BAD_ARGUMENTS check fires before the UNIQUE KEY + TTL reject.
+CREATE TABLE uk_ttl_inline_pk (c0 Int PRIMARY KEY)
+ENGINE = MergeTree() UNIQUE KEY (c0) TTL 1; -- { serverError BAD_ARGUMENTS }
+
+-- 22b. Inline PRIMARY KEY.
+CREATE TABLE uk_ttl_inline_pk (c0 Int PRIMARY KEY, ts DateTime)
+ENGINE = MergeTree() UNIQUE KEY (c0) TTL ts + INTERVAL 1 DAY; -- { serverError SUPPORT_IS_DISABLED }
+
+-- 22c. Storage-level PRIMARY KEY (not inline); `normalizeChildrenOrder` is not called here.
+CREATE TABLE uk_ttl_storage_pk (c0 Int, ts DateTime)
+ENGINE = MergeTree() PRIMARY KEY (c0) UNIQUE KEY (c0) TTL ts + INTERVAL 1 DAY; -- { serverError SUPPORT_IS_DISABLED }
+
+-- 22d. All storage clauses present at once.
+CREATE TABLE uk_ttl_full (c0 UInt32, sk UInt64, ts DateTime)
+ENGINE = MergeTree()
+PARTITION BY toDate(ts)
+PRIMARY KEY (c0, sk)
+ORDER BY (c0, sk)
+SAMPLE BY sk
+UNIQUE KEY (c0)
+TTL ts + INTERVAL 1 DAY; -- { serverError SUPPORT_IS_DISABLED }
+
 DROP TABLE uk_t;
 DROP TABLE uk_t_src;
 DROP TABLE uk_t_other;
@@ -217,3 +315,6 @@ DROP TABLE uk_t_composite;
 DROP TABLE uk_inline_pk;
 DROP TABLE uk_src_for_plain;
 DROP TABLE plain_dst_from_uk;
+DROP TABLE IF EXISTS uk_ttl_inline_pk;
+DROP TABLE IF EXISTS uk_ttl_storage_pk;
+DROP TABLE IF EXISTS uk_ttl_full;
