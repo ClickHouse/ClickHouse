@@ -21,6 +21,9 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
+#include <Formats/FormatSettings.h>
+#include <IO/ReadBufferFromMemory.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -353,8 +356,18 @@ ASTPtr columnToExactLiteralAST(const ColumnPtr & column, size_t row, const DataT
             if (global_discr != dynamic_column.getSharedVariantDiscriminator())
                 return columnToExactLiteralAST(
                     dynamic_column.getVariantColumnPtr(), row, dynamic_column.getVariantInfo().variant_type);
-            /// Rarely-used shared variant: fall back to the default representation.
-            return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(column, row, type));
+
+            /// Value stored in the shared binary variant (e.g. Dynamic(max_types=0)): decode its type
+            /// and value and recurse, so a decimal-backed shared value is still serialized exactly
+            /// instead of falling back to a bare literal that the shard would parse as Float64.
+            const auto & shared_variant = dynamic_column.getSharedVariant();
+            auto value_data = shared_variant.getDataAt(variant_column.offsetAt(row));
+            ReadBufferFromMemory buf(value_data);
+            auto decoded_type = decodeDataType(buf);
+            auto tmp_column = decoded_type->createColumn();
+            tmp_column->reserve(1);
+            decoded_type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, FormatSettings{});
+            return columnToExactLiteralAST(std::move(tmp_column), 0, decoded_type);
         }
         default:
             return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(column, row, type));

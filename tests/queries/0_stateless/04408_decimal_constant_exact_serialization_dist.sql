@@ -68,6 +68,11 @@ FROM (SELECT materialize(toDecimal64('999999999.123456789', 9)::Time64(9)::Varia
 SELECT DISTINCT dynamicType(d)
 FROM (SELECT materialize(toDecimal64('999999999.123456789', 9)::Time64(9)::Dynamic) AS d FROM remote('127.0.0.{1,2}', system.one));
 
+-- A decimal stored in a shared Dynamic variant (Dynamic(max_types=0) keeps every value in the shared
+-- binary payload) must also keep its exact value and Decimal subtype on every shard.
+SELECT DISTINCT d, dynamicType(d)
+FROM (SELECT materialize(toDecimal64('123456789012.34567', 5)::Dynamic(max_types=0)) AS d FROM remote('127.0.0.{1,2}', system.one));
+
 DROP TABLE ts_data_94612;
 
 -- An OR chain of >= 3 equalities is rewritten to IN, whose RHS set is a constant with casts
