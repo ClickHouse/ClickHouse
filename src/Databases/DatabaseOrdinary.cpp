@@ -427,6 +427,11 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, LoadingStric
         || query.isParameterizedView() || query.is_window_view)
         return false;
 
+    /// A lazy proxy would hide the TimeSeries type from the cross-database rename guard, so its
+    /// inner tables could be orphaned by a cross-database move. Load it eagerly, as for views.
+    if (query.is_time_series_table)
+        return false;
+
     /// Already handled by `StorageTableFunctionProxy`.
     if (query.as_table_function)
         return false;
@@ -694,7 +699,7 @@ DatabaseDetachedTablesSnapshotIteratorPtr DatabaseOrdinary::getDetachedTablesIte
     return DatabaseWithOwnTablesBase::getDetachedTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
 }
 
-Strings DatabaseOrdinary::getAllTableNames(ContextPtr) const
+VectorWithMemoryTracking<String> DatabaseOrdinary::getAllTableNames(ContextPtr) const
 {
     std::set<String> unique_names;
     {

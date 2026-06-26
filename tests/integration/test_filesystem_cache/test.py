@@ -7,8 +7,6 @@ import uuid
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.mock_servers import start_mock_servers, start_s3_mock
-from helpers.utility import SafeThread, generate_values, replace_config
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -382,7 +380,7 @@ def test_custom_cached_disk(non_shared_cluster):
     node = non_shared_cluster.instances["node_no_filesystem_caches_path"]
 
     assert "Cannot create cached custom disk without" in node.query_and_get_error(
-        f"""
+        """
         DROP TABLE IF EXISTS test SYNC;
         CREATE TABLE test (a Int32)
         ENGINE = MergeTree() ORDER BY tuple()
@@ -394,7 +392,7 @@ def test_custom_cached_disk(non_shared_cluster):
         [
             "bash",
             "-c",
-            f"""echo "
+            """echo "
         <clickhouse>
             <filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>
         </clickhouse>
@@ -405,7 +403,7 @@ def test_custom_cached_disk(non_shared_cluster):
     node.restart_clickhouse()
 
     node.query(
-        f"""
+        """
     CREATE TABLE test (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
     SETTINGS disk = disk(type = cache, name = 'custom_cached', path = 'kek', max_size = 10, disk = 'hdd_blob');
@@ -423,7 +421,7 @@ def test_custom_cached_disk(non_shared_cluster):
         [
             "bash",
             "-c",
-            f"""echo "
+            """echo "
         <clickhouse>
             <custom_cached_disks_base_directory>/var/lib/clickhouse/custom_caches/</custom_cached_disks_base_directory>
         </clickhouse>
@@ -441,7 +439,7 @@ def test_custom_cached_disk(non_shared_cluster):
     node.restart_clickhouse()
 
     node.query(
-        f"""
+        """
     CREATE TABLE test2 (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
     SETTINGS disk = disk(type = cache, name = 'custom_cached2', path = 'kek2', max_size = 10, disk = 'hdd_blob');
@@ -461,7 +459,7 @@ def test_custom_cached_disk(non_shared_cluster):
     node.restart_clickhouse()
 
     node.query(
-        f"""
+        """
     CREATE TABLE test3 (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
     SETTINGS disk = disk(type = cache, name = 'custom_cached3', path = 'kek3', max_size = 10, disk = 'hdd_blob');
@@ -476,7 +474,7 @@ def test_custom_cached_disk(non_shared_cluster):
     )
 
     assert "Filesystem cache absolute path must lie inside" in node.query_and_get_error(
-        f"""
+        """
     CREATE TABLE test4 (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
     SETTINGS disk = disk(type = cache, name = 'custom_cached4', path = '/kek4', max_size = 10, disk = 'hdd_blob');
@@ -484,7 +482,7 @@ def test_custom_cached_disk(non_shared_cluster):
     )
 
     node.query(
-        f"""
+        """
     CREATE TABLE test4 (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
     SETTINGS disk = disk(type = cache, name = 'custom_cached4', path = '/var/lib/clickhouse/custom_caches/kek4', max_size = 10, disk = 'hdd_blob');
@@ -713,7 +711,7 @@ INSERT INTO test SELECT randomString(200);
     )
     count = int(
         node.query(
-            f"""
+            """
     SYSTEM FLUSH LOGS;
     SELECT uniqExact(concat(key, toString(offset)))
     FROM system.filesystem_cache_log
@@ -839,7 +837,6 @@ cache_dynamic_resize_config = """
 
 def test_dynamic_resize(cluster):
     node = cluster.instances["cache_dynamic_resize"]
-    max_elements = 20
     cache_name = "cache_dynamic_resize"
     node.query(
         f"""
@@ -905,7 +902,7 @@ SELECT * FROM test;
     assert 10 == get_downloaded_elements()
     assert 10 == get_queue_elements()
 
-    node.query(f"SYSTEM ENABLE FAILPOINT file_cache_dynamic_resize_fail_to_evict")
+    node.query("SYSTEM ENABLE FAILPOINT file_cache_dynamic_resize_fail_to_evict")
 
     new_config = cache_dynamic_resize_config.format(100000, 5, 100000, 100)
     node.replace_config(
@@ -928,7 +925,7 @@ SELECT * FROM test;
         )
     )
 
-    node.query(f"SYSTEM DISABLE FAILPOINT file_cache_dynamic_resize_fail_to_evict")
+    node.query("SYSTEM DISABLE FAILPOINT file_cache_dynamic_resize_fail_to_evict")
     node.query("SYSTEM RELOAD CONFIG")
 
     assert 5 == get_downloaded_elements()
@@ -1016,7 +1013,6 @@ INSERT INTO test SELECT 1, 'test';
 
 def test_dynamic_resize_disabled(cluster):
     node = cluster.instances["cache_dynamic_resize"]
-    max_elements = 20
     cache_name = "cache_dynamic_resize_disabled"
     node.query(
         f"""
@@ -1348,7 +1344,7 @@ SYSTEM CLEAR FILESYSTEM CACHE;
                 f"WHERE name = 'LOGICAL_ERROR' AND last_error_time >= '{test_start}'"
             ).strip()
         )
-        assert errors == 0, f"LOGICAL_ERROR occurred during SLRU resize test"
+        assert errors == 0, "LOGICAL_ERROR occurred during SLRU resize test"
 
     finally:
         node.replace_config(
@@ -1496,7 +1492,7 @@ SYSTEM CLEAR FILESYSTEM CACHE;
                 f"WHERE name = 'LOGICAL_ERROR' AND last_error_time >= '{test_start}'"
             ).strip()
         )
-        assert errors == 0, f"LOGICAL_ERROR occurred during SLRU failpoint resize test"
+        assert errors == 0, "LOGICAL_ERROR occurred during SLRU failpoint resize test"
 
     finally:
         node.query(
