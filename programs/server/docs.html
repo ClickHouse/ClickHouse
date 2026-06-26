@@ -607,6 +607,91 @@
             .replace(/<import\b[^>]*\/?>/gi, '');
     }
 
+    /* ----------------------------------------------------------------------------------------
+       Sanitization of rendered Markdown.
+
+       `marked.parse` is not a sanitizer: it passes raw HTML in the Markdown through verbatim and
+       keeps any URL scheme in links and images. The documentation rendered here comes from the
+       server the user points this page at, over a connection whose credentials live in this same
+       origin, so an untrusted or compromised `system.documentation` could otherwise inject
+       `<img src=x onerror=...>` or `[x](javascript:...)` that runs in this origin, reads the
+       `user`/`password` fields, and issues same-origin queries. Every rendered document is
+       therefore sanitized against an allowlist before it reaches the DOM: elements not on the
+       list are dropped with their subtree, attributes not on the list are removed, and `href`/`src`
+       values are kept only for safe URL schemes. The allowlist covers what Markdown, the admonition
+       and math extensions, and KaTeX (its HTML and the parallel MathML) legitimately produce.
+       ---------------------------------------------------------------------------------------- */
+
+    const ALLOWED_TAGS = new Set([
+        /// Markdown block- and inline-level elements.
+        'p', 'br', 'hr', 'div', 'span', 'a', 'img', 'code', 'pre', 'blockquote',
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'dl', 'dt', 'dd',
+        'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td',
+        'strong', 'em', 'b', 'i', 'u', 's', 'del', 'ins', 'sub', 'sup', 'kbd', 'samp',
+        'abbr', 'mark', 'small', 'wbr',
+        /// MathML, as emitted by KaTeX alongside its visible HTML rendering.
+        'math', 'semantics', 'annotation', 'mrow', 'mi', 'mo', 'mn', 'ms', 'mtext', 'mspace',
+        'msup', 'msub', 'msubsup', 'mfrac', 'msqrt', 'mroot', 'mover', 'munder', 'munderover',
+        'mtable', 'mtr', 'mtd', 'mlabeledtr', 'mpadded', 'mphantom', 'menclose', 'mstyle',
+        'merror', 'mglyph', 'mmultiscripts', 'mprescripts', 'none',
+    ]);
+
+    const ALLOWED_ATTRS = new Set([
+        /// `class` and `style` are needed by KaTeX (inline layout) and our admonitions; the rest are
+        /// harmless presentational or accessibility attributes. `href`/`src` are additionally
+        /// scheme-checked below.
+        'class', 'style', 'id', 'title', 'colspan', 'rowspan', 'align', 'start', 'aria-hidden',
+        'href', 'src', 'alt', 'target', 'rel',
+        /// MathML presentation attributes used by KaTeX.
+        'mathvariant', 'displaystyle', 'scriptlevel', 'stretchy', 'accent', 'accentunder',
+        'width', 'height', 'depth', 'lspace', 'rspace', 'voffset', 'fence', 'separator',
+        'mathcolor', 'mathbackground', 'linethickness', 'encoding', 'xmlns',
+    ]);
+
+    /// Whether a URL is unsafe to keep in an `href`/`src`. Only relative URLs, in-page anchors, and
+    /// the `http`/`https`/`mailto` schemes are allowed; `javascript:`, `data:`, `vbscript:`, and the
+    /// like are rejected. Browsers ignore ASCII whitespace and control characters when resolving the
+    /// scheme, so those are stripped first to catch tricks like `java\tscript:`.
+    function isUnsafeURL(value) {
+        const match = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(value.replace(/[\u0000-\u0020]+/g, ''));
+        if (!match) {
+            return false; /// No scheme: a relative URL or a `#` fragment, which is safe.
+        }
+        const scheme = match[1].toLowerCase();
+        return scheme !== 'http' && scheme !== 'https' && scheme !== 'mailto';
+    }
+
+    /// Sanitize a parsed DOM subtree in place (see the block comment above).
+    function sanitizeNode(node) {
+        /// Snapshot the children first: the loop removes nodes and attributes as it goes.
+        for (const child of [...node.childNodes]) {
+            if (child.nodeType === Node.ELEMENT_NODE) {
+                if (!ALLOWED_TAGS.has(child.tagName.toLowerCase())) {
+                    child.remove();
+                    continue;
+                }
+                for (const attr of [...child.attributes]) {
+                    const name = attr.name.toLowerCase();
+                    if (!ALLOWED_ATTRS.has(name)
+                        || ((name === 'href' || name === 'src') && isUnsafeURL(attr.value))) {
+                        child.removeAttribute(attr.name);
+                    }
+                }
+                sanitizeNode(child);
+            } else if (child.nodeType === Node.COMMENT_NODE) {
+                child.remove();
+            }
+        }
+    }
+
+    /// Render rendered-Markdown HTML into `element`, sanitized first (see the block comment above).
+    function setSanitizedHTML(element, html) {
+        const template = document.createElement('template');
+        template.innerHTML = html;
+        sanitizeNode(template.content);
+        element.replaceChildren(template.content);
+    }
+
     /// Search both the name and the body of the documentation, but rank exact and prefix
     /// name matches first, so the most relevant entities are at the top.
     const QUERY = `
@@ -748,7 +833,9 @@
             name_el.appendChild(sourceLink(row.source));
         }
         const body = $doc.querySelector('.entity-body');
-        body.innerHTML = html;
+        /// `marked.parse` does not sanitize: insert the result through `setSanitizedHTML`, never
+        /// directly as `innerHTML`, so untrusted documentation cannot inject script into this origin.
+        setSanitizedHTML(body, html);
 
         /// Post-process the rendered HTML: give headings stable anchors, and rewrite relative links.
         /// The names map is needed to recognize links that point to another documented entity.
