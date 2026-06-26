@@ -503,11 +503,23 @@ class ReleaseInfo:
                 # Recovery run (only-repo / only-docker) against an already
                 # released tag: origin/<release_branch> has since been
                 # version-bumped, so the out-of-order comparison below would
-                # always fail. Skip it, but make sure we are really pointing at
-                # an existing release tag rather than an arbitrary commit.
-                assert Shell.check(
+                # always fail. Skip it, but make sure `commit_ref` really is the
+                # release tag: require that the tag exists and resolves to the
+                # same commit as the ref. Otherwise an arbitrary ancestor with
+                # the same version file would pass and get its commit_sha
+                # exported/built under the existing release tag.
+                tag_commit = Shell.get_output(
                     f"git rev-parse --verify --quiet refs/tags/{release_tag}^{{commit}}"
-                ), f"--skip-out-of-order-check requires an existing release tag [{release_tag}]"
+                )
+                assert tag_commit, (
+                    f"--skip-out-of-order-check requires an existing release tag "
+                    f"[{release_tag}]"
+                )
+                assert tag_commit == commit_sha, (
+                    f"--skip-out-of-order-check requires ref [{commit_ref}] to be the "
+                    f"release tag [{release_tag}]: ref resolves to [{commit_sha}] but "
+                    f"the tag is at [{tag_commit}]"
+                )
             else:
                 ref_cmake = Shell.get_output_or_raise(
                     f"git show {commit_ref}:{FILE_WITH_VERSION_PATH}"
