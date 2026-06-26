@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <string>
 #include <string_view>
 
 /// Stateless, data-independent quantization of dense vectors for fast (brute-force) KNN. Each method is a pure per-row
@@ -11,13 +12,19 @@
 /// the codes can be produced on the write path (as a derived companion stream of the vector column) and the per-row
 /// approximate distance computed at query time.
 ///
-/// Methods: "b1", "b1_projected", "turboquant", "rabitq", "e8", "int8". `bits` is only used by "e8" (bits per 8-dim
-/// sub-quantizer, 1..16); ignored otherwise. "int8" stores one Lloyd-Max Int8 code per coordinate (of the rotated,
-/// unit-variance vector) plus the per-vector L2 norm, and uses an asymmetric (full-precision query) distance.
+/// Methods: "turboquant", "rabitq", "e8", "int8". `bits` is only used by "e8" (bits per 8-dim sub-quantizer, 1..16);
+/// ignored otherwise. "int8" stores one Lloyd-Max Int8 code per coordinate (of the rotated, unit-variance vector) plus
+/// the per-vector L2 norm, and uses an asymmetric (full-precision query) distance. The "turboquant", "rabitq" and "e8"
+/// methods pack their codes 8 coordinates to the byte, so they require `dimensions` to be a multiple of 8; "int8" does not.
 namespace DB::VectorQuantization
 {
 
 bool isSupportedMethod(std::string_view method);
+
+/// Returns a human-readable error if (method, dimensions, bits) is not a valid configuration, or an empty string if it
+/// is valid. Used to reject bad codec parameters at DDL time (e.g. dimensions not a multiple of 8 for the bit-packed
+/// methods, or an out-of-range `bits` for "e8" - which would otherwise build a 2^bits codebook).
+std::string validateParams(std::string_view method, size_t dimensions, size_t bits);
 
 /// Size of one encoded vector in bytes for the given method/dimensions/bits.
 size_t bytesPerVector(std::string_view method, size_t dimensions, size_t bits);

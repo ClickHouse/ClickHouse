@@ -19,7 +19,10 @@
 #include <map>
 #include <mutex>
 #include <numbers>
+#include <string>
 #include <vector>
+
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -867,6 +870,28 @@ FlatQuantization methodToCodec(std::string_view method)
 bool isSupportedMethod(std::string_view method)
 {
     return method == "turboquant" || method == "rabitq" || method == "e8" || method == "int8";
+}
+
+std::string validateParams(std::string_view method, size_t dimensions, size_t bits)
+{
+    if (!isSupportedMethod(method))
+        return fmt::format("unknown quantization method '{}'", method);
+    if (dimensions == 0)
+        return "the number of dimensions must be greater than zero";
+
+    const FlatQuantization codec = methodToCodec(method);
+
+    /// 'turboquant', 'rabitq' and 'e8' pack their codes 8 coordinates to the byte (and 'e8' quantizes 8-dim subvectors),
+    /// so a dimension that is not a multiple of 8 would silently drop the tail coordinates. 'int8' has no such constraint.
+    if ((codec == FlatQuantization::TurboQuant || codec == FlatQuantization::RaBitQ || codec == FlatQuantization::E8)
+        && dimensions % 8 != 0)
+        return fmt::format("method '{}' requires the number of dimensions to be a multiple of 8, got {}", method, dimensions);
+
+    /// 'e8' builds a 2^bits lattice codebook; an unbounded `bits` would exhaust memory. The fast scan only covers <= 16.
+    if (codec == FlatQuantization::E8 && (bits < 1 || bits > 16))
+        return fmt::format("method 'e8' requires 'bits' in the range [1, 16], got {}", bits);
+
+    return {};
 }
 
 size_t bytesPerVector(std::string_view method, size_t dimensions, size_t bits)

@@ -89,14 +89,8 @@ QuantizeCodecParams parseQuantizeCodecArguments(const ASTPtr & arguments)
         params.bits = bits_literal->value.safeGet<UInt64>();
     }
 
-    if (!VectorQuantization::isSupportedMethod(params.method))
-        throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Unknown quantization method '{}' for codec Quantize", params.method);
-    if (params.dimensions == 0)
-        throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Number of dimensions for codec Quantize must be greater than zero");
-    if (VectorQuantization::bytesPerVector(params.method, params.dimensions, params.bits) == 0)
-        throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER,
-            "Codec Quantize with method '{}' and {} dimensions produces an empty code; check that the dimensions are a multiple of 8",
-            params.method, params.dimensions);
+    if (const std::string error = VectorQuantization::validateParams(params.method, params.dimensions, params.bits); !error.empty())
+        throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Codec Quantize: {}", error);
 
     return params;
 }
