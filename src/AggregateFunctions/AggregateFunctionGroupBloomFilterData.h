@@ -172,12 +172,15 @@ struct AggregateFunctionGroupBloomFilterData
         }
     }
 
-    void read(ReadBuffer & buf)
+    /// Deserialize the state, validating the header against the declared aggregate function
+    /// parameters (expected_filter_size_bytes, expected_num_hashes, expected_seed)
+    void read(ReadBuffer & buf, size_t expected_filter_size_bytes, size_t expected_num_hashes, size_t expected_seed)
     {
         readVarUInt(filter_size_bytes, buf);
         readVarUInt(num_hashes, buf);
         readVarUInt(seed, buf);
 
+        /// Absolute-bounds sanity checks (also protect the standalone / test path).
         if (filter_size_bytes == 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Bloom filter size cannot be zero");
         if (filter_size_bytes > BLOOM_FILTER_MAX_SIZE_BYTES)
@@ -190,6 +193,18 @@ struct AggregateFunctionGroupBloomFilterData
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Number of hash functions {} exceeds maximum allowed {}",
                 num_hashes, BLOOM_FILTER_MAX_HASHES);
+
+        /// Validate against the declared AggregateFunction parameters
+        if (filter_size_bytes != expected_filter_size_bytes
+            || num_hashes != expected_num_hashes
+            || seed != expected_seed)
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Bloom filter state parameters do not match declared aggregate function type: "
+                "serialized size {}, hashes {}, seed {}; declared size {}, hashes {}, seed {}",
+                filter_size_bytes, num_hashes, seed,
+                expected_filter_size_bytes, expected_num_hashes, expected_seed);
+        }
 
         UInt8 has_data = 0;
         readBinary(has_data, buf);

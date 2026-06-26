@@ -172,7 +172,7 @@ TEST(BloomFilterData, EmptySerializationRoundTrip)
 
     AggregateFunctionGroupBloomFilterData restored;
     ReadBufferFromString in(out.str());
-    restored.read(in);
+    restored.read(in, /*expected_filter_size_bytes=*/64, /*expected_num_hashes=*/3, /*expected_seed=*/7);
 
     EXPECT_FALSE(restored.isInitialized());
     EXPECT_EQ(restored.filter_size_bytes, empty.filter_size_bytes);
@@ -192,10 +192,50 @@ TEST(BloomFilterData, InitializedSerializationRoundTrip)
 
     AggregateFunctionGroupBloomFilterData restored;
     ReadBufferFromString in(out.str());
-    restored.read(in);
+    restored.read(in, /*expected_filter_size_bytes=*/64, /*expected_num_hashes=*/3, /*expected_seed=*/7);
 
     EXPECT_TRUE(restored.isInitialized());
     EXPECT_TRUE(restored.contains(reinterpret_cast<const char *>(&value), sizeof(value)));
+}
+
+/// Security regression: a forged aggregate state that declares filter_size_bytes much larger
+/// than the declared type parameters must be rejected before any allocation or payload read.
+/// Without the fix this would allocate up to BLOOM_FILTER_MAX_SIZE_BYTES of memory first.
+TEST(BloomFilterData, ForgedLargeSizeRejectedBeforeAllocation)
+{
+    /// Build a tiny forged payload: header claims MAX size with has_data=1.
+    WriteBufferFromOwnString forged;
+    writeVarUInt(BLOOM_FILTER_MAX_SIZE_BYTES, forged); // filter_size_bytes
+    writeVarUInt(size_t{3}, forged);                   // num_hashes
+    writeVarUInt(size_t{0}, forged);                   // seed
+    writeBinary(UInt8(1), forged);                     // has_data = 1 (payload follows, but is absent)
+
+    AggregateFunctionGroupBloomFilterData victim;
+    ReadBufferFromString in(forged.str());
+
+    /// The declared parameters of the aggregate function are small (64 bytes, 3 hashes, seed 0).
+    /// read() must throw INCORRECT_DATA immediately after reading the header, without allocating
+    /// BLOOM_FILTER_MAX_SIZE_BYTES or attempting to readStrict that many bytes.
+    EXPECT_THROW(
+        victim.read(in, /*expected_filter_size_bytes=*/64, /*expected_num_hashes=*/3, /*expected_seed=*/0),
+        Exception);
+}
+
+/// Verify that a mismatch in num_hashes is also caught before allocation.
+TEST(BloomFilterData, ForgedNumHashesMismatchRejected)
+{
+    WriteBufferFromOwnString forged;
+    writeVarUInt(size_t{64}, forged);  // filter_size_bytes matches declared
+    writeVarUInt(size_t{10}, forged);  // num_hashes mismatches declared (3)
+    writeVarUInt(size_t{0}, forged);   // seed
+    writeBinary(UInt8(1), forged);     // has_data = 1
+
+    AggregateFunctionGroupBloomFilterData victim;
+    ReadBufferFromString in(forged.str());
+
+    EXPECT_THROW(
+        victim.read(in, /*expected_filter_size_bytes=*/64, /*expected_num_hashes=*/3, /*expected_seed=*/0),
+        Exception);
 }
 
 TEST(BloomFilterAggregateFunction, DoesNotAllocateMemoryInArena)

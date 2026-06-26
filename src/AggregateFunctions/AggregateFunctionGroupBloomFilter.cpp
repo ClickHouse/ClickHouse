@@ -84,23 +84,9 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        this->data(place).read(buf);
-
-        const auto & deserialized_data = this->data(place);
-        if (deserialized_data.filter_size_bytes != filter_size_bytes
-            || deserialized_data.num_hashes != num_hashes
-            || deserialized_data.seed != seed)
-        {
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Bloom filter state parameters do not match declared aggregate function type: "
-                "serialized size {}, hashes {}, seed {}; declared size {}, hashes {}, seed {}",
-                deserialized_data.filter_size_bytes,
-                deserialized_data.num_hashes,
-                deserialized_data.seed,
-                filter_size_bytes,
-                num_hashes,
-                seed);
-        }
+        /// Pass the declared parameters so that read() validates the serialized header
+        /// against them before constructing the BloomFilter or reading the payload.
+        this->data(place).read(buf, filter_size_bytes, num_hashes, seed);
     }
 
     void throwIfCannotProduceFinalizedResult() const override
