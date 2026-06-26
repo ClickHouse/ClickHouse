@@ -50,4 +50,15 @@ SETTINGS use_query_condition_cache = 1, use_skip_indexes = 0;
 SELECT 'no_cache', count() FROM tab WHERE hasToken(s, 'a')
 SETTINGS use_query_condition_cache = 0, use_skip_indexes = 0;
 
+-- Per-index opt-out (#108548 review): ignore_data_skipping_indices = 'idx' disables the named
+-- index while use_skip_indexes stays true, so buildIndexes still leaves use_skip_indexes on
+-- and the QCC read gate must instead bypass on the ignore list. Re-populate the QCC via the
+-- index path, then rerun the same predicate ignoring 'idx'. Correct row-level answer is 1;
+-- before the fix this consulted the skip-index-derived entry and returned 0.
+SELECT 'index_path', count() FROM tab WHERE hasToken(s, 'a')
+SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0;
+
+SELECT 'ignore_index', count() FROM tab WHERE hasToken(s, 'a')
+SETTINGS use_query_condition_cache = 1, ignore_data_skipping_indices = 'idx';
+
 DROP TABLE tab;

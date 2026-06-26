@@ -1,3 +1,5 @@
 index_path	0
 skip_indexes_off	1
 no_cache	1
+index_path	0
+ignore_index	1

@@ -80,6 +80,7 @@ namespace Setting
     extern const SettingsBool per_part_index_stats;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsString force_data_skipping_indices;
+    extern const SettingsString ignore_data_skipping_indices;
     extern const SettingsBool force_index_by_date;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_rows_to_read;
@@ -1381,11 +1382,14 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             /// A cached verdict can encode a skip-index-derived exclusion (e.g. with
             /// use_skip_indexes_on_data_read=0 the index runs at analysis time and its
             /// dropped marks are persisted under the bare WHERE-condition hash). The cache
-            /// key does not record whether skip indexes were applied, so a query that
-            /// disabled them must not consult it: a skip index may legitimately diverge from
-            /// the row-level predicate (e.g. a text index with a preprocessor), and reusing
-            /// its verdict would drop a mark the predicate alone matches -> wrong result.
+            /// key does not record which skip indexes were applied, so a query that turned
+            /// any of them off must not consult it: a skip index may legitimately diverge
+            /// from the row-level predicate (e.g. a text index with a preprocessor), and
+            /// reusing its verdict would drop a mark the predicate alone matches -> wrong
+            /// result. use_skip_indexes disables them globally; ignore_data_skipping_indices
+            /// disables named ones while use_skip_indexes stays true (see buildIndexes).
             || !settings[Setting::use_skip_indexes]
+            || settings[Setting::ignore_data_skipping_indices].changed
             || (!select_query_info.prewhere_info && !select_query_info.filter_actions_dag)
             || (vector_search_parameters.has_value()) /// vector search has filter in the ORDER BY
             || select_query_info.isFinal()
