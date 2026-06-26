@@ -192,7 +192,9 @@ TEST(PlanScheduleRetrieves, DesignWorkedExample)
     EXPECT_TRUE(r.retain_for_serve);
     EXPECT_TRUE(intoHas(r, 1, {0, 6})) << "fs segment [0,6)";
     EXPECT_TRUE(intoHas(r, 1, {6, 2})) << "fs segment [6,8)";
-    EXPECT_TRUE(intoHas(r, 0, {5, 3})) << "page block [5,8) for the user tail";
+    /// The fetch fills ONLY the bottom (fs) tier; the page block [5,8) for the user
+    /// tail is filled by a promote on the serve front, not routed into this retrieve.
+    EXPECT_FALSE(intoHas(r, 0, {5, 3})) << "page block [5,8) is promoted at serve, not fetched";
 
     /// The gap step [5,8) waits on this retrieve; the hit step does not.
     ASSERT_EQ(s.steps.size(), 2u);
@@ -217,7 +219,9 @@ TEST(PlanScheduleRetrieves, SlackNotPromotedToFasterTier)
     const auto & r = s.retrieves[0];
     EXPECT_FALSE(intoHas(r, 0, {0, 1})) << "page slack cell must NOT be filled (not promoted)";
     EXPECT_TRUE(intoHas(r, 1, {0, 6})) << "fs owns the slack";
-    EXPECT_TRUE(intoHas(r, 0, {5, 3})) << "page user tail is filled";
+    /// The fetch fills only the bottom (fs) tier; the page user tail is promoted on
+    /// the serve front, so it is NOT a fetch target either.
+    EXPECT_FALSE(intoHas(r, 0, {5, 3})) << "page user tail is promoted at serve, not fetched";
 }
 
 /// A small resident hole between two gaps is bridged into one connection; a
