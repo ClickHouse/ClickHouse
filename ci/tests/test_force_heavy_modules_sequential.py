@@ -10,10 +10,16 @@ copies meant 15 ASan servers + 3 JVMs on 61 GiB and a kernel OOM (an in-test han
 at `test_checkpoint[1-s3]`). Reducing the per-JVM heap (#106698, 8g->2g) helped but
 did not remove the concurrency driver.
 
-The heavy delta modules carry `dist_each_sequential=True` in TEST_CONFIGS.
+The same concurrency driver hits any module that contends on a shared resource
+under `--dist=each`. `test_dns_cache` pins fixed IPs on the one shared
+`docker_compose_net.yml` subnet, so its concurrent copies serialize on the global
+`/tmp/docker_net.lock` and blow the 10-min acquire budget instead of OOMing. It
+carries the same flag.
+
+These modules carry `dist_each_sequential=True` in TEST_CONFIGS.
 `force_heavy_modules_sequential` reads that flag and moves them out of the
 `--dist=each` parallel bucket into the looped sequential bucket (`-n 1`, repeated
->=3x), so at most one delta cluster runs at a time while the flakiness signal is
+>=3x), so at most one such cluster runs at a time while the flakiness signal is
 preserved. Normal runs use `--dist=loadfile` (one file -> one worker -> one cluster)
 and never call this, so they are unaffected.
 """
@@ -51,11 +57,23 @@ def test_heavy_delta_modules_moved_to_sequential():
 
 def test_light_modules_stay_parallel():
     # Non-heavy modules must remain in the concurrent bucket.
-    parallel = ["test_storage_s3/test.py", "test_dns_cache/test.py"]
+    parallel = ["test_storage_s3/test.py", "test_distributed_ddl/test.py"]
     sequential = ["test_server_overload/test.py"]
     new_parallel, new_sequential = force_heavy_modules_sequential(parallel, sequential)
-    assert new_parallel == ["test_storage_s3/test.py", "test_dns_cache/test.py"]
+    assert new_parallel == ["test_storage_s3/test.py", "test_distributed_ddl/test.py"]
     assert new_sequential == ["test_server_overload/test.py"]
+
+
+def test_dns_cache_moved_to_sequential():
+    # test_dns_cache pins fixed IPs on the one shared docker_compose_net.yml subnet,
+    # so concurrent --dist=each copies serialize on the global /tmp/docker_net.lock
+    # and blow the 10-min acquire budget. It carries dist_each_sequential=True and
+    # must move to the sequential bucket, while light siblings stay parallel.
+    parallel = ["test_storage_s3/test.py", "test_dns_cache/test.py"]
+    sequential = []
+    new_parallel, new_sequential = force_heavy_modules_sequential(parallel, sequential)
+    assert new_parallel == ["test_storage_s3/test.py"]
+    assert new_sequential == ["test_dns_cache/test.py"]
 
 
 def test_mixed_split_preserves_order_and_existing_sequential():
@@ -112,8 +130,10 @@ def test_heavy_modules_are_not_unconditionally_sequential():
 
 def test_prefixes_match_real_module_paths():
     # Guard against the TEST_CONFIGS dist_each_sequential prefixes drifting from
-    # real test module paths.
+    # real test paths. A prefix is either a module file (test_storage_delta/test.py)
+    # or a suite directory (test_dns_cache/).
     base = os.path.join(os.path.dirname(__file__), "..", "..", "tests", "integration")
     assert HEAVY_PREFIXES, "expected at least one dist_each_sequential module in TEST_CONFIGS"
     for prefix in HEAVY_PREFIXES:
-        assert os.path.isfile(os.path.join(base, prefix)), prefix
+        path = os.path.join(base, prefix)
+        assert os.path.isfile(path) or os.path.isdir(path), prefix
