@@ -1,0 +1,4 @@
+-- short-name f1 resolves via the new db.table source match:
+10
+-- canonical dotted form keeps working:
+10

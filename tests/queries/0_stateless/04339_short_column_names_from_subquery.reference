@@ -28,10 +28,6 @@ f1	b.f1
 -- on/off: explicit dotted alias on a constant projection does NOT expose a short name; alias-qualified lookup against it fails on both sides
 -- on: materialized CTE source — qualifier matches the CTE name, not the temp-storage name
 1
--- on: db-qualified TableNode source — qualifier matches `db.table` for an unaliased cross-database reference
-db04339_a.t.f1	UInt8					
-10
-10
 -- on: explicit dotted alias on a resolved column does NOT expose a short name
 1
 2

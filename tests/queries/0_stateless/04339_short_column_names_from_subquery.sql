@@ -196,51 +196,12 @@ SELECT f1 FROM q;
 SET single_join_prefer_left_table = 1;
 SET enable_materialized_cte = 0;
 
-SELECT '-- on: db-qualified TableNode source — qualifier matches `db.table` for an unaliased cross-database reference';
-
--- Bot finding: when two unaliased tables share the same name across databases,
--- `qualifyColumnNodesWithProjectionNames` emits canonical names like `db1.t.f1`. The
--- previous `TableNode` branch compared the canonical's qualifier prefix only against
--- `getStorageID().getTableName()` (`t`), so it missed the `db1.t` form. Accept the
--- `db.table` form too.
---
--- To exercise the new code path specifically (https://github.com/ClickHouse/ClickHouse/pull/107449#discussion_r3483004360),
--- the inner subquery has BOTH unaliased `db04339_a.t` and `db04339_b.t` in scope so the
--- analyzer keeps the qualifier alive in the canonical projection name (DESCRIBE below),
--- but projects only ONE of those columns so the short-name `f1` is unambiguous and the
--- outer query actually exercises the short-name fallback. Without the `db.table` source
--- check this assertion returns `UNKNOWN_IDENTIFIER`; with it, the short-name resolves
--- to the projected db-qualified column.
-SET single_join_prefer_left_table = 0;
-DROP DATABASE IF EXISTS db04339_a;
-DROP DATABASE IF EXISTS db04339_b;
-CREATE DATABASE db04339_a;
-CREATE DATABASE db04339_b;
-CREATE TABLE db04339_a.t (f1 UInt8) ENGINE = Memory;
-CREATE TABLE db04339_b.t (f1 UInt8) ENGINE = Memory;
-INSERT INTO db04339_a.t VALUES (10);
-INSERT INTO db04339_b.t VALUES (20);
-
--- DESCRIBE confirms the canonical name retains the `db.table.column` form:
-DESCRIBE (SELECT db04339_a.t.f1 FROM db04339_a.t, db04339_b.t);
-
--- Focused short-name assertion: outer `f1` resolves to the projected db-qualified
--- column via the new `db.table` source-name match. The expected result is `10` (the
--- single value from db04339_a.t crossed with the single row in db04339_b.t).
-SELECT f1 FROM (
-    SELECT db04339_a.t.f1 FROM db04339_a.t, db04339_b.t
-);
-
--- Canonical (dotted) name also resolves, as always:
-SELECT `db04339_a.t.f1` FROM (
-    SELECT db04339_a.t.f1 FROM db04339_a.t, db04339_b.t
-);
-
-DROP TABLE db04339_a.t;
-DROP TABLE db04339_b.t;
-DROP DATABASE db04339_a;
-DROP DATABASE db04339_b;
-SET single_join_prefer_left_table = 1;
+-- Note: the focused db-qualified `TableNode` source case (where the canonical projection
+-- name retains the `db.table.column` form because two unaliased tables share a name
+-- across databases) is exercised in the sibling `.sh` test
+-- `04340_short_column_names_db_table.sh`. It needs `${CLICKHOUSE_DATABASE}`-derived
+-- unique database names to be parallel-safe (`DATABASE_ALREADY_EXISTS` race under the
+-- flaky check), which a pure-`.sql` test can't express without `no-parallel`.
 
 SELECT '-- on: explicit dotted alias on a resolved column does NOT expose a short name';
 
