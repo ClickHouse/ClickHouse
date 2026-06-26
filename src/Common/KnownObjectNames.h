@@ -4,6 +4,7 @@
 #include <unordered_set>
 #include <vector>
 #include <base/types.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -15,7 +16,7 @@ public:
     bool exists(const String & name) const;
     void add(const String & name, bool case_insensitive = false);
 
-    std::vector<String> getAllRegisteredNames() const;
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const;
 
 private:
     mutable std::mutex mutex;
