@@ -753,7 +753,7 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     if (reserved_size > downloaded_size)
     {
         queue_iterator->decrementSize(reserved_size - downloaded_size);
-        reserved_size = downloaded_size;
+        reserved_size = downloaded_size.load();
     }
 
     if (result_size == range().size())
