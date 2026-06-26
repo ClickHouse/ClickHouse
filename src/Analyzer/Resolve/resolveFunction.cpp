@@ -412,7 +412,15 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
     auto res_col = ColumnUInt8::create();
     res_col->getData().push_back(static_cast<UInt8>(const_node->getColumn()->getUInt(0)));
     ConstantValue const_value(ColumnConst::create(std::move(res_col), 1), std::make_shared<DataTypeUInt8>());
-    auto result_const_node = std::make_shared<ConstantNode>(std::move(const_value), std::move(node));
+    /// Use the rewritten subquery (a QueryNode) as the source expression, not the internal
+    /// `__unique(subquery)` function. `PlannerActionsVisitor` short-circuits the action-node name of
+    /// a constant when its source expression is a QUERY/UNION node, but recurses into any other source
+    /// expression. With the `__unique` function as the source, that recursion reaches the raw,
+    /// non-correlated subquery QueryNode and throws "Only correlated QueryNode can be used as action
+    /// query tree node" whenever the predicate is nested inside another expression (for example
+    /// `uniq(UNIQUE(...), b)` in ORDER BY). The rewritten subquery is the same representation that
+    /// scalar subqueries fold to, so the planner treats it as an already-evaluated constant.
+    auto result_const_node = std::make_shared<ConstantNode>(std::move(const_value), new_unique_subquery);
     auto res = result_const_node->getValueStringRepresentation();
     node = std::move(result_const_node);
     return {std::move(res)};
