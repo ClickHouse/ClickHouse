@@ -52,7 +52,7 @@ namespace ErrorCodes
 
 
 template <typename Impl>
-class FunctionsMultiStringSearch final : public IFunction
+class FunctionsMultiStringSearch : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;

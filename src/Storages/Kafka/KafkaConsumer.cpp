@@ -98,7 +98,6 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
         }
 
         assignment = topic_partitions;
-        waited_for_assignment = 0;
         num_rebalance_assignments++;
     });
 

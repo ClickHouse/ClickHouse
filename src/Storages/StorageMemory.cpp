@@ -79,7 +79,7 @@ namespace FailPoints
     extern const char backup_add_empty_memory_table[];
 }
 
-class MemorySink final : public SinkToStorage
+class MemorySink : public SinkToStorage
 {
 public:
     MemorySink(

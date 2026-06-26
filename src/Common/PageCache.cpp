@@ -187,7 +187,7 @@ bool PageCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
         }
         else
         {
-            int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+            int64_t now = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
             int64_t bucket = now / history_window.count();
             if (bucket > cur_bucket + 1)
                 peak_memory_buckets = {0, 0};

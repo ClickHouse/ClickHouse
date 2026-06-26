@@ -141,7 +141,7 @@ std::optional<String> IAccessStorage::readName(const UUID & id, bool throw_if_no
 }
 
 
-Strings IAccessStorage::readNames(const UUIDs & ids, bool throw_if_not_exists) const
+Strings IAccessStorage::readNames(const std::vector<UUID> & ids, bool throw_if_not_exists) const
 {
     Strings res;
     res.reserve(ids.size());
@@ -160,7 +160,7 @@ std::optional<String> IAccessStorage::tryReadName(const UUID & id) const
 }
 
 
-Strings IAccessStorage::tryReadNames(const UUIDs & ids) const
+Strings IAccessStorage::tryReadNames(const std::vector<UUID> & ids) const
 {
     return readNames(ids, /* throw_if_not_exists = */ false);
 }

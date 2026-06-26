@@ -1,18 +1,9 @@
 #pragma once
-
-#include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadStatus.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <Columns/IColumn_fwd.h>
-#include <Core/Block.h>
 
-namespace DB
-{
-
-using InternalProfileEventsQueue = ConcurrentBoundedQueue<Block>;
-using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue>;
-
-}
 
 namespace ProfileEvents
 {

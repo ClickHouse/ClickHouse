@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 #include <Functions/HighlightImpl.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 using namespace DB;
 using Interval = HighlightImpl::Interval;
@@ -13,7 +12,7 @@ bool operator==(const HighlightImpl::Interval & a, const HighlightImpl::Interval
 }
 }
 
-static VectorWithMemoryTracking<Interval> merge(VectorWithMemoryTracking<Interval> intervals)
+static std::vector<Interval> merge(std::vector<Interval> intervals)
 {
     HighlightImpl::mergeIntervals(intervals);
     return intervals;

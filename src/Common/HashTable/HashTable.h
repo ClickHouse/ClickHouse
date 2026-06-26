@@ -1151,9 +1151,6 @@ public:
         const auto & key = keyHolderGetKey(key_holder);
         const auto key_hash = hash(key);
         prefetchByHash(key_hash);
-        /// Release any temporary key memory held by the holder (e.g. `SerializedKeyHolder` rolls back the Arena allocation).
-        /// Without this, every prefetch would leak the serialized key bytes in the aggregation pool.
-        keyHolderDiscardKey(key_holder);
     }
 
     /** Insert the key.

@@ -20,6 +20,8 @@
 
 namespace DB
 {
+thread_local ThreadStatus constinit * current_thread = nullptr;
+
 namespace ErrorCodes
 {
     extern const int CANNOT_ALLOCATE_MEMORY;

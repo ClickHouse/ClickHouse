@@ -284,8 +284,7 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             /*group_by_sort_description_=*/SortDescription{},
             /*should_produce_results_in_order_of_bucket_number_=*/false,
             /*memory_bound_merging_of_aggregation_results_enabled_=*/false,
-            /*explicit_sorting_required_for_aggregation_in_order_=*/false,
-            /*enable_sharding_aggregator_=*/false);
+            /*explicit_sorting_required_for_aggregation_in_order_=*/false);
         plan.addStep(std::move(aggregating_step));
 
         /// Rename aggregate columns back to original names and project only needed columns.

@@ -135,7 +135,7 @@ struct LinfNorm
 
 
 template <class Kernel>
-class FunctionArrayNorm final : public IFunction
+class FunctionArrayNorm : public IFunction
 {
 public:
     String getName() const override { static auto name = String("array") + Kernel::name + "Norm"; return name; }

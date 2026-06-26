@@ -29,7 +29,7 @@ using IOutputFormatPtr = std::shared_ptr<IOutputFormat>;
 /// passed to the producer (e.g. so a storage can turn them into message
 /// metadata — Kafka key, timestamp, headers). `format_column_indices`
 /// describes which columns of `header` map onto `format_header`, in order.
-class MessageQueueSink final : public SinkToStorage
+class MessageQueueSink : public SinkToStorage
 {
 public:
     MessageQueueSink(
@@ -62,7 +62,7 @@ public:
 
 protected:
     /// Do some specific initialization before consuming data.
-    void initialize() {}
+    virtual void initialize() {}
 
 private:
     const String format_name;

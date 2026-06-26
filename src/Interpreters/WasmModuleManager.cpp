@@ -17,10 +17,10 @@
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/UniqueLock.h>
 #include <Common/SharedLockGuard.h>
 
-#include <algorithm>
 #include <ranges>
 #include <expected>
 
@@ -30,7 +30,6 @@ namespace DB
 using WebAssembly::WasmModule;
 using WebAssembly::WasmTimeRuntime;
 using WebAssembly::WasmEdgeRuntime;
-using WebAssembly::FuelMode;
 
 namespace ErrorCodes
 {
@@ -43,11 +42,6 @@ namespace ErrorCodes
 }
 
 constexpr auto FILE_EXTENSION = ".wasm";
-
-static size_t fuelModeIndex(FuelMode fuel_mode)
-{
-    return fuel_mode == FuelMode::Enabled ? 0 : 1;
-}
 
 template <typename... Args>
 auto formatUnexpected(FormatStringHelper<Args...> fmt, Args && ...args)
@@ -165,30 +159,42 @@ void WasmModuleManager::saveModule(std::string_view module_name, std::string_vie
             "Hash mismatch for WebAssembly module '{}', expected {}, got {}",
             module_name, hashToHex(expected_hash), hashToHex(actual_hash));
 
-    UniqueLock lock(modules_mutex);
-    auto it = modules.find(module_name);
-    if (it != modules.end())
     {
-        UInt256 existing_hash = it->second.hash;
-        if (!existing_hash)
+        UniqueLock lock(modules_mutex);
+        auto [existing_module, inserted] = modules.insert({std::string(module_name), ModuleRef{std::weak_ptr<WasmModule>{}, actual_hash}});
+        if (!inserted)
         {
-            existing_hash = calculateHash(loadModuleImpl(module_name));
-            it->second.hash = existing_hash;
-        }
+            UInt256 existing_hash = existing_module->second.hash;
+            if (!existing_hash)
+            {
+                existing_hash = calculateHash(loadModuleImpl(module_name));
+                existing_module->second.hash = existing_hash;
+            }
+            if (!actual_hash)
+                actual_hash = calculateHash(wasm_code);
 
-        if (existing_hash == actual_hash)
-        {
-            LOG_DEBUG(log, "WebAssembly module '{}' with the same hash already exists, skipping saving", module_name);
-            return;
+            if (existing_hash == actual_hash)
+            {
+                LOG_DEBUG(log, "WebAssembly module '{}' with the same hash already exists, skipping saving", module_name);
+                return;
+            }
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "WebAssembly module '{}' already exists", module_name);
         }
-        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "WebAssembly module '{}' already exists", module_name);
     }
+
+    bool is_written = false;
+    SCOPE_EXIT_SAFE({
+        if (is_written)
+            return;
+        UniqueLock lock(modules_mutex);
+        if (auto it = modules.find(module_name); it != modules.end())
+            modules.erase(it);
+    });
 
     auto out_buf = user_scripts_disk->writeFile(getFilePath(module_name), DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
     out_buf->write(wasm_code.data(), wasm_code.size());
     out_buf->finalize();
-
-    modules.emplace(String(module_name), ModuleRef{{}, actual_hash});
+    is_written = true;
 }
 
 
@@ -217,65 +223,34 @@ std::string WasmModuleManager::loadModuleImpl(std::string_view module_name)
     return wasm_code;
 }
 
-std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std::string_view module_name, FuelMode fuel_mode)
+std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std::string_view module_name)
 {
-    const bool requires_fuel_specialization = engine->requiresFuelSpecialization();
-    const size_t cache_idx = requires_fuel_specialization ? fuelModeIndex(fuel_mode) : 0;
-
     {
         SharedLockGuard lock(modules_mutex);
 
         auto it = modules.find(module_name);
-        if (it != modules.end())
+        if (it == modules.end())
         {
-            if (auto module = it->second.ptrs[cache_idx].lock())
-                return {module, it->second.hash};
-        }
-    }
-
-    UniqueLock lock(modules_mutex);
-    auto it = modules.find(module_name);
-    if (it != modules.end())
-    {
-        if (auto module = it->second.ptrs[cache_idx].lock())
+            auto module_path = getFilePath(module_name);
+            if (!user_scripts_disk->existsFile(module_path))
+                throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "WebAssembly module '{}' not found", module_name);
+            if (auto res = validateModuleFile(user_scripts_disk, module_path); !res)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot load WebAssembly module '{}': {}", module_name, res.error().text);
+            /// If file exists on disk but is not registered yet, we proceed to load it below
+        } else if (auto module = it->second.ptr.lock())
             return {module, it->second.hash};
     }
 
-    auto module_path = getFilePath(module_name);
-    if (!user_scripts_disk->existsFile(module_path))
-        throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "WebAssembly module '{}' not found", module_name);
-    if (auto res = validateModuleFile(user_scripts_disk, module_path); !res)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot load WebAssembly module '{}': {}", module_name, res.error().text);
+    UniqueLock write_lock(modules_mutex);
 
     auto wasm_code = loadModuleImpl(module_name);
-    UInt256 local_hash = calculateHash(wasm_code);
+    std::shared_ptr<WasmModule> module = engine->compileModule(module_name, wasm_code);
+    UInt256 module_hash = calculateHash(wasm_code);
 
-    if (it != modules.end())
-    {
-        if (it->second.hash && local_hash != it->second.hash)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Hash mismatch for WebAssembly module '{}', expected {}, got {}",
-                module_name,
-                hashToHex(it->second.hash),
-                hashToHex(local_hash));
-    }
+    modules[std::string(module_name)] = {module, module_hash};
+    linkHostFunctions(*module);
 
-    std::shared_ptr<WasmModule> local_module = engine->compileModule(module_name, wasm_code, fuel_mode);
-    linkHostFunctions(*local_module);
-
-    if (it == modules.end())
-    {
-        auto [inserted_it, _] = modules.emplace(String(module_name), ModuleRef{{}, local_hash});
-        it = inserted_it;
-    }
-    else if (!it->second.hash)
-    {
-        it->second.hash = local_hash;
-    }
-
-    it->second.ptrs[cache_idx] = local_module;
-    return {local_module, it->second.hash};
+    return {module, module_hash};
 }
 
 void WasmModuleManager::deleteModuleIfExists(std::function<bool(std::string_view)> name_match)
@@ -290,7 +265,7 @@ void WasmModuleManager::deleteModuleIfExists(std::function<bool(std::string_view
             continue;
         }
 
-        if (std::ranges::any_of(it->second.ptrs, [](const auto & ptr) { return !ptr.expired(); }))
+        if (!it->second.ptr.expired())
             throw Exception(
                 ErrorCodes::CANNOT_DROP_FUNCTION,
                 "Cannot delete WebAssembly module '{}' while it is in use. "
@@ -309,7 +284,7 @@ void WasmModuleManager::deleteModuleIfExists(std::string_view module_name)
     if (it == modules.end())
         return;
 
-    if (std::ranges::any_of(it->second.ptrs, [](const auto & ptr) { return !ptr.expired(); }))
+    if (!it->second.ptr.expired())
         throw Exception(
             ErrorCodes::CANNOT_DROP_FUNCTION,
             "Cannot delete WebAssembly module '{}' while it is in use. "

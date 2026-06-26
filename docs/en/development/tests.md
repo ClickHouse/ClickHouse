@@ -554,6 +554,9 @@ It is less tested than `clang-format`.
 
 `CLion` has its own code formatter that has to be tuned for our code style.
 
+We also use `codespell` to find typos in code.
+It is automated as well.
+
 ## Test coverage {#test-coverage}
 
 We also track test coverage but only for functional tests and only for clickhouse-server.

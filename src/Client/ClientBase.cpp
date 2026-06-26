@@ -52,7 +52,6 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
@@ -183,22 +182,8 @@ namespace ProfileEvents
 
 namespace
 {
-
 constexpr UInt64 THREAD_GROUP_ID = 0;
 
-/// Returns true if any `ASTTableExpression` in the query tree carries a `STREAM` modifier.
-bool hasStreamingTableExpression(const DB::IAST & ast)
-{
-    if (const auto * table_expression = ast.as<DB::ASTTableExpression>())
-        if (table_expression->stream_settings)
-            return true;
-
-    for (const auto & child : ast.children)
-        if (hasStreamingTableExpression(*child))
-            return true;
-
-    return false;
-}
 
 void cleanupTempFile(const DB::ASTPtr & parsed_query, const String & tmp_file)
 {
@@ -802,14 +787,6 @@ try
 
         auto format_settings = getFormatSettings(client_context);
         format_settings.is_writing_to_terminal = stdout_is_a_tty;
-
-        /// We need to disable output format squashing semantics for streaming queries
-        /// because otherwise data may not be disaplayed forever.
-        if (parsed_query && hasStreamingTableExpression(*parsed_query))
-        {
-            format_settings.pretty.squash_consecutive_ms = 0;
-            format_settings.pretty.squash_max_wait_ms = 0;
-        }
 
         /// It is not clear how to write progress and logs
         /// intermixed with data with parallel formatting.
@@ -1424,6 +1401,15 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 /// Also checks if query execution should be cancelled.
 void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel)
 {
+    /// The connection may already be torn down — e.g. `sendQuery` failed to
+    /// write the query to a server that died mid-transfer and called
+    /// `disconnect()`, after which `processOrdinaryQuery` calls us in a
+    /// best-effort attempt to drain remaining data. With the receive side
+    /// gone there is nothing to poll for; bail out so we don't call
+    /// `connection->poll()` (and friends) on a disconnected connection.
+    if (!connection->isConnected())
+        return;
+
     // TODO: get the poll_interval from commandline.
     const auto receive_timeout = connection_parameters.timeouts.receive_timeout;
     constexpr size_t default_poll_interval = 1000000; /// in microseconds

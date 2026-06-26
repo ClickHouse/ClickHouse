@@ -1017,13 +1017,6 @@ BlockIO InterpreterInsertQuery::execute()
             throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
     }
 
-    if (context->getMessageQueueDisableInsertion()
-        && table->isMessageQueue()
-        && no_destination)
-    {
-        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Message queue insertion is disabled");
-    }
-
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
 
     if (query.partition_by && !table->supportsPartitionBy())

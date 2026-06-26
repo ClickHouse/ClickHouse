@@ -944,8 +944,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         context->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr));
 
-    Block permuted_columns_cache;
-    out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
+    out->writeWithPermutation(block, perm_ptr);
 
     for (const auto & projection : metadata_snapshot->getProjections())
     {
@@ -1026,7 +1025,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
 
     auto new_data_part = parent_part->getProjectionPartBuilder(part_name, &projection, is_temp).withPartType(part_type).build();
     auto projection_part_storage = new_data_part->getDataPartStoragePtr();
-    auto data_settings = data.getSettings(&projection.settings_changes);
+    auto data_settings = data.getSettings(&projection);
 
     if (is_temp)
         projection_part_storage->beginTransaction();
@@ -1141,8 +1140,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         data.getContext()->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr));
 
-    Block permuted_columns_cache;
-    out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
+    out->writeWithPermutation(block, perm_ptr);
     out->finalizeIndexGranularity();
     auto finalizer = out->finalizePartAsync(new_data_part, IMergedBlockOutputStream::GatheredData{}, false);
     temp_part->part = new_data_part;

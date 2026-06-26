@@ -11,7 +11,7 @@ namespace
 {
 
 /// Returns name of IColumn instance.
-class FunctionToColumnTypeName final : public IFunction
+class FunctionToColumnTypeName : public IFunction
 {
 public:
     static constexpr auto name = "toColumnTypeName";

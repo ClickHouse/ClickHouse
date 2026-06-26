@@ -15,7 +15,6 @@
 
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>

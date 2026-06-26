@@ -139,7 +139,7 @@ namespace
         Map map;
         std::unordered_map<std::string, Dwarf> dwarfs;
 
-        void setResult(std::string_view & result, const Dwarf::LocationInfo & location, const VectorWithMemoryTracking<Dwarf::SymbolizedFrame> &)
+        void setResult(std::string_view & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> &)
         {
             const char * arena_begin = nullptr;
             WriteBufferFromArena out(arena, arena_begin);
@@ -165,7 +165,7 @@ namespace
                     return {};
 
                 Dwarf::LocationInfo location;
-                VectorWithMemoryTracking<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
+                std::vector<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
                 std::string_view result;
                 if (dwarf_it->second.findAddress(addr, location, Dwarf::LocationInfoMode::FAST, frames))
                 {

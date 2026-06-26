@@ -242,7 +242,7 @@ void StoragePostgreSQL::readImpl(
 }
 
 
-class PostgreSQLSink final : public SinkToStorage
+class PostgreSQLSink : public SinkToStorage
 {
 
 using Row = std::vector<std::optional<std::string>>;

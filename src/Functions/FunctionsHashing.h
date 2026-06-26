@@ -1658,7 +1658,7 @@ struct URLHierarchyHashImpl
 };
 
 
-class FunctionURLHash final : public IFunction
+class FunctionURLHash : public IFunction
 {
 public:
     static constexpr auto name = "URLHash";

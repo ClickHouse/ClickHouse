@@ -1,5 +1,4 @@
 #include <Analyzer/TableExpressionModifiers.h>
-#include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeSet.h>
 #include <Functions/FunctionFactory.h>
@@ -172,7 +171,7 @@ void LazyFinalKeyAnalysisTransform::work()
 
         ColumnWithTypeAndName column_set;
         column_set.type = std::make_shared<DataTypeSet>();
-        column_set.column = ColumnConst::create(ColumnSet::create(1, future_set), 0);
+        column_set.column = ColumnSet::create(0, future_set);
 
         const auto * key_node = filter_dag.getOutputs().at(0);
         if (filter_dag.getOutputs().size() > 1)
