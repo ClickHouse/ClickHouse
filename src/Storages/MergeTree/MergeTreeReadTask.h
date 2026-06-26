@@ -85,9 +85,9 @@ struct MergeTreeReadTaskColumns
     /// Column names to read during WHERE
     NamesAndTypesList columns;
     /// Column names to read during each PREWHERE step
-    std::vector<NamesAndTypesList> pre_columns;
+    NamesAndTypesLists pre_columns;
     /// Column names to read from patch parts.
-    std::vector<NamesAndTypesList> patch_columns;
+    NamesAndTypesLists patch_columns;
 
     String dump() const;
     Names getAllColumnNames() const;
@@ -213,6 +213,12 @@ public:
     /// them, so they must not be attributed to the PREWHERE predicate in the QueryConditionCache.
     /// See Issue #104781.
     bool readersChainCanSkipMarksBeforePrewhere() const;
+
+    /// Returns true if on-fly mutations or patch parts are applied earlier in the readers chain
+    /// than PREWHERE (and therefore than the downstream WHERE filter too). When true, a mark may be
+    /// fully filtered by the mutation rather than by the predicate, so it must not be attributed to
+    /// the PREWHERE or WHERE predicate in the QueryConditionCache.
+    bool appliesMutationsBeforePrewhere() const;
 
     Readers releaseReaders() { return std::move(readers); }
 
