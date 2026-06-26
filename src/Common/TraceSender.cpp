@@ -2,8 +2,6 @@
 #include <IO/WriteHelpers.h>
 #include <Common/CPUID.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
-#include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/StackTrace.h>
 #include <Common/TraceSender.h>

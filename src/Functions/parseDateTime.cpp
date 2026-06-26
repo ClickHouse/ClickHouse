@@ -8,8 +8,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Common/CacheLine.h>
 #include <Common/DateLUTImpl.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -41,6 +39,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_PARSE_DATETIME;
     extern const int ILLEGAL_COLUMN;
+    extern const int NOT_ENOUGH_SPACE;
     extern const int NOT_IMPLEMENTED;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
@@ -68,7 +67,7 @@ namespace
         DateTime64
     };
 
-    const UnorderedMapWithMemoryTracking<String, std::pair<String, Int32>> dayOfWeekMap{
+    const std::unordered_map<String, std::pair<String, Int32>> dayOfWeekMap{
         {"mon", {"day", 1}},
         {"tue", {"sday", 2}},
         {"wed", {"nesday", 3}},
@@ -78,7 +77,7 @@ namespace
         {"sun", {"day", 7}},
     };
 
-    const UnorderedMapWithMemoryTracking<String, std::pair<String, Int32>> monthMap{
+    const std::unordered_map<String, std::pair<String, Int32>> monthMap{
         {"jan", {"uary", 1}},
         {"feb", {"ruary", 2}},
         {"mar", {"ch", 3}},
@@ -641,7 +640,7 @@ namespace
 
     /// _FUNC_(str[, format, timezone])
     template <typename Name, ParseSyntax parse_syntax, ReturnType return_type, ErrorHandling error_handling>
-    class FunctionParseDateTimeImpl final : public IFunction
+    class FunctionParseDateTimeImpl : public IFunction
     {
     public:
         const bool mysql_M_is_month_name;
@@ -693,7 +692,7 @@ namespace
                 {
                     /// The precision of the return type is the number of 'S' placeholders.
                     String format = getFormat(arguments);
-                    VectorWithMemoryTracking<Instruction> instructions = parseFormat(format);
+                    std::vector<Instruction> instructions = parseFormat(format);
                     size_t s_count = 0;
                     for (const auto & instruction : instructions)
                     {
@@ -766,7 +765,7 @@ namespace
                 col_null_map = ColumnUInt8::create(input_rows_count, false);
 
             const String format = getFormat(arguments);
-            const VectorWithMemoryTracking<Instruction> instructions = parseFormat(format);
+            const std::vector<Instruction> instructions = parseFormat(format);
             const auto & time_zone = getTimeZone(arguments);
 
             ParsedValue<error_handling, return_type> datetime;
@@ -993,7 +992,7 @@ namespace
             {
                 if (cur > end || cur + len > end) [[unlikely]]
                     RETURN_ERROR(
-                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        ErrorCodes::NOT_ENOUGH_SPACE,
                         "Unable to parse fragment {} from {} because {}",
                         fragment,
                         std::string_view(cur, end - cur),
@@ -1900,7 +1899,7 @@ namespace
         };
         /// NOLINTEND(readability-else-after-return)
 
-        VectorWithMemoryTracking<Instruction> parseFormat(const String & format) const
+        std::vector<Instruction> parseFormat(const String & format) const
         {
             static_assert(
                 parse_syntax == ParseSyntax::MySQL || parse_syntax == ParseSyntax::Joda,
@@ -1912,14 +1911,14 @@ namespace
                 return parseJodaFormat(format);
         }
 
-        VectorWithMemoryTracking<Instruction> parseMysqlFormat(const String & format) const
+        std::vector<Instruction> parseMysqlFormat(const String & format) const
         {
 #define ACTION_ARGS(func) &(func), #func, std::string_view(pos - 1, 2)
 
             Pos pos = format.data();
             Pos end = format.data() + format.size();
 
-            VectorWithMemoryTracking<Instruction> instructions;
+            std::vector<Instruction> instructions;
             while (true)
             {
                 Pos next_percent_pos = find_first_symbols<'%'>(pos, end);
@@ -2176,14 +2175,14 @@ namespace
 #undef ACTION_ARGS
         }
 
-        VectorWithMemoryTracking<Instruction> parseJodaFormat(const String & format) const
+        std::vector<Instruction> parseJodaFormat(const String & format) const
         {
 #define ACTION_ARGS_WITH_BIND(func, arg) std::bind_front(&(func), (arg)), #func, std::string_view(cur_token, repetitions)
 
             Pos pos = format.data();
             Pos end = format.data() + format.size();
 
-            VectorWithMemoryTracking<Instruction> instructions;
+            std::vector<Instruction> instructions;
             while (pos < end)
             {
                 Pos cur_token = pos;

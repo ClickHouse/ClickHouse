@@ -30,7 +30,6 @@ using JSONParserImpl = DB::DummyJSONParser;
 #endif
 
 #include <Client/BuzzHouse/AST/SQLProtoStr.h>
-#include <Client/BuzzHouse/Generator/SQLFuncs.h>
 #include <Client/ClientBase.h>
 #include <Common/logger_useful.h>
 
@@ -52,26 +51,25 @@ const constexpr uint64_t allow_bool = (UINT64_C(1) << 0), allow_unsigned_int = (
                          allow_qbit = (UINT64_C(1) << 34), allow_aggregate = (UINT64_C(1) << 35),
                          allow_simple_aggregate = (UINT64_C(1) << 36);
 
-const constexpr uint64_t allow_replacing_mergetree
-    = (UINT64_C(1) << 0),
-    allow_coalescing_mergetree = (UINT64_C(1) << 1), allow_summing_mergetree = (UINT64_C(1) << 2),
-    allow_aggregating_mergetree = (UINT64_C(1) << 3), allow_collapsing_mergetree = (UINT64_C(1) << 4),
-    allow_versioned_collapsing_mergetree = (UINT64_C(1) << 5), allow_file = (UINT64_C(1) << 6), allow_null = (UINT64_C(1) << 7),
-    allow_setengine = (UINT64_C(1) << 8), allow_join = (UINT64_C(1) << 9), allow_memory = (UINT64_C(1) << 10),
-    allow_stripelog = (UINT64_C(1) << 11), allow_log = (UINT64_C(1) << 12), allow_tinylog = (UINT64_C(1) << 13),
-    allow_embedded_rocksdb = (UINT64_C(1) << 14), allow_buffer = (UINT64_C(1) << 15), allow_mysql = (UINT64_C(1) << 16),
-    allow_postgresql = (UINT64_C(1) << 17), allow_sqlite = (UINT64_C(1) << 18), allow_mongodb = (UINT64_C(1) << 19),
-    allow_redis = (UINT64_C(1) << 20), allow_S3 = (UINT64_C(1) << 21), allow_S3queue = (UINT64_C(1) << 22),
-    allow_hudi = (UINT64_C(1) << 23), allow_deltalakeS3 = (UINT64_C(1) << 24), allow_deltalakeAzure = (UINT64_C(1) << 25),
-    allow_deltalakelocal = (UINT64_C(1) << 26), allow_icebergS3 = (UINT64_C(1) << 27), allow_icebergAzure = (UINT64_C(1) << 28),
-    allow_icebergLocal = (UINT64_C(1) << 29), allow_merge = (UINT64_C(1) << 30), allow_distributed = (UINT64_C(1) << 31),
-    allow_dictionary = (UINT64_C(1) << 32), allow_generaterandom = (UINT64_C(1) << 33), allow_AzureBlobStorage = (UINT64_C(1) << 34),
-    allow_AzureQueue = (UINT64_C(1) << 35), allow_URL = (UINT64_C(1) << 36), allow_keepermap = (UINT64_C(1) << 37),
-    allow_external_distributed = (UINT64_C(1) << 38), allow_materialized_postgresql = (UINT64_C(1) << 39),
-    allow_replicated = (UINT64_C(1) << 40), allow_shared = (UINT64_C(1) << 41), allow_datalakecatalog = (UINT64_C(1) << 42),
-    allow_arrowflight = (UINT64_C(1) << 43), allow_alias = (UINT64_C(1) << 44), allow_kafka = (UINT64_C(1) << 45),
-    allow_backup = (UINT64_C(1) << 46), allow_paimon = (UINT64_C(1) << 47), allow_paimonS3 = (UINT64_C(1) << 48),
-    allow_paimonAzure = (UINT64_C(1) << 49), allow_paimonLocal = (UINT64_C(1) << 50);
+const constexpr uint64_t allow_replacing_mergetree = (UINT64_C(1) << 0), allow_coalescing_mergetree = (UINT64_C(1) << 1),
+                         allow_summing_mergetree = (UINT64_C(1) << 2), allow_aggregating_mergetree = (UINT64_C(1) << 3),
+                         allow_collapsing_mergetree = (UINT64_C(1) << 4), allow_versioned_collapsing_mergetree = (UINT64_C(1) << 5),
+                         allow_file = (UINT64_C(1) << 6), allow_null = (UINT64_C(1) << 7), allow_setengine = (UINT64_C(1) << 8),
+                         allow_join = (UINT64_C(1) << 9), allow_memory = (UINT64_C(1) << 10), allow_stripelog = (UINT64_C(1) << 11),
+                         allow_log = (UINT64_C(1) << 12), allow_tinylog = (UINT64_C(1) << 13), allow_embedded_rocksdb = (UINT64_C(1) << 14),
+                         allow_buffer = (UINT64_C(1) << 15), allow_mysql = (UINT64_C(1) << 16), allow_postgresql = (UINT64_C(1) << 17),
+                         allow_sqlite = (UINT64_C(1) << 18), allow_mongodb = (UINT64_C(1) << 19), allow_redis = (UINT64_C(1) << 20),
+                         allow_S3 = (UINT64_C(1) << 21), allow_S3queue = (UINT64_C(1) << 22), allow_hudi = (UINT64_C(1) << 23),
+                         allow_deltalakeS3 = (UINT64_C(1) << 24), allow_deltalakeAzure = (UINT64_C(1) << 25),
+                         allow_deltalakelocal = (UINT64_C(1) << 26), allow_icebergS3 = (UINT64_C(1) << 27),
+                         allow_icebergAzure = (UINT64_C(1) << 28), allow_icebergLocal = (UINT64_C(1) << 29),
+                         allow_merge = (UINT64_C(1) << 30), allow_distributed = (UINT64_C(1) << 31), allow_dictionary = (UINT64_C(1) << 32),
+                         allow_generaterandom = (UINT64_C(1) << 33), allow_AzureBlobStorage = (UINT64_C(1) << 34),
+                         allow_AzureQueue = (UINT64_C(1) << 35), allow_URL = (UINT64_C(1) << 36), allow_keepermap = (UINT64_C(1) << 37),
+                         allow_external_distributed = (UINT64_C(1) << 38), allow_materialized_postgresql = (UINT64_C(1) << 39),
+                         allow_replicated = (UINT64_C(1) << 40), allow_shared = (UINT64_C(1) << 41),
+                         allow_datalakecatalog = (UINT64_C(1) << 42), allow_arrowflight = (UINT64_C(1) << 43),
+                         allow_alias = (UINT64_C(1) << 44), allow_kafka = (UINT64_C(1) << 45), allow_backup = (UINT64_C(1) << 46);
 
 extern const DB::Strings compressionMethods;
 extern const DB::Strings codecs;
@@ -258,7 +256,11 @@ public:
     SystemTable & operator=(const SystemTable & c) = default;
     SystemTable & operator=(SystemTable && c) noexcept = default;
 
-    void setName(ExprSchemaTable * est) const;
+    void setName(ExprSchemaTable * est) const
+    {
+        est->mutable_database()->set_database(schema_name);
+        est->mutable_table()->set_table(table_name);
+    }
 };
 
 struct DiskInfo
@@ -271,13 +273,6 @@ struct DiskInfo
     bool is_encrypted = false;
     bool is_cached = false; /// true when cache_path != '' in system.disks
 };
-
-/// Escape a string for embedding inside a single-quoted SQL literal (doubles single quotes).
-String escapeSQLString(const String & s, char escape_char = '\'');
-
-/// Percent-encode a string for use as a URL query parameter value.
-/// Spaces are encoded as '+'; all other non-unreserved characters as %XX.
-String urlEncodeQueryParam(const String & s);
 
 class FuzzConfig
 {
@@ -307,13 +302,6 @@ public:
     DB::Strings disallowed_settings;
     DB::Strings hot_table_settings;
     DB::Strings tokenizers;
-
-    std::vector<CHFunction> det_funcs;
-    std::vector<CHFunction> nondet_funcs;
-    std::vector<CHFunction> common_funcs;
-    std::vector<CHAggregate> det_aggrs;
-    std::vector<CHAggregate> simple_det_aggrs;
-    std::vector<CHAggregate> nondet_aggrs;
 
     std::optional<ServerCredentials> clickhouse_server;
     std::optional<ServerCredentials> mysql_server;
@@ -346,7 +334,6 @@ public:
     bool allow_client_restarts = false;
     bool enable_fault_injection_settings = false;
     bool enable_force_settings = false;
-    bool enable_time_settings = false;
     bool allow_hardcoded_inserts = true;
     bool allow_async_requests = false;
     bool truncate_output = false;
@@ -358,10 +345,8 @@ public:
     bool allow_health_check = true;
     bool enable_compatibility_settings = false;
     bool enable_memory_settings = false;
-    bool enable_sync_settings = false;
     bool enable_backups = true;
     bool enable_renames = true;
-    bool allow_nasty_identifiers = false;
 
     uint64_t seed = 0;
     uint64_t min_insert_rows = 1;
@@ -424,8 +409,6 @@ private:
     uint32_t tableCountSystemRows(const String & system_table, const String & database, const String & table);
 
     String tableGetRandomSystemName(uint64_t rand_val, const String & system_table, const String & database, const String & table);
-
-    void loadFunctions();
 
 public:
     void loadServerConfigurations();

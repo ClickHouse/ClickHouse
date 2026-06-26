@@ -11,7 +11,7 @@ namespace
 {
 
 /// Returns name of IColumn instance.
-class FunctionToColumnTypeName final : public IFunction
+class FunctionToColumnTypeName : public IFunction
 {
 public:
     static constexpr auto name = "toColumnTypeName";
@@ -32,8 +32,6 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
-    bool isDeterministic() const override { return false; }
 
     size_t getNumberOfArguments() const override
     {

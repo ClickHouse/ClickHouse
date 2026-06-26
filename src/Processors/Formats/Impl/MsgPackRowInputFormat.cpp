@@ -14,7 +14,7 @@
 
 #include <cstdlib>
 #include <Common/assert_cast.h>
-#include <Core/Defines.h>
+#include <Common/checkStackSize.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
 
@@ -47,6 +47,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
     extern const int UNEXPECTED_END_OF_FILE;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 MsgPackRowInputFormat::MsgPackRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & settings)
@@ -399,26 +400,14 @@ bool MsgPackVisitor::start_array(size_t size) // NOLINT
         if (size > 0)
             info_stack.push(Info{nested_column, nested_type, false, size, nullptr});
     }
-    else if (isTuple(removeNullable(info_stack.top().type)))
+    else if (isTuple(info_stack.top().type))
     {
-        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*removeNullable(info_stack.top().type));
+        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*info_stack.top().type);
         const auto & nested_types = tuple_type.getElements();
         if (size != nested_types.size())
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack array with size {} into Tuple column with {} elements", size, nested_types.size());
 
-        /// If the type is Nullable, reaching start_array means the value
-        /// is non-null (for nulls, the parser calls visit_nil instead).
-        /// So we can safely unwrap the Nullable to work with the inner
-        /// ColumnTuple directly.
-        IColumn * column_ptr = &info_stack.top().column;
-        if (info_stack.top().type->isNullable())
-        {
-            auto & nullable_column = assert_cast<ColumnNullable &>(*column_ptr);
-            nullable_column.getNullMapColumn().insertValue(0);
-            column_ptr = &nullable_column.getNestedColumn();
-        }
-
-        ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(*column_ptr);
+        ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(info_stack.top().column);
         /// Push nested columns into stack in reverse order.
         for (ssize_t i = static_cast<ssize_t>(nested_types.size()) - 1; i >= 0; --i)
             info_stack.push(Info{column_tuple.getColumn(i), nested_types[i], true, std::nullopt, nullptr});
@@ -580,15 +569,6 @@ MsgPackSchemaReader::MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings 
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "You must specify setting input_format_msgpack_number_of_columns "
                         "to extract table schema from MsgPack data");
-
-    /// Guard against absurdly large values that would cause std::length_error
-    /// or trigger sanitizer OOM aborts in vector::reserve() below.
-    /// Uses the same limit as Native format readers (see Core/Defines.h).
-    if (number_of_columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "input_format_msgpack_number_of_columns = {} is too large "
-                        "(maximum: {})",
-                        number_of_columns, DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS);
 }
 
 
@@ -623,8 +603,23 @@ msgpack::object_handle MsgPackSchemaReader::readObject()
     return object_handle;
 }
 
-DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
+DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object, size_t depth)
 {
+    /// MsgPack arrays and maps can be nested arbitrarily deep, and msgpack::unpack builds the
+    /// whole object tree iteratively (heap), so a deeply nested object would overflow the native
+    /// stack during this recursive descent. Reject deep nesting early (before building the type)
+    /// with an explicit limit: this keeps inference cheap and interruptible instead of walking and
+    /// allocating a pathologically deep type that later code (e.g. makeNullableRecursively) would
+    /// also recurse over. checkStackSize is a last-resort backstop if max_parser_depth is raised.
+    /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
+    if (format_settings.max_parser_depth != 0 && depth > format_settings.max_parser_depth)
+        throw Exception(
+            ErrorCodes::TOO_DEEP_RECURSION,
+            "Too deep recursion while inferring the MsgPack schema: the nesting depth exceeds the limit ({}). "
+            "It can be raised with the setting 'max_parser_depth', but a very deep schema is rarely intentional",
+            format_settings.max_parser_depth);
+    checkStackSize();
+
     switch (object.type)
     {
         case msgpack::type::object_type::POSITIVE_INTEGER: [[fallthrough]];
@@ -650,12 +645,16 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
             bool nested_types_are_equal = true;
             for (size_t i = 0; i != object_array.size; ++i)
             {
-                auto nested_type = getDataType(object_array.ptr[i]);
+                auto nested_type = getDataType(object_array.ptr[i], depth + 1);
                 if (!nested_type)
                     return nullptr;
 
+                /// Compare only against the first element. Comparing the first element to itself is
+                /// pointless and would recurse through the whole (possibly deeply nested) type via
+                /// DataTypeArray::equals, which is itself unguarded recursion.
+                if (!nested_types.empty())
+                    nested_types_are_equal &= nested_type->equals(*nested_types[0]);
                 nested_types.push_back(nested_type);
-                nested_types_are_equal &= nested_type->equals(*nested_types[0]);
             }
 
             if (nested_types_are_equal)
@@ -668,8 +667,8 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
             msgpack::object_map object_map = object.via.map;
             if (object_map.size)
             {
-                auto key_type = removeNullable(getDataType(object_map.ptr[0].key));
-                auto value_type = getDataType(object_map.ptr[0].val);
+                auto key_type = removeNullable(getDataType(object_map.ptr[0].key, depth + 1));
+                auto value_type = getDataType(object_map.ptr[0].val, depth + 1);
                 if (key_type && value_type)
                     return std::make_shared<DataTypeMap>(key_type, value_type);
             }
@@ -697,7 +696,7 @@ std::optional<DataTypes> MsgPackSchemaReader::readRowAndGetDataTypes()
     for (size_t i = 0; i != number_of_columns; ++i)
     {
         auto object_handle = readObject();
-        data_types.push_back(getDataType(object_handle.get()));
+        data_types.push_back(getDataType(object_handle.get(), 1));
     }
 
     return data_types;

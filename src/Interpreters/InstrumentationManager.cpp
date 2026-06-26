@@ -78,26 +78,26 @@ String entryTypeToString(EntryType entry_type)
 String InstrumentationManager::InstrumentedPointInfo::toString() const
 {
     String entry_type_str = entryTypeToString(entry_type);
-    String arguments_str;
+    String parameters_str;
 
-    arguments_str = ", arguments [";
-    for (size_t i = 0; i < arguments.size(); ++i)
+    parameters_str = ", parameters [";
+    for (size_t i = 0; i < parameters.size(); ++i)
     {
-        const auto & arg = arguments[i];
-        if (std::holds_alternative<String>(arg))
-            arguments_str += fmt::format("{}", std::get<String>(arg));
-        else if (std::holds_alternative<Int64>(arg))
-            arguments_str += fmt::format("{}", std::get<Int64>(arg));
-        else if (std::holds_alternative<Float64>(arg))
-            arguments_str += fmt::format("{}", std::get<Float64>(arg));
+        const auto & param = parameters[i];
+        if (std::holds_alternative<String>(param))
+            parameters_str += fmt::format("{}", std::get<String>(param));
+        else if (std::holds_alternative<Int64>(param))
+            parameters_str += fmt::format("{}", std::get<Int64>(param));
+        else if (std::holds_alternative<Float64>(param))
+            parameters_str += fmt::format("{}", std::get<Float64>(param));
 
-        if (i < arguments.size() - 1)
-            arguments_str += ", ";
+        if (i < parameters.size() - 1)
+            parameters_str += ", ";
     }
-    arguments_str += "]";
+    parameters_str += "]";
 
     return fmt::format("id {}, function_id {}, function_name '{}', handler_name {}, entry_type {}, symbol {}{}",
-        id, function_id, function_name, handler_name, entry_type_str, symbol, arguments_str);
+        id, function_id, function_name, handler_name, entry_type_str, symbol, parameters_str);
 }
 
 InstrumentationManager::InstrumentationManager()
@@ -168,31 +168,28 @@ void InstrumentationManager::unpatchFunctionIfNeeded(Int32 function_id)
 
 bool InstrumentationManager::shouldPatchFunction(String function_to_patch, String full_qualified_function)
 {
-    /// We need to check all occurrences of function_to_patch, not just the first one,
-    /// because earlier matches may be inside template arguments while later ones are not.
     size_t found_pos = full_qualified_function.find(function_to_patch);
-    while (found_pos != std::string::npos)
+    if (found_pos != std::string::npos)
     {
-        /// Check whether the match is within a template argument by counting bracket depth.
-        size_t depth = 0;
+        /// Once we find a possible match, we need to ensure the match is not within a template argument
+        std::stack<bool> brackets;
         for (size_t pos = 0; pos < found_pos; ++pos)
         {
             if (full_qualified_function[pos] == '<')
-                ++depth;
-            else if (full_qualified_function[pos] == '>' && depth > 0)
-                --depth;
+                brackets.push(true);
+            else if (full_qualified_function[pos] == '>')
+                brackets.pop();
         }
 
-        if (depth == 0)
+        if (brackets.empty())
             return true;
 
         LOG_INFO(logger, "Not instrumenting function '{}' because the match is within a template argument: '{}'", function_to_patch, full_qualified_function);
-        found_pos = full_qualified_function.find(function_to_patch, found_pos + 1);
     }
     return false;
 }
 
-void InstrumentationManager::patchFunction(ContextPtr context, const String & function_name, const String & handler_name, Instrumentation::EntryType entry_type, const std::vector<InstrumentedArgument> & arguments)
+void InstrumentationManager::patchFunction(ContextPtr context, const String & function_name, const String & handler_name, Instrumentation::EntryType entry_type, const std::vector<InstrumentedParameter> & parameters)
 {
     auto handler_name_lower = Poco::toLower(handler_name);
 
@@ -237,7 +234,7 @@ void InstrumentationManager::patchFunction(ContextPtr context, const String & fu
     {
         patchFunctionIfNeeded(function_id);
 
-        InstrumentedPointInfo info{context, instrumented_point_ids, function_id, function_name, handler_name_lower, entry_type, symbol, arguments};
+        InstrumentedPointInfo info{context, instrumented_point_ids, function_id, function_name, handler_name_lower, entry_type, symbol, parameters};
         LOG_INFO(logger, "Adding instrumentation point for {}", info.toString());
         instrumented_points.emplace(std::move(info));
         instrumented_point_ids++;
@@ -440,30 +437,30 @@ void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, co
 
     static thread_local pcg64_fast random_generator{randomSeed()};
 
-    const auto & args = instrumented_point.arguments;
-    if (args.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing arguments for sleep instrumentation");
+    const auto & params = instrumented_point.parameters;
+    if (params.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for sleep instrumentation");
 
-    auto get_value = [](auto arg)
+    auto get_value = [](auto param)
     {
-        if (std::holds_alternative<Int64>(arg))
-            return static_cast<Float64>(std::get<Int64>(arg));
-        else if (std::holds_alternative<Float64>(arg))
-            return std::get<Float64>(arg);
+        if (std::holds_alternative<Int64>(param))
+            return static_cast<Float64>(std::get<Int64>(param));
+        else if (std::holds_alternative<Float64>(param))
+            return std::get<Float64>(param);
         else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected numeric argument (Int64 or Float64) for sleep, but got something else");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected numeric parameter (Int64 or Float64) for sleep, but got something else");
     };
 
     Int64 duration_ms = -1;
 
-    if (args.size() == 1)
+    if (params.size() == 1)
     {
-        duration_ms = static_cast<Int64>(1000 * get_value(args[0]));
+        duration_ms = static_cast<Int64>(1000 * get_value(params[0]));
     }
     else
     {
-        auto min = get_value(args[0]);
-        auto max = get_value(args[1]);
+        auto min = get_value(params[0]);
+        auto max = get_value(params[1]);
 
         std::uniform_real_distribution<> distrib(min, max);
         duration_ms = static_cast<Int64>(1000 * distrib(random_generator));
@@ -485,18 +482,18 @@ void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, co
 
 void InstrumentationManager::log(XRayEntryType entry_type, const InstrumentedPointInfo & instrumented_point)
 {
-    const auto & args = instrumented_point.arguments;
-    if (args.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing arguments for log instrumentation");
+    const auto & params = instrumented_point.parameters;
+    if (params.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for log instrumentation");
 
-    if (args.size() != 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected exactly one argument for log instrumentation, but got {}", args.size());
+    if (params.size() != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected exactly one parameter for instrumentation, but got {}", params.size());
 
-    const auto & arg = args[0];
+    const auto & param = params[0];
 
-    if (std::holds_alternative<String>(arg))
+    if (std::holds_alternative<String>(param))
     {
-        String logger_info = std::get<String>(arg);
+        String logger_info = std::get<String>(param);
         StackTrace stack_trace;
         String stack_trace_str = StackTrace::toString(stack_trace.getFramePointers().data(), stack_trace.getOffset(), stack_trace.getSize() - stack_trace.getOffset());
 

@@ -3,6 +3,7 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 
@@ -308,19 +309,13 @@ bool MergeTreeIndexAggregatorSet::buildFilter(
     for (size_t i = 0; i < limit; ++i)
     {
         auto emplace_result = state.emplaceKey(method.data, pos + i, variants.string_pool);
-        const bool inserted = emplace_result.isInserted();
 
-        if (inserted)
+        if (emplace_result.isInserted())
             has_new_data = true;
 
         /// Emit the record if there is no such key in the current set yet.
         /// Skip it otherwise.
-        filter[pos + i] = inserted;
-
-        /// `set(N)` granules with more than `N` values are serialized as empty.
-        /// Keeping more rows only wastes CPU and memory.
-        if (inserted && max_rows && variants.getTotalRowCount() > max_rows)
-            break;
+        filter[pos + i] = emplace_result.isInserted();
     }
     return has_new_data;
 }
@@ -570,7 +565,11 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
             /// "It's a bug!" exception from `__bitWrapperFunc` at execution time. Fall back to
             /// `UNKNOWN_FIELD` so that the index does not prune granules and the query goes
             /// through the regular filter path.
-            if (WhichDataType(removeNullable(atom_node_ptr->result_type)).isInteger())
+            const auto & atom_result_type = atom_node_ptr->result_type;
+            const bool is_integer_atom = WhichDataType(atom_result_type).isLowCardinality()
+                ? WhichDataType(removeLowCardinality(atom_result_type)).isInteger()
+                : WhichDataType(removeNullable(atom_result_type)).isInteger();
+            if (is_integer_atom)
             {
                 auto bit_wrapper_function = FunctionFactory::instance().get("__bitWrapperFunc", context);
                 result_node = &result_dag.addFunction(bit_wrapper_function, {atom_node_ptr}, {});

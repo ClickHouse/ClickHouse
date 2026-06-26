@@ -22,7 +22,6 @@
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
 
 #include <base/getPageSize.h>
-#include <base/memcmpSmall.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/formatReadable.h>
@@ -345,8 +344,6 @@ private:
 class JITSymbolResolver : public llvm::LegacyJITSymbolResolver
 {
 public:
-    explicit JITSymbolResolver(const llvm::DataLayout & layout_) : layout(layout_) {}
-
     llvm::JITSymbol findSymbolInLogicalDylib(const std::string &) override { return nullptr; }
 
     llvm::JITSymbol findSymbol(const std::string & Name) override
@@ -361,23 +358,11 @@ public:
         return jit_symbol;
     }
 
-    /// Store symbols under their target-mangled names so findSymbol, which receives
-    /// names already mangled by LLVM, can look them up directly. On macOS the mangler
-    /// prepends '_' to C symbol names; on ELF targets the mangled form is identical
-    /// to the input. Canonicalizing here means lookup never needs a fallback path.
-    void registerSymbol(const std::string & symbol_name, void * symbol)
-    {
-        std::string mangled_name;
-        llvm::raw_string_ostream mangled_name_stream(mangled_name);
-        llvm::Mangler::getNameWithPrefix(mangled_name_stream, symbol_name, layout);
-        mangled_name_stream.flush();
-        symbol_name_to_symbol_address[mangled_name] = symbol;
-    }
+    void registerSymbol(const std::string & symbol_name, void * symbol) { symbol_name_to_symbol_address[symbol_name] = symbol; }
 
     ~JITSymbolResolver() override = default;
 
 private:
-    const llvm::DataLayout & layout;
     std::unordered_map<std::string, void *> symbol_name_to_symbol_address;
 };
 
@@ -408,16 +393,15 @@ private:
 
 CHJIT::CHJIT()
     : machine(getTargetMachine())
-    , layout(machine->createDataLayout())
+, layout(machine->createDataLayout())
     , compiler(std::make_unique<JITCompiler>(*machine))
-    , symbol_resolver(std::make_unique<JITSymbolResolver>(layout))
+    , symbol_resolver(std::make_unique<JITSymbolResolver>())
 {
     /// Define common symbols that can be generated during compilation
     /// Necessary for valid linker symbol resolution
     symbol_resolver->registerSymbol("memset", reinterpret_cast<void *>(&memset));
     symbol_resolver->registerSymbol("memcpy", reinterpret_cast<void *>(&memcpy));
     symbol_resolver->registerSymbol("memcmp", reinterpret_cast<void *>(&memcmp));
-    symbol_resolver->registerSymbol("memcmpSmallCharsAllowOverflow15", reinterpret_cast<void *>(&memcmpSmallCharsAllowOverflow15));
 
     symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(static_cast<double (*)(double, double)>(&fmod)));
     /// Signed and unsigned variants must be kept together: see the comment above the extern declarations.
@@ -582,10 +566,10 @@ std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
 
     std::string error;
     auto cpu = llvm::sys::getHostCPUName();
-    auto triple = llvm::Triple(llvm::sys::getProcessTriple());
-    const auto * target = llvm::TargetRegistry::lookupTarget(triple.str(), error);
+    auto triple = llvm::sys::getProcessTriple();
+    const auto * target = llvm::TargetRegistry::lookupTarget(triple, error);
     if (!target)
-        throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot find target triple {} error: {}", triple.str(), error);
+        throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot find target triple {} error: {}", triple, error);
 
     llvm::SubtargetFeatures features;
     for (const auto & f : llvm::sys::getHostCPUFeatures())

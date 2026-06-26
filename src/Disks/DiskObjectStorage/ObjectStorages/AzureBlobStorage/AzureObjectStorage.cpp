@@ -223,19 +223,9 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t>,
-    bool use_external_buffer,
-    bool restrict_seek) const
+    std::optional<size_t>) const
 {
     auto settings_ptr = settings.get();
-
-    BlobStorageLogWriterPtr blob_storage_log;
-    if (read_settings.enable_blob_storage_log_for_read_operations)
-    {
-        blob_storage_log = BlobStorageLogWriter::create(name);
-        if (blob_storage_log)
-            blob_storage_log->local_path = object.local_path;
-    }
 
     return std::make_unique<ReadBufferFromAzureBlobStorage>(
         client.get(),
@@ -243,11 +233,9 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
         patchSettings(read_settings),
         settings_ptr->max_single_read_retries,
         settings_ptr->max_single_download_retries,
-        use_external_buffer,
-        restrict_seek,
-        /* read_until_position */0,
-        std::move(blob_storage_log),
-        connection_params.getContainer());
+        read_settings.remote_read_buffer_use_external_buffer,
+        read_settings.remote_read_buffer_restrict_seek,
+        /* read_until_position */0);
 }
 
 SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
@@ -587,10 +575,12 @@ void AzureObjectStorage::applyNewSettings(
 
     bool is_client_for_disk = client.get()->IsClientForDisk();
 
-    AzureBlobStorage::ConnectionParams params;
-    params.endpoint = AzureBlobStorage::processEndpoint(config, config_prefix);
-    params.auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix);
-    params.client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *settings.get(), is_client_for_disk);
+    AzureBlobStorage::ConnectionParams params
+    {
+        .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
+        .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
+        .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *settings.get(), is_client_for_disk),
+    };
 
     auto new_client = AzureBlobStorage::getContainerClient(params, /*readonly=*/ true);
     client.set(std::move(new_client));

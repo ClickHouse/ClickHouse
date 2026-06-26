@@ -1,3 +1,5 @@
+#if defined(OS_LINUX)
+
 #include <Server/ClientEmbedded/ClientEmbedded.h>
 
 #include <base/getFQDNOrHostName.h>
@@ -258,3 +260,5 @@ catch (...)
 }
 
 }
+
+#endif
