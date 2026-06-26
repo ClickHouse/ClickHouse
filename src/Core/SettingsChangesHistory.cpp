@@ -44,6 +44,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
             {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},
             {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
+            {"enable_writes_to_query_cache_disk", false, false, "New setting to allow storing query result cache entries on disk."},
+            {"enable_reads_from_query_cache_disk", false, false, "New setting to allow reading query result cache entries from disk."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
@@ -66,8 +68,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_float_precision", 0, 0, "A new setting to control decimal digits in float output"},
             {"file_like_engine_default_partition_strategy", "wildcard", "hive", "Change the default partition strategy for file-like table engines (S3, AzureBlobStorage, etc.) from `wildcard` to `hive` when no `partition_strategy` is provided."},
             {"allow_limit_by_partitions_independently", false, true, "New setting to enable independent per-partition evaluation of `LIMIT BY` when the partition expression is a deterministic function of the `LIMIT BY` columns."},
-            {"enable_writes_to_query_cache_disk", false, false, "New setting to allow storing query result cache entries on disk."},
-            {"enable_reads_from_query_cache_disk", false, false, "New setting to allow reading query result cache entries from disk."},
             {"optimize_limit_by_function_keys", false, true, "New setting that eliminates LIMIT BY keys that are functions of other LIMIT BY keys."},
             {"optimize_injective_functions_in_limit_by", false, true, "New setting that replaces injective functions by their arguments in the LIMIT BY keys."},
             {"optimize_rewrite_has_to_in", false, true, "New setting"},
