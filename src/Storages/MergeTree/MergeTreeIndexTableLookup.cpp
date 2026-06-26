@@ -42,11 +42,17 @@ void validateTableLookupKeys(const IndexDescription & index, std::string_view in
     for (const auto & child : index.expression_list_ast->children)
     {
         const auto * identifier = child->as<ASTIdentifier>();
-        if (!identifier)
+        /// Reject compound identifiers such as `m.keys`: those are subcolumns, not plain columns.
+        /// `IndexDescription::initExpressionInfo` analyzes with subcolumns enabled, so such a key would
+        /// be accepted here, but the lookup entity is built from top-level physical columns only and
+        /// cannot serve a subcolumn, leaving an accepted but unusable lookup index. A quoted top-level
+        /// column name containing a dot stays a single-part identifier (`compound()` is false) and is
+        /// still allowed.
+        if (!identifier || identifier->compound())
         {
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
-                "Index of type '{}' supports only plain column names in expression, got '{}'",
+                "Index of type '{}' supports only plain top-level column names in expression, got '{}'",
                 index_type,
                 child->formatForErrorMessage());
         }
