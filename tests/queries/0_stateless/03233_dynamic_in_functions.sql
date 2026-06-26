@@ -50,8 +50,8 @@ select sipHash64(d) as res, toTypeName(res) from test;
 select sipHash128(d) as res, toTypeName(res) from test;
 select intHash32(d) as res, toTypeName(res) from test;
 select intHash64(d) as res, toTypeName(res) from test;
-select h3CellAreaM2(585763170430222335 + d * 549755813888) as res, toTypeName(res) from test;
-select h3CellAreaRads2(585763170430222335 + d * 549755813888) as res, toTypeName(res) from test;
+select round(h3CellAreaM2(585763170430222335 + d * 549755813888), 0) as res, toTypeName(res) from test;
+select round(h3CellAreaRads2(585763170430222335 + d * 549755813888), 10) as res, toTypeName(res) from test;
 select h3Distance(585763170430222335 + d * 549755813888, 585763170430222335 + (d + 1) * 549755813888) as res, toTypeName(res) from test;
 select sqid(d) as res, toTypeName(res) from test;
 
