@@ -1584,8 +1584,12 @@ void RestCatalog::cacheCredentials(
 
     /// Cap at the configured TTL so an entry never outlives the documented maximum lifetime.
     auto refresh_after = now + ttl;
-    if (parsed.expires_at && parsed.expires_at.value() < refresh_after)
-        refresh_after = parsed.expires_at.value();
+    if (parsed.expires_at)
+    {
+        const auto safe_expiry = parsed.expires_at.value() - credentials_expiry_safety_window;
+        if (safe_expiry < refresh_after)
+            refresh_after = safe_expiry;
+    }
     if (refresh_after <= now)
         return;
 

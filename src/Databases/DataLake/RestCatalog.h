@@ -151,6 +151,8 @@ protected:
 
     /// Sweep trigger threshold, not capacity!
     static constexpr size_t credentials_cache_cleanup_threshold = 1000;
+
+    static constexpr std::chrono::seconds credentials_expiry_safety_window{60};
     mutable std::mutex credentials_cache_mutex;
 
     mutable std::map<std::pair<std::string, std::string>, VendedStorageCredentials> credentials_cache
