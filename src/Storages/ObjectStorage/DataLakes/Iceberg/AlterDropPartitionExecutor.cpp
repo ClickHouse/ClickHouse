@@ -258,8 +258,12 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
         compression_method,
         components.table_uuid);
 
-    if (metadata_object->getValue<Int32>(f_format_version) < 2)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "DROP PARTITION is supported only for Iceberg format-version 2");
+    const auto format_version = metadata_object->getValue<Int32>(f_format_version);
+    if (format_version != 2)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "DROP PARTITION is supported only for Iceberg format-version 2, but the table has format-version {}",
+            format_version);
 
     auto specs = metadata_object->getArray(f_partition_specs);
     if (!specs || specs->size() == 0)
