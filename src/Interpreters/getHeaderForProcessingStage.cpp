@@ -132,7 +132,7 @@ SharedHeader getHeaderForProcessingStage(
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query is not analyzed: no planner context");
 
                     const auto & query_node = query_info.query_tree->as<QueryNode &>();
-                    const auto & join_tree = query_node.getJoinTree();
+                    auto join_tree = query_node.getJoinTreeNodeTyped();
                     auto left_table_expression = extractLeftTableExpression(join_tree);
 
                     auto & table_expression_data = query_info.planner_context->getTableExpressionDataOrThrow(left_table_expression);

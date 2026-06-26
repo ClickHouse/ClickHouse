@@ -190,7 +190,7 @@ JoinClause JoinClause::concatClauses(const JoinClause & lhs, const JoinClause & 
 
 using TableExpressionSet = std::unordered_set<const IQueryTreeNode *>;
 
-TableExpressionSet extractTableExpressionsSet(const QueryTreeNodePtr & node)
+TableExpressionSet extractTableExpressionsSet(const TableExpressionNodePtr & node)
 {
     TableExpressionSet res;
     for (const auto & expr : extractTableExpressions(node, true))
@@ -239,8 +239,8 @@ std::set<JoinTableSide> extractJoinTableSidesFromExpression(
                 "JOIN {} actions has column {} that do not exist in left {} or right {} table expression columns",
                 join_node.formatASTForErrorMessage(),
                 column_source->formatASTForErrorMessage(),
-                join_node.getLeftTableExpression()->formatASTForErrorMessage(),
-                join_node.getRightTableExpression()->formatASTForErrorMessage());
+                join_node.getLeftTableExpressionNode()->formatASTForErrorMessage(),
+                join_node.getRightTableExpressionNode()->formatASTForErrorMessage());
 
         auto input_table_side = is_column_from_left_expr ? JoinTableSide::Left : JoinTableSide::Right;
         table_sides.insert(input_table_side);
@@ -798,8 +798,8 @@ static JoinClausesAndActions buildJoinClausesAndActions(
         join_right_actions_names_set.insert(right_table_expression_column.name);
     }
 
-    auto join_left_table_expressions = extractTableExpressionsSet(join_node.getLeftTableExpression());
-    auto join_right_table_expressions = extractTableExpressionsSet(join_node.getRightTableExpression());
+    auto join_left_table_expressions = extractTableExpressionsSet(join_node.getLeftTableExpressionNodeTyped());
+    auto join_right_table_expressions = extractTableExpressionsSet(join_node.getRightTableExpressionNodeTyped());
 
     JoinClausesAndActions result;
     bool has_residual_filters = false;
@@ -828,7 +828,7 @@ static JoinClausesAndActions buildJoinClausesAndActions(
     };
 
     bool is_join_with_special_storage = false;
-    if (const auto * right_table_node = join_node.getRightTableExpression()->as<TableNode>())
+    if (const auto * right_table_node = join_node.getRightTableExpressionNode()->as<TableNode>())
     {
         is_join_with_special_storage = dynamic_cast<const StorageJoin *>(right_table_node->getStorage().get());
     }

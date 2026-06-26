@@ -57,7 +57,7 @@ ASTPtr getParameterizedViewInnerQuery(const StoragePtr & storage)
 }
 
 TableNode::TableNode(StoragePtr storage_, StorageID storage_id_, TableLockHolder storage_lock_, StorageSnapshotPtr storage_snapshot_)
-    : IQueryTreeNode(children_size)
+    : ITableExpressionNode(children_size)
     , storage(std::move(storage_))
     , storage_id(std::move(storage_id_))
     , storage_lock(std::move(storage_lock_))
@@ -67,7 +67,7 @@ TableNode::TableNode(StoragePtr storage_, StorageID storage_id_, TableLockHolder
 {}
 
 TableNode::TableNode(StoragePtr storage_, TableLockHolder storage_lock_, StorageSnapshotPtr storage_snapshot_)
-    : IQueryTreeNode(children_size)
+    : ITableExpressionNode(children_size)
     , storage(std::move(storage_))
     , storage_id(storage->getStorageID())
     , storage_lock(std::move(storage_lock_))
@@ -78,7 +78,7 @@ TableNode::TableNode(StoragePtr storage_, TableLockHolder storage_lock_, Storage
 }
 
 TableNode::TableNode(StoragePtr storage_, const ContextPtr & context)
-    : IQueryTreeNode(children_size)
+    : ITableExpressionNode(children_size)
     , storage(std::move(storage_))
     , storage_id(storage->getStorageID())
     , storage_lock(storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]))

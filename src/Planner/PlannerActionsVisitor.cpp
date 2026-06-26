@@ -355,15 +355,15 @@ public:
                 WriteBufferFromOwnString buffer;
 
                 const auto & lambda_node = node->as<LambdaNode &>();
-                const auto & lambda_arguments_nodes = lambda_node.getArguments().getNodes();
+                const auto & lambda_argument_names = lambda_node.getArguments().getNames();
+                const auto & lambda_argument_types = lambda_node.getArguments().getTypes();
 
-                size_t lambda_arguments_nodes_size = lambda_arguments_nodes.size();
+                size_t lambda_arguments_nodes_size = lambda_argument_names.size();
                 for (size_t i = 0; i < lambda_arguments_nodes_size; ++i)
                 {
-                    const auto & lambda_argument_node = lambda_arguments_nodes[i];
-                    buffer << calculateActionNodeName(lambda_argument_node);
+                    buffer << lambda_argument_names[i];
                     buffer << ' ';
-                    buffer << lambda_argument_node->as<ColumnNode &>().getResultType()->getName();
+                    buffer << lambda_argument_types[i]->getName();
 
                     if (i + 1 != lambda_arguments_nodes_size)
                         buffer << ", ";
@@ -856,7 +856,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         if (scope && scope->getNodeType() == QueryTreeNodeType::LAMBDA)
         {
             const auto & lambda_node = scope->as<LambdaNode &>();
-            const auto & arg_names = lambda_node.getArgumentNames();
+            const auto & arg_names = lambda_node.getArguments().getNames();
             if (std::find(arg_names.begin(), arg_names.end(), column_node_name) != arg_names.end())
             {
                 const auto & disambiguated = planner_context->getColumnNodeIdentifierOrThrow(node);
@@ -888,7 +888,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
                     if (outer_scope && outer_scope->getNodeType() == QueryTreeNodeType::LAMBDA)
                     {
                         const auto & outer_lambda = outer_scope->as<LambdaNode &>();
-                        const auto & outer_arg_names = outer_lambda.getArgumentNames();
+                        const auto & outer_arg_names = outer_lambda.getArguments().getNames();
                         outer_lambda_shadows = std::find(outer_arg_names.begin(), outer_arg_names.end(), column_node_name) != outer_arg_names.end();
                     }
 
@@ -1007,17 +1007,14 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
             "Lambda {} is not resolved during query analysis",
             lambda_node.formatASTForErrorMessage());
 
-    auto & lambda_arguments_nodes = lambda_node.getArguments().getNodes();
-    size_t lambda_arguments_nodes_size = lambda_arguments_nodes.size();
+    const auto & lambda_argument_names = lambda_node.getArguments().getNames();
+    const auto & lambda_argument_types = lambda_node.getArguments().getTypes();
+    size_t lambda_arguments_nodes_size = lambda_argument_names.size();
 
     NamesAndTypesList lambda_arguments_names_and_types;
 
     for (size_t i = 0; i < lambda_arguments_nodes_size; ++i)
-    {
-        const auto & lambda_argument_name = lambda_node.getArgumentNames().at(i);
-        auto lambda_argument_type = lambda_arguments_nodes[i]->getResultType();
-        lambda_arguments_names_and_types.emplace_back(lambda_argument_name, std::move(lambda_argument_type));
-    }
+        lambda_arguments_names_and_types.emplace_back(lambda_argument_names[i], lambda_argument_types[i]);
 
     ActionsDAG lambda_actions_dag;
     actions_stack.emplace_back(lambda_actions_dag, node);
@@ -1033,8 +1030,6 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     actions_stack.pop_back();
     levels.reset(actions_stack.size());
     size_t level = levels.max();
-
-    const auto & lambda_argument_names = lambda_node.getArgumentNames();
 
     for (const auto & required_column_name : required_column_names)
     {

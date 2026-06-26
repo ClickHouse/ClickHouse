@@ -1,3 +1,4 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <Planner/CollectSets.h>
 
 #include <Storages/StorageSet.h>
@@ -157,7 +158,7 @@ public:
 
             auto subquery_to_execute = in_second_argument;
             if (in_second_argument->as<TableNode>())
-                subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context.getQueryContext());
+                subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(static_pointer_cast<TableNode>(subquery_to_execute), planner_context.getQueryContext());
 
             auto ast = in_second_argument->toAST({ .set_subquery_cte_name = false });
             sets.addFromSubquery(set_key, std::move(ast), std::move(subquery_to_execute), settings);

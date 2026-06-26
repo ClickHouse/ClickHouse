@@ -1,3 +1,4 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <DataTypes/DataTypeString.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
@@ -754,7 +755,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 auto internal_exists_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
                 internal_exists_subquery->setIsSubquery(true);
                 internal_exists_subquery->getProjection().getNodes().push_back(std::make_shared<IdentifierNode>(Identifier{unique_column_name}));
-                internal_exists_subquery->getJoinTree() = std::move(subquery_node);
+                internal_exists_subquery->getJoinTreeNode() = std::move(subquery_node);
 
                 /// SELECT 1 FROM (SELECT * AS _unique_name_ FROM subquery) WHERE a = _unique_name_ LIMIT 1
                 auto new_exists_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
@@ -762,7 +763,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     auto constant_data_type = std::make_shared<DataTypeUInt64>();
                     new_exists_subquery->setIsSubquery(true);
                     new_exists_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
-                    new_exists_subquery->getJoinTree() = std::move(internal_exists_subquery);
+                    new_exists_subquery->getJoinTreeNode() = std::move(internal_exists_subquery);
 
                     auto equals_function_node_ptr = std::make_shared<FunctionNode>("equals");
 
@@ -831,7 +832,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         new_exists_subquery->setIsSubquery(true);
         new_exists_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
-        new_exists_subquery->getJoinTree() = exists_subquery_argument;
+        new_exists_subquery->getJoinTreeNode() = exists_subquery_argument;
         new_exists_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
 
         QueryTreeNodePtr new_exists_argument = new_exists_subquery;
@@ -1065,8 +1066,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                                                 std::make_shared<IdentifierNode>(Identifier{arg_name}));
                                         }
 
+                                        auto lambda_args_node = std::make_shared<LambdaArgumentsNode>(std::move(lambda_arg_names));
                                         argument_nodes[0] = std::make_shared<LambdaNode>(
-                                            std::move(lambda_arg_names), std::move(func_call), false /*is_operator*/);
+                                            std::move(lambda_args_node), std::move(func_call), false /*is_operator*/);
                                     }
                                 }
                             }
@@ -1175,14 +1177,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             for (auto & column : columns_to_select)
             {
-                column_nodes_to_select->getNodes().emplace_back(std::make_shared<ColumnNode>(column, in_second_argument));
+                column_nodes_to_select->getNodes().emplace_back(std::make_shared<ColumnNode>(column, static_pointer_cast<ITableExpressionNode>(in_second_argument)));
                 projection_columns.emplace_back(column.name, column.type);
             }
 
             auto in_second_argument_query_node = std::make_shared<QueryNode>(Context::createCopy(scope.context));
             in_second_argument_query_node->setIsSubquery(true);
             in_second_argument_query_node->getProjectionNode() = std::move(column_nodes_to_select);
-            in_second_argument_query_node->getJoinTree() = std::move(in_second_argument);
+            in_second_argument_query_node->getJoinTreeNode() = std::move(in_second_argument);
             in_second_argument_query_node->resolveProjectionColumns(std::move(projection_columns));
 
             in_second_argument = std::move(in_second_argument_query_node);
@@ -1198,7 +1200,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 while (table_expression)
                 {
                     if (auto * query_node = table_expression->as<QueryNode>())
-                        table_expression = extractLeftTableExpression(query_node->getJoinTree());
+                        table_expression = extractLeftTableExpression(query_node->getJoinTreeNodeTyped());
                     else if (auto * union_node = table_expression->as<UnionNode>())
                         table_expression = union_node->getQueries().getNodes().at(0);
                     else
@@ -1212,7 +1214,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 {
                     auto replacement_table_expression_table_node = table_expression_table_node->clone();
                     replacement_table_expression_table_node->as<TableNode &>().updateStorage(storage, scope.context);
-                    in_second_argument = in_second_argument->cloneAndReplace(table_expression, std::move(replacement_table_expression_table_node));
+                    in_second_argument = in_second_argument->cloneAndReplace(
+                        static_pointer_cast<ITableExpressionNode>(table_expression),
+                        static_pointer_cast<ITableExpressionNode>(std::move(replacement_table_expression_table_node)));
                 }
             }
 
@@ -1321,7 +1325,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         const auto * lambda_node = function_argument->as<const LambdaNode>();
         if (lambda_node)
         {
-            size_t lambda_arguments_size = lambda_node->getArguments().getNodes().size();
+            size_t lambda_arguments_size = lambda_node->getArguments().getNames().size();
             argument_column.type = std::make_shared<DataTypeFunction>(DataTypes(lambda_arguments_size, nullptr), nullptr);
             function_lambda_arguments_indexes.push_back(function_argument_index);
         }
@@ -1684,8 +1688,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto lambda_to_resolve = lambda_argument->clone();
             auto & lambda_to_resolve_typed = lambda_to_resolve->as<LambdaNode &>();
 
-            const auto & lambda_argument_names = lambda_to_resolve_typed.getArgumentNames();
-            size_t lambda_arguments_size = lambda_to_resolve_typed.getArguments().getNodes().size();
+            const auto & lambda_argument_names = lambda_to_resolve_typed.getArguments().getNames();
+            size_t lambda_arguments_size = lambda_argument_names.size();
 
             const auto * function_data_type = typeid_cast<const DataTypeFunction *>(argument_types[function_lambda_argument_index].get());
             if (!function_data_type)
@@ -1732,8 +1736,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             {
                 const auto & argument_type = function_data_type_argument_types[i];
                 auto column_name_and_type = NameAndTypePair{lambda_argument_names[i], argument_type};
-                lambda_arguments.push_back(std::make_shared<ColumnNode>(std::move(column_name_and_type), lambda_to_resolve));
+                lambda_arguments.push_back(std::make_shared<ColumnNode>(std::move(column_name_and_type), lambda_to_resolve_typed.getArgumentsTyped()));
             }
+
+            /// Record the resolved argument types on the lambda arguments node so the planner
+            /// can reconstruct (name, type) pairs without the per-argument column list.
+            lambda_to_resolve_typed.getArguments().resolve(function_data_type_argument_types);
 
             lambda_projection_names = resolveLambda(lambda_argument, lambda_to_resolve, lambda_arguments, lambda_scope);
 
@@ -1860,7 +1868,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         auto * nearest_join_query_scope = scope.joins_count > 0 ? scope.getNearestQueryScope() : nullptr;
         auto * nearest_join_query_scope_query_node = nearest_join_query_scope ? nearest_join_query_scope->scope_node->as<QueryNode>() : nullptr;
-        const auto * join_node = nearest_join_query_scope_query_node ? nearest_join_query_scope_query_node->getJoinTree()->as<JoinNode>() : nullptr;
+        const auto * join_node = nearest_join_query_scope_query_node ? nearest_join_query_scope_query_node->getJoinTreeNode()->as<JoinNode>() : nullptr;
         if (join_node && join_node->getStrictness() == JoinStrictness::Asof &&
             scope.expressions_in_resolve_process_stack.has(join_node->getJoinExpression().get()))
         {

@@ -1297,7 +1297,7 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
 
     ColumnsDescription fake_column_descriptions(all_columns);
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
-    QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
+    auto fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
     GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
@@ -1311,7 +1311,7 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
     assertNoMatcherNodes(expression_list, "in column DEFAULT expression");
 
     query_node->getProjectionNode() = expression_list;
-    query_node->getJoinTree() = fake_table_expression;
+    query_node->getJoinTreeNode() = fake_table_expression;
 
     QueryTreeNodePtr query_tree = query_node;
     analyzer.resolve(query_tree, nullptr, execution_context);

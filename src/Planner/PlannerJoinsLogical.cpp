@@ -130,8 +130,8 @@ struct JoinOperatorBuildContext
         const PlannerContextPtr & planner_context_)
         : join_node(join_node_)
         , planner_context(planner_context_)
-        , left_table_expression_set(extractTableExpressionsSet(join_node.getLeftTableExpression()))
-        , right_table_expression_set(extractTableExpressionsSet(join_node.getRightTableExpression()))
+        , left_table_expression_set(extractTableExpressionsSet(join_node.getLeftTableExpressionNodeTyped()))
+        , right_table_expression_set(extractTableExpressionsSet(join_node.getRightTableExpressionNodeTyped()))
         , left_header(left_header_)
         , right_header(right_header_)
         , expression_actions(*left_header, *right_header)
@@ -571,8 +571,8 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
         SortingStep::Settings(settings));
 
     bool display_internal_aliases = settings[Setting::query_plan_display_internal_aliases];
-    auto left_table_label = getQueryDisplayLabel(join_node.getLeftTableExpression(), display_internal_aliases);
-    auto right_table_label = getQueryDisplayLabel(join_node.getRightTableExpression(), display_internal_aliases);
+    auto left_table_label = getQueryDisplayLabel(join_node.getLeftTableExpressionNode(), display_internal_aliases);
+    auto right_table_label = getQueryDisplayLabel(join_node.getRightTableExpressionNode(), display_internal_aliases);
     join_step->setInputLabels(std::move(left_table_label), std::move(right_table_label));
 
     {

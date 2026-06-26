@@ -1,3 +1,4 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ListNode.h>
@@ -27,7 +28,7 @@ JoinNode::JoinNode(QueryTreeNodePtr left_table_expression_,
     JoinStrictness strictness_,
     JoinKind kind_,
     bool is_using_join_expression_)
-    : IQueryTreeNode(children_size)
+    : ITableExpressionNode(children_size)
     , locality(locality_)
     , strictness(strictness_)
     , kind(kind_)
@@ -151,10 +152,10 @@ void JoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
     buffer << ", kind: " << toString(kind);
 
     buffer << '\n' << std::string(indent + 2, ' ') << "LEFT TABLE EXPRESSION\n";
-    getLeftTableExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
+    getLeftTableExpression().dumpTreeImpl(buffer, format_state, indent + 4);
 
     buffer << '\n' << std::string(indent + 2, ' ') << "RIGHT TABLE EXPRESSION\n";
-    getRightTableExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
+    getRightTableExpression().dumpTreeImpl(buffer, format_state, indent + 4);
 
     if (getJoinExpression())
     {
@@ -183,7 +184,9 @@ void JoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 QueryTreeNodePtr JoinNode::cloneImpl() const
 {
     auto clone = std::make_shared<JoinNode>(
-        getLeftTableExpression(), getRightTableExpression(), getJoinExpression(),
+        static_pointer_cast<ITableExpressionNode>(children[left_table_expression_child_index]),
+        static_pointer_cast<ITableExpressionNode>(children[right_table_expression_child_index]),
+        getJoinExpression(),
         locality, strictness, kind, is_using_join_expression);
     clone->is_natural = is_natural;
     return clone;

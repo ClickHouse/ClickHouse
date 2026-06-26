@@ -135,7 +135,7 @@ struct SelectQueryInfo
 
     /// Storage table expression
     /// It's guaranteed to be present in JOIN TREE of `query_tree`
-    QueryTreeNodePtr table_expression;
+    TableExpressionNodePtr table_expression;
 
     /// Table expression modifiers for storage
     std::optional<TableExpressionModifiers> table_expression_modifiers;

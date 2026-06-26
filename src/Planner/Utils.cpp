@@ -1,3 +1,4 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <Planner/Utils.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -370,7 +371,7 @@ bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node)
     const auto & query_node_typed = query_node->as<const QueryNode &>();
 
     std::vector<QueryTreeNodePtr> join_tree_nodes_to_process;
-    join_tree_nodes_to_process.push_back(query_node_typed.getJoinTree());
+    join_tree_nodes_to_process.push_back(query_node_typed.getJoinTreeNode());
 
     while (!join_tree_nodes_to_process.empty())
     {
@@ -406,8 +407,8 @@ bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node)
             case QueryTreeNodeType::JOIN:
             {
                 auto & join_node = join_tree_node_to_process->as<JoinNode &>();
-                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpression());
-                join_tree_nodes_to_process.push_back(join_node.getRightTableExpression());
+                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpressionNode());
+                join_tree_nodes_to_process.push_back(join_node.getRightTableExpressionNode());
                 break;
             }
             default:
@@ -449,7 +450,7 @@ bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node)
                 if (query_node_to_process.isGroupByWithTotals())
                     return true;
 
-                join_tree_nodes_to_process.push_back(query_node_to_process.getJoinTree().get());
+                join_tree_nodes_to_process.push_back(query_node_to_process.getJoinTreeNode().get());
                 break;
             }
             case QueryTreeNodeType::UNION:
@@ -464,7 +465,7 @@ bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node)
             case QueryTreeNodeType::ARRAY_JOIN:
             {
                 const auto & array_join_node = join_tree_node_to_process->as<ArrayJoinNode &>();
-                join_tree_nodes_to_process.push_back(array_join_node.getTableExpression().get());
+                join_tree_nodes_to_process.push_back(array_join_node.getTableExpressionNode().get());
                 break;
             }
             case QueryTreeNodeType::CROSS_JOIN:
@@ -478,8 +479,8 @@ bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node)
             case QueryTreeNodeType::JOIN:
             {
                 const auto & join_node = join_tree_node_to_process->as<JoinNode &>();
-                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpression().get());
-                join_tree_nodes_to_process.push_back(join_node.getRightTableExpression().get());
+                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpressionNode().get());
+                join_tree_nodes_to_process.push_back(join_node.getRightTableExpressionNode().get());
                 break;
             }
             default:
@@ -498,7 +499,7 @@ bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node)
 bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_node)
 {
     const auto & query_node_typed = query_node->as<const QueryNode &>();
-    return queryTreeHasWithTotalsInAnySubqueryInJoinTree(query_node_typed.getJoinTree().get());
+    return queryTreeHasWithTotalsInAnySubqueryInJoinTree(query_node_typed.getJoinTreeNode().get());
 }
 
 
@@ -515,11 +516,11 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
 
 QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
     const QueryTreeNodePtr & query_node,
-    const QueryTreeNodes & table_nodes,
+    const TableExpressionNodes & table_nodes,
     const ContextPtr & context,
     ResultReplacementMap * result_replacement_map)
 {
-    std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
+    IQueryTreeNode::ReplacementMap replacement_map;
 
     for (const auto & table_expression : table_nodes)
     {
@@ -546,7 +547,10 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
                 result_replacement_map->emplace(table_expression, dummy_table_node);
 
             dummy_table_node->setAlias(table_expression->getAlias());
-            replacement_map.emplace(table_expression.get(), std::move(dummy_table_node));
+            if (table_node)
+                replacement_map.emplace(table_node, std::move(dummy_table_node));
+            else
+                replacement_map.emplace(table_function_node, std::move(dummy_table_node));
         }
     }
 
@@ -563,7 +567,7 @@ SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const 
 }
 
 FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
-        const QueryTreeNodePtr & table_expression,
+        const TableExpressionNodePtr & table_expression,
         PlannerContextPtr & planner_context,
         NameSet table_expression_required_names_without_filter)
 {
@@ -602,7 +606,7 @@ FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
 }
 
 FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
-        const QueryTreeNodePtr & table_expression,
+        const TableExpressionNodePtr & table_expression,
         PlannerContextPtr & planner_context,
         NameSet table_expression_required_names_without_filter)
 {
