@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 SET alter_sync = 2;
 SET optimize_throw_if_noop = 0;
 

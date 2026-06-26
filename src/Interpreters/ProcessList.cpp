@@ -12,13 +12,10 @@
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Scheduler/IResourceManager.h>
-#include <Common/Scheduler/MemoryReservation.h>
 #include <Common/logger_useful.h>
-#include <array>
 #include <chrono>
 #include <memory>
 
@@ -50,8 +47,14 @@ namespace Setting
     extern const SettingsUInt64 max_network_bandwidth_for_user;
     extern const SettingsUInt64 max_temporary_data_on_disk_size_for_user;
     extern const SettingsUInt64 memory_usage_overcommit_max_wait_microseconds;
+    extern const SettingsUInt64 memory_overcommit_ratio_denominator;
     extern const SettingsUInt64 memory_overcommit_ratio_denominator_for_user;
+    extern const SettingsUInt64 memory_profiler_step;
+    extern const SettingsUInt64 memory_profiler_sample_min_allocation_size;
+    extern const SettingsUInt64 memory_profiler_sample_max_allocation_size;
+    extern const SettingsFloat memory_profiler_sample_probability;
     extern const SettingsUInt64 max_temporary_data_on_disk_size_for_query;
+    extern const SettingsFloat memory_tracker_fault_probability;
     extern const SettingsUInt64 priority;
     extern const SettingsMilliseconds queue_max_wait_ms;
     extern const SettingsBool replace_running_query;
@@ -62,7 +65,6 @@ namespace Setting
     extern const SettingsBool trace_profile_events;
     extern const SettingsString trace_profile_events_list;
     extern const SettingsMilliseconds low_priority_query_wait_time_ms;
-    extern const SettingsUInt64 reserve_memory;
 }
 
 namespace ErrorCodes
@@ -73,7 +75,6 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -129,39 +130,17 @@ ProcessList::EntryPtr ProcessList::insert(
     bool is_unlimited_query = isUnlimitedQuery(ast) || is_internal;
     std::shared_ptr<QueryStatus> query;
 
-    // Acquire a query slot and a memory reservation from the resource scheduler if necessary.
+    // Acquire a query slot from resource scheduler if necessary.
     // NOTE: There is a separate independent limit for the whole server `max_concurrent_queries`.
     // NOTE: If that limit is exhausted, the query will be later blocked and wait while holding a query slot.
-    // NOTE: `MemoryReservation` admission may block here and evict other queries. The query may still be
-    // rejected below by reject-fast `ProcessList` checks (`max_concurrent_queries*`, duplicate query id,
-    // etc.), in which case the reservation was performed in vain. We accept this trade-off: the query slot
-    // is already acquired at this point, and the upcoming multi-resource scheduler will admit query slots
-    // and memory reservations together as a single allocation. Splitting their admission across the
-    // `ProcessList` mutex would prevent that unification and is a worse design overall.
     QuerySlotPtr query_slot;
-    MemoryReservationPtr memory_reservation;
     if (!is_unlimited_query)
     {
-        /// Hold a shared_ptr to keep the storage alive for the duration of this call, in case of concurrent shutdown.
-        auto workload_entity_storage = query_context->getWorkloadEntityStoragePtr();
-        String query_resource_name = workload_entity_storage->getQueryResourceName();
+        String query_resource_name = query_context->getWorkloadEntityStorage().getQueryResourceName();
         if (!query_resource_name.empty())
         {
             if (ResourceLink link = query_context->getWorkloadClassifier()->get(query_resource_name))
                 query_slot = std::make_unique<QuerySlot>(link);
-        }
-        String memory_reservation_resource_name = workload_entity_storage->getMemoryReservationResourceName();
-        if (!memory_reservation_resource_name.empty())
-        {
-            if (ResourceLink link = query_context->getWorkloadClassifier()->get(memory_reservation_resource_name))
-            {
-                // The link must point to a space-shared resource; fail loudly instead of dereferencing null.
-                if (!link.allocation_queue)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Resource '{}' configured for memory reservation is not a `MEMORY RESERVATION` resource",
-                        memory_reservation_resource_name);
-                memory_reservation = std::make_unique<MemoryReservation>(link, client_info.current_query_id, settings[Setting::reserve_memory]);
-            }
         }
     }
 
@@ -323,24 +302,38 @@ ProcessList::EntryPtr ProcessList::insert(
 
             /// Set query-level memory trackers
             thread_group->memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage]);
-            configureMemoryTrackerFromSettings(query_context->hasTraceCollector(), thread_group->memory_tracker, settings);
+            thread_group->memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator]);
 
-            if (query_context->hasTraceCollector() && settings[Setting::trace_profile_events])
+            if (query_context->hasTraceCollector())
             {
-                const String & list_of_events_to_trace = settings[Setting::trace_profile_events_list];
-                if (!list_of_events_to_trace.empty())
+                /// Set up memory profiling
+                thread_group->memory_tracker.setProfilerStep(settings[Setting::memory_profiler_step]);
+
+                thread_group->memory_tracker.setSampleProbability(settings[Setting::memory_profiler_sample_probability]);
+                thread_group->memory_tracker.setSampleMinAllocationSize(settings[Setting::memory_profiler_sample_min_allocation_size]);
+                thread_group->memory_tracker.setSampleMaxAllocationSize(settings[Setting::memory_profiler_sample_max_allocation_size]);
+
+                /// Set up tracing of profile events
+                if (settings[Setting::trace_profile_events])
                 {
-                    /// Trace specific profile events
-                    thread_group->performance_counters.setTraceProfileEvents(list_of_events_to_trace);
-                }
-                else
-                {
-                    /// Trace all profile events
-                    thread_group->performance_counters.setTraceAllProfileEvents();
+                    const String & list_of_events_to_trace = settings[Setting::trace_profile_events_list];
+                    if (!list_of_events_to_trace.empty())
+                    {
+                        /// Trace specific profile events
+                        thread_group->performance_counters.setTraceProfileEvents(list_of_events_to_trace);
+                    }
+                    else
+                    {
+                        /// Trace all profile events
+                        thread_group->performance_counters.setTraceAllProfileEvents();
+                    }
                 }
             }
 
             thread_group->memory_tracker.setDescription("Query");
+            if (settings[Setting::memory_tracker_fault_probability] > 0.0)
+                thread_group->memory_tracker.setFaultProbability(settings[Setting::memory_tracker_fault_probability]);
+
             thread_group->memory_tracker.setOvercommitWaitingTime(settings[Setting::memory_usage_overcommit_max_wait_microseconds]);
 
             /// NOTE: Do not set the limit for thread-level memory tracker since it could show unreal values
@@ -356,7 +349,6 @@ ProcessList::EntryPtr ProcessList::insert(
                 settings[Setting::priority],
                 std::chrono::milliseconds(settings[Setting::low_priority_query_wait_time_ms].totalMilliseconds())),
             std::move(query_slot),
-            std::move(memory_reservation),
             std::move(thread_group),
             query_kind,
             settings,
@@ -497,7 +489,6 @@ QueryStatus::QueryStatus(
     const ClientInfo & client_info_,
     QueryPriorities::Handle && priority_handle_,
     QuerySlotPtr && query_slot_,
-    MemoryReservationPtr && memory_reservation_,
     ThreadGroupPtr && thread_group_,
     IAST::QueryKind query_kind_,
     const Settings & query_settings_,
@@ -508,7 +499,6 @@ QueryStatus::QueryStatus(
     , normalized_query_hash(normalized_query_hash_)
     , client_info(client_info_)
     , query_slot(std::move(query_slot_))
-    , memory_reservation(std::move(memory_reservation_))
     , thread_group(std::move(thread_group_))
     , watch(CLOCK_MONOTONIC, watch_start_nanoseconds, true)
     , priority_handle(std::move(priority_handle_))
@@ -527,28 +517,12 @@ QueryStatus::QueryStatus(
     overflow_mode = query_settings_[Setting::timeout_overflow_mode];
 }
 
-void QueryStatus::releaseWorkloadResources()
-{
-    releaseMemoryReservation();
-    releaseQuerySlot();
-}
-
-void QueryStatus::releaseQuerySlot()
-{
-    query_slot.reset();
-}
-
-void QueryStatus::releaseMemoryReservation()
-{
-    memory_reservation.reset();
-}
-
 QueryStatus::~QueryStatus()
 {
 #if !defined(NDEBUG)
     /// Check that all executors were invalidated.
     for (const auto & [_, e] : executors)
-        chassert(!e->executor);
+        assert(!e->executor);
 #endif
 
     if (auto * memory_tracker = getMemoryTracker())
@@ -640,7 +614,7 @@ void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
     throwProperExceptionIfNeeded(max_exec_time, 0);
 
     std::lock_guard lock(executors_mutex);
-    chassert(!executors.contains(e));
+    assert(!executors.contains(e));
     executors[e] = std::make_shared<ExecutorHolder>(e);
 }
 
@@ -650,7 +624,7 @@ void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
 
     {
         std::lock_guard lock(executors_mutex);
-        chassert(executors.contains(e));
+        assert(executors.contains(e));
         executor_holder = executors[e];
         executors.erase(e);
     }
@@ -681,12 +655,6 @@ void QueryStatus::throwIfKilled()
     if (!is_killed.load())
         return;
     throwProperExceptionIfNeeded(limits.max_execution_time.totalMilliseconds(), 0);
-}
-
-CancelReason QueryStatus::getCancelReason() const
-{
-    std::lock_guard<std::mutex> lock(cancel_mutex);
-    return cancel_reason;
 }
 
 bool QueryStatus::checkTimeLimitSoft()
@@ -726,12 +694,6 @@ ThrottlerPtr QueryStatus::getUserNetworkThrottler()
     return user_process_list->user_throttler;
 }
 
-MemoryTracker * QueryStatus::getMemoryTracker() const
-{
-    if (!thread_group)
-        return nullptr;
-    return &thread_group->memory_tracker;
-}
 
 QueryStatusPtr ProcessList::tryGetProcessListElement(const String & current_query_id, const String & current_user)
 {

@@ -4,18 +4,19 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            ReadFromMergeTree (default.tab)
-            Indexes:
-              PrimaryKey
-                Condition: true
-                Parts: 1/1
-                Granules: 4/4
-              Skip
-                Name: idx
-                Description: vector_similarity GRANULARITY 2
-                Parts: 1/1
-                Granules: 2/4
-              Ranges: 1
+            Expression
+              ReadFromMergeTree (default.tab)
+              Indexes:
+                PrimaryKey
+                  Condition: true
+                  Parts: 1/1
+                  Granules: 4/4
+                Skip
+                  Name: idx
+                  Description: vector_similarity GRANULARITY 2
+                  Parts: 1/1
+                  Granules: 2/4
+                Ranges: 1
       LazilyReadFromMergeTree
 Expression (Project names)
   Expression
@@ -23,18 +24,19 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            ReadFromMergeTree (default.tab)
-            Indexes:
-              PrimaryKey
-                Condition: true
-                Parts: 1/1
-                Granules: 4/4
-              Skip
-                Name: idx
-                Description: vector_similarity GRANULARITY 2
-                Parts: 1/1
-                Granules: 2/4
-              Ranges: 2
+            Expression
+              ReadFromMergeTree (default.tab)
+              Indexes:
+                PrimaryKey
+                  Condition: true
+                  Parts: 1/1
+                  Granules: 4/4
+                Skip
+                  Name: idx
+                  Description: vector_similarity GRANULARITY 2
+                  Parts: 1/1
+                  Granules: 2/4
+                Ranges: 2
       LazilyReadFromMergeTree
 Expression (Project names)
   Expression
@@ -42,16 +44,17 @@ Expression (Project names)
       Limit (preliminary LIMIT)
         Sorting (Sorting for ORDER BY)
           Expression
-            ReadFromMergeTree (default.tab)
-            Indexes:
-              PrimaryKey
-                Condition: true
-                Parts: 1/1
-                Granules: 4/4
-              Skip
-                Name: idx
-                Description: vector_similarity GRANULARITY 2
-                Parts: 1/1
-                Granules: 2/4
-              Ranges: 1
+            Expression
+              ReadFromMergeTree (default.tab)
+              Indexes:
+                PrimaryKey
+                  Condition: true
+                  Parts: 1/1
+                  Granules: 4/4
+                Skip
+                  Name: idx
+                  Description: vector_similarity GRANULARITY 2
+                  Parts: 1/1
+                  Granules: 2/4
+                Ranges: 1
       LazilyReadFromMergeTree
