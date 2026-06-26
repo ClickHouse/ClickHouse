@@ -15,6 +15,7 @@ using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 
 struct SkipIndexReadResult
 {
+    bool has_selected_granules = true;
     std::vector<bool> granules_selected; /// granules selected by skip index(es) at read time
     std::shared_ptr<MergeTreeIndexBulkGranulesMinMax> min_max_index_for_top_k;
     TopKThresholdTrackerPtr threshold_tracker;
@@ -93,6 +94,8 @@ struct ProjectionIndexBitmap
     size_t cardinality() const;
     bool empty() const;
 
+    bool has_selected_granules = true;
+
     template <typename Offset>
     bool contains(std::type_identity_t<Offset> value);
 
@@ -159,6 +162,7 @@ using MergeTreeProjectionIndexReaderPtr = std::shared_ptr<MergeTreeProjectionInd
 
 struct MergeTreeIndexReadResult
 {
+    bool has_selected_granules = true;
     SkipIndexReadResultPtr skip_index_read_result;
     ProjectionIndexBitmapPtr projection_index_read_result;
 };

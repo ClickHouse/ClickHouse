@@ -8,6 +8,9 @@
 namespace DB
 {
 
+struct MergeTreeIndexBuildContext;
+using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
+
 class UncompressedCache;
 using UncompressedCachePtr = std::shared_ptr<UncompressedCache>;
 
@@ -26,6 +29,11 @@ public:
         bool use_uncompressed_cache = false;
         bool do_not_steal_tasks = false;
         bool use_const_size_tasks_for_remote_reading = false;
+
+        /// When set, column readers are created in `MergeTreeReadTask::initializeReadersChain`
+        /// after skip-index filtering instead of in `createTask`.
+        bool defer_reader_creation = false;
+        MergeTreeIndexBuildContextPtr deferred_index_build_context;
 
         // Not the same as the similar field in `ParallelReadingExtension`. Accounts for `max_parallel_replicas`.
         const size_t total_query_nodes{};
@@ -59,6 +67,7 @@ public:
         const ContextPtr & context_);
 
     Block getHeader() const override { return header; }
+    MergeTreeReadTask::Extras getReaderExtras() const override { return getExtras(); }
 
 protected:
     /// Initialized in constructor

@@ -193,7 +193,8 @@ public:
         const PrewhereExprInfo & prewhere_actions,
         MergeTreeIndexBuildContextPtr index_build_context,
         LazyMaterializingRowsPtr lazy_materializing_rows,
-        const ReadStepsPerformanceCounters & read_steps_performance_counters);
+        const ReadStepsPerformanceCounters & read_steps_performance_counters,
+        const Extras & reader_extras);
 
     void initializeIndexReader(const MergeTreeIndexBuildContextPtr & index_build_context, const LazyMaterializingRowsPtr & lazy_materializing_rows);
 
@@ -203,6 +204,9 @@ public:
     const MergeTreeReadTaskInfo & getInfo() const { return *info; }
     const MergeTreeReadersChain & getReadersChain() const { return readers_chain; }
     const IMergeTreeReader & getMainReader() const { return *readers.main; }
+    bool hasReaders() const { return readers.main != nullptr; }
+
+    bool createColumnReadersIfNeeded(const Extras & reader_extras, MergeTreeIndexBuildContextPtr index_build_context);
 
     void addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_);
     const MarkRanges & getPrewhereUnmatchedMarks() { return prewhere_unmatched_marks; }

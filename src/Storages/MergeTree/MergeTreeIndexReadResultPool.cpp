@@ -117,6 +117,14 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
 
     auto res = std::make_shared<SkipIndexReadResult>();
     res->granules_selected.resize(part.data_part->index_granularity->getMarksCountWithoutFinal(), false);
+
+    if (ranges.empty())
+    {
+        res->has_selected_granules = false;
+        return res;
+    }
+
+    res->has_selected_granules = true;
     for (const auto & range : ranges)
     {
         for (auto i = range.begin; i < range.end; ++i)
@@ -425,6 +433,8 @@ ProjectionIndexBitmapPtr SingleProjectionIndexReader::read(const RangesInDataPar
     /// If the read was cancelled, return nullptr to avoid using an incomplete index bitmap.
     if (processor->is_cancelled)
         res = nullptr;
+    else if (res)
+        res->has_selected_granules = !res->empty();
 
     return res;
 }
@@ -461,6 +471,8 @@ ProjectionIndexBitmapPtr MergeTreeProjectionIndexReader::read(const RangesInData
         projection_index_bitmap = std::move(bitmaps[0]);
         for (size_t i = 1; i < bitmaps.size(); ++i)
             projection_index_bitmap->intersectWith(*bitmaps[i]);
+
+        projection_index_bitmap->has_selected_granules = !projection_index_bitmap->empty();
     }
 
     return projection_index_bitmap;
@@ -512,6 +524,16 @@ MergeTreeIndexReadResultPool::getOrBuildIndexReadResult(const RangesInDataPart &
                         res = std::make_shared<MergeTreeIndexReadResult>();
                     res->projection_index_read_result = std::move(projection_index_res);
                 }
+            }
+
+            if (res)
+            {
+                bool has_selected_granules = true;
+                if (res->skip_index_read_result)
+                    has_selected_granules = res->skip_index_read_result->has_selected_granules;
+                if (has_selected_granules && res->projection_index_read_result)
+                    has_selected_granules = res->projection_index_read_result->has_selected_granules;
+                res->has_selected_granules = has_selected_granules;
             }
 
             promise->set_value(res);

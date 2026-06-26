@@ -7,6 +7,8 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Processors/Chunk.h>
+#include <mutex>
+#include <unordered_map>
 
 namespace DB
 {
@@ -91,7 +93,18 @@ struct MergeTreeIndexBuildContext
         MergeTreeIndexReadResultPoolPtr index_reader_pool_,
         PartRemainingMarks part_remaining_marks_);
 
+    bool partHasSelectedGranules(
+        size_t part_index_in_query,
+        const StorageMetadataPtr & metadata,
+        const NameSet & all_updated_columns) const;
+
+    void markPartFullySkipped(size_t part_index_in_query) const;
+
     MergeTreeIndexReadResultPtr getPreparedIndexReadResult(const MergeTreeReadTask & task) const;
+
+private:
+    mutable std::mutex part_selection_cache_mutex;
+    mutable std::unordered_map<size_t, bool> part_selection_cache;
 };
 
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;

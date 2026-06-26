@@ -232,6 +232,7 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
         .preferred_block_size_bytes = ctx_settings[Setting::preferred_block_size_bytes],
         .use_uncompressed_cache = ctx_settings[Setting::use_uncompressed_cache],
         .use_const_size_tasks_for_remote_reading = ctx_settings[Setting::merge_tree_use_const_size_tasks_for_remote_reading],
+        .deferred_index_build_context = {},
         .total_query_nodes = 1,
     };
 
