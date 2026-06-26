@@ -2,7 +2,6 @@ import pytest
 import uuid
 import threading
 import logging
-import warnings
 import time
 import pymysql
 from helpers.config_cluster import mysql_pass
