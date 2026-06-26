@@ -4,6 +4,7 @@
 # pylint: disable=redefined-outer-name
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -240,68 +241,64 @@ def test_string_functions(start_cluster):
     functions = list(functions)
     logging.info("Got %s functions", len(functions))
 
-    skipped = 0
-    failed = 0
-    passed = 0
+    v = "foo"
+
+    allowed_errors = [
+        # Messages
+        "Cannot load time zone ",
+        "No macro ",
+        "Should start with ",  # POINT/POLYGON/...
+        "Cannot read input: expected a digit but got something else:",
+        # ErrorCodes
+        "ILLEGAL_TYPE_OF_ARGUMENT",
+        "DICTIONARIES_WAS_NOT_LOADED",
+        "CANNOT_PARSE_UUID",
+        "CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING",
+        "ILLEGAL_COLUMN",
+        "TYPE_MISMATCH",
+        "SUPPORT_IS_DISABLED",
+        "CANNOT_PARSE_DATE",
+        "UNKNOWN_SETTING",
+        "CANNOT_PARSE_BOOL",
+        "FILE_DOESNT_EXIST",
+        "NOT_IMPLEMENTED",
+        "BAD_GET",
+        "UNKNOWN_TYPE",
+        # addressToSymbol
+        "FUNCTION_NOT_ALLOWED",
+        # Date functions
+        "CANNOT_PARSE_TEXT",
+        "CANNOT_PARSE_DATETIME",
+        # Function X takes exactly one parameter:
+        "NUMBER_OF_ARGUMENTS_DOESNT_MATCH",
+        # Function X takes at least one argument
+        "TOO_FEW_ARGUMENTS_FOR_FUNCTION",
+        # Function X accepts at most 3 arguments, Y given
+        "TOO_MANY_ARGUMENTS_FOR_FUNCTION",
+        # The function 'X' can only be used as a window function
+        "BAD_ARGUMENTS",
+        # String foo is obviously not a valid IP address.
+        "CANNOT_PARSE_IPV4",
+        "CANNOT_PARSE_IPV6",
+        # neighbor / runningDifference / runningAccumulate are deprecated and disabled by default.
+        "DEPRECATED_FUNCTION",
+    ]
 
     def get_function_value(node, function_name, value):
         return node.query(f"select {function_name}('{value}')").strip()
 
-    v = "foo"
-    for function in functions:
+    def check_function(function):
         logging.info("Checking %s('%s')", function, v)
 
         try:
             backward_value = get_function_value(backward, function, v)
         except QueryRuntimeException as e:
             error_message = str(e)
-            allowed_errors = [
-                # Messages
-                "Cannot load time zone ",
-                "No macro ",
-                "Should start with ",  # POINT/POLYGON/...
-                "Cannot read input: expected a digit but got something else:",
-                # ErrorCodes
-                "ILLEGAL_TYPE_OF_ARGUMENT",
-                "DICTIONARIES_WAS_NOT_LOADED",
-                "CANNOT_PARSE_UUID",
-                "CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING",
-                "ILLEGAL_COLUMN",
-                "TYPE_MISMATCH",
-                "SUPPORT_IS_DISABLED",
-                "CANNOT_PARSE_DATE",
-                "UNKNOWN_SETTING",
-                "CANNOT_PARSE_BOOL",
-                "FILE_DOESNT_EXIST",
-                "NOT_IMPLEMENTED",
-                "BAD_GET",
-                "UNKNOWN_TYPE",
-                # addressToSymbol
-                "FUNCTION_NOT_ALLOWED",
-                # Date functions
-                "CANNOT_PARSE_TEXT",
-                "CANNOT_PARSE_DATETIME",
-                # Function X takes exactly one parameter:
-                "NUMBER_OF_ARGUMENTS_DOESNT_MATCH",
-                # Function X takes at least one argument
-                "TOO_FEW_ARGUMENTS_FOR_FUNCTION",
-                # Function X accepts at most 3 arguments, Y given
-                "TOO_MANY_ARGUMENTS_FOR_FUNCTION",
-                # The function 'X' can only be used as a window function
-                "BAD_ARGUMENTS",
-                # String foo is obviously not a valid IP address.
-                "CANNOT_PARSE_IPV4",
-                "CANNOT_PARSE_IPV6",
-                # neighbor / runningDifference / runningAccumulate are deprecated and disabled by default.
-                "DEPRECATED_FUNCTION",
-            ]
             if any(map(lambda x: x in error_message, allowed_errors)):
                 logging.info("Skipping %s", function)
-                skipped += 1
-                continue
+                return "skipped"
             logging.exception("Failed %s", function)
-            failed += 1
-            continue
+            return "failed"
 
         upstream_value = get_function_value(upstream, function, v)
         if upstream_value != backward_value:
@@ -312,10 +309,18 @@ def test_string_functions(start_cluster):
                 backward_value,
                 upstream_value,
             )
-            failed += 1
-        else:
-            logging.info("OK %s", function)
-            passed += 1
+            return "failed"
+        logging.info("OK %s", function)
+        return "passed"
+
+    # The work is dominated by per-query round-trip latency rather than server
+    # CPU, so run the independent per-function checks concurrently.
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        outcomes = list(executor.map(check_function, functions))
+
+    skipped = outcomes.count("skipped")
+    failed = outcomes.count("failed")
+    passed = outcomes.count("passed")
 
     logging.info(
         "Functions: %s, failed: %s, skipped: %s, passed: %s",
