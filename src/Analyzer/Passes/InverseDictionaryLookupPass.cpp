@@ -401,7 +401,7 @@ public:
         /// SELECT key_col FROM dictionary(dict_name) WHERE attr_name = const_value
         auto subquery_node = std::make_shared<QueryNode>(Context::createCopy(getContext()));
         subquery_node->setIsSubquery(true);
-        subquery_node->getJoinTree() = dict_table_function;
+        subquery_node->getJoinTreeNode() = dict_table_function;
         subquery_node->getWhere() = attr_comparison_function_node;
 
         for (const auto & key_col_node : key_cols)

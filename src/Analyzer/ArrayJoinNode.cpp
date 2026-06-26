@@ -1,6 +1,7 @@
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Utils.h>
 #include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
@@ -14,7 +15,7 @@ namespace DB
 {
 
 ArrayJoinNode::ArrayJoinNode(QueryTreeNodePtr table_expression_, QueryTreeNodePtr join_expressions_, bool is_left_)
-    : IQueryTreeNode(children_size)
+    : ITableExpressionNode(children_size)
     , is_left(is_left_)
 {
     children[table_expression_child_index] = std::move(table_expression_);
@@ -30,7 +31,7 @@ void ArrayJoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_stat
         buffer << ", alias: " << getAlias();
 
     buffer << '\n' << std::string(indent + 2, ' ') << "TABLE EXPRESSION\n";
-    getTableExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
+    children[table_expression_child_index]->dumpTreeImpl(buffer, format_state, indent + 4);
 
     buffer << '\n' << std::string(indent + 2, ' ') << "JOIN EXPRESSIONS\n";
     getJoinExpressionsNode()->dumpTreeImpl(buffer, format_state, indent + 4);
@@ -49,7 +50,7 @@ void ArrayJoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 
 QueryTreeNodePtr ArrayJoinNode::cloneImpl() const
 {
-    return std::make_shared<ArrayJoinNode>(getTableExpression(), getJoinExpressionsNode(), is_left);
+    return std::make_shared<ArrayJoinNode>(static_pointer_cast<ITableExpressionNode>(children[join_expressions_child_index]), getJoinExpressionsNode(), is_left);
 }
 
 ASTPtr ArrayJoinNode::toASTImpl(const ConvertToASTOptions & options) const

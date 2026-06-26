@@ -154,8 +154,8 @@ static bool isTwoArgumentsFromDifferentSides(const FunctionNode & node_function,
     if (!first_src || !second_src)
         return false;
 
-    const auto & lhs_join = *join_node.getLeftTableExpression();
-    const auto & rhs_join = *join_node.getRightTableExpression();
+    const auto & lhs_join = join_node.getLeftTableExpression();
+    const auto & rhs_join = join_node.getRightTableExpression();
     return (first_src->isEqual(lhs_join) && second_src->isEqual(rhs_join)) ||
            (first_src->isEqual(rhs_join) && second_src->isEqual(lhs_join));
 }

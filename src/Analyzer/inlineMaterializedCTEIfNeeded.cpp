@@ -1,3 +1,4 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/inlineMaterializedCTEIfNeeded.h>
 
 #include <Analyzer/TableNode.h>
@@ -36,7 +37,7 @@ public:
                     /// because the temporary table would already exist in the Context
                     /// and there would be an attempt to read it to send the temporary table to remote servers.
                     getContext()->getQueryContext()->removeExternalTable(table_node->getTemporaryTableName());
-                    replacement_map.emplace(table_node, table_node->getMaterializedCTESubquery());
+                    replacement_map.emplace(table_node, static_pointer_cast<ITableExpressionNode>(table_node->getMaterializedCTESubquery()));
                 }
             }
         }

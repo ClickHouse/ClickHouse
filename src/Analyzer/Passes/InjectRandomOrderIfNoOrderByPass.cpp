@@ -1,3 +1,4 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Passes/InjectRandomOrderIfNoOrderByPass.h>
 
 #include <Analyzer/ColumnNode.h>
@@ -50,9 +51,9 @@ static void wrapWithSelectOrderBy(QueryTreeNodePtr & query_root, ContextPtr cont
 
     /// SELECT unique_column_name FROM query_node order by rand()
     auto new_root = std::make_shared<QueryNode>(Context::createCopy(context));
-    new_root->getJoinTree() = query_root;
+    new_root->getJoinTreeNode() = query_root;
     NameAndTypePair column{unique_column_name, subquery_projection_columns[0].type};
-    new_root->getProjection().getNodes().push_back(std::make_shared<ColumnNode>(column, query_root));
+    new_root->getProjection().getNodes().push_back(std::make_shared<ColumnNode>(column, static_pointer_cast<ITableExpressionNode>(query_root)));
     new_root->resolveProjectionColumns({column});
     addRandomOrderBy(new_root->getOrderBy(), context);
 

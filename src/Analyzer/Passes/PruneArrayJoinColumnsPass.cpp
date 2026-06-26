@@ -345,7 +345,7 @@ void PruneArrayJoinColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextP
     ArrayJoinUsageMap usage_map;
     ArrayJoinNodeSet tracked_nodes;
 
-    auto table_expressions = extractTableExpressions(top_query_node->getJoinTree(), /*add_array_join=*/ true);
+    auto table_expressions = extractTableExpressions(top_query_node->getJoinTreeNodeTyped(), /*add_array_join=*/ true);
     for (const auto & table_expr : table_expressions)
     {
         auto * array_join_node = table_expr->as<ArrayJoinNode>();

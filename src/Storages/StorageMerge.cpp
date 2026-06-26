@@ -4,6 +4,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
@@ -962,7 +963,7 @@ namespace
 class ApplyAliasColumnExpressionsVisitor : public InDepthQueryTreeVisitor<ApplyAliasColumnExpressionsVisitor>
 {
 public:
-    explicit ApplyAliasColumnExpressionsVisitor(QueryTreeNodePtr replacement_table_expression_)
+    explicit ApplyAliasColumnExpressionsVisitor(TableExpressionNodePtr replacement_table_expression_)
         : replacement_table_expression(replacement_table_expression_)
     {}
 
@@ -992,18 +993,18 @@ public:
         }
     }
 private:
-    QueryTreeNodePtr replacement_table_expression;
+    TableExpressionNodePtr replacement_table_expression;
 };
 
 QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     QueryTreeNodePtr query,
-    QueryTreeNodePtr original_table_expression,
-    QueryTreeNodePtr replacement_table_expression,
+    TableExpressionNodePtr original_table_expression,
+    TableExpressionNodePtr replacement_table_expression,
     const ContextPtr & context,
     const Names & required_column_names)
 {
     auto * query_node = query->as<QueryNode>();
-    auto join_tree_type = query_node->getJoinTree()->getNodeType();
+    auto join_tree_type = query_node->getJoinTreeNode()->getNodeType();
     auto modified_query = query_node->cloneAndReplace(original_table_expression, replacement_table_expression);
 
     // For the case when join tree is just a table or a table function we don't need to do anything more.
@@ -1016,7 +1017,7 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     auto * modified_query_node = modified_query->as<QueryNode>();
 
     // Remove the JOIN statement. As a result query will have a form like: SELECT * FROM <table> ...
-    modified_query = modified_query->cloneAndReplace(modified_query_node->getJoinTree(), replacement_table_expression);
+    modified_query = modified_query->cloneAndReplace(modified_query_node->getJoinTreeNodeTyped(), replacement_table_expression);
     modified_query_node = modified_query->as<QueryNode>();
 
     query_node = modified_query->as<QueryNode>();

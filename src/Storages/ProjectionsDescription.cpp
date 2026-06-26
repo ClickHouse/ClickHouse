@@ -387,7 +387,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 
         auto query_tree = buildQueryTree(result.query_ast, mut_context);
         auto & query_node = query_tree->as<QueryNode &>();
-        query_node.getJoinTree() = std::make_shared<TableNode>(analyzer_storage, mut_context);
+        query_node.getJoinTreeNode() = std::make_shared<TableNode>(analyzer_storage, mut_context);
 
         QueryTreePassManager query_tree_pass_manager(mut_context);
         addQueryTreePasses(query_tree_pass_manager, /*only_analyze=*/true);

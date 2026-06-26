@@ -10,6 +10,7 @@
 #include <Interpreters/StorageID.h>
 
 #include <Analyzer/IQueryTreeNode.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -29,7 +30,7 @@ namespace DB
 class JoinNode;
 using JoinNodePtr = std::shared_ptr<JoinNode>;
 
-class JoinNode final : public IQueryTreeNode
+class JoinNode final : public ITableExpressionNode
 {
 public:
     /** Construct join node with left table expression, right table expression and join expression.
@@ -48,27 +49,52 @@ public:
         bool is_using_join_expression_);
 
     /// Get left table expression
-    const QueryTreeNodePtr & getLeftTableExpression() const
+    const ITableExpressionNode & getLeftTableExpression() const
+    {
+        return children[left_table_expression_child_index]->assertTableExpression();
+    }
+
+    /// Get left table expression
+    QueryTreeNodePtr & getLeftTableExpressionNode()
+    {
+        return children[left_table_expression_child_index];
+    }
+
+    const QueryTreeNodePtr & getLeftTableExpressionNode() const
     {
         return children[left_table_expression_child_index];
     }
 
     /// Get left table expression
-    QueryTreeNodePtr & getLeftTableExpression()
+    TableExpressionNodePtr getLeftTableExpressionNodeTyped() const
     {
-        return children[left_table_expression_child_index];
+        children[left_table_expression_child_index]->assertTableExpression();
+        return static_pointer_cast<ITableExpressionNode>(children[left_table_expression_child_index]);
     }
 
     /// Get right table expression
-    const QueryTreeNodePtr & getRightTableExpression() const
+    const ITableExpressionNode & getRightTableExpression() const
+    {
+        return children[right_table_expression_child_index]->assertTableExpression();
+    }
+
+    /// Get right table expression
+    QueryTreeNodePtr & getRightTableExpressionNode()
     {
         return children[right_table_expression_child_index];
     }
 
     /// Get right table expression
-    QueryTreeNodePtr & getRightTableExpression()
+    const QueryTreeNodePtr & getRightTableExpressionNode() const
     {
         return children[right_table_expression_child_index];
+    }
+
+    /// Get right table expression
+    TableExpressionNodePtr getRightTableExpressionNodeTyped() const
+    {
+        children[right_table_expression_child_index]->assertTableExpression();
+        return static_pointer_cast<ITableExpressionNode>(children[right_table_expression_child_index]);
     }
 
     /// Returns true if join has join expression, false otherwise
@@ -218,14 +244,27 @@ public:
 
     void appendTable(QueryTreeNodePtr table_expression, JoinType join_type);
 
+    QueryTreeNodes & getTableExpressions()
+    {
+        return children;
+    }
+
     const QueryTreeNodes & getTableExpressions() const
     {
         return children;
     }
 
-    QueryTreeNodes & getTableExpressions()
+    const ITableExpressionNode & getTableExpressionAt(size_t pos)
     {
-        return children;
+        auto & child = children.at(pos);
+        return child->assertTableExpression();
+    }
+
+    TableExpressionNodePtr getTableExpressionTypedAt(size_t pos) const
+    {
+        const auto & child = children.at(pos);
+        child->assertTableExpression();
+        return static_pointer_cast<ITableExpressionNode>(child);
     }
 
     /// The size is getTableExpressions.size() - 1

@@ -165,7 +165,7 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
     auto query_tree = buildQueryTree(ast, context);
 
     auto & query_node = query_tree->as<QueryNode &>();
-    query_node.getJoinTree() = std::make_shared<TableNode>(storage, context);
+    query_node.getJoinTreeNode() = std::make_shared<TableNode>(storage, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
     addQueryTreePasses(query_tree_pass_manager);

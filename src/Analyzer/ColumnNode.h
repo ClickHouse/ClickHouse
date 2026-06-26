@@ -36,10 +36,10 @@ class ColumnNode final : public IQueryTreeNode
 {
 public:
     /// Construct column node with column name, type, column expression and column source weak pointer
-    ColumnNode(NameAndTypePair column_, QueryTreeNodePtr expression_node_, QueryTreeNodeWeakPtr column_source_);
+    ColumnNode(NameAndTypePair column_, QueryTreeNodePtr expression_node_, std::weak_ptr<ITableExpressionNode> column_source_);
 
     /// Construct column node with column name, type and column source weak pointer
-    ColumnNode(NameAndTypePair column_, QueryTreeNodeWeakPtr column_source_);
+    ColumnNode(NameAndTypePair column_, std::weak_ptr<ITableExpressionNode> column_source_);
 
     /// Get column
     const NameAndTypePair & getColumn() const
@@ -101,16 +101,16 @@ public:
     /** Get column source.
       * If column source is not valid logical exception is thrown.
       */
-    QueryTreeNodePtr getColumnSource() const;
+    TableExpressionNodePtr getColumnSource() const;
 
     /** Get column source.
       * If column source is not valid null is returned.
       */
-    QueryTreeNodePtr getColumnSourceOrNull() const;
+    TableExpressionNodePtr getColumnSourceOrNull() const;
 
-    void setColumnSource(const QueryTreeNodePtr & source)
+    void setColumnSource(const TableExpressionNodePtr & source_)
     {
-        getSourceWeakPointer() = source;
+        source = source_;
     }
 
     QueryTreeNodeType getNodeType() const override
@@ -140,23 +140,12 @@ protected:
     ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
-    const QueryTreeNodeWeakPtr & getSourceWeakPointer() const
-    {
-        return weak_pointers[source_weak_pointer_index];
-    }
-
-    QueryTreeNodeWeakPtr & getSourceWeakPointer()
-    {
-        return weak_pointers[source_weak_pointer_index];
-    }
 
     NameAndTypePair column;
+    std::weak_ptr<ITableExpressionNode> source;
 
     static constexpr size_t expression_child_index = 0;
     static constexpr size_t children_size = expression_child_index + 1;
-
-    static constexpr size_t source_weak_pointer_index = 0;
-    static constexpr size_t weak_pointers_size = source_weak_pointer_index + 1;
 };
 
 }

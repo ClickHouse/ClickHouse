@@ -1,3 +1,4 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
 #include <DataTypes/DataTypeString.h>
 
@@ -51,7 +52,7 @@ namespace
 struct ColumnContext
 {
     NameAndTypePair column;
-    QueryTreeNodePtr column_source;
+    TableExpressionNodePtr column_source;
     ContextPtr context;
 };
 
@@ -1232,9 +1233,9 @@ public:
 
             /// If we are in the left (right) subtree of a LEFT (RIGHT) JOIN, skip this subtree
             /// and mark all tables as outer-joined tables.
-            if (isLeftOrFull(current_join_node->getKind()) && current_join_node->getRightTableExpression().get() == node.get())
+            if (isLeftOrFull(current_join_node->getKind()) && current_join_node->getRightTableExpressionNode().get() == node.get())
                 need_skip_subtree = true;
-            if (isRightOrFull(current_join_node->getKind()) && current_join_node->getLeftTableExpression().get() == node.get())
+            if (isRightOrFull(current_join_node->getKind()) && current_join_node->getLeftTableExpressionNode().get() == node.get())
                 need_skip_subtree = true;
         }
 
@@ -1261,8 +1262,8 @@ public:
         const auto * current_join_node = join_nodes_stack.top();
 
         /// Leaving the left (or right) subtree of a LEFT (or RIGHT) JOIN.
-        if (node.get() == current_join_node->getRightTableExpression().get()
-         || node.get() == current_join_node->getLeftTableExpression().get())
+        if (node.get() == current_join_node->getRightTableExpressionNode().get()
+         || node.get() == current_join_node->getLeftTableExpressionNode().get())
             need_skip_subtree = false;
 
         /// Leaving a JOIN node.

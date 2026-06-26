@@ -1822,7 +1822,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     {
                         auto execution_context = Context::createCopy(context);
                         auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, all_columns);
-                        QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(dummy_storage, execution_context);
+                        auto fake_table_expression = std::make_shared<TableNode>(dummy_storage, execution_context);
                         for (const ColumnDescription & column : all_columns)
                         {
                             if (const auto & default_expression = column.default_desc.expression)

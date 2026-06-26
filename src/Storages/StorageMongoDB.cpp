@@ -320,7 +320,7 @@ static const ColumnNode * getColumnNode(const QueryTreeNodePtr & node, const Joi
         return {};
     if (table_function && table_function->getStorage()->getStorageID() != storage_id)
         return {};
-    if (join_node && column->getColumnSource() != join_node->getLeftTableExpression())
+    if (join_node && column->getColumnSource().get() != join_node->getLeftTableExpressionNode().get())
         return {};
 
     return column;
@@ -596,16 +596,16 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
 
     if (query_tree.hasWhere())
     {
-        const auto & join_tree = query_tree.getJoinTree();
+        const auto & join_tree = query_tree.getJoinTreeNode();
         const auto * join_node = join_tree->as<JoinNode>();
         bool allow_where = true;
 
         if (join_node)
         {
             if (join_node->getKind() == JoinKind::Left)
-                allow_where = join_node->getLeftTableExpression()->isEqual(*query.table_expression);
+                allow_where = join_node->getLeftTableExpressionNode()->isEqual(*query.table_expression);
             else if (join_node->getKind() == JoinKind::Right)
-                allow_where = join_node->getRightTableExpression()->isEqual(*query.table_expression);
+                allow_where = join_node->getRightTableExpressionNode()->isEqual(*query.table_expression);
             else
                 allow_where = (join_node->getKind() == JoinKind::Inner);
         }

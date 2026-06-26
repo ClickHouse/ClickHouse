@@ -167,7 +167,7 @@ struct IdentifierResolveScope
     std::unordered_set<const IQueryTreeNode *> table_expressions_in_resolve_process;
 
     /// Table expression node to data
-    std::unordered_map<QueryTreeNodePtr, AnalysisTableExpressionData> table_expression_node_to_data;
+    std::unordered_map<TableExpressionNodePtr, AnalysisTableExpressionData> table_expression_node_to_data;
 
     /// Table expression nodes that appear in the join tree of the corresponding query
     std::unordered_set<QueryTreeNodePtr> registered_table_expression_nodes;
@@ -207,7 +207,7 @@ struct IdentifierResolveScope
     /** Scope join tree node for expression.
       * Valid only during analysis construction for single expression.
       */
-    QueryTreeNodePtr expression_join_tree_node;
+    TableExpressionNodePtr expression_join_tree_node;
 
     /// Node hash to mask id map
     std::shared_ptr<std::map<IQueryTreeNode::Hash, size_t>> projection_mask_map;
@@ -216,9 +216,9 @@ struct IdentifierResolveScope
 
     IdentifierResolveScope * getNearestQueryScope();
 
-    AnalysisTableExpressionData & getTableExpressionDataOrThrow(const QueryTreeNodePtr & table_expression_node);
+    AnalysisTableExpressionData & getTableExpressionDataOrThrow(const TableExpressionNodePtr & table_expression_node);
 
-    const AnalysisTableExpressionData & getTableExpressionDataOrThrow(const QueryTreeNodePtr & table_expression_node) const;
+    const AnalysisTableExpressionData & getTableExpressionDataOrThrow(const TableExpressionNodePtr & table_expression_node) const;
 
     void pushExpressionNode(const QueryTreeNodePtr & node);
 

@@ -3462,7 +3462,7 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     /// Remove this after statistics based cardinality estimation is enabled.
     if (query_info.query_tree)
     {
-        const QueryTreeNodePtr & join_tree_node = query_info.query_tree->as<QueryNode &>().getJoinTree();
+        const QueryTreeNodePtr & join_tree_node = query_info.query_tree->as<QueryNode &>().getJoinTreeNode();
 
         if (join_tree_node && (join_tree_node->getNodeType() == QueryTreeNodeType::JOIN || join_tree_node->getNodeType() == QueryTreeNodeType::CROSS_JOIN))
             return false;
