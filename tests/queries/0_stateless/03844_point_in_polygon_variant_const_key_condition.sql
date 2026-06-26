@@ -20,6 +20,12 @@ SELECT count() >= 0 FROM t_pip_variant WHERE pointInPolygon((x, y), multiIf(1, [
 SELECT count() >= 0 FROM t_pip_variant WHERE pointInPolygon((x, y), CAST([(0., 0.), (8., 4.), (5., 8.)] AS Variant(Array(Tuple(Float64, Float64)), UInt8)));
 SELECT count() >= 0 FROM t_pip_variant WHERE pointInPolygon((x, y), CAST([(0., 0.), (8., 4.), (5., 8.)] AS Dynamic));
 
+-- Supertype path: if(cond, Array(Tuple), Tuple) folds the polygon constant to the common
+-- supertype Variant(Array(Tuple), Tuple), again a non-Array const type that used to trip the
+-- chassert during key-condition analysis. Building the plan (EXPLAIN) must run to completion;
+-- whether the predicate later errors at execution is a separate function-level concern.
+SELECT count() >= 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_pip_variant WHERE pointInPolygon((x, y), if(materialize(0), [(0., 0.), (8., 4.), (5., 8.)], (1., 2.))));
+
 -- A plain Array constant must still take the skip-index analysis path: the key condition
 -- carries the pointInPolygon atom. Asserted over EXPLAIN text so it is robust to plan-format
 -- churn and analyzer differences.
