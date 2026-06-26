@@ -10,6 +10,11 @@ SET parallel_replicas_local_plan = 1;
 SET use_query_condition_cache = 0;
 SET use_skip_indexes_on_data_read = 1;
 SET use_skip_indexes = 1;
+-- The test asserts which source is chosen (base table vs projection), so projections must be
+-- enabled. The flaky check randomizes `optimize_use_projections` (it can be off); without pinning
+-- it the projection is never considered and every query falls back to the base table, which both
+-- flips the `EXPLAIN` result and trips the `max_rows_to_read` guards below.
+SET optimize_use_projections = 1;
 SET optimize_projection_skip_index_ratio = 0.5;
 
 DROP TABLE IF EXISTS tab;
