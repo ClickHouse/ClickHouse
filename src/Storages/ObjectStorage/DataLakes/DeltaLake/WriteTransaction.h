@@ -16,12 +16,8 @@ public:
 
     const std::string & getDataPath() const;
 
-    /// Create a transaction.
-    ///
-    /// `partition_columns` and `table_schema` describe the target table. delta-kernel v23 does
-    /// not expose a partitioned write context via FFI (`get_unpartitioned_write_context` errors
-    /// for partitioned tables, see TODO(#2355) upstream), so for partitioned tables the write
-    /// schema and write path are derived directly from these instead of from a write context.
+    /// Create a transaction for the target table. `table_schema` is the table's logical schema;
+    /// see the implementation for how partitioned vs unpartitioned tables derive the write context.
     void create(const DB::Names & partition_columns, const DB::NamesAndTypesList & table_schema);
 
     struct CommitFile
@@ -51,7 +47,7 @@ private:
 
     KernelExternEngine engine;
     KernelTransaction transaction;
-    KernelWriteContext write_context;
+    KernelWriteContext unpartitioned_write_context;
     DB::NamesAndTypesList write_schema;
 
     void assertTransactionCreated() const;

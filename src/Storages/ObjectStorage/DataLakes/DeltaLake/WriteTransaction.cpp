@@ -167,26 +167,22 @@ void WriteTransaction::create(const DB::Names & partition_columns, const DB::Nam
     if (partition_columns.empty())
     {
         /// Unpartitioned tables: let the kernel build the write context.
-        write_context = DeltaLake::KernelUtils::unwrapResult(
+        unpartitioned_write_context = DeltaLake::KernelUtils::unwrapResult(
             ffi::get_unpartitioned_write_context(transaction.get(), engine.get()),
             "get_unpartitioned_write_context");
-        write_schema = DeltaLake::getWriteSchema(write_context.get(), engine.get());
+        write_schema = DeltaLake::getWriteSchema(unpartitioned_write_context.get(), engine.get());
 
-        auto * write_path_raw = static_cast<std::string *>(
-            ffi::get_write_path(write_context.get(), DeltaLake::KernelUtils::allocateString));
+        std::unique_ptr<std::string> write_path_raw(static_cast<std::string *>(
+            ffi::get_write_path(unpartitioned_write_context.get(), DeltaLake::KernelUtils::allocateString)));
         if (!write_path_raw)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Failed to get write path");
 
         write_path = *write_path_raw;
-        delete write_path_raw;
     }
     else
     {
-        /// Partitioned tables: delta-kernel v23 does not expose a partitioned write context via
-        /// FFI (TODO(#2355) upstream) and `get_unpartitioned_write_context` errors for partitioned
-        /// tables. The write context is only used to obtain the write schema (validated by column
-        /// name) and the write path (the table root); both are already known here, so derive them
-        /// directly. Per-partition values are handled separately when committing the Add actions.
+        /// delta-kernel exposes no partitioned write context via FFI (TODO(#2355)), so derive the
+        /// write schema and path directly; per-partition values are handled when committing.
         write_schema = table_schema;
         write_path = kernel_helper->getTableLocation();
     }

@@ -83,10 +83,9 @@ class SchemaVisitorData
     friend class SchemaVisitor;
 
 public:
-    /// `engine_` is required by v0.23.0 FFI helpers such as `ffi::get_from_string_map`.
-    /// Pass `nullptr` for visit paths that don't need engine-bound FFI calls
-    /// (e.g. partition column extraction).
-    explicit SchemaVisitorData(ffi::SharedExternEngine * engine_ = nullptr) : engine(engine_) {}
+    /// `engine` is required by FFI helpers such as `ffi::get_from_string_map`. Pass `nullptr` only
+    /// for visit paths that make no engine-bound FFI calls (e.g. partition column extraction).
+    explicit SchemaVisitorData(ffi::SharedExternEngine * engine_) : engine(engine_) {}
 
     struct SchemaResult
     {
@@ -598,7 +597,8 @@ DB::NamesAndTypesList getWriteSchema(ffi::SharedWriteContext * write_context, ff
 
 DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot)
 {
-    SchemaVisitorData data;
+    /// Partition column extraction makes no engine-bound FFI calls, so no engine is needed.
+    SchemaVisitorData data(nullptr);
     SchemaVisitor::visitPartitionColumns(snapshot, data);
     return data.getPartitionColumns();
 }
