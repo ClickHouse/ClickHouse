@@ -50,6 +50,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"reader_executor_use_long_connections", true, true, "New experimental setting to reuse a bounded long source connection across windows in the ReaderExecutor; disabling it forces the stateless one-shot-per-window path."},
             {"reader_executor_decrypt_ahead", false, false, "New experimental setting to decrypt prefetched bytes on the ReaderExecutor read-ahead worker, ahead of serving, instead of at the serve boundary on the query thread."},
             {"reader_executor_lookahead_window", 16777216, 16777216, "New experimental setting: flat residency-lookup look-ahead for the ReaderExecutor warm-read path, decoupling the held cache readers from the per-mark-range read-until bound so they are reused across mark ranges."},
+            {"reader_executor_plan_look_ahead_max_window", 33554432, 33554432, "New experimental setting: ceiling on the ReaderExecutor plan window; setting it equal to reader_executor_window_size collapses the plan to a fixed small window."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",

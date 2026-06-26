@@ -347,6 +347,10 @@ public:
     /// one-shot connection (the stateless path).
     size_t buffer_slots = 10;
 
+    /// Plan-window ceiling override: 0 leaves the generalized default (variable window,
+    /// 32 MiB); set equal to `WINDOW` for the fixed-small A/B arm.
+    size_t plan_window_override = 0;
+
     /// A list of reads, each (offset, optional size); a nullopt size reads to the end
     /// of the file (FILE_SIZE - offset).
     using ReadList = std::vector<std::pair<size_t, std::optional<size_t>>>;
@@ -380,6 +384,8 @@ public:
         executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(buffer_slots);
         executor_options.long_connection_open_range = LONG_CONN_OPEN_RANGE;
         executor_options.long_connection_max_bound = LONG_CONN_MAX_BOUND;
+        if (plan_window_override)
+            executor_options.plan_look_ahead_max_window = plan_window_override;
         ReaderExecutor executor(src, objects, std::move(caches), executor_options);
 
         size_t total = 0;
@@ -569,6 +575,38 @@ TEST_F(ReaderExecutorMetric, ColdSequential)
     /// Stateless: a fresh short-lived connection per window, no reuse, still bounded.
     EXPECT_GT(stateless.requests, live.requests) << "no budget -> one connection per window";
     EXPECT_EQ(stateless.incomplete, 0u) << "bounded one-shot reads never leave an incomplete connection";
+}
+
+/// A/B for the plan-window knob (`reader_executor_plan_look_ahead_max_window`): the
+/// variable window (default 32 MiB, continuity-sized) vs a fixed-small window pinned to
+/// `WINDOW`. Hypothesis: on a sequential cold scan the long-connection carry keeps the
+/// source GET count close even when the plan never widens past one window, because the
+/// connection spans the scan regardless of how often the plan is rebuilt. The
+/// eviction-under-pressure regime where the two can diverge is exercised by the
+/// integration test under concurrent load, not on this single-threaded sync path.
+TEST_F(ReaderExecutorMetric, FixedSmallWindowMatchesVariableGets)
+{
+    auto [var_live, var_stateless] = runMatrix("ab_variable", {}, {{0, std::nullopt}});
+
+    plan_window_override = WINDOW;  /// fixed-small arm
+    auto [small_live, small_stateless] = runMatrix("ab_fixed_small", {}, {{0, std::nullopt}});
+    plan_window_override = 0;
+
+    /// Both arms read the whole file and fetch every byte exactly once.
+    EXPECT_EQ(var_live.fetched, FILE_SIZE);
+    EXPECT_EQ(small_live.fetched, FILE_SIZE);
+    EXPECT_EQ(var_live.requests, 12u) << "variable window: the continuity-sized plan reopens a handful of times";
+    /// The long-connection carry makes the plan window size irrelevant for source GETs on the
+    /// live path: fixed-small issues exactly as many GETs as the variable window, and the
+    /// modeled cost per MiB is within a few percent (a small Wc/Rc shift, S unchanged).
+    EXPECT_EQ(small_live.requests, var_live.requests)
+        << "fixed-small matches variable GETs -- the long connection spans the scan regardless of window";
+    EXPECT_NEAR(small_live.costPerMiB(), var_live.costPerMiB(), var_live.costPerMiB() * 0.05)
+        << "cost-equivalent on the live path";
+    /// Without the carry (stateless), the window DOES matter: a fixed-small window opens one
+    /// short-lived connection per window, so its GET count exceeds the variable window's.
+    EXPECT_GT(small_stateless.requests, var_stateless.requests)
+        << "no carry -> a small window means more one-shot connections";
 }
 
 /// Fully warm cache, full sequential scan -> no source requests; budget-invariant.

@@ -355,6 +355,7 @@ namespace Setting
     extern const SettingsBool enable_reader_executor_log;
     extern const SettingsUInt64 reader_executor_window_size;
     extern const SettingsUInt64 reader_executor_lookahead_window;
+    extern const SettingsUInt64 reader_executor_plan_look_ahead_max_window;
     extern const SettingsUInt64 reader_executor_block_size;
     extern const SettingsUInt64 reader_executor_min_bytes_for_seek;
     extern const SettingsUInt64 reader_executor_max_tail_for_drain;
@@ -8026,6 +8027,7 @@ ReadSettings Context::getReadSettings() const
     res.enable_reader_executor_log = settings_ref[Setting::enable_reader_executor_log];
     res.reader_executor_window_size = settings_ref[Setting::reader_executor_window_size];
     res.reader_executor_lookahead_window = settings_ref[Setting::reader_executor_lookahead_window];
+    res.reader_executor_plan_look_ahead_max_window = settings_ref[Setting::reader_executor_plan_look_ahead_max_window];
     res.reader_executor_block_size = settings_ref[Setting::reader_executor_block_size];
     res.reader_executor_min_bytes_for_seek = settings_ref[Setting::reader_executor_min_bytes_for_seek];
     res.reader_executor_max_tail_for_drain = settings_ref[Setting::reader_executor_max_tail_for_drain];
