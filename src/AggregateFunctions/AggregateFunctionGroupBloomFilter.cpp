@@ -215,15 +215,15 @@ AggregateFunctionPtr createAggregateFunctionGroupBloomFilter(
     if (parameters.empty())
     {
         /// No parameters — use all defaults
-        filter_size_bytes = bloomFilterOptimalSizeBytes(BLOOM_FILTER_DEFAULT_EXPECTED_ELEMENTS, BLOOM_FILTER_DEFAULT_FALSE_POSITIVE_RATE);
-        num_hashes = bloomFilterOptimalHashes(filter_size_bytes, BLOOM_FILTER_DEFAULT_EXPECTED_ELEMENTS);
+        std::tie(filter_size_bytes, num_hashes) = bloomFilterOptimalParams(
+            BLOOM_FILTER_DEFAULT_EXPECTED_ELEMENTS, BLOOM_FILTER_DEFAULT_FALSE_POSITIVE_RATE);
     }
     else if (parameters.size() == 1)
     {
         /// (expected_elements) — use default false positive rate
         size_t expected_elements = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), parameters[0]);
-        filter_size_bytes = bloomFilterOptimalSizeBytes(expected_elements, BLOOM_FILTER_DEFAULT_FALSE_POSITIVE_RATE);
-        num_hashes = bloomFilterOptimalHashes(filter_size_bytes, expected_elements);
+        std::tie(filter_size_bytes, num_hashes) = bloomFilterOptimalParams(
+            expected_elements, BLOOM_FILTER_DEFAULT_FALSE_POSITIVE_RATE);
     }
     else
     {
@@ -237,9 +237,7 @@ AggregateFunctionPtr createAggregateFunctionGroupBloomFilter(
         {
             /// (expected_elements, false_positive_rate[, seed])
             size_t expected_elements = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), parameters[0]);
-            double false_positive_rate = param2_as_float;
-            filter_size_bytes = bloomFilterOptimalSizeBytes(expected_elements, false_positive_rate);
-            num_hashes = bloomFilterOptimalHashes(filter_size_bytes, expected_elements);
+            std::tie(filter_size_bytes, num_hashes) = bloomFilterOptimalParams(expected_elements, param2_as_float);
         }
         else
         {

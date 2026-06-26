@@ -73,3 +73,9 @@ SELECT groupBloomFilterState(200000000, 0.0001)(number) FROM numbers(10); -- { s
 
 -- Explicit filter size above the maximum allowed size must throw
 SELECT groupBloomFilterState(268435464, 5)(number) FROM numbers(10); -- { serverError BAD_ARGUMENTS }
+
+-- Auto-sized parameters with very small false_positive_rate (k_opt > BLOOM_FILTER_MAX_HASHES):
+-- the filter must be enlarged to honour the FPR contract rather than silently cap k.
+-- Value inserted into filter must be found (no false negative).
+SELECT bloomFilterContains(groupBloomFilterState(100, 1e-10)(number), toUInt64(42)) AS result
+FROM numbers(100);

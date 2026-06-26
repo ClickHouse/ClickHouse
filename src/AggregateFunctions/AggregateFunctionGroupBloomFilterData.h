@@ -11,6 +11,7 @@
 #include <memory>
 #include <numbers>
 #include <type_traits>
+#include <utility>
 
 
 namespace DB
@@ -22,7 +23,6 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-/// Default parameters for Bloom filter
 static constexpr size_t BLOOM_FILTER_DEFAULT_SEED = 0;
 static constexpr double BLOOM_FILTER_DEFAULT_FALSE_POSITIVE_RATE = 0.025;
 static constexpr size_t BLOOM_FILTER_DEFAULT_EXPECTED_ELEMENTS = 10000;
@@ -30,12 +30,15 @@ static constexpr size_t BLOOM_FILTER_DEFAULT_EXPECTED_ELEMENTS = 10000;
 /// Maximum allowed Bloom filter size in bytes (256 MB)
 static constexpr size_t BLOOM_FILTER_MAX_SIZE_BYTES = 256 * 1024 * 1024;
 
-/// Maximum allowed number of hash functions for Bloom filter.
 static constexpr size_t BLOOM_FILTER_MAX_HASHES = 20;
 
-/// Compute optimal Bloom filter size in bytes given expected number of elements and false positive rate.
-/// Formula: m = -n * ln(p) / (ln(2))^2
-inline size_t bloomFilterOptimalSizeBytes(size_t expected_elements, double false_positive_rate)
+/// Returns {filter_size_bytes, num_hashes} for the given expected element count and false-positive rate.
+/// Standard path (k_opt = -ln(p)/ln2 <= BLOOM_FILTER_MAX_HASHES): m = -n*ln(p)/(ln2)^2, k = round(k_opt).
+/// When k_opt > BLOOM_FILTER_MAX_HASHES, the standard size is too small to honour the requested FPR
+/// with only BLOOM_FILTER_MAX_HASHES hash functions. In that case k is fixed at the cap and size is
+/// derived from the inverse of p = (1-exp(-k*n/m))^k:
+///   m = ceil( -k * n / ln(1 - p^(1/k)) )
+inline std::pair<size_t, size_t> bloomFilterOptimalParams(size_t expected_elements, double false_positive_rate)
 {
     if (false_positive_rate <= 0.0 || false_positive_rate >= 1.0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -44,32 +47,33 @@ inline size_t bloomFilterOptimalSizeBytes(size_t expected_elements, double false
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Expected number of elements for Bloom filter must be positive");
 
-    double ln2 = std::numbers::ln2;
-    double bits = -static_cast<double>(expected_elements) * std::log(false_positive_rate) / (ln2 * ln2);
-    double bytes_double = std::ceil(bits / 8.0);
+    const double n = static_cast<double>(expected_elements);
+    const double ln2 = std::numbers::ln2;
+    const double k_opt = -std::log(false_positive_rate) / ln2;
+
+    size_t num_hashes = 0;
+    double bytes_double = 0.0;
+    if (k_opt <= static_cast<double>(BLOOM_FILTER_MAX_HASHES))
+    {
+        bytes_double = std::ceil(-n * std::log(false_positive_rate) / (ln2 * ln2) / 8.0);
+        num_hashes = std::max(size_t{1}, static_cast<size_t>(std::round(k_opt)));
+    }
+    else
+    {
+        num_hashes = BLOOM_FILTER_MAX_HASHES;
+        const double k = static_cast<double>(num_hashes);
+        bytes_double = std::ceil(-k * n / std::log(1.0 - std::pow(false_positive_rate, 1.0 / k)) / 8.0);
+    }
+
     if (!std::isfinite(bytes_double) || bytes_double > static_cast<double>(BLOOM_FILTER_MAX_SIZE_BYTES))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Bloom filter parameters expected_elements={} and false_positive_rate={} require a filter larger than the maximum allowed size {} bytes",
-            expected_elements, false_positive_rate, BLOOM_FILTER_MAX_SIZE_BYTES);
+            "Bloom filter parameters expected_elements={} and false_positive_rate={} require a filter "
+            "larger than the maximum allowed size {} bytes, even with the maximum number of hash functions ({})",
+            expected_elements, false_positive_rate, BLOOM_FILTER_MAX_SIZE_BYTES, BLOOM_FILTER_MAX_HASHES);
 
     size_t bytes = static_cast<size_t>(bytes_double);
-    /// Round up to multiple of 8 bytes (64 bits) for alignment
-    bytes = ((bytes + 7) / 8) * 8;
-    return bytes;
-}
-
-/// Compute optimal number of hash functions given filter size and expected elements.
-/// Formula: k = (m / n) * ln(2)
-inline size_t bloomFilterOptimalHashes(size_t filter_size_bytes, size_t expected_elements)
-{
-    if (expected_elements == 0)
-        return 1;
-    double bits_per_element = static_cast<double>(filter_size_bytes * 8) / static_cast<double>(expected_elements);
-    size_t hashes = static_cast<size_t>(std::round(bits_per_element * std::numbers::ln2));
-    if (hashes == 0)
-        hashes = 1;
-    hashes = std::min(hashes, BLOOM_FILTER_MAX_HASHES);
-    return hashes;
+    bytes = ((bytes + 7) / 8) * 8;  /// align to 64 bits
+    return {bytes, num_hashes};
 }
 
 
@@ -78,9 +82,8 @@ T canonicalizeGroupBloomFilterValue(T value)
 {
     if constexpr (std::is_floating_point_v<T>)
     {
-        /// IEEE 754 has multiple object representations for values that ClickHouse treats as equal
-        /// or equivalent for set-membership purposes. Hash a canonical representation so the Bloom
-        /// filter keeps the advertised no-false-negatives property for `Float32` and `Float64`.
+        /// IEEE 754 has multiple representations for zero and NaN; canonicalize so the filter
+        /// never produces false negatives for equal values with different bit patterns.
         if (value == static_cast<T>(0))
             return static_cast<T>(0);
         if (std::isnan(value))
@@ -90,8 +93,6 @@ T canonicalizeGroupBloomFilterValue(T value)
     return value;
 }
 
-/// Data structure for groupBloomFilter aggregate function.
-/// Wraps BloomFilter from src/Interpreters/BloomFilter.h for use in aggregate functions.
 struct AggregateFunctionGroupBloomFilterData
 {
     static constexpr auto name = "groupBloomFilter";
@@ -148,7 +149,6 @@ struct AggregateFunctionGroupBloomFilterData
                 seed, rhs.seed);
         }
 
-        /// Merge by OR-ing the filter arrays
         auto & lhs_filter = bloom_filter->getFilter();
         const auto & rhs_filter = rhs.bloom_filter->getFilter();
         for (size_t i = 0; i < lhs_filter.size(); ++i)

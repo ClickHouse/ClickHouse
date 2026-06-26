@@ -87,12 +87,37 @@ ColumnPtr executeBloomFilterContains(
 
 TEST(BloomFilterData, OptimalParameterValidation)
 {
-    EXPECT_THROW(bloomFilterOptimalSizeBytes(10, 0.0), Exception);
-    EXPECT_THROW(bloomFilterOptimalSizeBytes(10, 1.0), Exception);
-    EXPECT_THROW(bloomFilterOptimalSizeBytes(0, 0.5), Exception);
+    EXPECT_THROW(bloomFilterOptimalParams(10, 0.0), Exception);
+    EXPECT_THROW(bloomFilterOptimalParams(10, 1.0), Exception);
+    EXPECT_THROW(bloomFilterOptimalParams(0, 0.5), Exception);
 
-    EXPECT_EQ(bloomFilterOptimalSizeBytes(1, 0.999), 8);
-    EXPECT_EQ(bloomFilterOptimalHashes(64, 0), 1);
+    auto [sz, k] = bloomFilterOptimalParams(1, 0.999);
+    EXPECT_EQ(sz, 8u);
+    EXPECT_GE(k, 1u);
+}
+
+/// When k_opt = -ln(p)/ln2 > BLOOM_FILTER_MAX_HASHES, the size must be enlarged so that
+/// the actual FPR with k = BLOOM_FILTER_MAX_HASHES does not exceed the requested p.
+TEST(BloomFilterData, OptimalParamsRecomputesWhenHashCapExceeded)
+{
+    auto check_fpr = [](size_t n, double p)
+    {
+        auto [size_bytes, k] = bloomFilterOptimalParams(n, p);
+        EXPECT_LE(size_bytes, BLOOM_FILTER_MAX_SIZE_BYTES);
+        EXPECT_EQ(k, BLOOM_FILTER_MAX_HASHES);
+        /// actual_fpr = (1 - exp(-k*n/m))^k
+        const double m_bits = static_cast<double>(size_bytes) * 8.0;
+        const double actual_fpr = std::pow(
+            1.0 - std::exp(-static_cast<double>(k) * static_cast<double>(n) / m_bits),
+            static_cast<double>(k));
+        EXPECT_LE(actual_fpr, p);
+    };
+
+    check_fpr(1, 1e-10);    /// k_opt ≈ 33
+    check_fpr(1, 1e-100);   /// k_opt ≈ 332; regression: was returning ~64 bytes with actual FPR ≈ 4e-29
+
+    /// recomputed size > 256 MB → throw
+    EXPECT_THROW(bloomFilterOptimalParams(100'000'000, 1e-7), Exception);
 }
 
 TEST(BloomFilterData, EmptyStateAndContains)

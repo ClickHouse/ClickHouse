@@ -88,6 +88,14 @@ The filter size and number of hash functions are computed automatically from `ex
 
 where `n` is the expected number of elements and `p` is the false positive rate.
 
+**Hash function cap.** The number of hash functions is limited to a maximum of 20 (`BLOOM_FILTER_MAX_HASHES`). The optimal `k` exceeds this cap when the requested `false_positive_rate` is smaller than approximately `2⁻²⁰ ≈ 9.5 × 10⁻⁷`. In that case the filter size is automatically increased to the minimum size that still achieves the requested false positive rate with `k = 20`:
+
+```
+m = ceil( -k × n / ln(1 - p^(1/k)) )
+```
+
+This guarantees the advertised false-positive rate is honoured, at the cost of a larger filter. If the recomputed size exceeds the 256 MB limit, an exception is thrown.
+
 When merging states (e.g. in distributed queries), both filters must have identical parameters (`filter_size_bytes`, `num_hashes`, `seed`). Merging is performed by bitwise OR of the filter arrays.
 
 ## Examples {#examples}
