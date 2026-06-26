@@ -584,15 +584,12 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 
     if (check_nullable_array_setting && !settings[Setting::allow_experimental_nullable_array_type])
     {
-        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(column_type.get()))
-        {
-            if (isArray(nullable_type->getNestedType()))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Cannot create column with type '{}' because Nullable Array type is not allowed. "
-                    "Set setting allow_experimental_nullable_array_type = 1 in order to allow it",
-                    column_type->getName());
-        }
+        if (hasNullableArray(column_type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Cannot create column with type '{}' because Nullable Array type is not allowed. "
+                "Set setting allow_experimental_nullable_array_type = 1 in order to allow it",
+                column_type->getName());
     }
 
     if (LoadingStrictnessLevel::ATTACH <= mode)
