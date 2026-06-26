@@ -4,14 +4,13 @@
 -- virtual column the rewritten filter relies on. With the optimization enabled the
 -- counts below must stay correct.
 
-SET allow_experimental_full_text_index = 1;
-SET query_plan_optimize_lazy_final = 1;
-SET max_rows_for_lazy_final = 10000000;
-SET min_filtered_ratio_for_lazy_final = 0;
+SET query_plan_optimize_lazy_final = 1;        -- off by default; bug needs it on
+SET min_filtered_ratio_for_lazy_final = 0;     -- avoid fallback to regular FINAL
+SET query_plan_direct_read_from_text_index = 1; -- exercise the direct read (randomized in CI)
 
 DROP TABLE IF EXISTS tab;
 
-SELECT 'Single part (non-intersecting): the synthetic read must still use the direct read';
+SELECT 'Single non-intersecting part: lazy FINAL must still read directly from the text index';
 CREATE TABLE tab
 (
     id UInt64,
@@ -34,7 +33,7 @@ SELECT count() FROM tab FINAL WHERE str = 'foo';          -- 0: replaced value i
 
 DROP TABLE tab;
 
-SELECT 'Intersecting and non-intersecting parts: lazy FINAL falls back to a regular FINAL read';
+SELECT 'Mixed intersecting and non-intersecting parts: lazy FINAL falls back to a regular FINAL read';
 CREATE TABLE tab
 (
     id UInt64,
