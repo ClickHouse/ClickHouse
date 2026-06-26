@@ -142,6 +142,7 @@ namespace Setting
     extern const SettingsUInt64 cross_to_inner_join_rewrite;
     extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool distributed_aggregation_memory_efficient;
+    extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_global_with_statement;
@@ -615,7 +616,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     query_info.query = query_ptr->clone();
 
-    if (settings[Setting::count_distinct_optimization])
+    /// With `distributed_group_by_no_merge` the `GROUP BY` of the rewritten subquery is completed per shard
+    /// and not merged on the initiator, so the outer `count()` would count duplicate per-shard groups instead
+    /// of the global distinct keys. The new analyzer skips the rewrite in this mode in `CountDistinctPass`;
+    /// mirror that here for the legacy analyzer.
+    if (settings[Setting::count_distinct_optimization] && !settings[Setting::distributed_group_by_no_merge])
     {
         RewriteCountDistinctFunctionMatcher::Data data_rewrite_countdistinct;
         RewriteCountDistinctFunctionVisitor(data_rewrite_countdistinct).visit(query_ptr);
