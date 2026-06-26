@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       days:
-        description: Lookback window in days; overrides the default for a manual run (e.g. 100 to backfill). Leave empty for the scheduled 1-day window.
+        description: Lookback window in days; overrides the default for a manual run (e.g. 100 to backfill). Leave empty for the scheduled 15-day window.
         required: false
         default: ''
 
