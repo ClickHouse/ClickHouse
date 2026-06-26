@@ -417,6 +417,19 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
         for (const auto & [header_name, header_value] : poco_response)
             response->SetHeader(header_name, header_value);
 
+        /// TEMPORARY DIAGNOSTIC: log status/length/encoding so we can tell whether `Content-Length`
+        /// is present on the wire (Azure `BlobClient::GetProperties` does an unguarded `.at("Content-Length")`
+        /// and throws `std::out_of_range` when it is missing).
+        LOG_INFO(
+            getLogger("PocoAzureHTTPClient"),
+            "Azure response: {} {} -> status {} {}; Poco getContentLength()={}, transfer-encoding='{}'",
+            method,
+            url.GetPath(),
+            status,
+            poco_response.getReason(),
+            poco_response.getContentLength(),
+            poco_response.getTransferEncoding());
+
         // Track metrics
         addMetric(method, AzureMetricType::Microseconds, watch.elapsedMicroseconds());
         addMetric(method, AzureMetricType::Count);
