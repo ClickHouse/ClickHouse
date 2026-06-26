@@ -11,7 +11,6 @@ cached_disk_name="04326_cached_disk_${CLICKHOUSE_DATABASE}"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS 04326_t SYNC"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS 04326_cached_t SYNC"
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS 04326_paths SYNC"
 
 ${CLICKHOUSE_CLIENT} --query "
 CREATE TABLE 04326_t (a Int32, b String) ORDER BY a
@@ -24,6 +23,25 @@ SETTINGS disk = disk(
 "
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO 04326_t SELECT number, toString(number) FROM numbers(100)"
+
+echo "-- the plain_rewritable disk is reported in system.remote_data_paths with metadata_type"
+${CLICKHOUSE_CLIENT} --query "
+SELECT count() >= 1 FROM system.remote_data_paths WHERE disk_name = '${disk_name}' AND metadata_type = 'PlainRewritable'"
+
+echo "-- common_prefix_for_blobs is non-empty and remote_path starts with it"
+${CLICKHOUSE_CLIENT} --query "
+SELECT count() FROM system.remote_data_paths
+WHERE disk_name = '${disk_name}' AND (common_prefix_for_blobs = '' OR NOT startsWith(remote_path, common_prefix_for_blobs))"
+
+echo "-- non-root local data paths are present"
+${CLICKHOUSE_CLIENT} --query "
+SELECT count() >= 1 FROM system.remote_data_paths
+WHERE disk_name = '${disk_name}' AND local_path != ''"
+
+echo "-- a freshly written table has no ephemeral entries"
+${CLICKHOUSE_CLIENT} --query "
+SELECT count() FROM system.remote_data_paths
+WHERE disk_name = '${disk_name}' AND is_ephemeral"
 
 # A cache disk wraps the plain_rewritable metadata storage, but the common blob prefix must still be
 # reported (it comes from the object storage contract, not a cast to the concrete metadata storage type).
@@ -44,40 +62,10 @@ SETTINGS disk = disk(
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO 04326_cached_t SELECT number, toString(number) FROM numbers(100)"
 
-# system.remote_data_paths enumerates every disk on the server and does not push down the disk_name
-# filter, so scanning it is expensive on a shared instance. Snapshot the rows for our two disks once
-# and run the cheap checks against the snapshot instead of rescanning the system table per assertion.
-${CLICKHOUSE_CLIENT} --query "
-CREATE TABLE 04326_paths ENGINE = Memory AS
-SELECT disk_name, metadata_type, common_prefix_for_blobs, remote_path, local_path, is_ephemeral
-FROM system.remote_data_paths
-WHERE disk_name IN ('${disk_name}', '${cached_disk_name}')
-"
-
-echo "-- the plain_rewritable disk is reported in system.remote_data_paths with metadata_type"
-${CLICKHOUSE_CLIENT} --query "
-SELECT count() >= 1 FROM 04326_paths WHERE disk_name = '${disk_name}' AND metadata_type = 'PlainRewritable'"
-
-echo "-- common_prefix_for_blobs is non-empty and remote_path starts with it"
-${CLICKHOUSE_CLIENT} --query "
-SELECT count() FROM 04326_paths
-WHERE disk_name = '${disk_name}' AND (common_prefix_for_blobs = '' OR NOT startsWith(remote_path, common_prefix_for_blobs))"
-
-echo "-- non-root local data paths are present"
-${CLICKHOUSE_CLIENT} --query "
-SELECT count() >= 1 FROM 04326_paths
-WHERE disk_name = '${disk_name}' AND local_path != ''"
-
-echo "-- a freshly written table has no ephemeral entries"
-${CLICKHOUSE_CLIENT} --query "
-SELECT count() FROM 04326_paths
-WHERE disk_name = '${disk_name}' AND is_ephemeral"
-
 echo "-- a wrapped (cache) plain_rewritable disk reports metadata_type and non-empty common_prefix_for_blobs"
 ${CLICKHOUSE_CLIENT} --query "
-SELECT count() >= 1 FROM 04326_paths
+SELECT count() >= 1 FROM system.remote_data_paths
 WHERE disk_name = '${cached_disk_name}' AND metadata_type = 'PlainRewritable' AND common_prefix_for_blobs != ''"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE 04326_t SYNC"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE 04326_cached_t SYNC"
-${CLICKHOUSE_CLIENT} --query "DROP TABLE 04326_paths SYNC"

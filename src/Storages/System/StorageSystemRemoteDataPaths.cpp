@@ -22,6 +22,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/VirtualColumnUtils.h>
 
 namespace fs = std::filesystem;
 
@@ -166,7 +167,9 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
-    /// TODO: void applyFilters(ActionDAGNodes added_filter_nodes) can be implemented to filter out disk names
+    /// Prune disks that cannot match the query's `disk_name` predicate, so we don't traverse every disk
+    /// on the server (which has no pushdown and can be very expensive on instances with many disks).
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
 private:
     std::shared_ptr<const StorageLimitsList> storage_limits;
@@ -228,6 +231,35 @@ void StorageSystemRemoteDataPaths::readImpl(
         header,
         max_block_size);
     query_plan.addStep(std::move(read_step));
+}
+
+void ReadFromSystemRemoteDataPaths::applyFilters(ActionDAGNodes added_filter_nodes)
+{
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
+    if (!filter_actions_dag)
+        return;
+
+    const auto * predicate = filter_actions_dag->getOutputs().at(0);
+    if (!predicate)
+        return;
+
+    /// Build a block with all disk names and apply the query's `disk_name` predicate to it, so the source
+    /// only traverses the matching disks. This avoids a full DFS over every disk on the server (there is
+    /// no other pushdown), which is expensive on instances with many disks.
+    auto disk_name_column = ColumnString::create();
+    for (const auto & [disk_name, _] : disks)
+        disk_name_column->insertData(disk_name.data(), disk_name.size());
+
+    Block block{{std::move(disk_name_column), std::make_shared<DataTypeString>(), "disk_name"}};
+    VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
+
+    std::unordered_set<std::string_view> allowed_disks;
+    const auto & filtered_column = block.getByPosition(0).column;
+    for (size_t i = 0; i < filtered_column->size(); ++i)
+        allowed_disks.insert(filtered_column->getDataAt(i));
+
+    std::erase_if(disks, [&](const auto & disk) { return !allowed_disks.contains(disk.first); });
 }
 
 void ReadFromSystemRemoteDataPaths::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & /*settings*/)
