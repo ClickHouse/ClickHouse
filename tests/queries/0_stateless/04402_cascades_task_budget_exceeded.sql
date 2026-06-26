@@ -1,6 +1,6 @@
--- A tiny Cascades task budget must fail closed with a clear exception instead of
--- building a plan from a partial memo (which would be non-minimal, or fail
--- confusingly deep in buildBestPlan). The budget is overridable for tests via the
+-- A tiny Cascades task budget must throw a clear exception instead of building a
+-- plan from a partial memo (which would be non-minimal, or error out confusingly
+-- deep in buildBestPlan). The budget is overridable for tests via the
 -- `_internal_cascades_task_limit` query parameter; the default is large.
 
 SET enable_analyzer = 1;
@@ -17,7 +17,7 @@ SELECT '-- default budget: the query optimizes and runs';
 SELECT k, sum(x) FROM t_task_budget GROUP BY k ORDER BY k LIMIT 3
 SETTINGS distributed_plan_execute_locally = 1;
 
-SELECT '-- task budget of 1 cannot finish: fail closed';
+SELECT '-- task budget of 1 cannot finish: rejected';
 SET param__internal_cascades_task_limit = 1;
 SELECT k, sum(x) FROM t_task_budget GROUP BY k ORDER BY k; -- { serverError SUPPORT_IS_DISABLED }
 

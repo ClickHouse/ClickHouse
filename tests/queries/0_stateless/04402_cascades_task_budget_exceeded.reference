@@ -2,7 +2,7 @@
 0	4500
 1	4510
 2	4520
--- task budget of 1 cannot finish: fail closed
+-- task budget of 1 cannot finish: rejected
 -- an over-large override is clamped to the built-in cap, so the query still runs
 0	4500
 1	4510
