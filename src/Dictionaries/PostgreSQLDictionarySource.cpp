@@ -209,7 +209,6 @@ static void validateConfigKeys(
 
 #endif
 
-void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory);
 void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,
@@ -351,14 +350,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 #endif
     };
 
-    factory.registerSource("postgresql", create_table_source, Documentation{
-        .description = "Reads dictionary data from a table in a PostgreSQL server."
-#if !USE_LIBPQXX
-            " Currently unavailable, because this ClickHouse build does not include PostgreSQL support."
-#endif
-        ,
-        .syntax = "SOURCE(POSTGRESQL(host 'host' port 5432 user 'user' password '' db 'db' table 'table'))",
-        .related = {"mysql", "clickhouse"}});
+    factory.registerSource("postgresql", create_table_source);
 }
 
 }

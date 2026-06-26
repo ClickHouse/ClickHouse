@@ -79,7 +79,7 @@ PartitionPruner::PartitionPruner(
             {},
             context);
 
-        DB::ActionsDAGWithInversionPushDown inverted_dag(filter_dag.getOutputs().front(), context, /* boolean_context */ true);
+        DB::ActionsDAGWithInversionPushDown inverted_dag(filter_dag.getOutputs().front(), context);
         key_condition.emplace(
             inverted_dag, context, partition_key.column_names, partition_key.expression, true /* single_point */);
     }
