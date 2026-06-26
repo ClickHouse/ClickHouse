@@ -9,7 +9,7 @@ CREATE TABLE table_c (a Float64) ENGINE = MergeTree ORDER BY a;
 CREATE TABLE table_d (a Float64, count Int64) ENGINE MergeTree ORDER BY a;
 CREATE TABLE table_e (a Float64, count Int64) ENGINE MergeTree ORDER BY a;
 CREATE TABLE table_f (a Float64, count Int64) ENGINE MergeTree ORDER BY a;
-
+SET query_plan_optimize_join_order_randomize = 0;
 -- SETUP MATERIALIZED VIEWS
 CREATE MATERIALIZED VIEW matview_a_to_b TO table_b AS SELECT toFloat64(a) AS a, b + sleepEachRow(0.000001) AS count FROM table_a;
 CREATE MATERIALIZED VIEW matview_b_to_c TO table_c AS SELECT SUM(a + sleepEachRow(0.000002)) as a FROM table_b;

@@ -4,6 +4,7 @@
 -- check_limits=false to the underlying join, silently disabling
 -- join_overflow_mode enforcement.
 
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join build side / overflow limits, which depend on join order
 SET max_block_size = 1000;
 -- ====================================================================
 -- Single-thread path (hash join)
