@@ -217,6 +217,13 @@ public:
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
     void getStatus(ReplicatedStatus & res, bool with_zk_fields = true);
 
+    /// Whether a part fetch is in progress whose result part covers any of `source_part_names`.
+    /// A fetch satisfies a scheduled merge (e.g. always_fetch_merged_part / prefer-fetch / zero-copy)
+    /// by committing the fetched part active before it queues its DOWNLOAD_PART part_log row, and it
+    /// creates no merge list entry. SYSTEM SYNC MERGES uses this (in addition to the merge list) so it
+    /// does not return before the fetch path's post-commit part_log write of the scheduled parts.
+    bool hasInFlightFetchCoveringParts(const NameSet & source_part_names) const;
+
     using LogEntriesData = std::vector<ReplicatedMergeTreeLogEntryData>;
     void getQueue(LogEntriesData & res, String & replica_name);
 

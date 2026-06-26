@@ -2193,6 +2193,12 @@ void InterpreterSystemQuery::syncMerges()
     const NameSet scheduled_part_names = ManualMergeSelector::getScheduledPartNames(table_id);
     auto & merge_list = getContext()->getMergeList();
 
+    /// On a replicated table a scheduled merge can be satisfied by fetching the merged part instead
+    /// of executing it locally (always_fetch_merged_part / prefer-fetch / zero-copy contention). The
+    /// fetch path commits the fetched part active before it queues its DOWNLOAD_PART part_log row and
+    /// creates no merge list entry, so the merge list check above does not cover it.
+    auto * replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(&merge_tree);
+
     const auto max_execution_time_ms = getContext()->getSettingsRef()[Setting::max_execution_time].totalMilliseconds();
     const auto timeout = max_execution_time_ms == 0 ? std::numeric_limits<int32_t>::max() : max_execution_time_ms;
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout);
@@ -2214,9 +2220,13 @@ void InterpreterSystemQuery::syncMerges()
         /// merge list entry until after write_part_log(), so we additionally wait until no scheduled
         /// merge is left in the merge list. Scoping to the scheduled source parts (and skipping
         /// mutations) keeps this from over-waiting on unrelated in-flight merges/mutations, and
-        /// covers both plain and replicated storage that run the Manual selector.
+        /// covers both plain and replicated storage that run the Manual selector. The replicated
+        /// fetch path has no merge list entry, so we also wait for any in-flight fetch whose result
+        /// part covers a scheduled source part (the fetch keeps it in currently_fetching_parts until
+        /// after its DOWNLOAD_PART part_log write).
         if (ManualMergeSelector::isAllScheduledPartsCovered(table_id, active_set)
-            && !merge_list.hasUnfinishedMergeOfSourceParts(table_id, scheduled_part_names))
+            && !merge_list.hasUnfinishedMergeOfSourceParts(table_id, scheduled_part_names)
+            && !(replicated_merge_tree && replicated_merge_tree->hasInFlightFetchCoveringParts(scheduled_part_names)))
             return;
 
         std::this_thread::sleep_for(std::chrono::milliseconds(poll_delay.getCurrentDelay()));

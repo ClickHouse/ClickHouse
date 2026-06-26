@@ -262,6 +262,7 @@ namespace FailPoints
     extern const char rmt_delay_execute_drop_range[];
     extern const char replicated_table_remove_zk_before_get_children[];
     extern const char replicated_table_remove_zk_before_final_multi[];
+    extern const char rmt_fetch_part_sleep_before_part_log[];
 }
 
 namespace ErrorCodes
@@ -5698,6 +5699,14 @@ bool StorageReplicatedMergeTree::fetchPart(
             if (prewarm_caches.primary_index_cache)
                 part->loadIndexToCache(*prewarm_caches.primary_index_cache);
 
+            /// The fetched part is already committed (active) at this point but its DOWNLOAD_PART
+            /// part_log row is queued only below. Widen that window so a test can observe that
+            /// SYSTEM SYNC MERGES waits for the part_log write on the fetch path.
+            fiu_do_on(FailPoints::rmt_fetch_part_sleep_before_part_log,
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+            });
+
             write_part_log({});
         }
         else
@@ -5735,6 +5744,23 @@ bool StorageReplicatedMergeTree::fetchPart(
         LOG_DEBUG(log, "Fetched part {} from {}:{}{}", part_name, source_zookeeper_name, source_replica_path, to_detached ? " (to 'detached' directory)" : "");
 
     return true;
+}
+
+
+bool StorageReplicatedMergeTree::hasInFlightFetchCoveringParts(const NameSet & source_part_names) const
+{
+    if (source_part_names.empty())
+        return false;
+
+    std::lock_guard lock(currently_fetching_parts_mutex);
+    for (const auto & fetching_part_name : currently_fetching_parts)
+    {
+        const auto fetching_part_info = MergeTreePartInfo::fromPartName(fetching_part_name, format_version);
+        for (const auto & source_part_name : source_part_names)
+            if (fetching_part_info.contains(MergeTreePartInfo::fromPartName(source_part_name, format_version)))
+                return true;
+    }
+    return false;
 }
 
 
