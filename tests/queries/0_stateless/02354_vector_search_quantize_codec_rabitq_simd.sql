@@ -5,6 +5,9 @@
 -- The codec is gated behind `allow_experimental_codecs`.
 
 SET allow_experimental_codecs = 1;
+-- The shortlist size is k * vector_search_index_fetch_multiplier clamped to query_plan_max_limit_for_lazy_materialization;
+-- the test harness randomizes the latter, which would shrink the shortlist and make the exact/recall checks flaky. Pin it.
+SET query_plan_max_limit_for_lazy_materialization = 1000000;
 
 DROP TABLE IF EXISTS quantize_rabitq_simd;
 CREATE TABLE quantize_rabitq_simd

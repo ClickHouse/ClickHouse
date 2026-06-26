@@ -4,6 +4,11 @@
 -- `allow_experimental_codecs`.
 
 SET allow_experimental_codecs = 1;
+-- Pin the lazy-materialization settings the test harness randomizes: the shortlist size is clamped to
+-- query_plan_max_limit_for_lazy_materialization (otherwise the full-coverage exact checks become approximate), and the
+-- plan's lazy read of the vector column needs lazy materialization enabled.
+SET query_plan_optimize_lazy_materialization = 1;
+SET query_plan_max_limit_for_lazy_materialization = 1000000;
 
 DROP TABLE IF EXISTS quantize_int8;
 CREATE TABLE quantize_int8
