@@ -109,8 +109,8 @@ void CascadesOptimizer::optimize()
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Cascades optimizer did not finish within the task budget of {} tasks "
             "(root group #{}, required properties {}, {} groups in memo). "
-            "Disable enable_cascades_optimizer, or raise the limit with the "
-            "'_internal_cascades_task_limit' query parameter.",
+            "The distributed Cascades optimizer is experimental; disable enable_cascades_optimizer "
+            "or simplify the query.",
             executed_tasks_limit, root_group_id, root_required_properties.dump(),
             optimizer_context.memo.getGroupCount());
 

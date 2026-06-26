@@ -21,4 +21,10 @@ SELECT '-- task budget of 1 cannot finish: fail closed';
 SET param__internal_cascades_task_limit = 1;
 SELECT k, sum(x) FROM t_task_budget GROUP BY k ORDER BY k; -- { serverError SUPPORT_IS_DISABLED }
 
+-- Raise the override above the built-in cap; it is clamped back to the cap, so the query runs.
+SET param__internal_cascades_task_limit = 100000000;
+SELECT '-- an over-large override is clamped to the built-in cap, so the query still runs';
+SELECT k, sum(x) FROM t_task_budget GROUP BY k ORDER BY k LIMIT 3
+SETTINGS distributed_plan_execute_locally = 1;
+
 DROP TABLE t_task_budget;
