@@ -4,7 +4,7 @@
 1	10	15
 3	30	35
 --- runtime filter IS applied to equality key when filters enabled ---
-Filter (Apply runtime join filter)
+BuildRuntimeFilter (Build runtime join filter on __table2.id)
 --- LEFT SEMI JOIN: same result without and with runtime filter ---
 1	10
 3	30

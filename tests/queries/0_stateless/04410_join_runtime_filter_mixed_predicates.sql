@@ -40,7 +40,7 @@ FROM (
     ORDER BY l.id
     SETTINGS enable_join_runtime_filters = 1
 )
-WHERE explain LIKE '%Apply runtime join filter%';
+WHERE explain LIKE '%Build runtime join filter%';
 
 SELECT '--- LEFT SEMI JOIN: same result without and with runtime filter ---';
 
