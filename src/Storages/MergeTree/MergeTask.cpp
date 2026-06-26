@@ -136,6 +136,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool materialize_projections_on_merge;
     extern const MergeTreeSettingsUInt64 merge_max_block_size_bytes;
     extern const MergeTreeSettingsNonZeroUInt64 merge_max_block_size;
+    extern const MergeTreeSettingsMergeSortingQueueStrategy merge_sorting_queue_strategy;
     extern const MergeTreeSettingsUInt64 min_merge_bytes_to_use_direct_io;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_bytes_to_activate;
@@ -168,6 +169,19 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int QUERY_WAS_CANCELLED;
+}
+
+static SortingQueueStrategy getSortingQueueStrategy(MergeSortingQueueStrategy merge_sorting_queue_strategy)
+{
+    switch (merge_sorting_queue_strategy)
+    {
+        case MergeSortingQueueStrategy::Default:
+            return SortingQueueStrategy::Default;
+        case MergeSortingQueueStrategy::Batch:
+            return SortingQueueStrategy::Batch;
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected merge sorting queue strategy: {}", static_cast<int>(merge_sorting_queue_strategy));
 }
 
 /// Transform that builds statistics for columns and doesn't change the chunk.
@@ -2480,6 +2494,7 @@ public:
         UInt64 merge_block_size_bytes_,
         std::optional<size_t> max_dynamic_subcolumns_,
         bool blocks_are_granules_size_,
+        SortingQueueStrategy sorting_queue_strategy_,
         bool cleanup_,
         time_t time_of_merge_)
         : ITransformingStep(input_header_, input_header_, getTraits())
@@ -2492,6 +2507,7 @@ public:
         , merge_block_size_bytes(merge_block_size_bytes_)
         , max_dynamic_subcolumns(max_dynamic_subcolumns_)
         , blocks_are_granules_size(blocks_are_granules_size_)
+        , sorting_queue_strategy(sorting_queue_strategy_)
         , cleanup(cleanup_)
         , time_of_merge(time_of_merge_)
     {}
@@ -2526,7 +2542,7 @@ public:
                     merge_block_size_rows,
                     merge_block_size_bytes,
                     max_dynamic_subcolumns,
-                    SortingQueueStrategy::Default,
+                    sorting_queue_strategy,
                     /* limit_= */0,
                     /* always_read_till_end_= */false,
                     rows_sources_write_buf,
@@ -2618,6 +2634,7 @@ private:
     const UInt64 merge_block_size_bytes;
     const std::optional<size_t> max_dynamic_subcolumns;
     const bool blocks_are_granules_size;
+    const SortingQueueStrategy sorting_queue_strategy;
     const bool cleanup{false};
     const time_t time_of_merge{0};
 };
@@ -3148,6 +3165,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size_bytes],
             max_dynamic_subcolumns,
             is_vertical_merge,
+            getSortingQueueStrategy((*merge_tree_settings)[MergeTreeSetting::merge_sorting_queue_strategy]),
             cleanup,
             global_ctx->time_of_merge);
 

@@ -1260,6 +1260,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
             {"allow_experimental_text_index_positions", false, false, "New setting"},
+            {"merge_sorting_queue_strategy", "default", "default", "New setting to choose the sorting queue strategy for ordinary `MergeTree` merges."},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",
