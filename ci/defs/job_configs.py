@@ -375,6 +375,23 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
+    # sccache-warmup builds (MasterCI only): compile amd_release / arm_release
+    # with the PR release builds' cmake flags (see PR_CACHE_WARMUP_BUILD_TYPES
+    # in build_clickhouse.py) while keeping the shared sccache read-write. This
+    # populates the cache so that read-only PR release builds get cache hits.
+    # They provide no artifacts and run no profile/master-head post hooks - the
+    # only purpose is to warm sccache.
+    sccache_warmup_build_jobs = common_build_job_config.parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.AMD_RELEASE_PR_CACHE_WARMUP,
+            runs_on=RunnerLabels.ARM_LARGE,
+            timeout=3 * 3600,
+        ),
+        Job.ParamSet(
+            parameter=BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP,
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
+    )
     extra_validation_build_jobs = common_build_job_config.set_post_hooks(
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
