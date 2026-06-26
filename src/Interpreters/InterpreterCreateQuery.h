@@ -108,9 +108,10 @@ private:
     AccessRightsElements getRequiredAccess() const;
 
     /// Create IStorage and add it to database. If table already exists and IF NOT EXISTS specified, do nothing and return false.
-    bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties, DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode);
+    bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties, DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode, bool skip_table_name_length_check = false);
     BlockIO doCreateOrReplaceTable(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode);
     BlockIO doCreateOrReplaceTemporaryTable(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode);
+    BlockIO doCreateTableAsSelect(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode);
 #if CLICKHOUSE_CLOUD
     /// Converts the "*MergeTree" table engine to "Replicated*MergeTree" or "Shared*MergeTree" if the corresponding settings are enabled.
     void convertTableEngineForCloud(ASTStorage & table_engine, TableProperties & properties) const;

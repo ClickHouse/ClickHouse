@@ -23,7 +23,10 @@ ${CLICKHOUSE_CLIENT} -q "select k from test_log_queries.logtable where i = 1" "-
 ${CLICKHOUSE_CLIENT} -q "select * from test_log_queries.logtable where i = 1" "--query_id=01600_log_queries_with_extensive_info_006"
 ${CLICKHOUSE_CLIENT} -q "create table test_log_queries.logtable2 as test_log_queries.logtable" "--query_id=01600_log_queries_with_extensive_info_007"
 ${CLICKHOUSE_CLIENT} -q "insert into test_log_queries.logtable2 select * from test_log_queries.logtable" "--query_id=01600_log_queries_with_extensive_info_008"
-${CLICKHOUSE_CLIENT} -q "create table test_log_queries.logtable3 engine MergeTree order by j as select * from test_log_queries.logtable" "--query_id=01600_log_queries_with_extensive_info_009"
+# Disable atomic CTAS for this query: the atomic path renames an internal `_tmp_ctas_*` table into place,
+# which makes the recorded `tables` field non-deterministic in `query_log`. The atomic CTAS behaviour is
+# covered by `03916_ctas_atomic`.
+${CLICKHOUSE_CLIENT} --atomic_create_as_select=0 -q "create table test_log_queries.logtable3 engine MergeTree order by j as select * from test_log_queries.logtable" "--query_id=01600_log_queries_with_extensive_info_009"
 ${CLICKHOUSE_CLIENT} -q "alter table test_log_queries.logtable rename column j to x, rename column k to y" "--query_id=01600_log_queries_with_extensive_info_010"
 ${CLICKHOUSE_CLIENT} -q "alter table test_log_queries.logtable2 add column x int, add column y int" "--query_id=01600_log_queries_with_extensive_info_011"
 ${CLICKHOUSE_CLIENT} -q "alter table test_log_queries.logtable3 drop column i, drop column k" "--query_id=01600_log_queries_with_extensive_info_012"

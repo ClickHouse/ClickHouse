@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.7",
         {
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
+            {"atomic_create_as_select", false, true, "Ensure atomicity of CREATE TABLE ... AS SELECT queries in Atomic databases"},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",

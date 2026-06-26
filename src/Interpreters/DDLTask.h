@@ -220,6 +220,7 @@ class ZooKeeperMetadataTransaction
     /// (otherwise we may get partially applied changes on connection loss).
     /// So we need this flag to avoid doing unnecessary operations with metadata.
     bool is_create_or_replace_query = false;
+    bool is_create_table_as_select = false;
 
 public:
     ZooKeeperMetadataTransaction(const ZooKeeperPtr & current_zookeeper_, const String & zookeeper_path_, bool is_initial_query_, const String & task_path_)
@@ -243,6 +244,10 @@ public:
     void setIsCreateOrReplaceQuery() { is_create_or_replace_query = true; }
 
     bool isCreateOrReplaceQuery() const { return is_create_or_replace_query; }
+
+    void setIsCreateTableAsSelect() { is_create_table_as_select = true; }
+
+    bool isCreateTableAsSelect() const { return is_create_table_as_select; }
 
     void addOp(Coordination::RequestPtr && op)
     {

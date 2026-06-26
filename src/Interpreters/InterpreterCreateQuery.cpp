@@ -67,7 +67,7 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
-
+#include <Interpreters/TemporaryCtasTableName.h>
 #include <Access/Common/AccessRightsElement.h>
 
 #include <DataTypes/DataTypeFactory.h>
@@ -127,6 +127,7 @@ namespace Setting
     extern const SettingsBool compatibility_ignore_collation_in_create_table;
     extern const SettingsBool compatibility_ignore_auto_increment_in_create_table;
     extern const SettingsBool create_if_not_exists;
+    extern const SettingsBool atomic_create_as_select;
     extern const SettingsFloat create_replicated_merge_tree_fault_injection_probability;
     extern const SettingsBool database_atomic_wait_for_drop_and_detach_synchronously;
     extern const SettingsUInt64 database_replicated_allow_explicit_uuid;
@@ -1853,6 +1854,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         chassert(!ddl_guard);
         return doCreateOrReplaceTable(create, properties, mode);
     }
+    const bool is_create_table_as_select = create.select && !create.attach && !create.is_create_empty && !create.is_ordinary_view && !create.is_materialized_view && !create.is_window_view;
+
+    if (getContext()->getSettingsRef()[Setting::atomic_create_as_select] && is_create_table_as_select && !create.isTemporary()
+        && (database->getEngineName() == "Atomic" || database->getEngineName() == "Replicated"))
+    {
+        chassert(!ddl_guard);
+        return doCreateTableAsSelect(create, properties, mode);
+    }
+
 
     /// Actually creates table
     bool created = doCreateTable(create, properties, ddl_guard, mode);
@@ -1933,7 +1943,7 @@ catch (...)
 
 bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                                            const InterpreterCreateQuery::TableProperties & properties,
-                                           DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode)
+                                           DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode, bool skip_table_name_length_check)
 {
     if (create.isTemporary())
     {
@@ -2026,7 +2036,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
         /// If this is an initial create, we also need to check the table name's length.
         /// We are not checking this for secondary creates to avoid backward compatibility issues.
-        if (mode <= LoadingStrictnessLevel::CREATE)
+        if (!skip_table_name_length_check && mode <= LoadingStrictnessLevel::CREATE)
             database->checkTableNameLength(create.getTable());
     }
 
@@ -2231,6 +2241,155 @@ void InterpreterCreateQuery::throwIfTooManyEntities(ASTCreateQuery & create) con
     else
         check_and_throw(ServerSetting::max_table_num_to_throw, CurrentMetrics::AttachedTable, "max_table_num_to_throw", "tables");
 }
+BlockIO InterpreterCreateQuery::doCreateTableAsSelect(ASTCreateQuery & create,
+                                                       const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode)
+{
+    /// Replicated database requires separate contexts for each DDL query
+    ContextPtr current_context = getContext();
+    if (auto txn = current_context->getZooKeeperMetadataTransaction())
+        txn->setIsCreateTableAsSelect();
+    ContextMutablePtr create_context = Context::createCopy(current_context);
+    create_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
+
+    /// Before actually creating/replacing the table, check if it will lead to cyclic dependencies.
+    checkTableCanBeAddedWithNoCyclicDependencies(create, query_ptr, create_context);
+
+    auto make_drop_context = [&]() -> ContextMutablePtr
+    {
+        ContextMutablePtr drop_context = Context::createCopy(current_context);
+        drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
+        return drop_context;
+    };
+
+    auto ast_drop = make_intrusive<ASTDropQuery>();
+    String target_table = create.getTable();
+    const bool if_not_exists = create.if_not_exists;
+
+    {
+        auto database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
+        if (database->getUUID() == UUIDHelpers::Nil)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "CREATE TABLE AS SELECT is supported only for Atomic databases");
+
+        if (mode <= LoadingStrictnessLevel::CREATE)
+            database->checkTableNameLength(target_table);
+
+        /// If the target already exists and IF NOT EXISTS is set, skip the whole CTAS dance:
+        /// otherwise we would create and populate a temporary table only to discover the target exists
+        /// at rename time, leaking a populated temp table that the cleanup path may fail to drop
+        /// due to user RBAC. A race against a concurrent CREATE is still handled by the rename below.
+        if (if_not_exists && database->isTableExist(target_table, current_context))
+            return {};
+    }
+
+    {
+        const String name_hash = TemporaryCtasTableName::calculateHash(create.getDatabase(), create.getTable());
+        const String random_suffix = [&]()
+        {
+            if (auto txn = current_context->getZooKeeperMetadataTransaction())
+            {
+                /// Avoid different table name on database replicas
+                UInt64 hashed_zk_path = sipHash64(txn->getTaskZooKeeperPath());
+                return getHexUIntLowercase(hashed_zk_path);
+            }
+            if (!current_context->getCurrentQueryId().empty())
+            {
+                const UInt32 hashed_query_id = static_cast<UInt32>(sipHash64(current_context->getCurrentQueryId()));
+                return getRandomASCIIString(/*length=*/8) + getHexUIntLowercase(hashed_query_id);
+            }
+            return getRandomASCIIString(/*length=*/16);
+        }();
+
+        const String tmp_target_table_name = TemporaryCtasTableName{.name_hash = name_hash, .random_suffix = random_suffix}.toString();
+        create.setTable(tmp_target_table_name);
+
+        ast_drop->setTable(create.getTable());
+        ast_drop->setDatabase(create.getDatabase());
+        ast_drop->kind = ASTDropQuery::Drop;
+    }
+
+    bool created = false;
+    bool renamed = false;
+    try
+    {
+        /// Create temporary table (random name will be generated)
+        DDLGuardPtr ddl_guard;
+        [[maybe_unused]] bool done = InterpreterCreateQuery(query_ptr, create_context).doCreateTable(create, properties, ddl_guard, mode, true);
+        ddl_guard.reset();
+        chassert(done);
+        created = true;
+
+        /// If table has dependencies - add them to the graph
+        addTableDependencies(create, query_ptr, getContext());
+
+        /// Try fill temporary table
+        BlockIO fill_io = fillTableIfNeeded(create);
+        bool with_interactive_cancel = create.isCreateQueryWithImmediateInsertSelect();
+        executeTrivialBlockIO(fill_io, getContext(), with_interactive_cancel);
+
+        ASTRenameQuery::Element elem
+        {
+            ASTRenameQuery::Table
+            {
+                create.getDatabase().empty() ? nullptr : make_intrusive<ASTIdentifier>(create.getDatabase()),
+                make_intrusive<ASTIdentifier>(create.getTable())
+            },
+            ASTRenameQuery::Table
+            {
+                create.getDatabase().empty() ? nullptr : make_intrusive<ASTIdentifier>(create.getDatabase()),
+                make_intrusive<ASTIdentifier>(target_table)
+            }
+        };
+
+        auto ast_rename = make_intrusive<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
+        ast_rename->rename_if_cannot_exchange = false;
+        ast_rename->exchange = false;
+        try
+        {
+            InterpreterRenameQuery(ast_rename, current_context).execute();
+        }
+
+        catch (const Exception & e)
+        {
+            if (if_not_exists && e.code() == ErrorCodes::TABLE_ALREADY_EXISTS)
+            {
+                create.setTable(target_table);
+                auto drop_context = make_drop_context();
+                try
+                {
+                    InterpreterDropQuery(ast_drop, drop_context).execute();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("InterpreterCreateQuery", "Cannot DROP temporary table");
+                }
+
+                return {};
+            }
+            throw;
+        }
+
+        renamed = true;
+        create.setTable(target_table);
+        return {};
+    }
+    catch (...)
+    {
+        /// Drop temporary table if it was successfully created, but was not renamed to target name
+        if (created && !renamed)
+        {
+            auto drop_context = make_drop_context();
+            try
+            {
+                InterpreterDropQuery(ast_drop, drop_context).execute();
+            }
+            catch (...)
+            {
+                tryLogCurrentException("InterpreterCreateQuery", "Cannot DROP temporary table");
+            }
+        }
+        throw;
+    }
+}
 
 
 BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
@@ -2360,7 +2519,6 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             auto drop_context = make_drop_context();
             InterpreterDropQuery(ast_drop, drop_context).execute();
         }
-
         create.setTable(table_to_replace_name);
 
         return {};

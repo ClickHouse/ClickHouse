@@ -2205,7 +2205,7 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
     chassert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn || startsWith(table_name, ".inner_id.") || startsWith(table_name, ".tmp.inner_id."));
-    if (txn && txn->isInitialQuery() && !txn->isCreateOrReplaceQuery())
+    if (txn && txn->isInitialQuery() && !txn->isCreateOrReplaceQuery() && !txn->isCreateTableAsSelect())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
         txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, -1));
@@ -2226,7 +2226,7 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
     new_digest -= getMetadataHash(table_name);
-    if (txn && !txn->isCreateOrReplaceQuery() && !is_recovering)
+    if (txn && !txn->isCreateOrReplaceQuery() && !txn->isCreateTableAsSelect() && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
     DatabaseAtomic::dropTableImpl(local_context, table_name, sync);
@@ -2277,7 +2277,7 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
         zookeeper->tryGet(metadata_zk_path, zk_statement, &stat);
         zookeeper->tryGet(metadata_zk_path_to, zk_statement_to, &stat_to);
 
-        if (!txn->isCreateOrReplaceQuery())
+        if (!txn->isCreateOrReplaceQuery() && !txn->isCreateTableAsSelect())
             txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, stat.version));
 
         if (exchange)
@@ -2287,8 +2287,8 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
                 txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, zk_statement_to, zkutil::CreateMode::Persistent));
         }
 
-        /// In case of CREATE OR REPLACE there is no statement for the temporary table in ZK, so we use the local definition
-        if (txn->isCreateOrReplaceQuery())
+        /// In case of CREATE OR REPLACE or CTAS there is no statement for the temporary table in ZK, so we use the local definition
+        if (txn->isCreateOrReplaceQuery() || txn->isCreateTableAsSelect())
             txn->addOp(zkutil::makeCreateRequest(metadata_zk_path_to, statement, zkutil::CreateMode::Persistent));
         else
             txn->addOp(zkutil::makeCreateRequest(metadata_zk_path_to, zk_statement, zkutil::CreateMode::Persistent));
@@ -2327,8 +2327,11 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
     /// the rename transaction that commits everything. Without this, an explicit DROP TABLE
     /// after CREATE OR REPLACE would fail with a ZooKeeper "No node" error when trying to
     /// remove the inner table's metadata node.
+    /// For CTAS, the metadata node for the temporary table is also omitted: the temporary
+    /// `_tmp_ctas_*` table is renamed to the final user-visible name atomically, and the
+    /// rename transaction creates the metadata node under that final name.
     const bool is_inner_table = query.getTable().starts_with(".inner_id.");
-    if (txn && txn->isInitialQuery() && (!txn->isCreateOrReplaceQuery() || is_inner_table))
+    if (txn && txn->isInitialQuery() && (!txn->isCreateOrReplaceQuery() || is_inner_table) && !txn->isCreateTableAsSelect())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(query.getTable());
         /// zk::multi(...) will throw if `metadata_zk_path` exists
@@ -2338,7 +2341,7 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
     std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
     new_digest += DB::getMetadataHash(query.getTable(), statement);
-    if (txn && !txn->isCreateOrReplaceQuery() && !is_recovering)
+    if (txn && !txn->isCreateOrReplaceQuery() && !txn->isCreateTableAsSelect() && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
     DatabaseAtomic::commitCreateTable(query, table, table_metadata_tmp_path, table_metadata_path, query_context);

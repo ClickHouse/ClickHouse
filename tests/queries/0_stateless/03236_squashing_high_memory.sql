@@ -1,5 +1,7 @@
--- Tags: no-fasttest, no-asan, no-tsan, no-msan, no-ubsan, no-random-settings, no-random-merge-tree-settings
+-- Tags: no-fasttest, no-asan, no-tsan, no-msan, no-ubsan, no-random-settings, no-random-merge-tree-settings, no-flaky-check
 -- reason: test requires too many rows to read
+-- no-flaky-check: heavy test (500M rows); runs ~13s in regular CI but ~400s under flaky-check load,
+--                 exceeding the 180s per-run timeout.
 
 SET max_rows_to_read = '501G';
 SET enable_lazy_columns_replication = 0;
@@ -9,7 +11,7 @@ DROP TABLE IF EXISTS id_values;
 DROP TABLE IF EXISTS test_table;
 
 CREATE TABLE id_values ENGINE MergeTree ORDER BY id1 AS
-    SELECT arrayJoin(range(500000)) AS id1, arrayJoin(range(1000)) AS id2;
+    SELECT arrayJoin(range(500000)) AS id1, arrayJoin(range(1000)) AS id2 SETTINGS atomic_create_as_select = 0;
 
 SET max_memory_usage = '1G';
 SET query_plan_join_swap_table = 'false';
@@ -23,7 +25,7 @@ FROM id_values
                     'qwe'                AS string_val1,
                     'asd'                AS string_val2) AS string_values
             ON id_values.id1 = string_values.id1
-    SETTINGS join_algorithm = 'hash';
+    SETTINGS join_algorithm = 'hash',atomic_create_as_select = 0;
 
 DROP TABLE IF EXISTS id_values;
 DROP TABLE IF EXISTS test_table;
