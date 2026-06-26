@@ -1,3 +1,7 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- ^ EXPLAIN output is sensitive to randomized query-plan settings (e.g. parallel replicas,
+--   join rewrites), which would otherwise make this test flaky under the flaky check.
+
 SET enable_analyzer = 1;
 SET join_algorithm = 'hash';
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;

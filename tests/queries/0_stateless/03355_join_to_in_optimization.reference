@@ -21,9 +21,9 @@ Positions: 1
 222	2
 222	222
 333	333
-Expression ((Project names + Projection))
+Expression ((Project names + (Projection + ( + Join output actions))))
   CreatingSets (Create sets before main query execution)
-    Expression (((WHERE + Join output actions) + (( + Calculate join left keys) + (Join filter + Change column names to column identifiers))))
+    Expression ((( + Calculate join left keys) + (WHERE + (Join filter + Change column names to column identifiers))))
       ReadFromMergeTree (system.query_log)
 0
 1	1

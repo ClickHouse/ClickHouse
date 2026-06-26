@@ -1,0 +1,14 @@
+just_id	1
+just_id	2
+with_tags	1	['a','b','c']
+with_tags	2	['d','e']
+with_arrjoin	1	a
+with_arrjoin	1	b
+with_arrjoin	1	c
+with_arrjoin	2	d
+with_arrjoin	2	e
+with_arrjoin_off	1	a
+with_arrjoin_off	1	b
+with_arrjoin_off	1	c
+with_arrjoin_off	2	d
+with_arrjoin_off	2	e
