@@ -1,23 +1,23 @@
 --- step 1: multi-partition INSERT ---
 APPEND	3	4			3	4
---- step 2: 10 single-partition INSERTs (last) ---
-APPEND	1	1			13	14
+--- step 2: 4 single-partition INSERTs (last) ---
+APPEND	1	1			7	8
 --- counts after step 2 ---
-14	13
+8	7
 --- step 3a: DROP PARTITION 100 ---
-DELETE			1	1	12	13
+DELETE			1	1	6	7
 --- step 3b: DROP PARTITION 101 ---
-DELETE			1	1	11	12
+DELETE			1	1	5	6
 --- step 3c: DROP PARTITION 1 (drops 2 rows from multi-INSERT) ---
-DELETE			1	2	10	10
+DELETE			1	2	4	4
 --- step 4: INSERT after DROP ---
-APPEND	1	1			11	11
+APPEND	1	1			5	5
 --- step 5: counts after OPTIMIZE (totals must be preserved) ---
-11	11
+5	5
 --- step 6: DROP PARTITION 200 (after OPTIMIZE) ---
-DELETE			1	1	10	10
+DELETE			1	1	4	4
 --- final SELECT vs total-* summary ---
-10	10	10	10	1
+4	4	4	4	1
 --- operation counts ---
-APPEND	12
+APPEND	6
 DELETE	4
