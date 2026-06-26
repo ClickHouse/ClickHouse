@@ -1,0 +1,54 @@
+-- default-off: canonical (dotted) name still works
+1	5
+-- default-off: short name still fails -- issue #87022
+-- default-off: subquery shape from issue #66133 still fails
+-- default-off: 3-way self-join CTE shape from issue #94858 still fails
+-- default-off: materialized CTE short name still fails
+-- on: issue #87022 reproducer works
+1	5
+-- on: outer reference via dotted name still works (additive)
+1	5
+-- on: reference via outer alias + short name
+1	5
+-- on: short name in subquery (not just CTE) -- issue #66133
+1
+-- on: 3-way self-join inside CTE -- issue #94858
+1
+-- on: ambiguous short name (collision among siblings) still errors
+-- on: dotted form still works in the ambiguous case
+1	1
+-- on: existing Nested-prefix resolution wins over the new short-name fallback
+[(1,'a')]
+-- on: existing Nested-prefix wins across a CROSS JOIN sibling that offers short-name
+[(1,'a')]
+-- on: JOIN USING does not match a short-name-resolved column
+-- on: SELECT * from sibling with `b.f1` does not over-qualify the existing `f1` projection
+f1	b.f1
+1	2
+-- on/off: explicit dotted alias on a constant projection does NOT expose a short name; alias-qualified lookup against it fails on both sides
+-- on: materialized CTE source — qualifier matches the CTE name, not the temp-storage name
+1
+-- on: explicit dotted alias on a resolved column does NOT expose a short name
+1
+2
+-- on: literal dotted column name (`f.1`) — short name is the actual column, not a wrong split
+1
+1
+-- on: pass-1 throw inside a JOIN ... USING (...) does not leave a dangling pointer
+1
+-- on: explicit canonical alias shadows the short name
+10
+-- on: explicit dotted projection in subquery (related: #94558)
+\N
+-- on: materialized CTE — same SQL-standard story, even though MATERIALIZED rewrites the CTE reference into a TableNode
+1	5
+-- on: materialized CTE — outer alias + short name
+1	5
+-- on: materialized CTE — canonical dotted name still works (additive)
+1	5
+-- on: DESCRIBE shows canonical names (not short names)
+b.f1	UInt8					
+b.f2	UInt8					
+-- on: SELECT * exposes canonical names
+b.f1	b.f2
+1	5

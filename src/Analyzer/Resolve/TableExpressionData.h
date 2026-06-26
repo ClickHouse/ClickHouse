@@ -84,6 +84,38 @@ struct AnalysisTableExpressionData
             || tryGetSubcolumnInfo(identifier_view.getFullName());
     }
 
+    /** Hybrid short-name fallback for subquery/CTE projection columns whose canonical
+      * name is a dotted identifier like `b.f1` (issue #87022 and friends).
+      *
+      * Populated only for `QueryNode` / `UnionNode` table expressions and only when
+      * `analyzer_enable_short_column_names_from_subquery` is on. Maps the rightmost
+      * component (`f1` for canonical `b.f1`) to the projection's `ColumnNode`.
+      *
+      * Entries are intentionally additive — the canonical dotted name still resolves
+      * via `column_name_to_column_node`. A short name is NOT registered when:
+      *   1. it collides with another short name produced by a sibling projection
+      *      (ambiguous → unresolved, raises the same `UNKNOWN_IDENTIFIER` as before),
+      *   2. it collides with any canonical projection name (explicit name wins).
+      */
+    ColumnNodePtr tryGetShortNameColumnNode(std::string_view name) const
+    {
+        if (short_name_to_column_node.empty())
+            return nullptr;
+        auto it = short_name_to_column_node.find(name);
+        if (it == short_name_to_column_node.end())
+            return nullptr;
+        return it->second;
+    }
+
+    bool canBindShortName(IdentifierView identifier_view) const
+    {
+        if (short_name_to_column_node.empty())
+            return false;
+        return identifier_view.getPartsSize() == 1 && short_name_to_column_node.contains(identifier_view.getFullName());
+    }
+
+    ColumnNameToColumnNodeMap short_name_to_column_node;
+
     [[maybe_unused]] void dump(WriteBuffer & buffer) const
     {
         buffer << " Table expression name '" << table_expression_name << "'";
