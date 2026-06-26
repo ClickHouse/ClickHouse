@@ -10,17 +10,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 export DATA_FILE="$CLICKHOUSE_TMP/deduptest.tsv"
 export TEST_MARK="02434_insert_${CLICKHOUSE_DATABASE}_"
 
-# Distributed table inserts to the destination with the current default async_insert setting, and sometimes this is set to 1 and sometimes to 0,
-# that leads that some inserts are done asynchronously and some synchronously.
-# insert ... select is always synchronous.
-# insert with too much data is always asynchronous
-# the most inserts here are with too much data.
-# but the last block from distributed table can be small and inserted synchronously.
-# To have more uniform behaviour we set async_insert=0 globally for this test.
-
+# Under insert_deduplication_version=new_unified_hash the deduplication id is keyed by the insert
+# source, so this test drives a single source - direct inserts into the destination table - while
+# varying only the protocol (native / HTTP / HTTP chunked). Those share the same source id and so
+# cross-deduplicate; the table must stay at 500000 rows while inserts are repeatedly cancelled (the
+# client is killed) and retried. The distributed and INSERT SELECT sources are covered by the
+# sibling 02434_cancel_insert_when_client_dies_* tests.
 $CLICKHOUSE_CLIENT -q 'select * from numbers(500000) format TSV' > $DATA_FILE
 $CLICKHOUSE_CLIENT -q "create table dedup_test(A Int64) Engine = MergeTree order by A settings non_replicated_deduplication_window=1000, merge_tree_clear_old_temporary_directories_interval_seconds = 1"
-$CLICKHOUSE_CLIENT -q "create table dedup_dist(A Int64) Engine = Distributed('test_cluster_one_shard_two_replicas', currentDatabase(), dedup_test)"
 
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --async_insert=0"
 CLICKHOUSE_URL="${CLICKHOUSE_URL}&async_insert=0"
@@ -31,30 +28,22 @@ function insert_data
 
     # send_logs_level: https://github.com/ClickHouse/ClickHouse/issues/67599
     SETTINGS="query_id=$ID&max_insert_block_size=110000&min_insert_block_size_rows=110000&send_logs_level=fatal"
-    # max_block_size=10000, so external table will contain smaller blocks that will be squashed on insert-select (more chances to catch a bug on query cancellation)
-    TRASH_SETTINGS="query_id=$ID&input_format_parallel_parsing=0&max_threads=1&max_insert_threads=1&max_insert_block_size=110000&max_block_size=10000&min_insert_block_size_bytes=0&min_insert_block_size_rows=110000&max_insert_block_size=110000"
-    TYPE=$(( RANDOM % 5 ))
+    TYPE=$(( RANDOM % 3 ))
 
     if [[ "$TYPE" -eq 0 ]]; then
         # client will send 10000-rows blocks, server will squash them into 110000-rows blocks (more chances to catch a bug on query cancellation)
         $CLICKHOUSE_CLIENT --allow_repeated_settings --send_logs_level=fatal --max_block_size=10000 --max_insert_block_size=10000 --query_id="$ID" \
             -q 'insert into dedup_test settings max_insert_block_size=110000, min_insert_block_size_rows=110000 format TSV' < $DATA_FILE
     elif [[ "$TYPE" -eq 1 ]]; then
-        $CLICKHOUSE_CLIENT --allow_repeated_settings --send_logs_level=fatal --max_block_size=10000 --max_insert_block_size=10000 --query_id="$ID" --prefer_localhost_replica="$(( RANDOM % 2))" \
-            -q 'insert into dedup_dist settings max_insert_block_size=110000, min_insert_block_size_rows=110000 format TSV' < $DATA_FILE
-    elif [[ "$TYPE" -eq 2 ]]; then
         $CLICKHOUSE_CURL -sS -X POST --data-binary @- "$CLICKHOUSE_URL&$SETTINGS&query=insert+into+dedup_test+format+TSV" < $DATA_FILE
-    elif [[ "$TYPE" -eq 3 ]]; then
-        $CLICKHOUSE_CURL -sS -X POST -H "Transfer-Encoding: chunked" --data-binary @- "$CLICKHOUSE_URL&$SETTINGS&query=insert+into+dedup_test+format+TSV" < $DATA_FILE
     else
-        $CLICKHOUSE_CURL -sS -F 'file=@-' "$CLICKHOUSE_URL&$TRASH_SETTINGS&file_format=TSV&file_types=UInt64" -X POST --form-string 'query=insert into dedup_test select * from file order by all' < $DATA_FILE
+        $CLICKHOUSE_CURL -sS -X POST -H "Transfer-Encoding: chunked" --data-binary @- "$CLICKHOUSE_URL&$SETTINGS&query=insert+into+dedup_test+format+TSV" < $DATA_FILE
     fi
 }
 
 export -f insert_data
 
 insert_data ${TEST_MARK}-${RANDOM}_first_run
-$CLICKHOUSE_CLIENT -q "system flush distributed dedup_dist"
 $CLICKHOUSE_CLIENT -q 'select count() from dedup_test'
 
 function thread_insert
@@ -107,7 +96,6 @@ wait
 
 $CLICKHOUSE_CLIENT -q 'select count() from dedup_test'
 
-$CLICKHOUSE_CLIENT -q "system flush distributed dedup_dist"
 $CLICKHOUSE_CLIENT -q 'system flush logs text_log'
 
 # Ensure that thread_cancel actually did something

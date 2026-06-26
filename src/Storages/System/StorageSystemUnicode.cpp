@@ -1,4 +1,5 @@
 #include <Columns/ColumnArray.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
@@ -755,3 +756,6 @@ void StorageSystemUnicode::fillData(
 }
 
 #pragma clang diagnostic pop
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemUnicode) }
