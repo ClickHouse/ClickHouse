@@ -39,10 +39,18 @@ $CLICKHOUSE_CLIENT --async_insert 0 --query "INSERT INTO rmt VALUES (0)"
 $CLICKHOUSE_CLIENT --query "SELECT name FROM system.parts WHERE database = currentDatabase() AND table = 'rmt' AND active"
 
 # Roll the partition block-number counter back to zero while the part stays in the working set.
-# Recreating /block_numbers/all resets its sequential counter, mimicking a ZooKeeper metadata
-# reset under a surviving local part.
-$CLICKHOUSE_KEEPER_CLIENT -q "rmr '$ZK_PATH/block_numbers/all'" >/dev/null 2>&1
-$CLICKHOUSE_KEEPER_CLIENT -q "touch '$ZK_PATH/block_numbers/all'" >/dev/null 2>&1
+# Recreating /block_numbers/all resets its sequential counter (the next allocated block number is
+# derived from the node's cversion), mimicking a ZooKeeper metadata reset under a surviving local
+# part. keeper-client can transiently fail under load and the reset would silently not take effect,
+# so retry until system.zookeeper confirms the counter is back at zero. This keeps the collision
+# below deterministic; without it the next INSERT may get block 1 and not collide (flaky).
+for _ in {1..30}; do
+    $CLICKHOUSE_KEEPER_CLIENT -q "rmr '$ZK_PATH/block_numbers/all'" >/dev/null 2>&1
+    $CLICKHOUSE_KEEPER_CLIENT -q "touch '$ZK_PATH/block_numbers/all'" >/dev/null 2>&1
+    cversion=$($CLICKHOUSE_CLIENT --query "SELECT cversion FROM system.zookeeper WHERE path = '$ZK_PATH/block_numbers' AND name = 'all'")
+    [ "$cversion" = "0" ] && break
+    sleep 0.3
+done
 
 # The next INSERT re-issues block number 0 and collides with the surviving local all_0_0_0.
 # It must fail with DUPLICATE_DATA_PART, NOT raise a LOGICAL_ERROR (which aborts the server in
