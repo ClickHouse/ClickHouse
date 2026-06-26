@@ -893,15 +893,22 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
     {
         if (s[4] < '0' || s[4] > '9')
         {
-            if constexpr (!throw_exception)
-            {
-                if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[3])
-                    || !isNumericASCII(s[5]) || !isNumericASCII(s[6]) || !isNumericASCII(s[8]) || !isNumericASCII(s[9]))
-                    return ReturnType(false);
+            /// Validate before parsing as YYYY-MM-DD. Without this throw path blindly consumed
+            /// non-date bytes ("0.0,true,...") as year/month/day, advancing the buffer by 10 chars
+            /// and corrupting subsequent field parsing
+            const bool looks_like_date
+                = isNumericASCII(s[0]) && isNumericASCII(s[1]) && isNumericASCII(s[2]) && isNumericASCII(s[3])
+                && isNumericASCII(s[5]) && isNumericASCII(s[6]) && isNumericASCII(s[8]) && isNumericASCII(s[9])
+                && isSymbolIn(s[4], allowed_date_delimiters) && isSymbolIn(s[7], allowed_date_delimiters);
 
-                if (!isSymbolIn(s[4], allowed_date_delimiters) || !isSymbolIn(s[7], allowed_date_delimiters))
+            if (!looks_like_date)
+            {
+                if constexpr (!throw_exception)
                     return ReturnType(false);
+                /// In the throw path fall through to integer parsing below
             }
+            else
+            {
 
             UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
             UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
@@ -971,6 +978,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
                 buf.position() += date_broken_down_length;
 
             return ReturnType(true);
+            }
         }
         /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
         return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
