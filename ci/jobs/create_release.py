@@ -874,6 +874,7 @@ class ReleaseInfo:
                 f"gh pr merge {changelog_pr_num} --repo {GITHUB_REPOSITORY} --merge --auto",
                 verbose=True,
                 dry_run=dry_run,
+                strict=True,
             )
         if self.release_type == "new":
             assert self.version_bump_pr
@@ -883,6 +884,7 @@ class ReleaseInfo:
                 f"gh pr merge {version_bump_pr_num} --repo {GITHUB_REPOSITORY} --merge --auto",
                 verbose=True,
                 dry_run=dry_run,
+                strict=True,
             )
         else:
             if not dry_run:
