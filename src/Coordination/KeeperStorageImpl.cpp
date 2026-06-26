@@ -657,7 +657,7 @@ static Coordination::Error preprocess(
     Coordination::Error error = Coordination::Error::ZNOTEMPTY;
     std::deque<std::pair<std::string, typename Storage::UncommittedNodeRef>> nodes_to_remove;
     bool visited_all = storage.nodes.visitUncommittedRecursive(zk_request.path, zk_request.remove_nodes_limit,
-            [&](std::string_view path, auto && uncommitted_ref)
+            [&](std::string_view path, typename Storage::UncommittedNodeRef && uncommitted_ref)
             {
                 if (check_acl && !storage.checkACL(uncommitted_ref.get()->stats.acl_id, Coordination::ACL::Delete, session_id, /*committed=*/false))
                 {
