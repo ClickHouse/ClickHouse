@@ -27,7 +27,6 @@ struct Settings;
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -256,14 +255,7 @@ public:
             }
             else
             {
-                if (isFinalizedGroupBloomFilterAggregateFunction(*nested_function))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Aggregate function {} can only be used as an aggregate state. "
-                        "Use {}State or {}MergeState with bloomFilterContains",
-                        "groupBloomFilter",
-                        "groupBloomFilter",
-                        "groupBloomFilter");
-
+                nested_function->throwIfCannotProduceFinalizedResult();
                 to_concrete.insertDefault();
             }
         }

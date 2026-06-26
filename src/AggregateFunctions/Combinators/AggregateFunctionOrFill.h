@@ -7,17 +7,11 @@
 #include <Common/memory.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Common/Exception.h>
 
 
 namespace DB
 {
 struct Settings;
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 /**
   * -OrDefault and -OrNull combinators for aggregate functions.
@@ -43,13 +37,7 @@ public:
         , inner_nullable{nested_function->getResultType()->isNullable()}
         , result_is_nullable{createResultType(nested_function_->getResultType())->isNullable()}
     {
-        if (isFinalizedGroupBloomFilterAggregateFunction(*nested_function))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Aggregate function {} can only be used as an aggregate state. "
-                "Use {}State or {}MergeState with bloomFilterContains",
-                "groupBloomFilter",
-                "groupBloomFilter",
-                "groupBloomFilter");
+        nested_function->throwIfCannotProduceFinalizedResult();
     }
 
     String getName() const override

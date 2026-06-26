@@ -103,7 +103,7 @@ public:
         }
     }
 
-    void insertResultInto(AggregateDataPtr __restrict /* place */, IColumn & /* to */, Arena *) const override
+    void throwIfCannotProduceFinalizedResult() const override
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Aggregate function {} can only be used as an aggregate state. "
@@ -111,6 +111,11 @@ public:
             AggregateFunctionGroupBloomFilterData::name,
             AggregateFunctionGroupBloomFilterData::name,
             AggregateFunctionGroupBloomFilterData::name);
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict /* place */, IColumn & /* to */, Arena *) const override
+    {
+        throwIfCannotProduceFinalizedResult();
     }
 };
 

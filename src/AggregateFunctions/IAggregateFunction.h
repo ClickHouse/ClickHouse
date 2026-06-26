@@ -283,6 +283,17 @@ public:
       */
     virtual bool isState() const { return false; }
 
+    /** Throws BAD_ARGUMENTS if this aggregate function has no meaningful finalized scalar result
+      * and can only be used as an intermediate aggregate state.
+      * Override in concrete functions that intentionally have no finalized result.
+      */
+    virtual void throwIfCannotProduceFinalizedResult() const
+    {
+        if (!isState())
+            if (const auto nested = getNestedFunction())
+                nested->throwIfCannotProduceFinalizedResult();
+    }
+
     /** The inner loop that uses the function pointer is better than using the virtual function.
       * The reason is that in the case of virtual functions GCC 5.1.2 generates code,
       *  which, at each iteration of the loop, reloads the function address (the offset value in the virtual function table) from memory to the register.
@@ -921,18 +932,6 @@ public:
         }
     }
 };
-
-inline bool isFinalizedGroupBloomFilterAggregateFunction(const IAggregateFunction & function)
-{
-    if (function.getName() == "groupBloomFilter")
-        return true;
-
-    if (function.isState())
-        return false;
-
-    const auto nested_function = function.getNestedFunction();
-    return nested_function && isFinalizedGroupBloomFilterAggregateFunction(*nested_function);
-}
 
 
 /// Properties of aggregate function that are independent of argument types and parameters.
