@@ -1939,12 +1939,14 @@ TEST_F(FileCacheTest, MoveEvictionPos)
     auto it_middle = add_to_src(10, 10);
     add_to_src(20, 10);
 
-    /// Point src's eviction position at the middle entry — the one we are about to move out.
+    /// Point both eviction cursors at the middle entry — the one we are about to move out.
     {
         auto read_lock = cache_guard.readLock();
         src.setEvictionPos(IFileCachePriority::EvictionCursor::Reserve, it_middle.get(), read_lock);
+        src.setEvictionPos(IFileCachePriority::EvictionCursor::Background, it_middle.get(), read_lock);
     }
     ASSERT_EQ((*src.getEvictionPos(IFileCachePriority::EvictionCursor::Reserve, cache_guard.readLock()))->offset, 10u);
+    ASSERT_EQ((*src.getEvictionPos(IFileCachePriority::EvictionCursor::Background, cache_guard.readLock()))->offset, 10u);
 
     /// Move the middle entry out of `src` into `dst` (as an SLRU upgrade/downgrade would).
     /// `move` is called on the destination queue; `src` is the source.
@@ -1957,7 +1959,22 @@ TEST_F(FileCacheTest, MoveEvictionPos)
     /// The moved node was spliced out of src, so src's eviction position must advance to the
     /// next surviving src entry (offset 20). Before the fix it kept pointing at the moved node,
     /// which now lives in `dst` (offset 10) — a dangling cross-queue eviction position.
+    /// Both cursors were set at the moved node, so `moveEvictionPosIfEqual` must advance both:
+    /// a regression advancing only one would leave the other dangling.
     ASSERT_EQ((*src.getEvictionPos(IFileCachePriority::EvictionCursor::Reserve, cache_guard.readLock()))->offset, 20u);
+    ASSERT_EQ((*src.getEvictionPos(IFileCachePriority::EvictionCursor::Background, cache_guard.readLock()))->offset, 20u);
+
+    /// The two cursors are independent: resetting one must not disturb the other. Put them at
+    /// different positions, reset only Reserve, and check Background is untouched. A regression
+    /// where `resetEvictionPos(Reserve)` also cleared Background would be caught here.
+    {
+        auto read_lock = cache_guard.readLock();
+        src.setEvictionPos(IFileCachePriority::EvictionCursor::Reserve, src.queue.begin(), read_lock);
+        src.setEvictionPos(IFileCachePriority::EvictionCursor::Background, std::next(src.queue.begin()), read_lock);
+    }
+    src.resetEvictionPos(IFileCachePriority::EvictionCursor::Reserve);
+    ASSERT_EQ(src.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 0u);
+    ASSERT_EQ(src.getEvictionPosCount(IFileCachePriority::EvictionCursor::Background), 1u);
 }
 
 TEST_F(FileCacheTest, LoadMetadataParallelism)

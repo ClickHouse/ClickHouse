@@ -186,6 +186,7 @@ private:
 
     /// Select the cursor member for `cursor`. `FromHead` has no cursor and must not be passed.
     LRUQueue::iterator & evictionPos(EvictionCursor cursor) TSA_REQUIRES(eviction_pos_mutex);
+    const LRUQueue::iterator & evictionPos(EvictionCursor cursor) const TSA_REQUIRES(eviction_pos_mutex);
     struct InvalidatedRef
     {
         std::weak_ptr<Entry> entry;

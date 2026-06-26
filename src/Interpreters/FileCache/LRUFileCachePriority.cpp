@@ -930,11 +930,23 @@ LRUFileCachePriority::LRUQueue::iterator & LRUFileCachePriority::evictionPos(Evi
     }
 }
 
+const LRUFileCachePriority::LRUQueue::iterator & LRUFileCachePriority::evictionPos(EvictionCursor cursor) const
+{
+    switch (cursor)
+    {
+        case EvictionCursor::Reserve:
+            return reserve_eviction_pos;
+        case EvictionCursor::Background:
+            return background_eviction_pos;
+        case EvictionCursor::FromHead:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "EvictionCursor::FromHead has no persistent cursor");
+    }
+}
+
 LRUFileCachePriority::LRUQueue::iterator LRUFileCachePriority::getEvictionPos(EvictionCursor cursor, const CachePriorityGuard::ReadLock &) const
 {
     std::lock_guard lk(eviction_pos_mutex);
-    /// evictionPos only selects a member, but returns a mutable reference for the setters.
-    return const_cast<LRUFileCachePriority *>(this)->evictionPos(cursor);
+    return evictionPos(cursor);
 }
 
 void LRUFileCachePriority::setEvictionPos(EvictionCursor cursor, LRUQueue::iterator it, const CachePriorityGuard::ReadLock &)
