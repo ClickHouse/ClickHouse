@@ -347,6 +347,30 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
     /// Like JSONEachRow: empty `read_columns` signals "no row produced" rather than "all nulls" (Code 7).
     ext.read_columns.clear();
 
+    /// A `# HELP` / `# TYPE` / `# UNIT` for a family must precede every sample that folds into it.
+    /// Besides the bare name, that covers the histogram/summary `_bucket` / `_sum` / `_count` siblings,
+    /// the counter `_total`, and the unsupported `_created` / `_gcount` / `_gsum` forms: the metadata
+    /// governs how each folds, so a sample already emitted under any of them means the metadata is late
+    /// and would make the parse order-dependent. Probe with `find` so checking siblings never grows the map.
+    const auto familyOrSiblingEmittedSample = [this](const String & family) -> bool
+    {
+        static constexpr std::array<std::string_view, 7> sibling_suffixes
+            = {"_bucket", "_sum", "_count", "_total", "_created", "_gcount", "_gsum"};
+
+        const auto emitted = [this](const String & key)
+        {
+            const auto it = family_meta.find(key);
+            return it != family_meta.end() && it->second.samples_emitted;
+        };
+
+        if (emitted(family))
+            return true;
+        for (const auto & suffix : sibling_suffixes)
+            if (emitted(family + String{suffix}))
+                return true;
+        return false;
+    };
+
     while (!in->eof() && !saw_eof)
     {
         String line;
@@ -379,7 +403,7 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
             {
                 parseMetadataLine(line, sizeof("# HELP ") - 1, name, rest);
                 auto & fm = family_meta[name];
-                if (fm.samples_emitted)
+                if (familyOrSiblingEmittedSample(name))
                     throwIncorrect("'# HELP' metadata cannot follow samples for a metric family", line);
                 if (fm.has_help)
                     throwIncorrect("Duplicate '# HELP' metadata for a metric family", line);
@@ -402,7 +426,7 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
                 }
                 rest.resize(end);
                 auto & fm = family_meta[name];
-                if (fm.samples_emitted)
+                if (familyOrSiblingEmittedSample(name))
                     throwIncorrect("'# TYPE' metadata cannot follow samples for a metric family", line);
                 if (fm.has_type)
                     throwIncorrect("Duplicate '# TYPE' metadata for a metric family", line);
@@ -413,7 +437,7 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
             {
                 parseMetadataLine(line, sizeof("# UNIT ") - 1, name, rest);
                 auto & fm = family_meta[name];
-                if (fm.samples_emitted)
+                if (familyOrSiblingEmittedSample(name))
                     throwIncorrect("'# UNIT' metadata cannot follow samples for a metric family", line);
                 if (fm.has_unit)
                     throwIncorrect("Duplicate '# UNIT' metadata for a metric family", line);
@@ -611,21 +635,12 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
 
         setString(loc.unit, fm.unit);
 
-        /// Record that this logical family has emitted a sample, so a later `# HELP` / `# TYPE` /
-        /// `# UNIT` for it is rejected. The histogram/summary suffixes (`_bucket` / `_sum` / `_count`)
-        /// and the counter `_total` all belong to the same base family, so key on the suffix-stripped
-        /// name even before that family's metadata is seen.
-        static constexpr std::array<std::string_view, 4> family_suffixes = {"_bucket", "_sum", "_count", "_total"};
-        String sample_family = stem;
-        for (const auto & suffix : family_suffixes)
-        {
-            if (stem.ends_with(suffix) && stem.size() > suffix.size())
-            {
-                sample_family = stem.substr(0, stem.size() - suffix.size());
-                break;
-            }
-        }
-        family_meta[sample_family].samples_emitted = true;
+        /// Record that a sample has been emitted under this exact name, so a later `# HELP` / `# TYPE`
+        /// / `# UNIT` for the owning family is rejected. Mark the literal emitted name (`operator[]`
+        /// deliberately grows the map here): `familyOrSiblingEmittedSample` maps a family back to every
+        /// sibling form it can fold, so recording the name as-is keeps that check symmetric for buckets,
+        /// `_sum` / `_count`, counter `_total`, and the `_created` / `_gcount` / `_gsum` siblings alike.
+        family_meta[stem].samples_emitted = true;
 
         return true;
     }

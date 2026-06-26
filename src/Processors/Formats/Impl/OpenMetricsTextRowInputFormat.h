@@ -50,9 +50,10 @@ private:
         bool has_help = false;
         bool has_type = false;
         bool has_unit = false;
-        /// Set once the family has emitted a sample row. A `# HELP` / `# TYPE` / `# UNIT` arriving
-        /// afterwards is rejected: folding (`_bucket` / `_sum` / `_count` and counter `_total`) is
-        /// driven by this metadata, so late metadata would make the parse order-dependent.
+        /// Set once a sample row has been emitted under this exact name. A `# HELP` / `# TYPE` /
+        /// `# UNIT` for the owning family is then rejected: folding (`_bucket` / `_sum` / `_count`,
+        /// counter `_total`, and the unsupported `_created` / `_gcount` / `_gsum` siblings) is driven
+        /// by that metadata, so late metadata would make the parse order-dependent.
         bool samples_emitted = false;
     };
 
