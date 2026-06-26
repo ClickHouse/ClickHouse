@@ -59,6 +59,15 @@ FROM (SELECT materialize(toDecimal64('123456789012.34567', 5)::Dynamic) AS d FRO
 SELECT DISTINCT materialize(toDecimal64('999999999.123456789', 9)::Time64(9)) AS t
 FROM remote('127.0.0.{1,2}', system.one);
 
+-- Time64 nested in Variant/Dynamic must keep both its exact value and its Time64 type on every shard:
+-- the decimal carrier has to be cast back to Time64 before the Variant/Dynamic cast (a Decimal carrier
+-- is not a member of Variant(Time64), and Dynamic would otherwise store a Decimal active subtype).
+SELECT DISTINCT v, variantType(v)
+FROM (SELECT materialize(toDecimal64('999999999.123456789', 9)::Time64(9)::Variant(Time64(9))) AS v FROM remote('127.0.0.{1,2}', system.one));
+
+SELECT DISTINCT dynamicType(d)
+FROM (SELECT materialize(toDecimal64('999999999.123456789', 9)::Time64(9)::Dynamic) AS d FROM remote('127.0.0.{1,2}', system.one));
+
 DROP TABLE ts_data_94612;
 
 -- An OR chain of >= 3 equalities is rewritten to IN, whose RHS set is a constant with casts
