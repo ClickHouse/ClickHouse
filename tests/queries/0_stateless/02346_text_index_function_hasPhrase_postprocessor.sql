@@ -158,4 +158,55 @@ SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'see cat');
 SYSTEM START MERGES tab;
 DROP TABLE tab;
 
+SELECT '6. ngrams tokenizer + lower postprocessor: case-insensitive substring phrase, consistent across read paths.';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = ngrams(3), postprocessor = lower(message), positions = 1)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS allow_experimental_text_index_positions = 1;
+
+INSERT INTO tab VALUES
+    (1, 'Hello World'),
+    (2, 'HELP me'),
+    (3, 'say hello');
+
+-- ngrams turn the phrase into a substring search; lower makes it case-insensitive. 'help' shares only
+-- the 'hel' gram, so it does not match. The rejoined fallback haystack gains boundary grams from the
+-- separators, but the needle grams still appear consecutively only where 'hello' does, so dr on/off agree.
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'hello') SETTINGS query_plan_direct_read_from_text_index = 1;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'hello') SETTINGS query_plan_direct_read_from_text_index = 0;
+-- Needle case does not matter.
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'HELLO') SETTINGS query_plan_direct_read_from_text_index = 1;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'HELLO') SETTINGS query_plan_direct_read_from_text_index = 0;
+-- A substring not present matches nothing.
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'xyz') SETTINGS query_plan_direct_read_from_text_index = 1;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'xyz') SETTINGS query_plan_direct_read_from_text_index = 0;
+
+DROP TABLE tab;
+
+SELECT '7. Separator-emitting postprocessor: rejected consistently on both read paths.';
+
+-- concat appends ' x', so a token becomes e.g. 'foo x', which contains a separator. The index stores it
+-- whole, but the row-scan rejoin would re-split it and disagree, so the query is rejected with
+-- BAD_ARGUMENTS at query-plan time regardless of query_plan_direct_read_from_text_index.
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, postprocessor = concat(message, ' x'), positions = 1)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS allow_experimental_text_index_positions = 1;
+
+INSERT INTO tab VALUES (1, 'foo bar');
+
+SELECT count() FROM tab WHERE hasPhrase(message, 'foo bar') SETTINGS query_plan_direct_read_from_text_index = 1;  -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM tab WHERE hasPhrase(message, 'foo bar') SETTINGS query_plan_direct_read_from_text_index = 0;  -- { serverError BAD_ARGUMENTS }
+
+DROP TABLE tab;
+
 DROP TABLE IF EXISTS tab;
