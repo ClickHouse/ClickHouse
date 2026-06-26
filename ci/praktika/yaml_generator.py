@@ -72,7 +72,7 @@ permissions: write-all\
 name: {NAME}
 on:
   schedule:{CRON_TEMPLATES}
-  workflow_dispatch:{DISPATCH_INPUTS_BLOCK}
+  workflow_dispatch:
 
 concurrency:
   group: ${{{{{{{{ github.workflow }}}}}}}}
@@ -168,7 +168,10 @@ jobs:
         id: run
         run: |
           . {ENV_SETUP_SCRIPT}
-          PYTHONUNBUFFERED=1 python3 -m praktika run '{JOB_NAME}' --workflow "{WORKFLOW_NAME}" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run '{JOB_NAME}' --workflow "{WORKFLOW_NAME}" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee {TEMP_DIR}/job.log
 {UPLOADS_GITHUB}\
 """
 
@@ -284,7 +287,9 @@ class PullRequestPushYamlGen:
         job_items = []
         for i, job in enumerate(self.workflow_config.jobs):
             job_name_normalized = Utils.normalize_string(job.name)
-            needs = ", ".join(sorted(map(Utils.normalize_string, _all_needs(job.name))))
+            needs = ", ".join(
+                sorted(map(Utils.normalize_string, _all_needs(job.name)))
+            )
             job_name = job.name
             job_addons = []
             for addon in job.addons:
@@ -341,18 +346,13 @@ class PullRequestPushYamlGen:
             # Emit timeout-minutes for any job whose configured timeout exceeds GitHub's 6h default.
             # JobYaml has no timeout; get it from the original Job.Config in workflow config.
             timeout_minutes = ""
-            orig_job = next(
-                (j for j in self.workflow_config.config.jobs if j.name == job.name),
-                None,
-            )
+            orig_job = next((j for j in self.workflow_config.config.jobs if j.name == job.name), None)
             if (
                 orig_job
                 and getattr(orig_job, "timeout", None)
                 and orig_job.timeout > 360 * 60
             ):
-                timeout_minutes = (
-                    f"\n    timeout-minutes: {math.ceil(orig_job.timeout / 60) + 5}"
-                )
+                timeout_minutes = f"\n    timeout-minutes: {math.ceil(orig_job.timeout / 60) + 5}"
 
             secrets_envs = []
             for secret in job.secret_names_gh:
@@ -365,10 +365,7 @@ class PullRequestPushYamlGen:
                 secrets_envs.append(
                     YamlGenerator.Templates.TEMPLATE_SETUP_ENV_VARS.format(VAR_NAME=var)
                 )
-            if (
-                self.workflow_config.event == Workflow.Event.DISPATCH
-                or self.workflow_config.dispatch_inputs
-            ):
+            if self.workflow_config.event == Workflow.Event.DISPATCH:
                 secrets_envs.append(
                     YamlGenerator.Templates.TEMPLATE_SETUP_ENVS_INPUTS.format(
                         WORKFLOW_INPUTS_FILE=Settings.WORKFLOW_INPUTS_FILE
@@ -391,6 +388,7 @@ class PullRequestPushYamlGen:
                 JOB_ADDONS="".join(job_addons),
                 DOWNLOADS_GITHUB="\n".join(downloads_github),
                 UPLOADS_GITHUB="\n".join(uploads_github),
+                RUN_LOG=Settings.RUN_LOG,
                 PYTHON=Settings.PYTHON_INTERPRETER,
                 WORKFLOW_JOB_FILE=Settings.WORKFLOW_JOB_FILE,
                 WORKFLOW_STATUS_FILE=Settings.WORKFLOW_STATUS_FILE,
@@ -455,15 +453,7 @@ class PullRequestPushYamlGen:
                 )
         elif self.workflow_config.event in (Workflow.Event.SCHEDULE,):
             base_template = YamlGenerator.Templates.TEMPLATE_SCHEDULE
-            format_kwargs = {
-                "CRON_TEMPLATES": cron_items,
-                # Allow a scheduled workflow to also declare workflow_dispatch
-                # inputs for manual runs; empty when none are declared, so the
-                # generated YAML is unchanged for inputs-less schedules.
-                "DISPATCH_INPUTS_BLOCK": (
-                    f"\n    inputs:{dispatch_inputs}" if dispatch_inputs else ""
-                ),
-            }
+            format_kwargs = {"CRON_TEMPLATES": cron_items}
             ENV_CHECKOUT_REFERENCE = (
                 YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_DEFAULT
             )

@@ -1,6 +1,8 @@
+import os.path as p
 import random
 import threading
 import time
+from random import randrange
 
 import pytest
 
@@ -8,12 +10,23 @@ from helpers.cluster import ClickHouseCluster
 from helpers.postgres_utility import (
     PostgresManager,
     assert_nested_table_is_created,
+    assert_number_of_columns,
     check_several_tables_are_synchronized,
     check_tables_are_synchronized,
+    create_postgres_schema,
+    create_postgres_table,
+    create_replication_slot,
+    drop_postgres_schema,
+    drop_postgres_table,
+    drop_replication_slot,
     get_postgres_conn,
+    postgres_table_template,
     postgres_table_template_2,
     postgres_table_template_3,
+    postgres_table_template_4,
+    queries,
 )
+from helpers.test_tools import TSV, assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -353,7 +366,7 @@ def test_table_schema_changes(started_cluster):
 
     check_several_tables_are_synchronized(instance, NUM_TABLES)
 
-    instance.query(
+    expected = instance.query(
         "SELECT key, value1, value3 FROM test_database.postgresql_replica_3 ORDER BY key"
     )
 

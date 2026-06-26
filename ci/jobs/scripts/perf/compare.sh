@@ -14,13 +14,11 @@ LEFT_SERVER_PORT=9001
 LEFT_SERVER_KEEPER_PORT=9181
 LEFT_SERVER_KEEPER_RAFT_PORT=9234
 LEFT_SERVER_INTERSERVER_PORT=9009
-LEFT_SERVER_HTTP_PORT=8123
 # patched version
 RIGHT_SERVER_PORT=19001
 RIGHT_SERVER_KEEPER_PORT=19181
 RIGHT_SERVER_KEEPER_RAFT_PORT=19234
 RIGHT_SERVER_INTERSERVER_PORT=19009
-RIGHT_SERVER_HTTP_PORT=18123
 
 # abort_conf   -- abort if some options is not recognized
 # abort        -- abort if something is not right in the env (i.e. per-cpu arenas does not work)
@@ -33,14 +31,14 @@ function wait_for_server # port, pid
 {
     for _ in {1..60}
     do
-        if clickhouse-client --port "$1" --receive_timeout=5 --query "select 1" || ! kill -0 "$2"
+        if clickhouse-client --port "$1" --query "select 1" || ! kill -0 "$2"
         then
             break
         fi
         sleep 1
     done
 
-    if ! clickhouse-client --port "$1" --receive_timeout=5 --query "select 1"
+    if ! clickhouse-client --port "$1" --query "select 1"
     then
         echo "Cannot connect to ClickHouse server at $1"
         return 1
@@ -152,10 +150,6 @@ function restart
         --user_files_path left/db/user_files
         --top_level_domains_path "$(left_or_right left top_level_domains)"
         --tcp_port $LEFT_SERVER_PORT
-        # The perf-comparison config removes <http_port>; re-enable it on the
-        # command line (a documented config override) with a distinct port per
-        # server, so that shell-script tests can talk to the server over HTTP.
-        --http_port $LEFT_SERVER_HTTP_PORT
         --keeper_server.tcp_port $LEFT_SERVER_KEEPER_PORT
         --keeper_server.raft_configuration.server.port $LEFT_SERVER_KEEPER_RAFT_PORT
         --keeper_server.storage_path left/coordination
@@ -176,7 +170,6 @@ function restart
         --user_files_path right/db/user_files
         --top_level_domains_path "$(left_or_right right top_level_domains)"
         --tcp_port $RIGHT_SERVER_PORT
-        --http_port $RIGHT_SERVER_HTTP_PORT
         --keeper_server.tcp_port $RIGHT_SERVER_KEEPER_PORT
         --keeper_server.raft_configuration.server.port $RIGHT_SERVER_KEEPER_RAFT_PORT
         --keeper_server.storage_path right/coordination
@@ -325,9 +318,9 @@ function run_tests
     do
         echo "$current_test of $total_tests tests complete" > status.txt
         # Check that both servers are alive, and restart them if they die.
-        clickhouse-client --port $LEFT_SERVER_PORT --receive_timeout=5 --query "select 1 format Null" \
+        clickhouse-client --port $LEFT_SERVER_PORT --query "select 1 format Null" \
             || { echo $test_name >> left-server-died.log ; restart ; }
-        clickhouse-client --port $RIGHT_SERVER_PORT --receive_timeout=5 --query "select 1 format Null" \
+        clickhouse-client --port $RIGHT_SERVER_PORT --query "select 1 format Null" \
             || { echo $test_name >> right-server-died.log ; restart ; }
 
         test_name=$(basename "$test" ".xml")
@@ -352,11 +345,6 @@ function run_tests
             argv=(
                 --host localhost localhost
                 --port "$LEFT_SERVER_PORT" "$RIGHT_SERVER_PORT"
-                # Binary paths and HTTP ports are used by shell-script tests
-                # (<query type="shell">), e.g. clickhouse-local startup and HTTP
-                # reads. They are parallel to --host/--port (left, then right).
-                --binary left/clickhouse right/clickhouse
-                --http-port "$LEFT_SERVER_HTTP_PORT" "$RIGHT_SERVER_HTTP_PORT"
                 --runs "$CHPC_RUNS"
                 --max-queries "$max_queries"
                 --profile-seconds "$profile_seconds"
@@ -426,8 +414,8 @@ function get_profiles
 
     # Just check that the servers are alive so that we return a proper exit code.
     # We don't consistently check the return codes of the above background jobs.
-    clickhouse-client --port $LEFT_SERVER_PORT --receive_timeout=5 --query "select 1"
-    clickhouse-client --port $RIGHT_SERVER_PORT --receive_timeout=5 --query "select 1"
+    clickhouse-client --port $LEFT_SERVER_PORT --query "select 1"
+    clickhouse-client --port $RIGHT_SERVER_PORT --query "select 1"
 }
 
 # Build and analyze randomization distribution for all queries.
@@ -498,12 +486,7 @@ create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-
         with (select groupUniqArrayArray(mapKeys(ProfileEvents)) from query_logs) as all_names
             select arrayReduce('sumMapState', [(all_names, arrayMap(x->0::Nullable(Float64), all_names))])
         ) as all_metrics
-    -- Take version/query_id from query_runs, the preserved side of the RIGHT JOIN.
-    -- For SQL queries the query_log always matches, so this is the same value;
-    -- but shell-script queries (<query type="shell">) have no query_log row, and
-    -- the unqualified columns would otherwise default to query_logs' 0/'' and
-    -- collapse both servers' runs onto version 0.
-    select test, query_index, query_runs.version version, query_runs.query_id query_id,
+    select test, query_index, version, query_id,
         (finalizeAggregation(
             arrayReduce('sumMapMergeState',
                 [
@@ -684,17 +667,9 @@ create view query_metric_stats as
 create table report_thresholds engine File(TSVWithNamesAndTypes, 'report/thresholds.tsv')
     as select
         query_display_names.test test, query_display_names.query_index query_index,
-        -- The floors (0.15 for 'changed', 0.25 for 'unstable') are the minimum
-        -- relative difference we treat as a real change. They are intentionally
-        -- above the level of run-to-run noise observed on CI runners: micro
-        -- benchmarks routinely swing by 10-15% between two binaries because of
-        -- machine noise (noisy neighbours, frequency scaling) and code-layout
-        -- artifacts (function alignment/inlining shifts) unrelated to the tested
-        -- change. For historically noisier queries the learned thresholds
-        -- (1.5 * historical p99) are larger and take over.
-        ceil(greatest(0.15, historical_thresholds.max_diff,
+        ceil(greatest(0.1, historical_thresholds.max_diff,
             test_thresholds.report_threshold), 2) changed_threshold,
-        ceil(greatest(0.25, historical_thresholds.max_stat_threshold,
+        ceil(greatest(0.2, historical_thresholds.max_stat_threshold,
             test_thresholds.report_threshold + 0.1), 2) unstable_threshold,
         query_display_names.query_display_name query_display_name
     from query_display_names
@@ -944,29 +919,14 @@ create table queries_old_format engine File(TSVWithNamesAndTypes, 'queries.rep')
     ;
 
 -- new report for all queries with all metrics (no page yet)
--- The trailing changed_threshold/unstable_threshold columns are the per-query
--- thresholds computed in report_thresholds above (the 0.15/0.25 floors raised
--- by historical and per-test thresholds). They are exported so downstream
--- consumers (e.g. .claude/tools/fetch_perf_report.py) can classify queries
--- with the same effective thresholds as the CI gate instead of only the floor
--- constants. They are appended at the end to keep the existing column
--- positions stable for older consumers.
 create table all_query_metrics_tsv engine File(TSV, 'report/all-query-metrics.tsv') as
     select metric_name, left, right, diff,
         floor(left > right ? left / right : right / left, 3),
-        stat_threshold,
-        query_metric_stats.test test, query_metric_stats.query_index query_index,
-        query_display_names.query_display_name query_display_name,
-        report_thresholds.changed_threshold changed_threshold,
-        report_thresholds.unstable_threshold unstable_threshold
+        stat_threshold, test, query_index, query_display_name
     from query_metric_stats
     left join query_display_names
         on query_metric_stats.test = query_display_names.test
             and query_metric_stats.query_index = query_display_names.query_index
-    left join report_thresholds
-        on query_display_names.test = report_thresholds.test
-            and query_display_names.query_index = report_thresholds.query_index
-            and query_display_names.query_display_name = report_thresholds.query_display_name
     order by test, query_index;
 " 2> >(tee -a report/errors.log 1>&2)
 
@@ -1138,18 +1098,6 @@ do
             || head -10 "$log"
     } | sed "s/^/$test\t/" >> run-errors.tsv ||:
 done
-
-# Shell-script queries (<query type="shell">) report a failure on a server by
-# emitting a `run-error` line to stdout (the per-test *-err.log is not always
-# available at report time). Fold those into run-errors.tsv as well, in the
-# 'test<tab>error' shape the Run Errors table and CIDB expect, so a shell test
-# that failed on one server is reported instead of silently disappearing.
-for test_file in *-raw.tsv
-do
-    test_name=$(basename "$test_file" "-raw.tsv")
-    sed -n "s/^run-error\t\([0-9]*\)\t\([0-9]*\)\t/$test_name\tquery \1 server \2: /p" \
-        < "$test_file" >> run-errors.tsv ||:
-done
 }
 
 function report_metrics
@@ -1230,7 +1178,7 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
         fromUnixTimestamp($CHPC_CHECK_START_TIMESTAMP) check_start_time,
         test_name :: LowCardinality(String) AS test_name ,
         test_status :: LowCardinality(String) AS test_status,
-        test_duration_ms :: Float64 AS test_duration_ms,
+        test_duration_ms :: UInt64 AS test_duration_ms,
         report_url,
         $PR_TO_TEST = 0
             ? 'https://github.com/ClickHouse/ClickHouse/commit/$SHA_TO_TEST'
