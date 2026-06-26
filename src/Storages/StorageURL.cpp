@@ -2143,6 +2143,16 @@ StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const Contex
             configuration.compression_method = checkAndGetLiteralArgument<String>(args[2], "compression_method");
     }
 
+    /// `body(...)` is a `url` table function feature only: it forms the HTTP request body of a `SELECT`.
+    /// `getConfiguration` is the parser for the persistent `ENGINE = URL(...)`, which has no place for it
+    /// (its `INSERT` already streams the inserted rows as the body, and the engine syntax is documented as
+    /// `URL(URL [,Format] [,CompressionMethod])`). Reject the argument here instead of silently accepting
+    /// it and later issuing an undocumented `POST` on `SELECT`.
+    if (!configuration.body.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The 'body' argument is supported only by the 'url' table function, not by the persistent 'URL' table engine.");
+
     /// Resolve relative URLs against the url_base setting.
     /// For the URL engine, the resolved URL is later materialized into the engine args
     /// AST by `addInferredEngineArgsToCreateQuery`, so DETACH/ATTACH and server restart
