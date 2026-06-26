@@ -187,6 +187,7 @@ namespace Setting
     extern const SettingsBool allow_prefetched_read_pool_for_local_filesystem;
     extern const SettingsBool allow_prefetched_read_pool_for_remote_filesystem;
     extern const SettingsBool compile_sort_description;
+    extern const SettingsBool distributed_plan_prefer_replicas_over_workers;
     extern const SettingsBool do_not_merge_across_partitions_select_final;
     extern const SettingsBool enable_automatic_decision_for_merging_across_partitions_for_final;
     extern const SettingsBool enable_vertical_final;
@@ -4925,9 +4926,17 @@ Strings ReadFromMergeTree::getShardsForDistributedRead() const
 
 bool ReadFromMergeTree::hasUnsupportedBucketedReadCarrier() const
 {
+    bool unsupported_deferred_filters = deferred_row_level_filter || deferred_prewhere_info;
+#if CLICKHOUSE_CLOUD
+    /// Deferred FINAL filters are reapplied after the merge only by the shared-storage stateless-worker
+    /// read, which carries them explicitly. The replica path and the non-shared full-replica fallback would
+    /// apply them before FINAL, so a deferred-FINAL read can be bucketed only on the shared-storage worker.
+    if (data.isSharedStorage()
+        && !context->getSettingsRef()[Setting::distributed_plan_prefer_replicas_over_workers])
+        unsupported_deferred_filters = false;
+#endif
     return query_info.input_order_info
-        || deferred_row_level_filter
-        || deferred_prewhere_info
+        || unsupported_deferred_filters
         || (analyzed_result_ptr && analyzed_result_ptr->readFromProjection())
         || !index_read_tasks.empty();
 }
@@ -4936,17 +4945,15 @@ bool ReadFromMergeTree::hasUnsupportedBucketedReadCarrier() const
 void ReadFromMergeTree::verifyBucketedReadSupported() const
 {
     /// A bucketed read is pinned to the coordinator's part list and cannot re-derive read-in-order,
-    /// deferred FINAL filters, a projection, or text index tasks. A non-bucket read is rebuilt and
-    /// re-optimized on the worker, which re-derives them, so it has no such limitation.
+    /// a projection, or text index tasks. A non-bucket read is rebuilt and re-optimized on the worker,
+    /// which re-derives them, so it has no such limitation. Deferred FINAL filters are gated in
+    /// hasUnsupportedBucketedReadCarrier (bucketed only for the worker path) and rejected in serialize.
     if (distributed_read_bucket_count == 0)
         return;
 
     if (query_info.input_order_info)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan does not support a read-in-order distributed read");
-    if (deferred_row_level_filter || deferred_prewhere_info)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan does not support a distributed read with deferred FINAL filters");
     if (analyzed_result_ptr && analyzed_result_ptr->readFromProjection())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan does not support a distributed read from a projection");
@@ -4966,6 +4973,13 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
             "make_distributed_plan does not support a distributed read with the STREAM modifier");
 
     verifyBucketedReadSupported();
+    /// The replica path serializes deferred FINAL filters as ordinary read filters, which would apply them
+    /// before FINAL. The coordinator only buckets a deferred-FINAL read for the stateless worker, so a
+    /// bucketed deferred read must never reach this replica serializer -- reject it rather than return
+    /// rows filtered before the merge.
+    if (distributed_read_bucket_count > 0 && (deferred_row_level_filter || deferred_prewhere_info))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan does not support a bucketed distributed read with deferred FINAL filters on the replica path");
 
     StorageID table_id = data.getStorageID();
     writeStringBinary(table_id.getDatabaseName(), ctx.out);
