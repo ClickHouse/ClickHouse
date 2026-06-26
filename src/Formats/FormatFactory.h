@@ -85,7 +85,7 @@ public:
     using FileSegmentationEngineCreator = std::function<FileSegmentationEngine(
         const FormatSettings & settings)>;
 
-    std::vector<String> getAllRegisteredNames() const override;
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 private:
     // On the input side, there are two kinds of formats:
     //  * InputCreator - formats parsed sequentially, e.g. CSV. Almost all formats are like this.

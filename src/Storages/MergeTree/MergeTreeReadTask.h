@@ -85,9 +85,9 @@ struct MergeTreeReadTaskColumns
     /// Column names to read during WHERE
     NamesAndTypesList columns;
     /// Column names to read during each PREWHERE step
-    std::vector<NamesAndTypesList> pre_columns;
+    NamesAndTypesLists pre_columns;
     /// Column names to read from patch parts.
-    std::vector<NamesAndTypesList> patch_columns;
+    NamesAndTypesLists patch_columns;
 
     String dump() const;
     Names getAllColumnNames() const;
