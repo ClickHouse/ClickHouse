@@ -16,6 +16,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -357,8 +358,14 @@ private:
         return function_name == "hasToken" || function_name == "hasAllTokens" || function_name == "hasAnyTokens";
     }
 
-    std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node)
+    std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node, const ContextPtr & context)
     {
+        /// Canonicalize the function-node subtree so that the serialized column names
+        /// fed to MergeTreeIndexConditionText::traverseFunctionNode match the ones
+        /// produced when the condition was originally constructed in ReadFromMergeTree::applyFilters.
+        ActionsDAGWithInversionPushDown canonical_dag(&function_node, context);
+        const auto & canonical_node = canonical_dag.predicate ? *canonical_dag.predicate : function_node;
+
         NameSet used_index_columns;
         std::vector<SelectedCondition> selected_conditions;
 
@@ -373,7 +380,7 @@ private:
             if (index_header.columns() != 1 || used_index_columns.contains(index_header.begin()->name))
                 continue;
 
-            auto search_query = text_index_condition.createTextSearchQuery(function_node);
+            auto search_query = text_index_condition.createTextSearchQuery(canonical_node);
             if (!search_query || search_query->direct_read_mode == TextIndexDirectReadMode::None)
                 continue;
 
@@ -410,7 +417,7 @@ private:
         if (!need_preprocess_function && !direct_read_from_text_index)
             return replacement;
 
-        auto selected_conditions = selectConditions(function_node);
+        auto selected_conditions = selectConditions(function_node, context);
         if (selected_conditions.empty())
             return replacement;
 
