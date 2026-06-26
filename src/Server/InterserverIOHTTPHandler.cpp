@@ -78,7 +78,7 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
         endpoint->processQuery(params, request.getStream(), *output, response);
     }
     /// Make sure that request stream is not used after this function.
-    assert(request.getStream().use_count() == 2);
+    chassert(request.getStream().use_count() == 2);
 }
 
 

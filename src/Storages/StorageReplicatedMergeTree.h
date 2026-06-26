@@ -153,6 +153,9 @@ public:
     bool supportsParallelInsert() const override { return true; }
     bool supportsReplication() const override { return true; }
     bool supportsDeduplication() const override { return true; }
+    bool supportsStreaming() const override { return true; }
+
+    CursorPromotersMap buildPromoters() override;
 
     void read(
         QueryPlan & query_plan,

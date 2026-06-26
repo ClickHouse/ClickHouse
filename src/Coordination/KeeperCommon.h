@@ -2,7 +2,9 @@
 
 #include <Common/Logger.h>
 
+#include <cstdint>
 #include <functional>
+#include <string>
 
 
 namespace Coordination
@@ -34,7 +36,8 @@ enum class KeeperDigestVersion : uint8_t
     V1 = 1,
     V2 = 2, // added system nodes that modify the digest on startup so digest from V0 is invalid
     V3 = 3, // fixed bug with casting, removed duplicate czxid usage
-    V4 = 4  // 0 is not a valid digest value
+    V4 = 4, // 0 is not a valid digest value
+    V5 = 5  // added TTL fields (destroy_time and ttl) to the node digest
 };
 
 struct KeeperDigest
@@ -43,11 +46,11 @@ struct KeeperDigest
     uint64_t value{0};
 };
 
-static constexpr auto KEEPER_CURRENT_DIGEST_VERSION = KeeperDigestVersion::V4;
+static constexpr auto KEEPER_CURRENT_DIGEST_VERSION = KeeperDigestVersion::V5;
 
 struct KeeperResponseForSession
 {
-    int64_t session_id;
+    int64_t session_id{};
     Coordination::ZooKeeperResponsePtr response;
     Coordination::ZooKeeperRequestPtr request = nullptr;
 };
@@ -56,7 +59,7 @@ using KeeperResponsesForSessions = std::vector<KeeperResponseForSession>;
 
 struct KeeperRequestForSession
 {
-    int64_t session_id;
+    int64_t session_id{};
     int64_t time{0};
     Coordination::ZooKeeperRequestPtr request;
     int64_t zxid{0};

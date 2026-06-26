@@ -26,25 +26,28 @@ ASTPtr ASTRefreshStrategy::clone() const
 void ASTRefreshStrategy::formatImpl(
     WriteBuffer & ostr, const IAST::FormatSettings & f_settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
 {
-    ostr << "REFRESH ";
+    ostr << "REFRESH";
     using enum RefreshScheduleKind;
-    switch (schedule_kind)
+    if (period)
     {
-        case AFTER:
-            ostr << "AFTER ";
-            period->format(ostr, f_settings, state, frame);
-            break;
-        case EVERY:
-            ostr << "EVERY ";
-            period->format(ostr, f_settings, state, frame);
-            if (offset)
-            {
-                ostr << " OFFSET ";
-                offset->format(ostr, f_settings, state, frame);
-            }
-            break;
-        default:
-            break;
+        switch (schedule_kind)
+        {
+            case AFTER:
+                ostr << " AFTER ";
+                period->format(ostr, f_settings, state, frame);
+                break;
+            case EVERY:
+                ostr << " EVERY ";
+                period->format(ostr, f_settings, state, frame);
+                if (offset)
+                {
+                    ostr << " OFFSET ";
+                    offset->format(ostr, f_settings, state, frame);
+                }
+                break;
+            default:
+                break;
+        }
     }
 
     if (spread)

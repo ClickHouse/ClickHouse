@@ -75,7 +75,7 @@ void MergeTreeReaderStream::init()
         read_settings = read_settings.adjustBufferSize(max_mark_range_bytes);
 
     //// Empty buffer does not makes progress.
-    if (!read_settings.local_fs_buffer_size || !read_settings.remote_fs_buffer_size)
+    if (!read_settings.local_fs_settings.buffer_size || !read_settings.remote_fs_settings.buffer_size)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read to empty buffer.");
 
     auto build_read_buffer = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
@@ -98,9 +98,9 @@ void MergeTreeReaderStream::init()
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
 
-        data_buffer = buffer.get();
-        plain_file_buffer = buffer.get();
         read_buffer_holder = std::move(buffer);
+        data_buffer = read_buffer_holder.get();
+        plain_file_buffer = static_cast<ReadBufferFromFileBase *>(read_buffer_holder.get());
     }
     else if (uncompressed_cache)
     {
@@ -128,9 +128,9 @@ void MergeTreeReaderStream::init()
         if (!settings.checksum_on_read)
             buffer->disableChecksumming();
 
-        data_buffer = buffer.get();
-        compressed_data_buffer = buffer.get();
         read_buffer_holder = std::move(buffer);
+        data_buffer = read_buffer_holder.get();
+        compressed_data_buffer = static_cast<CachedCompressedReadBuffer *>(read_buffer_holder.get());
     }
     else
     {
@@ -143,9 +143,9 @@ void MergeTreeReaderStream::init()
         if (!settings.checksum_on_read)
             buffer->disableChecksumming();
 
-        data_buffer = buffer.get();
-        compressed_data_buffer = buffer.get();
         read_buffer_holder = std::move(buffer);
+        data_buffer = read_buffer_holder.get();
+        compressed_data_buffer = static_cast<CompressedReadBufferFromFile *>(read_buffer_holder.get());
     }
 
     initialized = true;

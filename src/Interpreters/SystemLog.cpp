@@ -12,6 +12,7 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Core/ServerSettings.h>
+#include <Core/UUID.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/BackupLog.h>
@@ -593,7 +594,7 @@ SystemLog<LogElement>::SystemLog(
     , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>(context_->getConfigRef()))
 {
     create_query = getCreateTableQuery()->formatWithSecretsOneLine();
-    assert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
+    chassert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
 }
 
 template <typename LogElement>

@@ -332,9 +332,9 @@ public:
         return *file_info;
     }
 
-    std::vector<std::string> getAllFiles(NameFilter filter)
+    Strings getAllFiles(NameFilter filter)
     {
-        std::vector<std::string> files;
+        Strings files;
         resetFileInfo();
         int err = unzGoToFirstFile(raw_handle);
         rethrowStreamException();
@@ -446,7 +446,7 @@ public:
     off_t seek(off_t off, int whence) override
     {
         off_t current_pos = getPosition();
-        off_t new_pos;
+        off_t new_pos = 0;
         if (whence == SEEK_SET)
             new_pos = off;
         else if (whence == SEEK_CUR)
@@ -681,12 +681,12 @@ std::unique_ptr<ZipArchiveReader::FileEnumerator> ZipArchiveReader::currentFile(
     return std::make_unique<FileEnumeratorImpl>(std::move(handle));
 }
 
-std::vector<std::string> ZipArchiveReader::getAllFiles()
+Strings ZipArchiveReader::getAllFiles()
 {
     return getAllFiles({});
 }
 
-std::vector<std::string> ZipArchiveReader::getAllFiles(NameFilter filter)
+Strings ZipArchiveReader::getAllFiles(NameFilter filter)
 {
     auto handle = acquireHandle();
     return handle.getAllFiles(filter);

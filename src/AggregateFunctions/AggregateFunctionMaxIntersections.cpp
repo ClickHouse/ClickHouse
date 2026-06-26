@@ -206,6 +206,7 @@ AggregateFunctionPtr createAggregateFunctionMaxIntersections(
 
 }
 
+void registerAggregateFunctionsMaxIntersections(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsMaxIntersections(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

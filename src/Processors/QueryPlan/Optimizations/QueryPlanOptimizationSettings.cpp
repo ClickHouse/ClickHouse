@@ -2,6 +2,8 @@
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Common/getMultipleKeysFromConfig.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -25,8 +27,10 @@ namespace Setting
     extern const SettingsBool enable_join_runtime_filters;
     extern const SettingsBool force_optimize_projection;
     extern const SettingsBool make_distributed_plan;
+    extern const SettingsBool distributed_plan_execute_locally;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool optimize_distinct_in_order;
+    extern const SettingsBool optimize_limit_by_in_order;
     extern const SettingsBool optimize_read_in_order;
     extern const SettingsBool optimize_sorting_by_input_stream_properties;
     extern const SettingsBool optimize_use_implicit_projections;
@@ -88,7 +92,7 @@ namespace Setting
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
     extern const SettingsString cluster_for_parallel_replicas;
-    extern const SettingsUInt64 distributed_plan_default_reader_bucket_count;
+    extern const SettingsNonZeroUInt64 distributed_plan_default_reader_bucket_count;
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
     extern const SettingsBool distributed_plan_prefer_replicas_over_workers;
     extern const SettingsUInt64 join_runtime_bloom_filter_bytes;
@@ -107,7 +111,9 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_limit_for_top_k_optimization;
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
     extern const SettingsUInt64 query_plan_optimize_join_order_limit;
+    extern const SettingsUInt64 query_plan_optimize_join_order_max_searched_plans;
     extern const SettingsUInt64 query_plan_optimize_join_order_randomize;
+    extern const SettingsUInt64 query_plan_max_set_size_for_projection_match;
     extern const SettingsBool enable_join_transitive_predicates;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
@@ -158,12 +164,12 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     try_use_top_k_optimization = from[Setting::use_skip_indexes_for_top_k] || from[Setting::use_top_k_dynamic_filtering];
     top_k_through_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_top_k_through_join];
 
-    bool use_parallel_replicas = from[Setting::allow_experimental_parallel_reading_from_replicas] && from[Setting::max_parallel_replicas] > 1;
-    query_plan_optimize_join_order_limit = use_parallel_replicas ? 0 : from[Setting::query_plan_optimize_join_order_limit];
+    query_plan_optimize_join_order_limit = from[Setting::query_plan_optimize_join_order_limit];
     if (query_plan_optimize_join_order_limit > 64)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "The value of the setting `query_plan_optimize_join_order_limit` is too large: {}, "
             "maximum allowed value is 64", query_plan_optimize_join_order_limit);
+    query_plan_optimize_join_order_max_searched_plans = from[Setting::query_plan_optimize_join_order_max_searched_plans];
     query_plan_optimize_join_order_randomize = from[Setting::query_plan_optimize_join_order_randomize];
     if (query_plan_optimize_join_order_randomize == 1)
     {
@@ -185,6 +191,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_prewhere_after_pushdown = optimize_prewhere && from[Setting::optimize_prewhere_after_pushdown];
     read_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_read_in_order] && from[Setting::query_plan_read_in_order];
     distinct_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_distinct_in_order];
+    limit_by_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_limit_by_in_order];
     limit_by_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_limit_by_partitions_independently];
     optimize_sorting_by_input_stream_properties = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_sorting_by_input_stream_properties];
     aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order] && from[Setting::query_plan_aggregation_in_order];
@@ -199,14 +206,29 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_use_implicit_projections = optimize_projection && from[Setting::optimize_use_implicit_projections];
     force_use_projection = optimize_projection && from[Setting::force_optimize_projection];
     force_projection_name = optimize_projection ? from[Setting::force_optimize_projection_name].value : "";
+    max_set_size_for_projection_match = from[Setting::query_plan_max_set_size_for_projection_match];
     is_parallel_replicas_initiator_with_projection_support = is_parallel_replicas_initiator_with_projection_support_;
 
     make_distributed_plan = from[Setting::make_distributed_plan];
+
+    /// The implicit count/minmax projection counts a whole part from metadata; a distributed read
+    /// buckets the part, so the projection would be counted once per bucket and multiply the result.
+    /// Disable it for distributed plans (also forced off when a worker re-optimizes a fragment).
+    if (make_distributed_plan)
+        optimize_use_implicit_projections = false;
+
+    distributed_plan_execute_locally = from[Setting::distributed_plan_execute_locally];
     distributed_plan_default_shuffle_join_bucket_count = from[Setting::distributed_plan_default_shuffle_join_bucket_count];
     distributed_plan_default_reader_bucket_count = from[Setting::distributed_plan_default_reader_bucket_count];
     distributed_plan_optimize_exchanges = from[Setting::distributed_plan_optimize_exchanges];
 #ifdef OS_LINUX
     distributed_plan_force_exchange_kind = from[Setting::distributed_plan_force_exchange_kind].value;
+    if (!distributed_plan_force_exchange_kind.empty()
+        && distributed_plan_force_exchange_kind != "Persisted"
+        && distributed_plan_force_exchange_kind != "Streaming")
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting `distributed_plan_force_exchange_kind` must be empty, 'Persisted', or 'Streaming', got '{}'",
+            distributed_plan_force_exchange_kind);
 #else
     if (from[Setting::distributed_plan_force_exchange_kind].changed && from[Setting::distributed_plan_force_exchange_kind].value != "Persisted")
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Only Persisted exchange is supported");
@@ -295,57 +317,20 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
             if (auto nodes = cluster->getAnyShardInfo().getAllNodeCount())
                 max_parallel_replicas = std::min<size_t>(nodes, max_parallel_replicas);
     }
-}
 
-void QueryPlanOptimizationSettings::keepOnlyExplicitlyEnabled(const Settings & from)
-{
-    if (!from[Setting::query_plan_remove_redundant_sorting].changed)                    remove_redundant_sorting = false;
-
-    if (!from[Setting::query_plan_lift_up_array_join].changed)                          lift_up_array_join = false;
-    if (!from[Setting::query_plan_push_down_limit].changed)                             push_down_limit = false;
-    if (!from[Setting::query_plan_split_filter].changed)                                split_filter = false;
-    if (!from[Setting::query_plan_merge_expressions].changed)                           merge_expressions = false;
-    if (!from[Setting::query_plan_merge_filters].changed)                               merge_filters = false;
-    if (!from[Setting::query_plan_filter_push_down].changed)                            filter_push_down = false;
-    if (!from[Setting::query_plan_convert_outer_join_to_inner_join].changed)            convert_outer_join_to_inner_join = false;
-    if (!from[Setting::query_plan_execute_functions_after_sorting].changed)             execute_functions_after_sorting = false;
-    if (!from[Setting::query_plan_reuse_storage_ordering_for_window_functions].changed) reuse_storage_ordering_for_window_functions = false;
-    if (!from[Setting::query_plan_lift_up_union].changed)                               lift_up_union = false;
-    if (!from[Setting::allow_aggregate_partitions_independently].changed)               aggregate_partitions_independently = false;
-    if (!from[Setting::query_plan_remove_redundant_distinct].changed)                   remove_redundant_distinct = false;
-    if (!from[Setting::query_plan_try_use_vector_search].changed)                       try_use_vector_search = false;
-    if (!from[Setting::query_plan_convert_join_to_in].changed)                          convert_join_to_in = false;
-    if (!from[Setting::query_plan_merge_filter_into_join_condition].changed)            merge_filter_into_join_condition = false;
-    if (!from[Setting::query_plan_convert_any_join_to_semi_or_anti_join].changed)       convert_any_join_to_semi_or_anti_join = false;
-    if (!from[Setting::use_skip_indexes_for_top_k].changed
-        && !from[Setting::use_top_k_dynamic_filtering].changed)                         try_use_top_k_optimization = false;
-    if (!from[Setting::query_plan_top_k_through_join].changed)                          top_k_through_join = false;
-
-    if (!from[Setting::use_join_disjunctions_push_down].changed)                        use_join_disjunctions_push_down = false;
-    if (!from[Setting::query_plan_remove_unused_columns].changed)                       remove_unused_columns = false;
-
-    if (!from[Setting::query_plan_optimize_prewhere].changed)                           optimize_prewhere = false;
-    if (!from[Setting::optimize_read_in_order].changed
-        && !from[Setting::query_plan_read_in_order].changed)                            read_in_order = false;
-    if (!from[Setting::optimize_distinct_in_order].changed)                             distinct_in_order = false;
-    if (!from[Setting::optimize_sorting_by_input_stream_properties].changed)            optimize_sorting_by_input_stream_properties = false;
-    if (!from[Setting::optimize_aggregation_in_order].changed
-        && !from[Setting::query_plan_aggregation_in_order].changed)                     aggregation_in_order = false;
-
-    if (!from[Setting::optimize_use_projections].changed)                               optimize_projection = false;
-    if (!from[Setting::optimize_use_implicit_projections].changed)                      optimize_use_implicit_projections = false;
-    if (!from[Setting::force_optimize_projection].changed)                              force_use_projection = false;
-
-    if (!from[Setting::use_query_condition_cache].changed)                              use_query_condition_cache = false;
-    if (!from[Setting::query_plan_direct_read_from_text_index].changed)                 direct_read_from_text_index = false;
-    if (!from[Setting::query_plan_read_in_order_through_join].changed)                  read_in_order_through_join = false;
-    if (!from[Setting::correlated_subqueries_use_in_memory_buffer].changed)             correlated_subqueries_use_in_memory_buffer = false;
-
-    if (!from[Setting::query_plan_optimize_lazy_materialization].changed)               optimize_lazy_materialization = false;
-    if (!from[Setting::query_plan_optimize_lazy_final].changed)                         optimize_lazy_final = false;
-
-    if (!from[Setting::enable_join_runtime_filters].changed)                            enable_join_runtime_filters = false;
-
-    if (!from[Setting::parallel_replicas_filter_pushdown].changed)                      parallel_replicas_filter_pushdown = false;
+#ifdef OS_LINUX
+    /// Auto-select the exchange kind when it is not forced: use Streaming only when its listener will
+    /// run (both the port and a listen host are configured), otherwise Persisted. This avoids planning
+    /// Streaming exchanges that would connect to a listener that was never started. A forced kind and
+    /// local execution (which routes exchanges through in-memory queues) are left untouched.
+    if (distributed_plan_force_exchange_kind.empty() && !distributed_plan_execute_locally)
+    {
+        const auto & config = from->getConfigRef();
+        const bool streaming_listener_configured =
+            config.getUInt("distributed_query.streaming_exchange_port", 0) != 0
+            && !getMultipleValuesFromConfig(config, "distributed_query", "streaming_exchange_listen_host").empty();
+        distributed_plan_force_exchange_kind = streaming_listener_configured ? "Streaming" : "Persisted";
+    }
+#endif
 }
 }

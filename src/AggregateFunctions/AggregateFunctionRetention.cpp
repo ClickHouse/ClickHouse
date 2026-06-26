@@ -52,7 +52,7 @@ struct AggregateFunctionRetentionData
 
     void deserialize(ReadBuffer & buf)
     {
-        UInt32 event_value;
+        UInt32 event_value = 0;
         readBinary(event_value, buf);
         events = event_value;
     }
@@ -159,6 +159,7 @@ AggregateFunctionPtr createAggregateFunctionRetention(const std::string & name, 
 
 }
 
+void registerAggregateFunctionRetention(AggregateFunctionFactory & factory);
 void registerAggregateFunctionRetention(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("retention", {createAggregateFunctionRetention, {}});

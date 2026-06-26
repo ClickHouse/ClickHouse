@@ -6,7 +6,6 @@ from minio.deleteobjects import DeleteObject
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
-import re
 import time
 
 import logging

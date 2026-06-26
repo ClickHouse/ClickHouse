@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-random-merge-tree-settings
+# Tags: no-random-merge-tree-settings, no-parallel-replicas
+# no-parallel-replicas - because explain produced different plan
 # add_minmax_index_for_numeric_columns=0: Changes the plan
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

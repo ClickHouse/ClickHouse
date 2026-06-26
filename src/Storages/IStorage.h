@@ -126,6 +126,9 @@ public:
     /// Returns true if the storage supports queries with the FINAL section.
     virtual bool supportsFinal() const { return false; }
 
+    /// Returns true if the storage supports `SELECT ... FROM t STREAM` continuous reads.
+    virtual bool supportsStreaming() const { return false; }
+
     /// Returns true if the storage supports insert queries with the PARTITION BY section.
     virtual bool supportsPartitionBy() const { return false; }
 
@@ -206,7 +209,7 @@ public:
     /// used without any locks.
     /// Pass query context to enable metadata caching in MergeTree.
     /// Pass nullptr when no query context is available.
-    virtual StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr /*context*/, bool /*bypass_metadata_cache*/) const
+    virtual StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr /*context*/, bool /*bypass_metadata_cache*/) const
     {
         return metadata.get();
     }

@@ -81,7 +81,8 @@ public:
         unsigned timeout = MYSQLXX_DEFAULT_TIMEOUT,
         unsigned rw_timeout = MYSQLXX_DEFAULT_RW_TIMEOUT,
         bool enable_local_infile = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE,
-        bool opt_reconnect = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
+        bool opt_reconnect = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT,
+        bool enable_compression = false);
 
     /// Creates connection. Can be used if Poco::Util::Application is using.
     /// All settings will be got from config_name section of configuration.
@@ -102,7 +103,8 @@ public:
         unsigned timeout = MYSQLXX_DEFAULT_TIMEOUT,
         unsigned rw_timeout = MYSQLXX_DEFAULT_RW_TIMEOUT,
         bool enable_local_infile = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE,
-        bool opt_reconnect = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
+        bool opt_reconnect = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT,
+        bool enable_compression = false);
 
     void connect(const std::string & config_name)
     {
@@ -119,6 +121,7 @@ public:
         std::string ssl_key = cfg.getString(config_name + ".ssl_key", "");
         bool enable_local_infile = cfg.getBool(config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE);
         bool opt_reconnect = cfg.getBool(config_name + ".opt_reconnect", MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
+        bool enable_compression = cfg.getBool(config_name + ".enable_compression", false);
 
         unsigned timeout =
             cfg.getInt(config_name + ".connect_timeout",
@@ -143,7 +146,8 @@ public:
                 timeout,
                 rw_timeout,
                 enable_local_infile,
-                opt_reconnect);
+                opt_reconnect,
+                enable_compression);
     }
 
     /// If MySQL connection was established.

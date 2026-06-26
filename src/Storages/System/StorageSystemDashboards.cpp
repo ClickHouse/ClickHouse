@@ -19,7 +19,7 @@ ColumnsDescription StorageSystemDashboards::getColumnsDescription()
     };
 }
 
-String trim(const char * text)
+static String trim(const char * text)
 {
     std::string_view view(text);
     ::trim(view, '\n');

@@ -19,7 +19,8 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 8192, index_granularity_bytes = '10M', min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10M', min_bytes_for_wide_part = 0,
+    text_index_posting_list_block_size = 10000000, text_index_posting_list_codec = 'none';
 
 INSERT INTO tab SELECT
     number,

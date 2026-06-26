@@ -98,7 +98,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , object_shared_data_buckets(isCompactPart(data_part) ? (*storage_settings)[MergeTreeSetting::object_shared_data_buckets_for_compact_part] : (*storage_settings)[MergeTreeSetting::object_shared_data_buckets_for_wide_part])
     , max_buckets_in_map((*storage_settings)[MergeTreeSetting::max_buckets_in_map])
     , map_buckets_strategy((*storage_settings)[MergeTreeSetting::map_buckets_strategy])
-    , map_buckets_coefficient((*storage_settings)[MergeTreeSetting::map_buckets_coefficient])
+    , map_buckets_coefficient(static_cast<double>((*storage_settings)[MergeTreeSetting::map_buckets_coefficient]))
     , map_buckets_min_avg_size((*storage_settings)[MergeTreeSetting::map_buckets_min_avg_size])
     , use_adaptive_write_buffer_for_dynamic_subcolumns((*storage_settings)[MergeTreeSetting::use_adaptive_write_buffer_for_dynamic_subcolumns])
     , min_columns_to_activate_adaptive_write_buffer((*storage_settings)[MergeTreeSetting::min_columns_to_activate_adaptive_write_buffer])

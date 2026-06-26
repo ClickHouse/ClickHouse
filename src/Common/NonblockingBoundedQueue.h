@@ -79,7 +79,7 @@ public:
     }
 
     /// `value` is moved-out iff the return value is true.
-    bool tryPush(T && value)
+    bool tryPush(T & value)
     {
         chassert(mask);
         size_t pos = enqueue_pos.load(std::memory_order_relaxed);

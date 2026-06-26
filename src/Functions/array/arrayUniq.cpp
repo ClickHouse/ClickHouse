@@ -131,7 +131,7 @@ ColumnPtr FunctionArrayUniq::executeImpl(const ColumnsWithTypeAndName & argument
 {
     const ColumnArray::Offsets * offsets = nullptr;
     const size_t num_arguments = arguments.size();
-    assert(num_arguments > 0);
+    chassert(num_arguments > 0);
     ColumnRawPtrs data_columns(num_arguments);
 
     Columns array_holders;

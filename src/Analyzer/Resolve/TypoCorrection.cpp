@@ -41,7 +41,8 @@ void TypoCorrection::collectTableExpressionValidIdentifiers(
     const AnalysisTableExpressionData & table_expression_data,
     std::unordered_set<Identifier> & valid_identifiers_result)
 {
-    for (const auto & [column_name, column_node] : table_expression_data.column_name_to_column_node)
+    /// Typo correction is on the error path: build the full map so we can iterate `ColumnNode`s.
+    for (const auto & [column_name, column_node] : table_expression_data.getColumnNodeMap())
     {
         Identifier column_identifier(column_name);
         if (unresolved_identifier.getPartsSize() == column_identifier.getPartsSize())
@@ -115,7 +116,7 @@ void TypoCorrection::collectScopeValidIdentifiers(
     {
         for (const auto & [name, expression] : scope.aliases.alias_name_to_expression_node)
         {
-            assert(expression);
+            chassert(expression);
             auto expression_identifier = Identifier(name);
             valid_identifiers_result.insert(expression_identifier);
         }
@@ -160,7 +161,7 @@ void TypoCorrection::collectScopeValidIdentifiers(
 
     for (const auto & [argument_name, expression] : scope.expression_argument_name_to_node)
     {
-        assert(expression);
+        chassert(expression);
         auto expression_node_type = expression->getNodeType();
 
         if (allow_expression_identifiers && isExpressionNodeType(expression_node_type))

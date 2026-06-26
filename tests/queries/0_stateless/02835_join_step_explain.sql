@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas - because explain produced different plan
 SET enable_analyzer = 1;
 SET parallel_hash_join_threshold = 0;
 SET enable_join_runtime_filters = 0;

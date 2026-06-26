@@ -313,7 +313,7 @@ private:
         static const int max_stored_half_planes = 2;
 
         HalfPlane half_planes[max_stored_half_planes];
-        size_t index_of_inner_polygon;
+        size_t index_of_inner_polygon{};
         CellType type;
     };
 

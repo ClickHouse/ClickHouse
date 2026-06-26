@@ -339,8 +339,8 @@ bool SparseGramsTokenizer::nextInString(const char * data, size_t length, size_t
         sparse_grams_iterator.set(data, data + length);
     }
 
-    Pos next_begin;
-    Pos next_end;
+    Pos next_begin = nullptr;
+    Pos next_end = nullptr;
     if (!sparse_grams_iterator.get(next_begin, next_end))
     {
         previous_data = nullptr;
@@ -367,8 +367,8 @@ bool SparseGramsTokenizer::nextInStringLike(const char * data, size_t length, si
 
     while (true)
     {
-        Pos next_begin;
-        Pos next_end;
+        Pos next_begin = nullptr;
+        Pos next_end = nullptr;
         if (!sparse_grams_iterator.get(next_begin, next_end))
         {
             previous_data = nullptr;
@@ -576,7 +576,7 @@ bool AsciiCJKTokenizer::nextInString(
 bool AsciiCJKTokenizer::nextInStringLike(const char * data, size_t length, size_t & __restrict pos, String & token) const
 {
     token.clear();
-    size_t token_start;
+    size_t token_start = 0;
     std::optional<size_t> last_glob_pos;
     bool escaped = false; /// Whether current char is an escaped char
     while (pos < length)

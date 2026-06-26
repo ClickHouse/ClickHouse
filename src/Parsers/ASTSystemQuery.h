@@ -221,12 +221,12 @@ public:
 
 #if USE_XRAY
     /// For SYSTEM INSTRUMENT ADD/REMOVE
-    using InstrumentParameter = std::variant<String, Int64, Float64>;
+    using InstrumentArgument = std::variant<String, Int64, Float64>;
     String instrumentation_function_name;
     String instrumentation_handler_name;
-    Instrumentation::EntryType instrumentation_entry_type;
+    Instrumentation::EntryType instrumentation_entry_type{};
     std::optional<std::variant<UInt64, Instrumentation::All, String>> instrumentation_point;
-    std::vector<InstrumentParameter> instrumentation_parameters;
+    std::vector<InstrumentArgument> instrumentation_arguments;
     String instrumentation_subquery;
 #endif
 

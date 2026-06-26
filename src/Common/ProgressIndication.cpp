@@ -204,8 +204,8 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
     /// If the approximate number of rows to process is known, we can display a progress bar and percentage.
     if (progress.total_rows_to_read || progress.total_bytes_to_read)
     {
-        size_t current_count;
-        size_t max_count;
+        size_t current_count = 0;
+        size_t max_count = 0;
         if (progress.total_rows_to_read)
         {
             current_count = progress.read_rows;

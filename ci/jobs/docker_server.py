@@ -419,7 +419,7 @@ def main():
             else:
                 assert False, "BUG"
             urls = read_build_urls(build_name)
-            assert urls, f"URLS has not been read from build report"
+            assert urls, "URLS has not been read from build report"
             direct_urls[arch] = [
                 url
                 for url in urls

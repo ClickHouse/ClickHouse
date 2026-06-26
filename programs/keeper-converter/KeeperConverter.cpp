@@ -14,6 +14,7 @@
 #include <Disks/DiskLocal.h>
 
 
+int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
 int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
 {
     using namespace DB;

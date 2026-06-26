@@ -40,8 +40,8 @@ enum class ArchiveType : uint8_t
 template <ArchiveType archive_type>
 bool createArchiveWithFiles(const std::string & archivename, const std::map<std::string, std::string> & files)
 {
-    struct archive * a;
-    struct archive_entry * entry;
+    struct archive * a = nullptr;
+    struct archive_entry * entry = nullptr;
 
     a = archive_write_new();
 

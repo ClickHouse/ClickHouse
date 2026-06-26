@@ -11,6 +11,7 @@
 #include <Storages/StorageFilesystem.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionFilesystem.h>
+#include <TableFunctions/registerTableFunctions.h>
 #include <Interpreters/Context.h>
 
 namespace fs = std::filesystem;

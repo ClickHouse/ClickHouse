@@ -38,9 +38,7 @@ YTsaurusSettings::YTsaurusSettings(const YTsaurusSettings & settings) : impl(std
 {
 }
 
-YTsaurusSettings::YTsaurusSettings(YTsaurusSettings && settings) noexcept : impl(std::make_unique<YTsaurusSettingsImpl>(std::move(*settings.impl)))
-{
-}
+YTsaurusSettings::YTsaurusSettings(YTsaurusSettings && settings) noexcept = default;
 
 YTsaurusSettings::~YTsaurusSettings() = default;
 

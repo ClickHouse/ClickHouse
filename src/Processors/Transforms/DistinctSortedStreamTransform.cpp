@@ -148,7 +148,7 @@ bool DistinctSortedStreamTransform::isLatestKeyFromPrevChunk(const size_t row_po
 template<typename Predicate>
 size_t DistinctSortedStreamTransform::getRangeEnd(size_t begin, size_t end, Predicate pred) const
 {
-    assert(begin < end);
+    chassert(begin < end);
 
     const size_t linear_probe_threadhold = 16;
     size_t linear_probe_end = begin + linear_probe_threadhold;

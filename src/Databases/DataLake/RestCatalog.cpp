@@ -265,13 +265,15 @@ DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(bool update_token) const
     /// https://github.com/apache/iceberg/blob/3badfe0c1fcf0c0adfc7aa4a10f0b50365c48cf9/open-api/rest-catalog-open-api.yaml#L3498C5-L3498C34
     if (!client_id.empty())
     {
-        if (!access_token.has_value() || update_token)
+        auto current = access_token.get();
+        if (!current || update_token)
         {
-            access_token = retrieveAccessToken();
+            access_token.set(std::make_unique<AccessToken>(retrieveAccessToken()));
+            current = access_token.get();
         }
 
         DB::HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", "Bearer " + access_token.value().token);
+        headers.emplace_back("Authorization", "Bearer " + current->token);
         return headers;
     }
     return {};
@@ -296,7 +298,7 @@ OneLakeCatalog::OneLakeCatalog(
     // Get token before loading config so getAuthHeaders() can work
     if (!client_id.empty() && !client_secret.empty())
     {
-        access_token = retrieveAccessToken();
+        access_token.set(std::make_unique<AccessToken>(retrieveAccessToken()));
     }
     config = loadConfig();
 }
@@ -412,7 +414,7 @@ BigLakeCatalog::BigLakeCatalog(
     // Get token before loading config so getAuthHeaders() can work
     if (!google_project_id.empty() || !google_adc_client_id.empty())
     {
-        access_token = retrieveGoogleCloudAccessToken();
+        access_token.set(std::make_unique<AccessToken>(retrieveGoogleCloudAccessToken()));
     }
     config = loadConfig();
 }
@@ -425,13 +427,15 @@ DB::HTTPHeaderEntries BigLakeCatalog::getAuthHeaders(bool update_token) const
     /// https://developers.google.com/identity/protocols/oauth2
     if (!google_project_id.empty() || !google_adc_client_id.empty())
     {
-        if (!access_token.has_value() || update_token || access_token->isExpired())
+        auto current = access_token.get();
+        if (!current || update_token || current->isExpired())
         {
-            access_token = retrieveGoogleCloudAccessToken();
+            access_token.set(std::make_unique<AccessToken>(retrieveGoogleCloudAccessToken()));
+            current = access_token.get();
         }
 
         DB::HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", "Bearer " + access_token->token);
+        headers.emplace_back("Authorization", "Bearer " + current->token);
 
         std::string project_id = google_project_id;
         if (project_id.empty() && !google_adc_quota_project_id.empty())
@@ -624,19 +628,23 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
 
 bool RestCatalog::empty() const
 {
-    /// TODO: add a test with empty namespaces and zero namespaces.
     bool found_table = false;
     auto stop_condition = [&](const std::string & namespace_name) -> bool
     {
+        if (found_table)
+            return true;
+
         const auto tables = getTables(namespace_name, /* limit */1);
-        found_table = !tables.empty();
+        if (!tables.empty())
+            found_table = true;
+
         return found_table;
     };
 
     Namespaces namespaces;
     getNamespacesRecursive("", namespaces, stop_condition, /* execute_func */{});
 
-    return found_table;
+    return !found_table;
 }
 
 DB::Names RestCatalog::getTables() const
@@ -1272,8 +1280,71 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     {
         sendRequest(endpoint, request_body);
     }
-    catch (const DB::HTTPException &)
+    catch (const DB::HTTPException & ex)
     {
+        LOG_TRACE(log, "Unsucceeded request {}", ex.what());
+        return false;
+    }
+    return true;
+}
+
+bool RestCatalog::updateSchema(
+    const String & namespace_name,
+    const String & table_name,
+    const String & /*new_metadata_path*/,
+    Poco::JSON::Object::Ptr new_schema,
+    Int32 previous_schema_id) const
+{
+    const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
+
+    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
+    {
+        Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
+        identifier->set("name", table_name);
+        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
+        namespaces->add(namespace_name);
+        identifier->set("namespace", namespaces);
+
+        request_body->set("identifier", identifier);
+    }
+
+    {
+        Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
+        requirement->set("type", "assert-current-schema-id");
+        requirement->set("current-schema-id", previous_schema_id);
+
+        Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
+        requirements->add(requirement);
+        request_body->set("requirements", requirements);
+    }
+
+    {
+        Poco::JSON::Array::Ptr updates = new Poco::JSON::Array;
+
+        {
+            Poco::JSON::Object::Ptr add_schema = new Poco::JSON::Object;
+            add_schema->set("action", "add-schema");
+            add_schema->set("schema", new_schema);
+            updates->add(add_schema);
+        }
+
+        {
+            Poco::JSON::Object::Ptr set_current_schema = new Poco::JSON::Object;
+            set_current_schema->set("action", "set-current-schema");
+            set_current_schema->set("schema-id", -1);
+            updates->add(set_current_schema);
+        }
+
+        request_body->set("updates", updates);
+    }
+
+    try
+    {
+        sendRequest(endpoint, request_body);
+    }
+    catch (const DB::HTTPException & ex)
+    {
+        LOG_TRACE(log, "Unsucceeded request {}", ex.what());
         return false;
     }
     return true;

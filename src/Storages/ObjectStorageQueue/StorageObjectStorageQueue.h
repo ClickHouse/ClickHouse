@@ -5,6 +5,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/UUID.h>
 #include <Storages/IStorage.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>

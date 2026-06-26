@@ -20,6 +20,36 @@ export PYTHONPATH=$repo_dir:$repo_dir/ci
 
 cd /workspace
 
+# Direct sanitizer reports to files instead of the server's stderr to avoid 
+# losing the report when the server aborts. The runtime appends ".<pid>"
+# to `log_path`; reports are merged back in by collect_sanitizer_reports.
+# Existing options from the environment/image are preserved.
+SANITIZER_LOG_BASE="/workspace/sanitizer.log"
+for _san in ASAN TSAN MSAN UBSAN LSAN; do
+    _var="${_san}_OPTIONS"
+    export "$_var"="${!_var:+${!_var} }log_path=${SANITIZER_LOG_BASE}"
+done
+unset _san _var
+
+function collect_sanitizer_reports
+{
+    # Merge sanitizer reports captured via log_path into stderr.log (for the
+    # failure parser) and server.log (for context and the OOM grep). Run from an
+    # EXIT trap so early `set -e` aborts are covered too; `|| true` keeps the
+    # exit code intact.
+    local report
+    for report in "${SANITIZER_LOG_BASE}".*; do
+        [ -e "$report" ] || continue
+        echo "Found sanitizer report: $report"
+        {
+            echo "=== sanitizer report from ${report} ==="
+            cat "$report"
+            echo
+        } | tee -a stderr.log >> server.log || true
+    done
+}
+trap collect_sanitizer_reports EXIT
+
 function configure
 {
     chmod +x $repo_dir/ci/tmp/clickhouse
@@ -37,19 +67,6 @@ function configure
     cp -av --dereference "$repo_dir"/tests/config/users.d/ci_logs_sender.yaml $CONFIG_DIR/users.d
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml $CONFIG_DIR/users.d
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/fuzz-server-settings.xml $CONFIG_DIR/config.d
-
-    if [[ -n "${SERVER_FUZZER_ENABLED:-}" ]]; then
-        cat > $CONFIG_DIR/users.d/serverfuzz-tweaks.xml <<EOL
-<clickhouse>
-    <profiles>
-        <default>
-            <ast_fuzzer_runs>5</ast_fuzzer_runs>
-            <ast_fuzzer_any_query>true</ast_fuzzer_any_query>
-        </default>
-    </profiles>
-</clickhouse>
-EOL
-    fi
 
     cat > $CONFIG_DIR/config.d/max_server_memory_usage_to_ram_ratio.xml <<EOL
 <clickhouse>
@@ -118,7 +135,7 @@ function fuzz
     server_bg_pid=$!
     for _ in {1..30}
     do
-        if clickhouse-client --query "select 1"
+        if clickhouse-client --receive_timeout=5 --query "select 1"
         then
             break
         fi
@@ -173,7 +190,7 @@ function fuzz
         # to freeze, and the fuzzer will fail. In debug build, it can take a lot of time.
         for _ in {1..180}
         do
-            if clickhouse-client --query "select 1"
+            if clickhouse-client --receive_timeout=5 --query "select 1"
             then
                 break
             fi
@@ -267,9 +284,14 @@ function fuzz
     # the process is still present while the server is terminating and not
     # accepting the connections anymore.
 
+    # Default: the loop leaves this unset if it exhausts all retries via the
+    # "alive but busy" branches (TOO_MANY_SIMULTANEOUS_QUERIES /
+    # MEMORY_LIMIT_EXCEEDED); a dead server sets server_died=1 and breaks.
+    server_died=0
+
     for _ in {1..100}
     do
-        if clickhouse-client --query "SELECT 1" 2> err
+        if clickhouse-client --receive_timeout=5 --query "SELECT 1" 2> err
         then
             server_died=0
             break
@@ -278,8 +300,11 @@ function fuzz
             # SELECT * FROM remote('127.0.0.{1..255}', system, one)
             if grep -F 'TOO_MANY_SIMULTANEOUS_QUERIES' err
             then
-                # Give it some time to cool down
-                clickhouse-client --query "SHOW PROCESSLIST"
+                # Give it some time to cool down. The SHOW PROCESSLIST is only a
+                # diagnostic and runs under `set -e`; if the same overload rejects
+                # it, do not abort the script (that would skip the status.tsv
+                # write below and surface as a missing-status job ERROR).
+                clickhouse-client --query "SHOW PROCESSLIST" ||:
                 sleep 1
             elif grep -F 'MEMORY_LIMIT_EXCEEDED' err
             then

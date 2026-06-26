@@ -40,9 +40,24 @@ TEST_CONFIGS = [
         False,
         "10-node cluster; fully isolated per test module",
     ),
+    TC(
+        "test_backup_restore_on_cluster/test_huge_concurrent_restore.py",
+        True,
+        "20-node cluster; under ASan its concurrent startup saturates the host and overloads Keeper (KEEPER_EXCEPTION on ON CLUSTER queries), timing out co-scheduled tests",
+    ),
     TC("test_storage_iceberg_no_spark/", False, "minio/azurite per cluster; fully isolated"),
     TC("test_storage_iceberg_with_spark_cache/", False, "package-scoped Spark session; each xdist worker gets its own instance"),
     TC("test_storage_iceberg_concurrent/", False, "package-scoped Spark session; each xdist worker gets its own instance"),
+    TC(
+        "test_storage_delta/test_azure_cluster.py",
+        True,
+        "pins azurite to fixed host port 10000 (emulator mode); concurrent --dist=each workers collide on bind",
+    ),
+    TC(
+        "test_storage_iceberg_interoperability_azure/",
+        True,
+        "pins azurite to fixed host port 10000 (Spark emulator mode); concurrent --dist=each workers collide on bind",
+    ),
 ]
 
 IMAGES_ENV = {

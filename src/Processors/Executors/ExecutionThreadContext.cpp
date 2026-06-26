@@ -1,8 +1,14 @@
 #include <ctime>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Processors/Executors/ExecutionThreadContext.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/StepWallClock.h>
 #include <QueryPipeline/ReadProgressCallback.h>
+<<<<<<< HEAD
 #include <base/types.h>
+=======
+#include <base/defines.h>
+>>>>>>> 7a90d91b53a5de5f79d7d47ce2e097e65af37906
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
@@ -94,10 +100,24 @@ bool ExecutionThreadContext::executeTask()
 
     std::optional<Stopwatch> execution_time_watch;
 
+    const size_t group = node->processor()->getQueryPlanStepGroup();
+
+    StepWallClock * clock = nullptr;
+    if (step_to_wall_clock_registry)
+    {
+        /// Some processors are pipeline "plumbing" (resize, converting, output format, etc.)
+        /// and are not attributed to any query plan step, so there is no clock for them.
+        if (const auto * step = node->processor()->getQueryPlanStep())
+        {
+            clock = &step_to_wall_clock_registry->get(step, group);
+            clock->onEnter();
+        }
+    }
+
 #ifndef NDEBUG
     execution_time_watch.emplace();
 #else
-    if (profile_processors || collect_work_intervals)
+    if (profile_processors || step_to_wall_clock_registry)
         execution_time_watch.emplace();
 #endif
 
@@ -111,18 +131,26 @@ bool ExecutionThreadContext::executeTask()
         node->exception = std::current_exception();
     }
 
-    if (collect_work_intervals)
-        work_intervals.emplace_back(execution_time_watch->getStart(), 
-                                    execution_time_watch->elapsedNanoseconds(),
-                                    node->processors_id);
+    UInt64 elapsed_ns = 0;
 
-    if (profile_processors)
+    if (profile_processors || step_to_wall_clock_registry)
     {
-        UInt64 elapsed_ns = execution_time_watch->elapsedNanoseconds();
+        elapsed_ns = execution_time_watch->elapsedNanoseconds();
         node->processor()->elapsed_ns += elapsed_ns;
+        /// Once processor can be in two groups. See AggregatingTransform as an example
+        node->processor()->addElapsedNs(group, elapsed_ns);
         if (trace_processors)
             span->addAttribute("execution_time_ms", elapsed_ns / 1000U);
     }
+
+    if (clock)
+        clock->onLeave();
+
+    if (collect_work_intervals)
+        work_intervals.emplace_back(execution_time_watch->getStart(), 
+                                    elapsed_ns,
+                                    node->processors_id);
+
 #ifndef NDEBUG
     execution_time_ns += execution_time_watch->elapsed();
     if (trace_processors)

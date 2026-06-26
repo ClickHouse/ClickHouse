@@ -26,16 +26,22 @@ struct AggregateFunctionAnyHeavyData
     using Self = AggregateFunctionAnyHeavyData;
 
 private:
-    SingleValueDataBaseMemoryBlock v_data;
+    /// Raw storage populated by `generateSingleValueFromType` via placement construction in the
+    /// `DataTypePtr` constructor. Default-initializing with `{}` would zero the whole block on every
+    /// aggregate-state creation (hot for high-cardinality `GROUP BY`); skip it deliberately.
+    SingleValueDataBaseMemoryBlock v_data; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     UInt64 counter = 0;
 
 public:
-    [[noreturn]] explicit AggregateFunctionAnyHeavyData()
+    [[noreturn]] explicit AggregateFunctionAnyHeavyData() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionAnyHeavyData initialized empty");
     }
 
-    explicit AggregateFunctionAnyHeavyData(const DataTypePtr & value_type) { generateSingleValueFromType(value_type, v_data); }
+    explicit AggregateFunctionAnyHeavyData(const DataTypePtr & value_type) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+    {
+        generateSingleValueFromType(value_type, v_data);
+    }
 
     ~AggregateFunctionAnyHeavyData() { data().~SingleValueDataBase(); }
 
@@ -159,6 +165,7 @@ createAggregateFunctionAnyHeavy(const std::string & name, const DataTypes & argu
 
 }
 
+void registerAggregateFunctionAnyHeavy(AggregateFunctionFactory & factory);
 void registerAggregateFunctionAnyHeavy(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_anyHeavy = R"(

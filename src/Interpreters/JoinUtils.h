@@ -3,7 +3,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Common/HashTable/Hash.h>
-#include <Common/WeakHash.h>
+#include <Common/PODArray.h>
 #include <Core/Block_fwd.h>
 #include <Core/Joins.h>
 #include <Interpreters/ActionsDAG.h>
@@ -83,6 +83,9 @@ void changeColumnRepresentation(const ColumnPtr & src_column, ColumnPtr & dst_co
 ColumnPtr emptyNotNullableClone(const ColumnPtr & column);
 ColumnPtr materializeColumn(const Block & block, const String & name);
 Columns materializeColumns(const Block & block, const Names & names);
+/// Like materializeColumns, but keeps LowCardinality columns as-is (only removes Const/Sparse). Used
+/// for the probe side of single-LowCardinality-column joins, whose key getter consumes the dictionary.
+Columns materializeColumnsKeepLowCardinality(const Block & block, const Names & names);
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names);
 ColumnRawPtrs getRawPointers(const Columns & columns);
 void restoreLowCardinalityInplace(Block & block, const Names & lowcard_keys);
@@ -117,9 +120,8 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
 void changeLowCardinalityInplace(ColumnWithTypeAndName & column);
 
 template <Fn<size_t(size_t)> Sharder>
-IColumn::Selector hashToSelector(const WeakHash32 & hash, Sharder sharder)
+IColumn::Selector hashToSelector(const PaddedPODArray<UInt32> & hashes, Sharder sharder)
 {
-    const auto & hashes = hash.getData();
     size_t num_rows = hashes.size();
 
     IColumn::Selector selector(num_rows);

@@ -187,7 +187,7 @@ public:
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         auto & set = this->data(place).value;
-        size_t size;
+        size_t size = 0;
         readVarUInt(size, buf);
 
         for (size_t i = 0; i < size; ++i)
@@ -200,8 +200,8 @@ public:
         if (limit_num_elems && set.size() >= max_elems)
             return;
 
-        bool inserted;
-        State::Set::LookupResult it;
+        bool inserted = false;
+        State::Set::LookupResult it = nullptr;
         auto key_holder = getKeyHolder<is_plain_column>(*columns[0], row_num, *arena);
         set.emplace(key_holder, it, inserted);
     }
@@ -211,8 +211,8 @@ public:
         auto & cur_set = this->data(place).value;
         auto & rhs_set = this->data(rhs).value;
 
-        bool inserted;
-        State::Set::LookupResult it;
+        bool inserted = false;
+        State::Set::LookupResult it = nullptr;
         for (auto & rhs_elem : rhs_set)
         {
             if (limit_num_elems && cur_set.size() >= max_elems)
@@ -336,6 +336,7 @@ AggregateFunctionPtr createAggregateFunctionGroupUniqArray(
 
 }
 
+void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

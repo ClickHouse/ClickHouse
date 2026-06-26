@@ -13,7 +13,7 @@ namespace DB
 
 struct PostgreSQLArrayInfo
 {
-    size_t num_dimensions;
+    size_t num_dimensions{};
     Field default_value;
     std::function<Field(std::string & field)> pqxx_parser;
 };

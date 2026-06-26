@@ -74,8 +74,8 @@ private:
 class MergeTreeIndexMinMax : public IMergeTreeIndex
 {
 public:
-    explicit MergeTreeIndexMinMax(const IndexDescription & index_)
-        : IMergeTreeIndex(index_)
+    MergeTreeIndexMinMax(StorageMetadataPtr metadata_snapshot_, const IndexDescription & index_)
+        : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
     {}
 
     ~MergeTreeIndexMinMax() override = default;
@@ -87,7 +87,10 @@ public:
         const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     MergeTreeIndexSubstreams getSubstreams() const override { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}; }
-    MergeTreeIndexFormat getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const override; /// NOLINT
+    MergeTreeIndexFormat getDeserializedFormat(
+        const MergeTreeDataPartChecksums & checksums,
+        const std::string & path_prefix,
+        const IDataPartStorage * storage) const override;
 };
 
 struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranules
