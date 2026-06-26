@@ -4297,7 +4297,18 @@ void populateShortNameIndexForSubquery(
           *   1. its explicit alias from `<expr> AS <alias>` in the FROM clause,
           *   2. its CTE name (for a `WITH cte AS (...)` reference, the source `QueryNode` /
           *      `UnionNode` may not have an alias but does carry the CTE name),
-          *   3. its table name for an unaliased `TableNode`.
+          *   3. for a `TableNode`:
+          *      - the materialized CTE name (`getMaterializedCTE()->cte_name`), since a
+          *        `WITH cte AS MATERIALIZED (...)` reference is rewritten to an
+          *        unaliased `TableNode` backed by a temporary storage whose
+          *        `getStorageID().getTableName()` is the auto-generated `_data_<hash>`,
+          *        not the user-visible CTE name,
+          *      - the temporary-table name (`getTemporaryTableName()`), for engines like
+          *        `Engine = Memory` materialized into a temporary holder,
+          *      - its bare table name (`getStorageID().getTableName()`),
+          *      - its database-qualified table name (`db.table`), which the analyzer
+          *        emits in `qualifyColumnNodesWithProjectionNames` when two unaliased
+          *        tables share the same table name across different databases.
           * If none of those match, the dot in the canonical name came from somewhere we
           * can't reconstruct (e.g. an explicit user alias on a subquery or column), and
           * we skip to stay on the safe side.
@@ -4319,8 +4330,37 @@ void populateShortNameIndexForSubquery(
         }
         else if (const auto * source_table = column_source->as<TableNode>())
         {
-            if (source_table->getStorageID().getTableName() != qualifier_prefix)
-                return {};
+            const auto & storage_id = source_table->getStorageID();
+            const auto & table_name = storage_id.getTableName();
+            const auto & temp_table_name = source_table->getTemporaryTableName();
+            const auto & materialized_cte = source_table->getMaterializedCTE();
+            const auto materialized_cte_name = materialized_cte ? materialized_cte->cte_name : std::string();
+
+            if (!materialized_cte_name.empty() && materialized_cte_name == qualifier_prefix)
+            {
+                // OK: matched the user-visible materialized CTE name.
+            }
+            else if (!temp_table_name.empty() && temp_table_name == qualifier_prefix)
+            {
+                // OK: matched the temporary-table name.
+            }
+            else if (!table_name.empty() && table_name == qualifier_prefix)
+            {
+                // OK: matched the bare table name (`SELECT t.f1 FROM t`).
+            }
+            else
+            {
+                const auto & database_name = storage_id.getDatabaseName();
+                if (!database_name.empty() && !table_name.empty()
+                    && qualifier_prefix == database_name + "." + table_name)
+                {
+                    // OK: matched the database-qualified form (`SELECT db.t.f1 FROM db.t`).
+                }
+                else
+                {
+                    return {};
+                }
+            }
         }
         else
         {

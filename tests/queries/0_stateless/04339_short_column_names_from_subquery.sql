@@ -180,6 +180,55 @@ SET analyzer_enable_short_column_names_from_subquery = 0;
 SELECT q.f1 FROM (SELECT 1 AS `b.f1`) AS q CROSS JOIN (SELECT 2 AS `q.f1`) AS r; -- { serverError UNKNOWN_IDENTIFIER }
 SET analyzer_enable_short_column_names_from_subquery = 1;
 
+SELECT '-- on: materialized CTE source — qualifier matches the CTE name, not the temp-storage name';
+
+-- Bot finding: a `WITH cte AS MATERIALIZED (...)` reference is rewritten into an
+-- unaliased `TableNode` whose `getStorageID().getTableName()` is an auto-generated
+-- `_data_<hash>`, not the user-visible CTE name. `safe_short_name`'s `TableNode` branch
+-- previously compared only against the storage table name, so it skipped registration
+-- for cases where the analyzer keeps the qualifier alive (here: forced by both sides
+-- of an inner join having `f1`). Now we also accept `getMaterializedCTE()->cte_name`.
+SET enable_materialized_cte = 1;
+SET single_join_prefer_left_table = 0;
+WITH src AS MATERIALIZED (SELECT 1 AS f1),
+     q AS (SELECT src.f1 FROM src JOIN (SELECT 1 AS f1) AS r ON src.f1 = r.f1)
+SELECT f1 FROM q;
+SET single_join_prefer_left_table = 1;
+SET enable_materialized_cte = 0;
+
+SELECT '-- on: db-qualified TableNode source — qualifier matches `db.table` for an unaliased cross-database reference';
+
+-- Bot finding: when two unaliased tables share the same name across databases,
+-- `qualifyColumnNodesWithProjectionNames` emits canonical names like `db1.t.f1`. The
+-- previous `TableNode` branch compared the canonical's qualifier prefix only against
+-- `getStorageID().getTableName()` (`t`), so it missed the `db1.t` form. Accept the
+-- `db.table` form too.
+SET single_join_prefer_left_table = 0;
+DROP DATABASE IF EXISTS db04339_a;
+DROP DATABASE IF EXISTS db04339_b;
+CREATE DATABASE db04339_a;
+CREATE DATABASE db04339_b;
+CREATE TABLE db04339_a.t (f1 UInt8) ENGINE = Memory;
+CREATE TABLE db04339_b.t (f1 UInt8) ENGINE = Memory;
+INSERT INTO db04339_a.t VALUES (10);
+INSERT INTO db04339_b.t VALUES (20);
+
+-- DESCRIBE confirms both canonical names retain the `db.table.column` form:
+DESCRIBE (SELECT db04339_a.t.f1, db04339_b.t.f1 FROM db04339_a.t, db04339_b.t);
+
+-- Each db-qualified short-name still resolves via the canonical (dotted) form. The
+-- short-name lookup `f1` against both is ambiguous (both register `f1`), so we assert
+-- the disambiguation works rather than trying to bind `f1` unambiguously.
+SELECT `db04339_a.t.f1`, `db04339_b.t.f1` FROM (
+    SELECT db04339_a.t.f1, db04339_b.t.f1 FROM db04339_a.t, db04339_b.t
+);
+
+DROP TABLE db04339_a.t;
+DROP TABLE db04339_b.t;
+DROP DATABASE db04339_a;
+DROP DATABASE db04339_b;
+SET single_join_prefer_left_table = 1;
+
 SELECT '-- on: explicit dotted alias on a resolved column does NOT expose a short name';
 
 -- Bot finding: previously, an explicit alias like `b.f1 AS `x.f1`` was indistinguishable
