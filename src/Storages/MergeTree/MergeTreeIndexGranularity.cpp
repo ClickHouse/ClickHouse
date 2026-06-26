@@ -132,8 +132,10 @@ size_t computeIndexGranularity(
         {
             index_granularity_for_block = rows;
         }
-        else if (bytes_uncompressed >= index_granularity_bytes)
+        else if (index_granularity_bytes != 0 && bytes_uncompressed >= index_granularity_bytes)
         {
+            /// index_granularity_bytes == 0 disables adaptive sizing upstream, so this branch is
+            /// unreachable with a zero divisor; the explicit check makes that visible to static analysis.
             size_t granules_in_block = bytes_uncompressed / index_granularity_bytes;
             index_granularity_for_block = rows / granules_in_block;
         }
