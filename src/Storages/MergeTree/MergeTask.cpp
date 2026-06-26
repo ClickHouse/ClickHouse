@@ -1063,6 +1063,14 @@ bool MergeTask::isVerticalLightweightDelete(const GlobalRuntimeContext & global_
 
 bool MergeTask::canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx)
 {
+    /// For an unconditional rows `TTLDrop`, all source rows are deleted. The
+    /// vertical TTL-delete path still scans key rows to write an all-skipped
+    /// row-source file, so use the existing horizontal `TTLTransform`
+    /// all-data-dropped short-circuit instead.
+    if (global_ctx.future_part->merge_type == MergeType::TTLDrop
+        && global_ctx.metadata_snapshot->hasRowsTTL())
+        return false;
+
     if (global_ctx.merging_params.mode != MergeTreeData::MergingParams::Ordinary)
         return false;
 
