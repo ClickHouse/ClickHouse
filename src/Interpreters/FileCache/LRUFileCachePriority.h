@@ -176,17 +176,15 @@ private:
     const std::string description;
     LoggerPtr log;
     StatePtr state;
-    /// Eviction positions track where the last collectCandidatesForEviction stopped,
-    /// so a pass can resume instead of iterating the queue from scratch (skipping elements
-    /// which are likely in a non-evictable state). There is one cursor per independent
-    /// eviction driver (see EvictionCursor): the foreground reserve path and the background
-    /// free-space keeper run concurrently and would otherwise clobber each other's progress.
+    /// Where the last collectCandidatesForEviction stopped, so a pass resumes instead of
+    /// rescanning from the head (skipping likely non-evictable entries). One per eviction
+    /// driver (see EvictionCursor) so the reserve path and the background keeper, which run
+    /// concurrently, do not clobber each other's progress.
     LRUQueue::iterator reserve_eviction_pos TSA_GUARDED_BY(eviction_pos_mutex);
     LRUQueue::iterator background_eviction_pos TSA_GUARDED_BY(eviction_pos_mutex);
     mutable std::mutex eviction_pos_mutex;
 
-    /// Select the cursor for `cursor`. Must be called under `eviction_pos_mutex`.
-    /// `EvictionCursor::FromHead` has no persistent cursor and must not be passed here.
+    /// Select the cursor member for `cursor`. `FromHead` has no cursor and must not be passed.
     LRUQueue::iterator & evictionPos(EvictionCursor cursor) TSA_REQUIRES(eviction_pos_mutex);
     struct InvalidatedRef
     {

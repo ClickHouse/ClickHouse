@@ -317,15 +317,13 @@ public:
 
     virtual PriorityDumpPtr dump(const CachePriorityGuard::ReadLock &) = 0;
 
-    /// Selects which persistent eviction cursor a candidate-collection pass resumes from.
-    /// Independent eviction drivers (the foreground reserve path and the background
-    /// free-space keeper) each keep their own cursor, so neither perturbs the other's
-    /// progress through the LRU queue (see `eviction_pos` in LRUFileCachePriority).
+    /// Which cursor a candidate-collection pass resumes from. The reserve path and the
+    /// background keeper each get their own cursor so neither perturbs the other's progress.
     enum class EvictionCursor
     {
-        FromHead,   /// Always start scanning from the queue head; do not persist a position.
-        Reserve,    /// The foreground reserve path's cursor (shared by concurrent reservers).
-        Background, /// The background free-space keeping thread's cursor.
+        FromHead,   /// Start from the queue head; do not persist a position.
+        Reserve,    /// Foreground reserve path (shared by concurrent reservers).
+        Background, /// Background free-space keeping thread.
     };
 
     /// Collect eviction candidates sufficient to free `size` bytes

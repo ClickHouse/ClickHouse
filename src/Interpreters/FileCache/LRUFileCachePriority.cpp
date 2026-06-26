@@ -933,8 +933,7 @@ LRUFileCachePriority::LRUQueue::iterator & LRUFileCachePriority::evictionPos(Evi
 LRUFileCachePriority::LRUQueue::iterator LRUFileCachePriority::getEvictionPos(EvictionCursor cursor, const CachePriorityGuard::ReadLock &) const
 {
     std::lock_guard lk(eviction_pos_mutex);
-    /// `evictionPos` is logically const here (it only selects a member), but is declared
-    /// non-const because it returns a mutable reference for the setters.
+    /// evictionPos only selects a member, but returns a mutable reference for the setters.
     return const_cast<LRUFileCachePriority *>(this)->evictionPos(cursor);
 }
 
