@@ -351,11 +351,11 @@ void testLogAndStateMachine(
     auto & source_storage = state_machine->getStorageUnsafe();
     auto & restored_storage = restore_machine->getStorageUnsafe();
 
-    EXPECT_EQ(source_storage.container.size(), restored_storage.container.size());
+    EXPECT_EQ(source_storage.getStorageStats().nodes_count, restored_storage.getStorageStats().nodes_count);
     for (size_t i = 1; i < total_logs + 1; ++i)
     {
         auto path = "/hello_" + std::to_string(i);
-        EXPECT_EQ(source_storage.container.getValue(path).getData(), restored_storage.container.getValue(path).getData());
+        EXPECT_EQ(committedNodeData(source_storage, path), committedNodeData(restored_storage, path));
     }
 }
 
@@ -364,7 +364,7 @@ TYPED_TEST(CoordinationTest, TestStateMachineAndLogStore)
     using namespace Coordination;
     using namespace DB;
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
+    using Storage [[maybe_unused]] = typename TestFixture::Storage;
 
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
@@ -440,7 +440,7 @@ TYPED_TEST(CoordinationTest, TestEphemeralNodeRemove)
     ChangelogDirTest snapshots("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
+    using Storage [[maybe_unused]] = typename TestFixture::Storage;
 
 
     SnapshotsQueue snapshots_queue{1};
@@ -476,7 +476,7 @@ TYPED_TEST(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecomm
     ChangelogDirTest snapshots("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
+    using Storage [[maybe_unused]] = typename TestFixture::Storage;
 
 
     SnapshotsQueue snapshots_queue{1};
@@ -505,14 +505,14 @@ TYPED_TEST(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecomm
     auto create_entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), create_req);
     state_machine->pre_commit(2, create_entry->get_buf());
 
-    const auto & storage = state_machine->getStorageUnsafe();
-    ASSERT_TRUE(storage.uncommitted_state.nodes.contains(node_path));
+    auto & storage = static_cast<Storage &>(state_machine->getStorageUnsafe());
+    ASSERT_TRUE(storage.nodes.uncommitted_nodes.contains(node_path));
 
     // commit log entries
     state_machine->commit(1, auth_entry->get_buf());
     state_machine->commit(2, create_entry->get_buf());
 
-    const auto * node = storage.uncommitted_state.getNode(node_path).get();
+    const auto * node = storage.nodes.getUncommittedNode(node_path).get();
     ASSERT_NE(node, nullptr);
     auto acls = getUncommittedACLs(storage, node_path);
     ASSERT_EQ(acls.size(), 1);
@@ -529,7 +529,7 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
     ChangelogDirTest snapshots("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
+    using Storage [[maybe_unused]] = typename TestFixture::Storage;
 
     SnapshotsQueue snapshots_queue{1};
     int64_t session_without_auth = 1;
@@ -539,8 +539,7 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
     auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, this->keeper_context, nullptr);
     state_machine->init();
 
-    auto & storage = state_machine->getStorageUnsafe();
-    const auto & uncommitted_state = storage.uncommitted_state;
+    auto & storage = static_cast<Storage &>(state_machine->getStorageUnsafe());
 
     auto auth_req = std::make_shared<ZooKeeperAuthRequest>();
     auth_req->scheme = "digest";
@@ -559,7 +558,7 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
         auto create_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), create_req);
         state_machine->pre_commit(2, create_entry->get_buf());
         state_machine->commit(2, create_entry->get_buf());
-        ASSERT_TRUE(storage.container.contains(node_without_acl));
+        ASSERT_TRUE(storage.nodes.container.contains(node_without_acl));
     }
 
     std::string node_with_acl = "/node_with_acl";
@@ -571,7 +570,7 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
         auto create_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), create_req);
         state_machine->pre_commit(3, create_entry->get_buf());
         state_machine->commit(3, create_entry->get_buf());
-        ASSERT_TRUE(storage.container.contains(node_with_acl));
+        ASSERT_TRUE(storage.nodes.container.contains(node_with_acl));
     }
 
     auto set_req_with_acl = std::make_shared<ZooKeeperSetRequest>();
@@ -583,7 +582,7 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
     set_req_without_acl->data = "modified";
 
     const auto reset_node_value
-        = [&](const auto & path) { storage.container.updateValue(path, [](auto & node) { node.setData("notmodified"); }); };
+        = [&](const auto & path) { storage.nodes.container.updateValue(path, [](auto & node) { node.setData("notmodified"); }); };
 
     auto close_req = std::make_shared<ZooKeeperCloseRequest>();
 
@@ -594,13 +593,13 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
         auto set_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), set_req_with_acl);
         state_machine->pre_commit(5, set_entry->get_buf());
         state_machine->commit(5, set_entry->get_buf());
-        ASSERT_TRUE(storage.container.find(node_with_acl)->value.getData() == "modified");
+        ASSERT_TRUE(storage.nodes.container.find(node_with_acl)->value.getData() == "modified");
         reset_node_value(node_with_acl);
 
         set_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), set_req_without_acl);
         state_machine->pre_commit(6, set_entry->get_buf());
         state_machine->commit(6, set_entry->get_buf());
-        ASSERT_TRUE(storage.container.find(node_without_acl)->value.getData() == "modified");
+        ASSERT_TRUE(storage.nodes.container.find(node_without_acl)->value.getData() == "modified");
         reset_node_value(node_without_acl);
 
         auto close_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), close_req);
@@ -616,8 +615,8 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
         auto set_entry_without_acl = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), set_req_without_acl);
         state_machine->pre_commit(9, set_entry_without_acl->get_buf());
 
-        ASSERT_TRUE(uncommitted_state.getNode(node_with_acl).get()->getData() == "notmodified");
-        ASSERT_TRUE(uncommitted_state.getNode(node_without_acl).get()->getData() == "modified");
+        ASSERT_TRUE(storage.nodes.getUncommittedNode(node_with_acl).get()->getData() == "notmodified");
+        ASSERT_TRUE(storage.nodes.getUncommittedNode(node_without_acl).get()->getData() == "modified");
 
         state_machine->rollback(9, set_entry_without_acl->get_buf());
         state_machine->rollback(8, set_entry_with_acl->get_buf());
@@ -633,14 +632,14 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
         set_entry_without_acl = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), set_req_without_acl);
         state_machine->pre_commit(9, set_entry_without_acl->get_buf());
 
-        ASSERT_TRUE(uncommitted_state.getNode(node_with_acl).get()->getData() == "notmodified");
-        ASSERT_TRUE(uncommitted_state.getNode(node_without_acl).get()->getData() == "modified");
+        ASSERT_TRUE(storage.nodes.getUncommittedNode(node_with_acl).get()->getData() == "notmodified");
+        ASSERT_TRUE(storage.nodes.getUncommittedNode(node_without_acl).get()->getData() == "modified");
 
         state_machine->commit(8, set_entry_with_acl->get_buf());
         state_machine->commit(9, set_entry_without_acl->get_buf());
 
-        ASSERT_TRUE(storage.container.find(node_with_acl)->value.getData() == "notmodified");
-        ASSERT_TRUE(storage.container.find(node_without_acl)->value.getData() == "modified");
+        ASSERT_TRUE(storage.nodes.container.find(node_with_acl)->value.getData() == "notmodified");
+        ASSERT_TRUE(storage.nodes.container.find(node_without_acl)->value.getData() == "modified");
 
         reset_node_value(node_without_acl);
     }
@@ -652,12 +651,12 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
         auto set_entry = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), set_req_with_acl);
         state_machine->pre_commit(10, set_entry->get_buf());
         state_machine->commit(10, set_entry->get_buf());
-        ASSERT_TRUE(storage.container.find(node_with_acl)->value.getData() == "notmodified");
+        ASSERT_TRUE(storage.nodes.container.find(node_with_acl)->value.getData() == "notmodified");
 
         set_entry = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), set_req_without_acl);
         state_machine->pre_commit(11, set_entry->get_buf());
         state_machine->commit(11, set_entry->get_buf());
-        ASSERT_TRUE(storage.container.find(node_without_acl)->value.getData() == "modified");
+        ASSERT_TRUE(storage.nodes.container.find(node_without_acl)->value.getData() == "modified");
         reset_node_value(node_without_acl);
 
         auto close_entry = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), close_req);
@@ -673,8 +672,8 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
         auto set_entry_without_acl = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), set_req_without_acl);
         state_machine->pre_commit(14, set_entry_without_acl->get_buf());
 
-        ASSERT_TRUE(uncommitted_state.getNode(node_with_acl).get()->getData() == "notmodified");
-        ASSERT_TRUE(uncommitted_state.getNode(node_without_acl).get()->getData() == "modified");
+        ASSERT_TRUE(storage.nodes.getUncommittedNode(node_with_acl).get()->getData() == "notmodified");
+        ASSERT_TRUE(storage.nodes.getUncommittedNode(node_without_acl).get()->getData() == "modified");
 
         state_machine->rollback(14, set_entry_without_acl->get_buf());
         state_machine->rollback(13, set_entry_with_acl->get_buf());
@@ -690,14 +689,14 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
         set_entry_without_acl = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), set_req_without_acl);
         state_machine->pre_commit(14, set_entry_without_acl->get_buf());
 
-        ASSERT_TRUE(uncommitted_state.getNode(node_with_acl).get()->getData() == "notmodified");
-        ASSERT_TRUE(uncommitted_state.getNode(node_without_acl).get()->getData() == "modified");
+        ASSERT_TRUE(storage.nodes.getUncommittedNode(node_with_acl).get()->getData() == "notmodified");
+        ASSERT_TRUE(storage.nodes.getUncommittedNode(node_without_acl).get()->getData() == "modified");
 
         state_machine->commit(13, set_entry_with_acl->get_buf());
         state_machine->commit(14, set_entry_without_acl->get_buf());
 
-        ASSERT_TRUE(storage.container.find(node_with_acl)->value.getData() == "notmodified");
-        ASSERT_TRUE(storage.container.find(node_without_acl)->value.getData() == "modified");
+        ASSERT_TRUE(storage.nodes.container.find(node_with_acl)->value.getData() == "notmodified");
+        ASSERT_TRUE(storage.nodes.container.find(node_without_acl)->value.getData() == "modified");
 
         reset_node_value(node_without_acl);
     }
@@ -711,7 +710,7 @@ TYPED_TEST(CoordinationTest, TestMultiRequestWithNoAuth)
     ChangelogDirTest snapshots("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
+    using Storage [[maybe_unused]] = typename TestFixture::Storage;
 
     SnapshotsQueue snapshots_queue{1};
     int64_t session_without_auth = 1;
@@ -721,7 +720,7 @@ TYPED_TEST(CoordinationTest, TestMultiRequestWithNoAuth)
     auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, this->keeper_context, nullptr);
     state_machine->init();
 
-    auto & storage = state_machine->getStorageUnsafe();
+    auto & storage = static_cast<Storage &>(state_machine->getStorageUnsafe());
 
     auto auth_req = std::make_shared<ZooKeeperAuthRequest>();
     auth_req->scheme = "digest";
@@ -741,7 +740,7 @@ TYPED_TEST(CoordinationTest, TestMultiRequestWithNoAuth)
         auto create_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), create_req);
         state_machine->pre_commit(3, create_entry->get_buf());
         state_machine->commit(3, create_entry->get_buf());
-        ASSERT_TRUE(storage.container.contains(node_with_acl));
+        ASSERT_TRUE(storage.nodes.container.contains(node_with_acl));
     }
     Requests ops;
     ops.push_back(zkutil::makeSetRequest(node_with_acl, "modified", -1));
@@ -751,8 +750,8 @@ TYPED_TEST(CoordinationTest, TestMultiRequestWithNoAuth)
     state_machine->pre_commit(4, multi_entry->get_buf());
     state_machine->commit(4, multi_entry->get_buf());
 
-    auto node_it = storage.container.find(node_with_acl);
-    ASSERT_FALSE(node_it == storage.container.end());
+    auto node_it = storage.nodes.container.find(node_with_acl);
+    ASSERT_FALSE(node_it == storage.nodes.container.end());
     ASSERT_TRUE(node_it->value.getData() == "notmodified");
 }
 
@@ -767,7 +766,7 @@ TYPED_TEST(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitte
 
     SnapshotsQueue snapshots_queue{1};
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
+    using Storage [[maybe_unused]] = typename TestFixture::Storage;
     auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, this->keeper_context, nullptr);
     state_machine->init();
 
@@ -803,8 +802,8 @@ TYPED_TEST(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitte
     state_machine->commit(2, create_entry->get_buf());
     state_machine->commit(3, set_acl_entry->get_buf());
 
-    const auto & storage = state_machine->getStorageUnsafe();
-    const auto * node = storage.uncommitted_state.getNode(node_path).get();
+    auto & storage = static_cast<Storage &>(state_machine->getStorageUnsafe());
+    const auto * node = storage.nodes.getUncommittedNode(node_path).get();
 
     ASSERT_NE(node, nullptr);
     auto acls = getUncommittedACLs(storage, node_path);
@@ -908,10 +907,10 @@ TYPED_TEST(CoordinationTest, TestDurableState)
 TYPED_TEST(CoordinationTest, TestFeatureFlags)
 {
     using namespace Coordination;
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
+    using Storage [[maybe_unused]] = typename TestFixture::Storage;
 
-
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
     auto request = std::make_shared<ZooKeeperGetRequest>();
     request->path = DB::keeper_api_feature_flags_path;
     KeeperRequestsForSessions requests {KeeperRequestForSession {.session_id = 0, .request = request}};

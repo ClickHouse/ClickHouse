@@ -842,7 +842,7 @@ struct SetupNodeCollector
             std::make_shared<DB::DiskLocal>("Keeper-snapshots", setup_nodes_snapshot_path));
 
         snapshot_manager.emplace(1, keeper_context);
-        initial_storage = std::make_unique<Coordination::KeeperStorage>(
+        initial_storage = Coordination::KeeperStorage::create(
             /* tick_time_ms */ 500, /* superdigest */ "", keeper_context, /* initialize_system_nodes */ false);
         auto buffer = snapshot_manager->deserializeLatestSnapshotBufferFromDisk();
         if (buffer)
@@ -940,7 +940,7 @@ struct SetupNodeCollector
     {
         std::lock_guard lock(nodes_mutex);
 
-        if (initial_storage->container.contains(path))
+        if (initial_storage->nodes_storage->getCommittedNodeSimple(path))
             return;
 
         new_nodes = true;

@@ -294,8 +294,8 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t 
     , zxid(storage->zxid)
     , nodes_digest(storage->nodes_digest)
 {
-    node_stream = storage->beginWritingSnapshot();
-    scope_guard snapshot_mode_guard([&] { storage->finishWritingSnapshot(std::move(node_stream)); });
+    node_stream = storage->nodes_storage->beginWritingSnapshot();
+    scope_guard snapshot_mode_guard([&] { storage->nodes_storage->finishWritingSnapshot(std::move(node_stream)); });
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();
     session_and_auth = storage->committed_session_and_auth;
@@ -312,8 +312,8 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(
     , zxid(storage->zxid)
     , nodes_digest(storage->nodes_digest)
 {
-    node_stream = storage->beginWritingSnapshot();
-    scope_guard snapshot_mode_guard([&] { storage->finishWritingSnapshot(std::move(node_stream)); });
+    node_stream = storage->nodes_storage->beginWritingSnapshot();
+    scope_guard snapshot_mode_guard([&] { storage->nodes_storage->finishWritingSnapshot(std::move(node_stream)); });
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();
     session_and_auth = storage->committed_session_and_auth;
@@ -323,7 +323,7 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(
 KeeperStorageSnapshot::~KeeperStorageSnapshot()
 {
     if (node_stream)
-        storage->finishWritingSnapshot(std::move(node_stream));
+        storage->nodes_storage->finishWritingSnapshot(std::move(node_stream));
 }
 
 SnapshotFileInfoPtr
@@ -729,9 +729,7 @@ std::unique_ptr<KeeperSnapshotReader> KeeperSnapshotManager::makeSnapshotReader(
 SnapshotDeserializationResult KeeperSnapshotManager::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer, KeeperStorage & storage) const
 {
     auto reader = makeSnapshotReader(buffer);
-    reader->readMetadata();
-    reader->readACLMapAndNodeCount();
-    storage.loadNodesFromSnapshot(*reader);
+    storage.loadFromSnapshot(*reader);
 
     SnapshotDeserializationResult result;
     result.snapshot_meta = reader->snapshot_meta;

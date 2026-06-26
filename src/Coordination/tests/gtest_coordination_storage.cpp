@@ -15,12 +15,10 @@ TYPED_TEST(CoordinationTest, TestSystemNodeModify)
     using namespace Coordination;
     int64_t zxid{0};
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
-
-
     // On INIT we abort when a system path is modified
     this->keeper_context->setServerState(KeeperContext::Phase::RUNNING);
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
     const auto assert_create = [&](const std::string_view path, const auto expected_code)
     {
         auto request = std::make_shared<ZooKeeperCreateRequest>();
@@ -50,10 +48,8 @@ TYPED_TEST(CoordinationTest, TestCheckNotExistsRequest)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
 
     int32_t zxid = 0;
 
@@ -84,9 +80,9 @@ TYPED_TEST(CoordinationTest, TestCheckNotExistsRequest)
     }
 
     create_path("/test_node");
-    auto node_it = storage.container.find("/test_node");
-    ASSERT_NE(node_it, storage.container.end());
-    auto node_version = node_it->value.stats.version;
+    DB::KeeperNodeStats stats;
+    ASSERT_TRUE(storage.nodes_storage->getCommittedNodeSimple("/test_node", &stats));
+    auto node_version = stats.version;
 
     {
         SCOPED_TRACE("CheckNotExists returns ZNODEEXISTS");
@@ -126,16 +122,13 @@ TYPED_TEST(CoordinationTest, TestDeterministicPreprocess)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
-
-
     static constexpr int64_t initial_zxid = 100;
 
     const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
     create_request->path = "/test/data";
     create_request->is_sequential = true;
 
-    const auto process_create = [](Storage & storage, const auto & request, int64_t zxid)
+    const auto process_create = [](DB::KeeperStorage & storage, const auto & request, int64_t zxid)
     {
         storage.preprocessRequest(request, 1, 0, zxid);
         auto responses = storage.processRequest(request, 1, zxid);
@@ -156,14 +149,16 @@ TYPED_TEST(CoordinationTest, TestDeterministicPreprocess)
             process_create(storage, create_request, zxid);
     };
 
-    Storage storage1{500, "", this->keeper_context};
+    const auto storage1_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage1 = *storage1_ptr;
     commit_initial_data(storage1);
 
     for (int64_t zxid = initial_zxid + 1; zxid < initial_zxid + 50; ++zxid)
         storage1.preprocessRequest(create_request, 1, 0, zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/zxid);
 
     /// create identical new storage
-    Storage storage2{500, "", this->keeper_context};
+    const auto storage2_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage2 = *storage2_ptr;
     commit_initial_data(storage2);
 
     /// preprocess the same requests, expect same results
@@ -172,7 +167,7 @@ TYPED_TEST(CoordinationTest, TestDeterministicPreprocess)
     for (int64_t zxid = initial_zxid + 1; zxid < initial_zxid + 50; ++zxid)
         storage2.preprocessRequest(create_request, 1, 0, zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/zxid);
 
-    const auto commit_unprocessed = [&](Storage & storage)
+    const auto commit_unprocessed = [&](DB::KeeperStorage & storage)
     {
         for (int64_t zxid = initial_zxid + 1; zxid < initial_zxid + 50; ++zxid)
         {
@@ -185,7 +180,7 @@ TYPED_TEST(CoordinationTest, TestDeterministicPreprocess)
     commit_unprocessed(storage1);
     commit_unprocessed(storage2);
 
-    const auto get_children = [&](Storage & storage)
+    const auto get_children = [&](DB::KeeperStorage & storage)
     {
         const auto list_request = std::make_shared<ZooKeeperListRequest>();
         list_request->path = "/test";
@@ -211,10 +206,8 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveRequest)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
 
     int32_t zxid = 0;
 
@@ -382,10 +375,8 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveInMultiRequest)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
     int zxid = 0;
 
     auto prepare_create_tree = []()
@@ -592,10 +583,8 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveWatches)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
     int zxid = 0;
 
     const auto create = [&](const String & path, int create_mode)
@@ -698,10 +687,8 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveAcls)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
     int zxid = 0;
 
     {
@@ -760,10 +747,8 @@ TYPED_TEST(CoordinationTest, TestListRequestTypes)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
 
     int32_t zxid = 0;
 
@@ -847,10 +832,8 @@ TYPED_TEST(CoordinationTest, TestGetChildrenWithStatsAndData)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
 
     int32_t zxid = 0;
 
@@ -1047,10 +1030,8 @@ TYPED_TEST(CoordinationTest, TestUncommittedStateBasicCrud)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
 
     constexpr std::string_view path = "/test";
 
@@ -1168,10 +1149,8 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
 
     int64_t zxid = 1;
 
@@ -1192,7 +1171,9 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
         ASSERT_EQ(acls.size(), 1);
         ASSERT_EQ(acls[0].id, digest);
         storage.processRequest(create_request, session_id, req_zxid);
-        ASSERT_NE(storage.container.getValue(path).stats.acl_id, 0);
+        DB::KeeperNodeStats stats;
+        ASSERT_TRUE(storage.nodes_storage->getCommittedNodeSimple(path, &stats));
+        ASSERT_NE(stats.acl_id, 0);
 
         req_zxid = zxid++;
         const auto set_acl_request = std::make_shared<ZooKeeperSetACLRequest>();
@@ -1203,7 +1184,8 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
         ASSERT_EQ(acls.size(), 1);
         ASSERT_EQ(acls[0].id, new_digest);
         storage.processRequest(set_acl_request, session_id, req_zxid);
-        ASSERT_NE(storage.container.getValue(path).stats.acl_id, 0);
+        ASSERT_TRUE(storage.nodes_storage->getCommittedNodeSimple(path, &stats));
+        ASSERT_NE(stats.acl_id, 0);
     }
 
     {
@@ -1218,7 +1200,9 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
         auto acls = getUncommittedACLs(storage, path);
         ASSERT_EQ(acls.size(), 0);
         storage.processRequest(create_request, session_id, req_zxid);
-        ASSERT_EQ(storage.container.getValue(path).stats.acl_id, 0);
+        DB::KeeperNodeStats stats;
+        ASSERT_TRUE(storage.nodes_storage->getCommittedNodeSimple(path, &stats));
+        ASSERT_EQ(stats.acl_id, 0);
 
         req_zxid = zxid++;
         const auto set_acl_request = std::make_shared<ZooKeeperSetACLRequest>();
@@ -1228,7 +1212,8 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
         acls = getUncommittedACLs(storage, path);
         ASSERT_EQ(acls.size(), 0);
         storage.processRequest(set_acl_request, session_id, req_zxid);
-        ASSERT_EQ(storage.container.getValue(path).stats.acl_id, 0);
+        ASSERT_TRUE(storage.nodes_storage->getCommittedNodeSimple(path, &stats));
+        ASSERT_EQ(stats.acl_id, 0);
     }
 }
 
@@ -1237,10 +1222,8 @@ TYPED_TEST(CoordinationTest, TestMultiWatches)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
 
     int32_t zxid = 0;
     auto wait_event = std::make_shared<Poco::Event>();
@@ -1335,10 +1318,8 @@ TYPED_TEST(CoordinationTest, TestCheckStat)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
 
     int32_t zxid = 0;
     auto wait_event = std::make_shared<Poco::Event>();
@@ -1420,10 +1401,8 @@ TYPED_TEST(CoordinationTest, TestTryRemove)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
 
     int32_t zxid = 0;
 
@@ -1523,10 +1502,8 @@ TYPED_TEST(CoordinationTest, TestListRecursiveRequest)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
 
     int32_t zxid = 0;
 
@@ -1709,10 +1686,8 @@ TYPED_TEST(CoordinationTest, TestListRecursiveInMultiRequest)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
     int zxid = 0;
 
     const auto exists = [&](const String & path)
@@ -1779,10 +1754,8 @@ TYPED_TEST(CoordinationTest, TestListRecursiveAcls)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
-
-
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
     int zxid = 0;
 
     {
@@ -1830,9 +1803,9 @@ TYPED_TEST(CoordinationTest, TestTTLNodeExpiry)
 {
     using namespace DB;
     using namespace Coordination;
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
     int64_t zxid = 0;
     const int64_t session_id = 1;
     const int64_t ttl_ms = 5000;
@@ -1848,10 +1821,10 @@ TYPED_TEST(CoordinationTest, TestTTLNodeExpiry)
 
     ASSERT_TRUE(storage.containsTTLPath("/ttl_node"));
     {
-        auto node_it = storage.container.find("/ttl_node");
-        ASSERT_NE(node_it, storage.container.end());
-        ASSERT_TRUE(node_it->value.stats.isTTL());
-        EXPECT_EQ(node_it->value.stats.destroyTime(), ttl_ms);
+        DB::KeeperNodeStats stats;
+        ASSERT_TRUE(storage.nodes_storage->getCommittedNodeSimple("/ttl_node", &stats));
+        ASSERT_TRUE(stats.isTTL());
+        EXPECT_EQ(stats.destroyTime(), ttl_ms);
     }
 
     EXPECT_TRUE(storage.collectExpiredTTLPaths(/*now_ms=*/0, 1000000).empty());
@@ -1869,7 +1842,7 @@ TYPED_TEST(CoordinationTest, TestTTLNodeExpiry)
     ASSERT_EQ(remove_responses[0].response->error, Error::ZOK);
 
     EXPECT_FALSE(storage.containsTTLPath("/ttl_node"));
-    EXPECT_EQ(storage.container.find("/ttl_node"), storage.container.end());
+    EXPECT_FALSE(storage.nodes_storage->getCommittedNodeSimple("/ttl_node"));
     EXPECT_TRUE(storage.collectExpiredTTLPaths(ttl_ms + 1, 1000000).empty());
 }
 
@@ -1877,9 +1850,9 @@ TYPED_TEST(CoordinationTest, TestTTLNodeSetRefreshesUncommittedDestroyTime)
 {
     using namespace DB;
     using namespace Coordination;
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
     int64_t zxid = 0;
     const int64_t session_id = 1;
     const int64_t ttl_ms = 5000;
@@ -1896,10 +1869,10 @@ TYPED_TEST(CoordinationTest, TestTTLNodeSetRefreshesUncommittedDestroyTime)
     const int64_t original_destroy_time = create_time + ttl_ms;
     const int64_t expected_new_destroy_time = set_time + ttl_ms;
     {
-        auto node_it = storage.container.find("/ttl_node");
-        ASSERT_NE(node_it, storage.container.end());
-        ASSERT_TRUE(node_it->value.stats.isTTL());
-        EXPECT_EQ(node_it->value.stats.destroyTime(), original_destroy_time);
+        DB::KeeperNodeStats stats;
+        ASSERT_TRUE(storage.nodes_storage->getCommittedNodeSimple("/ttl_node", &stats));
+        ASSERT_TRUE(stats.isTTL());
+        EXPECT_EQ(stats.destroyTime(), original_destroy_time);
     }
 
     auto set_request = std::make_shared<ZooKeeperSetRequest>();
@@ -1908,20 +1881,20 @@ TYPED_TEST(CoordinationTest, TestTTLNodeSetRefreshesUncommittedDestroyTime)
     storage.preprocessRequest(set_request, session_id, set_time, ++zxid);
 
     {
-        const auto * uncommitted = storage.uncommitted_state.getNode("/ttl_node").get();
-        ASSERT_NE(uncommitted, nullptr);
-        ASSERT_TRUE(uncommitted->stats.isTTL());
-        EXPECT_EQ(uncommitted->stats.destroyTime(), expected_new_destroy_time);
+        DB::KeeperNodeStats stats;
+        ASSERT_TRUE(storage.nodes_storage->getUncommittedNodeSimple("/ttl_node", &stats));
+        ASSERT_TRUE(stats.isTTL());
+        EXPECT_EQ(stats.destroyTime(), expected_new_destroy_time);
     }
 
     auto set_responses = storage.processRequest(set_request, session_id, zxid);
     ASSERT_EQ(set_responses[0].response->error, Error::ZOK);
 
     {
-        auto node_it = storage.container.find("/ttl_node");
-        ASSERT_NE(node_it, storage.container.end());
-        ASSERT_TRUE(node_it->value.stats.isTTL());
-        EXPECT_EQ(node_it->value.stats.destroyTime(), expected_new_destroy_time);
+        DB::KeeperNodeStats stats;
+        ASSERT_TRUE(storage.nodes_storage->getCommittedNodeSimple("/ttl_node", &stats));
+        ASSERT_TRUE(stats.isTTL());
+        EXPECT_EQ(stats.destroyTime(), expected_new_destroy_time);
     }
 }
 
@@ -1929,9 +1902,9 @@ TYPED_TEST(CoordinationTest, TestTTLGCVersionCheckPreventsStaleRemoval)
 {
     using namespace DB;
     using namespace Coordination;
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
     int64_t zxid = 0;
     const int64_t session_id = 1;
     const int64_t ttl_ms = 5000;
@@ -1958,9 +1931,9 @@ TYPED_TEST(CoordinationTest, TestTTLGCVersionCheckPreventsStaleRemoval)
     ASSERT_EQ(set_responses[0].response->error, Error::ZOK);
 
     {
-        auto node_it = storage.container.find("/ttl_node");
-        ASSERT_NE(node_it, storage.container.end());
-        EXPECT_GT(node_it->value.stats.version, collected_version);
+        DB::KeeperNodeStats stats;
+        ASSERT_TRUE(storage.nodes_storage->getCommittedNodeSimple("/ttl_node", &stats));
+        EXPECT_GT(stats.version, collected_version);
     }
 
     auto remove_request = std::make_shared<ZooKeeperRemoveRequest>();
@@ -1971,7 +1944,7 @@ TYPED_TEST(CoordinationTest, TestTTLGCVersionCheckPreventsStaleRemoval)
     auto remove_responses = storage.processRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, zxid);
     EXPECT_TRUE(remove_responses.empty() || remove_responses[0].response->error == Error::ZOK);
 
-    EXPECT_NE(storage.container.find("/ttl_node"), storage.container.end());
+    EXPECT_TRUE(storage.nodes_storage->getCommittedNodeSimple("/ttl_node"));
     EXPECT_TRUE(storage.containsTTLPath("/ttl_node"));
 }
 
@@ -1979,9 +1952,9 @@ TYPED_TEST(CoordinationTest, TestTTLGCDoesNotRemoveRecreatedNode)
 {
     using namespace DB;
     using namespace Coordination;
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
     int64_t zxid = 0;
     const int64_t session_id = 1;
     const int64_t ttl_ms = 5000;
@@ -2020,10 +1993,10 @@ TYPED_TEST(CoordinationTest, TestTTLGCDoesNotRemoveRecreatedNode)
     ASSERT_EQ(recreate_responses[0].response->error, Error::ZOK);
 
     {
-        auto node_it = storage.container.find("/ttl_node");
-        ASSERT_NE(node_it, storage.container.end());
-        EXPECT_EQ(node_it->value.stats.version, collected_version);
-        EXPECT_FALSE(node_it->value.stats.isTTL());
+        DB::KeeperNodeStats stats;
+        ASSERT_TRUE(storage.nodes_storage->getCommittedNodeSimple("/ttl_node", &stats));
+        EXPECT_EQ(stats.version, collected_version);
+        EXPECT_FALSE(stats.isTTL());
     }
 
     /// The stale TryRemove commits and must be a no-op — matching real ZK,
@@ -2037,10 +2010,11 @@ TYPED_TEST(CoordinationTest, TestTTLGCDoesNotRemoveRecreatedNode)
     ASSERT_EQ(remove_responses.size(), 1u);
     ASSERT_EQ(remove_responses[0].response->error, Error::ZOK);
 
-    auto node_after_it = storage.container.find("/ttl_node");
-    ASSERT_NE(node_after_it, storage.container.end());
-    EXPECT_FALSE(node_after_it->value.stats.isTTL());
-    EXPECT_EQ(std::string{node_after_it->value.getData()}, "fresh");
+    DB::KeeperNodeStats stats;
+    std::string data;
+    ASSERT_TRUE(storage.nodes_storage->getCommittedNodeSimple("/ttl_node", &stats, &data));
+    EXPECT_FALSE(stats.isTTL());
+    EXPECT_EQ(data, "fresh");
     EXPECT_FALSE(storage.containsTTLPath("/ttl_node"));
 }
 
@@ -2051,9 +2025,9 @@ TYPED_TEST(CoordinationTest, TestTTLGCNoOpDoesNotFireDeleteWatch)
 {
     using namespace DB;
     using namespace Coordination;
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
     int64_t zxid = 0;
     const int64_t session_id = 1;
     const int64_t ttl_ms = 5000;
@@ -2106,7 +2080,7 @@ TYPED_TEST(CoordinationTest, TestTTLGCNoOpDoesNotFireDeleteWatch)
     ASSERT_EQ(remove_responses[0].response->error, Error::ZOK);
     EXPECT_EQ(dynamic_cast<Coordination::ZooKeeperWatchResponse *>(remove_responses[0].response.get()), nullptr);
     EXPECT_EQ(storage.watches.size(), 1u);
-    EXPECT_NE(storage.container.find("/ttl_node"), storage.container.end());
+    EXPECT_TRUE(storage.nodes_storage->getCommittedNodeSimple("/ttl_node"));
 }
 
 /// A genuine TTL GC removal must still fire the DELETED watch — the no-op suppression above must
@@ -2115,9 +2089,9 @@ TYPED_TEST(CoordinationTest, TestTTLGCRemovalFiresDeleteWatch)
 {
     using namespace DB;
     using namespace Coordination;
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
     int64_t zxid = 0;
     const int64_t session_id = 1;
     const int64_t ttl_ms = 5000;
@@ -2167,7 +2141,7 @@ TYPED_TEST(CoordinationTest, TestTTLGCRemovalFiresDeleteWatch)
     EXPECT_TRUE(got_ok_remove);
     EXPECT_TRUE(fired_delete_watch);
     EXPECT_EQ(storage.watches.size(), 0u);
-    EXPECT_EQ(storage.container.find("/ttl_node"), storage.container.end());
+    EXPECT_FALSE(storage.nodes_storage->getCommittedNodeSimple("/ttl_node"));
 }
 
 /// B4: invalid TTL values must be rejected with ZBADARGUMENTS.
@@ -2175,9 +2149,9 @@ TYPED_TEST(CoordinationTest, TestCreateTTLRejectsInvalidValues)
 {
     using namespace DB;
     using namespace Coordination;
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
     int64_t zxid = 0;
     const int64_t session_id = 1;
 
@@ -2206,9 +2180,9 @@ TYPED_TEST(CoordinationTest, TestCreateTTLAndEphemeralDoesNotLeakEphemeral)
 {
     using namespace DB;
     using namespace Coordination;
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
     int64_t zxid = 0;
     const int64_t session_id = 7;
 
@@ -2232,9 +2206,9 @@ TYPED_TEST(CoordinationTest, TestFailedMultiRollsBackTTLDestroyTime)
 {
     using namespace DB;
     using namespace Coordination;
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    Storage storage{500, "", this->keeper_context};
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
     int64_t zxid = 0;
     const int64_t session_id = 8;
     const int64_t ttl_ms = 5000;
@@ -2266,15 +2240,14 @@ TYPED_TEST(CoordinationTest, TestFailedMultiRollsBackTTLDestroyTime)
     ASSERT_EQ(multi_response.responses.size(), 2u);
     EXPECT_NE(multi_response.responses[1]->error, Error::ZOK);
 
-    auto node_it = storage.container.find("/n");
-    ASSERT_NE(node_it, storage.container.end());
-    ASSERT_TRUE(node_it->value.stats.isTTL());
-    EXPECT_EQ(node_it->value.stats.destroyTime(), original_destroy_time);
+    DB::KeeperNodeStats stats;
+    ASSERT_TRUE(storage.nodes_storage->getCommittedNodeSimple("/n", &stats));
+    ASSERT_TRUE(stats.isTTL());
+    EXPECT_EQ(stats.destroyTime(), original_destroy_time);
 
-    const auto * uncommitted = storage.uncommitted_state.getNode("/n").get();
-    ASSERT_NE(uncommitted, nullptr);
-    ASSERT_TRUE(uncommitted->stats.isTTL());
-    EXPECT_EQ(uncommitted->stats.destroyTime(), original_destroy_time);
+    ASSERT_TRUE(storage.nodes_storage->getUncommittedNodeSimple("/n", &stats));
+    ASSERT_TRUE(stats.isTTL());
+    EXPECT_EQ(stats.destroyTime(), original_destroy_time);
 }
 
 #endif

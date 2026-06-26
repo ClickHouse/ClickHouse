@@ -9,15 +9,15 @@
 #include <Coordination/SessionExpiryQueue.h>
 #include <Coordination/SnapshotableHashTable.h>
 #include <Coordination/KeeperCommon.h>
+#include <Coordination/KeeperNodesStorage.h>
 #include <Coordination/KeeperReadThreadPool.h>
+#include <Coordination/KeeperStorage_fwd.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/SharedMutex.h>
 #include <Common/Concepts.h>
 
 #include <base/defines.h>
 #include <memory>
-
-#include <Coordination/CompactChildrenSet.h>
 
 namespace DB
 {
@@ -29,112 +29,22 @@ struct KeeperSnapshotReader;
 
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
 
-/// Iterator over nodes in KeeperStorage, frozen at the moment in time when
-/// KeeperNodeStreamForSnapshot was created. Creation locks storage_mutex but is relatively fast,
-/// then the long-running iteration can proceed after the mutex is unlocked.
-struct KeeperNodeStreamForSnapshot
-{
-    /// Total number of nodes that `next` will report. Storage must provide it in advance.
-    size_t node_count = 0;
-
-    virtual bool next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats) = 0;
-
-    virtual ~KeeperNodeStreamForSnapshot() { chassert(node_count == 0); }
-};
-
-/// KeeperMemNode should have as minimal size as possible to reduce memory footprint
-/// of stored nodes
-/// New fields should be added to the struct only if it's really necessary
-struct KeeperMemNode
-{
-    KeeperNodeStats stats;
-    std::unique_ptr<char[]> data{nullptr};
-    mutable uint64_t cached_digest = 0;
-
-    KeeperMemNode() = default;
-
-    KeeperMemNode & operator=(const KeeperMemNode & other);
-    KeeperMemNode(const KeeperMemNode & other);
-
-    KeeperMemNode & operator=(KeeperMemNode && other) noexcept;
-    KeeperMemNode(KeeperMemNode && other) noexcept;
-
-    bool empty() const;
-
-    /// Object memory size
-    uint64_t sizeInBytes() const;
-
-    void setData(const String & new_data);
-
-    std::string_view getData() const noexcept { return {data.get(), stats.data_size}; }
-
-    void addChild(std::string_view child_path);
-
-    void removeChild(std::string_view child_path);
-
-    template <typename Self>
-    auto & getChildren(this Self & self)
-    {
-        return self.children;
-    }
-
-    // Invalidate the calculated digest so it's recalculated again on the next
-    // getDigest call
-    void invalidateDigestCache() const;
-
-    // get the calculated digest of the node
-    UInt64 getDigest(std::string_view path) const;
-
-    // copy only necessary information for preprocessing and digest calculation
-    // (e.g. we don't need to copy list of children)
-    void shallowCopy(const KeeperMemNode & other);
-
-    // copy data from node that is left only for snapshot write
-    // e.g. we don't need list of children when writing snapshots so we can
-    // move it to the new copy of node
-    KeeperMemNode copyFromSnapshotNode();
-private:
-    CompactChildrenSet children{};
-};
-
-/// Going to >160 bytes pushes to jemalloc bin #10 (192 bytes).
-#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
-static_assert(sizeof(KeeperMemNode) <= 160);
-#endif
-
-struct KeeperStorageStats
-{
-    uint64_t nodes_count = 0;
-    uint64_t approximate_data_size = 0;
-
-    uint64_t total_watches_count = 0;
-    uint64_t watched_paths_count = 0;
-    uint64_t sessions_with_watches_count = 0;
-    uint64_t session_with_ephemeral_nodes_count = 0;
-    uint64_t total_emphemeral_nodes_count = 0;
-    int64_t last_committed_zxid = 0;
-};
-
 /// Keeper state machine almost equal to the ZooKeeper's state machine.
 /// Implements all logic of operations, data changes, sessions allocation.
-/// In-memory and not thread safe.
+/// In-memory and not generally thread safe, though preprocessRequest and processRequest can run in parallel.
+/// Split into 3 parts:
+///  * KeeperNodesStorage interface, with two implementations to choose from. Stores the actual
+///    nodes, which usually take lots of memory/space and need to be careful about performance.
+///    Manages committed and uncommitted state.
+///  * KeeperStorageImpl<KeeperNodesStorage> (template) implements execution of all the types of
+///    user requests. Talks to KeeperNodesStorage to manipulate the nodes, talks to KeeperStorage
+///    to report deltas and digest. (It's a template to try to go fast, but we haven't actually
+///    benchmarked it against a maybe simpler inheritance-based implementation.)
+///  * KeeperStorage base class that manages everything else: sessions, watches, set of ephemeral
+///    nodes, ACLs, digest, deltas.
 class KeeperStorage
 {
 public:
-    using Container = SnapshotableHashTable<KeeperMemNode>;
-    using Node = KeeperMemNode;
-
-#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
-    static_assert(sizeof(CompactChildrenSet) == 16);
-    static_assert(sizeof(KeeperMemNode) == 104);
-    static_assert(
-        sizeof(ListNode<Node>) <= 128,
-        "std::list node containing ListNode<Node> is > 144 bytes (sizeof(ListNode<Node>) + 16 bytes for pointers) which will increase "
-        "memory consumption");
-    static_assert(std::is_nothrow_move_assignable_v<CompactChildrenSet>);
-    static_assert(std::is_nothrow_move_constructible_v<CompactChildrenSet>);
-#endif
-
     static String generateDigest(const String & userdata);
 
     using AuthID = KeeperAuthID;
@@ -177,25 +87,10 @@ public:
 
     using Delta = KeeperDelta;
     using Operation = KeeperDelta::Operation;
-    using DeltaIterator = std::list<KeeperStorage::Delta>::const_iterator;
-    struct DeltaRange
-    {
-        DeltaIterator begin_it;
-        DeltaIterator end_it;
+    using DeltaIterator = std::list<KeeperStorage::Delta>::iterator;
+    using DeltaRange = std::ranges::subrange<DeltaIterator>;
 
-        DeltaIterator begin() const;
-        DeltaIterator end() const;
-        bool empty() const;
-        const KeeperStorage::Delta & front() const;
-    };
-
-    /// Element of RemoveRecursive's list of nodes to remove.
-    struct SubtreeNodeToRemove
-    {
-        std::string path;
-        ACLId acl_id = 0;
-        std::optional<int64_t> ephemeral_owner;
-    };
+    KeeperNodesStorage * nodes_storage = nullptr;
 
     mutable std::mutex transaction_mutex;
 
@@ -229,6 +124,14 @@ public:
     /// Mapping session_id -> set of ephemeral nodes paths
     Ephemerals committed_ephemerals;
     size_t committed_ephemeral_nodes{0};
+
+    /// Paths of nodes that may carry TTL. Protected by storage_mutex, but don't tell that to TSA
+    /// or it'll produce false positives in `commit` and `loadNodesFromSnapshot`.
+    mutable std::unordered_set<
+        String,
+        StringHashForHeterogeneousLookup,
+        StringHashForHeterogeneousLookup::transparent_key_equal>
+        ttl_paths;
 
     /// All active sessions with timeout
     SessionAndTimeout session_and_timeout;
@@ -285,7 +188,8 @@ public:
 
     bool removePersistentWatch(const String& path, Coordination::RemoveWatchRequest::WatchType type, int64_t session_id);
 protected:
-    KeeperStorage(int64_t tick_time_ms, const KeeperContextPtr & keeper_context, const String & superdigest_);
+    /// If initialize_system_nodes is false, container starts with no nodes at all, not even "/".
+    KeeperStorage(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_);
 
     /// Expiration queue for session, allows to get dead sessions at some point of time
     SessionExpiryQueue session_expiry_queue;
@@ -315,22 +219,6 @@ protected:
     std::atomic<bool> initialized{false};
 
 public:
-    /// Main hashtable with nodes. Contain all information about data.
-    /// All other structures expect session_and_timeout can be restored from
-    /// container.
-    Container container;
-
-    /// Paths of nodes that may carry TTL
-    mutable std::unordered_set<
-        String,
-        StringHashForHeterogeneousLookup,
-        StringHashForHeterogeneousLookup::transparent_key_equal>
-        ttl_paths TSA_GUARDED_BY(storage_mutex);
-
-    std::atomic<UInt64> committed_ttl_nodes{0};
-
-    struct UncommittedNodeRef;
-
     struct UncommittedState
     {
         explicit UncommittedState(KeeperStorage & storage_);
@@ -342,57 +230,11 @@ public:
         void rollback(int64_t rollback_zxid);
         void rollback(std::list<Delta> rollback_deltas);
 
-        UncommittedNodeRef getNode(std::string_view path) const;
-
-        void rollbackDelta(const Delta & delta);
-
-        /// Update digest with new nodes
-        UInt64 updateNodesDigest(UInt64 current_digest, UInt64 zxid) const;
-
         bool hasACL(int64_t session_id, bool committed, std::function<bool(const AuthID &)> predicate) const;
 
         void forEachAuthInSession(int64_t session_id, std::function<void(const AuthID &)> func) const;
 
-        std::shared_ptr<Node> tryGetNodeFromStorage(std::string_view path) const;
-
         std::unordered_map<int64_t, std::unordered_set<int64_t>> closed_sessions_to_zxids;
-
-        struct UncommittedNode
-        {
-            std::shared_ptr<Node> node{nullptr};
-            /// Tracks which zxids have been applied to this uncommitted node.
-            /// Typically 1-3 entries; vector is faster than unordered_set at this size.
-            /// May contain duplicates when a Multi operation applies multiple deltas
-            /// with the same zxid to the same node — this is harmless because erasure
-            /// uses std::erase (removes all matches) and only emptiness is checked.
-            /// TODO: Store just the max zxid instead of the whole set. Clean up when commit zxid
-            ///       reaches that value. It may end up overestimated on rollback, but that's fine,
-            ///       it would just delay cleanup a little. But maybe this won't work because of the
-            ///       zxid_to_nodes[0] thing, research that first.
-            std::vector<uint64_t> applied_zxids{};
-
-            void materializeACL(const ACLMap & current_acl_map);
-        };
-
-        /// zxid_to_nodes stores iterators of nodes map
-        /// so we should be careful when removing nodes from it
-        /// Note: we rely on unordered_map iterators staying valid even after rehash. The standard
-        ///       doesn't guarantee it, but apparently the libc++ we're using has this property.
-        mutable std::unordered_map<
-            std::string,
-            UncommittedNode,
-            StringHashForHeterogeneousLookup,
-            StringHashForHeterogeneousLookup::transparent_key_equal>
-            nodes;
-
-        using NodesIterator = decltype(nodes)::iterator;
-        struct NodesIteratorHash
-        {
-            auto operator()(NodesIterator it) const
-            {
-                return std::hash<std::string_view>{}(it->first);
-            }
-        };
 
         Ephemerals ephemerals;
 
@@ -402,39 +244,9 @@ public:
         ///       this whole map. Maybe do something about it.
         std::unordered_map<int64_t, std::list<std::pair<int64_t, std::shared_ptr<AuthID>>>> session_and_auth;
 
-        /// Mapping of uncommitted transaction to all it's modified nodes for a faster cleanup.
-        /// zxid_to_nodes[0] contains nodes that were duplicated from committed container to
-        /// UncommittedState::nodes, but weren't necessarily updated.
-        using ZxidToNodes = std::map<int64_t, std::unordered_set<NodesIterator, NodesIteratorHash>>;
-        mutable ZxidToNodes zxid_to_nodes;
-
         mutable std::mutex deltas_mutex;
         std::list<Delta> deltas TSA_GUARDED_BY(deltas_mutex);
         KeeperStorage & storage;
-    };
-
-    struct UncommittedNodeRef
-    {
-        std::optional<typename UncommittedState::NodesIterator> it{};
-
-        const Node * get() const { return it ? (*it)->second.node.get() : nullptr; }
-
-        /// Mutable access to the node. Should only be used from `prepare*` functions, together
-        /// with producing deltas matching the changes made to the Node.
-        Node * getMut() const
-        {
-            chassert(it.has_value());
-            chassert((*it)->second.node != nullptr);
-            return (*it)->second.node.get();
-        }
-    };
-
-    struct NodeStreamForSnapshot : public KeeperNodeStreamForSnapshot
-    {
-        size_t next_node_idx = 0;
-        KeeperStorage::Container::const_iterator it;
-
-        bool next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats) override;
     };
 
     UncommittedState uncommitted_state{*this};
@@ -444,29 +256,6 @@ public:
 
     Coordination::Error commit(DeltaRange deltas);
 
-    // Create node in the storage
-    // Returns false if it failed to create the node, true otherwise
-    // We don't care about the exact failure because we should've caught it during preprocessing
-    // createNode and removeNode mutate ttl_paths (guarded by storage_mutex). They are part of the
-    // commit path, which is reached through the dual-mode process/processImpl templates: the same
-    // instantiation serves local reads under a shared lock and writes under an exclusive lock, so a
-    // single TSA_REQUIRES/TSA_REQUIRES_SHARED contract cannot describe it. That is why the whole
-    // storage_mutex-protected core (including all container access) is left unanalyzed; we follow the
-    // same convention here. The lock is always held exclusively when these run (see commit callers).
-    bool
-    createNode(
-        const std::string & path,
-        String data,
-        const Coordination::Stat & stat,
-        ACLId acl_id,
-        bool update_digest,
-        std::optional<int64_t> ttl) TSA_NO_THREAD_SAFETY_ANALYSIS;
-
-    // Remove node in the storage
-    // Returns false if it failed to remove the node, true otherwise
-    // We don't care about the exact failure because we should've caught it during preprocessing
-    bool removeNode(const std::string & path, int32_t version, bool update_digest) TSA_NO_THREAD_SAFETY_ANALYSIS;
-
     /// Used internally by `preprocess` and `processLocal` implementations.
     /// They usually have acl_id readily available, so we don't have to look up the node here.
     bool checkACL(ACLId acl_id, int32_t permissions, int64_t session_id, bool committed) const;
@@ -474,42 +263,39 @@ public:
     /// Used externally. Locks storage mutex and looks up the node.
     bool checkCommittedACL(std::string_view path, int32_t permissions, int64_t session_id);
 
-    KeeperStorage(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes = true);
-    ~KeeperStorage();
+    /// If initialize_system_nodes is false, container starts with no nodes at all, not even "/".
+    static std::unique_ptr<KeeperStorage> create(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes = true);
+
+    virtual ~KeeperStorage();
 
     void initializeSystemNodes() TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     /// Must be called on an empty storage, created with initialize_system_nodes = false.
     /// Caller has already read everything before the nodes, this method starts from createStreams.
     /// TODO: When we have chunked snapshots, probably pass a ThreadPool here.
-    void loadNodesFromSnapshot(KeeperSnapshotReader & reader) TSA_NO_THREAD_SAFETY_ANALYSIS;
-
-    /// Caller must hold storage mutex.
-    /// At most one stream can exist at any given time.
-    /// Stream must be destroyed using finishWritingSnapshot (with storage mutex held), otherwise
-    /// destructor fails assert.
-    std::unique_ptr<KeeperNodeStreamForSnapshot> beginWritingSnapshot();
-    void finishWritingSnapshot(std::unique_ptr<KeeperNodeStreamForSnapshot> stream);
-
-    /// Process user request and return response.
-    /// check_acl = false only when converting data from ZooKeeper.
-    KeeperResponsesForSessions processRequest(
-        const Coordination::ZooKeeperRequestPtr & request,
-        int64_t session_id,
-        std::optional<int64_t> new_last_zxid);
+    void loadFromSnapshot(KeeperSnapshotReader & reader) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     /// Process a batch of local read requests (no deltas, no commit).
-    KeeperResponsesForSessions processLocalRequests(
+    virtual KeeperResponsesForSessions processLocalRequests(
         const KeeperRequestsForSessions & requests,
-        bool check_acl = true);
-    KeeperDigest preprocessRequest(
+        bool check_acl = true) = 0;
+    /// Pre-validate uncommitted request and apply it to uncommitted state.
+    /// check_acl = false only when converting data from ZooKeeper.
+    virtual KeeperDigest preprocessRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,
         int64_t time,
         int64_t new_last_zxid,
         bool check_acl = true,
         std::optional<KeeperDigest> digest = std::nullopt,
-        int64_t log_idx = 0);
+        int64_t log_idx = 0) = 0;
+    /// Commit a previously preprocessed request. Apply the changes to the committed state.
+    /// Produce response for the request + triggered watch notifications.
+    virtual KeeperResponsesForSessions processRequest(
+        const Coordination::ZooKeeperRequestPtr & request,
+        int64_t session_id,
+        std::optional<int64_t> new_last_zxid) = 0;
+
     void rollbackRequest(int64_t rollback_zxid, bool allow_missing);
 
     KeeperResponsesForSessions setWatches(
@@ -532,33 +318,13 @@ public:
         const Coordination::Response * response,
         int64_t session_id);
 
-    void recalculateStats();
-
-private:
-    void removeDigest(const Node & node, std::string_view path);
-    void addDigest(const Node & node, std::string_view path);
-
-public:
-    /// Functions that mutate UncommittedState, add corresponding deltas to staging.deltas, and
-    /// update staging.digest.
-    /// These are public because they're called from the free `preprocess` request handlers.
-    void prepareUpdateNodeStat(std::string_view path, UncommittedNodeRef && node, const KeeperNodeStats & new_stats);
-    void prepareUpdateNodeDataAndStat(std::string_view path, UncommittedNodeRef && node, const KeeperNodeStats & new_stats, std::string_view new_data);
-    void prepareCreateNodeWithoutUpdatingParent(
-        std::string_view path, UncommittedNodeRef && node, const Coordination::Stat & stat,
-        ACLId acl_id, std::string_view data, std::optional<int64_t> ttl);
-    void prepareRemoveNodeWithoutUpdatingParent(std::string_view path, UncommittedNodeRef && node);
-
-    /// Helper that uses getUncommittedNode, prepareRemoveNodeWithoutUpdatingParent, and
-    /// prepareUpdateNodeStat to remove the given set of ephemeral nodes and update their parents'
-    /// stats accordingly. Requires that no nodes in the set are ancestors of other nodes (true for
-    /// ephemeral nodes because they can't have children).
-    void prepareRemoveEphemeralNodes(const std::unordered_set<std::string> & paths, int64_t session_id);
+    std::pair<KeeperResponsesForSessions, Int64> processWatchesImpl(
+        std::string_view path, Coordination::Event event_type);
 
     void prepareAddAuth(std::shared_ptr<KeeperStorage::AuthID> new_auth, int64_t session_id);
-
-    /// Helpers used by other `prepare*` implementations.
-    void prepareWriteCommon(std::string_view path, UncommittedNodeRef & node);
 };
+
+/// Remove `path` from the set of ephemeral paths owned by `session_id`.
+void unregisterEphemeralPath(KeeperStorage::Ephemerals & ephemerals, int64_t session_id, const std::string & path, bool throw_if_missing);
 
 }

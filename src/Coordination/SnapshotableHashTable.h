@@ -268,7 +268,7 @@ public:
         insertOrReplace(key, std::move(value), /*owns_key*/ true);
     }
 
-    bool erase(const std::string & key)
+    bool erase(std::string_view key)
     {
         auto it = map.find(key);
         if (it == map.end())
