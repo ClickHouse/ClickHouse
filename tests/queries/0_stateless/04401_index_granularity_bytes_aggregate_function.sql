@@ -47,8 +47,10 @@ FROM (SELECT g, uniqExactMerge(s.1) AS u FROM amt_nested GROUP BY g);
 
 DROP TABLE IF EXISTS amt_nested;
 
--- Skewed state sizes (most groups tiny, one group huge) must also be split: the size estimate scales
--- by the largest sampled state, so a block dominated by a large state cannot keep one oversized granule.
+-- Skewed state sizes (most groups tiny, one group huge) must also be split. The size must come from the
+-- exact serialized size of every state, not from sampled states: the single huge state below sits at row 1
+-- (g = 2, after ORDER BY g), which no strided sampler hits, so a sampling estimate would miss it and keep
+-- one oversized granule.
 DROP TABLE IF EXISTS amt_skew;
 
 CREATE TABLE amt_skew (g UInt64, s AggregateFunction(uniqExact, UInt64))
@@ -59,9 +61,9 @@ INSERT INTO amt_skew
 SELECT g, uniqExactState(v)
 FROM
 (
-    SELECT 0 AS g, number AS v FROM numbers(300000)
+    SELECT 2 AS g, number AS v FROM numbers(300000)
     UNION ALL
-    SELECT number AS g, number AS v FROM numbers(1, 999)
+    SELECT number AS g, number AS v FROM numbers(1, 2000)
 ) GROUP BY g;
 
 SELECT
@@ -70,8 +72,8 @@ SELECT
 FROM system.parts WHERE table = 'amt_skew' AND active AND database = currentDatabase();
 
 SELECT
-    (SELECT uniqExactMerge(s) FROM amt_skew WHERE g = 0) = 300000
-    AND (SELECT max(u) FROM (SELECT uniqExactMerge(s) AS u FROM amt_skew WHERE g > 0 GROUP BY g)) = 1
+    (SELECT uniqExactMerge(s) FROM amt_skew WHERE g = 2) = 300000
+    AND (SELECT max(u) FROM (SELECT uniqExactMerge(s) AS u FROM amt_skew WHERE g != 2 GROUP BY g)) = 1
         AS skewed_groups_correct;
 
 DROP TABLE IF EXISTS amt_skew;
