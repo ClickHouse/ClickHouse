@@ -105,12 +105,13 @@ public:
     }
 };
 
-/// Discriminators mixed into the cache key so the three cell kinds occupy disjoint key spaces.
+/// Discriminators mixed into the cache key so the cell kinds occupy disjoint key spaces.
 enum class TextIndexPostingsCacheKind : UInt8
 {
     Roaring = 0,
     Segment = 1,
     Flat = 2,
+    Phrase = 3, /// phrase-search result, reusing the Flat (sorted doc-id) payload
 };
 
 /// A single cell of TextIndexPostingsCache. It holds one of:
