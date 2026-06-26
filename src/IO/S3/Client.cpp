@@ -83,6 +83,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_REDIRECTS;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace S3
@@ -183,6 +184,14 @@ void Client::RetryStrategy::RequestBookkeeping(
 
 namespace
 {
+
+/// On cancellation (e.g. KILL QUERY) the S3 retry/redirect loops stop early and keep the last failed
+/// outcome. Surface the cancellation so callers report it instead of a misleading network/S3 error.
+void throwIfQueryWasCanceled()
+{
+    if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+}
 
 void verifyClientConfiguration(const Aws::Client::ClientConfiguration & client_config)
 {
@@ -437,6 +446,8 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
     auto result = HeadObject(static_cast<const Model::HeadObjectRequest&>(request));
     if (result.IsSuccess())
         return result;
+
+    throwIfQueryWasCanceled();
 
     const auto & error = result.GetError();
 
@@ -697,6 +708,8 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         auto result = request_fn(request);
         if (result.IsSuccess())
             return result;
+
+        throwIfQueryWasCanceled();
 
         const auto & error = result.GetError();
 
