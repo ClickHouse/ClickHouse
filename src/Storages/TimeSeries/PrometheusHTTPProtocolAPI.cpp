@@ -104,15 +104,18 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     }
 
     /// Mirror executeQuery's HTTP finish lifecycle:
-    /// - release workload resources (query slot, process-list entry, memory reservation) now, before
-    ///   query_finish_callback flushes the response, so a slow client draining a large response does
-    ///   not keep occupying query concurrency after execution has finished;
+    /// - release the query slot now (before query_finish_callback flushes the response) so a slow
+    ///   client draining a large response does not keep occupying a query concurrency slot after
+    ///   execution has finished. Only the query slot is released here, not the memory reservation:
+    ///   pipeline threads still hold raw pointers to it until io.onFinish() finalizes the pipeline,
+    ///   so releasing it here would be a data race;
     /// - capture finish_time before query_finish_callback so system.query_log.event_time excludes the
     ///   HTTP final flush and matches the regular HTTP path;
     /// - run the callback, then always fire io.onFinish() (recording QueryFinish with
-    ///   read_rows/read_bytes) with that finish_time, catching only the callback's exception and
-    ///   rethrowing it after onFinish so onFinish's own exceptions still propagate normally.
-    io.releaseWorkloadResources();
+    ///   read_rows/read_bytes, and releasing the memory reservation after the pipeline is finalized)
+    ///   with that finish_time, catching only the callback's exception and rethrowing it after
+    ///   onFinish so onFinish's own exceptions still propagate normally.
+    io.releaseQuerySlot();
 
     const auto finish_time = std::chrono::system_clock::now();
     std::exception_ptr callback_exception;
