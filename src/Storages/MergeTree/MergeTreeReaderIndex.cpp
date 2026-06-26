@@ -11,6 +11,18 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+bool MergeTreeReaderIndex::canSkipAnyMark() const
+{
+    /// `canSkipMark` returns true when a skip-index or projection-index read result is present, or when a
+    /// Bernoulli sampling filter drops a whole granule (a granule with no sampled rows).
+    /// `lazy_materializing_rows` alone affects row-level filtering inside a granule and never returns
+    /// true from `canSkipMark`, so a reader configured only for lazy materialization does not skip
+    /// whole marks.
+    return (index_read_result
+        && (index_read_result->skip_index_read_result || index_read_result->projection_index_read_result))
+        || bernoulli_filter != nullptr;
+}
+
 MergeTreeReaderIndex::MergeTreeReaderIndex(
     const IMergeTreeReader * main_reader_,
     MergeTreeIndexReadResultPtr index_read_result_,
@@ -104,7 +116,7 @@ size_t MergeTreeReaderIndex::readRows(
         /// If there are rows to read, apply bitmap filtering.
         if (max_rows_to_read > 0)
         {
-            auto mutable_filter_column = filter_column->assumeMutable();
+            auto mutable_filter_column = IColumn::mutate(std::move(filter_column));
             auto & filter_data = static_cast<ColumnUInt8 &>(*mutable_filter_column).getData();
             index_read_result->projection_index_read_result->appendToFilter(filter_data, starting_row, max_rows_to_read);
             filter_column = std::move(mutable_filter_column);
@@ -131,7 +143,7 @@ size_t MergeTreeReaderIndex::readRows(
         /// If there are rows to read, apply bitmap filtering.
         if (max_rows_to_read > 0)
         {
-            auto mutable_filter_column = filter_column->assumeMutable();
+            auto mutable_filter_column = IColumn::mutate(std::move(filter_column));
             auto & filter_data = static_cast<ColumnUInt8 &>(*mutable_filter_column).getData();
             size_t old_size = filter_data.size();
             filter_data.resize(old_size + max_rows_to_read);
