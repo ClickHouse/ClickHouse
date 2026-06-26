@@ -44,4 +44,11 @@ target_include_directories(_h3 SYSTEM PUBLIC "${H3_SOURCE_DIR}/include")
 target_include_directories(_h3 SYSTEM PUBLIC "${H3_BINARY_DIR}/include")
 target_compile_definitions(_h3 PRIVATE H3_HAVE_VLA)
 
+# h3 geo math (latLng/vec2d/vec3d/bbox/faceijk) is heavy on libm sqrt/sin/cos/atan2. Scope the
+# same two FP optimizations used for ClickHouse's own geo functions to this contrib only:
+#  - -fno-math-errno: drop the per-call errno-guard branch+wrapper (no result change), and
+#  - -ffp-contract=fast: contract the haversine/coordinate math into FMA (overrides the global
+#    -ffp-contract=off, so the cross-platform-determinism cost stays confined to h3).
+target_compile_options(_h3 PRIVATE -fno-math-errno -ffp-contract=fast)
+
 add_library(ch_contrib::h3 ALIAS _h3)

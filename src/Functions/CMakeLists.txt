@@ -180,6 +180,16 @@ add_subdirectory(keyvaluepair)
 # Signed integer overflow on user-provided data inside boost::geometry - ignore.
 set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-sanitize=signed-integer-overflow)
 
+# Geo-distance functions (greatCircleDistance, greatCircleAngle, geoDistance) are heavy on
+# `sqrt` and FP arithmetic over an already-approximate LUT model. Scope two FP optimizations
+# to this TU only:
+#  - -fno-math-errno: drop the per-`sqrt` errno-guard branch+libm-wrapper call (no result
+#    change; lets the hot loop emit `vsqrtpd`), and
+#  - -ffp-contract=fast: contract the LUT interpolation and metric sums into FMA.
+# The latter overrides the global -ffp-contract=off, so the cross-platform-determinism cost is
+# confined to these functions, whose LUT already carries ~1e-5 relative error.
+set_source_files_properties("greatCircleDistance.cpp" PROPERTIES COMPILE_FLAGS "-fno-math-errno -ffp-contract=fast")
+
 # TODO: at v3 these wrapper TUs regress because the SLP vectorizer / SIMD-aware codegen
 # fires inside the per-row dispatch (YMM scratch zero-init in `stringJaccardIndex`,
 # YMM `ColumnString` prologue forcing `vzeroupper` around `randomString`'s `getUInt`,
