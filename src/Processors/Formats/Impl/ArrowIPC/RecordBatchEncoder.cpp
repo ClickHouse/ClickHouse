@@ -383,6 +383,18 @@ void RecordBatchEncoder::encodeField(const IColumn & column, const DataTypePtr &
         return;
     }
 
+    /// Materialize a lazily-replicated column (`ColumnReplicated`, produced by `JOIN`/`ARRAY JOIN` with
+    /// `enable_lazy_columns_replication`) before the type-specific casts below, matching the Apache Arrow
+    /// library writer's normalization. We could not reproduce such a column actually reaching this writer
+    /// (the SELECT pipeline materializes it before the output format), so this is defensive parity with the
+    /// library rather than a fix for an observed failure.
+    if (column.isReplicated())
+    {
+        auto full = column.convertToFullColumnIfReplicated();
+        encodeField(*full, type, num_rows);
+        return;
+    }
+
     if (type->lowCardinality())
     {
         /// Materialize LowCardinality to its full column (matches output_format_arrow_low_cardinality_as_dictionary=false).

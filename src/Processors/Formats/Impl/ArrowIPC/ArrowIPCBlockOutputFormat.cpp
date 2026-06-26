@@ -280,6 +280,12 @@ std::pair<ColumnPtr, DataTypePtr> ArrowIPCBlockOutputFormat::substituteDictionar
     if (isColumnConst(*column))
         return substituteDictionaries(column->convertToFullColumnIfConst(), type, plan);
 
+    /// Same for a lazily-replicated column (`ColumnReplicated`): materialize it before the
+    /// `ColumnLowCardinality`/container casts below, matching the Apache Arrow library writer. (Defensive
+    /// parity — we could not reproduce a `ColumnReplicated` reaching this writer.)
+    if (column->isReplicated())
+        return substituteDictionaries(column->convertToFullColumnIfReplicated(), type, plan);
+
     if (plan.here)
         return encodeDictionaryColumn(column, type, *plan.here);
 
