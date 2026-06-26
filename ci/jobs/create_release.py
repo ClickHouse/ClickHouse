@@ -839,19 +839,12 @@ class ReleaseInfo:
                     verbose=True,
                     retries=5,
                 ), f"Failed to create release {self.release_tag}"
-            # On a rerun some assets may already be uploaded. Fetch the list and
-            # skip those files to avoid redundant uploads.
-            uploaded = set(
-                Shell.get_output(
-                    f"gh release view --repo {repo} {self.release_tag} "
-                    f"--json assets --jq '[.assets[].name][]'"
-                ).splitlines()
-            )
-            for file, cmd in zip(packages_files, cmds_upload):
-                name = Path(file).name
-                if name in uploaded:
-                    print(f"Asset {name} already uploaded — skipping")
-                    continue
+            # Always upload every asset with `--clobber`. The upload is
+            # idempotent (it overwrites an existing asset of the same name), so
+            # re-running repairs an asset that a previous attempt uploaded with
+            # wrong/partial contents. A name-only "already uploaded" skip would
+            # bypass `--clobber` and keep publishing the stale asset.
+            for cmd in cmds_upload:
                 Shell.check(cmd, strict=True, verbose=True, retries=5)
             self.release_url = (
                 f"https://github.com/{GITHUB_REPOSITORY}/releases/tag/{self.release_tag}"
