@@ -258,3 +258,35 @@ CREATE TABLE t_mat_ttl_where_expr (a Int, d DateTime MATERIALIZED toDateTime(170
     ENGINE = MergeTree() ORDER BY a TTL d + INTERVAL 1 DAY DELETE WHERE d > toDateTime(1700000000);
 ALTER TABLE t_mat_ttl_where_expr MATERIALIZE COLUMN d;
 DROP TABLE t_mat_ttl_where_expr;
+
+-- Case 25: A skip index over a *subcolumn* of a column that a TTL resets. Materializing `c` drives the
+-- column TTL `x TTL c + ...`, which the mutation re-evaluates and can reset `x` (so the stored `x.k`
+-- changes); but the minmax index `idx_xk` over `x.k` cannot be rebuilt from the reset parent — the
+-- mutation reads the subcolumn `x.k` as an unchanged column straight from the source part rather than
+-- deriving it from the recalculated parent, leaving the index with stale bounds (the same gap exists
+-- for UPDATE of `c`). Following the same fail-close approach used for subcolumn TTL bounds, refuse.
+DROP TABLE IF EXISTS t_mat_ttl_index_subcolumn;
+CREATE TABLE t_mat_ttl_index_subcolumn
+    (a UInt64, c DateTime MATERIALIZED toDateTime(1000000000),
+     x Tuple(k UInt64, v UInt64) TTL c + INTERVAL 1 SECOND,
+     INDEX idx_xk x.k TYPE minmax GRANULARITY 1)
+    ENGINE = MergeTree() ORDER BY a;
+ALTER TABLE t_mat_ttl_index_subcolumn MATERIALIZE COLUMN c; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_ttl_index_subcolumn;
+
+-- Case 26: The Case 25 refusal must NOT over-reject a skip index over the *whole* TTL-target column:
+-- that one is rebuilt correctly by the generic derived-object scan (the target column is fully
+-- recalculated). `c` is materialized to a past value so the column TTL resets `y` to its default 0;
+-- the minmax index `idx_y` over the full column `y` is rebuilt, so a query forced through it for the
+-- new value 0 still finds the row (a stale, hardlinked index would prune it away and return 0).
+DROP TABLE IF EXISTS t_mat_ttl_index_full;
+CREATE TABLE t_mat_ttl_index_full
+    (a UInt64, c DateTime MATERIALIZED toDateTime(2000000000),
+     y UInt64 TTL c + INTERVAL 1 SECOND,
+     INDEX idx_y y TYPE minmax GRANULARITY 1)
+    ENGINE = MergeTree() ORDER BY a SETTINGS index_granularity = 1;
+INSERT INTO t_mat_ttl_index_full (a, y) VALUES (1, 100);
+ALTER TABLE t_mat_ttl_index_full MODIFY COLUMN c DateTime MATERIALIZED toDateTime(1000000000);
+ALTER TABLE t_mat_ttl_index_full MATERIALIZE COLUMN c SETTINGS mutations_sync = 2;
+SELECT count() FROM t_mat_ttl_index_full WHERE y = 0 SETTINGS force_data_skipping_indices = 'idx_y';
+DROP TABLE t_mat_ttl_index_full;

@@ -1308,11 +1308,53 @@ void MutationsInterpreter::prepare(bool dry_run)
             /// table with `TTL c2 + INTERVAL 1 DAY`, TTL scheduling/deletes/moves would still use the
             /// old bounds. The required TTL input columns are fed into the mutation stream as well,
             /// just like `MATERIALIZE TTL` does for the UPDATE/DELETE case.
+            Names ttl_target_columns;
             for (const auto & dependency : getAllColumnDependencies(metadata_snapshot, rewritten_columns, has_dependency))
             {
                 if (dependency.kind == ColumnDependency::TTL_EXPRESSION
                     || dependency.kind == ColumnDependency::TTL_TARGET)
                     dependencies.insert(dependency);
+
+                /// A `TTL_TARGET` dependency means the mutation re-evaluates a column TTL whose
+                /// expression reads a rewritten column, and `TTLTransform` rewrites (resets on
+                /// expiry) that TTL's *target* column — e.g. with `x ... TTL c + INTERVAL ...`,
+                /// `MATERIALIZE COLUMN c` resets `x`.
+                if (dependency.kind == ColumnDependency::TTL_TARGET)
+                    ttl_target_columns.push_back(dependency.column_name);
+            }
+
+            /// A TTL-target column rewritten as above lands in `changed_columns`, so the generic
+            /// derived-object scan near the end of `prepare` correctly rebuilds a skip index that
+            /// reads the *whole* target column. A skip index that reads only a *subcolumn* of the
+            /// target (`INDEX idx x.k` while a TTL resets the parent `x`) cannot be rebuilt correctly,
+            /// however: the mutation reads the subcolumn `x.k` as an unchanged column straight from
+            /// the source part instead of deriving it from the reset parent, so the rebuilt index
+            /// would keep stale values (queries forced through it could then be pruned with stale
+            /// bounds). This is a limitation of the shared mutation machinery — UPDATE of such a
+            /// TTL-expression column leaves the same subcolumn-over-target index stale — so, following
+            /// the same fail-close approach used for subcolumn TTL bounds above, refuse the command
+            /// rather than silently producing a stale index. (Projections cannot reference individual
+            /// subcolumns, and statistics are always whole-column, so only skip indices are affected.)
+            if (!ttl_target_columns.empty())
+            {
+                /// Refuse based on the table metadata (not a specific part's materialized indices),
+                /// so the command is rejected up front rather than failing mid-mutation, matching the
+                /// other refusals in this block.
+                for (const auto & index : indices_desc)
+                {
+                    for (const auto & required_column : index.expression->getRequiredColumns())
+                    {
+                        auto resolved = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_column);
+                        if (resolved && resolved->isSubcolumn()
+                            && std::ranges::find(ttl_target_columns, resolved->getNameInStorage()) != ttl_target_columns.end())
+                            throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                                "Refused to materialize column {} because it drives a TTL that resets column {}, whose "
+                                "subcolumn {} is read by skip index {}. Recomputing the column would require rebuilding "
+                                "the index from the subcolumn, which is not supported for subcolumn dependencies",
+                                backQuote(command.column_name), backQuote(resolved->getNameInStorage()),
+                                backQuote(required_column), backQuote(index.name));
+                    }
+                }
             }
 
             /// `TTL <expr> DELETE WHERE <cond>` (a rows-where TTL) and `TTL <expr> GROUP BY ... [WHERE
