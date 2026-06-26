@@ -171,4 +171,9 @@ struct FunctionDocumentation
 
 };
 
+/// Whether a documentation type literal (e.g. "String", "Array(UInt8)") maps to a documentation link.
+/// Rendering an unknown type degrades gracefully rather than failing, so this is exposed for tests that
+/// assert every registered function declares only known, linkable types.
+bool documentationTypeHasLink(const std::string & type);
+
 }

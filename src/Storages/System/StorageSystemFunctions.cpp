@@ -81,15 +81,40 @@ namespace
             }
             else
             {
-                auto documentation = factory.getDocumentation(name);
-                res_columns[6]->insert(documentation.description);
-                res_columns[7]->insert(documentation.syntaxAsString());
-                res_columns[8]->insert(documentation.argumentsAsString());
-                res_columns[9]->insert(documentation.parametersAsString());
-                res_columns[10]->insert(documentation.returnedValueAsString());
-                res_columns[11]->insert(documentation.examplesAsString());
-                res_columns[12]->insert(documentation.introducedInAsString());
-                res_columns[13]->insert(documentation.categoryAsString());
+                try
+                {
+                    /// Render every field before inserting anything, so a throw leaves all columns untouched
+                    /// for this row (the catch then fills consistent defaults). One function's malformed
+                    /// documentation must not break `system.functions` for everyone.
+                    auto documentation = factory.getDocumentation(name);
+                    const String description = documentation.description;
+                    const String syntax = documentation.syntaxAsString();
+                    const String arguments = documentation.argumentsAsString();
+                    const String parameters = documentation.parametersAsString();
+                    const String returned_value = documentation.returnedValueAsString();
+                    const String examples = documentation.examplesAsString();
+                    const String introduced_in = documentation.introducedInAsString();
+                    const String category = documentation.categoryAsString();
+
+                    res_columns[6]->insert(description);
+                    res_columns[7]->insert(syntax);
+                    res_columns[8]->insert(arguments);
+                    res_columns[9]->insert(parameters);
+                    res_columns[10]->insert(returned_value);
+                    res_columns[11]->insert(examples);
+                    res_columns[12]->insert(introduced_in);
+                    res_columns[13]->insert(category);
+                }
+                catch (...)
+                {
+                    LOG_DEBUG(
+                        getLogger("system.functions"),
+                        "Cannot render documentation for function {}: {}",
+                        name,
+                        getCurrentExceptionMessage(/* with_stacktrace */ false));
+                    for (size_t i = 6; i <= 13; ++i)
+                        res_columns[i]->insertDefault();
+                }
             }
         }
         else

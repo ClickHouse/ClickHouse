@@ -6,7 +6,9 @@
 #include <Common/AsynchronousMetrics.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Documentation.h>
+#include <Common/Exception.h>
 #include <Common/FunctionDocumentation.h>
+#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Field.h>
@@ -221,15 +223,28 @@ String renderDoc(const Documentation & doc)
 
 String renderFunctionDoc(const FunctionDocumentation & doc)
 {
-    return composeMarkdown(
-        doc.description,
-        doc.syntaxAsString(),
-        doc.argumentsAsString(),
-        doc.parametersAsString(),
-        doc.returnedValueAsString(),
-        doc.examplesAsString(),
-        doc.introducedInAsString(),
-        /*related=*/ {});
+    try
+    {
+        return composeMarkdown(
+            doc.description,
+            doc.syntaxAsString(),
+            doc.argumentsAsString(),
+            doc.parametersAsString(),
+            doc.returnedValueAsString(),
+            doc.examplesAsString(),
+            doc.introducedInAsString(),
+            /*related=*/ {});
+    }
+    catch (...)
+    {
+        /// One entity's malformed documentation must not break `system.documentation` for everyone;
+        /// fall back to the plain description.
+        LOG_DEBUG(
+            getLogger("system.documentation"),
+            "Cannot render documentation: {}",
+            getCurrentExceptionMessage(/* with_stacktrace */ false));
+        return doc.description;
+    }
 }
 
 void addRow(MutableColumns & res_columns, EntityType type, const String & name, const String & description, std::string_view source)
