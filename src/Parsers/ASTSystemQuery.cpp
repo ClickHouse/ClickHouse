@@ -604,6 +604,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
         case Type::CLEAR_PAIMON_METADATA_CACHE:
         case Type::CLEAR_PARQUET_METADATA_CACHE:
+        case Type::CLEAR_POINT_IN_POLYGON_CACHE:
         case Type::CLEAR_AVRO_SCHEMA_CACHE:
         case Type::RESET_COVERAGE:
         case Type::RESTART_REPLICAS:
