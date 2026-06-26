@@ -28,7 +28,8 @@ static std::string getOrCreateCustomDisk(
     const ASTs & disk_args,
     const std::string & serialization,
     ContextPtr context,
-    bool attach)
+    bool attach,
+    bool for_system_database)
 {
     std::string default_path = "/etc/metrika.xml";
 
@@ -42,7 +43,7 @@ static std::string getOrCreateCustomDisk(
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
     {
         DynamicS3DiskCredentialInfo s3_disk_info;
-        auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context, attach, &s3_disk_info);
+        auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context, attach, &s3_disk_info, for_system_database);
 
         Poco::AutoPtr<Poco::XML::NamePool> name_pool(new Poco::XML::NamePool());
         Poco::XML::DOMParser dom_parser(name_pool);
@@ -150,6 +151,7 @@ public:
     {
         ContextPtr context;
         bool attach;
+        bool for_system_database;
     };
 
     static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
@@ -162,14 +164,14 @@ public:
             const auto * function_args_expr = assert_cast<const ASTExpressionList *>(function->arguments.get());
             const auto & function_args = function_args_expr->children;
             auto disk_setting_string = function->formatWithSecretsOneLine();
-            auto disk_name = getOrCreateCustomDisk(function_args, disk_setting_string, data.context, data.attach);
+            auto disk_name = getOrCreateCustomDisk(function_args, disk_setting_string, data.context, data.attach, data.for_system_database);
             ast = make_intrusive<ASTLiteral>(disk_name);
         }
     }
 };
 
 
-std::string DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast, ContextPtr context, bool attach)
+std::string DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast, ContextPtr context, bool attach, bool for_system_database)
 {
     if (!isDiskFunction(disk_function_ast))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a disk function");
@@ -177,7 +179,7 @@ std::string DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast, Cont
     auto ast = disk_function_ast->clone();
 
     using FlattenDiskConfigurationVisitor = InDepthNodeVisitor<DiskConfigurationFlattener, false>;
-    FlattenDiskConfigurationVisitor::Data data{context, attach};
+    FlattenDiskConfigurationVisitor::Data data{context, attach, for_system_database};
     FlattenDiskConfigurationVisitor{data}.visit(ast);
 
     return assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>();

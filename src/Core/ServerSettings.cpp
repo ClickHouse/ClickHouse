@@ -1376,6 +1376,14 @@ later re-bound to `use_environment_credentials = 1` — from aborting server sta
 When disabled, loading such an object instead fails, which can prevent the server from starting. Use this only
 if you prefer a hard failure over a silently inaccessible table, disk, or catalog database.
 )", 0) \
+    DECLARE(Bool, s3_allow_server_credentials_for_system_table_disks, false, R"(
+Allows a dynamic `disk(type = s3, ...)` of a table in the `system` database to use the server's own (ambient)
+S3 credentials, exempting it from the `s3_allow_server_credentials_in_user_queries` restriction. This is for
+server-internal infrastructure that ships system tables to S3 with the server's identity (attached by the
+cloud operator into the `system` database). Unlike the session setting, it is a server-level setting, so the
+exemption also applies when the table is reloaded from metadata on restart. It is scoped to the `system`
+database, which ordinary users cannot create tables in, so it does not relax the restriction for user queries.
+)", 0) \
     DECLARE(Int32, os_threads_nice_value_merge_mutate, 0, R"(
     Linux nice value for merge and mutation threads. Lower values mean higher CPU priority.
 

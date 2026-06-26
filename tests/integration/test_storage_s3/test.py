@@ -153,6 +153,22 @@ def started_cluster():
             user_configs=["configs/sync_insert.xml"],
             stay_alive=True,
         )
+        # Like s3_environment_credentials_restricted, but with the server setting that exempts
+        # `system`-database S3 disks from the restriction (server-internal system-table infrastructure).
+        cluster.add_instance(
+            "s3_system_table_disk",
+            with_minio=True,
+            env_variables={
+                "AWS_ACCESS_KEY_ID": "minio",
+                "AWS_SECRET_ACCESS_KEY": "ClickHouse_Minio_P@ssw0rd",
+            },
+            main_configs=[
+                "configs/use_environment_credentials.xml",
+                "configs/allow_system_table_disk_server_credentials.xml",
+            ],
+            user_configs=["configs/sync_insert.xml"],
+            stay_alive=True,
+        )
         cluster.add_instance(
             "dummy2",
             with_minio=True,
@@ -2269,6 +2285,47 @@ def test_dynamic_s3_disk_anonymous_on_reload(started_cluster):
     # load time), so the table is inaccessible -- it must not silently return data through the server identity.
     with pytest.raises(helpers.client.QueryRuntimeException):
         instance.query("SELECT count() FROM t_dynamic_disk", settings=allow)
+
+
+def test_system_table_s3_disk_uses_server_credentials_with_server_setting(started_cluster):
+    # A dynamic S3 disk of a `system`-database table is server-internal infrastructure (the cloud operator
+    # attaches system tables to S3 with the server's identity). With the server setting
+    # s3_allow_server_credentials_for_system_table_disks = 1 it may use the server's ambient credentials despite
+    # the default user-query restriction, and -- unlike the session opt-in -- this survives a restart, because
+    # the exemption is re-evaluated from server config on metadata reload. In production a regular user cannot
+    # create a `system` table (the permission is removed), so only the operator reaches this exemption.
+    instance = started_cluster.instances["s3_system_table_disk"]
+    bucket = started_cluster.minio_restricted_bucket
+    disk_endpoint = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/system_disk/"
+    disk_def = f"disk(type = s3, endpoint = '{disk_endpoint}', use_environment_credentials = 1)"
+
+    instance.query("DROP TABLE IF EXISTS system.t_sys_s3 SYNC")
+    instance.query(
+        f"CREATE TABLE system.t_sys_s3 (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS disk = {disk_def}"
+    )
+    instance.query("INSERT INTO system.t_sys_s3 SELECT * FROM numbers(100)")
+    assert instance.query("SELECT count() FROM system.t_sys_s3").strip() == "100"
+
+    # The exemption is server-level, so the disk keeps the server credentials after a restart (no anonymous
+    # downgrade) and the table is still readable.
+    instance.restart_clickhouse()
+    assert instance.query("SELECT count() FROM system.t_sys_s3").strip() == "100"
+
+    instance.query("DROP TABLE system.t_sys_s3 SYNC")
+
+
+def test_system_table_s3_disk_restricted_without_server_setting(started_cluster):
+    # Without the server setting, a `system`-database S3 disk that resolves the server credentials is still
+    # refused, so the exemption is genuinely opt-in per service.
+    instance = started_cluster.instances["s3_environment_credentials_restricted"]
+    bucket = started_cluster.minio_restricted_bucket
+    disk_endpoint = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/system_disk_norestr/"
+    disk_def = f"disk(type = s3, endpoint = '{disk_endpoint}', use_environment_credentials = 1)"
+
+    instance.query("DROP TABLE IF EXISTS system.t_sys_s3_norestr SYNC")
+    assert "ACCESS_DENIED" in instance.query_and_get_error(
+        f"CREATE TABLE system.t_sys_s3_norestr (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS disk = {disk_def}"
+    )
 
 
 def test_s3_list_objects_failure(started_cluster):

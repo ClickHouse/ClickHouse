@@ -40,6 +40,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsBool s3_load_table_anonymously_if_credentials_restricted;
+    extern const ServerSettingsBool s3_allow_server_credentials_for_system_table_disks;
 }
 
 [[noreturn]] static void throwBadConfiguration(const std::string & message = "")
@@ -50,7 +51,7 @@ namespace ServerSetting
         message.empty() ? "" : ": " + message);
 }
 
-Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & disk_args, ContextPtr context, bool is_loading_from_existing_metadata, DynamicS3DiskCredentialInfo * info)
+Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & disk_args, ContextPtr context, bool is_loading_from_existing_metadata, DynamicS3DiskCredentialInfo * info, bool for_system_database)
 {
     if (disk_args.empty())
         throwBadConfiguration("expected non-empty list of arguments");
@@ -221,6 +222,13 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         ? has_explicit_gcp_adc
         : (has_explicit_credentials || has_no_sign_request || allowed_anonymous);
 
+    /// A disk of a table in the `system` database is server-internal infrastructure (attached by the operator
+    /// to ship system tables to S3 with the server's identity), exempt from the user-query restriction when the
+    /// server setting allows it. Unlike the session setting this also applies on metadata reload, and `system`
+    /// is not user-writable, so it does not relax the restriction for user queries.
+    const bool system_disk_exempt = for_system_database
+        && context->getGlobalContext()->getServerSettings()[ServerSetting::s3_allow_server_credentials_for_system_table_disks];
+
     if (info)
     {
         info->has_include = has_include;
@@ -228,9 +236,10 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         info->ast_has_no_sign_request = has_no_sign_request;
         info->ast_has_use_environment_credentials_off = allowed_anonymous;
         info->ast_has_explicit_gcp_adc = has_explicit_gcp_adc;
+        info->restriction_exempt = system_disk_exempt;
     }
 
-    if (maybe_s3_disk && context->shouldRestrictUserQueryS3Credentials())
+    if (maybe_s3_disk && context->shouldRestrictUserQueryS3Credentials() && !system_disk_exempt)
     {
         /// Refuse anything that is not a safe explicit form (indirection, or no explicit credentials).
         const bool denied = type_is_indirect || has_include || has_indirect_auth_field || !ast_has_explicit_credentials;
@@ -283,7 +292,8 @@ void validateResolvedS3DiskCredentials(
     /// Re-check after `include` is resolved: an `include` can inject an S3 type and credentials past the
     /// pre-resolution check (the disk is then built with `for_disk_s3 = true`, bypassing `getClient`). Only an
     /// `include`d disk needs this; the resolved auth mode is validated against the form the AST itself proved.
-    if (!info.has_include || !context->shouldRestrictUserQueryS3Credentials())
+    /// `restriction_exempt` carries a pre-resolution exemption (e.g. a server-internal `system`-database disk).
+    if (!info.has_include || !context->shouldRestrictUserQueryS3Credentials() || info.restriction_exempt)
         return;
 
     auto is_s3_type = [](const String & t) { return t == "s3" || t.starts_with("s3_"); };

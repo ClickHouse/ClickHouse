@@ -32,6 +32,9 @@ struct DynamicS3DiskCredentialInfo
     bool load_anonymously = false;
     /// The AST used `include`, so the resolved credentials' provenance cannot be trusted.
     bool has_include = false;
+    /// The pre-resolution check exempted this disk from the restriction (e.g. a server-internal
+    /// `system`-database disk), so the post-`include` re-check must not re-apply it.
+    bool restriction_exempt = false;
     /// The safe credential forms the AST itself supplied with literal values; the resolved auth mode is
     /// validated against these.
     bool ast_has_explicit_key_pair = false;                 /// literal `access_key_id` + `secret_access_key`
@@ -49,7 +52,7 @@ struct DynamicS3DiskCredentialInfo
 /// The server-managed S3 credential restriction is applied even on metadata load. The pre-resolution outcome
 /// is reported through `*info`; after resolving `include`, the caller must call `forceAnonymousS3DiskConfig`
 /// (when `info->load_anonymously`) or `validateResolvedS3DiskCredentials`.
-[[ maybe_unused ]] Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & disk_args, ContextPtr context, bool is_loading_from_existing_metadata = false, DynamicS3DiskCredentialInfo * info = nullptr);
+[[ maybe_unused ]] Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & disk_args, ContextPtr context, bool is_loading_from_existing_metadata = false, DynamicS3DiskCredentialInfo * info = nullptr, bool for_system_database = false);
 
 /// Rewrite a dynamic disk configuration so its S3 client is built anonymously (see `getDiskConfigurationFromASTImpl`).
 void forceAnonymousS3DiskConfig(Poco::Util::AbstractConfiguration & config);
