@@ -1441,6 +1441,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                     part.part_starting_offset_in_query,
                     std::move(ranges_to_get_from_part),
                     part.read_hints);
+                /// The Bernoulli sampling filter is per-part read state (like `read_hints`) and must
+                /// survive splitting a part across streams, otherwise the sample is silently dropped.
+                new_parts.back().bernoulli_filter = part.bernoulli_filter;
             }
 
             split_parts_and_ranges.emplace_back(std::move(new_parts));
@@ -1785,6 +1788,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                     part_it->part_starting_offset_in_query,
                     part_it->ranges,
                     part_it->read_hints);
+                /// Carry the per-part Bernoulli sampling filter through the FINAL reconstruction,
+                /// otherwise `FINAL SAMPLE` reaches the readers without it and returns unsampled rows.
+                new_parts.back().bernoulli_filter = part_it->bernoulli_filter;
                 current_ranges_marks += part_it->getMarksCount();
             }
 

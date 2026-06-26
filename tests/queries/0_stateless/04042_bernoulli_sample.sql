@@ -231,6 +231,46 @@ SELECT count() FROM (EXPLAIN SELECT sum(v) FROM t_bernoulli_proj SAMPLE 0.1) WHE
 -- A pre-aggregated projection result would have returned 100000 here.
 SELECT sum(v) FROM t_bernoulli_proj SAMPLE 0.1 SETTINGS bernoulli_sample_seed = 42;
 
+SELECT 'bernoulli survives FINAL merge-path reconstruction';
+-- FINAL over overlapping parts routes through spreadMarkRangesAmongStreamsFinal and
+-- splitPartsWithRangesByPrimaryKey, which rebuild RangesInDataPart objects. The per-part
+-- Bernoulli filter must be carried through, otherwise FINAL SAMPLE silently bypasses the
+-- filter and returns the full (unsampled) table.
+DROP TABLE IF EXISTS t_bernoulli_final;
+CREATE TABLE t_bernoulli_final (x UInt64) ENGINE = ReplacingMergeTree ORDER BY x;
+INSERT INTO t_bernoulli_final SELECT number FROM numbers(100000);
+INSERT INTO t_bernoulli_final SELECT number FROM numbers(100000);
+-- 100000 unique rows after FINAL dedup; a 0.1 sample must be far below that (would be
+-- 100000 if the filter were dropped during the merge-path reconstruction).
+SELECT count() < 40000 FROM t_bernoulli_final FINAL SAMPLE 0.1 SETTINGS bernoulli_sample_seed = 42;
+-- Thread-count independence must hold through the merge path too.
+SELECT
+    (SELECT count() FROM t_bernoulli_final FINAL SAMPLE 0.1 SETTINGS bernoulli_sample_seed = 42, max_threads = 1)
+    =
+    (SELECT count() FROM t_bernoulli_final FINAL SAMPLE 0.1 SETTINGS bernoulli_sample_seed = 42, max_threads = 4);
+DROP TABLE t_bernoulli_final;
+
+SELECT 'bernoulli survives read-in-order split across streams';
+-- ORDER BY matching the sorting key with max_threads > 1 and optimize_read_in_order routes
+-- through spreadMarkRangesAmongStreamsWithOrder, which splits a part across streams and
+-- rebuilds RangesInDataPart per sub-range. The Bernoulli filter must survive the split,
+-- otherwise the sample is dropped on the multi-stream path and all rows are returned.
+DROP TABLE IF EXISTS t_bernoulli_order;
+CREATE TABLE t_bernoulli_order (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t_bernoulli_order SELECT number FROM numbers(100000);
+SELECT count() < 40000 FROM (
+    SELECT x FROM t_bernoulli_order SAMPLE 0.1 ORDER BY x
+    SETTINGS bernoulli_sample_seed = 42, max_threads = 4, optimize_read_in_order = 1);
+-- Single-stream (no split) vs multi-stream (split) must agree: a dropped filter on the
+-- split path would make the multi-stream count jump to the full table size.
+SELECT
+    (SELECT count() FROM (SELECT x FROM t_bernoulli_order SAMPLE 0.1 ORDER BY x
+        SETTINGS bernoulli_sample_seed = 42, max_threads = 1, optimize_read_in_order = 1))
+    =
+    (SELECT count() FROM (SELECT x FROM t_bernoulli_order SAMPLE 0.1 ORDER BY x
+        SETTINGS bernoulli_sample_seed = 42, max_threads = 4, optimize_read_in_order = 1));
+DROP TABLE t_bernoulli_order;
+
 DROP TABLE t_bernoulli;
 DROP TABLE t_bernoulli_empty;
 DROP TABLE t_bernoulli_memory;
