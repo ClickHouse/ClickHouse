@@ -1,0 +1,35 @@
+--- 1. one child, same rp same column
+1	10
+3	30
+--- 2. one child, rp on different columns
+1	10
+--- 3. one child, different rps same column
+1	10
+3	30
+--- 4. one child, self-excluding rps
+--- 5. multi child, same rp same column
+1	10
+3	30
+5	50
+7	70
+--- 6. multi child, rp on different columns
+1	10
+5	50
+--- 7. multi child, different rps same column
+1	10
+3	30
+5	50
+7	70
+--- 8. multi child, self-excluding rps
+--- 9. multi child, one child rp, merge different column
+1	10
+5	50
+6	60
+--- 10. multi child, one child rp, merge same column
+1	10
+3	30
+5	50
+7	70
+--- 11. multi child, one child rp, merge different rp same column
+6	60
+8	80
