@@ -39,6 +39,6 @@ struct Query;
 std::shared_ptr<const Query> prepareQuery(std::string_view method, const float * ref, size_t dimensions, size_t bits, bool is_l2);
 
 /// Approximate distance between the prepared query and one encoded vector (`code` is `bytesPerVector` bytes).
-float distance(const Query & query, const char * code);
+float distance(const Query & q, const char * code);
 
 }

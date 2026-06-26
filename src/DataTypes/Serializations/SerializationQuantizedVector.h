@@ -43,8 +43,8 @@ private:
     DataTypePtr codes_type;            /// FixedString(bytes_per_vector)
     SerializationPtr codes_serialization; /// SerializationNamed(FixedString, "quantized", QuantizedCodes)
 
-    /// Encode rows [offset, offset + limit) of the dense vector column into a FixedString(bytes_per_vector) column.
-    ColumnPtr encodeCodes(const IColumn & column, size_t offset, size_t limit) const;
+    /// Encode rows [offset, offset + count) of the dense vector column into a FixedString(bytes_per_vector) column.
+    ColumnPtr encodeCodes(const IColumn & column, size_t offset, size_t count) const;
 };
 
 }
