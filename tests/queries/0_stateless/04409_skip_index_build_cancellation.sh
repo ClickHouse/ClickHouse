@@ -7,14 +7,17 @@
 # to return quickly. Without the per-granule cancellation check the KILL blocks until the
 # whole block's build completes and the timeout below trips.
 #
-# no-random-settings: the test reads 30M rows in a single large INSERT and controls
-# termination itself via KILL QUERY. Randomized query limits break that contract -- e.g.
-# an injected 'max_rows_to_read' aborts the INSERT with TOO_MANY_ROWS before the build even
-# starts, and a random 'max_execution_time' / 'max_memory_usage' would terminate it instead
-# of our KILL. We need the read/time/memory limits left at their (unlimited) defaults.
-# no-random-merge-tree-settings: a randomized index_granularity changes the granule count
-# and can make the build pathologically slow or memory-heavy; the timing/memory assumptions
-# here need the pinned granularity below.
+# The test reads 30M rows in a single large INSERT and controls termination itself via
+# KILL QUERY, so the read/time limits must be left out of its way:
+# * The CI 'default' test profile (tests/config/users.d/limits.yaml) caps 'max_rows_to_read'
+#   at 20M, which aborts the 30M-row INSERT with TOO_MANY_ROWS before the build even starts.
+#   We override it with --max_rows_to_read 0 on the INSERT below (this is a fixed profile
+#   limit, not a randomized one, so no-random-settings alone does not relax it).
+# * no-random-settings: a random 'max_execution_time' / 'max_memory_usage' would terminate
+#   the long INSERT instead of our KILL.
+# * no-random-merge-tree-settings: a randomized index_granularity changes the granule count
+#   and can make the build pathologically slow or memory-heavy; the timing/memory assumptions
+#   here need the pinned granularity below.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -39,6 +42,7 @@ insert_err="${CLICKHOUSE_TMP}/04409_insert_err.txt"
 ${CLICKHOUSE_CLIENT} --query_id "$query_id" \
     --max_block_size 30000000 --max_insert_block_size 30000000 \
     --min_insert_block_size_rows 0 --min_insert_block_size_bytes 0 \
+    --max_rows_to_read 0 \
     -q "INSERT INTO t_skip_index_cancel SELECT number % 1000 FROM numbers(30000000)" >/dev/null 2>"$insert_err" &
 insert_pid=$!
 
