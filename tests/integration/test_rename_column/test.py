@@ -178,7 +178,7 @@ def insert(
                     )
                 )
             node.query(";\n".join(query))
-        except QueryRuntimeException as ex:
+        except QueryRuntimeException:
             if not ignore_exception:
                 raise
 
@@ -217,7 +217,7 @@ def select(
                     ):
                         continue
                     assert r == expected_result
-            except QueryRuntimeException as ex:
+            except QueryRuntimeException:
                 if not ignore_exception:
                     raise
             break
