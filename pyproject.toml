@@ -53,20 +53,29 @@ extend-exclude = [
 ]
 
 [tool.ruff.lint]
-# Start narrow: only rules that catch real bugs with low false-positive rate.
-# Each rule below was hand-picked because every hit was either a genuine bug
-# or an obviously dead reference (e.g. PR #105159: undefined name in an f-string
-# only evaluated on a diagnostic branch, masking the real failure).
+# The first batch (F402/F522/F523/F601/F632/F811/F821) was hand-picked because
+# every hit was either a genuine bug or an obviously dead reference (e.g.
+# PR #105159: undefined name in an f-string only evaluated on a diagnostic
+# branch, masking the real failure).
 #
-# Stylistic / unused-name rules (F401, F541, F841, F403, F405) are intentionally
-# off for now — they need a separate cleanup pass and would drown out the
-# bug-class signal.
+# The unused-name / star-import rules below (F401/F403/F405/F541/F841) were
+# enabled in a follow-up after a dedicated cleanup pass: unused imports and
+# variables removed (keeping side-effecting calls), placeholder-less f-strings
+# de-prefixed, and every `from module import *` expanded into explicit imports.
+# Eliminating the star imports also turned up a real bug — a call to an
+# undefined `execute_instant_query_with_http_api` in the prometheus presets
+# helper that the wildcard had been masking from F821.
 select = [
+    "F401",  # unused-import
     "F402",  # import-shadowed-by-loop-var
+    "F403",  # undefined-local-with-import-star  (`from module import *`)
+    "F405",  # undefined-local-with-import-star-usage
     "F522",  # string-format-extra-named-arg
     "F523",  # string-format-extra-positional-arg
+    "F541",  # f-string-missing-placeholders
     "F601",  # multi-value-repeated-key-literal
     "F632",  # is-literal  (e.g. `x is "foo"`, always False under CPython)
     "F811",  # redefined-while-unused  (duplicate function/import definitions)
     "F821",  # undefined-name  (the PR #105159 class)
+    "F841",  # local-variable-assigned-but-never-used
 ]
