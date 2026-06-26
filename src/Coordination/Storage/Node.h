@@ -15,11 +15,6 @@
 #include <string_view>
 #include <utility>
 
-namespace DB::ErrorCodes
-{
-    extern const int CORRUPTED_DATA;
-}
-
 namespace Coordination::Storage
 {
 
