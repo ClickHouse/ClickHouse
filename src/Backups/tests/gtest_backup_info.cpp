@@ -1,11 +1,96 @@
 #include <Backups/BackupInfo.h>
 
 #include <Common/Exception.h>
+#include <Common/tests/gtest_global_context.h>
+#include <Common/tests/gtest_global_register.h>
 
 #include <gtest/gtest.h>
 
+#include <cstdlib>
+#include <iostream>
+
 
 using namespace DB;
+
+namespace
+{
+    void requireContains(const String & str, const String & expected)
+    {
+        if (str.find(expected) == String::npos)
+        {
+            std::cerr << "Expected to find " << expected << " in " << str << '\n';
+            std::_Exit(1);
+        }
+    }
+
+    void requireNotContains(const String & str, const String & unexpected)
+    {
+        if (str.find(unexpected) != String::npos)
+        {
+            std::cerr << "Did not expect to find " << unexpected << " in " << str << '\n';
+            std::_Exit(1);
+        }
+    }
+
+    [[noreturn]] void checkURLOverrideExpressionWithContext()
+    {
+        tryRegisterFunctions();
+        const auto & context = getContext().context;
+        auto info = BackupInfo::fromString("S3(collection, url = concat('https://user:URLPASSWORD@', 's3.example.com/bucket/backup'))");
+
+        String str = info.withoutS3Credentials(context).toString();
+        requireContains(str, "'https://s3.example.com/bucket/backup'");
+        requireNotContains(str, "URLPASSWORD");
+        requireNotContains(str, "concat");
+        std::_Exit(0);
+    }
+
+    [[noreturn]] void checkExpressionCredentialKeyWithContext()
+    {
+        tryRegisterFunctions();
+        const auto & context = getContext().context;
+        auto info = BackupInfo::fromString("S3(collection, concat('secret_', 'access_key') = 'KEYSECRET')");
+
+        String str = info.withoutS3Credentials(context).toString();
+        requireNotContains(str, "KEYSECRET");
+        requireNotContains(str, "concat");
+        std::_Exit(0);
+    }
+
+    [[noreturn]] void checkExpressionURLKeyAndValueWithContext()
+    {
+        tryRegisterFunctions();
+        const auto & context = getContext().context;
+        auto info = BackupInfo::fromString("S3(collection, concat('u', 'rl') = concat('https://user:URLPASSWORD@', 'host/bucket/backup'))");
+
+        String str = info.withoutS3Credentials(context).toString();
+        requireContains(str, "host/bucket/backup");
+        requireNotContains(str, "URLPASSWORD");
+        std::_Exit(0);
+    }
+}
+
+
+TEST(BackupInfoDeathTest, WithoutS3CredentialsEvaluatesURLOverrideExpression)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_EXIT(checkURLOverrideExpressionWithContext(), ::testing::ExitedWithCode(0), ".*");
+}
+
+
+TEST(BackupInfoDeathTest, WithoutS3CredentialsStripsExpressionCredentialKey)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_EXIT(checkExpressionCredentialKeyWithContext(), ::testing::ExitedWithCode(0), ".*");
+}
+
+
+TEST(BackupInfoDeathTest, WithoutS3CredentialsRedactsExpressionURLKeyAndValue)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_EXIT(checkExpressionURLKeyAndValueWithContext(), ::testing::ExitedWithCode(0), ".*");
+}
+
 
 TEST(BackupInfo, WithoutS3CredentialsStripsPositionalArguments)
 {
