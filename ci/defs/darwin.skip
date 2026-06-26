@@ -27,7 +27,6 @@
 01317_no_password_in_command_line
 
 # Reason not yet investigated.
-01293_system_distribution_queue
 01473_event_time_microseconds
 01569_query_profiler_big_query_id
 01720_country_intersection
