@@ -11,7 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT --query "
 CREATE DICTIONARY dict (n UInt64)
 PRIMARY KEY n
-SOURCE(CLICKHOUSE(QUERY 'SELECT number AS n FROM remote(''127.0.0.2'', numbers(1)) SETTINGS log_comment=''$CLICKHOUSE_TEST_UNIQUE_NAME'''))
+SOURCE(CLICKHOUSE(QUERY 'SELECT number AS n FROM remote(''127.0.0.2'', numbers(1)) SETTINGS log_comment=''$CLICKHOUSE_TEST_UNIQUE_NAME'', prefer_localhost_replica=0'))
 LIFETIME(MIN 100500 MAX 100500)
 LAYOUT(FLAT())"
 
