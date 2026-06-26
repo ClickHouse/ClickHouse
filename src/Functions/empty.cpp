@@ -4,10 +4,17 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/EmptyImpl.h>
 #include <Columns/ColumnObject.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool type_json_skip_null_typed_paths;
+}
 
 namespace ErrorCodes
 {
@@ -31,7 +38,8 @@ struct NameNotEmpty
 class ExecutableFunctionJSONEmpty final : public IExecutableFunction
 {
 public:
-    ExecutableFunctionJSONEmpty(bool negative_, const char * name_) : negative(negative_), function_name(name_) {}
+    ExecutableFunctionJSONEmpty(bool negative_, const char * name_, bool skip_null_typed_paths_)
+        : negative(negative_), function_name(name_), skip_null_typed_paths(skip_null_typed_paths_) {}
 
     std::string getName() const override { return function_name; }
 
@@ -49,8 +57,9 @@ private:
         auto & data = typeid_cast<ColumnUInt8 &>(*res).getData();
         const auto & typed_paths = object_column->getTypedPaths();
         size_t size = object_column->size();
-        /// If object column has at least 1 typed path, it will never be empty, because these paths always have values.
-        if (!typed_paths.empty())
+        /// If object column has at least 1 typed path and we don't skip null typed paths,
+        /// it will never be empty, because these paths always have values.
+        if (!typed_paths.empty() && !skip_null_typed_paths)
         {
             data.resize_fill(size, negative);
             return res;
@@ -67,15 +76,31 @@ private:
             {
                 empty = false;
             }
-            /// Check that all dynamic paths have NULL value in this row.
             else
             {
-                for (const auto & [path, column] : dynamic_paths)
+                /// Check that all typed paths have NULL value in this row (when skip_null_typed_paths is enabled).
+                if (skip_null_typed_paths)
                 {
-                    if (!column->isNullAt(i))
+                    for (const auto & [path, column] : typed_paths)
                     {
-                        empty = false;
-                        break;
+                        if (!column->isNullAt(i))
+                        {
+                            empty = false;
+                            break;
+                        }
+                    }
+                }
+
+                /// Check that all dynamic paths have NULL value in this row.
+                if (empty)
+                {
+                    for (const auto & [path, column] : dynamic_paths)
+                    {
+                        if (!column->isNullAt(i))
+                        {
+                            empty = false;
+                            break;
+                        }
                     }
                 }
             }
@@ -88,13 +113,14 @@ private:
 
     bool negative;
     const char * function_name;
+    bool skip_null_typed_paths;
 };
 
 class FunctionEmptyJSON final : public IFunctionBase
 {
 public:
-    FunctionEmptyJSON(bool negative_, const char * name_, const DataTypes & argument_types_, const DataTypePtr & return_type_)
-        : negative(negative_), function_name(name_), argument_types(argument_types_), return_type(return_type_) {}
+    FunctionEmptyJSON(bool negative_, const char * name_, const DataTypes & argument_types_, const DataTypePtr & return_type_, bool skip_null_typed_paths_)
+        : negative(negative_), function_name(name_), argument_types(argument_types_), return_type(return_type_), skip_null_typed_paths(skip_null_typed_paths_) {}
 
     String getName() const override { return function_name; }
 
@@ -105,7 +131,7 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<ExecutableFunctionJSONEmpty>(negative, function_name);
+        return std::make_unique<ExecutableFunctionJSONEmpty>(negative, function_name, skip_null_typed_paths);
     }
 
 private:
@@ -113,16 +139,19 @@ private:
     const char * function_name;
     DataTypes argument_types;
     DataTypePtr return_type;
+    bool skip_null_typed_paths;
 };
 
 class FunctionEmptyOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
-    FunctionEmptyOverloadResolver(bool negative_, const char * name_) : negative(negative_), function_name(name_) {}
+    FunctionEmptyOverloadResolver(bool negative_, const char * name_, bool skip_null_typed_paths_)
+        : negative(negative_), function_name(name_), skip_null_typed_paths(skip_null_typed_paths_) {}
 
-    static FunctionOverloadResolverPtr create(ContextPtr, bool negative, const char * name)
+    static FunctionOverloadResolverPtr create(ContextPtr context, bool negative, const char * name)
     {
-        return std::make_unique<FunctionEmptyOverloadResolver>(negative, name);
+        bool skip_null = context ? context->getSettingsRef()[Setting::type_json_skip_null_typed_paths] : false;
+        return std::make_unique<FunctionEmptyOverloadResolver>(negative, name, skip_null);
     }
 
     String getName() const override { return function_name; }
@@ -136,7 +165,7 @@ public:
             argument_types.push_back(arg.type);
 
         if (argument_types.size() == 1 && isObject(argument_types[0]))
-            return std::make_shared<FunctionEmptyJSON>(negative, function_name, argument_types, return_type);
+            return std::make_shared<FunctionEmptyJSON>(negative, function_name, argument_types, return_type, skip_null_typed_paths);
 
         if (negative)
             return std::make_shared<FunctionToFunctionBaseAdaptor>(std::make_shared<FunctionStringOrArrayToT<EmptyImpl<true>, NameNotEmpty, UInt8, false>>(), argument_types, return_type);
@@ -166,6 +195,7 @@ public:
 private:
     bool negative;
     const char * function_name;
+    bool skip_null_typed_paths;
 };
 
 }
@@ -247,8 +277,8 @@ The function is also available for [arrays](/sql-reference/functions/array-funct
     FunctionDocumentation documentation_empty_string = {description_empty_string, syntax_empty_string, arguments_string, {}, returned_value_empty_string, examples_empty_string, introduced_in, category_string};
     FunctionDocumentation documentation_not_empty_string = {description_not_empty_string, syntax_not_empty_string, arguments_string, {}, returned_value_not_empty_string, examples_not_empty_string, introduced_in, category_string};
 
-    factory.registerFunction("notEmpty", [](ContextPtr){ return FunctionEmptyOverloadResolver::create({}, true, "notEmpty"); }, documentation_not_empty);
-    factory.registerFunction("empty", [](ContextPtr){ return FunctionEmptyOverloadResolver::create({}, false, "empty"); }, documentation_empty);
+    factory.registerFunction("notEmpty", [](ContextPtr context){ return FunctionEmptyOverloadResolver::create(context, true, "notEmpty"); }, documentation_not_empty);
+    factory.registerFunction("empty", [](ContextPtr context){ return FunctionEmptyOverloadResolver::create(context, false, "empty"); }, documentation_empty);
 
 }
 

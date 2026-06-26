@@ -494,20 +494,23 @@ ColumnPtr extractSubObjectColumn(const ColumnObject & object_column, const Strin
 
 /// Merges literal and sub-object columns into a single Dynamic column.
 /// Prefers the literal value if present; falls back to the sub-object cast to Dynamic; otherwise NULL.
+/// When skip_null_typed_paths is true, typed paths with NULL values are not considered present,
+/// so a sub-object whose only typed descendants are all NULL is treated as empty.
 ColumnPtr extractCombinedColumn(
     const ColumnObject & object_column,
     const String & path,
     const String & prefix,
     const DataTypePtr & sub_object_type,
     const DataTypePtr & dynamic_result_type,
-    size_t max_dynamic_types)
+    size_t max_dynamic_types,
+    bool skip_null_typed_paths = false)
 {
     auto literal_column = extractLiteralColumn(object_column, path, max_dynamic_types);
     auto sub_object_column = extractSubObjectColumn(object_column, prefix, sub_object_type);
 
     /// If sub-object contains only empty objects, just use literal.
     const auto * sub_object_typed_column = assert_cast<const ColumnObject *>(sub_object_column.get());
-    if (!sub_object_typed_column->hasNonEmptyRows())
+    if (!sub_object_typed_column->hasNonEmptyRows(skip_null_typed_paths))
         return literal_column;
 
     /// Cast sub-object to Dynamic.
@@ -520,7 +523,7 @@ ColumnPtr extractCombinedColumn(
     {
         if (!literal_column->isDefaultAt(i))
             merged->insertFrom(*literal_column, i);
-        else if (!sub_object_typed_column->isEmptyAt(i))
+        else if (!sub_object_typed_column->isEmptyAt(i, skip_null_typed_paths))
             merged->insertFrom(*casted_sub_object, i);
         else
             merged->insertDefault();
@@ -854,6 +857,30 @@ DataTypePtr DataTypeObject::getTypeOfNestedObjects() const
 DataTypePtr DataTypeObject::getDynamicType() const
 {
     return std::make_shared<DataTypeDynamic>(max_dynamic_types);
+}
+
+ColumnPtr DataTypeObject::extractCombinedSubcolumn(const String & path, const ColumnPtr & column, bool skip_null_typed_paths) const
+{
+    const auto & object_column = assert_cast<const ColumnObject &>(*column);
+    const String prefix = path + ".";
+
+    /// Build sub-object type: collect typed paths that start with prefix.
+    std::unordered_map<String, DataTypePtr> typed_sub_paths;
+    for (const auto & [p, type] : typed_paths)
+    {
+        if (p.starts_with(prefix))
+            typed_sub_paths[p.substr(prefix.size())] = type;
+    }
+
+    auto sub_object_type = std::make_shared<DataTypeObject>(
+        schema_format, typed_sub_paths, paths_to_skip, path_regexps_to_skip,
+        max_dynamic_paths, max_dynamic_types);
+    auto dynamic_result_type = getDynamicType();
+
+    return extractCombinedColumn(
+        object_column, path, prefix, sub_object_type,
+        dynamic_result_type, max_dynamic_types,
+        skip_null_typed_paths);
 }
 
 static DataTypePtr createJSON(const ASTPtr & arguments)
