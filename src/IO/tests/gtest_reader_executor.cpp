@@ -1740,6 +1740,11 @@ public:
     /// the segment non-evictable.
     std::unordered_map<size_t, std::shared_ptr<int>> liveness;
     std::vector<std::pair<ByteRange, size_t>> put_log;
+    /// idx -> how many times a write buffer was opened for this segment. A segment
+    /// straddling several small plan windows is re-opened once per window it spans
+    /// (single tier does not fold the plan to the cell boundary), so this rises above
+    /// 1 even though the segment is FETCHED once - the segment-open-once probe.
+    std::unordered_map<size_t, size_t> open_count;
     /// idx -> true means put() returns 0 (simulates a cache that refuses writes).
     std::unordered_map<size_t, bool> reject_put;
 
@@ -1948,6 +1953,7 @@ inline VectorWithMemoryTracking<MissEntry> EvictableSegmentMockCache::openWriteB
         /// Each aligned miss lies within a single segment (one miss entry per segment
         /// in `planResidencyView`); derive its index from the offset.
         const size_t seg_idx = aligned.offset / segment_size;
+        ++open_count[seg_idx];
         result.push_back(MissEntry{
             aligned, std::make_unique<EvictableSegmentWriteBuffer>(aligned, seg_idx, *this)});
     }
@@ -2080,6 +2086,67 @@ TEST(ReaderExecutor, PrefetchConsumeRebuildsPinAcrossSegmentBoundary)
         consume(std::move(chain));
     }
     EXPECT_EQ(result, content);
+}
+
+TEST(ReaderExecutor, SegmentFetchedOnceAcrossSmallWindows)
+{
+    TestThreadGroup tg;
+
+    /// Stage 3 settles the design's open question: must the open writer be CARRIED
+    /// across a replan, or is re-opening cheap because the source is fetched once
+    /// anyway? Four 2000-byte segments (8000-byte object), window 1000, the plan
+    /// window PINNED to window_size (`plan_look_ahead_max_window == window_size` --
+    /// the fixed-small A/B arm). A single tier does NOT fold the plan to the cell
+    /// boundary, so each segment straddles two windows and its write buffer is
+    /// RE-OPENED on the second window (open_count == 2). The point: re-open is local
+    /// and free -- the source is still read exactly once (`BytesFromSource` == file
+    /// size, no re-fetch), because the new writer continues from the committed
+    /// frontier and the long connection rides across the replan. So carrying the
+    /// writer is an unneeded optimisation, not a correctness requirement.
+    String content(8000, 'Q');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"file", content}});
+    StoredObjects objects;
+    objects.emplace_back("file", "", 8000);
+
+    auto cache = std::make_shared<EvictableSegmentMockCache>(2000);
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(cache);
+
+    auto pool = std::make_shared<SyncPrefetchPool>();
+    auto limit = std::make_shared<LongConnectionLimit>(10);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 1000;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.prefetch_pool = pool;
+    executor_options.long_connection_limit = limit;
+    /// Fixed-small plan window: the ceiling collapses the generalized window to
+    /// window_size, so every plan is exactly one window and each 2000-byte segment
+    /// spans two of them.
+    executor_options.plan_look_ahead_max_window = 1000;
+    auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, executor_options);
+
+    String result;
+    while (true)
+    {
+        auto chain = executor->readNextWindow();
+        if (chain.empty())
+            break;
+        for (const auto & node : chain.getNodes())
+            result.append(node.data(), node.size);
+    }
+    EXPECT_EQ(result, content);
+
+    /// Each segment re-opened once per straddling window (open-once does NOT hold for
+    /// a single tier with a small window) ...
+    for (size_t idx = 0; idx < 4; ++idx)
+        EXPECT_EQ(cache->open_count[idx], 2u) << "segment " << idx << " open count";
+
+    /// ... but fetched exactly once: the file is read from the source whole, no byte
+    /// re-fetched despite the re-opens.
+    executor.reset();
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 8000)
+        << "the source was re-read -- carrying the writer WOULD matter";
 }
 
 TEST(ReaderExecutor, PinReleasedOnSeek)
