@@ -291,6 +291,48 @@ def test_deferred_handler_targets_qualified_table_header():
     assert metric_name in metric_names
 
 
+def test_deferred_handler_qualified_table_param_ignores_database_header():
+    timestamp = 1_700_002_300.0
+    metric_name = "deferred_qualified_param_vs_db_header"
+    # The 'table' query parameter carries a qualified `database.table` name while a conflicting
+    # 'X-ClickHouse-Database' header is also sent. The qualified parameter outranks the lower-priority
+    # header, so the sample must land in default.hdr_target -- not otherdb.hdr_target, and not the bogus
+    # lookup otherdb."default.hdr_target" (which would make the write fail outright).
+    headers = {"X-ClickHouse-Database": "otherdb"}
+    write_path = f"{DEFERRED_WRITE_PATH}?table=default.hdr_target"
+    read_path = f"{DEFERRED_READ_PATH}?table=default.hdr_target"
+
+    default_before = int(
+        node.query("SELECT count() FROM timeSeriesData(default.hdr_target)").strip()
+    )
+    other_before = int(
+        node.query("SELECT count() FROM timeSeriesData(otherdb.hdr_target)").strip()
+    )
+
+    send_with_headers(
+        [({"__name__": metric_name}, {timestamp: 24.0})],
+        write_path,
+        headers,
+    )
+
+    default_after = int(
+        node.query("SELECT count() FROM timeSeriesData(default.hdr_target)").strip()
+    )
+    other_after = int(
+        node.query("SELECT count() FROM timeSeriesData(otherdb.hdr_target)").strip()
+    )
+
+    # The qualified table parameter won: the sample is in default.hdr_target and the header database
+    # was ignored (otherdb.hdr_target is untouched).
+    assert default_after > default_before
+    assert other_after == other_before
+
+    metric_names = read_metric_names_with_headers(
+        metric_name, timestamp - 1, timestamp + 1, read_path, headers
+    )
+    assert metric_name in metric_names
+
+
 def test_deferred_handler_without_target_fails():
     timestamp = 1_700_002_200.0
     metric_name = "deferred_no_target"

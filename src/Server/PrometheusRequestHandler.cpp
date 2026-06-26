@@ -242,8 +242,11 @@ protected:
     /// 'X-ClickHouse-Database'/'X-ClickHouse-Table' HTTP header, in that order of priority.
     /// A query parameter can't override a value set in the configuration; the headers are consulted only
     /// for a name that is still unset by both the configuration and the query parameters, and never error.
-    /// If the database isn't set, the table name is treated as a possibly-qualified  `database.table` name,
-    /// and if the table name is not a qualified name then the database name falls back to "default".
+    /// The table name may be a possibly-qualified `database.table`: a table supplied by the configuration
+    /// or the query parameter is split into database and table before the lower-priority
+    /// 'X-ClickHouse-Database' header is consulted, so a qualified table provides its own database instead
+    /// of being paired with the header database. If the database is still unset the table name is parsed
+    /// the same way, and if it is not qualified the database falls back to "default".
     StorageID getTimeSeriesTableID(const HTTPServerRequest & request)
     {
         QualifiedTableName full_name;
@@ -264,6 +267,17 @@ protected:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "The table is set in the configuration of this prometheus handler and cannot be overridden by the 'table' query parameter");
             full_name.table = params->get("table");
+        }
+
+        /// A 'table' supplied by the configuration or the query parameter may be a qualified
+        /// `database.table`. Split it before consulting the lower-priority 'X-ClickHouse-Database'
+        /// header, otherwise a qualified table such as `?table=default.events` would be paired with
+        /// the header database and looked up as `<header_db>."default.events"`.
+        if (full_name.database.empty() && !full_name.table.empty())
+        {
+            QualifiedTableName qualified = QualifiedTableName::parseFromString(full_name.table);
+            if (!qualified.database.empty())
+                full_name = qualified;
         }
 
         if (full_name.database.empty())
