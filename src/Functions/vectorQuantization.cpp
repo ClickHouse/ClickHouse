@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/VectorQuantization.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <vector>
 
@@ -44,7 +45,7 @@ UInt64 getConstUIntArgument(const ColumnWithTypeAndName & arg, const String & fn
 }
 
 /// Read the float vector at `row` from an Array(Float32) / Array(Float64) column into `out` (resized to the array size).
-void readVectorRow(const ColumnArray & col_arr, size_t row, std::vector<float> & out)
+void readVectorRow(const ColumnArray & col_arr, size_t row, VectorWithMemoryTracking<float> & out)
 {
     const IColumn & nested = col_arr.getData();
     const auto & offsets = col_arr.getOffsets();
@@ -140,7 +141,7 @@ public:
         auto & chars = col_res->getChars();
         chars.resize_fill(input_rows_count * n, 0);
 
-        std::vector<float> buf;
+        VectorWithMemoryTracking<float> buf;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             readVectorRow(*col_arr, row, buf);
@@ -203,7 +204,7 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Query argument of function {} must be a constant array", name);
         const auto * query_arr = checkAndGetColumn<ColumnArray>(&query_const->getDataColumn());
 
-        std::vector<float> query_buf;
+        VectorWithMemoryTracking<float> query_buf;
         readVectorRow(*query_arr, 0, query_buf);
         if (query_buf.size() != dimensions)
             throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
