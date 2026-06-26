@@ -148,7 +148,16 @@ void writePartitionRecord(
             if (value.getType() == Field::Types::Decimal32)
                 return value.safeGet<Decimal32>().getValue().value;
             if (value.getType() == Field::Types::UInt64)
-                return static_cast<Int64>(value.safeGet<UInt64>());
+            {
+                const UInt64 unsigned_value = value.safeGet<UInt64>();
+                if (unsigned_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Partition value {} of column {} cannot be represented by Iceberg's signed long",
+                        unsigned_value,
+                        partition_columns[i]);
+                return static_cast<Int64>(unsigned_value);
+            }
             return value.safeGet<Int64>();
         };
 
