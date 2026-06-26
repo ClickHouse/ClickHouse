@@ -42,6 +42,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.7",
         {
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
+            {"vector_query_plan_cache_tag", "", "", "New setting for labeling vector query plan cache settings."},
+            {"vector_query_plan_cache", false, false, "New setting to enable/disable vector Query plan cache."},
+            {"vector_use_cast", false, false, "New setting to enable/disable CAST with no cached vector query plans."},
+            {"vector_query_plan_cache_only_vector", false, false, "New setting to parse only vector VectorQueryPlan."},
+            {"vector_query_plan_cache_max_size_in_bytes", 0, DEFAULT_VECTOR_QUERY_PLAN_CACHE_MAX_SIZE, "Introduced vector query plan cache. The maximum amount of memory (in bytes) the current user may allocate in the vector query plan cache. 0 means unlimited."},
+            {"vector_query_plan_cache_max_entries", 0, DEFAULT_VECTOR_QUERY_PLAN_CACHE_MAX_ENTRIES, "Introduced vector query plan cache. The maximum number of query results the current user may store in the vector query plan cache. 0 means unlimited."},
+            {"vector_query_plan_cache_ttl", 60, 60, "Introduced vector query plan cache. After this time in seconds entries in the vector query plan cache become stale."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
@@ -74,13 +81,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_limit_by_in_order", false, true, "New setting to optimize `LIMIT BY` queries when `BY` columns are a prefix of the table's sorting key."},
             {"analyzer_compatibility_prefer_alias_over_subcolumn", false, false, "New compatibility setting"},
             {"query_plan_max_set_size_for_projection_match", 0, 10000, "Added new setting that bounds the cost of content-hashing IN-clause sets in the projection matcher (today: aggregate projection). Sets larger than the limit are treated as non-matching. Zero disables content-hash comparison entirely (compatibility value: projection match never succeeds for nodes with IN-sets)."},
-            {"vector_query_plan_cache_tag", "", "", "New setting for labeling vector query plan cache settings."},
-            {"vector_query_plan_cache", false, false, "New setting to enable/disable vector Query plan cache."},
-            {"vector_use_cast", false, false, "New setting to enable/disable CAST with no cached vector query plans."},
-            {"vector_query_plan_cache_only_vector", false, false, "New setting to parse only vector VectorQueryPlan."},
-            {"vector_query_plan_cache_max_size_in_bytes", 0, DEFAULT_VECTOR_QUERY_PLAN_CACHE_MAX_SIZE, "Introduced vector query plan cache. The maximum amount of memory (in bytes) the current user may allocate in the vector query plan cache. 0 means unlimited."},
-            {"vector_query_plan_cache_max_entries", 0, DEFAULT_VECTOR_QUERY_PLAN_CACHE_MAX_ENTRIES, "Introduced vector query plan cache. The maximum number of query results the current user may store in the vector query plan cache. 0 means unlimited."},
-            {"vector_query_plan_cache_ttl", 60, 60, "Introduced vector query plan cache. After this time in seconds entries in the vector query plan cache become stale."},
             {"allow_replace_partition_from_empty_source", true, false, "New safety check: `ALTER TABLE ... REPLACE PARTITION ... FROM ...` now throws when the source table has no parts in the requested partition (fixes the silent data loss in [#23727](https://github.com/ClickHouse/ClickHouse/issues/23727)). The previous behavior, silently dropping the destination partition, is preserved by setting `allow_replace_partition_from_empty_source = 1`."},
             {"query_plan_optimize_join_order_max_searched_plans", 0, 100000, "New setting to bound the number of partial plans the join order optimizer enumerates before falling back to the next algorithm."},
             {"distributed_plan_workers_num", 0, 0, "New experimental setting for how many stateless workers to lease for a distributed query. Zero disables leasing."},
