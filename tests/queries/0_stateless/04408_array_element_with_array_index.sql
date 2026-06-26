@@ -82,3 +82,19 @@ SELECT [map('a', 1, 'b', 2), map('c', 3, 'd', 4)][[2, 1]];
 
 -- Equivalence with arrayMap
 SELECT [10, 20, 30, 40][[2, 4, 1]] = arrayMap(i -> [10, 20, 30, 40][i], [2, 4, 1]);
+
+-- Array(Nullable(T)) with OOB in zero mode: should return NULL (not default 0)
+SELECT [1, NULL, 3][[4]];
+SELECT [1, NULL, 3][[1, 4, 2]];
+
+-- Int64 minimum value as index (signed overflow edge case)
+SELECT [10, 20, 30][[toInt64(-9223372036854775808), toInt64(1)]];
+SELECT arrayElementOrNull([10, 20, 30], [toInt64(-9223372036854775808)]);
+
+-- Const source array with per-row index arrays (lookup-table path)
+DROP TABLE IF EXISTS test_const_src;
+CREATE TABLE test_const_src (idx Array(UInt32)) ENGINE = Memory;
+INSERT INTO test_const_src VALUES ([1, 3]), ([2, 2, 1]), ([3]);
+SELECT [100, 200, 300][idx] FROM test_const_src;
+SELECT arrayElementOrNull([100, 200, 300], idx) FROM test_const_src;
+DROP TABLE test_const_src;
