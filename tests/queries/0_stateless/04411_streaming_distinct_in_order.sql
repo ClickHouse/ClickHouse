@@ -9,6 +9,13 @@
 SET enable_streaming_queries = 1;
 SET max_threads = 1;
 
+-- Pin the trigger settings for the query-plan DISTINCT-in-order pass that this PR guards.
+-- CI randomizes these; with any of them off the query takes the generic distinct path and the
+-- unfixed build never reaches the bad input_order_info, so the test would pass without the fix.
+SET enable_analyzer = 1;
+SET query_plan_enable_optimizations = 1;
+SET optimize_distinct_in_order = 1;
+
 DROP TABLE IF EXISTS t_stream_distinct_in_order;
 
 CREATE TABLE t_stream_distinct_in_order (a String, b UInt64) ENGINE = MergeTree ORDER BY a;
