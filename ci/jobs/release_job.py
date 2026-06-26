@@ -28,6 +28,14 @@ _DOCKERHUB_SECRET = Secret.Config(
 
 _GEESEFS_VERSION = "v0.43.5"
 
+# binfmt is run as a --privileged container in the release job, so pin it by
+# digest (not the mutable `latest` tag) to avoid executing a moved/tampered
+# image with elevated privileges on the self-hosted release runner.
+_BINFMT_IMAGE = (
+    "tonistiigi/binfmt@sha256:"
+    "400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0"
+)
+
 _R2_AUTH_TEST_SECRET = Secret.Config(
     name="/release/r2-auth-test",
     type=Secret.Type.AWS_SSM_PARAMETER,
@@ -565,7 +573,7 @@ def main():
                 # is native and arm64 is emulated) and create a
                 # `docker-container` builder (the default `docker` driver cannot
                 # produce a multi-platform image or push to a registry).
-                "docker run --privileged --rm tonistiigi/binfmt --install all",
+                f"docker run --privileged --rm {_BINFMT_IMAGE} --install all",
                 # Create the builder with host networking. The default
                 # docker-container sandbox network on the ephemeral runner has
                 # no working egress for RUN steps (busybox wget in the alpine
