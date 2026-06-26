@@ -117,11 +117,13 @@ Settings:
 
 Examples:
 
-```sql title="Query"
+```sql
 EXPLAIN SYNTAX SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
 ```
 
-```sql title="Response"
+Output:
+
+```sql
 SELECT *
 FROM system.numbers AS a, system.numbers AS b, system.numbers AS c
 WHERE (a.number = b.number) AND (b.number = c.number)
@@ -129,11 +131,13 @@ WHERE (a.number = b.number) AND (b.number = c.number)
 
 With `run_query_tree_passes`:
 
-```sql title="Query"
+```sql
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
 ```
 
-```sql title="Response"
+Output:
+
+```sql
 SELECT
     __table1.number AS `a.number`,
     __table2.number AS `b.number`,
@@ -633,17 +637,21 @@ Shows the estimated number of rows, marks and parts to be read from the tables w
 
 Creating a table:
 
-```sql title="Query"
+```sql
 CREATE TABLE ttt (i Int64) ENGINE = MergeTree() ORDER BY i SETTINGS index_granularity = 16, write_final_mark = 0;
 INSERT INTO ttt SELECT number FROM numbers(128);
 OPTIMIZE TABLE ttt;
 ```
 
-```sql title="Query"
+Query:
+
+```sql
 EXPLAIN ESTIMATE SELECT * FROM ttt;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─database─┬─table─┬─parts─┬─rows─┬─marks─┐
 │ default  │ ttt   │     1 │  128 │     8 │
 └──────────┴───────┴───────┴──────┴───────┘
@@ -658,19 +666,21 @@ Also does some validation, throwing an exception if the override would have caus
 
 Assume you have a remote MySQL table like this:
 
-```sql title="Query"
+```sql
 CREATE TABLE db.tbl (
     id INT PRIMARY KEY,
     created DATETIME DEFAULT now()
 )
 ```
 
-```sql title="Query"
+```sql
 EXPLAIN TABLE OVERRIDE mysql('127.0.0.1:3306', 'db', 'tbl', 'root', 'clickhouse')
 PARTITION BY toYYYYMM(assumeNotNull(created))
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─explain─────────────────────────────────────────────────┐
 │ PARTITION BY uses columns: `created` Nullable(DateTime) │
 └─────────────────────────────────────────────────────────┘

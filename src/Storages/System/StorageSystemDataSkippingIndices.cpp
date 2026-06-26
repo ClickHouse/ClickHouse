@@ -58,7 +58,7 @@ VirtualColumnsDescription StorageSystemDataSkippingIndices::createVirtuals()
     return desc;
 }
 
-class DataSkippingIndicesSource final : public ISource
+class DataSkippingIndicesSource : public ISource
 {
 public:
     DataSkippingIndicesSource(
@@ -284,7 +284,7 @@ void ReadFromSystemDataSkippingIndices::initializePipeline(QueryPipelineBuilder 
 {
     MutableColumnPtr column = ColumnString::create();
 
-    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
     for (const auto & [database_name, database] : databases)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)

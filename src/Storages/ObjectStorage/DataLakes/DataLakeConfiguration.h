@@ -21,7 +21,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Formats/FormatFilterInfo.h>
-#include <optional>
+#include <Formats/FormatParserSharedResources.h>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -69,9 +69,6 @@ namespace DataLakeStorageSetting
     extern DataLakeStorageSettingsString storage_oauth_server_uri;
     extern DataLakeStorageSettingsBool storage_oauth_server_use_request_body;
 }
-
-struct FormatParserSharedResources;
-using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 
 template <typename T>
 concept StorageConfiguration = std::derived_from<T, StorageObjectStorageConfiguration>;

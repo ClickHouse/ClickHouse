@@ -2,7 +2,6 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/Exception.h>
-#include <Common/RemoteHostFilter.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
@@ -45,7 +44,6 @@
 #include <Poco/Net/HTTPSClientSession.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/StreamCopier.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Common/FailPoint.h>
 
 
@@ -55,11 +53,6 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int FAULT_INJECTED;
-}
-
-namespace DB::Setting
-{
-    extern const SettingsBool allow_experimental_geo_types_in_iceberg;
 }
 
 namespace DB::FailPoints
@@ -129,22 +122,6 @@ String encodeNamespaceForURI(const String & namespace_name)
     }
     return encoded;
 }
-
-std::unordered_set<std::string> getAllowedBigLakeMetadataServiceHosts(
-    const Poco::Util::AbstractConfiguration & config)
-{
-    static constexpr auto SECTION = "iceberg_biglake_metadata_service_hosts";
-    std::unordered_set<std::string> allowed;
-    if (!config.has(SECTION))
-        return allowed;
-
-    std::vector<std::string> keys;
-    config.keys(SECTION, keys);
-    for (const auto & key : keys)
-        allowed.insert(config.getString(std::string(SECTION) + "." + key));
-    return allowed;
-}
-
 
 }
 
@@ -351,7 +328,6 @@ AccessToken RestCatalog::retrieveAccessToken() const
     }
 
     const auto & context = getContext();
-    context->getRemoteHostFilter().checkHostAndPort(url.getHost(), std::to_string(url.getPort()));
     auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
     auto session = makeHTTPSession(DB::HTTPConnectionGroupType::HTTP, url, timeouts, {});
 
@@ -485,23 +461,6 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
     /// https://cloud.google.com/compute/docs/metadata/overview
     static constexpr auto DEFAULT_REQUEST_TOKEN_PATH = "/computeMetadata/v1/instance/service-accounts";
 
-    const auto & context = getContext();
-
-    const auto allowed_metadata_hosts = getAllowedBigLakeMetadataServiceHosts(context->getConfigRef());
-    if (allowed_metadata_hosts.empty())
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS,
-            "BigLake metadata service requests are disabled. To enable, configure "
-            "<iceberg_biglake_metadata_service_hosts> in server config with the allowed metadata "
-            "hosts (typically `metadata.google.internal` and `169.254.169.254`).");
-
-    if (!allowed_metadata_hosts.contains(google_metadata_service))
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS,
-            "google_metadata_service host `{}` is not in the server-side allow-list "
-            "<iceberg_biglake_metadata_service_hosts>",
-            google_metadata_service);
-
     Poco::URI url;
     url.setScheme("http");
     url.setHost(google_metadata_service);
@@ -512,7 +471,7 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
 
     LOG_DEBUG(log, "Requesting Google Cloud access token from metadata service: {}", url.toString());
 
-    context->getRemoteHostFilter().checkHostAndPort(url.getHost(), std::to_string(url.getPort()));
+    const auto & context = getContext();
     auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
     auto session = makeHTTPSession(DB::HTTPConnectionGroupType::HTTP, url, timeouts, {});
 
@@ -1069,9 +1028,8 @@ bool RestCatalog::getTableMetadataImpl(
 
     if (result.requiresSchema())
     {
-        const bool allow_geo_parser
-            = getContext()->getSettingsRef()[DB::Setting::allow_experimental_geo_types_in_iceberg].value;
-        auto schema_processor = DB::Iceberg::IcebergSchemaProcessor(allow_geo_parser);
+        // int format_version = metadata_object->getValue<int>("format-version");
+        auto schema_processor = DB::Iceberg::IcebergSchemaProcessor();
         auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor, log);
         auto schema = schema_processor.getClickhouseTableSchemaById(id);
         result.setSchema(*schema);
@@ -1097,9 +1055,6 @@ bool RestCatalog::getTableMetadataImpl(
             result.setDataLakeSpecificProperties(DataLakeSpecificProperties{ .iceberg_metadata_file_location = metadata_location });
         }
     }
-
-    if (metadata_object->has("table-uuid"))
-        result.setTableUUID(metadata_object->get("table-uuid").extract<String>());
 
     return true;
 }
@@ -1197,10 +1152,6 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     }
     request_body->set("stage-create", false);
     Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
-
-    if (metadata_content->has("format-version"))
-        properties->set("format-version", std::to_string(metadata_content->getValue<int>("format-version")));
-
     request_body->set("properties", properties);
 
     try

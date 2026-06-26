@@ -34,7 +34,7 @@ namespace ErrorCodes
     }
 
 #define EXPAND(IDX, ...) \
-    (mask ? expand(mask.read(IDX, i), __VA_ARGS__) : __VA_ARGS__)
+    (mask) ? expand(mask->getColumn(IDX).getUInt(0), __VA_ARGS__) : __VA_ARGS__
 
 #define MASK(ND, IDX, ...) \
     (EXPAND(IDX, __VA_ARGS__) & MortonND_##ND##D_Enc.InputMask())
@@ -42,22 +42,23 @@ namespace ErrorCodes
 #define EXECUTE() \
     size_t nd = arguments.size(); \
     size_t vectorStartIndex = 0; \
-    auto mask = extractRangeMask(arguments); \
+    const auto * const_col = typeid_cast<const ColumnConst *>(arguments[0].column.get()); \
+    const ColumnTuple * mask; \
+    if (const_col) \
+        mask = typeid_cast<const ColumnTuple *>(const_col->getDataColumnPtr().get()); \
+    else \
+        mask = typeid_cast<const ColumnTuple *>(arguments[0].column.get()); \
     if (mask) \
     { \
-        nd = mask.tupleSize(); \
+        nd = mask->tupleSize(); \
         vectorStartIndex = 1; \
-        const size_t rows_to_check_morton = mask.is_const ? 1 : input_rows_count; \
-        for (size_t row = 0; row < rows_to_check_morton; row++) \
+        for (size_t i = 0; i < nd; i++) \
         { \
-            for (size_t i = 0; i < nd; i++) \
-            { \
-                auto ratio = mask.read(i, row); \
-                if (ratio > 8 || ratio < 1) \
-                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, \
-                                    "Illegal argument {} of function {}, should be a number in range 1-8", \
-                                    arguments[0].column->getName(), getName()); \
-            } \
+            auto ratio = mask->getColumn(i).getUInt(0); \
+            if (ratio > 8 || ratio < 1) \
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, \
+                                "Illegal argument {} of function {}, should be a number in range 1-8", \
+                                arguments[0].column->getName(), getName()); \
         } \
     } \
      \
@@ -202,7 +203,7 @@ public:
 #define MASK(ND, IDX, ...) \
     (EXPAND(IDX, __VA_ARGS__))
 
-DECLARE_X86_64_V3_SPECIFIC_CODE(
+DECLARE_AVX2_SPECIFIC_CODE(
 using MortonND_2D = mortonnd::MortonNDBmi<2, uint64_t>;
 using MortonND_3D = mortonnd::MortonNDBmi<3, uint64_t>;
 using MortonND_4D = mortonnd::MortonNDBmi<4, uint64_t>;
@@ -243,7 +244,7 @@ public:
         EXECUTE()
     }
 };
-) // DECLARE_X86_64_V3_SPECIFIC_CODE
+) // DECLARE_AVX2_SPECIFIC_CODE
 #endif // MORTON_ND_BMI2_ENABLED
 
 #undef ENCODE

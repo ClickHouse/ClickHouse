@@ -327,12 +327,7 @@ bool AzureStorageParsedArguments::collectCredentials(
 
 void AzureStorageParsedArguments::fromDisk(DiskPtr disk, ASTs & args, ContextPtr context, bool with_structure)
 {
-    auto object_storage = disk->getObjectStorage();
-    /// Unwrap decorator object storages (e.g. `CachedObjectStorage`) before the cast.
-    /// See `S3StorageParsedArguments::fromDisk` and issue #89300 for the rationale.
-    while (auto inner = object_storage->getUnderlying())
-        object_storage = std::move(inner);
-    const auto & azure_object_storage = assert_cast<const AzureObjectStorage &>(*object_storage);
+    const auto & azure_object_storage = assert_cast<const AzureObjectStorage &>(*disk->getObjectStorage());
 
     connection_params = azure_object_storage.getConnectionParameters();
     ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context, disk->getPath());

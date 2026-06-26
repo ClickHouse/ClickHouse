@@ -20,7 +20,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/assert_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <base/range.h>
 #include <base/TypeLists.h>
 #include <Interpreters/castColumn.h>
@@ -39,15 +38,11 @@ namespace ErrorCodes
 
 enum class ArraySetMode { Intersect, Union, SymmetricDifference };
 
-class FunctionArrayIntersect final : public IFunction
+class FunctionArrayIntersect : public IFunction
 {
 public:
-    FunctionArrayIntersect(const char * name_, ArraySetMode mode_, ContextPtr context)
-        : function_name(name_)
-        , mode(mode_)
-        , not_equals_func(FunctionFactory::instance().get("notEquals", context))
-    {
-    }
+    FunctionArrayIntersect(const char * name_, ArraySetMode mode_, ContextPtr context_)
+        : function_name(name_), mode(mode_), context(context_) {}
 
     static FunctionPtr create(const char * name, ArraySetMode mode, ContextPtr context)
     {
@@ -69,7 +64,7 @@ public:
 private:
     const char * function_name;
     const ArraySetMode mode;
-    FunctionOverloadResolverPtr not_equals_func;
+    ContextPtr context;
 
     /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
     static constexpr size_t INITIAL_SIZE_DEGREE = 6;
@@ -88,7 +83,7 @@ private:
 
         };
 
-        VectorWithMemoryTracking<UnpackedArray> args;
+        std::vector<UnpackedArray> args;
         Columns column_holders;
 
         UnpackedArrays() = default;
@@ -340,10 +335,10 @@ FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
     return {.initial = initial_columns, .cast = cast_columns};
 }
 
-static ColumnPtr callFunctionNotEquals(ColumnWithTypeAndName first, ColumnWithTypeAndName second, const FunctionOverloadResolverPtr & not_equals_func)
+static ColumnPtr callFunctionNotEquals(ColumnWithTypeAndName first, ColumnWithTypeAndName second, ContextPtr context)
 {
     ColumnsWithTypeAndName args{first, second};
-    auto eq_func = not_equals_func->build(args);
+    auto eq_func = FunctionFactory::instance().get("notEquals", context)->build(args);
     return eq_func->execute(args, eq_func->getResultType(), args.front().column->size(), /* dry_run = */ false);
 }
 
@@ -404,7 +399,7 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
                     auto overflow_mask = callFunctionNotEquals(
                             {arg.nested_column->getPtr(), nested_cast_type, ""},
                             {initial_column->getPtr(), nested_init_type, ""},
-                            not_equals_func);
+                            context);
 
                     arg.overflow_mask = &typeid_cast<const ColumnUInt8 &>(*removeNullable(overflow_mask)).getData();
                     arrays.column_holders.emplace_back(std::move(overflow_mask));
@@ -538,7 +533,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
     bool all_nullable = true;
     bool has_nullable = false;
 
-    VectorWithMemoryTracking<const ColumnType *> columns;
+    std::vector<const ColumnType *> columns;
     columns.reserve(args);
     for (const auto & arg : arrays.args)
     {
@@ -565,7 +560,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
     Arena arena;
 
     Map map;
-    VectorWithMemoryTracking<size_t> prev_off(args, 0);
+    std::vector<size_t> prev_off(args, 0);
     size_t result_offset = 0;
     for (size_t row = 0; row < rows; ++row)
     {

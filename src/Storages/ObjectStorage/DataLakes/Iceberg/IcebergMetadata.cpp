@@ -9,7 +9,6 @@
 #include <memory>
 #include <optional>
 #include <sstream>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeSet.h>
@@ -22,7 +21,7 @@
 #include <Functions/tuple.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
@@ -129,7 +128,6 @@ extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 extern const SettingsString iceberg_metadata_compression_method;
 extern const SettingsBool allow_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
-extern const SettingsBool allow_experimental_geo_types_in_iceberg;
 extern const SettingsBool allow_iceberg_remove_orphan_files;
 extern const SettingsBool allow_experimental_expire_snapshots;
 extern const SettingsBool iceberg_delete_data_on_drop;
@@ -191,7 +189,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     }
     auto table_path = configuration->getPathForRead().path;
     return PersistentTableComponents{
-        .schema_processor = std::make_shared<IcebergSchemaProcessor>(context_->getSettingsRef()[Setting::allow_experimental_geo_types_in_iceberg]),
+        .schema_processor = std::make_shared<IcebergSchemaProcessor>(),
         .metadata_cache = cache_ptr,
         .format_version = format_version,
         .table_location = table_location,
@@ -498,13 +496,13 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
                 "No snapshot found in snapshot log before requested timestamp for iceberg table {}",
                 persistent_components.table_path);
         auto data_snapshot = getIcebergDataSnapshot(metadata_object, *current_snapshot_id, local_context);
-        return {data_snapshot, static_cast<Int32>(data_snapshot->schema_id_on_snapshot_commit)};
+        return {data_snapshot, data_snapshot->schema_id_on_snapshot_commit};
     }
     else if (snapshot_id_changed)
     {
         Int64 current_snapshot_id = local_context->getSettingsRef()[Setting::iceberg_snapshot_id];
         auto data_snapshot = getIcebergDataSnapshot(metadata_object, current_snapshot_id, local_context);
-        return {data_snapshot, static_cast<Int32>(data_snapshot->schema_id_on_snapshot_commit)};
+        return {data_snapshot, data_snapshot->schema_id_on_snapshot_commit};
     }
     else
     {
@@ -513,9 +511,7 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
         {
             return {nullptr, schema_id};
         }
-        Int64 current_snapshot_id = metadata_object->isNull(f_current_snapshot_id)
-            ? -1
-            : metadata_object->getValue<Int64>(f_current_snapshot_id);
+        auto current_snapshot_id = metadata_object->getValue<Int64>(f_current_snapshot_id);
         if (current_snapshot_id < 0)
         {
             return {nullptr, schema_id};
@@ -873,13 +869,11 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
         history_record.manifest_list_path = IcebergPathFromMetadata::deserialize(snapshot->getValue<String>(f_manifest_list));
         const auto summary = snapshot->getObject(f_summary);
         if (summary->has(f_added_data_files))
-            history_record.added_files = summary->getValue<Int64>(f_added_data_files);
+            history_record.added_files = summary->getValue<Int32>(f_added_data_files);
         if (summary->has(f_added_records))
-            history_record.added_records = summary->getValue<Int64>(f_added_records);
-        if (summary->has(f_added_files_size))
-            history_record.added_files_size = summary->getValue<Int64>(f_added_files_size);
-        if (summary->has(f_changed_partition_count))
-            history_record.num_partitions = summary->getValue<Int64>(f_changed_partition_count);
+            history_record.added_records = summary->getValue<Int32>(f_added_records);
+        history_record.added_files_size = summary->getValue<Int32>(f_added_files_size);
+        history_record.num_partitions = summary->getValue<Int32>(f_changed_partition_count);
 
         if (snapshot->has(f_parent_snapshot_id) && !snapshot->isNull(f_parent_snapshot_id))
             history_record.parent_id = snapshot->getValue<Int64>(f_parent_snapshot_id);
@@ -1159,7 +1153,7 @@ void IcebergMetadata::addDeleteTransformers(
                 = {settings[Setting::max_rows_in_set], settings[Setting::max_bytes_in_set], settings[Setting::set_overflow_mode]};
             FutureSetPtr future_set = std::make_shared<FutureSetFromTuple>(
                 CityHash_v1_0_2::uint128(), nullptr, block_for_set.getColumnsWithTypeAndName(), true, size_limits_for_set);
-            ColumnPtr set_col = ColumnConst::create(ColumnSet::create(1, future_set), 1);
+            ColumnPtr set_col = ColumnSet::create(1, future_set);
             ActionsDAG dag(header->getColumnsWithTypeAndName());
             /// Construct right argument of 'not in' expression, it is the column set.
             const ActionsDAG::Node * in_rhs_arg = &dag.addColumn({set_col, std::make_shared<DataTypeSet>(), "set column"});

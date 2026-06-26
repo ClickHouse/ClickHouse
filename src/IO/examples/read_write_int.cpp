@@ -9,7 +9,7 @@
 #include <IO/WriteHelpers.h>
 
 
-int mainEntryExampleReadWriteInt(int, char **)
+int main(int, char **)
 {
     try
     {

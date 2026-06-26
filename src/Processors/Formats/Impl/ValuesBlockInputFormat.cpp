@@ -588,7 +588,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     Field value = convertFieldToType(expression_value, type, value_raw.second.get(), format_settings);
 
     /// Check that we are indeed allowed to insert a NULL.
-    if (value.isNull() && !canContainNull(type))
+    if (value.isNull() && !type.isNullable() && !type.isLowCardinalityNullable())
     {
         if (format_settings.null_as_default)
         {

@@ -8,7 +8,6 @@
 #include <Interpreters/Context.h>
 #include <Common/randomSeed.h>
 #include <Common/FunctionDocumentation.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromVector.h>
@@ -190,7 +189,7 @@ namespace
         /// and slowness of this function, and it can lead to `Max query size exceeded`
         /// while using this function with generateRandom.
         size_t num_values = rng() % 16 + 1;
-        VectorWithMemoryTracking<Int16> values(num_values);
+        std::vector<Int16> values(num_values);
 
         /// Generate random numbers from range [-(max_value + 1), max_value - num_values + 1].
         for (Int16 & x : values)

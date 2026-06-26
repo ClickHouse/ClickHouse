@@ -457,11 +457,6 @@ bool LocalConnection::poll(size_t)
 
     if (state->exception)
     {
-        /// Flush any buffered logs before delivering the exception, otherwise
-        /// the user would not see log messages produced before the failure.
-        if (needSendLogs())
-            return true;
-
         next_packet_type = Protocol::Server::Exception;
         return true;
     }

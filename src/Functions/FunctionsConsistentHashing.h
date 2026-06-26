@@ -18,7 +18,7 @@ namespace ErrorCodes
 
 
 template <typename Impl>
-class FunctionConsistentHashImpl final : public IFunction
+class FunctionConsistentHashImpl : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
