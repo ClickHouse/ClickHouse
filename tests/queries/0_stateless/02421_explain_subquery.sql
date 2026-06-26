@@ -57,5 +57,8 @@ SELECT * FROM viewExplain('', ''); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM viewExplain('EXPLAIN AST', ''); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM viewExplain('EXPLAIN AST', '', 1); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM viewExplain('EXPLAIN AST', '', ''); -- { serverError BAD_ARGUMENTS }
+-- `viewExplain` validates the first two arguments as string literals before analyzer resolution.
+SELECT * FROM viewExplain((SELECT * FROM view_explain_missing_table), '', (SELECT 1)); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM viewExplain('EXPLAIN', (SELECT * FROM view_explain_missing_table), (SELECT 1)); -- { serverError BAD_ARGUMENTS }
 
 -- EXPLAIN ESTIMATE is not supported in experimental analyzer
