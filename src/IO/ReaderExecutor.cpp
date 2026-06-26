@@ -311,6 +311,13 @@ ReaderExecutor::~ReaderExecutor()
         long_conn.reset();
     }
 
+    /// Emit the genuine over-read once, now that every serve has run: `overread_pending` holds
+    /// the source bytes fetched beyond their window MINUS those the cursor later read back from
+    /// the cache (removed at serve), so what remains is the true waste - alignment slack and a
+    /// read-ahead's fetched-ahead bytes that a seek-away or EOF left unconsumed. Counting it per
+    /// fetch (the old way) miscounted every forward read-ahead's fetch-ahead as over-read.
+    stats.add(Stats::OverReadBytes, overread_pending.totalBytes());
+
     /// A transient `readBigAt` executor rolls its stats into the parent via
     /// mergeTransientStats; emitting ProfileEvents / a reader_executor_log row
     /// here too would double-count. The parent's destructor reports the aggregate.
@@ -467,6 +474,12 @@ ChainedBuffers ReaderExecutor::readNextWindow()
 
     stats.add(Stats::RequestedBytes, chain.range().size);
     position += chain.range().size;
+    /// Credit the over-read: bytes now delivered to the consumer that were earlier fetched ahead
+    /// (alignment slack / read-ahead) and parked in `overread_pending`. Removing the served range
+    /// nets them out, so only fetched-but-never-read bytes remain as genuine over-read. `chain` is
+    /// logical (post-header); shift to the physical file offsets `overread_pending` is keyed on.
+    if (chain.range().size)
+        overread_pending.remove({chain.range().offset + data_start_offset, chain.range().size});
     /// Feed every forward serve - hit OR miss - to the look-ahead estimator. It sizes the
     /// plan / look-ahead window, which must grow on a sequential COLD read too (a cold scan
     /// has no hits, so a hit-only feed left the window pinned to one mark range). The window
@@ -1555,7 +1568,6 @@ void ReaderExecutor::assembleAndWriteBack(
     /// hole from the bounding span would wrongly mark it served, suppressing the sibling-led
     /// serve and the loser-tail that must still fill it and leaving a non-contiguous window that
     /// trips `finalizeAssembledWindow`'s single-run guard.
-    size_t served_requested = 0;
     for (const auto & gap : covered.subtract(fetch_window))
     {
         for (const auto & run : source_bytes.getIntervals())
@@ -1567,18 +1579,28 @@ void ReaderExecutor::assembleAndWriteBack(
             const ByteRange sub{lo, hi - lo};
             result.append(source_bytes.slice(sub));
             covered.add(sub);
-            const size_t rlo = std::max(sub.offset, requested_window.offset);
-            const size_t rhi = std::min(sub.end(), requested_window.end());
-            if (rhi > rlo)
-                served_requested += rhi - rlo;
         }
     }
 
-    /// Over-read - the single rule for both gap paths: source bytes that did NOT serve the
-    /// REQUESTED window. That is the alignment slack fetched only to fill a cache cell,
-    /// redundant copies of late-hit ranges another reader cached since planning, and any
-    /// bridged sub-`min_bytes_for_seek` hole (`[CF-overread]`).
-    out_stats.add(Stats::OverReadBytes, source_bytes.totalBytes() - served_requested);
+    /// Over-read - source bytes fetched BEYOND the requested window: alignment slack fetched to
+    /// fill a cache cell and the read-ahead's fetched-ahead bytes, both written to the cache.
+    /// Record their RANGES as pending rather than counting them now: a forward read-ahead fetches
+    /// far past the current window, but the cursor consumes those bytes from the cache a few
+    /// windows later, at which point the serve removes the range (`overread_pending.remove`). What
+    /// is never read back is the genuine over-read, emitted as `OverReadBytes` in the destructor -
+    /// so the read-ahead's "+" (fetch ahead) and "-" (read back from cache) balance on a large
+    /// window and only true waste remains. (Bytes already covered within the window - a redundant
+    /// late-hit copy - are also served-from-cache and so are correctly not counted.)
+    for (const auto & run : source_bytes.getIntervals())
+    {
+        if (run.offset < requested_window.offset)
+            overread_pending.add({run.offset, std::min(run.end(), requested_window.offset) - run.offset});
+        if (run.end() > requested_window.end())
+        {
+            const size_t tail = std::max(run.offset, requested_window.end());
+            overread_pending.add({tail, run.end() - tail});
+        }
+    }
 
     if (push_to_writers)
         pushAssembledToWriteBuffers(fetch_window, result, out_stats);

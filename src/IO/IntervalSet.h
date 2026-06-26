@@ -20,6 +20,12 @@ public:
     /// increasing-offset order.
     VectorWithMemoryTracking<ByteRange> subtract(ByteRange r) const;
 
+    /// Remove `r`'s bytes from the set, trimming/splitting any overlapping intervals.
+    void remove(ByteRange r);
+
+    /// Total bytes held (sum of the disjoint intervals' sizes).
+    size_t totalBytes() const;
+
 private:
     VectorWithMemoryTracking<ByteRange> intervals;
 };

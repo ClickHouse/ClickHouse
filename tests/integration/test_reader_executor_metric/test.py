@@ -101,28 +101,32 @@ LOADS = {
 # not here. Warm cells are ~0, gated by invariants. The real-load metrics are NOISY: prewhere on
 # a cold cache swings wildly within AND between runs (R 40-104, I 14-60, cv up to 0.44) and the
 # fragmented cells vary with the random eviction pattern, so a single recompute under-samples the
-# volatile cells. These bands are the UNION of two runs (see test_recompute_baseline) plus margin
-# - deliberately wide on prewhere/cold and the fragmented cells. After the connection-reach
-# unification the clean drains shift O/I on some loads. CI on consistent hardware is the
+# volatile cells. Regenerated (test_recompute_baseline) after the progressive fill-ahead run-ahead
+# and the net-waste over-read metric: R dropped (the read-ahead coalesces fetches into fewer GETs)
+# and O is now the NET over-read - the within-thread fetch-ahead is read back from the cache so it
+# no longer counts, leaving only the cross-thread / stripe-boundary prefill. A single recompute
+# under-samples the volatile cells (prewhere/cold), so CI on consistent hardware is the
 # authoritative gate; re-tune a row from the CI metric report if it regresses. Update a row only
 # when an executor change intentionally moves its magnitude.
 BASELINE = {
-    ("sequential", "cold", "live"): {"R": (26, 60), "I": (5, 12), "O": (7, 27), "cost/MiB": (13.3, 39.8)},
-    ("sequential", "fragmented", "live"): {"R": (18, 54), "I": (4, 12), "O": (3, 17), "cost/MiB": (5.6, 22.5)},
-    ("selective", "cold", "live"): {"R": (16, 38), "I": (5, 15), "O": (6, 23), "cost/MiB": (28.1, 84.2)},
-    ("selective", "fragmented", "live"): {"R": (5, 28), "I": (0, 3), "O": (0, 5), "cost/MiB": (46.8, 187.1)},
-    ("aggregation", "cold", "live"): {"R": (55, 129), "I": (10, 24), "O": (14, 57), "cost/MiB": (17.0, 51.0)},
-    ("aggregation", "fragmented", "live"): {"R": (16, 49), "I": (5, 16), "O": (4, 20), "cost/MiB": (5.4, 21.7)},
-    ("prewhere", "cold", "live"): {"R": (29, 115), "I": (14, 68), "O": (15, 120), "cost/MiB": (16.4, 58.0)},
-    ("prewhere", "fragmented", "live"): {"R": (21, 64), "I": (8, 30), "O": (11, 68), "cost/MiB": (8.4, 33.5)},
-    ("sequential", "cold", "stateless"): {"R": (77, 181), "O": (5, 28), "cost/MiB": (18.1, 54.2)},
-    ("sequential", "fragmented", "stateless"): {"R": (37, 111), "O": (3, 19), "cost/MiB": (7.5, 30.1)},
-    ("selective", "cold", "stateless"): {"R": (24, 56), "O": (5, 22), "cost/MiB": (32.7, 98.0)},
-    ("selective", "fragmented", "stateless"): {"R": (5, 25), "O": (0, 0), "cost/MiB": (43.7, 174.8)},
-    ("aggregation", "cold", "stateless"): {"R": (116, 271), "O": (11, 43), "cost/MiB": (22.5, 67.6)},
-    ("aggregation", "fragmented", "stateless"): {"R": (38, 113), "O": (3, 18), "cost/MiB": (7.4, 29.5)},
-    ("prewhere", "cold", "stateless"): {"R": (35, 130), "O": (12, 98), "cost/MiB": (16.5, 60.0)},
-    ("prewhere", "fragmented", "stateless"): {"R": (22, 80), "O": (7, 40), "cost/MiB": (8.0, 32.1)},
+    ("sequential", "cold", "live"): {"R": (15, 35), "I": (6, 15), "O": (13, 51), "cost/MiB": (11.6, 34.8)},
+    ("sequential", "fragmented", "live"): {"R": (8, 24), "I": (5, 15), "O": (7, 38), "cost/MiB": (3.1, 12.3)},
+    ("selective", "cold", "live"): {"R": (17, 39), "I": (1, 3), "O": (15, 60), "cost/MiB": (28.9, 86.7)},
+    ("selective", "fragmented", "live"): {"R": (5, 14), "I": (0, 0), "O": (0, 0), "cost/MiB": (19.2, 76.6)},
+    ("aggregation", "cold", "live"): {"R": (18, 43), "I": (6, 15), "O": (26, 103), "cost/MiB": (13.1, 39.2)},
+    ("aggregation", "fragmented", "live"): {"R": (8, 24), "I": (4, 13), "O": (9, 50), "cost/MiB": (3.0, 12.2)},
+    # prewhere/cold is the documented worst-case for variance (R and I swing widely run-to-run);
+    # widened to the union of two recompute runs plus margin (R seen 32-103, I seen 0-3).
+    ("prewhere", "cold", "live"): {"R": (20, 120), "I": (0, 8), "O": (10, 41), "cost/MiB": (17.2, 51.7)},
+    ("prewhere", "fragmented", "live"): {"R": (30, 110), "I": (0, 5), "O": (0, 6), "cost/MiB": (8.0, 32.0)},
+    ("sequential", "cold", "stateless"): {"R": (37, 87), "O": (10, 42), "cost/MiB": (13.7, 41.2)},
+    ("sequential", "fragmented", "stateless"): {"R": (11, 34), "O": (7, 40), "cost/MiB": (3.4, 13.4)},
+    ("selective", "cold", "stateless"): {"R": (21, 50), "O": (15, 60), "cost/MiB": (29.5, 88.6)},
+    ("selective", "fragmented", "stateless"): {"R": (5, 15), "O": (0, 0), "cost/MiB": (18.3, 73.1)},
+    ("aggregation", "cold", "stateless"): {"R": (43, 101), "O": (17, 69), "cost/MiB": (14.2, 42.5)},
+    ("aggregation", "fragmented", "stateless"): {"R": (12, 35), "O": (5, 29), "cost/MiB": (3.1, 12.3)},
+    ("prewhere", "cold", "stateless"): {"R": (35, 82), "O": (7, 28), "cost/MiB": (17.0, 50.9)},
+    ("prewhere", "fragmented", "stateless"): {"R": (12, 37), "O": (0, 2), "cost/MiB": (4.1, 16.4)},
 }
 
 

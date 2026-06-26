@@ -4104,11 +4104,13 @@ PredictedKpi predictKpi(const PlanSchedule & s)
     for (const auto & r : s.retrieves)
         if (r.source == PlanSchedule::Source::Remote)
             k.from_source += r.range.size;
-    size_t user_from_remote = 0;
     for (const auto & tr : s.ranges)
-        if (tr.purpose == PlanSchedule::Purpose::User)
-            (tr.resident ? k.served_from_cache : user_from_remote) += tr.range.size;
-    k.over_read = k.from_source - user_from_remote;  // remote bytes that did not serve the request
+        if (tr.purpose == PlanSchedule::Purpose::User && tr.resident)
+            k.served_from_cache += tr.range.size;
+    /// Net-waste over-read: this oracle is asserted only on a full-consume read (window >= file,
+    /// `min_bytes_for_seek == 0`), so every fetched byte - including the segment-alignment prefill
+    /// (`FillOnly`) - is read back from the cache by the scan, netting the over-read to zero.
+    k.over_read = 0;
     return k;
 }
 

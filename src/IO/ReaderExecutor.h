@@ -1012,6 +1012,14 @@ private:
     /// one-shot extent, or `setReadExtent`). `nullopt` = read to the file end.
     std::optional<size_t> read_extent_end;
 
+    /// Physical (file-offset) ranges fetched from the source BEYOND the window they served -
+    /// alignment slack and the read-ahead's fetched-ahead bytes, both written to the cache.
+    /// A range is REMOVED when the serve later delivers it (the run-ahead reads it back from the
+    /// cache), so it never counts as waste; what remains at the end is the genuine over-read
+    /// (`OverReadBytes`, emitted once in the destructor). FOREGROUND-PRIVATE: only the foreground
+    /// `assembleAndWriteBack` adds and the serve removes; the worker never touches it.
+    IntervalSet overread_pending;
+
     /// The current look-ahead plan (source of truth; geometry snapshot null
     /// until the first plan is built).
     ReadPlan read_plan;

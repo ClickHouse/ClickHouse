@@ -564,7 +564,7 @@ TEST_F(ReaderExecutorMetric, ColdSequential)
     /// (consumed by the scan, not waste).
     EXPECT_EQ(live.requests, 12u) << "live: the cold scan reopens the reach-bounded long connection a handful of times";
     EXPECT_EQ(live.incomplete, 0u) << "the connection drains to its bound";
-    EXPECT_EQ(live.over_read, 770048u) << "full-segment prefill from the wide cold fetch — consumed by the scan, not waste (stopgap pending the net-waste over_read metric)";
+    EXPECT_EQ(live.over_read, 0u) << "the wide cold fetch's full-segment prefill is consumed by the scan -> zero net over-read";
     EXPECT_EQ(live.fetched, FILE_SIZE);
     /// Stateless: a fresh short-lived connection per window, no reuse, still bounded.
     EXPECT_GT(stateless.requests, live.requests) << "no budget -> one connection per window";
@@ -598,7 +598,7 @@ TEST_F(ReaderExecutorMetric, Checkerboard)
 
     EXPECT_EQ(live.requests, 17u) << "live: one reach-bounded GET per cold segment, plus one ramp GET as the plan grows";
     EXPECT_EQ(live.incomplete, 0u) << "live: each cold-run connection drains at the next cached segment, none abandoned";
-    EXPECT_EQ(live.over_read, 385024u) << "full-segment prefill from the wide cold fetch (stopgap pending the net-waste over_read metric)";
+    EXPECT_EQ(live.over_read, 0u) << "the wide cold fetch's full-segment prefill is consumed by the scan -> zero net over-read";
     EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
     EXPECT_LE(stateless.requests, live.requests) << "stateless: a connection per window; with full-segment fetch each cold segment is one GET either way";
 }
@@ -623,7 +623,7 @@ TEST_F(ReaderExecutorMetric, SmallCachedGaps)
     /// can over-predict at a cold run's end, so the long connection over-reaches into the
     /// next above-bound hole and is abandoned -> incomplete > 0 on the live arm.
     EXPECT_EQ(live.incomplete, 7u) << "live: the over-reaching connection is abandoned at the next above-bound hole (accepted, re-tuned in a follow-up)";
-    EXPECT_EQ(live.over_read, 704512u) << "full-segment prefill from the wide cold fetch (stopgap pending the net-waste over_read metric)";
+    EXPECT_EQ(live.over_read, 0u) << "the wide cold fetch's full-segment prefill is consumed by the scan -> zero net over-read";
     EXPECT_GT(stateless.requests, live.requests) << "stateless: a connection per window";
 }
 
@@ -687,7 +687,7 @@ TEST_F(ReaderExecutorMetric, PrefixHitSuffixMiss)
 
     EXPECT_EQ(live.requests, 5u) << "live: the cold suffix is served by a handful of reach-bounded GETs";
     EXPECT_EQ(live.incomplete, 0u) << "the miss runs to EOF and drains cleanly";
-    EXPECT_EQ(live.over_read, 385024u) << "full-segment prefill from the wide cold fetch (stopgap pending the net-waste over_read metric)";
+    EXPECT_EQ(live.over_read, 0u) << "the wide cold fetch's full-segment prefill is consumed by the scan -> zero net over-read";
     EXPECT_EQ(stateless.incomplete, 0u);
     EXPECT_GT(stateless.requests, live.requests) << "stateless: one connection per window";
 }
@@ -705,7 +705,7 @@ TEST_F(ReaderExecutorMetric, SuffixHitPrefixMiss)
     /// over-predicts at the prefix's end, so the long connection over-reaches past the
     /// cold/warm boundary and is abandoned -> incomplete on the live arm.
     EXPECT_EQ(live.incomplete, 1u) << "live: the over-reaching connection is abandoned at the cold/warm boundary (accepted, re-tuned in a follow-up)";
-    EXPECT_EQ(live.over_read, 376832u) << "full-segment prefill from the wide cold fetch (stopgap pending the net-waste over_read metric)";
+    EXPECT_EQ(live.over_read, 0u) << "the wide cold fetch's full-segment prefill is consumed by the scan -> zero net over-read";
     EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
 }
 
@@ -721,7 +721,7 @@ TEST_F(ReaderExecutorMetric, InteriorHole)
 
     EXPECT_EQ(live.requests, 1u) << "live: one GET for the single interior cold segment";
     EXPECT_EQ(live.incomplete, 0u) << "live: the connection drains at the following cached segment";
-    EXPECT_EQ(live.over_read, 24576u) << "full-segment prefill from the wide cold fetch (stopgap pending the net-waste over_read metric)";
+    EXPECT_EQ(live.over_read, 0u) << "the wide cold fetch's full-segment prefill is consumed by the scan -> zero net over-read";
     EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
 }
 
@@ -803,7 +803,7 @@ TEST_F(ReaderExecutorMetric, SparseScatteredCold)
 
     EXPECT_EQ(live.requests, cold.size()) << "live: one GET per scattered cold segment";
     EXPECT_EQ(live.incomplete, 0u) << "live: each connection drains at the following cached segment";
-    EXPECT_EQ(live.over_read, 98304u) << "full-segment prefill from the wide cold fetch (stopgap pending the net-waste over_read metric)";
+    EXPECT_EQ(live.over_read, 0u) << "the cold segments' full-segment prefill is consumed by the full scan -> zero net over-read";
     EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
 }
 
@@ -829,7 +829,7 @@ TEST_F(ReaderExecutorMetric, ReverseSequential)
     /// prediction can over-reach a chunk, so a connection is occasionally abandoned at the
     /// backward seek -> incomplete > 0 on the live arm.
     EXPECT_EQ(live.incomplete, 1u) << "live: an over-reaching chunk connection is abandoned at the backward seek (accepted, re-tuned in a follow-up)";
-    EXPECT_EQ(live.over_read, 749568u) << "full-segment prefill from the wide cold fetch (stopgap pending the net-waste over_read metric)";
+    EXPECT_EQ(live.over_read, 0u) << "the wide cold fetch's full-segment prefill is consumed by the (reverse) scan -> zero net over-read";
     EXPECT_EQ(stateless.incomplete, 0u);
 }
 
