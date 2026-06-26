@@ -1,0 +1,22 @@
+-- distributed aggregate over an aggregate-projected table does not abort
+0	400
+1	400
+2	400
+3	400
+4	400
+5	400
+6	400
+7	400
+8	400
+9	400
+-- matches the single-node result
+0	400
+1	400
+2	400
+3	400
+4	400
+5	400
+6	400
+7	400
+8	400
+9	400
