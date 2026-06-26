@@ -97,7 +97,7 @@ inline constexpr Float32 BOUNDARIES[255] = {
 /// (+0 -> positive central cell, -0 -> negative). A NaN maps to the positive central cell.
 inline Int8 quantize(Float32 x)
 {
-    size_t index;
+    size_t index = 0;
     if (std::isnan(x))
         index = 128;
     else if (x == 0.0f)
