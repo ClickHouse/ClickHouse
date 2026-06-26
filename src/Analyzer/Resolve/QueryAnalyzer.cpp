@@ -73,6 +73,8 @@
 #include <algorithm>
 #include <memory>
 #include <ranges>
+#include <set>
+#include <tuple>
 
 namespace DB
 {
@@ -1392,7 +1394,11 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
     {
         /// Create a TableNode with StorageDummy as placeholder. The subquery stays unresolved.
         /// Resolution and real storage creation happen later in resolveQueryJoinTreeNode.
-        auto table_node = std::make_shared<TableNode>(full_name, cte_node, scope.context);
+        /// Carry the CTE-name double-quote bit so qualifier matching in `standard` mode can keep
+        /// a double-quoted CTE name case-sensitive.
+        const bool cte_name_is_double_quoted = (query_node && query_node->isCTENameDoubleQuoted())
+            || (union_node && union_node->isCTENameDoubleQuoted());
+        auto table_node = std::make_shared<TableNode>(full_name, cte_node, scope.context, cte_name_is_double_quoted);
         table_node->setAlias(full_name);
 
         cte_node = table_node;
@@ -5452,12 +5458,13 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
     {
         auto & join_using_list = join_node_typed.getJoinExpression()->as<ListNode &>();
         std::unordered_set<std::string> join_using_identifiers;
-        /// In `standard` mode an unquoted USING key folds case-insensitively (it can resolve to a
-        /// physical column of a different case). Track lowercase forms of unquoted entries so a
-        /// `USING (Key, key)` clause over a single physical `Key` is rejected here, before both
-        /// entries resolve to the same join key and silently break the duplicate-key invariant.
         const bool standard_mode = scope.isStandardMode();
-        std::unordered_set<std::string> join_using_lowercase_unquoted;
+        /// Resolved-key identity dedup. `USING (Key, key)` is valid when each entry resolves to a
+        /// distinct column; only when two entries resolve to the **same** (left, right) column pair
+        /// is the USING clause an actual duplicate. The pre-resolution lowercase check that used to
+        /// live here was too aggressive — it rejected the valid case where both sides expose
+        /// distinct exact columns `Key` and `key`.
+        std::set<std::tuple<const IQueryTreeNode *, String, const IQueryTreeNode *, String>> seen_resolved_using_pairs;
 
         for (auto & join_using_node : join_using_list.getNodes())
         {
@@ -5477,24 +5484,6 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                     identifier_full_name);
 
             join_using_identifiers.insert(identifier_full_name);
-
-            if (standard_mode)
-            {
-                const auto & quote_styles = identifier_node->getQuoteStyles();
-                const bool any_part_double_quoted = std::any_of(
-                    quote_styles.begin(), quote_styles.end(),
-                    [](auto style) { return style == IdentifierQuoteStyle::DoubleQuote; });
-                if (!any_part_double_quoted)
-                {
-                    const String lowered = Poco::toLower(identifier_full_name);
-                    if (!join_using_lowercase_unquoted.insert(lowered).second)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "JOIN {} identifier '{}' appears more than once in USING clause "
-                            "(case-insensitive duplicate under `case_insensitive_names = 'standard'`)",
-                            join_node_typed.formatASTForErrorMessage(),
-                            identifier_full_name);
-                }
-            }
 
             const auto & settings = scope.context->getSettingsRef();
 
@@ -5712,6 +5701,26 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                     scope.scope_node->formatASTForErrorMessage());
 
             result_table_expressions.push_back(result_right_table_expression);
+
+            /// Two USING entries are an actual duplicate only when they resolve to the same column
+            /// on both sides (e.g. `USING (Key, key)` over single physical column `Key`). When each
+            /// side exposes distinct exact columns, both entries are valid join keys.
+            if (standard_mode)
+            {
+                const auto & left_column = result_left_table_expression->as<ColumnNode &>();
+                const auto & right_column = result_right_table_expression->as<ColumnNode &>();
+                auto resolved_pair = std::make_tuple(
+                    left_column.getColumnSource().get(),
+                    left_column.getColumnName(),
+                    right_column.getColumnSource().get(),
+                    right_column.getColumnName());
+                if (!seen_resolved_using_pairs.insert(std::move(resolved_pair)).second)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "JOIN {} identifier '{}' appears more than once in USING clause "
+                        "(resolves to the same column pair under `case_insensitive_names = 'standard'`)",
+                        join_node_typed.formatASTForErrorMessage(),
+                        identifier_full_name);
+            }
 
             NameAndTypePair join_using_column(identifier_full_name, common_type);
             ListNodePtr join_using_expression = std::make_shared<ListNode>(result_table_expressions);

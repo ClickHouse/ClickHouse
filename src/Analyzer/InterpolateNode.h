@@ -52,6 +52,11 @@ public:
 
     const std::string & getExpressionName() const { return expression_name; }
 
+    /// True iff the original `INTERPOLATE ("Col" AS ...)` target was double-quoted. Captured at
+    /// construction; the resolved child is no longer an `IdentifierNode`, so we cannot recover
+    /// this from the child during round-trip.
+    bool isExpressionDoubleQuoted() const { return expression_is_double_quoted; }
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
@@ -65,6 +70,7 @@ protected:
 
     /// Initial name from column identifier.
     std::string expression_name;
+    bool expression_is_double_quoted = false;
 
 private:
     static constexpr size_t expression_child_index = 0;

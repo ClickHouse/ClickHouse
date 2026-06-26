@@ -705,8 +705,13 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
         /// Don't read subcolumn of aliases directly, only using getSubcolumn,
         /// because aliases don't have real subcolumns, they should be extracted
         /// after alias expression evaluation.
+        /// Build the canonical name from the resolved base + suffix so a folded lookup
+        /// like `data.name` against physical `Data.Name` reads the right storage column.
         if (scope.table_expression_data_for_alias_resolution->supports_subcolumns && !subcolumn_info->column_node->hasExpression())
-            return std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, subcolumn_info->subcolumn_type}, subcolumn_info->column_node->getColumnSource());
+        {
+            const String canonical_full_name = subcolumn_info->column_node->getColumnName() + "." + subcolumn_info->subcolumn_name;
+            return std::make_shared<ColumnNode>(NameAndTypePair{canonical_full_name, subcolumn_info->subcolumn_type}, subcolumn_info->column_node->getColumnSource());
+        }
 
         return wrapExpressionNodeInSubcolumn(subcolumn_info->column_node, String(subcolumn_info->subcolumn_name), scope.context);
     }
@@ -931,8 +936,13 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
             /// Don't read subcolumn of aliases directly, only using getSubcolumn,
             /// because aliases don't have real subcolumns, they should be extracted
             /// after alias expression evaluation.
+            /// Build the canonical name from the resolved base + suffix so a folded lookup
+            /// like `data.name` against physical `Data.Name` reads the right storage column.
             if (table_expression_data.supports_subcolumns && !subcolumn_info->column_node->hasExpression())
-                result_expression = std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, subcolumn_info->subcolumn_type}, subcolumn_info->column_node->getColumnSource());
+            {
+                const String canonical_full_name = subcolumn_info->column_node->getColumnName() + "." + subcolumn_info->subcolumn_name;
+                result_expression = std::make_shared<ColumnNode>(NameAndTypePair{canonical_full_name, subcolumn_info->subcolumn_type}, subcolumn_info->column_node->getColumnSource());
+            }
             else
                 result_expression = wrapExpressionNodeInSubcolumn(subcolumn_info->column_node, String(subcolumn_info->subcolumn_name), scope.context);
         }
@@ -1159,8 +1169,15 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     if (table_expression_node_type == QueryTreeNodeType::TABLE)
     {
         auto * table_node = table_expression_node->as<TableNode>();
-        if (table_node->isMaterializedCTE() && strings_equal(path_start, table_node->getMaterializedCTE()->cte_name, part_case_insensitive(0)))
-            return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
+        if (table_node->isMaterializedCTE())
+        {
+            const auto & cte = *table_node->getMaterializedCTE();
+            /// A double-quoted CTE definition (`WITH "MyCte" AS MATERIALIZED ...`) pins the CTE
+            /// name to its canonical case; an unquoted qualifier `mycte.x` must not bind to it.
+            const bool cte_case_insensitive = part_case_insensitive(0) && !cte.name_is_double_quoted;
+            if (strings_equal(path_start, cte.cte_name, cte_case_insensitive))
+                return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
+        }
     }
 
     if (identifier.getPartsSize() == 2)

@@ -45,3 +45,10 @@ Alice	Smith	0
 [11,22]
 --- ARRAY JOIN: double-quoted alias does not bind to unquoted lookup ---
 1	1
+--- Folded subcolumn lookup returns canonical column name ---
+hello
+--- JOIN USING (Key, key) with distinct exact columns is valid ---
+1	a	a
+--- Materialized CTE double-quoted name stays case-sensitive in qualifier ---
+--- INTERPOLATE quoted target survives format/reparse ---
+1

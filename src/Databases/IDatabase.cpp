@@ -53,12 +53,21 @@ StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
 
 String IDatabase::tryResolveTableNameCaseInsensitive(const String & name, ContextPtr context) const
 {
+    /// Remote / data-lake databases (PostgreSQL, MySQL, DataLake, ...) do not participate in
+    /// case-insensitive resolution at all. The outer lookup path already performs an exact-name
+    /// probe; an additional probe here would double the remote round trips for every reference
+    /// against such a database, and the catalog scan below is even more expensive.
+    /// Documented under the `case_insensitive_names` setting (`Scope:` section): a typo against a
+    /// remote table surfaces as `UNKNOWN_TABLE` — this is the deliberate trade-off.
+    if (isRemoteDatabase())
+        return {};
+
     /// Prefer the narrow exact-name lookup first: `getTablesIterator` may enumerate the entire
-    /// catalog (remote PostgreSQL / DataLake databases), which is far more expensive than a single
-    /// `tryGetTable` probe. The case-insensitive scan only fires when the exact lookup misses.
-    /// This is what makes `information_schema.tables` work in standard mode — the database contains
-    /// both `tables` and `TABLES`, but a literal lookup of `tables` matches `tables` exactly and
-    /// avoids the otherwise-ambiguous case-insensitive scan.
+    /// catalog, which is more expensive than a single `tryGetTable` probe. The case-insensitive
+    /// scan only fires when the exact lookup misses.
+    /// This is what makes `information_schema.tables` work in standard mode — the database
+    /// contains both `tables` and `TABLES`, but a literal lookup of `tables` matches `tables`
+    /// exactly and avoids the otherwise-ambiguous case-insensitive scan.
     if (tryGetTable(name, context))
         return name;
 
@@ -89,16 +98,6 @@ String IDatabase::tryResolveTableNameCaseInsensitive(const String & name, Contex
             }
         }
     }
-
-    /// `getTablesIterator` lists the whole catalog. For remote / data-lake databases
-    /// (PostgreSQL, MySQL, DataLake, etc.) that means a paid round trip per missing-name lookup —
-    /// far worse than the typo it would help with. Skip the scan for those engines; the
-    /// exact-name `tryGetTable` above already covered the cheap path. This caveat is documented
-    /// in the `case_insensitive_names` setting docs (`Scope:` section); a typo against a remote
-    /// table surfaces as `UNKNOWN_TABLE` rather than the more helpful ambiguity/canonical-form
-    /// diagnostic, which is the deliberate trade-off for avoiding the remote round trip.
-    if (isRemoteDatabase())
-        return {};
 
     String found_name;
     for (auto table_it = getTablesIterator(context); table_it->isValid(); table_it->next())

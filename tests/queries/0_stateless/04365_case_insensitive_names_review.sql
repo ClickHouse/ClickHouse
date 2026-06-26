@@ -121,3 +121,33 @@ CREATE TABLE t_array_join_quoted (x Int32) ENGINE = Memory;
 INSERT INTO t_array_join_quoted VALUES (1);
 SELECT x, "X" FROM t_array_join_quoted ARRAY JOIN [1] AS "X";
 DROP TABLE t_array_join_quoted;
+
+SELECT '--- Folded subcolumn lookup returns canonical column name ---';
+-- Bot review: a folded lookup `data.name` against physical column `Data.Name` must read the
+-- canonical column from storage, not the user's folded spelling.
+CREATE TABLE t_subcol_canonical (Data Tuple(Name String)) ENGINE = Memory;
+INSERT INTO t_subcol_canonical VALUES (('hello'));
+SELECT data.name FROM t_subcol_canonical;
+DROP TABLE t_subcol_canonical;
+
+SELECT '--- JOIN USING (Key, key) with distinct exact columns is valid ---';
+-- Bot review: pre-resolution lowercase dedup falsely rejected the case where both sides expose
+-- distinct `Key` and `key` columns. Post-resolution identity dedup permits it.
+CREATE TABLE t_using_distinct_l (Key Int32, key String) ENGINE = Memory;
+CREATE TABLE t_using_distinct_r (Key Int32, key String) ENGINE = Memory;
+INSERT INTO t_using_distinct_l VALUES (1, 'a');
+INSERT INTO t_using_distinct_r VALUES (1, 'a');
+SELECT * FROM t_using_distinct_l JOIN t_using_distinct_r USING (Key, key);
+DROP TABLE t_using_distinct_l;
+DROP TABLE t_using_distinct_r;
+
+SELECT '--- Materialized CTE double-quoted name stays case-sensitive in qualifier ---';
+-- Bot review: WITH "MyCte" AS MATERIALIZED (...) ... FROM "MyCte" — unquoted `mycte.x` must
+-- not bind to the double-quoted CTE name.
+SET enable_materialized_cte = 1;
+WITH "MyCte" AS MATERIALIZED (SELECT 1 AS x) SELECT mycte.x FROM "MyCte"; -- { serverError UNKNOWN_IDENTIFIER }
+
+SELECT '--- INTERPOLATE quoted target survives format/reparse ---';
+-- Bot review: after analysis the target child is a ColumnNode, not an IdentifierNode. The quote
+-- bit must come from the InterpolateNode itself so the round-trip keeps `"x"` quoted.
+SELECT formatQuery($$ SELECT x FROM (SELECT 1 AS x) ORDER BY x WITH FILL FROM 1 TO 3 INTERPOLATE ("x" AS x + 1) $$) LIKE '%INTERPOLATE ("x"%';

@@ -14,7 +14,14 @@ InterpolateNode::InterpolateNode(std::shared_ptr<IdentifierNode> expression_, Qu
     : IQueryTreeNode(children_size)
 {
     if (expression_)
+    {
         expression_name = expression_->getIdentifier().getFullName();
+        /// Capture the original double-quote bit now: once the child is resolved into a ColumnNode
+        /// it no longer carries `quote_styles`, so a later `toASTImpl` cannot recover it.
+        const auto & quote_styles = expression_->getQuoteStyles();
+        expression_is_double_quoted
+            = !quote_styles.empty() && quote_styles.front() == IdentifierQuoteStyle::DoubleQuote;
+    }
 
     children[expression_child_index] = std::move(expression_);
     children[interpolate_expression_child_index] = std::move(interpolate_expression_);
@@ -46,6 +53,7 @@ QueryTreeNodePtr InterpolateNode::cloneImpl() const
 {
     auto cloned = std::make_shared<InterpolateNode>(nullptr /*expression*/, nullptr /*interpolate_expression*/);
     cloned->expression_name = expression_name;
+    cloned->expression_is_double_quoted = expression_is_double_quoted;
     return cloned;
 }
 
@@ -57,17 +65,12 @@ ASTPtr InterpolateNode::toASTImpl(const ConvertToASTOptions & options) const
     /// In case of alias, identifier is replaced to expression, which can't be parsed.
     /// In this case, keep original alias name.
     if (const auto * identifier = getExpression()->as<IdentifierNode>())
-    {
         result->column = identifier->toAST(options)->getColumnName();
-        /// Propagate `INTERPOLATE ("Col" AS ...)` quote so the round-trip format → parse preserves
-        /// case-sensitivity in `standard` mode (otherwise the target would re-parse as unquoted and
-        /// could case-insensitively bind to a differently-cased output column).
-        if (!identifier->getQuoteStyles().empty()
-            && identifier->getQuoteStyles().front() == IdentifierQuoteStyle::DoubleQuote)
-            result->column_is_double_quoted = true;
-    }
     else
         result->column = expression_name;
+    /// Carry the original double-quote bit from the InterpolateNode itself: the resolved child
+    /// is no longer an `IdentifierNode`, so we cannot read it from there.
+    result->column_is_double_quoted = expression_is_double_quoted;
 
     result->children.push_back(getInterpolateExpression()->toAST(options));
     result->expr = result->children.back();

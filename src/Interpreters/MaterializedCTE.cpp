@@ -6,8 +6,9 @@
 namespace DB
 {
 
-MaterializedCTE::MaterializedCTE(const std::string & cte_name_)
+MaterializedCTE::MaterializedCTE(const std::string & cte_name_, bool name_is_double_quoted_)
     : cte_name(cte_name_)
+    , name_is_double_quoted(name_is_double_quoted_)
     , temporary_table_name(fmt::format("_materialized_cte_{}_{}", cte_name, thread_local_rng()))
 {}
 
