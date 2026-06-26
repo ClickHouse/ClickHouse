@@ -6,6 +6,7 @@
 -- EXPLAIN actions, just like they already are for EXPLAIN SYNTAX and EXPLAIN QUERY TREE.
 -- This is general: every constant masked during analysis (encrypt/decrypt/HMAC/...) is covered.
 
+SET explain_query_plan_default = 'legacy';
 -- { echoOn }
 -- All EXPLAIN flavours must hide the key consistently.
 EXPLAIN SYNTAX
