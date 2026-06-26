@@ -7,6 +7,9 @@ SET enable_analyzer = 1;
 SET serialize_query_plan = 0;
 SET enable_parallel_replicas = 0;
 SET max_parallel_replicas = 1;
+-- `limits.yaml` in the standard stateless config sets `max_rows_in_join` / `max_bytes_in_join` to a high
+-- ceiling; reset them so the `table_join` lookup fast path (declined on any non-zero limit) is exercised.
+SET max_rows_in_join = 0, max_bytes_in_join = 0;
 SET allow_experimental_lookup_index = 1;
 SET join_algorithm = 'direct,hash';
 
