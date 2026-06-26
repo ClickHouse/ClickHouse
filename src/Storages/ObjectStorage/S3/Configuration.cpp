@@ -783,11 +783,19 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         query_provided_secret_access_key = true;
     }
 
+    bool query_provided_session_token = false;
     if (auto session_token_value = getFromPositionOrKeyValue<String>("session_token", args, engine_args_to_idx, key_value_args);
         session_token_value.has_value())
     {
         s3_settings->auth_settings[S3AuthSetting::session_token] = session_token_value.value();
+        query_provided_session_token = true;
     }
+
+    /// When the query supplies its own key pair but no `session_token`, drop any token inherited from the
+    /// global/per-endpoint `<s3>` config: the server's temporary token does not belong with the query's keys
+    /// (it would be sent to a user-chosen endpoint and breaks otherwise-valid explicit credentials).
+    if (query_provided_access_key_id && query_provided_secret_access_key && !query_provided_session_token)
+        s3_settings->auth_settings[S3AuthSetting::session_token] = "";
 
     /// A query-supplied `role_arn` must assume the role with the query's own base keys, not the server `<s3>`
     /// static keys (a confused-deputy STS path). Drop it when the query did not supply its own key pair.

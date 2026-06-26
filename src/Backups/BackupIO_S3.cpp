@@ -126,6 +126,7 @@ private:
         String role_session_name,
         String external_id,
         bool gcp_oauth_supplied_by_query,
+        bool from_named_collection,
         const S3Settings & settings,
         const ContextPtr & context)
     {
@@ -153,12 +154,14 @@ private:
             external_id = settings.auth_settings[S3AuthSetting::external_id];
         }
 
-        /// Under the restriction a role_arn may be assumed only with the request's own base key pair, never
-        /// the server `<s3>` keys as the STS base. Drop a server-inherited role used on top of explicit keys,
-        /// and drop a query role whose base keys came from server config (an `extra_credentials(role_arn=...)`
-        /// or role-only collection); `getCredentialsProvider` then refuses the remaining server-managed credential.
+        /// Under the restriction a role_arn may be assumed only with the request's own base keys, never the
+        /// server `<s3>` keys as the STS base. Drop a server-inherited role used on top of explicit keys, and
+        /// (positional/`extra_credentials` form only) drop a query role whose base keys fell back to server
+        /// config. A named-collection role keeps its keys from the collection, so a role-only collection is left
+        /// to reach the central rejection (a query-overridden role is handled in registerBackupEngineS3).
         const bool drop_inherited_role = !role_arn_supplied_by_query && !credentials.IsEmpty();
-        const bool drop_role_on_server_keys = role_arn_supplied_by_query && !base_keys_supplied_by_query;
+        const bool drop_role_on_server_keys
+            = !from_named_collection && role_arn_supplied_by_query && !base_keys_supplied_by_query;
         if (!role_arn.empty() && (drop_inherited_role || drop_role_on_server_keys)
             && context->shouldRestrictUserQueryS3Credentials())
         {
@@ -330,7 +333,7 @@ BackupReaderS3::BackupReaderS3(
     /// A `gcp_oauth` is server-managed unless the named collection supplied it itself (see makeS3Client).
     const bool gcp_oauth_supplied_by_query = named_collection_auth
         && boost::iequals(String((*named_collection_auth)[S3AuthSetting::http_client]), "gcp_oauth");
-    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, gcp_oauth_supplied_by_query, s3_settings, context_);
+    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, gcp_oauth_supplied_by_query, /* from_named_collection */ named_collection_auth.has_value(), s3_settings, context_);
 
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
         blob_storage_log = std::make_shared<BlobStorageLogWriter>(blob_storage_system_log);
@@ -439,7 +442,7 @@ BackupWriterS3::BackupWriterS3(
     /// A `gcp_oauth` is server-managed unless the named collection supplied it itself (see makeS3Client).
     const bool gcp_oauth_supplied_by_query = named_collection_auth
         && boost::iequals(String((*named_collection_auth)[S3AuthSetting::http_client]), "gcp_oauth");
-    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, gcp_oauth_supplied_by_query, s3_settings, context_);
+    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, gcp_oauth_supplied_by_query, /* from_named_collection */ named_collection_auth.has_value(), s3_settings, context_);
 
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
     {

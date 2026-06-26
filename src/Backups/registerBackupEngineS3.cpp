@@ -97,6 +97,18 @@ void registerBackupEngineS3(BackupFactory & factory)
             role_session_name = collection->getOrDefault<String>("role_session_name", "");
             external_id = collection->getOrDefault<String>("external_id", "");
 
+            /// A query-overridden `role_arn` (`S3(collection, role_arn = ...)`) must not be assumed using the
+            /// collection's operator-provisioned keys; honor it only when the same query also overrode the base
+            /// key pair (mirrors `StorageS3Configuration::fromNamedCollection`). A `role_arn` from the stored
+            /// collection definition is left in place (a role-only collection then reaches the central rejection).
+            if (params.context->shouldRestrictUserQueryS3Credentials() && collection->isQueryOverridden("role_arn")
+                && !(collection->isQueryOverridden("access_key_id") && collection->isQueryOverridden("secret_access_key")))
+            {
+                role_arn.clear();
+                role_session_name.clear();
+                external_id.clear();
+            }
+
             /// Take every credential field (mechanisms and the static key pair) from the collection, defaulting
             /// to empty/0, so none is inherited from the server `<s3>` config: a URL-only backup collection
             /// stays anonymous and a role-only collection has no base keys to assume the role with (matches
