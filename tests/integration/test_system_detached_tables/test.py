@@ -96,4 +96,9 @@ def test_system_detached_tables(
     result = node.query(querry)
     assert result == expected_after_restart
 
+    node.restart_clickhouse()
+
+    result = node.query(querry)
+    assert result == expected_after_restart
+
     node.query(f"DROP DATABASE {db_name}")
