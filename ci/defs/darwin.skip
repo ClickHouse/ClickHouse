@@ -19,10 +19,6 @@
 02950_dictionary_ssd_cache_short_circuit
 03405_ssd_cache_incorrect_min_max_lifetimes_and_block_size
 
-# Transaction commit hang: fixed by PR #108375 (csn notify_all); remove once that merges.
-01172_transaction_counters
-01173_transaction_control_queries
-
 # Uses BSD 'ps' / procfs which differ on macOS (no '/proc', different ps options).
 01317_no_password_in_command_line
 
@@ -193,6 +189,5 @@
 04105_distributed_final_replacing
 04107_parallel_hash_join_partition_correctness
 04117_max_threads_min_free_memory_per_thread
-04141_transaction_after_commit_no_premature_wakeup
 04242_file_log_delete_recreate
 04257_file_log_rename_and_recreate
