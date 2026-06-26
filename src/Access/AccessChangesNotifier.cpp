@@ -102,14 +102,12 @@ void AccessChangesNotifier::sendNotifications()
     /// Only one thread can send notification at any time.
     std::lock_guard sending_notifications_lock{sending_notifications};
 
-    bool sent_any = false;
     std::unique_lock queue_lock{queue_mutex};
     while (!queue.empty())
     {
         auto event = std::move(queue.front());
         queue.pop();
         queue_lock.unlock();
-        sent_any = true;
 
         std::vector<OnChangedHandler> current_handlers;
         {
@@ -136,10 +134,11 @@ void AccessChangesNotifier::sendNotifications()
     }
     queue_lock.unlock();
 
-    if (!sent_any)
-        return;
-
-    /// Queue drained (e.g. a full refresh); run the coalesced per-batch work. Copied out so handlers
+    /// Run the coalesced per-batch work unconditionally, even when this call drained nothing: a
+    /// per-batch handler whose previous rebuild threw left its work pending, and the per-entity flag
+    /// guarding that rebuild is only cleared on success, so the retry must not depend on a fresh event
+    /// being queued (an up-to-date `SYSTEM RELOAD USERS` diffs to zero and would otherwise never retry).
+    /// Each handler is cheap when nothing is pending (a mutex + a flag check). Copied out so handlers
     /// run without `handlers->mutex` held.
     std::vector<OnBatchFinishedHandler> batch_finished_handlers;
     {
