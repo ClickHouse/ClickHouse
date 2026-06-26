@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -46,6 +45,3 @@ void StorageSystemEvents::fillData(MutableColumns & res_columns, ContextPtr cont
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemEvents) }

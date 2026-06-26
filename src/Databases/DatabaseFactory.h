@@ -89,9 +89,9 @@ public:
     /// Returns true if the given database engine accesses external data sources.
     bool isDatabaseExternal(const String & engine_name) const;
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
+    std::vector<String> getAllRegisteredNames() const override
     {
-        VectorWithMemoryTracking<String> result;
+        std::vector<String> result;
         auto getter = [](const auto & pair) { return pair.first; };
         std::transform(database_engines.begin(), database_engines.end(), std::back_inserter(result), getter);
         return result;

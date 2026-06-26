@@ -905,9 +905,6 @@ public:
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
     ClassifierPtr getWorkloadClassifier() const;
-    /// Release the query slot early so the client can reuse it for its next query.
-    /// Only the query slot is released, not the memory reservation: pipeline threads still hold raw
-    /// pointers to it, so it is released later by `BlockIO::onFinish` after the pipeline is finalized.
     void releaseQuerySlot() const;
     String getMergeWorkload() const;
     void setMergeWorkload(const String & value);
