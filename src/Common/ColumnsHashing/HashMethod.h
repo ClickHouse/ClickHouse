@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/ColumnsHashingImpl.h>
+#include <Common/HashTable/Prefetching.h>
 #include <Common/SipHash.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -214,6 +215,78 @@ protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 };
 
+/// For the case when there is one string key.
+template <
+    typename Value,
+    typename Mapped,
+    bool place_string_to_arena = true,
+    bool use_cache = true,
+    bool need_offset = false,
+    bool nullable = false>
+struct HashMethodABString : public columns_hashing_impl::HashMethodBase<
+                              HashMethodABString<Value, Mapped, place_string_to_arena, use_cache, need_offset, nullable>,
+                              Value,
+                              Mapped,
+                              use_cache,
+                              need_offset,
+                              nullable>
+{
+    static_assert(!need_offset);
+    static_assert(!nullable);
+    using Self = HashMethodABString<Value, Mapped, place_string_to_arena, use_cache, need_offset, nullable>;
+    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
+
+    static constexpr bool has_cheap_key_calculation = false;
+    /// The `hashes` array below stores 32-bit hashes used to populate the `ABStringRef`
+    /// payload itself (the layout packs the hash into the ref). It is not the canonical
+    /// 64-bit hash that `ColumnsHashingImpl.h`'s precomputed-hash hot path requires, so
+    /// this method opts out of that path until it is reworked to expose canonical hashes.
+    static constexpr bool has_pre_computed_hashes = false;
+
+    const IColumn::Offset * offsets;
+    const UInt8 * chars;
+
+    PaddedPODArray<UInt32> hashes;
+
+    HashMethodABString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
+    {
+        const IColumn * column = key_columns[0];
+        const ColumnString & column_string = assert_cast<const ColumnString &>(*column);
+        offsets = column_string.getOffsets().data();
+        chars = column_string.getChars().data();
+        auto & data = hashes;
+        size_t rows = column_string.size();
+        data.resize_exact(rows);
+        for (size_t i = 0; i < rows; ++i)
+        {
+            auto str = column_string.getDataAt(i);
+            if (str.empty())
+                data[i] = 0;
+            else if (str.size() <= std::numeric_limits<UInt32>::max())
+                data[i] = static_cast<UInt32>(StringRefHash()(StringRef{str.data(), str.size()}));
+            else
+                data[i] = static_cast<UInt32>(str.size());
+        }
+    }
+
+    ALWAYS_INLINE size_t getSize(ssize_t row) const { return offsets[row] - offsets[row - 1]; }
+
+    auto getKeyHolder(ssize_t row, [[maybe_unused]] Arena & pool) const
+    {
+        if constexpr (place_string_to_arena)
+        {
+            return ArenaABStringHolder{
+                ABStringRef::build(reinterpret_cast<const char *>(chars + offsets[row - 1]), getSize(row), hashes[row]), pool};
+        }
+        else
+        {
+            return ABStringRef::build(reinterpret_cast<const char *>(chars + offsets[row - 1]), getSize(row), hashes[row]);
+        }
+    }
+
+protected:
+    friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
+};
 
 /// For the case when there is one fixed-length string key.
 template <

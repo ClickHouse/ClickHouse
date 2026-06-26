@@ -154,6 +154,8 @@ public:
 
     void onFinish() const;
 
+    PrewhereInfoPtr getPrewhereInfo() const { return prewhere_info; }
+
 private:
     friend class SingleProjectionIndexReader;
 

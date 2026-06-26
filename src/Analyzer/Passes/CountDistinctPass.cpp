@@ -11,15 +11,20 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsBool count_distinct_optimization;
+    extern const SettingsBool optimize_distributed_group_by_sharding_key;
+    extern const SettingsUInt64 distributed_group_by_no_merge;
 }
 
 namespace
@@ -36,6 +41,14 @@ public:
         if (!getSettings()[Setting::count_distinct_optimization])
             return;
 
+        /// With `distributed_group_by_no_merge` the `GROUP BY` of the rewritten subquery is completed
+        /// independently on each shard and is not merged on the initiator, so the outer `count()` would
+        /// count duplicate per-shard groups instead of the global distinct keys. This is also the case
+        /// the `isRemote()` check below cannot catch when the remote/distributed table is reached through
+        /// a local wrapper such as `StorageMerge` (`merge(...)`), so skip the rewrite outright in this mode.
+        if (getSettings()[Setting::distributed_group_by_no_merge])
+            return;
+
         auto * query_node = node->as<QueryNode>();
 
         /// Check that query has only SELECT clause
@@ -48,6 +61,23 @@ public:
         auto join_tree_node_type = query_node->getJoinTree()->getNodeType();
         if (join_tree_node_type == QueryTreeNodeType::JOIN || join_tree_node_type == QueryTreeNodeType::CROSS_JOIN || join_tree_node_type == QueryTreeNodeType::ARRAY_JOIN)
             return;
+
+        /// Check only local table. Remote storages must be skipped because rewriting `countDistinct`/`uniqExact`
+        /// into `count()` over `GROUP BY` is not correct for distributed reads: with `distributed_group_by_no_merge`
+        /// the inner `GROUP BY` is completed independently per shard, so the outer `count()` would count duplicate
+        /// per-shard groups instead of the global distinct keys. A remote storage can be reached both directly
+        /// (`TableNode`) and through a table function such as `remote(...)` (`TableFunctionNode`), so check both.
+        const auto & join_tree_node = query_node->getJoinTree();
+        if (const auto * table_node = join_tree_node->as<TableNode>())
+        {
+            if (table_node->getStorage()->isRemote())
+                return;
+        }
+        else if (const auto * table_function_node = join_tree_node->as<TableFunctionNode>())
+        {
+            if (table_function_node->getStorage()->isRemote())
+                return;
+        }
 
         /// Check that query has only single node in projection
         auto & projection_nodes = query_node->getProjection().getNodes();

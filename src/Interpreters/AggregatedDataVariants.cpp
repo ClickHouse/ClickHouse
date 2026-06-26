@@ -424,11 +424,23 @@ AggregatedDataVariants::Type AggregatedDataVariants::chooseMethod(
     {
         if (has_low_cardinality)
             return Type::low_cardinality_key_string;
+        /// The `ABStringRef` aggregation method (`key_ab_string`) is not selected by default yet, because its
+        /// two-level variant (`AggregatedDataWithABStringKeyTwoLevel = TwoLevelHashMap<ABStringRef>`) assigns
+        /// buckets with `DefaultHash<ABStringRef>` (the low 32 bits of `StringRefHash`), whereas the established
+        /// two-level string method (`TwoLevelStringHashMap`) buckets short strings with `StringHashTableHash`.
+        /// Since `Aggregator::mergeBlocks` combines two-level data strictly by the incoming `bucket_num`, an
+        /// `ABStringRef` partial aggregation and a legacy/older-version one would place equal keys into different
+        /// buckets, so a memory-efficient or mixed-version distributed merge could emit duplicate groups. Keep the
+        /// established bucket-compatible method until the two-level `ABStringRef` bucket assignment reproduces it.
         return Type::key_string;
     }
 
     if (keys_size > 1 && all_keys_are_numbers_or_strings)
+    {
+        /// `ab_serialized` shares the same `TwoLevelHashMap<ABStringRef>` two-level bucketing as `key_ab_string`
+        /// above, so it has the same two-level bucket incompatibility and is likewise not selected by default yet.
         return Type::prealloc_serialized;
+    }
 
     return Type::serialized;
 }

@@ -1,6 +1,7 @@
 -- Tests merge tree 'setting' materialize_skip_indexes_on_merge
 -- add_minmax_index_for_numeric_columns=0: Different indices and plans on b
 
+SET use_query_condition_cache = 0;
 SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS tab;

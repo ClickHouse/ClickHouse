@@ -17,6 +17,8 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Functions/IFunction.h>
 
+#include <boost/functional/hash.hpp>
+
 namespace ProfileEvents
 {
     extern const Event FilterTransformPassedRows;
@@ -350,6 +352,18 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
         {
             buffered_mark_ranges_info->appendMarkRanges(mark_ranges_info->mark_ranges);
         }
+    }
+}
+
+void FilterTransform::updateQueryConditionHash(UInt64 top_n_hash)
+{
+    if (condition)
+    {
+        /// `boost::hash_combine` takes its seed by `std::size_t &`. On Darwin `UInt64` is `unsigned long long`
+        /// while `std::size_t` is `unsigned long`, so passing `condition->first` directly does not compile there.
+        std::size_t seed = condition->first;
+        boost::hash_combine(seed, top_n_hash);
+        condition->first = seed;
     }
 }
 

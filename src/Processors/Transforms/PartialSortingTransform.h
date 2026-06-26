@@ -24,6 +24,15 @@ public:
 
     void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { read_rows.swap(counter); }
 
+    size_t getFilterMask(
+        const ColumnRawPtrs & raw_block_columns,
+        const Columns & threshold_columns,
+        size_t num_rows,
+        IColumn::Filter & filter,
+        PaddedPODArray<UInt64> * rows_to_compare,
+        PaddedPODArray<Int8> & compare_results,
+        bool include_equal_row) const;
+
 protected:
     void transform(Chunk & chunk) override;
 
