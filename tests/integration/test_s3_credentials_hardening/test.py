@@ -252,6 +252,24 @@ def test_explicit_keys_drop_inherited_session_token():
     )
 
 
+def test_backup_explicit_keys_drop_inherited_session_token():
+    # BACKUP TO S3(url, ak, sk) with explicit keys must not send the server's inherited per-endpoint
+    # session_token (the explicit form has no way to supply one). The backup succeeding proves the token was
+    # dropped -- minio rejects the bogus inherited token if it is sent.
+    node_with_server_session_token.query("DROP TABLE IF EXISTS t_backup_token SYNC")
+    node_with_server_session_token.query(
+        "CREATE TABLE t_backup_token (x UInt8) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    node_with_server_session_token.query("INSERT INTO t_backup_token SELECT 1")
+
+    node_with_server_session_token.query(
+        f"BACKUP TABLE t_backup_token TO "
+        f"S3('http://minio1:9001/root/sessiontoken/backup1', '{minio_access_key}', '{minio_secret_key}')"
+    )
+
+    node_with_server_session_token.query("DROP TABLE t_backup_token SYNC")
+
+
 def test_backup_role_arn_override_does_not_use_collection_keys():
     # A query-overridden `role_arn` on a backup collection that carries operator-provisioned keys must not be
     # assumed using those keys as the STS base. Under the restriction the injected role is dropped and the

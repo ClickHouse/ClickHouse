@@ -132,6 +132,7 @@ private:
     {
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
         HTTPHeaderEntries headers;
+        String session_token = settings.auth_settings[S3AuthSetting::session_token];
         /// Whether the base key pair came from the request rather than the server `<s3>` config fallback below.
         const bool base_keys_supplied_by_query = !access_key_id.empty();
         if (access_key_id.empty())
@@ -139,6 +140,12 @@ private:
             credentials = Aws::Auth::AWSCredentials(settings.auth_settings[S3AuthSetting::access_key_id], settings.auth_settings[S3AuthSetting::secret_access_key]);
             headers = settings.auth_settings.headers;
         }
+
+        /// The explicit `BACKUP ... TO S3(url, ak, sk)` form supplies its own keys but has no way to supply a
+        /// session_token, so any token here was inherited from the server `<s3>`/endpoint config. Clear it so
+        /// the server's temporary token is not sent with the query's keys (a named collection carries its own).
+        if (base_keys_supplied_by_query && !from_named_collection)
+            session_token.clear();
 
         const auto & request_settings = settings.request_settings;
         const auto & server_settings = context->getGlobalContext()->getServerSettings();
@@ -261,7 +268,7 @@ private:
             settings.auth_settings.server_side_encryption_kms_config,
             std::move(headers),
             std::move(credentials_configuration),
-            settings.auth_settings[S3AuthSetting::session_token],
+            session_token,
             shared_cache);
     }
 
