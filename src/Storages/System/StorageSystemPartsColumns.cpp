@@ -14,6 +14,9 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/threadPoolCallbackRunner.h>
+#include <Common/setThreadName.h>
+#include <IO/SharedThreadPools.h>
 #include <Databases/IDatabase.h>
 
 namespace DB
@@ -114,6 +117,49 @@ void StorageSystemPartsColumns::processNextStorage(
     MergeTreeData::DataPartStateVector all_parts_state;
     MergeTreeData::DataPartsVector all_parts;
     all_parts = info.getParts(all_parts_state, has_state_column);
+
+    /// The `column_modification_time` value is the last-modified time of each column's data file.
+    /// For Wide parts this is a separate stat() per column, so a single query over a table with
+    /// many parts and many columns issues a huge number of independent, latency-bound stat() calls.
+    /// Compute them in parallel up front (only when the column is actually requested), so the
+    /// serial row-filling loop below can read the cached values. Each part is independent, mirroring
+    /// the parallelism in StorageSystemDetachedParts.
+    const auto & sample_block = getInMemoryMetadataPtr()->getSampleBlock();
+    const size_t column_modification_time_position = sample_block.getPositionByName("column_modification_time");
+    const bool need_column_modification_time = columns_mask[column_modification_time_position];
+
+    /// Indexed by [part_number][column_name] -> last modification time (if any).
+    std::vector<std::unordered_map<String, std::optional<time_t>>> column_modification_times;
+    if (need_column_modification_time && !all_parts.empty())
+    {
+        column_modification_times.resize(all_parts.size());
+
+        std::atomic<size_t> next_part = 0;
+        ThreadPoolCallbackRunnerLocal<void> runner(getIOThreadPool().get(), ThreadName::PARTS_COLUMNS_MTIME);
+
+        /// Scale the number of workers with the amount of work, so that tables with only a handful
+        /// of parts stay effectively single-threaded and do not pay the thread-dispatch overhead.
+        /// Mirrors the heuristic in StorageSystemDetachedParts.
+        const size_t max_threads = std::max<size_t>(1, std::min<size_t>(getIOThreadPool().get().getMaxThreads(), all_parts.size() / 10));
+        for (size_t thread = 0; thread < max_threads; ++thread)
+        {
+            /// Capturing by reference is safe: waitForAllToFinishAndRethrowFirstError() below joins
+            /// all workers before any of the captured locals goes out of scope.
+            runner.enqueueAndKeepTrack([&]
+            {
+                for (size_t i = next_part++; i < all_parts.size(); i = next_part++)
+                {
+                    const auto & part = all_parts[i];
+                    auto & times_for_part = column_modification_times[i];
+                    for (const auto & part_column : part->getColumns())
+                        times_for_part.emplace(part_column.name, part->getColumnModificationTime(part_column.name));
+                }
+            });
+        }
+
+        runner.waitForAllToFinishAndRethrowFirstError();
+    }
+
     for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
     {
         const auto & part = all_parts[part_number];
@@ -254,8 +300,10 @@ void StorageSystemPartsColumns::processNextStorage(
                 columns[res_index++]->insert(column_size.marks);
             if (columns_mask[src_index++])
             {
-                if (auto column_modification_time = part->getColumnModificationTime(column.name))
-                    columns[res_index++]->insert(UInt64(column_modification_time.value()));
+                const auto & times_for_part = column_modification_times[part_number];
+                auto time_it = times_for_part.find(column.name);
+                if (time_it != times_for_part.end() && time_it->second)
+                    columns[res_index++]->insert(UInt64(time_it->second.value()));
                 else
                     columns[res_index++]->insertDefault();
             }

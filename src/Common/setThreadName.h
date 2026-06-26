@@ -113,6 +113,7 @@ namespace DB
     M(PARQUET_PREFETCH, "ParquetPrefetch") \
     M(PLAIN_REWRITABLE_META_LOAD, "PlainRWMetaLoad") \
     M(POLYGON_DICT_LOAD, "PolygonDict") \
+    M(PARTS_COLUMNS_MTIME, "PartsColMtime") \
     M(POOL_DELAYED_EXECUTION, "PoolDelayExec") \
     M(POSTGRES_HANDLER, "PostgresHandler") \
     M(PREFIX_READER, "PrefixReader") \
