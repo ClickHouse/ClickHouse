@@ -327,8 +327,16 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       `CANNOT_PARSE_TEXT` errors come from:
 #       - 00834_kill_mutation{,_replicated_zookeeper}: `DELETE WHERE toUInt32(s) = 1` on String data ('a', 'b')
 #       - 01414_mutations_and_errors_zookeeper: `MODIFY COLUMN value UInt64` on String data ('Hello')
+#       - 03047_on_fly_mutations_alters / 03100_lwu_25_update_alters / 04338_on_fly_mutation_read_overwritten_lc_source:
+#         `UPDATE v = 'x'` then `MODIFY COLUMN v UInt64` leaves a non-replicated MergeTree part holding the
+#         unconvertible value 'x' that a background mutation later fails to CAST to UInt64.
 #       `MutateFromLogEntryTask` is also excluded for the same reason, but only catches the first log line;
 #       the wrapping `MergeTreeBackgroundExecutor` line also needs to be excluded.
+#       For the non-replicated path the wrapper is `MutatePlainMergeTreeTask` (not `MutateFromLogEntryTask`).
+#       Rather than exclude the broad task-component names, the narrow inner-text `Cannot parse string 'x' as
+#       UInt64` is filtered: it appears in all three emitted lines (the `MutatePlainMergeTreeTask:` line, its
+#       `executeStep()` line, and the `MergeTreeBackgroundExecutor` wrapper line), so one entry covers them all
+#       while a genuinely different plain-mutation error still surfaces.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 # `Unknown tokenizer: 'unicode_word'` appears because the `unicode_word` tokenizer was renamed to `asciiCJK`
@@ -426,6 +434,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "is lost forever." \
            -e "Unknown index: idx." \
            -e "Cannot parse string 'Hello' as UInt64" \
+           -e "Cannot parse string 'x' as UInt64" \
            -e "Cannot parse string 'Hello' as UInt32" \
            -e "Cannot parse string \'Hello\' as UInt32" \
            -e "Cannot parse string \\'Hello\\' as UInt32" \
