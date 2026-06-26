@@ -1,12 +1,11 @@
 #include <algorithm>
 #include <iterator>
 #include <set>
-#include <stack>
 #include <unordered_map>
+#include <vector>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/StepWallClock.h>
 #include <Processors/StepWallClockRegistry.h>
 #include <base/defines.h>
@@ -15,7 +14,7 @@
 namespace DB
 {
 
-AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_)
+AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 execution_query_time_ns_)
 : max_num_threads_per_query(pipeline.getNumThreads())
 , execution_query_time_ns(execution_query_time_ns_)
 {
@@ -24,7 +23,6 @@ AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, const Query
     collectIoStats(processors);
     const auto elapsed_per_step_group = collectTimingStats(pipeline, processors);
     computeDistribution(elapsed_per_step_group);
-    computeStepTimes(plan);
 }
 
 void AnalyzeStepsStats::collectIoStats(const Processors & processors)
@@ -127,40 +125,6 @@ void AnalyzeStepsStats::computeDistribution(const ElapsedTimesPerStepGroup & ela
     }
 }
 
-void AnalyzeStepsStats::computeStepTimes(const QueryPlan & plan)
-{
-    const auto * root_node = plan.getRootNode();
-    if (!root_node)
-        return;
-
-    /// Walk the whole plan, descending into direct children and the root nodes of nested
-    /// sub-plans (matching StepWallClockRegistry::populateFromPlan). For each step, the total
-    /// time is the sum of its per-group wall-clock times.
-    std::stack<const QueryPlan::Node *> stack;
-    stack.push(root_node);
-
-    while (!stack.empty())
-    {
-        const auto * node = stack.top();
-        stack.pop();
-
-        const auto * step = node->step.get();
-
-        UInt64 total_step_time_ns = 0;
-        for (size_t group : step->getStepGroups())
-            if (auto group_it = stats_by_step_group.find(std::make_pair(step, group)); group_it != stats_by_step_group.end())
-                total_step_time_ns += group_it->second.wall_clock_time_ns;
-
-        stats_by_step[step].total_step_time_ns = total_step_time_ns;
-
-        for (const auto * child_node : node->children)
-            stack.push(child_node);
-        for (const auto * child_plan : node->step->getChildPlans())
-            if (const auto * child_root = child_plan->getRootNode())
-                stack.push(child_root);
-    }
-}
-
 void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer & out, const std::string & prefix, bool processors_info) const
 {
     if (!step)
@@ -172,7 +136,7 @@ void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer 
 
     const bool empty_io = (step_stats.input_bytes == 0 && step_stats.output_bytes == 0);
 
-    out << prefix << "Actual: rows "
+    out << prefix << "Actual I/O: rows "
         << formatReadableQuantity(static_cast<double>(step_stats.input_rows)) << " → "
         << formatReadableQuantity(static_cast<double>(step_stats.output_rows));
 
@@ -188,13 +152,22 @@ void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer 
 
     out << "\n";
 
+    /// Collect the stages (step groups) that actually have timing stats.
+    std::vector<std::pair<size_t, const StepGroupStats *>> stages;
     for (size_t group : step->getStepGroups())
     {
         const auto group_it = stats_by_step_group.find(std::make_pair(step, group));
-        if (group_it == stats_by_step_group.end())
-            continue;
+        if (group_it != stats_by_step_group.end())
+            stages.emplace_back(group, &group_it->second);
+    }
 
-        const auto & group_stats = group_it->second;
+    /// A step that splits into several stages labels each one ("Stage (<name>): ..."); a step with a
+    /// single stage just reports that stage's time directly, since there is nothing to disambiguate.
+    const bool label_stages = stages.size() > 1;
+
+    for (const auto & [group, group_stats_ptr] : stages)
+    {
+        const auto & group_stats = *group_stats_ptr;
 
         const double share_of_query_time = execution_query_time_ns != 0
             ? 100.0 * static_cast<double>(group_stats.wall_clock_time_ns) / static_cast<double>(execution_query_time_ns)
@@ -204,11 +177,15 @@ void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer 
             : 0.0;
         const UInt64 max_parallelism = std::min(max_num_threads_per_query, group_stats.total_num_processors);
 
-        const std::string group_name = step->getStepGroupName(group);
-
         out << prefix << "  ";
-        if (!group_name.empty())
-            out << group_name << ": ";
+        if (label_stages)
+        {
+            const std::string group_name = step->getStepGroupName(group);
+            out << "Stage";
+            if (!group_name.empty())
+                out << " (" << group_name << ")";
+            out << ": ";
+        }
         out << "time " << formatReadableTime(static_cast<double>(group_stats.wall_clock_time_ns))
             << fmt::format(" ({:.1f}%)", share_of_query_time) << " · parallelism "
             << (group_stats.wall_clock_time_ns ? fmt::format("{:.2f}/{}", parallelism, max_parallelism) : "Unknown")
@@ -220,18 +197,6 @@ void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer 
                 << " · median " << formatReadableTime(static_cast<double>(group_stats.median_elapsed_ns))
                 << " · max " << formatReadableTime(static_cast<double>(group_stats.max_elapsed_ns))
                 << " · sum " << formatReadableTime(static_cast<double>(group_stats.sum_elapsed_ns)) << "\n";
-    }
-
-    if (step_stats.total_step_time_ns != 0)
-    {
-        const double share_of_query_time = execution_query_time_ns != 0
-            ? 100.0 * static_cast<double>(step_stats.total_step_time_ns) / static_cast<double>(execution_query_time_ns)
-            : 0.0;
-
-        out << prefix << "  Total time: "
-            << formatReadableTime(static_cast<double>(step_stats.total_step_time_ns))
-            << fmt::format(" ({:.1f}%)", share_of_query_time)
-            << "\n";
     }
 }
 

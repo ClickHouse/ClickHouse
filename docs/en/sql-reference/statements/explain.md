@@ -672,21 +672,21 @@ Query summary:
 Output: number MOD 10, count()
 
 Expression ((Project names + Projection))
-│  Actual: rows 10.00 → 10.00 · 90.00 B → 90.00 B
+│  Actual I/O: rows 10.00 → 10.00 · 90.00 B → 90.00 B
 │    time 30.25 us (0.7%) · parallelism 0.99/1
 └──Aggregating
    │  Keys: number MOD 10
    │  Aggregates: count()
    │  Skip merging: 0
-   │  Actual: rows 1.00 million → 10.00 (0.00%) · 1.00 MB → 90.00 B
-   │    grouping: time 521.00 us (12.4%) · parallelism 5.92/12
-   │    merging: time 744.67 us (17.7%) · parallelism 2.31/31
+   │  Actual I/O: rows 1.00 million → 10.00 (0.00%) · 1.00 MB → 90.00 B
+   │    Stage (grouping): time 521.00 us (12.4%) · parallelism 5.92/12
+   │    Stage (merging): time 744.67 us (17.7%) · parallelism 2.31/31
    └──Expression ((Before GROUP BY + Change column names to column identifiers))
-      │  Actual: rows 1.00 million → 1.00 million · 8.00 MB → 1.00 MB
+      │  Actual I/O: rows 1.00 million → 1.00 million · 8.00 MB → 1.00 MB
       │    time 625.48 us (14.8%) · parallelism 4.86/12
       └──ReadFromSystemNumbers
             Output: number
-            Actual: rows 0.00 → 1.00 million · 0.00 B → 8.00 MB
+            Actual I/O: rows 0.00 → 1.00 million · 0.00 B → 8.00 MB
               time 986.90 us (23.4%) · parallelism 6.28/15
 ```
 
@@ -706,17 +706,17 @@ Let's examine the output. First let's look at the header.
 Now let's look at the new lines that appear in the query plan.
 
 ```txt
-Actual: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
-  [<stage>: ]time <t> (<share>%) · parallelism <avg>/<max>
+Actual I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
+  [Stage (<stage>): ]time <t> (<share>%) · parallelism <avg>/<max>
 ```
 
-Rows and bytes are reported once for the whole step (the first line). Time and parallelism are reported per stage of the step on the following indented line(s).
+Rows and bytes are reported once for the whole step (the `Actual I/O` line). Time and parallelism are reported per stage of the step on the following indented line(s).
 
 - `rows <in> → <out>` — rows that entered and left the step; (`<selectivity>`%) shows how much the step filtered (`out/in`) or expanded the data, it is hidden when input rows equals output rows and when input rows equals `0`.
 - `<bytes_in> → <bytes_out>` — uncompressed in-memory bytes flowing through the step (omitted when both are zero).
 - `time <t> (<share>%)` — wall-clock time the stage was active, and its share of query execution time (i.e. without build time). Note shares can add up to more than 100% because stages and steps run concurrently.
 - `parallelism <avg>/<max>` — average number of CPU threads working within this stage at once, out of the maximum it could use. A value near max means the stage was well parallelized; near 1 means it ran mostly serially.
-- `<stage>` — the name of the stage. A step with a single, unnamed stage prints the time line without a label. Steps with several stages print one line per stage, e.g. `Aggregating` shows `grouping` and `merging`, and a hash join shows `build` and `probe`.
+- `Stage (<stage>)` — the name of the stage. A step with a single stage prints the time line directly, without a `Stage (...)` label. Steps with several stages print one labeled line per stage, e.g. `Aggregating` shows `Stage (grouping)` and `Stage (merging)`, and a hash join shows `Stage (build)` and `Stage (probe)`.
 
 :::note
 ClickHouse parallelizes not only execution of tasks within a plan step, but also the execution of plan steps. The `parallelism` metric reflects only the work of this step. Other steps may run concurrently, so this number does not show how the step's parallelism compares to the whole query.

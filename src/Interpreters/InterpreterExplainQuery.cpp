@@ -718,6 +718,7 @@ struct InterpreterExplainQuery::AnalyzedInnerQuery
     bool ignore_quota = false;
     bool ignore_limits = false;
     UInt64 planning_ns = 0;
+    ExplainPlanOptions query_plan_options;
 };
 
 InterpreterExplainQuery::InterpreterExplainQuery(const ASTPtr & query_, ContextPtr context_, const SelectQueryOptions & options_)
@@ -764,6 +765,8 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
     InterpreterSetQuery::applySettingsFromQuery(query, planning_context);
 
     auto result = std::make_unique<AnalyzedInnerQuery>();
+
+    result->query_plan_options = checkAndGetSettings<QueryAnalyzeSettings>(ast.getSettings()).query_plan_options;
 
     Stopwatch watch;
     if (planning_context->getSettingsRef()[Setting::allow_experimental_analyzer])
@@ -1110,10 +1113,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     ErrorCodes::NOT_IMPLEMENTED,
                     "EXPLAIN ANALYZE doesn't support queries executed in distributed mode");
 
-            auto settings = checkAndGetSettings<QueryAnalyzeSettings>(ast.getSettings());
-
             /// Plan the inner SELECT. This is cached when ignoreQuota / ignoreLimits already triggered
             /// it during quota charging in executeQuery, so the inner query is never planned twice.
+            /// getAnalyzedInnerQuery also validates the EXPLAIN ANALYZE settings (the same check that was
+            /// previously done here), so invalid settings are still rejected, just without re-parsing.
             /// EXPLAIN ANALYZE executes the inner SELECT, so quota and result limits must follow the same
             /// rules as running that SELECT directly; the inner interpreter resolves the effective
             /// ignore_quota / ignore_limits during planning (e.g. exempt system tables such as `system.one`).
@@ -1197,6 +1200,18 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     std::move(cancel_callback),
                     query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
 
+            /// SelectedRows / SelectedBytes are cumulative thread-group counters for the whole outer query.
+            /// EXPLAIN ANALYZE can appear as a table expression, so an earlier analyze subquery in the same
+            /// outer query may have already advanced them. Snapshot the baseline before executing and report
+            /// only the delta produced by this inner pipeline.
+            UInt64 read_rows_before = 0;
+            UInt64 read_bytes_before = 0;
+            if (auto thread_group = CurrentThread::getGroup())
+            {
+                read_rows_before  = thread_group->performance_counters[ProfileEvents::SelectedRows];
+                read_bytes_before = thread_group->performance_counters[ProfileEvents::SelectedBytes];
+            }
+
             watch.restart();
             executor.execute();
             UInt64 execute_ns = watch.elapsed();
@@ -1209,17 +1224,17 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             if (auto thread_group = CurrentThread::getGroup())
             {
-                read_rows   = thread_group->performance_counters[ProfileEvents::SelectedRows];
-                read_bytes  = thread_group->performance_counters[ProfileEvents::SelectedBytes];
+                read_rows   = thread_group->performance_counters[ProfileEvents::SelectedRows] - read_rows_before;
+                read_bytes  = thread_group->performance_counters[ProfileEvents::SelectedBytes] - read_bytes_before;
                 peak_memory = thread_group->memory_tracker.getPeak();
             }
 
-            AnalyzeStepsStats steps_to_stats(pipeline, plan, execute_ns);
+            AnalyzeStepsStats steps_to_stats(pipeline, execute_ns);
 
             formatHeaderExplainAnalyze(total_time_ns, planning_ns, execute_ns, read_rows, read_bytes, peak_memory, buf);
 
             plan.explainPlan(buf,
-            settings.query_plan_options,
+            analyzed.query_plan_options,
             0,
             query_context->getSettingsRef()[Setting::query_plan_max_step_description_length],
             &precomputed_pretty_names,
