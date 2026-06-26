@@ -37,7 +37,9 @@ workflow = Workflow.Config(
     secrets=SECRETS,
     enable_report=True,
     enable_cidb=False,
-    cron_schedules=["*/30 * * * *"],
+    # `0,30 * * * *` (minutes 0 and 30) rather than `*/30 * * * *`: praktika
+    # emits the cron unquoted, and a YAML plain scalar may not start with `*`.
+    cron_schedules=["0,30 * * * *"],
 )
 
 WORKFLOWS = [
