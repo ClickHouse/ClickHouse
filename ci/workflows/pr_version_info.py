@@ -6,8 +6,8 @@ from ci.defs.defs import BASE_BRANCH, SECRETS, RunnerLabels
 # release version a PR shipped in from the CIDB `version_history` table. See
 # tests/ci/pr_version_info.py for details.
 #
-# Runs hourly with a 15-day lookback: each run reconciles PRs merged in the last
-# 15 days, plus any original pulled in by a backport merged in that window. A
+# Runs hourly with a 10-day lookback: each run reconciles PRs merged in the last
+# 10 days, plus any original pulled in by a backport merged in that window. A
 # manual run can widen the lookback via the `days` input (e.g. 100 to backfill).
 
 workflow = Workflow.Config(
@@ -19,7 +19,7 @@ workflow = Workflow.Config(
             name="days",
             description="Lookback window in days; overrides the default for a "
             "manual run (e.g. 100 to backfill). Leave empty for the scheduled "
-            "15-day window.",
+            "10-day window.",
             is_required=False,
             default_value="",
         ),
@@ -27,7 +27,7 @@ workflow = Workflow.Config(
     jobs=[
         Job.Config(
             name="Update PR version info",
-            command="python3 ./tests/ci/pr_version_info.py --days 15",
+            command="python3 ./tests/ci/pr_version_info.py --days 10",
             runs_on=RunnerLabels.STYLE_CHECK_ARM,
             enable_gh_auth=True,
         ),
