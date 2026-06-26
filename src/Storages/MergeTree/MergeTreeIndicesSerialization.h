@@ -27,6 +27,7 @@ inline bool looksLikePackedSkipIndexFile(std::string_view name)
 class IMergeTreeIndexCondition;
 class IMergeTreeDataPart;
 struct IMergeTreeIndex;
+struct MarkRanges;
 
 /// Represents a substream of a merge tree index.
 /// By default skip indexes have one substream (skp_idx_<name>.idx),
@@ -39,6 +40,7 @@ struct MergeTreeIndexSubstream
         Regular,
         TextIndexDictionary,
         TextIndexPostings,
+        TextIndexPositions,
     };
 
     Type type;
@@ -49,9 +51,9 @@ struct MergeTreeIndexSubstream
 
     static bool isCompressed(Type type)
     {
-        /// Text index postings are not compressed by write buffer,
+        /// Text index postings and positions are not compressed by write buffer,
         /// because the compression is implicitly applied during building them.
-        return type != Type::TextIndexPostings;
+        return type != Type::TextIndexPostings && type != Type::TextIndexPositions;
     }
 };
 
@@ -79,6 +81,7 @@ struct MergeTreeIndexDeserializationState
     const IMergeTreeDataPart & part;
     const IMergeTreeIndex & index;
     size_t mark = 0; /// Index mark currently being deserialized, used e.g. to load vectors from the data part.
+    const MarkRanges * readable_ranges;
 };
 
 }
