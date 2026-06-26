@@ -13,7 +13,6 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}
-  cancel-in-progress: true
 
 env:
   PYTHONUNBUFFERED: 1

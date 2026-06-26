@@ -75,7 +75,7 @@ on:
   workflow_dispatch:{DISPATCH_INPUTS_BLOCK}
 
 concurrency:
-  group: ${{{{{{{{ github.workflow }}}}}}}}{CANCEL_IN_PROGRESS}
+  group: ${{{{{{{{ github.workflow }}}}}}}}
 
 env:
   PYTHONUNBUFFERED: 1
@@ -457,14 +457,6 @@ class PullRequestPushYamlGen:
             base_template = YamlGenerator.Templates.TEMPLATE_SCHEDULE
             format_kwargs = {
                 "CRON_TEMPLATES": cron_items,
-                # Empty unless the workflow opts in, so every other scheduled
-                # workflow's generated YAML is byte-for-byte unchanged. The
-                # value has no braces, so it survives the second `.format` pass.
-                "CANCEL_IN_PROGRESS": (
-                    "\n  cancel-in-progress: true"
-                    if self.workflow_config.cancel_intersecting_runs
-                    else ""
-                ),
                 # Allow a scheduled workflow to also declare workflow_dispatch
                 # inputs for manual runs; empty when none are declared, so the
                 # generated YAML is unchanged for inputs-less schedules.
