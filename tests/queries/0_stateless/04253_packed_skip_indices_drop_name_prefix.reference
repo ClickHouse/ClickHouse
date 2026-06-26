@@ -4,7 +4,3 @@ drop_a_ab_filtered	1
 drop_ab_query_a	51
 drop_ab_a_filtered	1
 1
-mutate_prefix_storage	Compact	Packed
-mutate_prefix_rows	2000
-mutate_prefix_ab_filtered	1
-1

@@ -2149,9 +2149,8 @@ private:
             }
             else
             {
-                auto index_helper = MergeTreeIndexFactory::instance().get(idx, *ctx->data->getSettings());
-                const String index_file_name = index_helper->getFileName();
-                const auto index_format = index_helper->getDeserializedFormat(ctx->source_part->checksums, index_file_name);
+                const String index_file_name = index_ptr->getFileName();
+                const auto index_format = index_ptr->getDeserializedFormat(ctx->source_part->checksums, index_file_name, &ctx->source_part->getDataPartStorage());
 
                 for (const auto & substream : index_format.substreams)
                 {
