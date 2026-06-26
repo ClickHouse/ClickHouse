@@ -355,3 +355,26 @@ GTEST_TEST(FunctionSignature, ConstArgumentPosition)
     EXPECT_THAT(checkSignature(sig, {makeColumn("String"), makeColumn("String")}), ::testing::StartsWith("FAIL:"));
     EXPECT_EQ(checkSignatureTypesOnly(sig, {makeColumn("String"), makeColumn("String")}), "String");
 }
+
+GTEST_TEST(FunctionSignature, AdditionMultiplicationResult)
+{
+    /// `arrayDotProduct`: same-type `Float32`/`BFloat16` accumulate to `Float32` (the two leading
+    /// alternatives); every other pair uses `additionMultiplicationResult`, i.e.
+    /// `NumberTraits::ResultOfAdditionMultiplication` of the element types.
+    const String sig =
+        "(Array(Float32), Array(Float32)) -> Float32"
+        " OR (Array(BFloat16), Array(BFloat16)) -> Float32"
+        " OR (Array(L : NativeNumber | BFloat16), Array(R : NativeNumber | BFloat16))"
+        " -> additionMultiplicationResult(L, R)";
+
+    EXPECT_EQ(checkSignature(sig, {makeColumn("Array(Float32)"), makeColumn("Array(Float32)")}), "Float32");
+    EXPECT_EQ(checkSignature(sig, {makeColumn("Array(BFloat16)"), makeColumn("Array(BFloat16)")}), "Float32");
+    EXPECT_EQ(checkSignature(sig, {makeColumn("Array(BFloat16)"), makeColumn("Array(Float32)")}), "Float64");
+    EXPECT_EQ(checkSignature(sig, {makeColumn("Array(Float32)"), makeColumn("Array(Float64)")}), "Float64");
+    EXPECT_EQ(checkSignature(sig, {makeColumn("Array(UInt8)"), makeColumn("Array(UInt8)")}), "UInt16");
+    EXPECT_EQ(checkSignature(sig, {makeColumn("Array(Int8)"), makeColumn("Array(UInt16)")}), "Int32");
+    EXPECT_EQ(checkSignature(sig, {makeColumn("Array(UInt64)"), makeColumn("Array(UInt64)")}), "UInt64");
+    /// Non-numeric element types are rejected.
+    EXPECT_THAT(checkSignature(sig, {makeColumn("Array(String)"), makeColumn("Array(String)")}), ::testing::StartsWith("FAIL:"));
+    EXPECT_THAT(checkSignature(sig, {makeColumn("Array(Decimal(10, 2))"), makeColumn("Array(Decimal(10, 2))")}), ::testing::StartsWith("FAIL:"));
+}

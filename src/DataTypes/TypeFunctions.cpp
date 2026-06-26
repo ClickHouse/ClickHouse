@@ -407,6 +407,56 @@ public:
     std::string name() const override { return "difference"; }
 };
 
+/// `additionMultiplicationResult(A, B)` — the result type of multiplying then summing values of
+/// types `A` and `B`, i.e. `NumberTraits::ResultOfAdditionMultiplication<A, B>` evaluated at
+/// runtime. Supports the native integer and floating types plus `BFloat16` (the set accepted by
+/// `arrayDotProduct`); anything else raises a clean `ILLEGAL_TYPE_OF_ARGUMENT`.
+class TypeFunctionAdditionMultiplicationResult : public ITypeFunction
+{
+private:
+    template <typename F>
+    static void dispatchNumeric(const IDataType & type, F && f)
+    {
+        WhichDataType which(type);
+        if (which.isUInt8()) f(UInt8{});
+        else if (which.isUInt16()) f(UInt16{});
+        else if (which.isUInt32()) f(UInt32{});
+        else if (which.isUInt64()) f(UInt64{});
+        else if (which.isInt8()) f(Int8{});
+        else if (which.isInt16()) f(Int16{});
+        else if (which.isInt32()) f(Int32{});
+        else if (which.isInt64()) f(Int64{});
+        else if (which.isBFloat16()) f(BFloat16{});
+        else if (which.isFloat32()) f(Float32{});
+        else if (which.isFloat64()) f(Float64{});
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Type function additionMultiplicationResult only supports UInt8, UInt16, UInt32, UInt64, "
+                "Int8, Int16, Int32, Int64, BFloat16, Float32, Float64, got {}", type.getName());
+    }
+
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 2)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Wrong number of arguments for type function additionMultiplicationResult");
+
+        DataTypePtr res;
+        dispatchNumeric(*args[0].type(), [&](auto left)
+        {
+            dispatchNumeric(*args[1].type(), [&](auto right)
+            {
+                using Result = typename NumberTraits::ResultOfAdditionMultiplication<decltype(left), decltype(right)>::Type;
+                res = std::make_shared<DataTypeNumber<Result>>();
+            });
+        });
+        return Value(res);
+    }
+
+    std::string name() const override { return "additionMultiplicationResult"; }
+};
+
 /// If the type was already Nullable, return it as is.
 class TypeFunctionNullable : public ITypeFunction
 {
@@ -1174,6 +1224,7 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionTimezoneOf>();
     factory.registerElement<TypeFunctionMax>();
     factory.registerElement<TypeFunctionDifference>();
+    factory.registerElement<TypeFunctionAdditionMultiplicationResult>();
     factory.registerElement<TypeFunctionTypeFromString>();
     factory.registerElement<TypeFunctionSubcolumnTypeOf>();
     factory.registerElement<TypeFunctionNullable>();
