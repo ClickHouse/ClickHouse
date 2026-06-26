@@ -310,6 +310,15 @@ public:
     /// Manually release all acquired workload resources.
     void releaseWorkloadResources();
 
+    /// Release the query slot only. Safe to call while the query pipeline is still running:
+    /// pipeline threads do not access the query slot.
+    void releaseQuerySlot();
+
+    /// Release the memory reservation only. MUST NOT be called while the query pipeline is still
+    /// running: pipeline threads hold raw pointers to `MemoryReservation` (see `WorkloadResources`
+    /// in `PipelineExecutor`) and would race with its destruction.
+    void releaseMemoryReservation();
+
     /// Manually release admission slot (if any). Acquires ProcessList::mutex.
     void releaseAdmissionSlot();
 };

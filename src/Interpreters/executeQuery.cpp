@@ -67,6 +67,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <QueryPipeline/printPipeline.h>
 #include <IO/Progress.h>
@@ -116,6 +117,7 @@ namespace ProfileEvents
     extern const Event InsertQueryTimeMicroseconds;
     extern const Event OtherQueryTimeMicroseconds;
     extern const Event ASTFuzzerQueries;
+    extern const Event QueryParseMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -1150,6 +1152,8 @@ static BlockIO executeQueryImpl(
     /// Parse the query from string.
     try
     {
+        ProfileEventTimeIncrement<Microseconds> parse_time_watch(ProfileEvents::QueryParseMicroseconds);
+
         if (stage == QueryProcessingStage::QueryPlan)
         {
             /// Do not parse Query
@@ -2598,8 +2602,10 @@ void executeQuery(
         throw;
     }
 
-    /// We release query slot here to make sure client can safely reuse the slot with his next query, otherwise it will be released too late by BlockIO.
-    context->releaseWorkloadResources();
+    /// We release the query slot here to make sure the client can safely reuse the slot with his next query, otherwise it will be released too late by BlockIO.
+    /// Only the query slot is released here, not the memory reservation: pipeline threads still hold raw pointers to it,
+    /// so it is released later by `streams.onFinish()` after the pipeline has been finalized.
+    context->releaseQuerySlot();
 
     /// Release admission slot early (same timing as QuerySlot) to reduce slot hold time.
     /// Without this, the admission slot is held until ProcessListEntry destructor,
