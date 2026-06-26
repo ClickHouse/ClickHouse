@@ -364,6 +364,14 @@
             margin-bottom: 0.25rem;
         }
 
+        /* This is an `<a>` whose SVG draws with `currentColor`. Pin the color across all link
+           states (including `:visited`, which the generic `a:visited` rule would otherwise tint
+           with `--link-color`) so the icon always matches the other menu icons. */
+        #docs-icon:link, #docs-icon:visited, #docs-icon:hover, #docs-icon:active
+        {
+            color: var(--menu-icon-color);
+        }
+
         #github-icon
         {
             grid-area: github-icon;
