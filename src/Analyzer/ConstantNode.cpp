@@ -95,19 +95,14 @@ void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
         buffer << ", alias: " << getAlias();
 
     buffer << ", constant_value: ";
-    if (mask_id)
-    {
-        if (mask_id == std::numeric_limits<decltype(mask_id)>::max())
-            buffer << "[HIDDEN]";
-        else
-            buffer << "[HIDDEN id: " << mask_id << "]";
-    }
+    if (isMasked())
+        buffer << getMaskString();
     else
         buffer << getValue().dump();
 
     buffer << ", constant_value_type: " << constant_value.getType()->getName();
 
-    if (!mask_id && getSourceExpression())
+    if (!isMasked() && getSourceExpression())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION" << '\n';
         getSourceExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
@@ -119,42 +114,28 @@ void ConstantNode::convertToNullable()
     constant_value = { makeNullableSafe(constant_value.getColumn()), makeNullableSafe(constant_value.getType()) };
 }
 
-bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const
+bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*compare_options*/) const
 {
     const auto & rhs_typed = assert_cast<const ConstantNode &>(rhs);
 
     const auto & column = constant_value.getColumn();
     const auto & rhs_column = rhs_typed.constant_value.getColumn();
 
-    if (compare_options.compare_types)
-        return constant_value.getType()->equals(*rhs_typed.constant_value.getType())
-               && column->compareAt(0, 0, *rhs_column, 1) == 0;
-
-    if (column->isNullAt(0))
-        return rhs_column->isNullAt(0);
-
-    auto not_nullable_type = removeNullable(constant_value.getType());
-    auto not_nullable_rhs_type = removeNullable(rhs_typed.constant_value.getType());
-
-    if (!constant_value.getType()->equals(*rhs_typed.constant_value.getType()))
-        return false;
-
-    auto not_nullable_column = removeNullable(column);
-    auto not_nullable_rhs_column = removeNullable(rhs_column);
-
-    return not_nullable_column->compareAt(0, 0, *not_nullable_rhs_column, 1) == 0;
+    return constant_value.getType()->equals(*rhs_typed.constant_value.getType())
+           && column->compareAt(0, 0, *rhs_column, 1) == 0;
 }
 
-void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const
+void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*compare_options*/) const
 {
     constant_value.getColumn()->updateHashFast(hash_state);
-    if (compare_options.compare_types)
-        constant_value.getType()->updateHash(hash_state);
+    constant_value.getType()->updateHash(hash_state);
 }
 
 QueryTreeNodePtr ConstantNode::cloneImpl() const
 {
-    return std::make_shared<ConstantNode>(constant_value, source_expression, is_deterministic);
+    auto result = std::make_shared<ConstantNode>(constant_value, source_expression, is_deterministic);
+    result->mask_id = mask_id;
+    return result;
 }
 
 template <typename F>
