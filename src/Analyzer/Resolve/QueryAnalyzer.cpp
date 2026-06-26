@@ -4260,8 +4260,15 @@ void populateShortNameIndexForSubquery(
 
     /** For projection at index `i`, derive the candidate short name from the underlying
       * `ColumnNode`'s actual column name. Returns an empty view when registration must
-      * be skipped (non-`ColumnNode` projection, candidate is not a strict suffix of the
-      * canonical name preceded by `.`, etc.).
+      * be skipped:
+      *   - the projection is not a resolved `ColumnNode`,
+      *   - the column name is not a strict suffix of the canonical name preceded by `.`,
+      *   - the qualifier prefix in the canonical name does not match the resolved
+      *     column's source alias / table name. This last check guards against explicit
+      *     dotted aliases on a resolved column (e.g. ``SELECT b.f1 AS `x.f1` ``): there
+      *     the canonical name is `x.f1` but the source is still aliased `b`, so the
+      *     dot in `x.f1` was the user's explicit choice, not an analyzer-synthesized
+      *     qualifier separator — and the natural short name `f1` should not be exposed.
       */
     const auto safe_short_name = [&](size_t i) -> std::string_view
     {
@@ -4277,6 +4284,48 @@ void populateShortNameIndexForSubquery(
             return {};
         if (std::string_view(canonical).substr(boundary) != actual_column_name)
             return {};
+
+        const auto qualifier_prefix = std::string_view(canonical).substr(0, boundary - 1);
+        const auto column_source = column_projection->getColumnSource();
+        if (!column_source)
+            return {};
+
+        /** The qualifier prefix should equal the name by which the user referred to the
+          * column's source — that's the only way the canonical's dot can be an
+          * analyzer-introduced qualifier separator rather than part of an explicit alias.
+          * Check the candidates a source can present, in order:
+          *   1. its explicit alias from `<expr> AS <alias>` in the FROM clause,
+          *   2. its CTE name (for a `WITH cte AS (...)` reference, the source `QueryNode` /
+          *      `UnionNode` may not have an alias but does carry the CTE name),
+          *   3. its table name for an unaliased `TableNode`.
+          * If none of those match, the dot in the canonical name came from somewhere we
+          * can't reconstruct (e.g. an explicit user alias on a subquery or column), and
+          * we skip to stay on the safe side.
+          */
+        if (!column_source->getAlias().empty())
+        {
+            if (column_source->getAlias() != qualifier_prefix)
+                return {};
+        }
+        else if (const auto * source_query = column_source->as<QueryNode>(); source_query && source_query->isCTE())
+        {
+            if (source_query->getCTEName() != qualifier_prefix)
+                return {};
+        }
+        else if (const auto * source_union = column_source->as<UnionNode>(); source_union && source_union->isCTE())
+        {
+            if (source_union->getCTEName() != qualifier_prefix)
+                return {};
+        }
+        else if (const auto * source_table = column_source->as<TableNode>())
+        {
+            if (source_table->getStorageID().getTableName() != qualifier_prefix)
+                return {};
+        }
+        else
+        {
+            return {};
+        }
         return std::string_view(canonical).substr(boundary);
     };
 

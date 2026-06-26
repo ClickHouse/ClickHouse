@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.7",
         {
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
+            {"analyzer_enable_short_column_names_from_subquery", false, false, "New compatibility setting: when enabled, an outer query may refer to a subquery/CTE projection column whose name is an unaliased qualified identifier like `b.f1` by its short name `f1`. Closes the long-standing divergence from SQL-standard column naming (see issues #87022, #66133, #94858, #94558). Additive: the canonical dotted name keeps working. The fallback does not apply while resolving `JOIN USING` column lists — use an explicit `AS` alias or the canonical dotted name for that form."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
@@ -73,7 +74,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_identifier_resolve_cache", false, true, "New setting to control the identifier resolution cache in the query analyzer"},
             {"optimize_limit_by_in_order", false, true, "New setting to optimize `LIMIT BY` queries when `BY` columns are a prefix of the table's sorting key."},
             {"analyzer_compatibility_prefer_alias_over_subcolumn", false, false, "New compatibility setting"},
-            {"analyzer_enable_short_column_names_from_subquery", false, false, "New compatibility setting: when enabled, an outer query may refer to a subquery/CTE projection column whose name is an unaliased qualified identifier like `b.f1` by its short name `f1`. Closes the long-standing divergence from SQL-standard column naming (see issues #87022, #66133, #94858, #94558). Additive: the canonical dotted name keeps working. The fallback does not apply while resolving `JOIN USING` column lists — use an explicit `AS` alias or the canonical dotted name for that form."},
             {"query_plan_max_set_size_for_projection_match", 0, 10000, "Added new setting that bounds the cost of content-hashing IN-clause sets in the projection matcher (today: aggregate projection). Sets larger than the limit are treated as non-matching. Zero disables content-hash comparison entirely (compatibility value: projection match never succeeds for nodes with IN-sets)."},
             {"allow_replace_partition_from_empty_source", true, false, "New safety check: `ALTER TABLE ... REPLACE PARTITION ... FROM ...` now throws when the source table has no parts in the requested partition (fixes the silent data loss in [#23727](https://github.com/ClickHouse/ClickHouse/issues/23727)). The previous behavior, silently dropping the destination partition, is preserved by setting `allow_replace_partition_from_empty_source = 1`."},
             {"query_plan_optimize_join_order_max_searched_plans", 0, 100000, "New setting to bound the number of partial plans the join order optimizer enumerates before falling back to the next algorithm."},

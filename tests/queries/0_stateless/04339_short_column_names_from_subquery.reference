@@ -26,6 +26,9 @@
 f1	b.f1
 1	2
 -- on/off: explicit dotted alias on a constant projection does NOT expose a short name; alias-qualified lookup against it fails on both sides
+-- on: explicit dotted alias on a resolved column does NOT expose a short name
+1
+2
 -- on: literal dotted column name (`f.1`) — short name is the actual column, not a wrong split
 1
 1

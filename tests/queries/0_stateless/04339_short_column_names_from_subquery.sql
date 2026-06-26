@@ -180,6 +180,34 @@ SET analyzer_enable_short_column_names_from_subquery = 0;
 SELECT q.f1 FROM (SELECT 1 AS `b.f1`) AS q CROSS JOIN (SELECT 2 AS `q.f1`) AS r; -- { serverError UNKNOWN_IDENTIFIER }
 SET analyzer_enable_short_column_names_from_subquery = 1;
 
+SELECT '-- on: explicit dotted alias on a resolved column does NOT expose a short name';
+
+-- Bot finding: previously, an explicit alias like `b.f1 AS `x.f1`` was indistinguishable
+-- from an analyzer-synthesized `x.f1` qualified projection name once the alias was
+-- stripped. My code happily registered `f1` as a short name (matching the underlying
+-- `ColumnNode::getColumnName` against the canonical suffix), which violated the
+-- "unaliased" contract of the setting and could ambiguity-kill a legitimate sibling
+-- short name. The fix additionally requires the canonical's qualifier prefix to match
+-- the resolved column's source alias / table name — that's true for unaliased
+-- `b.f1` (qualifier `b` == source alias `b`) but false for explicit `b.f1 AS `x.f1``
+-- (qualifier `x` != source alias `b`).
+
+-- Standalone explicit dotted alias: the user picked `x.f1`, only that name should resolve.
+SELECT `x.f1` FROM (SELECT b.f1 AS `x.f1` FROM (SELECT 1 AS f1) AS b);
+SELECT f1 FROM (SELECT b.f1 AS `x.f1` FROM (SELECT 1 AS f1) AS b); -- { serverError UNKNOWN_IDENTIFIER }
+
+-- The dangerous sibling case: an explicit `x.f1` alias next to an unaliased `c.f1`.
+-- The buggy version registered `f1` for both projections, ambiguity-cancelled them,
+-- and made the perfectly fine `c.f1`'s short name unusable. With the fix, only `c.f1`
+-- registers `f1`, and the legitimate short-name lookup keeps working. CROSS JOIN with
+-- distinguishable values so the assertion proves `f1` resolves to `c.f1` (= 2), not
+-- to the explicitly-aliased `b.f1` (= 1).
+SELECT f1 FROM (
+    SELECT b.f1 AS `x.f1`, c.f1
+    FROM (SELECT 1 AS f1) AS b
+    CROSS JOIN (SELECT 2 AS f1) AS c
+);
+
 SELECT '-- on: literal dotted column name (`f.1`) — short name is the actual column, not a wrong split';
 
 -- Bot finding (https://github.com/ClickHouse/ClickHouse/pull/107449#discussion_r3...):
