@@ -14,6 +14,7 @@ from helpers.s3_queue_common import (
 )
 
 AVAILABLE_MODES = ["unordered", "ordered"]
+AUXILIARY_ZOOKEEPER_NAME = "zookeeper2"
 
 
 @pytest.fixture(autouse=True)
@@ -747,5 +748,69 @@ def test_system_queue_metadata_ordered_partitioned(started_cluster):
     assert len(keys) == len(hostnames)
     for key in keys:
         assert key.startswith("processed/"), key
+
+    node.query(f"DROP TABLE {table_name} SYNC")
+
+
+def test_system_queue_metadata_auxiliary_keeper(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_system_queue_metadata_aux_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    # A unique path is necessary for repeatable tests
+    keeper_suffix = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    # The factory key for an auxiliary keeper is "<keeper>:<path>", but the keeper
+    # reads themselves must use the raw path against the auxiliary keeper client.
+    keeper_path = f"{AUXILIARY_ZOOKEEPER_NAME}:{keeper_suffix}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 10
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            # A single processed pointer (no buckets) keeps the test deterministic.
+            "s3queue_buckets": 1,
+            "s3queue_processing_threads_num": 1,
+            # Pin processing-node persistence so the counts are deterministic.
+            "use_persistent_processing_nodes": False,
+        },
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    generate_random_files(started_cluster, files_path, files_to_generate, row_num=1)
+
+    for _ in range(60):
+        if files_to_generate == int(
+            node.query(f"SELECT count() FROM {dst_table_name}")
+        ):
+            break
+        time.sleep(1)
+    assert files_to_generate == int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    # The display column keeps the auxiliary-keeper-prefixed factory key.
+    zookeeper_path = node.query(
+        f"""
+        SELECT zookeeper_path
+        FROM system.s3_queue_metadata
+        WHERE zookeeper_path ilike '%{keeper_suffix}%'
+        """
+    ).strip()
+    assert zookeeper_path == keeper_path
+
+    # The processed pointer must be read from the auxiliary keeper using the raw
+    # path; without that, the read would target a nonexistent path and the
+    # metadata would be empty.
+    processed_path_value = node.query(
+        f"""
+        SELECT arrayJoin(mapValues(processed_path))
+        FROM system.s3_queue_metadata
+        WHERE zookeeper_path ilike '%{keeper_suffix}%'
+        """
+    )
+    assert files_path in processed_path_value
 
     node.query(f"DROP TABLE {table_name} SYNC")

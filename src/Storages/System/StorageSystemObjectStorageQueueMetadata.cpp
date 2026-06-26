@@ -11,6 +11,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/StreamingStorageRegistry.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
@@ -84,12 +85,20 @@ void StorageSystemObjectStorageQueueMetadata<type>::fillData(
     };
 
     auto log = getLogger(name);
+    /// All Keeper requests below must run with a component set, otherwise
+    /// `Coordination::ZooKeeper::pushRequest` throws a logical error.
+    auto component_guard = Coordination::setCurrentComponent("StorageSystemObjectStorageQueueMetadata::fillData");
+
     for (const auto & [zookeeper_path, metadata] : ObjectStorageQueueMetadataFactory::instance().getAll())
     {
         if (type != metadata->getType())
             continue;
 
-        const std::filesystem::path base_path(zookeeper_path);
+        /// `zookeeper_path` is the factory key, which for auxiliary Keepers is
+        /// prefixed with "<keeper>:". It is used only for display. Keeper reads
+        /// must use the raw path returned by `getPath`; the client returned by
+        /// `getZooKeeper` is already bound to the right Keeper.
+        const std::filesystem::path base_path(metadata->getPath());
         const bool unordered = metadata->getTableMetadata().mode == "unordered";
         const size_t batch_size = std::max<size_t>(1, metadata->getKeeperMultireadBatchSize());
 
@@ -185,7 +194,8 @@ void StorageSystemObjectStorageQueueMetadata<type>::fillData(
             }
 
             std::vector<std::string> leaf_paths;
-            if (metadata->getPartitioningMode() == ObjectStorageQueuePartitioningMode::NONE)
+            const bool partitioned = metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::NONE;
+            if (!partitioned)
             {
                 leaf_paths = std::move(roots);
             }
@@ -218,9 +228,13 @@ void StorageSystemObjectStorageQueueMetadata<type>::fillData(
             {
                 if (!data[i].has_value() || data[i]->empty())
                     continue;
-                const auto node = ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(*data[i]);
+                /// Partition pointers store the raw last processed file path
+                /// directly; only the root/bucket pointers are `NodeMetadata` JSON.
+                std::string file_path = partitioned
+                    ? *data[i]
+                    : ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(*data[i]).file_path;
                 auto key = std::filesystem::path(leaf_paths[i]).lexically_relative(base_path).string();
-                result.emplace_back(std::move(key), node.file_path);
+                result.emplace_back(std::move(key), std::move(file_path));
             }
             return result;
         };
