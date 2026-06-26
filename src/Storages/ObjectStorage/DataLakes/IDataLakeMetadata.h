@@ -177,6 +177,7 @@ public:
     }
 
     virtual void drop(ContextPtr) { }
+    virtual void truncate(ContextPtr /*local_context*/, std::shared_ptr<DataLake::ICatalog> /*catalog*/, const StorageID & /*table_id_*/) { throwNotImplemented("truncate"); }
 
     virtual ObjectStorageType getObjectStorageType() const { return ObjectStorageType::None; }
 

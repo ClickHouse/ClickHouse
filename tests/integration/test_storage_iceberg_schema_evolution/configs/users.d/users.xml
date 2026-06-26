@@ -1,4 +1,10 @@
 <clickhouse>
+    <profiles>
+        <default>
+            <iceberg_delete_data_on_drop>1</iceberg_delete_data_on_drop>
+        </default>
+    </profiles>
+
     <users>
         <default>
             <password></password>

@@ -178,6 +178,7 @@ public:
         ContextPtr local_context) const override;
 
     void drop(ContextPtr context) override;
+    void truncate(ContextPtr local_context, std::shared_ptr<DataLake::ICatalog> catalog, const StorageID & table_id_) override;
 
 private:
     static Iceberg::PersistentTableComponents initializePersistentTableComponents(

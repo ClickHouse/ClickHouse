@@ -651,22 +651,22 @@ bool StorageObjectStorage::optimize(
 void StorageObjectStorage::truncate(
     const ASTPtr & /* query */,
     const StorageMetadataPtr & /* metadata_snapshot */,
-    ContextPtr /* context */,
+    ContextPtr context,
     TableExclusiveLockHolder & /* table_holder */)
 {
     const auto path = configuration->getRawPath();
 
+    if (configuration->isDataLakeConfiguration())
+    {
+        configuration->lazyInitializeIfNeeded(object_storage, context);
+        configuration->truncate(context, catalog, storage_id);
+        return;
+    }
     if (configuration->isArchive())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Path '{}' contains archive. Table cannot be truncated",
                         path.path);
-    }
-
-    if (configuration->isDataLakeConfiguration())
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Truncate is not supported for data lake engine");
     }
 
     if (path.hasGlobsIgnorePlaceholders())
