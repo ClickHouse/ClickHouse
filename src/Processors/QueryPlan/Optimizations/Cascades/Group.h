@@ -82,7 +82,10 @@ private:
     std::unordered_set<ExpressionProperties, ExpressionPropertiesHash> optimized_properties;  /// Tracks which required properties have had implementation rules applied
     std::unordered_set<ExpressionProperties, ExpressionPropertiesHash> enforced_properties;   /// Tracks which required properties have had enforcer rules applied
     std::unordered_set<ExpressionProperties, ExpressionPropertiesHash> fully_done_properties; /// Tracks which required properties are fully optimized (all stages complete)
-    std::unordered_set<size_t> physical_fingerprints;  /// Deduplicates identical physical expressions
+    /// Deduplicates physical expressions by STRUCTURAL identity. Bucketed by fingerprint hash;
+    /// a hit is dropped only when an existing expression is structurally equal, so a genuine
+    /// hash collision keeps both alternatives instead of silently discarding one.
+    std::unordered_map<size_t, std::vector<GroupExpression *>> physical_expressions_by_fingerprint;
 
     /// Encode (node_count, is_replicated) into a single key for best_implementations lookup.
     static UInt64 distributionKey(const DistributionDescription & distribution)

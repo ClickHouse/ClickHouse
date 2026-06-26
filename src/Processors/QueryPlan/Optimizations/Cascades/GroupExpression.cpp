@@ -60,6 +60,31 @@ String GroupExpression::dump(const CostConfig & cost_config) const
     return out.str();
 }
 
+bool GroupExpression::structurallyEqualTo(const GroupExpression & other) const
+{
+    if (getName() != other.getName() || getDescription() != other.getDescription())
+        return false;
+
+    const String strategy_name = strategy ? strategy->getName() : String{};
+    const String other_strategy_name = other.strategy ? other.strategy->getName() : String{};
+    if (strategy_name != other_strategy_name)
+        return false;
+
+    if (!(properties == other.properties))
+        return false;
+
+    if (inputs.size() != other.inputs.size())
+        return false;
+    for (size_t i = 0; i < inputs.size(); ++i)
+    {
+        if (inputs[i].group_id != other.inputs[i].group_id)
+            return false;
+        if (!(inputs[i].required_properties == other.inputs[i].required_properties))
+            return false;
+    }
+    return true;
+}
+
 size_t GroupExpression::fingerprint() const
 {
     size_t h = std::hash<String>()(getDescription());

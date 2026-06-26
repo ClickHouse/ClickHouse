@@ -46,6 +46,12 @@ public:
     String dump(const CostConfig & cost_config) const;
     size_t fingerprint() const;
 
+    /// Structural identity used to deduplicate physical expressions. Compares the same
+    /// components the fingerprint hashes (step name and description, strategy, output
+    /// properties, and each input's group and required properties), so a fingerprint hash
+    /// collision does not silently drop a distinct alternative.
+    bool structurallyEqualTo(const GroupExpression & other) const;
+
     GroupId group_id = INVALID_GROUP_ID;
     std::shared_ptr<const IQueryPlanStep> plan_step;  /// Shared immutable plan step
     ImplementationStrategyPtr strategy;     /// Implementation strategy (nullptr = logical / default)

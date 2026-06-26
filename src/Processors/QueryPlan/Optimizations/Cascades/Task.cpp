@@ -70,11 +70,6 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
         /// Collect enforcer expressions first, then push tasks in the right order.
         std::vector<GroupExpressionPtr> enforcer_expressions;
 
-        /// Deduplicate enforcers: different source expressions with the same
-        /// (node_count, is_replicated, has_sorting) produce physically identical exchange steps.
-        /// Track which (enforcer, source_distribution_shape) combos we've already applied.
-        std::unordered_set<String> seen_enforcer_keys;
-
         /// Fixed-point loop: iterate over newly-added physical expressions until no
         /// new enforcers are produced.  Each iteration may create expressions that
         /// enable further enforcers (e.g. Sort enables sorted GatherExchange).
@@ -101,16 +96,10 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
                     if (!enforcer->checkPattern(expression, required_properties, optimizer_context.getMemo()))
                         continue;
 
-                    /// Include sorting state in the key so that DistributionEnforcer
-                    /// fires separately for sorted expressions (producing sorted gather)
-                    /// and unsorted expressions (producing regular gather).
-                    String enforcer_key = enforcer->getName()
-                        + ":" + std::to_string(expression->properties.distribution.node_count)
-                        + ":" + std::to_string(expression->properties.distribution.is_replicated)
-                        + ":" + std::to_string(!expression->properties.sorting.empty());
-                    if (!seen_enforcer_keys.insert(enforcer_key).second)
-                        continue;
-
+                    /// No coarse pass-local dedup here: physically identical enforcer outputs are
+                    /// dropped by Group::addPhysicalExpression (structural dedup), while sources
+                    /// that differ in sort direction or distribution keep their own enforced
+                    /// alternative (e.g. a sorted gather for each requested direction).
                     auto new_expressions = enforcer->apply(expression, required_properties, optimizer_context.getMemo());
                     for (const auto & new_expression : new_expressions)
                     {

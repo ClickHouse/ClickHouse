@@ -2,6 +2,7 @@
 
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
+#include <Columns/Collator.h>
 #include <base/types.h>
 #include <vector>
 #include <functional>
@@ -70,8 +71,16 @@ struct ExpressionPropertiesHash
         }
         for (const auto & type_name : props.distribution.hash_type_names)
             boost::hash_combine(h, type_name);
+        /// Hash exactly the fields SortColumnDescription::operator== compares, so the hash is
+        /// consistent with equality (ORDER BY k ASC and k DESC must hash differently).
         for (const auto & col : props.sorting)
+        {
             boost::hash_combine(h, col.column_name);
+            boost::hash_combine(h, col.direction);
+            boost::hash_combine(h, col.nulls_direction);
+            if (col.collator)
+                boost::hash_combine(h, col.collator->getLocale());
+        }
         return h;
     }
 };
