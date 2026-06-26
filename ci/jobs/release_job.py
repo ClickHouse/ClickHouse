@@ -238,7 +238,7 @@ def main():
         name="Prepare Release Info",
         command=[
             f"python3 ./ci/jobs/create_release.py --prepare-release-info"
-            f" --ref {args.ref} --release-type {args.release_type}"
+            f" --ref {shlex.quote(args.ref)} --release-type {args.release_type}"
             f" {skip_out_of_order_check_flag} {dry_run_flag}".strip()
         ],
         workdir=REPO_PATH,

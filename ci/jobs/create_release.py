@@ -446,6 +446,14 @@ class ReleaseInfo:
 
     def prepare(self, commit_ref: str, release_type: str, _skip_out_of_order_check: bool) -> "ReleaseInfo":
         assert release_type in ("patch", "new")
+        # `commit_ref` (the workflow `ref` input) is interpolated into git
+        # commands run through a shell below; fail closed on anything that is
+        # not a plain branch/tag/SHA so a ref with shell metacharacters cannot
+        # inject commands into the privileged release job.
+        assert re.fullmatch(r"[0-9A-Za-z._/-]+", commit_ref), (
+            f"ref [{commit_ref}] contains unexpected characters; expected a "
+            f"branch, tag, or commit SHA"
+        )
         version = None
         release_branch = None
         release_tag = None
