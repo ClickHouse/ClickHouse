@@ -24,10 +24,6 @@ EXPLAIN actions = 1
 SELECT decrypt('aes-128-ecb', toString(number), 'MY_SUPER_SECRET_KEY_123')
 FROM numbers(3);
 
-EXPLAIN actions = 1
-SELECT hex(HMAC('sha256', toString(number), 'MY_SUPER_SECRET_KEY_123'))
-FROM numbers(3);
-
 -- With the setting enabled the key is shown verbatim.
 SET format_display_secrets_in_show_and_select = 1;
 

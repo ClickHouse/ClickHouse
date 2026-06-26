@@ -136,11 +136,6 @@ protected:
             /// encrypt('mode', 'plaintext', 'key' [, iv, aad])
             findEncryptionFunctionSecretArguments();
         }
-        else if (boost::iequals(function->name(), "HMAC"))
-        {
-            /// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
-            findHMACSecretArguments();
-        }
         else if (function->name() == "url")
         {
             findURLSecretArguments();
@@ -576,17 +571,6 @@ protected:
         /// encrypt('mode', 'plaintext', 'key' [, iv, aad]) -> encrypt('mode', '[HIDDEN]')
         result.start = 1;
         result.count = function->arguments->size() - 1;
-    }
-
-    void findHMACSecretArguments()
-    {
-        if (function->arguments->size() < 3)
-            return;
-
-        /// We hide the key argument:
-        /// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
-        result.start = 2;
-        result.count = 1;
     }
 
     void findTableEngineSecretArguments()
