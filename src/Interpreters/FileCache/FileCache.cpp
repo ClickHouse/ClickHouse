@@ -1408,9 +1408,17 @@ bool FileCache::doEviction(
                 CurrentMetrics::get(CurrentMetrics::FilesystemCacheDownloadQueueElements));
         };
 
-        bool continue_from_last_eviction_pos = cache_reserve_active_threads.load(std::memory_order_relaxed) > 1;
-        if (!continue_from_last_eviction_pos)
-            main_priority->resetEvictionPos();
+        /// Concurrent reservers resume from the shared reserve cursor so they do not all
+        /// re-scan the queue head and collide on the same candidates. A lone reserver instead
+        /// starts from the head and resets the reserve cursor so the next contended round
+        /// starts fresh. The background free-space keeper uses a separate cursor and is not
+        /// affected by this reset.
+        const bool resume_reserve_cursor = cache_reserve_active_threads.load(std::memory_order_relaxed) > 1;
+        const auto eviction_cursor = resume_reserve_cursor
+            ? IFileCachePriority::EvictionCursor::Reserve
+            : IFileCachePriority::EvictionCursor::FromHead;
+        if (!resume_reserve_cursor)
+            main_priority->resetEvictionPos(IFileCachePriority::EvictionCursor::Reserve);
 
         if (query_eviction_info && query_eviction_info->requiresEviction())
         {
@@ -1421,7 +1429,7 @@ bool FileCache::doEviction(
                     eviction_candidates,
                     invalidated_entries,
                     /* reservee */{},
-                    continue_from_last_eviction_pos,
+                    eviction_cursor,
                     /* max_candidates_size */0,
                     /* is_total_space_cleanup */false,
                     origin_info,
@@ -1442,7 +1450,7 @@ bool FileCache::doEviction(
                 eviction_candidates,
                 invalidated_entries,
                 main_priority_iterator,
-                continue_from_last_eviction_pos,
+                eviction_cursor,
                 /* max_candidates_size */0,
                 /* is_total_space_cleanup */false,
                 origin_info,
@@ -1712,7 +1720,7 @@ void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
             FileCacheReserveStat stat;
             main_priority->collectCandidatesForEviction(
                 *eviction_info, stat, *batch->candidates, batch->invalidated_entries,
-                /* reservee */nullptr, /* continue_from_last_eviction_pos */true,
+                /* reservee */nullptr, IFileCachePriority::EvictionCursor::Background,
                 /* max_candidates_size */keep_up_free_space_remove_batch,
                 /* is_total_space_cleanup */true, getInternalOrigin(),
                 cache_guard, cache_state_guard);
@@ -2694,7 +2702,7 @@ bool FileCache::doDynamicResizeImpl(
             eviction_candidates,
             invalidated_entries,
             /* reservee */nullptr,
-            /* continue_from_last_eviction_pos */false,
+            IFileCachePriority::EvictionCursor::FromHead,
             /* max_candidates_size */0,
             /* is_total_space_cleanup */true,
             getInternalOrigin(),
