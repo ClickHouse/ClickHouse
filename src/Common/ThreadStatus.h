@@ -86,6 +86,13 @@ public:
     const Int32 os_threads_nice_value;
 
     MemorySpillScheduler::Ptr memory_spill_scheduler;
+
+    /// For a "borrowed" child group (createForMaterializedView / createForFlushAsyncInsertQueue),
+    /// performance_counters and memory_tracker below hold RAW pointers into the parent group's
+    /// counters. Keep the parent alive so those pointers never dangle. Declared before the two
+    /// trackers so it is destroyed after them (members are destroyed in reverse order).
+    ThreadGroupPtr parent_thread_group;
+
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
