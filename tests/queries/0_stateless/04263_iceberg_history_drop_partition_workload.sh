@@ -64,13 +64,17 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
 "
 latest_snapshot "step 1: multi-partition INSERT"
 
-# Step 2: ten INSERTs, each into a distinct new partition (a = 100..109).
-for i in $(seq 100 109); do
-    ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE} VALUES (${i}, 'p${i}')"
+# Step 2: four INSERTs, each into a distinct new partition (a = 100..103). Each is a
+# separate snapshot; they are sent on a single client connection to avoid per-statement
+# process startup (the metadata rescans, not the row count, dominate this test's runtime).
+STEP2_INSERTS=""
+for i in $(seq 100 103); do
+    STEP2_INSERTS+="INSERT INTO ${TABLE} VALUES (${i}, 'p${i}');"
 done
-latest_snapshot "step 2: 10 single-partition INSERTs (last)"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "${STEP2_INSERTS}"
+latest_snapshot "step 2: 4 single-partition INSERTs (last)"
 
-# Sanity: 14 distinct partitions total, 14 data files, 14 records.
+# Sanity: 8 records across 7 distinct partitions (a = 1 holds two rows), 7 data files.
 echo "--- counts after step 2 ---"
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), uniqExact(a) FROM ${TABLE} FORMAT TSV"
 
