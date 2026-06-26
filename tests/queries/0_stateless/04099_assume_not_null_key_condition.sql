@@ -16,19 +16,19 @@ INSERT INTO test VALUES (NULL), ('2014-12-31'), ('2015-01-01'), ('2015-01-02'), 
 OPTIMIZE TABLE test FINAL;
 
 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d < '2015-01-01';
-EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d < '2015-01-01';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d < '2015-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 
 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d <= '2015-01-01';
-EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d <= '2015-01-01';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d <= '2015-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 
 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d = '2015-01-01';
-EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d = '2015-01-01';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d = '2015-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 
 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d >= '2015-01-01';
-EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d >= '2015-01-01';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d >= '2015-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 
 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d > '2015-01-01';
-EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d > '2015-01-01';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d > '2015-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 
 DROP TABLE test;
 
@@ -41,7 +41,7 @@ INSERT INTO test VALUES (NULL), ('2016-01-01'), ('2035-01-01');
 OPTIMIZE TABLE test FINAL;
 
 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d < '2015-01-01';
-EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d < '2015-01-01';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d < '2015-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 
 DROP TABLE test;
 
@@ -54,10 +54,10 @@ INSERT INTO test VALUES (NULL), ('1970-01-01'), ('2024-06-15');
 OPTIMIZE TABLE test FINAL;
 
 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d = '1970-01-01';
-EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d = '1970-01-01';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d = '1970-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 
 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d > '1970-01-01';
-EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d > '1970-01-01';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d > '1970-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 
 DROP TABLE test;
 
@@ -70,10 +70,10 @@ INSERT INTO test VALUES (NULL), (NULL), (NULL);
 OPTIMIZE TABLE test FINAL;
 
 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d >= '2024-01-01';
-EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d >= '2024-01-01';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d >= '2024-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 
 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d = '1970-01-01';
-EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d = '1970-01-01';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d = '1970-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 
 DROP TABLE test;
 
@@ -85,10 +85,10 @@ ENGINE = MergeTree PARTITION BY toRelativeDayNum(assumeNotNull(d)) ORDER BY tupl
 INSERT INTO test VALUES (NULL), ('1970-01-01'), ('2014-12-31'), ('2016-01-01'), ('2035-01-01');
 
 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d < '2015-01-01';
-EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d < '2015-01-01';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d < '2015-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 
 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d = '1970-01-01';
-EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d = '1970-01-01';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d = '1970-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 
 DROP TABLE test;
 
@@ -101,10 +101,10 @@ INSERT INTO test VALUES (-10), (0), (NULL), (42), (100);
 OPTIMIZE TABLE test FINAL;
 
 SELECT arraySort(groupArray(if(isNull(x), 'NULL', toString(x)))) FROM test WHERE x > 0;
-EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(x), 'NULL', toString(x)))) FROM test WHERE x > 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(x), 'NULL', toString(x)))) FROM test WHERE x > 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 
 SELECT arraySort(groupArray(if(isNull(x), 'NULL', toString(x)))) FROM test WHERE x = 42;
-EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(x), 'NULL', toString(x)))) FROM test WHERE x = 42;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(x), 'NULL', toString(x)))) FROM test WHERE x = 42) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 
 DROP TABLE test;
 
@@ -117,9 +117,9 @@ INSERT INTO test VALUES (1, 10), (1, 20), (2, 10), (2, 20), (NULL, 5);
 OPTIMIZE TABLE test FINAL;
 
 SELECT arraySort(groupArray(concat(if(isNull(a), 'NULL', toString(a)), ':', toString(b)))) FROM test WHERE a = 1;
-EXPLAIN indexes = 1 SELECT arraySort(groupArray(concat(if(isNull(a), 'NULL', toString(a)), ':', toString(b)))) FROM test WHERE a = 1;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(concat(if(isNull(a), 'NULL', toString(a)), ':', toString(b)))) FROM test WHERE a = 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 
 SELECT arraySort(groupArray(concat(if(isNull(a), 'NULL', toString(a)), ':', toString(b)))) FROM test WHERE a >= 2;
-EXPLAIN indexes = 1 SELECT arraySort(groupArray(concat(if(isNull(a), 'NULL', toString(a)), ':', toString(b)))) FROM test WHERE a >= 2;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(concat(if(isNull(a), 'NULL', toString(a)), ':', toString(b)))) FROM test WHERE a >= 2) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 
 DROP TABLE test;
