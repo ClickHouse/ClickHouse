@@ -2,10 +2,7 @@ import csv
 import logging
 import os
 import shutil
-import threading
-import time
 import uuid
-from email.errors import HeaderParseError
 
 import pytest
 
@@ -734,6 +731,11 @@ def test_iceberg_s3_cluster_read_task_failpoint(started_cluster):
                 "SYSTEM ENABLE FAILPOINT storage_cluster_read_sleep"
             )
 
+        # The failpoint sleeps 10s uninterruptibly before max_execution_time can
+        # fire, so the server's legitimate abort lands well after 5s. The client
+        # timeout must outlast that abort (plus sanitizer/runner slowdown), not
+        # the 5s execution limit, otherwise a slow runner raises a false
+        # "Client timed out!".
         _, error = node.query_and_get_answer_with_error(
             f"""
             INSERT INTO {dst_table}
@@ -743,7 +745,7 @@ def test_iceberg_s3_cluster_read_task_failpoint(started_cluster):
                 '{minio_access_key}', '{minio_secret_key}')
             SETTINGS max_execution_time = 5
             """,
-            timeout=30,
+            timeout=120,
         )
 
         assert error, (
