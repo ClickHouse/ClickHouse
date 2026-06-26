@@ -39,6 +39,7 @@ namespace MergeTreeSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
@@ -278,7 +279,12 @@ void MergeTreeDataPartWriterOnDisk::checkWriteCancellation(size_t rows_written)
     if (rows_since_cancellation_check >= cancellation_check_period_rows)
     {
         rows_since_cancellation_check = 0;
-        cancellation_query_status->checkTimeLimit();
+        /// `is_killed` is set by an explicit KILL QUERY and by `CancellationChecker` when
+        /// `max_execution_time` is exceeded in 'throw' mode, so this single flag covers both
+        /// cancellation and throw-mode timeouts. In 'break' mode the flag stays unset and the
+        /// writer finishes the current block, yielding the graceful partial INSERT that mode promises.
+        if (cancellation_query_status->isKilled())
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
     }
 }
 
