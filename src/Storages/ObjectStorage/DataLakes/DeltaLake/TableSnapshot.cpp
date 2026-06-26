@@ -503,7 +503,7 @@ public:
                     Iterator::scanCallback),
                 "visit_scan_metadata");
         }
-        catch (...)
+        catch (...) // Ok: exception saved via setScanException, rethrown by scanDataFunc
         {
             iter->setScanException();
             iter->data_files_cv.notify_all();
