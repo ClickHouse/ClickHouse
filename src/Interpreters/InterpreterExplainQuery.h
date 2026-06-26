@@ -33,6 +33,8 @@ public:
     bool ignoreQuota() const override;
     bool ignoreLimits() const override;
 
+    bool isExecutableAnalyze() const;
+
 private:
     ASTPtr query;
     SelectQueryOptions options;
@@ -44,9 +46,6 @@ private:
     /// planning pass instead of planning twice.
     struct AnalyzedInnerQuery;
     AnalyzedInnerQuery & getAnalyzedInnerQuery() const;
-
-    /// Whether this is an EXPLAIN ANALYZE that will actually execute an inner SELECT here.
-    bool isExecutableAnalyze() const;
 
     mutable std::unique_ptr<AnalyzedInnerQuery> analyzed_inner_query;
 };

@@ -1,4 +1,3 @@
-query_selects after exempt source:
-0
+first non-exempt EXPLAIN ANALYZE:
 second non-exempt EXPLAIN ANALYZE:
 QUOTA_EXCEEDED
