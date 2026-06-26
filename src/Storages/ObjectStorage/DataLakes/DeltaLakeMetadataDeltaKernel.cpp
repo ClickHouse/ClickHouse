@@ -625,7 +625,7 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     {
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "Delta Lake writes are enabled by default, but were explicitly disabled. "
+            "Delta Lake writes are a Beta feature disabled by default. "
             "To enable them, set allow_delta_lake_writes = 1");
     }
 
