@@ -699,6 +699,35 @@ namespace
     }
 
 
+    /// The TimeSeries `tags` inner table keeps the tag columns (and the `tags`/`all_tags` Maps) outside
+    /// the sorting key, but they are functionally dependent on `id`, which is part of it: every group of
+    /// rows that a background merge collapses together shares the same `id`, hence the same values of
+    /// those columns, so this off-key layout is safe here. `AggregatingMergeTree` rejects such a layout
+    /// by default (see the `allow_dimensions_outside_sorting_key` setting and
+    /// https://github.com/ClickHouse/ClickHouse/issues/751), so enable that setting on the inner tags
+    /// engine — both when we generate it and when the user specifies an aggregating engine explicitly.
+    void allowOffKeyDimensionsForAggregatingTagsEngine(ASTStorage & storage)
+    {
+        if (!storage.engine || storage.engine->name.find("Aggregating") == std::string::npos)
+            return;
+
+        if (storage.settings)
+        {
+            /// Respect an explicit value if the user already set it.
+            for (const auto & change : storage.settings->changes)
+                if (change.name == "allow_dimensions_outside_sorting_key")
+                    return;
+        }
+        else
+        {
+            auto settings_ast = make_intrusive<ASTSetQuery>();
+            settings_ast->is_standalone = false;
+            storage.set(storage.settings, settings_ast);
+        }
+
+        storage.settings->changes.push_back(SettingChange{"allow_dimensions_outside_sorting_key", Field(static_cast<UInt64>(1))});
+    }
+
     /// Makes the definition of the default engine for an inner table.
     boost::intrusive_ptr<ASTStorage> generateInnerEngine(ViewTarget::Kind target_kind, const TimeSeriesSettings & settings)
     {
@@ -740,20 +769,6 @@ namespace
             arguments_list->children = std::move(order_by_list);
             order_by_tuple->arguments = arguments_list;
             storage->set(storage->order_by, order_by_tuple);
-
-            if (aggregate_min_time_and_max_time)
-            {
-                /// The tag columns (and the `tags` Map) are not part of the sorting key, but they are
-                /// functionally dependent on `id`, which is part of the sorting key, so all rows that
-                /// collapse together during a background merge share the same values. Allow this off-key
-                /// layout explicitly; otherwise AggregatingMergeTree rejects it by default (see the
-                /// `allow_dimensions_outside_sorting_key` setting and
-                /// https://github.com/ClickHouse/ClickHouse/issues/751).
-                auto settings_ast = make_intrusive<ASTSetQuery>();
-                settings_ast->is_standalone = false;
-                settings_ast->changes.push_back(SettingChange{"allow_dimensions_outside_sorting_key", Field(static_cast<UInt64>(1))});
-                storage->set(storage->settings, settings_ast);
-            }
         }
         else if (target_kind == ViewTarget::Metrics)
         {
@@ -1051,6 +1066,12 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
 
                 if (!create_query.getTargetInnerEngine(kind))
                     create_query.setTargetInnerEngine(kind, generateInnerEngine(kind, settings));
+
+                if (kind == ViewTarget::Tags)
+                {
+                    if (auto * tags_engine = create_query.getTargetInnerEngine(kind))
+                        allowOffKeyDimensionsForAggregatingTagsEngine(*tags_engine);
+                }
             }
         }
     }
