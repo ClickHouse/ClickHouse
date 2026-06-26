@@ -70,6 +70,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageURL.h>
 #include <base/coverage.h>
@@ -2201,7 +2202,17 @@ void InterpreterSystemQuery::syncMerges()
             active_set.add(part->info, part->name);
 
         if (ManualMergeSelector::isAllScheduledPartsCovered(table_id, active_set))
-            return;
+        {
+            /// A scheduled merge makes its result part active by committing the transaction inside
+            /// MergePlainMergeTreeTask::finish(), which happens BEFORE the task writes its part_log
+            /// entry and releases the merged parts. Returning as soon as the result part is active
+            /// would let SYNC MERGES finish before part_log is populated, so we additionally wait
+            /// until all in-flight merges/mutations have completed (the merged parts are released
+            /// only after part_log is written). The Manual selector is only used by StorageMergeTree.
+            const auto * storage_merge_tree = dynamic_cast<const StorageMergeTree *>(&merge_tree);
+            if (!storage_merge_tree || storage_merge_tree->getNumberOfPartsInCurrentMergesAndMutations() == 0)
+                return;
+        }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(poll_delay.getCurrentDelay()));
         poll_delay.up();
