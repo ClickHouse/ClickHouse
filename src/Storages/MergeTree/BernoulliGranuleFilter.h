@@ -41,8 +41,8 @@ class BernoulliGranuleFilter
 public:
     struct Checkpoint
     {
-        size_t mark_start_row; /// absolute row index of mark's first row
-        size_t remaining_skip; /// geometric skip counter at mark boundary (rows remaining before next hit)
+        size_t mark_start_row = 0; /// absolute row index of mark's first row
+        size_t remaining_skip = 0; /// geometric skip counter at mark boundary (rows remaining before next hit)
         pcg64 rng; /// RNG state at mark boundary
     };
 
