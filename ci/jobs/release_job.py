@@ -498,12 +498,19 @@ def main():
                     # on failure, print just its tail so the real error survives.
                     image_slug = image.replace("/", "_")
                     build_log = f"/tmp/docker_build_{image_slug}_{variant}.log"
+                    # The distroless image is a multi-stage Dockerfile; build the
+                    # production target explicitly so the published image is the
+                    # minimal runtime stage, not an earlier build stage.
+                    target_arg = (
+                        " --target=production" if variant == "distroless" else ""
+                    )
                     Shell.check(
                         f"docker buildx build"
                         f" --platform=linux/amd64,linux/arm64"
                         f" --provenance=true"
                         f" --sbom=true"
                         f" --output=type=registry"
+                        f"{target_arg}"
                         f" --label=com.clickhouse.build.version={label_version}"
                         f" {' '.join(tags)}"
                         f" --build-arg=VERSION={version_string}"
