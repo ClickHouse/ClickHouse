@@ -1,9 +1,5 @@
 #pragma once
 
-#include <future>
-#include <optional>
-#include <Common/re2.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
 #include <IO/Archives/IArchiveReader.h>
@@ -12,6 +8,12 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Common/parseGlobs.h>
+#include <Common/threadPoolCallbackRunner.h>
+
+#include <future>
+#include <optional>
+
 
 namespace DB
 {
@@ -224,7 +226,7 @@ private:
     std::vector<String> expanded_keys;
     std::vector<String>::iterator expanded_keys_iter;
 
-    std::unique_ptr<re2::RE2> matcher;
+    std::optional<GlobMatcher> matcher;
 
     bool is_finished = false;
     bool first_iteration = true;
