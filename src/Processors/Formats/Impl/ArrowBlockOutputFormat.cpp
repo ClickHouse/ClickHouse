@@ -133,93 +133,6 @@ void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> 
     writer = *writer_status;
 }
 
-namespace
-{
-/// True if `type`'s tree contains a `LowCardinality` anywhere (under any Nullable/Array/Tuple/Map/Variant
-/// wrapper).
-bool typeContainsLowCardinality(const DataTypePtr & type)
-{
-    if (type->lowCardinality())
-        return true;
-    const DataTypePtr t = removeNullable(removeLowCardinality(type));
-    const WhichDataType which(t);
-    if (which.isArray())
-        return typeContainsLowCardinality(assert_cast<const DataTypeArray &>(*t).getNestedType());
-    if (which.isTuple())
-    {
-        for (const auto & e : assert_cast<const DataTypeTuple &>(*t).getElements())
-            if (typeContainsLowCardinality(e))
-                return true;
-        return false;
-    }
-    if (which.isMap())
-    {
-        const auto & m = assert_cast<const DataTypeMap &>(*t);
-        return typeContainsLowCardinality(m.getKeyType()) || typeContainsLowCardinality(m.getValueType());
-    }
-    if (which.isVariant())
-    {
-        for (const auto & v : assert_cast<const DataTypeVariant &>(*t).getVariants())
-            if (typeContainsLowCardinality(v))
-                return true;
-        return false;
-    }
-    return false;
-}
-
-/// True if `type` has a `Variant` (anywhere in its tree) one of whose alternatives contains a
-/// `LowCardinality` — directly or nested inside an Array/Tuple/Map. The native writer treats `Variant` as a
-/// dictionary boundary, materializing any such alternative to plain values, so with dictionary output
-/// requested it cannot reproduce the library writer's nested-dictionary union child — defer the column to
-/// the library writer. (A `LowCardinality` *not* under a `Variant` is dictionary-encoded natively, so the
-/// search for a `Variant` must come first; only inside one does any nested `LowCardinality` force fallback.)
-bool variantHasLowCardinalityAlternative(const DataTypePtr & type)
-{
-    const DataTypePtr t = removeNullable(removeLowCardinality(type));
-    const WhichDataType which(t);
-    if (which.isVariant())
-    {
-        for (const auto & v : assert_cast<const DataTypeVariant &>(*t).getVariants())
-            if (typeContainsLowCardinality(v))
-                return true;
-        return false;
-    }
-    if (which.isArray())
-        return variantHasLowCardinalityAlternative(assert_cast<const DataTypeArray &>(*t).getNestedType());
-    if (which.isTuple())
-    {
-        for (const auto & e : assert_cast<const DataTypeTuple &>(*t).getElements())
-            if (variantHasLowCardinalityAlternative(e))
-                return true;
-        return false;
-    }
-    if (which.isMap())
-    {
-        const auto & m = assert_cast<const DataTypeMap &>(*t);
-        return variantHasLowCardinalityAlternative(m.getKeyType()) || variantHasLowCardinalityAlternative(m.getValueType());
-    }
-    return false;
-}
-
-/// Whether the native Arrow IPC writer can encode every column of the header. The only remaining
-/// reason to use the Apache Arrow library writer is a column type the native encoder does not support
-/// (e.g. `Dynamic`/`JSON`); LowCardinality (incl. dictionary-encoded output) and Variant are native.
-bool canNativelyEncodeBlock(const Block & header, const FormatSettings & format_settings)
-{
-    for (const auto & column : header)
-    {
-        if (!ArrowIPC::RecordBatchEncoder::canNativelyEncode(column.type))
-            return false;
-        /// The native writer cannot dictionary-encode a `LowCardinality` nested inside a `Variant`; when
-        /// dictionary output is requested, defer such a column to the Apache Arrow library writer so the
-        /// union child keeps its dictionary schema instead of silently becoming plain values.
-        if (format_settings.arrow.low_cardinality_as_dictionary && variantHasLowCardinalityAlternative(column.type))
-            return false;
-    }
-    return true;
-}
-}
-
 void registerOutputFormatArrow(FormatFactory & factory);
 void registerOutputFormatArrow(FormatFactory & factory)
 {
@@ -231,7 +144,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
            FormatFilterInfoPtr /*format_filter_info*/) -> OutputFormatPtr
         {
             auto header = std::make_shared<const Block>(sample);
-            if (format_settings.arrow.output_use_native_writer && canNativelyEncodeBlock(sample, format_settings))
+            if (format_settings.arrow.output_use_native_writer)
                 return std::make_shared<ArrowIPCBlockOutputFormat>(buf, header, false, format_settings);
             return std::make_shared<ArrowBlockOutputFormat>(buf, header, false, format_settings);
         });
@@ -247,7 +160,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
           FormatFilterInfoPtr /*format_filter_info*/) -> OutputFormatPtr
         {
             auto header = std::make_shared<const Block>(sample);
-            if (format_settings.arrow.output_use_native_writer && canNativelyEncodeBlock(sample, format_settings))
+            if (format_settings.arrow.output_use_native_writer)
                 return std::make_shared<ArrowIPCBlockOutputFormat>(buf, header, true, format_settings);
             return std::make_shared<ArrowBlockOutputFormat>(buf, header, true, format_settings);
         });

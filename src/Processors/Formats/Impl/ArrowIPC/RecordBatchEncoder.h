@@ -38,10 +38,6 @@ public:
 
     EncodedBatch encode(const Columns & columns, const DataTypes & types, size_t num_rows);
 
-    /// Whether the native writer can encode this type (recursively). Used to fall back to the Apache
-    /// Arrow library writer for types the native encoder does not support (e.g. Variant).
-    static bool canNativelyEncode(const DataTypePtr & type);
-
     /// Appends a buffer to the body (8-byte aligned start) and records its {offset, length}.
     void appendBuffer(const void * data, size_t length);
 
@@ -54,6 +50,10 @@ private:
     /// Encodes a Variant column as an Arrow dense union (no validity buffer; a types and an offsets
     /// buffer, the variant children in global order, and a trailing single-element null child).
     void encodeVariant(const IColumn & column, const DataTypePtr & type, size_t num_rows);
+    /// Writes a column with no first-class Arrow mapping as an Arrow `Binary` column (an int32 offsets
+    /// buffer and the concatenated per-row `getDataAt` bytes), matching the Apache Arrow library writer's
+    /// `output_format_arrow_unsupported_types_as_binary` fallback. Read back as `String`.
+    void encodeAsBinary(const IColumn & column, size_t num_rows);
 
     void appendEmptyBuffer();
     /// Emits the validity buffer: a packed LSB-first bitmap (1 = valid) for nullable columns, or an

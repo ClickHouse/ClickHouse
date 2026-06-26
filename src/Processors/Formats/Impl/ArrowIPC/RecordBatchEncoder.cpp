@@ -41,47 +41,6 @@ namespace ErrorCodes
 namespace DB::ArrowIPC
 {
 
-bool RecordBatchEncoder::canNativelyEncode(const DataTypePtr & type)
-{
-    const DataTypePtr t = removeNullable(removeLowCardinality(type));
-    const WhichDataType which(t);
-    if (which.isArray())
-        return canNativelyEncode(assert_cast<const DataTypeArray &>(*t).getNestedType());
-    if (which.isTuple())
-    {
-        for (const auto & e : assert_cast<const DataTypeTuple &>(*t).getElements())
-        {
-            if (!canNativelyEncode(e))
-                return false;
-        }
-        return true;
-    }
-    if (which.isMap())
-    {
-        const auto & m = assert_cast<const DataTypeMap &>(*t);
-        return canNativelyEncode(m.getKeyType()) && canNativelyEncode(m.getValueType());
-    }
-    if (which.isVariant())
-    {
-        const auto & variants = assert_cast<const DataTypeVariant &>(*t).getVariants();
-        /// An Arrow dense-union type id is a signed int8 and the trailing NULL child uses id `size`, so a
-        /// Variant with more than 127 alternatives cannot be represented; let the library writer reject it.
-        if (variants.size() > 127)
-            return false;
-        for (const auto & v : variants)
-        {
-            if (!canNativelyEncode(v))
-                return false;
-        }
-        return true;
-    }
-    /// `which.isFloat()` also matches `BFloat16`, which the value encoder does not handle; restrict to the
-    /// 32-/64-bit floats it can encode so other floating-point types fall back to the Apache Arrow library.
-    return which.isInt() || which.isUInt() || which.isFloat32() || which.isFloat64() || which.isEnum() || which.isDecimal()
-        || which.isDateOrDate32() || which.isDateTime() || which.isDateTime64() || which.isString()
-        || which.isFixedString() || which.isUUID() || which.isIPv4() || which.isIPv6() || which.isInterval();
-}
-
 void RecordBatchEncoder::appendBuffer(const void * data, size_t length)
 {
     while (body.size() % 8 != 0)
@@ -380,10 +339,39 @@ void RecordBatchEncoder::encodeValues(
             return;
         }
         default:
+            /// A type with no first-class Arrow mapping. Mirror the Apache Arrow library writer: when
+            /// `output_format_arrow_unsupported_types_as_binary` is set, write its raw per-row bytes as an
+            /// Arrow `Binary` column (read back as `String`); otherwise reject it.
+            if (settings.arrow.output_unsupported_types_as_binary)
+            {
+                encodeAsBinary(column, num_rows);
+                return;
+            }
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
-                "Native Arrow IPC writer does not support encoding type {} yet", type->getName());
+                "Native Arrow IPC writer does not support encoding type {}. Set "
+                "output_format_arrow_unsupported_types_as_binary = 1 to write it as binary",
+                type->getName());
     }
+}
+
+void RecordBatchEncoder::encodeAsBinary(const IColumn & column, size_t num_rows)
+{
+    PODArray<Int32> arrow_offsets(num_rows + 1);
+    arrow_offsets[0] = 0;
+    PODArray<char> data;
+    size_t total = 0;
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        const std::string_view value = column.getDataAt(i);
+        total += value.size();
+        if (total > static_cast<size_t>(std::numeric_limits<Int32>::max()))
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC binary offset exceeds 32 bits");
+        data.insert(data.end(), value.data(), value.data() + value.size());
+        arrow_offsets[i + 1] = static_cast<Int32>(total);
+    }
+    appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(Int32));
+    appendBuffer(data.data(), data.size());
 }
 
 void RecordBatchEncoder::encodeField(const IColumn & column, const DataTypePtr & type, size_t num_rows)
@@ -439,6 +427,12 @@ void RecordBatchEncoder::encodeVariant(const IColumn & column, const DataTypePtr
     const auto & variant_column = assert_cast<const ColumnVariant &>(column);
     const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
     const size_t num_variants = variant_type.getVariants().size();
+    /// An Arrow dense-union type id is a signed int8 and the trailing NULL child uses id `num_variants`,
+    /// so a Variant with more than 127 alternatives cannot be represented.
+    if (num_variants > 127)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Native Arrow IPC writer does not support a Variant with {} alternatives (maximum is 127)", num_variants);
     const auto & local_discriminators = variant_column.getLocalDiscriminators();
     const auto & ch_offsets = variant_column.getOffsets();
 

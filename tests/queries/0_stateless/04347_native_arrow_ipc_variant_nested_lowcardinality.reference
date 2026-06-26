@@ -1,15 +1,14 @@
-OK   Variant(Array(LowCardinality)): native writer deferred to the library writer (identical, dictionary schema kept)
+--- Variant(Array(LowCardinality)): native writer + native reader round-trip ---
 ['a','b']
 ['a','b']
 ['a','b']
 []
 []
 []
-OK   Variant(Tuple(LowCardinality)): native writer deferred to the library writer (identical, dictionary schema kept)
+--- Variant(Tuple(LowCardinality)): native writer + native reader round-trip ---
 ('0')
 ('0')
 ('1')
 ('1')
 ('2')
 ('2')
-OK   Array(LowCardinality): encoded by the native writer (no over-fallback)

@@ -407,6 +407,15 @@ buildField(
     flatbuffers::FlatBufferBuilder & b, const std::string & name, const DataTypePtr & type, const FormatSettings & settings,
     const DictPlan & plan);
 
+/// The child plan at position `i`, or an empty (no-dictionary) plan when the parent has none. A container
+/// nested in a `Variant` recurses with an empty plan (`Variant` is a dictionary boundary), so its own
+/// children must fall back to empty plans rather than indexing a non-existent vector entry.
+const DictPlan & childPlan(const DictPlans & children, size_t i)
+{
+    static const DictPlan empty;
+    return i < children.size() ? children[i] : empty;
+}
+
 flatbuffers::Offset<flatbuf::Field>
 buildMapEntriesField(
     flatbuffers::FlatBufferBuilder & b, const DataTypeMap & map_type, const FormatSettings & settings,
@@ -414,8 +423,8 @@ buildMapEntriesField(
 {
     /// Arrow map child: a non-nullable struct "entries" with children "key" (non-nullable) and "value".
     VectorWithMemoryTracking<flatbuffers::Offset<flatbuf::Field>> kv;
-    kv.push_back(buildField(b, "key", removeNullable(map_type.getKeyType()), settings, kv_plans.at(0)));
-    kv.push_back(buildField(b, "value", map_type.getValueType(), settings, kv_plans.at(1)));
+    kv.push_back(buildField(b, "key", removeNullable(map_type.getKeyType()), settings, childPlan(kv_plans, 0)));
+    kv.push_back(buildField(b, "value", map_type.getValueType(), settings, childPlan(kv_plans, 1)));
     auto kv_vec = b.CreateVector(kv);
     auto entries_name = b.CreateString("entries");
     auto struct_type = flatbuf::CreateStruct_(b).Union();
@@ -544,7 +553,7 @@ buildField(
                 }
                 break;
             case TypeIndex::Array:
-                children.push_back(buildField(b, "item", assert_cast<const DataTypeArray &>(*t).getNestedType(), settings, plan.children.at(0)));
+                children.push_back(buildField(b, "item", assert_cast<const DataTypeArray &>(*t).getNestedType(), settings, childPlan(plan.children, 0)));
                 type_type = flatbuf::Type_List;
                 type_offset = flatbuf::CreateList(b).Union();
                 break;
@@ -554,7 +563,7 @@ buildField(
                 const auto & elems = tuple.getElements();
                 const auto & elem_names = tuple.getElementNames();
                 for (size_t i = 0; i < elems.size(); ++i)
-                    children.push_back(buildField(b, elem_names[i], elems[i], settings, plan.children.at(i)));
+                    children.push_back(buildField(b, elem_names[i], elems[i], settings, childPlan(plan.children, i)));
                 type_type = flatbuf::Type_Struct_;
                 type_offset = flatbuf::CreateStruct_(b).Union();
                 break;
@@ -622,9 +631,20 @@ buildField(
                 break;
             }
             default:
+                /// A type with no first-class Arrow mapping: written as an Arrow `Binary` column when
+                /// `output_format_arrow_unsupported_types_as_binary` is set (matching the encoder and the
+                /// Apache Arrow library writer); otherwise rejected.
+                if (settings.arrow.output_unsupported_types_as_binary)
+                {
+                    type_type = flatbuf::Type_Binary;
+                    type_offset = flatbuf::CreateBinary(b).Union();
+                    break;
+                }
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
-                    "Native Arrow IPC writer does not support type {} yet", type->getName());
+                    "Native Arrow IPC writer does not support type {}. Set "
+                    "output_format_arrow_unsupported_types_as_binary = 1 to write it as binary",
+                    type->getName());
         }
     }
 
