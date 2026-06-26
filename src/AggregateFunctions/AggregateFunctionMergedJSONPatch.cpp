@@ -85,24 +85,6 @@ struct AggregateFunctionMergedJSONPatchData
         }
     };
 
-    struct StringSlice
-    {
-        const char * data = nullptr;
-        size_t size = 0;
-
-        StringSlice() = default;
-
-        StringSlice(const char * data_, size_t size_)
-            : data(data_), size(size_)
-        {
-        }
-
-        std::string_view view() const
-        {
-            return std::string_view(data, size);
-        }
-    };
-
     struct EncodedField
     {
         enum class Kind : UInt8
@@ -117,7 +99,11 @@ struct AggregateFunctionMergedJSONPatchData
         Kind kind = Kind::Empty;
         Int64 inline_int64 = 0;
         UInt64 inline_uint64 = 0;
-        StringSlice data;
+        /// Owned string storage for String and BinaryNonObjectField kinds.
+        /// Using owned String rather than an arena pointer means the bytes are freed immediately
+        /// when the Entry is erased, keeping memory proportional to the live state size rather
+        /// than to the total number of updates processed.
+        String data; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
         EncodedField() = default;
 
@@ -133,11 +119,13 @@ struct AggregateFunctionMergedJSONPatchData
         {
         }
 
-        EncodedField(Kind kind_, StringSlice data_)
+        EncodedField(Kind kind_, String data_)
             : kind(kind_)
-            , data(data_)
+            , data(std::move(data_))
         {
         }
+
+        std::string_view dataView() const { return data; }
 
         Field get() const
         {
@@ -150,10 +138,10 @@ struct AggregateFunctionMergedJSONPatchData
                 case Kind::UInt64:
                     return Field(inline_uint64);
                 case Kind::String:
-                    return Field(String(data.view()));
+                    return Field(data);
                 case Kind::BinaryNonObjectField:
                 {
-                    ReadBufferFromString buf(data.view());
+                    ReadBufferFromString buf(data);
                     return decodeField(buf);
                 }
             }
@@ -164,24 +152,18 @@ struct AggregateFunctionMergedJSONPatchData
 
     struct Entry
     {
-        StringSlice path;
+        /// Owned string for the path. Freed when the entry is erased, so path memory is
+        /// proportional to the number of live entries, not to the total number of updates.
+        String path; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         EncodedField value;
         SortKey sort_key;
+
+        std::string_view pathView() const { return path; }
     };
 
     VectorWithMemoryTracking<Entry> entries;
 
-    static StringSlice copyToArena(Arena & arena, std::string_view data)
-    {
-        if (data.empty())
-            return {};
-
-        char * dst = arena.alloc(data.size());
-        memcpy(dst, data.data(), data.size());
-        return StringSlice(dst, data.size());
-    }
-
-    static EncodedField encodeFieldToArena(Field value, Arena & arena)
+    static EncodedField encodeField(Field value)
     {
         switch (value.getType())
         {
@@ -190,32 +172,14 @@ struct AggregateFunctionMergedJSONPatchData
             case Field::Types::UInt64:
                 return EncodedField(value.safeGet<UInt64>());
             case Field::Types::String:
-                return EncodedField(EncodedField::Kind::String, copyToArena(arena, value.safeGet<String>()));
+                return EncodedField(EncodedField::Kind::String, value.safeGet<String>());
             default:
             {
                 WriteBufferFromOwnString buf;
-                encodeField(value, buf);
-                return EncodedField(EncodedField::Kind::BinaryNonObjectField, copyToArena(arena, buf.str()));
+                ::DB::encodeField(value, buf);
+                return EncodedField(EncodedField::Kind::BinaryNonObjectField, std::move(buf.str()));
             }
         }
-    }
-
-    static EncodedField cloneEncodedField(const EncodedField & value, Arena & arena)
-    {
-        switch (value.kind)
-        {
-            case EncodedField::Kind::Empty:
-                return EncodedField();
-            case EncodedField::Kind::Int64:
-                return EncodedField(value.inline_int64);
-            case EncodedField::Kind::UInt64:
-                return EncodedField(value.inline_uint64);
-            case EncodedField::Kind::String:
-            case EncodedField::Kind::BinaryNonObjectField:
-                return EncodedField(value.kind, copyToArena(arena, value.data.view()));
-        }
-
-        UNREACHABLE();
     }
 
     static bool isObjectField(const Field & value)
@@ -243,7 +207,7 @@ struct AggregateFunctionMergedJSONPatchData
             path,
             [](const Entry & entry, std::string_view rhs_path)
             {
-                return entry.path.view() < rhs_path;
+                return entry.pathView() < rhs_path;
             });
     }
 
@@ -251,7 +215,7 @@ struct AggregateFunctionMergedJSONPatchData
     {
         for (const auto & entry : entries)
         {
-            if (pathsConflict(entry.path.view(), path) && entry.sort_key > sort_key)
+            if (pathsConflict(entry.pathView(), path) && entry.sort_key > sort_key)
                 return true;
         }
 
@@ -266,36 +230,36 @@ struct AggregateFunctionMergedJSONPatchData
                 entries.end(),
                 [&](const Entry & entry)
                 {
-                    return pathsConflict(entry.path.view(), path) && entry.sort_key <= sort_key;
+                    return pathsConflict(entry.pathView(), path) && entry.sort_key <= sort_key;
                 }),
             entries.end());
     }
 
-    void pushLeafEntry(std::string_view path, Field value, const SortKey & sort_key, Arena & arena)
+    void pushLeafEntry(std::string_view path, Field value, const SortKey & sort_key)
     {
         Entry entry;
-        entry.path = copyToArena(arena, path);
-        entry.value = encodeFieldToArena(std::move(value), arena);
+        entry.path = path;
+        entry.value = encodeField(std::move(value));
         entry.sort_key = sort_key;
 
         auto it = findInsertPosition(entries, path);
         entries.insert(it, std::move(entry));
     }
 
-    void insertLeafEntry(std::string_view path, Field value, const SortKey & sort_key, Arena & arena)
+    void insertLeafEntry(std::string_view path, Field value, const SortKey & sort_key)
     {
         if (hasNewerConflictingEntry(path, sort_key))
             return;
 
         eraseShadowedEntries(path, sort_key);
-        pushLeafEntry(path, std::move(value), sort_key, arena);
+        pushLeafEntry(path, std::move(value), sort_key);
     }
 
-    void insertPathValue(std::string_view path, Field value, const SortKey & sort_key, Arena & arena)
+    void insertPathValue(std::string_view path, Field value, const SortKey & sort_key)
     {
         if (!isObjectField(value))
         {
-            insertLeafEntry(path, std::move(value), sort_key, arena);
+            insertLeafEntry(path, std::move(value), sort_key);
             return;
         }
 
@@ -306,11 +270,11 @@ struct AggregateFunctionMergedJSONPatchData
             if (!child_path.empty())
                 child_path += '.';
             child_path += child_key;
-            insertPathValue(child_path, child_value, sort_key, arena);
+            insertPathValue(child_path, child_value, sort_key);
         }
     }
 
-    static EncodedField readEncodedField(ReadBuffer & buf, Arena & arena)
+    static EncodedField readEncodedField(ReadBuffer & buf)
     {
         UInt8 encoded_kind = 0;
         readBinary(encoded_kind, buf);
@@ -348,44 +312,32 @@ struct AggregateFunctionMergedJSONPatchData
             case EncodedField::Kind::String:
             case EncodedField::Kind::BinaryNonObjectField:
             {
-                size_t value_size = 0;
-                readVarUInt(value_size, buf);
-
-                StringSlice stored = {};
-                if (value_size)
-                {
-                    char * dst = arena.alloc(value_size);
-                    buf.readStrict(dst, value_size);
-                    stored = StringSlice(dst, value_size);
-                }
-
-                return EncodedField(kind, stored);
+                String stored;
+                readStringBinary(stored, buf);
+                return EncodedField(kind, std::move(stored));
             }
         }
 
         UNREACHABLE();
     }
 
-    void add(const IColumn & json_column, size_t row_num, Arena & arena)
+    void add(const IColumn & json_column, size_t row_num, Arena &)
     {
         const auto & object_column = assert_cast<const ColumnObject &>(json_column);
 
-        /// Hash the row into a temporary SipHash rather than serializing into the aggregate arena.
-        /// serializeValueIntoArena would leave the full serialized JSON in the arena for the
-        /// lifetime of the aggregate state, even for rows that are later shadowed. The 16-byte
-        /// hash digest lives entirely on the stack and produces no arena allocation.
+        /// Hash the row into a temporary SipHash — no arena allocation needed.
         SipHash hash;
         object_column.updateHashWithValue(row_num, hash);
         SortKey sort_key = SortKey(Field(hash.get128()));
 
-        addKeyValuePairs(object_column, row_num, sort_key, arena);
+        addKeyValuePairs(object_column, row_num, sort_key);
     }
 
-    void addWithKey(const IColumn & json_column, const IColumn & key_column, size_t row_num, Arena & arena)
+    void addWithKey(const IColumn & json_column, const IColumn & key_column, size_t row_num, Arena &)
     {
         const auto & object_column = assert_cast<const ColumnObject &>(json_column);
         SortKey sort_key = SortKey(key_column[row_num]);
-        addKeyValuePairs(object_column, row_num, sort_key, arena);
+        addKeyValuePairs(object_column, row_num, sort_key);
     }
 
     /// A leaf entry used as a staging buffer before atomic batch insertion.
@@ -413,7 +365,7 @@ struct AggregateFunctionMergedJSONPatchData
         }
     }
 
-    void addKeyValuePairs(const ColumnObject & object_column, size_t row_num, const SortKey & sort_key, Arena & arena)
+    void addKeyValuePairs(const ColumnObject & object_column, size_t row_num, const SortKey & sort_key)
     {
         /// Collect all leaf (path, value) pairs from the row, then insert them atomically.
         ///
@@ -434,7 +386,7 @@ struct AggregateFunctionMergedJSONPatchData
             it.next();
         }
 
-        insertBatchAtomic(batch, arena);
+        insertBatchAtomic(batch);
     }
 
     /// Insert a flat list of leaf entries into this state, treating the entire batch as atomic
@@ -456,7 +408,7 @@ struct AggregateFunctionMergedJSONPatchData
     /// (entries[0..existing_count)) breaks down when pushLeafEntry inserts into a sorted
     /// position that falls below the limit, causing a later survivor's erase pass to
     /// mis-identify the newly pushed sibling as a pre-existing entry and erase it.
-    void insertBatchAtomic(std::vector<LeafRef> & batch, Arena & arena) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    void insertBatchAtomic(std::vector<LeafRef> & batch) // STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
         size_t existing_count = entries.size();
 
@@ -468,7 +420,7 @@ struct AggregateFunctionMergedJSONPatchData
             bool blocked = false;
             for (size_t j = 0; j < existing_count; ++j)
             {
-                if (pathsConflict(entries[j].path.view(), batch[i].path) && entries[j].sort_key > batch[i].sort_key)
+                if (pathsConflict(entries[j].pathView(), batch[i].path) && entries[j].sort_key > batch[i].sort_key)
                 {
                     blocked = true;
                     break;
@@ -489,7 +441,7 @@ struct AggregateFunctionMergedJSONPatchData
                     entries.end(),
                     [&](const Entry & e)
                     {
-                        return pathsConflict(e.path.view(), batch[idx].path)
+                        return pathsConflict(e.pathView(), batch[idx].path)
                             && e.sort_key <= batch[idx].sort_key;
                     }),
                 entries.end());
@@ -498,16 +450,16 @@ struct AggregateFunctionMergedJSONPatchData
         /// Phase 3: push all survivors. The pre-existing state is already clean; batch
         /// siblings are not yet in entries, so pushLeafEntry cannot accidentally erase them.
         for (size_t idx : survivors)
-            pushLeafEntry(batch[idx].path, std::move(batch[idx].value), batch[idx].sort_key, arena);
+            pushLeafEntry(batch[idx].path, std::move(batch[idx].value), batch[idx].sort_key);
     }
 
-    void merge(const AggregateFunctionMergedJSONPatchData & other, Arena & arena)
+    void merge(const AggregateFunctionMergedJSONPatchData & other, Arena &)
     {
         std::vector<LeafRef> batch; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         batch.reserve(other.entries.size());
         for (const auto & entry : other.entries)
-            batch.push_back({String(entry.path.view()), entry.value.get(), entry.sort_key});
-        insertBatchAtomic(batch, arena);
+            batch.push_back({String(entry.pathView()), entry.value.get(), entry.sort_key});
+        insertBatchAtomic(batch);
     }
 
     void serialize(WriteBuffer & buf) const
@@ -515,7 +467,7 @@ struct AggregateFunctionMergedJSONPatchData
         writeVarUInt(entries.size(), buf);
         for (const auto & entry : entries)
         {
-            writeStringBinary(entry.path.view(), buf);
+            writeStringBinary(entry.pathView(), buf);
             writeBinary(static_cast<UInt8>(entry.value.kind), buf);
             switch (entry.value.kind)
             {
@@ -529,14 +481,14 @@ struct AggregateFunctionMergedJSONPatchData
                     break;
                 case EncodedField::Kind::String:
                 case EncodedField::Kind::BinaryNonObjectField:
-                    writeStringBinary(entry.value.data.view(), buf);
+                    writeStringBinary(entry.value.dataView(), buf);
                     break;
             }
-            encodeField(entry.sort_key.toField(), buf);
+            DB::encodeField(entry.sort_key.toField(), buf);
         }
     }
 
-    void deserialize(ReadBuffer & buf, Arena & arena)
+    void deserialize(ReadBuffer & buf, Arena &)
     {
         entries.clear();
 
@@ -554,11 +506,11 @@ struct AggregateFunctionMergedJSONPatchData
         {
             LeafRef & lv = batch.emplace_back();
             readStringBinary(lv.path, buf);
-            lv.value = readEncodedField(buf, arena).get();
+            lv.value = readEncodedField(buf).get();
             lv.sort_key = SortKey(decodeField(buf));
         }
 
-        insertBatchAtomic(batch, arena);
+        insertBatchAtomic(batch);
     }
 
     void insertResultInto(IColumn & to, const DataTypePtr &) const
@@ -576,7 +528,7 @@ struct AggregateFunctionMergedJSONPatchData
 
         for (const auto & entry : entries)
         {
-            std::string_view path = entry.path.view();
+            std::string_view path = entry.pathView();
             Field value = entry.value.get();
 
             if (auto typed_it = result_column.getTypedPaths().find(path); typed_it != result_column.getTypedPaths().end())
@@ -644,7 +596,7 @@ public:
 
     bool allocatesMemoryInArena() const override
     {
-        return true;
+        return false;
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
