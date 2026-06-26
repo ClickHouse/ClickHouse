@@ -122,58 +122,78 @@ fi
 chmod +x $CLICKHOUSE_BIN
 $CLICKHOUSE_BIN local --version
 
+# Apply the server-side config overrides shipped with the SQLancer provider
+# (ClickHouse/sqlancer PR #4, `.claude/clickhouse-config/`): drop the file
+# logger to `warning`, remove `system.trace_log`, TTL the system observability
+# tables, and pin `async_insert` off (the oracles rely on the
+# SELECT-after-INSERT invariant). The server is started without `--config-file`,
+# so it uses the binary's embedded `config.xml` and merges any `config.d/*.xml`
+# found relative to its working directory (see `ConfigProcessor::loadConfig`);
+# starting it from `$SERVER_DIR` is what makes the overrides take effect.
+SERVER_DIR="$TMP_PATH/server"
+mkdir -p "$SERVER_DIR/config.d"
+cp /sqlancer/sqlancer-main/.claude/clickhouse-config/*.xml "$SERVER_DIR/config.d/"
+
 echo "Starting ClickHouse server..."
-$CLICKHOUSE_BIN server -P $PID_FILE 1>$OUTPUT_PATH/clickhouse-server.log 2>$OUTPUT_PATH/clickhouse-server.log.err &
+( cd "$SERVER_DIR" && exec "$CLICKHOUSE_BIN" server -P "$PID_FILE" ) 1>$OUTPUT_PATH/clickhouse-server.log 2>$OUTPUT_PATH/clickhouse-server.log.err &
 for _ in $(seq 1 60); do if [[ $(wget -q 'localhost:8123' -O- 2>/dev/null) == 'Ok.' ]]; then break ; else sleep 1; fi ; done
 
 cd /sqlancer/sqlancer-main
 
-TIMEOUT=300
-NUM_QUERIES=1000
+# Run all oracles in a single invocation bounded by one wall-clock timeout,
+# matching the upstream `.claude/run-sqlancer.sh` reference run. The provider
+# now uses the `com.clickhouse:client-v2` transport, pins its own per-request
+# settings (`max_execution_time`, `wait_end_of_query`, `max_result_rows`, ...),
+# and additionally randomizes a curated subset of session settings.
+TIMEOUT=3000
 NUM_THREADS=10
-TESTS=( "TLPGroupBy" "TLPHaving" "TLPWhere" "TLPDistinct" "TLPAggregate" "NoREC" )
-echo "${TESTS[@]}"
+ORACLES="TLPWhere,TLPDistinct,TLPGroupBy,TLPAggregate,TLPHaving,NoREC,PQS,CERT,CODDTest,SEMR,SEMRMulti,EET,SetOpTLP,CombinatorTLP,QccCache,SortedUnionLimitBy,RowPolicy,SchemaRoundtrip,JoinAlgorithm,Cast,Parallelism,PartitionMirror,KeyCondition,TableFunctionIN,ViewEquivalence"
+echo "$ORACLES"
 
 OVERALL_STATUS=OK
+TEST_NAME="SQLancer"
+output_file="$OUTPUT_PATH/sqlancer.out"
+ATTACHED_FILES_ARRAY+=("$output_file")
 
-for TEST in "${TESTS[@]}"; do
-    echo "$TEST"
-    error_output_file="$OUTPUT_PATH/$TEST.err"
-    ATTACHED_FILES_ARRAY+=("$error_output_file")
+if [[ $(wget -q 'localhost:8123' -O- 2>/dev/null) == 'Ok.' ]]; then
+    echo "Server is OK"
+    java_exit=0
+    java -jar target/sqlancer-*.jar \
+        --num-threads "$NUM_THREADS" \
+        --num-tries 999999 \
+        --timeout-seconds "$TIMEOUT" \
+        --use-connection-test false \
+        --print-progress-summary true \
+        --random-session-settings true \
+        --random-session-settings-budget 5 \
+        --host 127.0.0.1 --port 8123 \
+        --username default --password "" \
+        clickhouse --oracle "$ORACLES" 2>&1 | tee "$output_file" || java_exit=${PIPESTATUS[0]}
 
-    if [[ $(wget -q 'localhost:8123' -O- 2>/dev/null) == 'Ok.' ]]; then
-        echo "Server is OK"
-        java_exit=0
-        ( java -jar target/sqlancer-*.jar --log-each-select true --print-failed false --num-threads "$NUM_THREADS" --timeout-seconds "$TIMEOUT" --num-queries "$NUM_QUERIES"  --username default --password "" clickhouse --oracle "$TEST" | tee "./$TEST.out" )  3>&1 1>&2 2>&3 | tee "$error_output_file" || java_exit=$?
-
-        if [[ $(wget -q 'localhost:8123' -O- 2>/dev/null) != 'Ok.' ]]; then
-            echo "Server crashed during $TEST"
-            TEST_RESULTS+=("${TEST},ERROR,Server crashed during test")
-            OVERALL_STATUS="FAIL"
-            RESULT_INFO="Server crashed during $TEST"
-            break
-        fi
-
-        assertion_error="$(grep 'AssertionError' "$error_output_file" ||:)"
-
+    if [[ $(wget -q 'localhost:8123' -O- 2>/dev/null) != 'Ok.' ]]; then
+        echo "Server crashed during SQLancer run"
+        TEST_RESULTS+=("${TEST_NAME},ERROR,Server crashed during test")
+        OVERALL_STATUS="FAIL"
+        RESULT_INFO="Server crashed during SQLancer run"
+    else
+        assertion_error="$(grep 'AssertionError' "$output_file" ||:)"
         if [ -n "$assertion_error" ]; then
             # Collapse to single line; full JSON escaping is done in write_result
             assertion_error_clean="$(printf '%s' "$assertion_error" | tr '\n' ' ')"
-            TEST_RESULTS+=("${TEST},FAIL,${assertion_error_clean}")
+            TEST_RESULTS+=("${TEST_NAME},FAIL,${assertion_error_clean}")
             OVERALL_STATUS="FAIL"
         elif [ "$java_exit" -ne 0 ]; then
-            TEST_RESULTS+=("${TEST},ERROR,SQLancer exited with code $java_exit")
+            TEST_RESULTS+=("${TEST_NAME},ERROR,SQLancer exited with code $java_exit")
             OVERALL_STATUS="FAIL"
         else
-            TEST_RESULTS+=("${TEST},OK,")
+            TEST_RESULTS+=("${TEST_NAME},OK,")
         fi
-    else
-        TEST_RESULTS+=("${TEST},ERROR,Server is not responding")
-        OVERALL_STATUS="FAIL"
-        RESULT_INFO="Server is not responding before $TEST"
-        break
     fi
-done
+else
+    TEST_RESULTS+=("${TEST_NAME},ERROR,Server is not responding")
+    OVERALL_STATUS="FAIL"
+    RESULT_INFO="Server is not responding before SQLancer run"
+fi
 
 ls "$OUTPUT_PATH"
 
