@@ -1302,8 +1302,12 @@ ProcessList::QueryAmount ProcessList::getQueryKindAmount(const IAST::QueryKind &
 
 void ProcessList::increaseAdmissionPendingTeardowns(const IAST::QueryKind & query_kind, const String & user)
 {
+    /// Perform the only potentially-allocating operation (inserting a new query-kind key) first, so this
+    /// function is all-or-nothing: if `operator[]` throws while rehashing, no counter has been incremented
+    /// yet and the caller can leave admission-slot ownership untouched.
+    auto & kind_pending_teardowns = query_kind_pending_teardowns[query_kind];
+    ++kind_pending_teardowns;
     ++admission_pending_teardowns;
-    ++query_kind_pending_teardowns[query_kind];
     if (auto found = user_to_queries.find(user); found != user_to_queries.end())
         ++found->second.admission_pending_teardowns;
 }
@@ -1387,9 +1391,16 @@ void QueryStatus::releaseAdmissionSlot()
         if (!holds_admission_slot)
             return; /// Double-check under lock.
 
+        /// Record the pending teardown *before* clearing ownership. `increaseAdmissionPendingTeardowns`
+        /// is the only step here that can allocate (and therefore throw); if it fails, the slot is still
+        /// owned (`holds_admission_slot` stays true) and the destructor releases it through the normal
+        /// path, so no admission slot is leaked and the teardown counters stay consistent. Once the
+        /// accounting has succeeded, the remaining work - flipping the flags and transferring the slot via
+        /// `releaseAdmissionSlotLocked` - is allocation-free and cannot throw.
+        process_list.increaseAdmissionPendingTeardowns(query_kind, client_info.current_user);
+
         holds_admission_slot = false;
         admission_slot_released_early = true;
-        process_list.increaseAdmissionPendingTeardowns(query_kind, client_info.current_user);
         process_list.releaseAdmissionSlotLocked(lock);
     }
 }
