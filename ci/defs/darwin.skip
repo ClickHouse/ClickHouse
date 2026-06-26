@@ -1,7 +1,6 @@
 00558_parse_floats
 01037_polygon_dicts_correctness_all
 01037_polygon_dicts_correctness_fast
-01085_max_distributed_connections
 01288_shard_max_network_bandwidth
 01293_system_distribution_queue
 01302_polygons_distance
