@@ -52,7 +52,8 @@ std::string makeTwoBlockMixedCodecStream(const std::string & first, const std::s
 TEST(MixedCodecReaderTest, StreamGenuinelyMixesCodecs)
 {
     /// Reading the crafted stream with the tolerance off must throw on the second block.
-    ReadBufferFromString source(makeTwoBlockMixedCodecStream("first under NONE; ", "second under LZ4."));
+    const std::string stream = makeTwoBlockMixedCodecStream("first under NONE, ", "second under LZ4.");
+    ReadBufferFromString source(stream);
     CompressedReadBuffer decompressor(source, /* allow_different_codecs */ false);
 
     std::string decompressed;
