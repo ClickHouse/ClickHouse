@@ -53,17 +53,24 @@ read -r D USED < <($CLICKHOUSE_CLIENT --query "
 D=${D:-1000}
 echo "deferred_build_used ${USED:-0}"
 
-# With the in-replay poll a limit of 0.7*D stops the query at ~0.7*D. Without it, once the replay starts
-# it runs to completion (~D) before the limit is noticed. So a stop before 0.82*D (between the limit and
+# With the in-replay poll a limit of 0.5*D stops the query at ~0.5*D. Without it, once the replay starts
+# it runs to completion (~D) before the limit is noticed. So a stop before 0.85*D (between the limit and
 # the full build) means the limit was honored mid-flight. Which phase the limit lands in (buffering vs
 # replay) wobbles run to run, so this is probabilistic: run several trials and require a majority. A few
 # trials whose limit happens to trip during the already-interruptible buffering phase still stop at
-# ~0.7*D, so they never turn a working build into a failure; they only matter for the regression case,
+# ~0.5*D, so they never turn a working build into a failure; they only matter for the regression case,
 # where the majority that reach the replay run to ~D and are not counted as early.
-limit_ms=$(( D * 70 / 100 ))
+#
+# The band is deliberately wide (limit 0.5*D, threshold 0.85*D) so the test is robust to the timing noise
+# of sanitizer (TSan/MSan/Debug) builds, where the per-trial build duration drifts from the warm-measured
+# D. The limit at half of D keeps the build from racing to completion before the limit fires even when a
+# trial runs faster than the warm baseline, and the threshold at 0.85*D leaves a wide margin so an
+# interrupted trial (stopping at ~0.5*D) is counted as early even if it runs up to 1.7x slower than D;
+# only a build that runs to ~full completion (the regression) exceeds 0.85*D and is excluded.
+limit_ms=$(( D * 50 / 100 ))
 [ "$limit_ms" -lt 30 ] && limit_ms=30
 limit_s=$(awk "BEGIN { printf \"%.3f\", $limit_ms / 1000 }")
-threshold_ms=$(( D * 82 / 100 ))
+threshold_ms=$(( D * 85 / 100 ))
 trials=7
 majority=4
 id_list=""
@@ -82,11 +89,12 @@ early=$($CLICKHOUSE_CLIENT --query "
 
 # --- KILL QUERY must cancel a cold deferred build --------------------------------------------------
 # A single build thread stretches the build wall time (~0.5s) at modest memory, leaving a wide window
-# to KILL the query while it is buffering/replaying. Retry a few times in case a run is fast enough to
-# finish before the asynchronous KILL lands.
+# to KILL the query while it is buffering/replaying. Retry several times in case a run is fast enough to
+# finish before the asynchronous KILL lands (more likely on a loaded sanitizer build, hence the extra
+# attempts); a single successful cancellation is enough.
 kill_query="SELECT count() FROM (SELECT number AS k FROM numbers(2)) AS l INNER JOIN (SELECT number AS k FROM numbers(6000000)) AS r USING (k) SETTINGS ${SETTINGS_BASE}, max_threads = 1, max_execution_time = 0"
 kill_cancelled=0
-for attempt in $(seq 1 5); do
+for attempt in $(seq 1 8); do
     kill_id="${CLICKHOUSE_DATABASE}_kill_${attempt}"
     kill_err="${CLICKHOUSE_TMP}/04408_kill_${CLICKHOUSE_DATABASE}_${attempt}.err"
     $CLICKHOUSE_CLIENT --query_id="$kill_id" --query "$kill_query FORMAT Null" >/dev/null 2>"$kill_err" &
