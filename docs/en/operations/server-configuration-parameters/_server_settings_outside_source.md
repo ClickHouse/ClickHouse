@@ -539,24 +539,16 @@ Example:
 
 ### Prometheus protocol handlers {#http_handlers-prometheus}
 
-An `http_handlers` rule can serve a Prometheus protocol by setting the handler `type` to one of:
+An `http_handlers` rule can serve the Prometheus HTTP API v1 over a [TimeSeries](/engines/table-engines/special/time_series) table by setting the handler `type` to `prometheus_api_v1`.
 
-| `type`               | Protocol                                                                                    |
-|----------------------|---------------------------------------------------------------------------------------------|
-| `prometheus_metrics` | Expose metrics for scraping (`prometheus` is accepted as an alias)                           |
-| `prometheus_write`   | Remote-write samples into a [TimeSeries](/engines/table-engines/special/time_series) table   |
-| `prometheus_read`    | Remote-read from a `TimeSeries` table                                                        |
-| `prometheus_query`   | Prometheus query API over a `TimeSeries` table                                               |
-| `prometheus_api_v1`  | Prometheus HTTP API v1 over a `TimeSeries` table                                             |
-
-For the `prometheus_write`, `prometheus_read`, `prometheus_query` and `prometheus_api_v1` types, the target `TimeSeries` table can be pinned in the handler with a `<table>` element (a qualified `database.table` is accepted):
+The target `TimeSeries` table can be pinned in the handler with a `<table>` element (a qualified `database.table` is accepted):
 
 ```xml
 <http_handlers>
     <my_rule>
-        <url>/write</url>
+        <url_prefix>/prometheus/api/v1</url_prefix>
         <handler>
-            <type>prometheus_write</type>
+            <type>prometheus_api_v1</type>
             <table>my_db.my_time_series</table>
         </handler>
     </my_rule>
