@@ -522,7 +522,13 @@ profiles:
         if self.is_db_replicated and replica_num == 0:
             res = self.start(replica_num=1) and self.start(replica_num=2)
 
-        self._flush_system_logs()
+        # Do not flush system logs here: callers run wait_ready() AFTER start(),
+        # so the server has the pid file but is not yet listening on the TCP port,
+        # and "system flush logs" fails with Code 210 (Connection refused). The
+        # result was discarded so it never failed the job, but it polluted every
+        # setup log and made triage look like a startup crash. The flush is a
+        # no-op here anyway (no tests have run yet); the meaningful flushes are in
+        # terminate() and start_light() (which flushes after its own wait_ready()).
         self.save_system_metadata_files_from_remote_database_disk()
 
         return res
