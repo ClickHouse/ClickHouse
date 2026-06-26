@@ -1159,11 +1159,11 @@ toTypeName(value): Date32
     /// toTime documentation
     FunctionDocumentation::Description description_toTime = R"(
 Converts an input value to type [Time](/sql-reference/data-types/time).
-Supports conversion from String, FixedString, DateTime, or numeric types representing seconds since midnight.
+Supports conversion from String, FixedString, DateTime, DateTime64, or numeric types representing seconds since midnight.
     )";
     FunctionDocumentation::Syntax syntax_toTime = "toTime(x)";
     FunctionDocumentation::Arguments arguments_toTime = {
-        {"x", "Input value to convert.", {"String", "FixedString", "DateTime", "(U)Int*", "Float*"}}
+        {"x", "Input value to convert.", {"String", "FixedString", "DateTime", "DateTime64", "(U)Int*", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toTime = {"Returns the converted value.", {"Time"}};
     FunctionDocumentation::Examples examples_toTime = {
@@ -1217,7 +1217,7 @@ Provides microsecond precision for time values.
         {"x", "Input value to convert.", {"String", "FixedString", "DateTime64", "(U)Int*", "Float*"}},
         {"scale", "Precision (number of fractional digits, `0`–`9`) of the resulting `Time64`.", {"(U)Int*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toTime64 = {"Returns the converted input value with microsecond precision.", {"Time64(6)"}};
+    FunctionDocumentation::ReturnedValue returned_value_toTime64 = {"Returns the converted value with the requested `scale`.", {"Time64"}};
     FunctionDocumentation::Examples examples_toTime64 = {
     {
         "String to Time64 conversion",

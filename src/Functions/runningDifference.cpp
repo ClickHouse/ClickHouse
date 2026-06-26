@@ -58,7 +58,7 @@ FROM
         EventTime
     FROM events
     WHERE EventDate = '2025-11-24'
-    ORDER BY EventTime ASC
+    ORDER BY EventTime ASC, EventID ASC
     LIMIT 5
 );
         )",
