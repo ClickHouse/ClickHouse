@@ -34,6 +34,7 @@ namespace S3AuthSetting
 {
     extern const S3AuthSettingsString access_key_id;
     extern const S3AuthSettingsString secret_access_key;
+    extern const S3AuthSettingsString session_token;
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
     extern const S3AuthSettingsString external_id;
@@ -309,7 +310,9 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             s3_settings->auth_settings[S3AuthSetting::access_key_id] = move_access_key_id;
             s3_settings->auth_settings[S3AuthSetting::secret_access_key] = move_secret_access_key;
             /// The move uses its own explicit keys, so drop every server-managed mechanism inherited from
-            /// `<s3>` config (role_arn STS, GCP OAuth) that would otherwise use the server's identity.
+            /// `<s3>` config (role_arn STS, GCP OAuth, and the server's temporary session_token) that would
+            /// otherwise use the server's identity on top of those keys.
+            s3_settings->auth_settings[S3AuthSetting::session_token] = "";
             s3_settings->auth_settings[S3AuthSetting::role_arn] = "";
             s3_settings->auth_settings[S3AuthSetting::role_session_name] = "";
             s3_settings->auth_settings[S3AuthSetting::external_id] = "";
