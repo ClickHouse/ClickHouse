@@ -126,14 +126,6 @@ public:
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
-    /// Number of parts currently participating in a merge or mutation.
-    /// Used by SYSTEM SYNC MERGES to wait until scheduled merges fully finish.
-    size_t getNumberOfPartsInCurrentMergesAndMutations() const
-    {
-        std::lock_guard lock(currently_processing_in_background_mutex);
-        return currently_merging_mutating_parts.size();
-    }
-
 private:
 
     /// Mutex and condvar for synchronous mutations wait

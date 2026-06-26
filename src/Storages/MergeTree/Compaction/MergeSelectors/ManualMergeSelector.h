@@ -21,6 +21,9 @@ public:
 
     static void push(const StorageID & id, const Names & parts_to_merge);
     static bool isAllScheduledPartsCovered(const StorageID & id, const ActiveDataPartSet & active_set);
+    /// Canonical names of all source parts currently scheduled for a manual merge on `id`.
+    /// Used by SYSTEM SYNC MERGES to scope its part_log wait to exactly the scheduled merges.
+    static NameSet getScheduledPartNames(const StorageID & id);
     static void erase(const StorageID & id);
 
 private:

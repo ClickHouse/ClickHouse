@@ -131,6 +131,17 @@ bool ManualMergeSelector::isAllScheduledPartsCovered(const StorageID & id, const
     return info->scheduled_part_infos.empty();
 }
 
+NameSet ManualMergeSelector::getScheduledPartNames(const StorageID & id)
+{
+    auto [info, lock] = getTableInfo(id);
+
+    NameSet names;
+    for (const auto & part_info : info->scheduled_part_infos)
+        names.insert(part_info.getPartNameV1());
+
+    return names;
+}
+
 void ManualMergeSelector::erase(const StorageID & id)
 {
     eraseTableInfo(id);
