@@ -214,3 +214,4 @@ B	2	22	[20,21,22]
 2	10
 3	10
 4	10
+-- invalid GROUPS frames (start after end) are rejected
