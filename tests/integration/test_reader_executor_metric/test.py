@@ -477,3 +477,32 @@ def test_recompute_baseline(started_cluster):
     # passing tests, so fail on purpose to print the regenerated BASELINE - this
     # "failure" is the expected outcome when regenerating.
     pytest.fail("Regenerated BASELINE (copy into the module-level BASELINE dict):\n" + text)
+
+
+def test_repro_legacy_vs_executor(started_cluster):
+    """Localize the premature-EOF (CANNOT_READ_ALL_DATA) seen on the executor sequential/cold
+    scan: run the SAME multi-threaded scan legacy (use_reader_executor=0) vs executor live
+    (long connection) vs executor stateless (one-shot per window). Legacy-passes/executor-fails
+    => executor-specific bound/EOF bug; live-fails/stateless-passes => the long-connection path."""
+    q = LOADS["sequential"]
+
+    def run(label, settings):
+        _drop_caches()
+        qid = str(uuid.uuid4())
+        try:
+            res = node.query(q, query_id=qid, settings=settings).strip()
+            return f"{label}: OK sum={res} (qid={qid})", res
+        except Exception as e:  # noqa: BLE001
+            return f"{label}: FAILED (qid={qid}): {str(e)[:400]}", None
+
+    legacy_msg, legacy_res = run("legacy(executor=0)", {"use_reader_executor": 0, "max_threads": 8})
+    live_msg, live_res = run("executor-live", _settings(True))
+    stateless_msg, stateless_res = run("executor-stateless", _settings(False))
+
+    logging.error("REPRO RESULTS:\n  %s\n  %s\n  %s", legacy_msg, live_msg, stateless_msg)
+
+    assert legacy_res is not None, f"legacy path itself failed: {legacy_msg}"
+    assert live_res == legacy_res and stateless_res == legacy_res, (
+        "executor result/availability differs from legacy:\n  "
+        + "\n  ".join([legacy_msg, live_msg, stateless_msg])
+    )

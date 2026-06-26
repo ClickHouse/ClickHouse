@@ -438,16 +438,22 @@ ChainedBuffers ReaderExecutor::readNextWindow()
         /// BASE `window_size` (a constant), so deciding whether to plan never queries
         /// memory pressure; the plan span and every read are clamped to `plan_end`,
         /// and the per-plan pressure level is sampled once inside `observeAndSchedule`.
-        /// NB: never re-plan while a machine is in flight. A read-ahead is launched only
-        /// at a gap cursor, so this cursor IS a gap and must be collected via the gap
-        /// branch below. A re-plan here would re-probe residency and could see the
-        /// worker's just-fetched gap as RESIDENT, wrongly taking the resident
-        /// fast-path while `machine` is still set (the invariant the
-        /// `observeAndSchedule` `chassert(!machine)` guards).
-        if (!machine
-            && (!read_plan.geometry()
-                || position_phys < read_plan.geometry()->plan_start
-                || (position_phys + window_size > read_plan.geometry()->plan_end && !planReachesEnd())))
+        /// NB: do not re-plan while a machine is in flight - a re-plan would re-probe residency
+        /// and could see the worker's just-fetched gap as RESIDENT, wrongly taking the resident
+        /// fast-path while `machine` is still set (the `observeAndSchedule` `chassert(!machine)`
+        /// invariant). For a mid-plan gap the serve's gap branch collects the machine. But once
+        /// the cursor reaches `plan_end` the cursor sits on a consumed step (its serve yields
+        /// nothing), so the gap branch never collects - leaving the re-plan permanently blocked
+        /// and the executor stalled at `plan_end`, a premature EOF in the interior of the extent.
+        /// Collect the in-flight machine here (committing its cells, which the re-plan then sees
+        /// resident) so the re-plan, now with `machine` cleared, can extend past the stale plan_end.
+        const bool want_replan = !read_plan.geometry()
+            || position_phys < read_plan.geometry()->plan_start
+            || (position_phys + window_size > read_plan.geometry()->plan_end && !planReachesEnd());
+        const bool at_plan_end = read_plan.geometry() && position_phys >= read_plan.geometry()->plan_end;
+        if (machine && at_plan_end)
+            collectInFlightInto(machine->retrieve_index);
+        if (!machine && want_replan)
         {
             observeAndSchedule(position_phys);
             reconstructCursor();
