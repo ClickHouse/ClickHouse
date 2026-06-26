@@ -21,9 +21,12 @@ RUN apt-get update --yes \
     && apt-get update --yes \
     && env DEBIAN_FRONTEND=noninteractive apt-get install temurin-25-jdk --yes --no-install-recommends \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/* \
+    # The Temurin deb installs to an arch-specific dir (temurin-25-jdk-amd64 /
+    # -arm64); this image is built for both arches, so symlink a stable path.
+    && ln -s /usr/lib/jvm/temurin-25-jdk-* /usr/lib/jvm/temurin-25-jdk
 
-ENV JAVA_HOME="/usr/lib/jvm/temurin-25-jdk-amd64"
+ENV JAVA_HOME="/usr/lib/jvm/temurin-25-jdk"
 
 # Vendored Maven 3.9.9 (matches the upstream sqlancer build), new enough to run
 # on JDK 25; the Ubuntu 3.6.3 package is too old for the build plugins.

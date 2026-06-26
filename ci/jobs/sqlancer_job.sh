@@ -123,13 +123,17 @@ chmod +x $CLICKHOUSE_BIN
 $CLICKHOUSE_BIN local --version
 
 # Apply the server-side config overrides shipped with the SQLancer provider
-# (ClickHouse/sqlancer PR #4, `.claude/clickhouse-config/`): drop the file
-# logger to `warning`, remove `system.trace_log`, TTL the system observability
-# tables, and pin `async_insert` off (the oracles rely on the
-# SELECT-after-INSERT invariant). The server is started without `--config-file`,
-# so it uses the binary's embedded `config.xml` and merges any `config.d/*.xml`
-# found relative to its working directory (see `ConfigProcessor::loadConfig`);
-# starting it from `$SERVER_DIR` is what makes the overrides take effect.
+# (ClickHouse/sqlancer PR #4, `.claude/clickhouse-config/`): drop the file logger
+# to `warning`, remove the heavy `system.*_log` tables, and pin the profile
+# settings the oracles depend on (`async_insert=0`, `alter_sync=2`,
+# `mutations_sync=2`) so an INSERT/ALTER/mutation is visible to the next read in
+# the same oracle iteration. The server runs without `--config-file`, so it uses
+# the binary's embedded `config.xml` and merges any `config.d/*.xml` relative to
+# its working directory (see `ConfigProcessor::loadConfig`); starting it from
+# `$SERVER_DIR` is what makes the overrides take effect. The embedded config's
+# `users_config` points at `config.xml` itself, so `<profiles>` overrides placed
+# in `config.d/` reach the default profile (verified) -- unlike a packaged
+# server, this does not need a separate `users.d/`.
 SERVER_DIR="$TMP_PATH/server"
 mkdir -p "$SERVER_DIR/config.d"
 cp /sqlancer/sqlancer-main/.claude/clickhouse-config/*.xml "$SERVER_DIR/config.d/"
