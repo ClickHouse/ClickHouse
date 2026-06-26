@@ -36,7 +36,7 @@ SELECT
     coalesce(CAST(metrics.help AS String), '')        AS help,
     coalesce(CAST(metrics.type AS String), '')        AS type,
     coalesce(CAST(metrics.unit AS String), '')        AS unit,
-    mapFilter((k, v) -> (k != '__name__'), tags.tags) AS labels,
+    CAST(mapFilter((k, v) -> (k != '__name__'), tags.tags) AS Map(String, String)) AS labels,
     toUnixTimestamp64Milli(samples.timestamp)         AS timestamp
 FROM timeSeriesSamples(prometheus) AS samples
 INNER JOIN timeSeriesTags(prometheus) AS tags ON samples.id = tags.id
