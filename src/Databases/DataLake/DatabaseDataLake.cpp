@@ -157,10 +157,8 @@ DatabaseDataLake::DatabaseDataLake(
     }
     catch (const Exception & e)
     {
-        /// When loading from existing metadata, a catalog whose credentials resolve the server's own
-        /// (restricted) identity must not abort server startup: leave the catalog unavailable so the server
-        /// starts and only this database is inaccessible, mirroring the persistent S3/S3Queue table behavior.
-        /// `getCatalog` reports the stored reason on every query. Disable via the server setting to fail loading.
+        /// On metadata load, a catalog that resolves the now-restricted server identity must not abort startup:
+        /// leave it unavailable (`getCatalog` reports the reason on every query), mirroring S3/S3Queue tables.
         if (is_loading_from_existing_metadata && e.code() == ErrorCodes::ACCESS_DENIED
             && Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::s3_load_table_anonymously_if_credentials_restricted])
         {
@@ -1175,23 +1173,14 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                 break;
         }
 
-        /// The catalog clients (Glue, BigLake OAuth) are built once and cached for every later query against
-        /// the database, so the effective `s3_allow_server_credentials_in_user_queries` restriction must be
-        /// captured now, from the CREATE query. The restriction is NOT relaxed when loading from existing
-        /// metadata: a database whose catalog resolves server-managed credentials (e.g. a Glue/BigLake catalog
-        /// created before the restriction existed, or whose server ambient identity changes later) must not
-        /// silently regain the server identity on restart. Instead, the load is flagged so a restricted catalog
-        /// is left unavailable (the database is inaccessible, server still starts) rather than escalating --
-        /// see the `DatabaseDataLake` constructor and `s3_load_table_anonymously_if_credentials_restricted`.
+        /// The catalog client is cached for every later query, so capture the restriction now from the CREATE
+        /// query rather than relying on the live per-session setting.
         const bool allow_server_credentials_in_user_queries
             = args.context->getSettingsRef()[Setting::s3_allow_server_credentials_in_user_queries];
 
-        /// A database is loaded from existing metadata whenever it is attached rather than freshly created.
-        /// Unlike tables (loaded with `FORCE_ATTACH` on startup), a database is replayed from its stored
-        /// `ATTACH DATABASE` statement with plain `ATTACH`, so `isLoadingFromExistingMetadata` (which only
-        /// covers `FORCE_ATTACH`/`FORCE_RESTORE`) is too narrow here: treat any attach as loading from existing
-        /// metadata, so a catalog that resolves now-restricted server credentials is left unavailable instead
-        /// of aborting server startup.
+        /// A database is replayed from its stored `ATTACH DATABASE` statement with plain `ATTACH` (unlike tables,
+        /// which use `FORCE_ATTACH`), so `isLoadingFromExistingMetadata` is too narrow; treat any attach as a
+        /// metadata load so a now-restricted catalog is left unavailable instead of aborting startup.
         const bool is_loading_from_existing_metadata = args.mode >= LoadingStrictnessLevel::ATTACH;
 
         return std::make_shared<DatabaseDataLake>(

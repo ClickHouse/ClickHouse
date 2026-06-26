@@ -97,14 +97,10 @@ void registerBackupEngineS3(BackupFactory & factory)
             role_session_name = collection->getOrDefault<String>("role_session_name", "");
             external_id = collection->getOrDefault<String>("external_id", "");
 
-            /// Every server-managed credential mechanism is taken from the collection, with the collection
-            /// defaults when omitted, so none of them is inherited from the server `<s3>` config.
-            /// `use_environment_credentials` defaults to 0 so a URL-only backup collection reads anonymously
-            /// instead of authenticating with the server's own cloud identity (matches s3 table functions).
-            /// The static key pair is also taken from the collection (empty when omitted) so it overrides --
-            /// rather than inherits -- the server `<s3>` static keys: a URL-only backup collection stays
-            /// anonymous instead of authenticating with the server's keys, and a collection with only a
-            /// `role_arn` has no base keys to assume the role with.
+            /// Take every credential field (mechanisms and the static key pair) from the collection, defaulting
+            /// to empty/0, so none is inherited from the server `<s3>` config: a URL-only backup collection
+            /// stays anonymous and a role-only collection has no base keys to assume the role with (matches
+            /// the s3 table function).
             named_collection_auth.emplace();
             auto & auth = *named_collection_auth;
             auth[S3AuthSetting::access_key_id] = access_key_id;
@@ -112,8 +108,7 @@ void registerBackupEngineS3(BackupFactory & factory)
             auth[S3AuthSetting::use_environment_credentials]
                 = collection->getOrDefault<bool>("use_environment_credentials", false);
             auth[S3AuthSetting::no_sign_request] = collection->getOrDefault<bool>("no_sign_request", false);
-            /// Carry the `session_token` part of an explicit temporary (STS) key triplet, so a collection with
-            /// temporary credentials is signed with the token (matches the s3 table function / S3 engine).
+            /// Carry the collection's own `session_token` so temporary credentials are signed with it.
             auth[S3AuthSetting::session_token] = collection->getOrDefault<String>("session_token", "");
             auth[S3AuthSetting::role_arn] = role_arn;
             auth[S3AuthSetting::role_session_name] = role_session_name;

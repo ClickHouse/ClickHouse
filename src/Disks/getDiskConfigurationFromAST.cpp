@@ -203,25 +203,10 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         }
     }
 
-    /// A user-created S3 disk must not resolve the server's own credentials (environment/IMDS/IRSA,
-    /// role_arn-based STS, AWS config files, or the GCP metadata service). The check is bypassed for trusted
-    /// clients via the `s3_allow_server_credentials_in_user_queries` setting (see
-    /// shouldRestrictUserQueryS3Credentials).
-    ///
-    /// The check is also applied when loading from existing metadata (server startup or RESTORE): a disk
-    /// definition that resolves server-managed credentials -- e.g. one created before this restriction existed,
-    /// or while it was allowed -- must not silently keep using the server's identity on restart, since a user
-    /// `CREATE`/`ATTACH` of the same definition would be refused. To avoid aborting startup, such a disk is
-    /// forced anonymous on load (it becomes inaccessible for a private bucket) rather than throwing, governed by
-    /// the server setting `s3_load_table_anonymously_if_credentials_restricted`.
-    ///
-    /// A `from_env`/`from_zk` substitution on the disk type or on a credential/auth field could hide an S3
-    /// disk or resolve a server-side value, so an indirect type is treated as potentially-S3. An `include`
-    /// could pull S3 fields (including the type) from server config, so it is also potentially-S3 -- unless
-    /// the disk's backend is explicitly a literal non-S3 type, in which case the include cannot turn it into
-    /// an S3 disk and the check must not break that unrelated dynamic-disk feature. `type = object_storage`
-    /// is only a wrapper: its backend comes from `object_storage_type` (which an `include` could inject as
-    /// `s3`), so it is non-S3 only when an explicit literal non-S3 `object_storage_type` is also present.
+    /// A user-created S3 disk must not resolve the server's own credentials. Indirection (`from_env`/`from_zk`
+    /// on the type or auth fields, or an `include`) is treated as potentially-S3 unless the backend is an
+    /// explicit literal non-S3 type. `type = object_storage` is a wrapper: non-S3 only with a literal non-S3
+    /// `object_storage_type`.
     const bool type_explicitly_non_s3
         = has_concrete_non_s3_type || (type_is_object_storage && has_explicit_non_s3_object_storage_type);
     const bool maybe_s3_disk = is_s3_disk || type_is_indirect || (has_include && !type_explicitly_non_s3);
@@ -229,15 +214,9 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     const bool has_explicit_credentials = has_access_key_id && has_secret_access_key;
     const bool has_explicit_gcp_adc
         = has_google_adc_client_id && has_google_adc_client_secret && has_google_adc_refresh_token;
-    /// An explicit anonymous form is allowed: an explicit key pair, `no_sign_request`, or an explicit
-    /// `use_environment_credentials = 0` with no `role_arn` (the request then goes unsigned, the same as
-    /// any other user query that asks for no server-managed credentials). `gcp_oauth` authenticates with a
-    /// bearer token rather than S3 keys, so it needs a complete explicit ADC triple, otherwise the token
-    /// comes from the server's GCP metadata service.
+    /// `use_environment_credentials = 0` without a `role_arn` goes unsigned, so it is a safe anonymous form.
     const bool allowed_anonymous = use_environment_credentials_off && !has_role_arn;
-    /// Whether the AST itself (literal values, no substitution/include) supplied a safe credential form.
-    /// Only this counts when the resolved configuration is re-checked after `include`: a value an `include`
-    /// or a `from_env`/`from_zk` substitution injects must not be trusted as a user-provided credential.
+    /// A safe credential form supplied by the AST itself (literal values); a substitution/`include` value does not count.
     const bool ast_has_explicit_credentials = wants_gcp_oauth
         ? has_explicit_gcp_adc
         : (has_explicit_credentials || has_no_sign_request || allowed_anonymous);
@@ -253,9 +232,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
 
     if (maybe_s3_disk && context->shouldRestrictUserQueryS3Credentials())
     {
-        /// Everything that is not a safe explicit form (no credentials with the default
-        /// `use_environment_credentials = 1`, a `role_arn` without explicit keys, substitutions on the type
-        /// or credential/auth fields, or `include`) could resolve a server-managed credential and is refused.
+        /// Refuse anything that is not a safe explicit form (indirection, or no explicit credentials).
         const bool denied = type_is_indirect || has_include || has_indirect_auth_field || !ast_has_explicit_credentials;
         if (denied)
         {
@@ -269,10 +246,8 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
                     "be inaccessible until its credentials resolve to a permitted source. Set the server setting "
                     "s3_load_table_anonymously_if_credentials_restricted = 0 to fail loading instead.");
 
-                /// Do not abort startup: tell the caller to force the disk anonymous once the configuration is
-                /// loaded (and any `include` is resolved), see forceAnonymousS3DiskConfig. We cannot rewrite the
-                /// DOM here because in DiskFromAST an `include` is processed after this function returns and
-                /// could otherwise re-introduce server credentials.
+                /// Force the disk anonymous once `include` is resolved (see forceAnonymousS3DiskConfig); we
+                /// cannot rewrite the DOM here because DiskFromAST processes `include` after this returns.
                 if (info)
                     info->load_anonymously = true;
             }
@@ -292,31 +267,22 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
 
 void forceAnonymousS3DiskConfig(Poco::Util::AbstractConfiguration & config)
 {
-    /// Clear `http_client` (which would mint a GCP token at the HTTP layer regardless of the credentials
-    /// provider) and force `no_sign_request = 1`, so the S3 client is built unsigned regardless of
-    /// `use_environment_credentials`/`role_arn` (see getCredentialsProvider) and never resolves the server's
-    /// own credentials. `setString` overwrites any value the definition (or an `include`) supplied.
+    /// Force the S3 client unsigned: clear `http_client` (which would mint a GCP token regardless of the
+    /// credentials provider) and set `no_sign_request = 1`. `setString` overwrites any inherited value.
     config.setString("http_client", "");
     config.setString("no_sign_request", "1");
 
-    /// The disk is intentionally inaccessible (anonymous against a bucket that needs auth), so its startup
-    /// access check would fail and abort loading the table. Skip it: the table must load and merely be
-    /// inaccessible on query, not fail to attach. `getClient` separately drops the server-provided
-    /// `access_header`/SSE material so the unsigned client cannot keep the server identity alive.
+    /// The disk is intentionally inaccessible, so skip the startup access check: the table must load (and
+    /// merely be inaccessible on query) rather than fail to attach.
     config.setString("skip_access_check", "1");
 }
 
 void validateResolvedS3DiskCredentials(
     Poco::Util::AbstractConfiguration & config, ContextPtr context, bool is_loading_from_existing_metadata, const DynamicS3DiskCredentialInfo & info)
 {
-    /// Re-check the credential restriction AFTER `include`/`from_env`/`from_zk` are resolved, but only for an
-    /// `include`d disk: an `include` can supply the type and credentials (e.g. `type = s3` plus
-    /// `access_key_id`/`secret_access_key` via `from_env`/`from_zk`, or `http_client = gcp_oauth`), evading the
-    /// pre-resolution check that ran on a literal non-S3 type in the AST; the disk would then be built with
-    /// `for_disk_s3 = true`, so the central `getClient` restriction never applies. A disk without `include` is
-    /// fully decided by the pre-resolution check. The resolved values here are just concrete strings whose
-    /// provenance cannot be trusted, so the resolved auth MODE is validated against the specific safe form the
-    /// AST itself proved: a value an `include`/substitution injected does not count.
+    /// Re-check after `include` is resolved: an `include` can inject an S3 type and credentials past the
+    /// pre-resolution check (the disk is then built with `for_disk_s3 = true`, bypassing `getClient`). Only an
+    /// `include`d disk needs this; the resolved auth mode is validated against the form the AST itself proved.
     if (!info.has_include || !context->shouldRestrictUserQueryS3Credentials())
         return;
 
@@ -337,7 +303,7 @@ void validateResolvedS3DiskCredentials(
     const bool resolved_use_env_off
         = config.has("use_environment_credentials") && !config.getBool("use_environment_credentials", true);
 
-    bool safe;
+    bool safe = false;
     if (resolved_wants_gcp_oauth)
         safe = info.ast_has_explicit_gcp_adc;
     else if (resolved_has_role_arn)

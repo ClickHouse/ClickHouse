@@ -59,9 +59,7 @@ public:
     bool isOverridable(const Key & key, bool default_value) const;
 
     /// Record that `key` was overridden by a user query argument (e.g. `s3(collection, key = ...)`) rather
-    /// than coming from the stored collection definition. Lets callers keep operator-provisioned values and
-    /// user-supplied overrides distinct, which matters for credentials (a user must not override a role to
-    /// assume on top of the collection's operator-provisioned keys).
+    /// than coming from the stored collection, so callers can keep operator and user values distinct.
     void markQueryOverridden(const Key & key);
     bool isQueryOverridden(const Key & key) const;
 

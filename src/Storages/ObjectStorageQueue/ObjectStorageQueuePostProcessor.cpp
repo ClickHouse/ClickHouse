@@ -308,11 +308,8 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             );
             s3_settings->auth_settings[S3AuthSetting::access_key_id] = move_access_key_id;
             s3_settings->auth_settings[S3AuthSetting::secret_access_key] = move_secret_access_key;
-            /// The move destination authenticates with its own explicit keys (required above). Drop every
-            /// server-managed auth mechanism inherited from the server `<s3>` config so the move never uses
-            /// the server's identity on top of those keys: `role_arn`-based STS, and the GCP OAuth mechanism
-            /// (`http_client = gcp_oauth` would mint a token from the server's GCP metadata service at the
-            /// HTTP layer regardless of the keys). The move settings have no way to request any of these.
+            /// The move uses its own explicit keys, so drop every server-managed mechanism inherited from
+            /// `<s3>` config (role_arn STS, GCP OAuth) that would otherwise use the server's identity.
             s3_settings->auth_settings[S3AuthSetting::role_arn] = "";
             s3_settings->auth_settings[S3AuthSetting::role_session_name] = "";
             s3_settings->auth_settings[S3AuthSetting::external_id] = "";

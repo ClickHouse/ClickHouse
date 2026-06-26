@@ -1264,13 +1264,9 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleCredentia
     const DB::S3::PocoHTTPClientConfiguration & client_configuration,
     const std::string & sts_endpoint_override)
 {
-    /// The STS AssumeRole client uses the AWS SDK's own request/retry loop (not Client::doRequest), so it
-    /// only honors the retry strategy and timeouts set on its own configuration. Give it ClickHouse's
-    /// bounded, cancellation-aware retry strategy (its ShouldRetry checks isQueryCanceled), so an
-    /// AssumeRole against an unreachable / slow STS endpoint stays bounded and respects query cancellation
-    /// and max_execution_time instead of retrying for minutes with the AWS SDK default strategy. Also bound
-    /// each attempt's time so cancellation is observed promptly (it is checked between attempts, so a single
-    /// in-flight request is the granularity); never lengthen the caller's configured timeouts.
+    /// The STS AssumeRole client uses the AWS SDK's own retry loop, so give it ClickHouse's bounded,
+    /// cancellation-aware retry strategy and per-attempt timeout (never longer than the caller's) so an
+    /// AssumeRole against a slow/unreachable STS endpoint stays bounded and respects query cancellation.
     auto sts_client_configuration = client_configuration;
     auto sts_retry_strategy = sts_client_configuration.retry_strategy;
     sts_retry_strategy.max_retries = std::min(sts_retry_strategy.max_retries, static_cast<decltype(sts_retry_strategy.max_retries)>(3));
@@ -1356,43 +1352,29 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
 {
     CredentialsConfiguration credentials_configuration = credentials_configuration_;
 
-    /// Set when a refused server-managed request is downgraded to anonymous access instead of throwing
-    /// (only when `anonymous_fallback_for_server_credentials` is set, i.e. loading a persistent table from
-    /// existing metadata). Treated like `no_sign_request` below: build the anonymous provider and skip STS.
+    /// Set when a refused server-managed request is downgraded to anonymous instead of throwing (only on a
+    /// metadata load, via `anonymous_fallback_for_server_credentials`). Treated like `no_sign_request` below.
     bool force_anonymous_fallback = false;
 
-    /// For S3 access that originates from user SQL in clickhouse-server, refuse every server-managed
-    /// credential source so a user cannot make the server authenticate to S3 with its own identity.
-    /// A user may still supply explicit credentials, use no_sign_request, or supply explicit credentials
-    /// together with a role_arn (then the STS assume-role uses the user's own credentials, which is safe).
-    /// A server-configured role_arn (from the global or per-endpoint `<s3>` config) is stripped by the
-    /// storage and backup layers before this point, so any role_arn that reaches here for a restricted
-    /// request was supplied by the query or named collection.
+    /// For S3 access originating from user SQL, refuse every server-managed credential source. Explicit
+    /// credentials (optionally with a `role_arn`, which then assumes the role using the user's own keys) and
+    /// NOSIGN are still allowed. A server-configured `role_arn` is stripped by the storage/backup layers
+    /// before this point, so any `role_arn` reaching here was supplied by the query or named collection.
     if (credentials_configuration.forbid_implicit_credentials)
     {
-        /// A partial key pair (e.g. an access_key_id with an empty secret) is not enough to authorize a
-        /// request on its own; treat only a complete pair as explicit user credentials. Without one, every
-        /// remaining credential source is server-managed (environment, IMDS/IRSA, instance profile, AWS
-        /// config/credentials file, role_arn-based STS, or the GCP OAuth metadata service used by the
-        /// `gcp_oauth` http client), so the request must be rejected unless it is unsigned (NOSIGN).
+        /// Only a complete key pair counts as explicit user credentials.
         const bool has_explicit_credentials
             = !credentials.GetAWSAccessKeyId().empty() && !credentials.GetAWSSecretKey().empty();
 
-        /// `gcp_oauth` mints an OAuth bearer token: from an explicit Application Default Credentials triple
-        /// if one is given, otherwise from the server's GCP metadata service (server-managed). The token is
-        /// fetched and sent regardless of no_sign_request and regardless of any S3 keys, and the http client
-        /// name is matched case-insensitively in PocoHTTPClientFactory, so match it the same way here.
+        /// `gcp_oauth` mints a bearer token from an explicit ADC triple if given, otherwise from the server's
+        /// GCP metadata service. Matched case-insensitively, the same as PocoHTTPClientFactory.
         const bool uses_gcp_oauth = boost::iequals(configuration.http_client, "gcp_oauth");
         const bool has_explicit_gcp_adc = !configuration.google_adc_client_id.empty()
             && !configuration.google_adc_client_secret.empty()
             && !configuration.google_adc_refresh_token.empty();
 
-        /// Refuse only when the query explicitly asks for a server-managed credential mechanism:
-        /// `use_environment_credentials` (which also covers IMDS/IRSA/ECS/instance-profile/SSO) or a
-        /// `role_arn` to assume. When nothing ambient is requested, the request is simply sent unsigned
-        /// (anonymous): the provider chain below returns before adding any environment / IMDS /
-        /// instance-profile / AWS config-file provider, so the server's own credentials are never resolved
-        /// either way. This keeps anonymous access to public buckets working without an explicit NOSIGN.
+        /// Refuse only when a server-managed mechanism is explicitly requested. Otherwise the request is sent
+        /// unsigned (the provider chain below adds no implicit provider), keeping public-bucket access working.
         const bool wants_server_credentials
             = credentials_configuration.use_environment_credentials || !credentials_configuration.role_arn.empty();
 
@@ -1434,15 +1416,13 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
                 "will be inaccessible until its credentials resolve to a permitted source. Set the server "
                 "setting s3_load_table_anonymously_if_credentials_restricted = 0 to fail loading instead.");
 
-        /// Belt and suspenders: even when explicit credentials are present, never let the provider chain
-        /// fall back to the server's environment credentials.
+        /// Belt and suspenders: never let the provider chain fall back to the server's environment credentials.
         credentials_configuration.use_environment_credentials = false;
     }
 
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
-    /// Match `gcp_oauth` case-insensitively, the same way PocoHTTPClientFactory selects the GCP OAuth HTTP
-    /// client. Otherwise a differently-cased value (e.g. `GCP_OAUTH`) would build the AWS provider chain
-    /// here while the HTTP layer still sends a GCP OAuth bearer token.
+    /// Match `gcp_oauth` case-insensitively (as PocoHTTPClientFactory does), so a differently-cased value
+    /// cannot build the AWS provider chain here while the HTTP layer still sends a GCP OAuth token.
     if (credentials_configuration.no_sign_request || force_anonymous_fallback || boost::iequals(configuration.http_client, "gcp_oauth"))
     {
         credentials_provider = std::make_shared<Aws::Auth::AnonymousAWSCredentialsProvider>();
@@ -1453,10 +1433,8 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
             = std::make_shared<S3CredentialsProviderChain>(configuration, credentials, credentials_configuration);
     }
 
-    /// `no_sign_request` means anonymous access, and `gcp_oauth` authenticates with a bearer token at the
-    /// HTTP layer (its provider here is anonymous); both are mutually exclusive with assuming a role. Skip the
-    /// STS assume-role wrapper so a stray `role_arn` alongside either does not trigger credential resolution
-    /// on top of the anonymous provider. The anonymous metadata-load fallback likewise must not assume a role.
+    /// Skip the STS assume-role wrapper for anonymous / `gcp_oauth` / fallback clients, so a stray `role_arn`
+    /// alongside them does not trigger credential resolution on top of the anonymous provider.
     if (!credentials_configuration.no_sign_request && !force_anonymous_fallback
         && !boost::iequals(configuration.http_client, "gcp_oauth")
         && !credentials_configuration.role_arn.empty())

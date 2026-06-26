@@ -231,9 +231,8 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
 
     s3_settings->auth_settings[S3AuthSetting::access_key_id] = collection.getOrDefault<String>("access_key_id", "");
     s3_settings->auth_settings[S3AuthSetting::secret_access_key] = collection.getOrDefault<String>("secret_access_key", "");
-    /// Default to 0 (do not use the server's environment credentials) for named collections used in user
-    /// queries, so a collection that only specifies a URL reads anonymously instead of authenticating with
-    /// the server's own cloud identity. A collection can still opt in with `use_environment_credentials = 1`.
+    /// Default to 0 so a URL-only collection reads anonymously instead of using the server's identity; a
+    /// collection can still opt in with `use_environment_credentials = 1`.
     s3_settings->auth_settings[S3AuthSetting::use_environment_credentials]
         = collection.getOrDefault<UInt64>("use_environment_credentials", 0);
     s3_settings->auth_settings[S3AuthSetting::no_sign_request] = collection.getOrDefault<bool>("no_sign_request", false);
@@ -265,11 +264,9 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     s3_settings->auth_settings[S3AuthSetting::role_session_name] = collection.getOrDefault<String>("role_session_name", "");
     s3_settings->auth_settings[S3AuthSetting::external_id] = collection.getOrDefault<String>("external_id", "");
 
-    /// Under the restriction, a `role_arn` supplied as a query override (`s3(collection, role_arn = ...)`) must
-    /// not be assumed on top of the collection's operator-provisioned static keys -- that would let a user pick
-    /// an arbitrary role to assume using the collection's keys as the STS base (a confused deputy). Honor a
-    /// query-overridden role only when the same query also supplied the base key pair; otherwise drop it. A
-    /// `role_arn` from the stored collection definition is left untouched, as it is operator-intended.
+    /// A query-overridden `role_arn` (`s3(collection, role_arn = ...)`) must not be assumed using the
+    /// collection's operator-provisioned keys as the STS base. Honor it only when the same query also supplied
+    /// the base key pair; a `role_arn` from the stored collection definition is left untouched.
     if (context->shouldRestrictUserQueryS3Credentials() && collection.isQueryOverridden("role_arn")
         && !(collection.isQueryOverridden("access_key_id") && collection.isQueryOverridden("secret_access_key")))
     {
@@ -282,9 +279,7 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     s3_settings->auth_settings[S3AuthSetting::service_account] = collection.getOrDefault<String>("service_account", "");
     s3_settings->auth_settings[S3AuthSetting::metadata_service] = collection.getOrDefault<String>("metadata_service", "");
     s3_settings->auth_settings[S3AuthSetting::request_token_path] = collection.getOrDefault<String>("request_token_path", "");
-    /// Explicit Google Application Default Credentials triple: with `http_client = gcp_oauth` it is a
-    /// user-supplied credential, so the restriction allows it instead of minting a token from the server's
-    /// GCP metadata service.
+    /// An explicit Google ADC triple is a user-supplied credential, so `gcp_oauth` with it is allowed.
     s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = collection.getOrDefault<String>("google_adc_client_id", "");
     s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = collection.getOrDefault<String>("google_adc_client_secret", "");
     s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = collection.getOrDefault<String>("google_adc_refresh_token", "");
@@ -685,9 +680,8 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     s3_settings->loadFromConfigForObjectStorage(
         config, "s3", context->getSettingsRef(), url.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
-    /// A user query must not assume a role_arn that comes from the server `<s3>` configuration (it would gain
-    /// the server's identity). Drop any role_arn/STS fields the global `<s3>` config supplied before reading
-    /// the query's own `extra_credentials`, so that after parsing only a query-supplied role_arn remains.
+    /// Drop any role_arn/STS fields from the global `<s3>` config before parsing `extra_credentials`, so only
+    /// a query-supplied role_arn remains (a server role_arn would assume the role with the server's identity).
     const bool restrict_server_credentials = context->shouldRestrictUserQueryS3Credentials();
     if (restrict_server_credentials)
     {
@@ -698,8 +692,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
 
     S3StorageParsedArguments::collectCredentials(extra_credentials, s3_settings->auth_settings, context);
 
-    /// Remember the query-supplied role_arn/STS fields (if any) so the per-endpoint `<s3>` config merged
-    /// below cannot replace them with a server-configured role for a restricted user query.
+    /// Remember the query-supplied role_arn/STS fields so the per-endpoint `<s3>` merge below cannot replace them.
     const String user_role_arn = s3_settings->auth_settings[S3AuthSetting::role_arn];
     const String user_role_session_name = s3_settings->auth_settings[S3AuthSetting::role_session_name];
     const String user_external_id = s3_settings->auth_settings[S3AuthSetting::external_id];
@@ -716,11 +709,8 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         s3_settings->auth_settings[S3AuthSetting::role_session_name] = user_role_session_name;
         s3_settings->auth_settings[S3AuthSetting::external_id] = user_external_id;
 
-        /// Likewise drop any GCP OAuth mechanism inherited from the global or per-endpoint `<s3>` config:
-        /// `http_client = gcp_oauth` would mint a token from the server's GCP metadata service at the HTTP
-        /// layer regardless of the request's own credentials. The bare-URL `s3(...)` form cannot supply these
-        /// fields (they come only from a named collection, handled in `fromNamedCollection`), so a value
-        /// present here is always server-configured and must not survive a restricted user query.
+        /// Drop any GCP OAuth mechanism inherited from `<s3>` config: the bare-URL `s3(...)` form cannot supply
+        /// these fields, so a value here is always server-configured and would mint a server-identity token.
         s3_settings->auth_settings[S3AuthSetting::http_client] = "";
         s3_settings->auth_settings[S3AuthSetting::service_account] = "";
         s3_settings->auth_settings[S3AuthSetting::metadata_service] = "";
@@ -799,11 +789,8 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         s3_settings->auth_settings[S3AuthSetting::session_token] = session_token_value.value();
     }
 
-    /// A query-supplied `role_arn` (from `extra_credentials`) must assume the role using the query's own base
-    /// keys, never the static `access_key_id`/`secret_access_key` from the server `<s3>` config: otherwise the
-    /// user picks the role while the server pays with its keys (a confused-deputy STS path). When the query
-    /// did not supply its own explicit key pair, drop the `role_arn` so no role is assumed; any server static
-    /// keys are then used directly, which is allowed.
+    /// A query-supplied `role_arn` must assume the role with the query's own base keys, not the server `<s3>`
+    /// static keys (a confused-deputy STS path). Drop it when the query did not supply its own key pair.
     if (restrict_server_credentials && !String(s3_settings->auth_settings[S3AuthSetting::role_arn]).empty()
         && !(query_provided_access_key_id && query_provided_secret_access_key))
     {

@@ -131,9 +131,7 @@ private:
     {
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
         HTTPHeaderEntries headers;
-        /// Whether the base key pair was supplied by the backup query or its named collection (rather than
-        /// inherited from the server `<s3>` config below). A role_arn may only be assumed on top of the
-        /// request's own base keys, never the server's.
+        /// Whether the base key pair came from the request rather than the server `<s3>` config fallback below.
         const bool base_keys_supplied_by_query = !access_key_id.empty();
         if (access_key_id.empty())
         {
@@ -146,8 +144,7 @@ private:
         const Settings & global_settings = context->getGlobalContext()->getSettingsRef();
         const Settings & local_settings = context->getSettingsRef();
 
-        /// The passed-in role_arn is the one supplied by the backup query or its named collection; if empty,
-        /// fall back to the server `<s3>` configuration's role_arn.
+        /// The passed-in role_arn comes from the query/named collection; if empty, fall back to server config.
         const bool role_arn_supplied_by_query = !role_arn.empty();
         if (role_arn.empty())
         {
@@ -156,25 +153,13 @@ private:
             external_id = settings.auth_settings[S3AuthSetting::external_id];
         }
 
-        /// Under the restriction, a user backup must not assume a server-configured role (one inherited from
-        /// the `<s3>` config rather than supplied by the query/named collection) on top of its own explicit
-        /// keys -- that would use the keys merely as the STS base for the server's role. Drop the inherited
-        /// role so the explicit keys are used directly. With no explicit keys, the inherited role_arn is left
-        /// in place and `getCredentialsProvider` refuses it as a server-managed credential.
-        if (!role_arn_supplied_by_query && !role_arn.empty() && !credentials.IsEmpty()
-            && context->shouldRestrictUserQueryS3Credentials())
-        {
-            role_arn.clear();
-            role_session_name.clear();
-            external_id.clear();
-        }
-
-        /// Under the restriction, a query/named-collection role_arn must use the request's own base key pair,
-        /// not the server `<s3>` static keys: otherwise a backup that supplies only `extra_credentials(role_arn
-        /// = ...)` (or a collection with only a role) would assume the chosen role using the server's keys as the
-        /// STS base -- a confused deputy. Drop the role when the base keys were not supplied by the request; with
-        /// no role and only server keys, `getCredentialsProvider` then refuses the server-managed credentials.
-        if (role_arn_supplied_by_query && !base_keys_supplied_by_query && !role_arn.empty()
+        /// Under the restriction a role_arn may be assumed only with the request's own base key pair, never
+        /// the server `<s3>` keys as the STS base. Drop a server-inherited role used on top of explicit keys,
+        /// and drop a query role whose base keys came from server config (an `extra_credentials(role_arn=...)`
+        /// or role-only collection); `getCredentialsProvider` then refuses the remaining server-managed credential.
+        const bool drop_inherited_role = !role_arn_supplied_by_query && !credentials.IsEmpty();
+        const bool drop_role_on_server_keys = role_arn_supplied_by_query && !base_keys_supplied_by_query;
+        if (!role_arn.empty() && (drop_inherited_role || drop_role_on_server_keys)
             && context->shouldRestrictUserQueryS3Credentials())
         {
             role_arn.clear();
@@ -217,18 +202,13 @@ private:
         client_configuration.service_account = settings.auth_settings[S3AuthSetting::service_account];
         client_configuration.metadata_service = settings.auth_settings[S3AuthSetting::metadata_service];
         client_configuration.request_token_path = settings.auth_settings[S3AuthSetting::request_token_path];
-        /// Propagate the explicit Google ADC triple so that `http_client = gcp_oauth` with a user-supplied ADC
-        /// (rather than the server's GCP metadata service) is accepted by the credential restriction.
+        /// Propagate the explicit Google ADC triple so a user-supplied `gcp_oauth` is accepted by the restriction.
         client_configuration.google_adc_client_id = settings.auth_settings[S3AuthSetting::google_adc_client_id];
         client_configuration.google_adc_client_secret = settings.auth_settings[S3AuthSetting::google_adc_client_secret];
         client_configuration.google_adc_refresh_token = settings.auth_settings[S3AuthSetting::google_adc_refresh_token];
 
-        /// Under the restriction, a user backup must not use `http_client = gcp_oauth` inherited from the
-        /// server `<s3>` config to mint a token from the server's GCP metadata service. Only a `gcp_oauth`
-        /// inherited from the server config is dropped here (so the backup authenticates with its explicit S3
-        /// keys instead); a `gcp_oauth` the backup query/named collection supplied itself is left in place so
-        /// that, without a complete explicit Google ADC triple, it reaches the central `getCredentialsProvider`
-        /// rejection rather than being silently downgraded to anonymous. The `role_arn` STS path is handled above.
+        /// Drop only a server-inherited `gcp_oauth` (so the backup uses its explicit keys); a query-supplied
+        /// `gcp_oauth` without an ADC triple is left to reach the central `getCredentialsProvider` rejection.
         const bool has_explicit_gcp_adc = !client_configuration.google_adc_client_id.empty()
             && !client_configuration.google_adc_client_secret.empty()
             && !client_configuration.google_adc_refresh_token.empty();
@@ -339,19 +319,15 @@ BackupReaderS3::BackupReaderS3(
         s3_settings.updateIfChanged(*endpoint_settings);
     }
 
-    /// A backup named collection fully overrides the server-managed credential mechanisms (mirrors
-    /// `S3StorageParsedArguments::fromNamedCollection`): every mechanism field carries the collection's
-    /// value, defaulted when omitted, so a URL-only collection stays anonymous instead of inheriting a
-    /// global `role_arn`, `http_client` or GCP metadata service from the server `<s3>` config. The explicit
-    /// url/key form passes no override and keeps the server `<s3>` config values.
+    /// A backup named collection fully overrides the credential fields (so a URL-only collection stays
+    /// anonymous); the explicit url/key form passes no override and keeps the server `<s3>` config values.
     if (named_collection_auth)
         s3_settings.auth_settings.updateIfChanged(*named_collection_auth);
 
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
 
-    /// `http_client = gcp_oauth` is server-managed unless the backup named collection supplied it itself; only a
-    /// server-inherited one is stripped in makeS3Client (a query-supplied one reaches the central rejection).
+    /// A `gcp_oauth` is server-managed unless the named collection supplied it itself (see makeS3Client).
     const bool gcp_oauth_supplied_by_query = named_collection_auth
         && boost::iequals(String((*named_collection_auth)[S3AuthSetting::http_client]), "gcp_oauth");
     client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, gcp_oauth_supplied_by_query, s3_settings, context_);
@@ -451,11 +427,8 @@ BackupWriterS3::BackupWriterS3(
         s3_settings.updateIfChanged(*endpoint_settings);
     }
 
-    /// A backup named collection fully overrides the server-managed credential mechanisms (mirrors
-    /// `S3StorageParsedArguments::fromNamedCollection`): every mechanism field carries the collection's
-    /// value, defaulted when omitted, so a URL-only collection stays anonymous instead of inheriting a
-    /// global `role_arn`, `http_client` or GCP metadata service from the server `<s3>` config. The explicit
-    /// url/key form passes no override and keeps the server `<s3>` config values.
+    /// A backup named collection fully overrides the credential fields (so a URL-only collection stays
+    /// anonymous); the explicit url/key form passes no override and keeps the server `<s3>` config values.
     if (named_collection_auth)
         s3_settings.auth_settings.updateIfChanged(*named_collection_auth);
 
@@ -463,8 +436,7 @@ BackupWriterS3::BackupWriterS3(
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
     s3_settings.request_settings[S3RequestSetting::storage_class_name] = storage_class_name;
 
-    /// `http_client = gcp_oauth` is server-managed unless the backup named collection supplied it itself; only a
-    /// server-inherited one is stripped in makeS3Client (a query-supplied one reaches the central rejection).
+    /// A `gcp_oauth` is server-managed unless the named collection supplied it itself (see makeS3Client).
     const bool gcp_oauth_supplied_by_query = named_collection_auth
         && boost::iequals(String((*named_collection_auth)[S3AuthSetting::http_client]), "gcp_oauth");
     client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, gcp_oauth_supplied_by_query, s3_settings, context_);

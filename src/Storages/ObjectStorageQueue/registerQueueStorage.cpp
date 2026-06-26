@@ -50,10 +50,8 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
     auto configuration = std::make_shared<Configuration>();
-    /// Parse the S3 configuration with the local/create context so that a `SETTINGS
-    /// s3_allow_server_credentials_in_user_queries = 1` on the `CREATE` is honored when deciding whether a
-    /// server-configured `role_arn` may be kept (see `StorageS3Configuration::fromAST`). The background
-    /// processing context stays global and is set up separately below.
+    /// Parse with the create context so a `SETTINGS s3_allow_server_credentials_in_user_queries = 1` on the
+    /// `CREATE` is honored (see `StorageS3Configuration::fromAST`); the processing context stays global below.
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, args.getLocalContext(), false, &args.table_id);
 
     // Use format settings from global server context + settings from

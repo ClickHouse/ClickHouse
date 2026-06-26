@@ -210,18 +210,13 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
         /*sts_endpoint_override=*/""
     };
 
-    /// S3 access that is not for a server disk (s3/s3Cluster table functions, the S3/S3Queue engines,
-    /// DataLake table reads) is driven by user SQL, so it must not use the server's own credentials.
-    /// Server disks use the server's own credentials. User-created dynamic S3 disks are handled earlier,
-    /// in getDiskConfigurationFromAST.
+    /// Non-disk S3 access (table functions, S3/S3Queue engines, DataLake reads) is user SQL and must not use
+    /// server credentials. Server disks may; user dynamic S3 disks are handled earlier in getDiskConfigurationFromAST.
     credentials_configuration.forbid_implicit_credentials = !for_disk_s3 && context->shouldRestrictUserQueryS3Credentials();
 
-    /// When loading a persistent table from existing metadata (server startup or RESTORE), a definition that
-    /// resolves the server's own (now restricted) credentials would otherwise abort startup. If allowed by the
-    /// server setting, downgrade it to an anonymous client so the server starts and the table is merely
-    /// inaccessible instead of escalating. `gcp_oauth` mints its token at the HTTP layer regardless of the
-    /// credentials provider, so also drop that http client when no explicit ADC triple is supplied, otherwise
-    /// the downgrade would still use the server's GCP identity.
+    /// On metadata load, downgrade a now-restricted definition to anonymous (if allowed by the server setting)
+    /// so the server starts with the table inaccessible instead of aborting. Also drop a `gcp_oauth` http client
+    /// without an explicit ADC triple, else the downgrade would still mint a token with the server's GCP identity.
     if (credentials_configuration.forbid_implicit_credentials && is_loading_from_existing_metadata
         && server_settings[ServerSetting::s3_load_table_anonymously_if_credentials_restricted])
     {
@@ -241,12 +236,9 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     String server_side_encryption_customer_key_base64 = auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64];
     auto server_side_encryption_kms_config = auth_settings.server_side_encryption_kms_config;
 
-    /// When a persistent table or dynamic disk is loaded from existing metadata under the restriction and the
-    /// resolved client is unsigned (a dynamic disk forced anonymous by forceAnonymousS3DiskConfig, which sets
-    /// `no_sign_request`) or downgraded to anonymous (an S3 engine table, `anonymous_fallback_for_server_credentials`),
-    /// the table is meant to be inaccessible rather than keep using the server identity. The server `<s3>` endpoint
-    /// `access_header` and SSE material (merged from the global config) would otherwise still authorize/encrypt with
-    /// the server identity, so drop them and keep only the headers from the stored user definition.
+    /// On a restricted metadata load that resolves to an unsigned/anonymous client, drop the server `<s3>`
+    /// `access_header` and SSE material (merged from config) so they cannot keep authorizing with the server
+    /// identity; keep only the headers from the stored user definition.
     if (is_loading_from_existing_metadata && context->shouldRestrictUserQueryS3Credentials()
         && (credentials_configuration.no_sign_request || credentials_configuration.anonymous_fallback_for_server_credentials))
     {

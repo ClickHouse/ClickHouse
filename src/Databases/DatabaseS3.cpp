@@ -97,12 +97,9 @@ bool DatabaseS3::isTableExist(const String & name, ContextPtr context_) const
 
 StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) const
 {
-    /// The built storage is intentionally NOT cached across sessions. The S3 client an `s3(...)` table builds
-    /// depends on the per-session `s3_allow_server_credentials_in_user_queries` value (e.g. whether a
-    /// server-configured `role_arn` is stripped), so a storage built by one session must not be reused by
-    /// another with a different effective credential mode -- that would let an allowed session prime a client
-    /// for a later restricted one (or vice versa). Rebuild under the current query context every time so the
-    /// restriction is enforced per session. Caching can be reintroduced once it keys on the credential mode.
+    /// Not cached across sessions: the built S3 client depends on the per-session
+    /// `s3_allow_server_credentials_in_user_queries`, so reuse could let an allowed session prime a client for a
+    /// restricted one. Rebuild every time. Caching can return once it keys on the credential mode.
     auto url = getFullUrl(name);
     checkUrl(url, context_, /* throw_on_error */true);
 
@@ -123,9 +120,8 @@ StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) co
     }
     else if (config.use_environment_credentials)
     {
-        /// Carry the opt-in into the `s3` table function as an explicit key-value argument. Flattening to the
-        /// positional `s3(url)` form would lose it (whose built-in default depends on the server `<s3>` config).
-        /// The table function then applies the user-query credential restriction to it like any other query.
+        /// Carry the opt-in as an explicit key-value arg; the positional `s3(url)` form would lose it. The
+        /// table function then applies the user-query credential restriction like any other query.
         function->arguments->children.push_back(
             makeASTFunction("equals",
                 make_intrusive<ASTIdentifier>("use_environment_credentials"),
@@ -251,10 +247,9 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
         if (!secret_key.empty())
             result.secret_access_key = secret_key;
 
-        /// A URL-only named collection (no explicit key pair, not NOSIGN) defaults to anonymous access, the
-        /// same as `s3(named_collection)` where `use_environment_credentials` defaults to 0. Preserve that as
-        /// NOSIGN so `getTableImpl` does not flatten it to the positional `s3(url)` form, whose built-in
-        /// default is `use_environment_credentials = 1` and would resolve the server's ambient credentials.
+        /// A URL-only collection is anonymous; record it as NOSIGN so `getTableImpl` does not flatten it to
+        /// the positional `s3(url)` form, whose built-in `use_environment_credentials = 1` default would
+        /// resolve the server's credentials.
         const bool has_complete_keys = result.access_key_id.has_value() && result.secret_access_key.has_value();
         if (!result.no_sign_request && !has_complete_keys
             && !collection.getOrDefault<bool>("use_environment_credentials", false))

@@ -112,11 +112,8 @@ GlueCatalog::GlueCatalog(
     creds_config.role_session_name = settings.aws_role_session_name;
     creds_config.external_id = settings.aws_external_id;
 
-    /// A Glue catalog is created by user SQL (`CREATE DATABASE ... ENGINE = DataLakeCatalog`), so it must
-    /// not be able to reuse the server's own credentials unless that was allowed when the database was
-    /// created. The context here is the global one (the catalog is cached and shared by every query) and its
-    /// live setting no longer reflects the creating session, so pass the value captured at CREATE time; the
-    /// overload still exempts non-server applications.
+    /// A Glue catalog is created by user SQL, so it must not reuse the server's credentials unless allowed at
+    /// CREATE time. The cached catalog uses the global context, so pass the value captured then, not the live setting.
     creds_config.forbid_implicit_credentials
         = getContext()->shouldRestrictUserQueryS3Credentials(allow_server_credentials_in_user_queries_);
 
@@ -166,12 +163,8 @@ GlueCatalog::GlueCatalog(
 
         if (credentials.IsEmpty() && !creds_config.forbid_implicit_credentials)
         {
-            /// You can specify any key for fake moto glue, it's just important
-            /// for it not to be empty.
-            /// Skip this when the user-query credential restriction is in effect and no explicit credentials
-            /// were given: leaving them empty makes `getCredentialsProvider` refuse the server-managed request,
-            /// so the restriction (and the `DatabaseDataLake` unavailable-on-load fallback) is exercised instead
-            /// of being masked by a placeholder key.
+            /// Placeholder key for mocked moto glue (must be non-empty). Skipped under the restriction with no
+            /// explicit credentials, so it does not mask the refusal that the test exercises.
             credentials.SetAWSAccessKeyId("testing");
             credentials.SetAWSSecretKey("testing");
         }
