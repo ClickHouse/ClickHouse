@@ -395,6 +395,13 @@ void OpenMetricsTextOutputFormat::flushCurrentMetric()
     if (use_buckets)
         fixupBucketLabels(current_metric);
 
+    /// Validate every row's label values before emitting any of this family's bytes, so a malformed
+    /// value (a tab or other control character) fails the whole family up front instead of throwing
+    /// mid-stream and leaving a dangling `# HELP`/`# TYPE`/`# UNIT` header on the wire.
+    for (const auto & val : current_metric.values)
+        for (const auto & [label_name, label_value] : val.labels)
+            validateLabelValue(label_value);
+
     auto write_attribute = [this](const char * marker, const String & value)
     {
         if (value.empty())
@@ -412,9 +419,6 @@ void OpenMetricsTextOutputFormat::flushCurrentMetric()
 
     for (auto & val : current_metric.values)
     {
-        for (const auto & [label_name, label_value] : val.labels)
-            validateLabelValue(label_value);
-
         writeString(current_metric.name, out);
 
         /// Suffix-marker rewrite. The documented table contract is:
@@ -508,16 +512,36 @@ void OpenMetricsTextOutputFormat::write(const Columns & columns, size_t row_num)
         current_metric = CurrentMetric(name);
     }
 
-    if (pos.help.has_value() && !columns[*pos.help]->isNullAt(row_num) && current_metric.help.empty())
+    if (pos.help.has_value() && !columns[*pos.help]->isNullAt(row_num))
     {
-        current_metric.help = getString(columns, row_num, *pos.help);
-        std::replace(current_metric.help.begin(), current_metric.help.end(), '\n', ' ');
+        String help = getString(columns, row_num, *pos.help);
+        std::replace(help.begin(), help.end(), '\n', ' ');
+        if (!help.empty())
+        {
+            if (current_metric.help.empty())
+                current_metric.help = std::move(help);
+            else if (current_metric.help != help)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Conflicting '# HELP' metadata for metric family '{}' in output format '{}'",
+                    current_metric.name, FORMAT_NAME);
+        }
     }
 
-    if (pos.type.has_value() && !columns[*pos.type]->isNullAt(row_num) && current_metric.type.empty())
+    if (pos.type.has_value() && !columns[*pos.type]->isNullAt(row_num))
     {
-        current_metric.type = getString(columns, row_num, *pos.type);
-        validateOpenMetricsType(current_metric.type);
+        String type = getString(columns, row_num, *pos.type);
+        if (!type.empty())
+        {
+            if (current_metric.type.empty())
+            {
+                current_metric.type = std::move(type);
+                validateOpenMetricsType(current_metric.type);
+            }
+            else if (current_metric.type != type)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Conflicting '# TYPE' metadata for metric family '{}' in output format '{}'",
+                    current_metric.name, FORMAT_NAME);
+        }
     }
 
     std::optional<std::map<String, String>> labels;
@@ -530,10 +554,19 @@ void OpenMetricsTextOutputFormat::write(const Columns & columns, size_t row_num)
         }
     }
 
-    if (pos.unit.has_value() && !columns[*pos.unit]->isNullAt(row_num) && current_metric.unit.empty())
+    if (pos.unit.has_value() && !columns[*pos.unit]->isNullAt(row_num))
     {
-        current_metric.unit = getString(columns, row_num, *pos.unit);
-        std::replace(current_metric.unit.begin(), current_metric.unit.end(), '\n', ' ');
+        String unit = getString(columns, row_num, *pos.unit);
+        std::replace(unit.begin(), unit.end(), '\n', ' ');
+        if (!unit.empty())
+        {
+            if (current_metric.unit.empty())
+                current_metric.unit = std::move(unit);
+            else if (current_metric.unit != unit)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Conflicting '# UNIT' metadata for metric family '{}' in output format '{}'",
+                    current_metric.name, FORMAT_NAME);
+        }
     }
 
     auto & row = current_metric.values.emplace_back();

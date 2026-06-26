@@ -227,6 +227,9 @@ SELECT * FROM (
 -- Output label serialization: only `\\`,`\"`,`\n` escapes; other control chars / duplicate keys / bad names rejected.
 SELECT 'm' AS name, 1.0 AS value, map('k', concat('a', char(10), 'b')) AS labels FORMAT OpenMetrics;
 SELECT 'm' AS name, 1.0 AS value, map('k', concat('a', char(9), 'b')) AS labels FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+-- A malformed label value is rejected before any of the family's header bytes are written, even when
+-- `# HELP`/`# TYPE` are populated, so an invalid row never leaves a partial stream behind.
+SELECT 'm' AS name, 1.0 AS value, 'Total things' AS help, 'counter' AS type, map('k', concat('a', char(9), 'b')) AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
 SELECT 'm' AS name, 1.0 AS value, map('a', '1', 'a', '2') AS labels FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
 SELECT 'bad name' AS name, 1.0 AS value FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
 SELECT 'm' AS name, 1.0 AS value, map('trace:id', 'x') AS labels FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
@@ -319,3 +322,19 @@ SELECT 'h' AS name, 4.0 AS value, '' AS help, 'histogram' AS type, map('le', '+I
 -- INPUT positives: a finite `le` (including the canonical `+Inf` bucket) and an in-range `quantile` are accepted.
 SELECT name, value, labels, type FROM format(OpenMetrics, concat('# TYPE h histogram', char(10), 'h_bucket{le="0.5"} 3', char(10), 'h_bucket{le="+Inf"} 9', char(10), '# EOF', char(10))) ORDER BY value FORMAT TSV;
 SELECT name, value, labels, type FROM format(OpenMetrics, concat('# TYPE s summary', char(10), 's{quantile="0.5"} 1', char(10), '# EOF', char(10))) ORDER BY value FORMAT TSV;
+
+-- ===== Family metadata must agree across a family's rows (output) =====
+-- The first non-empty `# HELP`/`# TYPE`/`# UNIT` for a family is captured and reused for its rows.
+-- Repeating the same non-empty descriptor on a later row is accepted (idempotent), but a row carrying
+-- a different non-empty descriptor for the family is conflicting exposition the writer cannot
+-- represent (a sample would be emitted under the wrong descriptor) and is rejected.
+SELECT * FROM (
+    SELECT 'rt' AS name, 1.0 AS value, '' AS help, 'counter' AS type, map('method', 'GET') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
+    UNION ALL
+    SELECT 'rt', 2.0, '', 'counter', map('method', 'POST'), CAST(NULL AS Nullable(Int64)), ''
+) ORDER BY value FORMAT OpenMetrics;
+SELECT * FROM (
+    SELECT 'cm' AS name, 1.0 AS value, '' AS help, 'counter' AS type, CAST(map(), 'Map(String, String)') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
+    UNION ALL
+    SELECT 'cm', 2.0, '', 'gauge', CAST(map(), 'Map(String, String)'), CAST(NULL AS Nullable(Int64)), ''
+) ORDER BY value FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }

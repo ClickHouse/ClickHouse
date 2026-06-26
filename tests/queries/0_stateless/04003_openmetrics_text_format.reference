@@ -136,3 +136,8 @@ h_count 4
 h	3	{'le':'0.5'}	histogram
 h	9	{'le':'+Inf'}	histogram
 s	1	{'quantile':'0.5'}	summary
+# TYPE rt counter
+rt{method="GET"} 1
+rt{method="POST"} 2
+
+# EOF
