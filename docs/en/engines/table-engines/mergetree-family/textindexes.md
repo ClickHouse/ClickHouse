@@ -324,7 +324,7 @@ When the column is of type `Array(String)`, the postprocessor still operates on 
 Usage of non-deterministic functions is disallowed.
 
 The postprocessor is applied to each generated token during index build (for the `array` tokenizer, each array element is a token). At query time, the behavior depends on the function:
-- For `hasToken`, `hasAllTokens`, and `hasAnyTokens` (with any tokenizer): the postprocessor is applied to both the haystack tokens and the search needle, enabling fully normalized matching (e.g., case-insensitive search).
+- For `hasToken`, `hasAllTokens`, `hasAnyTokens`, and `hasPhrase` (with any supported tokenizer): the postprocessor is applied to both the haystack tokens and the search needle, enabling fully normalized matching (e.g., case-insensitive search). For `hasPhrase`, the postprocessed tokens are positioned densely, so a token the postprocessor drops leaves no positional gap and the phrase still matches across it — e.g. with a stop-word postprocessor that drops `the`, `hasPhrase(col, 'see cat')` matches a document `see the cat`.
 - For all other functions (`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`): only the search needle is postprocessed for the index-hint lookup; the row-level predicate still compares against the original column values.
 
 Examples:
@@ -430,8 +430,9 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 **Function support**.
 
 For predicates that consult the text index, the preprocessor and postprocessor are applied to the search value before the granule-level check so that the index lookup uses the same tokens that were stored at index build.
-For most functions (`=`, `IN`, `hasPhrase`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`), the text index is used only to skip irrelevant data blocks; ClickHouse still verifies each surviving row using the original predicate against the original column data.
+For most functions (`=`, `IN`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`), the text index is used only to skip irrelevant data blocks; ClickHouse still verifies each surviving row using the original predicate against the original column data.
 For token search functions (`hasToken`, `hasAllTokens`, `hasAnyTokens`), the text index is the primary evaluation path: ClickHouse normalizes the needle through the same preprocessor, tokenizer, and postprocessor that were applied at index build time, and uses this normalized form for both indexed and non-indexed table parts. With a postprocessor, the haystack tokens are also normalized at query time (for any tokenizer, not only `array`), so both sides of the comparison are consistently transformed and the result does not depend on whether the index is read directly (setting `query_plan_direct_read_from_text_index`) or whether a given part has a materialized index — e.g. enabling case-insensitive matching for `hasAllTokens(col, ['FOO'])` with a `lower` postprocessor.
+Without `positions`, `hasPhrase` uses the index only as a hint and verifies each surviving row with the original predicate; a postprocessor additionally normalizes both the phrase and the haystack tokens the same way, so the result is independent of the read path, and tokens the postprocessor drops do not break phrase adjacency. With `positions = 1`, `hasPhrase` uses exact direct reads (still applying the postprocessor, if any).
 Search tokens that the postprocessor maps to an empty string are ignored, i.e. treated as absent from the search phrase.
 
 | Function | Supports a preprocessor | Compatible tokenizers | Supports a postprocessor |
