@@ -55,7 +55,7 @@ INSERT INTO salaries FORMAT Values
 
 ```sql title="Query"
 SELECT player, salary,
-       ntile(4) OVER (ORDER BY salary DESC) AS bucket
+       ntile(4) OVER (ORDER BY salary DESC, player ASC) AS bucket
 FROM salaries;
 ```
 
@@ -64,9 +64,9 @@ FROM salaries;
 1. │ Gary Chen       │ 195000 │      1 │
 2. │ Robert George   │ 195000 │      1 │
 3. │ Charles Juarez  │ 190000 │      2 │
-4. │ Michael Stanley │ 150000 │      2 │
-5. │ Scott Harrison  │ 150000 │      3 │
-6. │ Douglas Benson  │ 150000 │      3 │
+4. │ Douglas Benson  │ 150000 │      2 │
+5. │ Michael Stanley │ 150000 │      3 │
+6. │ Scott Harrison  │ 150000 │      3 │
 7. │ James Henderson │ 140000 │      4 │
    └─────────────────┴────────┴────────┘
 ```
