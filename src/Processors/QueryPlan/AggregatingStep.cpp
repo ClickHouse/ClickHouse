@@ -857,6 +857,26 @@ AggregatingProjectionStep::AggregatingProjectionStep(
     updateInputHeaders(std::move(input_headers_));
 }
 
+std::vector<size_t> AggregatingProjectionStep::getStepGroups() const
+{
+    return {
+        static_cast<size_t>(AggregatingStep::AggregatingStage::Grouping),
+        static_cast<size_t>(AggregatingStep::AggregatingStage::Merging)
+    };
+}
+
+String AggregatingProjectionStep::getStepGroupName(size_t group) const
+{
+    switch (static_cast<AggregatingStep::AggregatingStage>(group))
+    {
+        case AggregatingStep::AggregatingStage::Grouping: return "grouping";
+        case AggregatingStep::AggregatingStage::Merging: return "merging";
+        case AggregatingStep::AggregatingStage::Scatter: [[fallthrough]];
+        case AggregatingStep::AggregatingStage::AggregatingSharded: break;
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown AggregatingProjectionStep group {}", group);
+}
+
 void AggregatingProjectionStep::updateOutputHeader()
 {
     if (input_headers.size() != 2)

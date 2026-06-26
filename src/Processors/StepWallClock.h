@@ -28,11 +28,13 @@ public:
     void onLeave()
     {
         UInt64 new_value = 0;
+        UInt64 exit_time = 0;
         UInt64 old_value = threads_and_time.load(std::memory_order_acquire);
         bool last_thread = false;
         do
         {
             new_value = old_value - 1;
+            exit_time = clock_gettime_ns() - query_start_time;
             /// Extract the number of threads after decrement
             last_thread = (new_value & MASK_16_BIT) == 0;
         } while (!threads_and_time.compare_exchange_weak(old_value, new_value, std::memory_order_release, std::memory_order_relaxed));
@@ -41,7 +43,7 @@ public:
         {
             /// new_value contains the old entry time, so we substract it
             UInt64 start_time = (new_value >> 16);
-            wall_clock_time.fetch_add((clock_gettime_ns() - query_start_time) - start_time, std::memory_order_release);
+            wall_clock_time.fetch_add(exit_time - start_time, std::memory_order_release);
         }
     }
 

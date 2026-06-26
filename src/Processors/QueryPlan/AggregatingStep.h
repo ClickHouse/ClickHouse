@@ -173,6 +173,9 @@ public:
     String getName() const override { return "AggregatingProjection"; }
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
+    std::vector<size_t> getStepGroups() const override;
+    String getStepGroupName(size_t group) const override;
+
     const Aggregator::Params & getParams() const { return params; }
 
 private:

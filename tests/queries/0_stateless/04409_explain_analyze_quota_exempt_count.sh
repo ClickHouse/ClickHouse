@@ -19,9 +19,10 @@ ${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON *.* TO r04409"
 ${CLICKHOUSE_CLIENT} -q "GRANT r04409 TO u04409"
 ${CLICKHOUSE_CLIENT} -q "CREATE QUOTA q04409 KEYED BY user_name FOR INTERVAL 100 YEAR MAX query_selects = 1 TO r04409"
 
-# Exempt source: repeated EXPLAIN ANALYZE over system.one must never hit the query-count quota.
-for _ in 1 2 3; do
+for _ in {1..100}; do
     ${CLICKHOUSE_CLIENT} --user u04409 --send_logs_level=none -q "EXPLAIN ANALYZE SELECT dummy FROM system.one" 2>&1 | grep -o 'QUOTA_EXCEEDED'
+    [ "$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.quotas_usage WHERE quota_name = 'q04409'")" -gt 0 ] && break
+    sleep 0.3
 done
 echo "query_selects after exempt source:"
 ${CLICKHOUSE_CLIENT} -q "SELECT sum(query_selects) FROM system.quotas_usage WHERE quota_name = 'q04409'"
