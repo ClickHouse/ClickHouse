@@ -168,6 +168,10 @@ SELECT * FROM format(OpenMetrics, concat('# TYPE s summary', char(10), 's 3', ch
 SELECT * FROM format(OpenMetrics, concat('# TYPE h counter', char(10), '# TYPE h gauge', char(10), 'h 1', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, concat('# HELP h a', char(10), '# HELP h b', char(10), 'h 1', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, concat('# UNIT h_seconds seconds', char(10), '# UNIT h_seconds ms', char(10), 'h_seconds 1', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+-- Metadata must precede the family's samples. The check is keyed on the logical family, so a late
+-- `# TYPE h` after an `h_bucket` sample (which folds under `h`) is rejected even though the sample
+-- came first — otherwise that one histogram would split into a bare `h_bucket` row and a folded `h` row.
+SELECT * FROM format(OpenMetrics, concat('h_bucket{le="1"} 2', char(10), '# TYPE h histogram', char(10), 'h_bucket{le="2"} 3', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
 -- (4) Output `type` is emitted raw in `# TYPE`; reject values with whitespace or control characters that would break the stream.
 SELECT 'h' AS name, 1.0 AS value, '' AS help, 'counter garbage' AS type, CAST(map(), 'Map(String, String)') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
 SELECT 'h' AS name, 1.0 AS value, '' AS help, concat('coun', char(10), 'ter') AS type, CAST(map(), 'Map(String, String)') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }

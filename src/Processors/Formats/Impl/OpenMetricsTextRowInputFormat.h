@@ -50,6 +50,10 @@ private:
         bool has_help = false;
         bool has_type = false;
         bool has_unit = false;
+        /// Set once the family has emitted a sample row. A `# HELP` / `# TYPE` / `# UNIT` arriving
+        /// afterwards is rejected: folding (`_bucket` / `_sum` / `_count` and counter `_total`) is
+        /// driven by this metadata, so late metadata would make the parse order-dependent.
+        bool samples_emitted = false;
     };
 
     std::unordered_map<String, FamilyMeta> family_meta;

@@ -371,13 +371,16 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
 
             String name;
             String rest;
-            /// OpenMetrics allows at most one `# HELP` / `# TYPE` / `# UNIT` per metric family;
-            /// a duplicate descriptor would silently overwrite the first and make the parsed rows
-            /// order-dependent, so reject it.
+            /// OpenMetrics requires every `# HELP` / `# TYPE` / `# UNIT` to precede the family's
+            /// samples, and allows at most one of each. A duplicate descriptor, or one arriving after
+            /// a sample, would change how rows fold and make the parsed result order-dependent, so
+            /// reject both rather than silently reinterpreting earlier rows.
             if (line.starts_with("# HELP "))
             {
                 parseMetadataLine(line, sizeof("# HELP ") - 1, name, rest);
                 auto & fm = family_meta[name];
+                if (fm.samples_emitted)
+                    throwIncorrect("'# HELP' metadata cannot follow samples for a metric family", line);
                 if (fm.has_help)
                     throwIncorrect("Duplicate '# HELP' metadata for a metric family", line);
                 fm.help = std::move(rest);
@@ -399,6 +402,8 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
                 }
                 rest.resize(end);
                 auto & fm = family_meta[name];
+                if (fm.samples_emitted)
+                    throwIncorrect("'# TYPE' metadata cannot follow samples for a metric family", line);
                 if (fm.has_type)
                     throwIncorrect("Duplicate '# TYPE' metadata for a metric family", line);
                 fm.type = std::move(rest);
@@ -408,6 +413,8 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
             {
                 parseMetadataLine(line, sizeof("# UNIT ") - 1, name, rest);
                 auto & fm = family_meta[name];
+                if (fm.samples_emitted)
+                    throwIncorrect("'# UNIT' metadata cannot follow samples for a metric family", line);
                 if (fm.has_unit)
                     throwIncorrect("Duplicate '# UNIT' metadata for a metric family", line);
                 fm.unit = std::move(rest);
@@ -512,7 +519,11 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
                 if (!stem.ends_with(suffix) || stem.size() <= suffix.size())
                     continue;
                 const String base = stem.substr(0, stem.size() - suffix.size());
-                if (family_meta.contains(base))
+                /// Only a declared family (one carrying a `# HELP` / `# TYPE` / `# UNIT`) claims these
+                /// siblings; a base name that has merely emitted samples does not.
+                const auto base_it = family_meta.find(base);
+                if (base_it != family_meta.end()
+                    && (base_it->second.has_help || base_it->second.has_type || base_it->second.has_unit))
                     throwIncorrect(
                         fmt::format("Unsupported OpenMetrics sibling suffix '{}' for family '{}'", suffix, base),
                         line);
@@ -599,6 +610,22 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
         }
 
         setString(loc.unit, fm.unit);
+
+        /// Record that this logical family has emitted a sample, so a later `# HELP` / `# TYPE` /
+        /// `# UNIT` for it is rejected. The histogram/summary suffixes (`_bucket` / `_sum` / `_count`)
+        /// and the counter `_total` all belong to the same base family, so key on the suffix-stripped
+        /// name even before that family's metadata is seen.
+        static constexpr std::array<std::string_view, 4> family_suffixes = {"_bucket", "_sum", "_count", "_total"};
+        String sample_family = stem;
+        for (const auto & suffix : family_suffixes)
+        {
+            if (stem.ends_with(suffix) && stem.size() > suffix.size())
+            {
+                sample_family = stem.substr(0, stem.size() - suffix.size());
+                break;
+            }
+        }
+        family_meta[sample_family].samples_emitted = true;
 
         return true;
     }
