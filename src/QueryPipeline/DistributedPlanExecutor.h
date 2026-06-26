@@ -25,6 +25,10 @@ size_t getDistributedWorkerCount(ContextPtr context);
 /// executor to cap the host list.
 size_t getCascadesClusterNodeCountParam(ContextPtr context);
 
+/// Task budget for the Cascades optimizer, overridable via the
+/// `_internal_cascades_task_limit` query parameter (0 or absent -> default_limit).
+size_t getCascadesTaskLimitParam(ContextPtr context, size_t default_limit);
+
 /// Network endpoint of a worker, resolved on the initiator from the cluster config (and
 /// server-level defaults). Both ports may differ per node so several workers can share a host.
 struct WorkerAddress

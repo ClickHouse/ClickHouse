@@ -1,0 +1,5 @@
+-- default budget: the query optimizes and runs
+0	4500
+1	4510
+2	4520
+-- task budget of 1 cannot finish: fail closed

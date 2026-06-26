@@ -1026,6 +1026,18 @@ size_t getCascadesClusterNodeCountParam(ContextPtr context)
     return 0;
 }
 
+size_t getCascadesTaskLimitParam(ContextPtr context, size_t default_limit)
+{
+    constexpr auto param_name = "_internal_cascades_task_limit";
+    if (context->getQueryParameters().contains(param_name))
+    {
+        size_t value = parse<size_t>(context->getQueryParameters().at(param_name));
+        if (value > 0)
+            return value;
+    }
+    return default_limit;
+}
+
 size_t getDistributedWorkerCount(ContextPtr context)
 {
     return getDistributedWorkerHostnames(context).size();

@@ -27,6 +27,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static String dumpQueryPlanShort(const QueryPlan & query_plan)
@@ -90,7 +91,7 @@ void CascadesOptimizer::optimize()
 
     /// Limit the time in terms of optimization tasks instead of wall clock time. This is done for stability of generated plans regardless of system load.
     /// Guys from MS SQL Server describe this in Andy Pavlo's seminar: https://www.youtube.com/watch?v=pQe1LQJiXN0
-    const size_t executed_tasks_limit = 100000;
+    const size_t executed_tasks_limit = getCascadesTaskLimitParam(query_context, 100000);
     size_t executed_tasks_count = 0;
     for (; !optimizer_context.tasks.empty() && executed_tasks_count < executed_tasks_limit; ++executed_tasks_count)
     {
@@ -100,6 +101,18 @@ void CascadesOptimizer::optimize()
     }
 
     LOG_TEST(optimizer_context.log, "Executed {} tasks, Memo after:\n{}", executed_tasks_count, optimizer_context.memo.dump());
+
+    /// Fail closed if the search did not finish within the task budget: building a plan from a
+    /// partial memo can yield a non-minimal plan or a confusing failure deep inside buildBestPlan.
+    /// Surface a clear error instead and point at the knob to raise the limit.
+    if (!optimizer_context.tasks.empty())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cascades optimizer did not finish within the task budget of {} tasks "
+            "(root group #{}, required properties {}, {} groups in memo). "
+            "Disable enable_cascades_optimizer, or raise the limit with the "
+            "'_internal_cascades_task_limit' query parameter.",
+            executed_tasks_limit, root_group_id, root_required_properties.dump(),
+            optimizer_context.memo.getGroupCount());
 
     /// Get the best plan for the root group
     auto best_plan = buildBestPlan(root_group_id, root_required_properties, optimizer_context.memo);
