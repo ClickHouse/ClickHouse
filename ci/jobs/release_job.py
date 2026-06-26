@@ -169,6 +169,28 @@ def main():
         workdir=REPO_PATH,
     )
 
+    # Authenticate to Docker Hub in the setup phase, before any release
+    # mutation (tag push, GitHub release, repo export). Pushing docker images
+    # is part of the release contract, so a missing/expired registry token must
+    # stop the run before partial publication. Gated on patch && !dry_run so it
+    # also covers only-repo / only-docker recovery runs.
+    if args.release_type == "patch" and not args.dry_run:
+
+        def docker_login():
+            Shell.check(
+                f"docker login --username {shlex.quote(_DOCKERHUB_USERNAME)}"
+                f" --password-stdin",
+                strict=True,
+                stdin_str=_DOCKERHUB_SECRET.get_value(),
+                encoding="utf-8",
+            )
+
+        step(
+            name="Docker Hub Login",
+            command=docker_login,
+            workdir=REPO_PATH,
+        )
+
     if args.release_type == "patch" and not args.only_docker:
         arch = "amd64" if Shell.get_output("uname -m") == "x86_64" else "arm64"
         geesefs_bin_dir = os.path.expanduser("~/.local/bin")
@@ -531,21 +553,6 @@ def main():
                 )
 
             return build
-
-        def docker_login():
-            Shell.check(
-                f"docker login --username {shlex.quote(_DOCKERHUB_USERNAME)}"
-                f" --password-stdin",
-                strict=True,
-                stdin_str=_DOCKERHUB_SECRET.get_value(),
-                encoding="utf-8",
-            )
-
-        step(
-            name="Docker Hub Login",
-            command=docker_login,
-            workdir=REPO_PATH,
-        )
 
         step(
             name="Set up Docker buildx (multi-arch)",
