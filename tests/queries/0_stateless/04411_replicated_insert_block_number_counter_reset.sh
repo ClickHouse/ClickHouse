@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Tags: zookeeper, no-shared-merge-tree, no-replicated-database
+# no-shared-merge-tree: uses an explicit ReplicatedMergeTree ZooKeeper path and resets its
+#   block-number counter directly; SharedMergeTree allocates block numbers differently.
+# no-replicated-database: uses an explicit ReplicatedMergeTree ZooKeeper path that conflicts
+#   with the DDL replication mechanism of DatabaseReplicated.
+#
+# Regression test for a server abort (LOGICAL_ERROR "Part with name ... is already written by
+# concurrent request") in ReplicatedMergeTreeSink::commitPart. When the ZooKeeper block-number
+# counter is reset while a local part at a higher block number survives (Keeper metadata loss,
+# replica re-creation, or a DROP/lost-replica race), the next INSERT re-issues an already-used
+# block number and renameTempPartAndAdd finds the surviving part. The sink used to treat this as
+# an impossible LOGICAL_ERROR and abort the server. It must instead fail the INSERT with a normal
+# (non-fatal) DUPLICATE_DATA_PART error and keep the server alive.
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS rmt SYNC"
+$CLICKHOUSE_CLIENT --query "
+    CREATE TABLE rmt (k UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/rmt', 'r1') ORDER BY k
+"
+
+# Resolve the table's ZooKeeper path from the server so the keeper-client commands below act on
+# exactly the path the table was created with (single source of truth, no duplicated literal).
+ZK_PATH=$($CLICKHOUSE_CLIENT --query "SELECT zookeeper_path FROM system.replicas WHERE database = currentDatabase() AND table = 'rmt'")
+
+# Create several active parts: all_0_0_0 .. all_5_5_0
+for i in 0 1 2 3 4 5; do
+    $CLICKHOUSE_CLIENT --async_insert 0 --query "INSERT INTO rmt VALUES ($i)"
+done
+
+# Roll the partition block-number counter back to zero while the parts stay in the working set.
+# Recreating /block_numbers/all resets its sequential counter, mimicking a ZooKeeper metadata
+# reset under surviving local parts.
+$CLICKHOUSE_KEEPER_CLIENT -q "rmr '$ZK_PATH/block_numbers/all'" >/dev/null 2>&1
+$CLICKHOUSE_KEEPER_CLIENT -q "touch '$ZK_PATH/block_numbers/all'" >/dev/null 2>&1
+
+# The next INSERT re-issues block number 0 and collides with the surviving local all_0_0_0.
+# It must fail with DUPLICATE_DATA_PART, NOT abort the server with a LOGICAL_ERROR.
+$CLICKHOUSE_CLIENT --async_insert 0 --query "INSERT INTO rmt VALUES (99)" 2>&1 \
+    | grep -o -m1 "DUPLICATE_DATA_PART" || echo "NO_EXPECTED_ERROR"
+
+# The server must still be alive and the data intact (6 rows, no crash, no data loss).
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM rmt"
+
+$CLICKHOUSE_CLIENT --query "DROP TABLE rmt SYNC"

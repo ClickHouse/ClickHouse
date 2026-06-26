@@ -998,9 +998,15 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
         {
             if (e.code() == ErrorCodes::DUPLICATE_DATA_PART || e.code() == ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Part with name {} is already written by concurrent request."
-                                " It should not happen for non-duplicate data parts because unique names are assigned for them. It's a bug",
+                /// Recoverable replica inconsistency, not a bug: the ZK block-number counter was reset
+                /// while this part survived locally, so the fresh number collides with it. Reconcile the
+                /// stale part and fail the insert instead of aborting the server with a LOGICAL_ERROR.
+                storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
+                throw Exception(ErrorCodes::DUPLICATE_DATA_PART,
+                                "Part with name {} already exists locally for a newly allocated block number. "
+                                "The ZooKeeper block-number counter is inconsistent with local parts "
+                                "(it may have been reset by Keeper metadata loss or replica re-creation). "
+                                "The conflicting part will be checked and reconciled; retry the insert",
                                 part->name);
             }
 
