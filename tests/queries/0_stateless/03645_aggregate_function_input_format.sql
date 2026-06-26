@@ -31,7 +31,7 @@ SELECT '=== Test 5: Array format - multiple arguments ===';
 SET aggregate_function_input_format = 'array';
 TRUNCATE TABLE test_agg_multi;
 INSERT INTO test_agg_multi VALUES (202, [(1.0,2.0),(3.0,4.0),(5.0,6.0)]), (302, [(1.0,2.0),(3.0,4.0),(5.0,6.0)]);
-SELECT user_id, corrMerge(corr_values) FROM test_agg_multi GROUP BY user_id;
+SELECT user_id, corrMerge(corr_values) FROM test_agg_multi GROUP BY user_id ORDER BY user_id;
 
 SELECT '=== Test 6: String aggregate function - value format ===';
 SET aggregate_function_input_format = 'value';
