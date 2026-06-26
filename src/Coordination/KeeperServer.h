@@ -83,7 +83,7 @@ private:
 
     nuraft::ptr<KeeperStateManager> state_manager;
 
-    nuraft::ptr<IKeeperStateMachine> state_machine;
+    nuraft::ptr<KeeperStateMachine> state_machine;
 
     nuraft::ptr<KeeperRaftServer> raft_instance; // TSA_GUARDED_BY(server_write_mutex);
     nuraft::ptr<nuraft::asio_service> asio_service;
@@ -136,7 +136,7 @@ public:
         SnapshotsQueue & snapshots_queue_,
         KeeperContextPtr keeper_context_,
         KeeperSnapshotManagerS3 & snapshot_manager_s3,
-        IKeeperStateMachine::CommitCallback commit_callback);
+        KeeperStateMachine::CommitCallback commit_callback);
 
     /// Load state machine from the latest snapshot and load log storage. Start NuRaft with required settings.
     void startup(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6 = true);
@@ -154,7 +154,7 @@ public:
     /// Return set of the non-active sessions
     std::vector<int64_t> getDeadSessions();
 
-    nuraft::ptr<IKeeperStateMachine> getKeeperStateMachine() const { return state_machine; }
+    nuraft::ptr<KeeperStateMachine> getKeeperStateMachine() const { return state_machine; }
 
     void forceRecovery();
 

@@ -257,7 +257,7 @@ void KeeperRequestDispatcher::shutdown(bool closed_all_connections)
             std::vector<nuraft::ptr<nuraft::buffer>> entries;
             entries.reserve(close_requests.size());
             for (const auto & r : close_requests)
-                entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(r));
+                entries.push_back(KeeperStateMachine::getZooKeeperLogEntry(r));
 
             temp_stream->append(std::move(entries));
 
@@ -891,7 +891,7 @@ void KeeperRequestDispatcher::dispatchThread()
                 std::vector<nuraft::ptr<nuraft::buffer>> entries;
                 entries.reserve(requests.size());
                 for (const auto & r : requests)
-                    entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(r));
+                    entries.push_back(KeeperStateMachine::getZooKeeperLogEntry(r));
 
                 /// Add information about the batch to the queue of in-flight requests.
 

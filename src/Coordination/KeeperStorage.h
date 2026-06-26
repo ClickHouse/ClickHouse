@@ -18,11 +18,6 @@
 
 #include <Coordination/CompactChildrenSet.h>
 
-#include "config.h"
-#if USE_ROCKSDB
-#include <Coordination/RocksDBContainer.h>
-#endif
-
 namespace DB
 {
 
@@ -141,93 +136,6 @@ private:
     } ephemeral_or_seq_num_or_ttl{0};
 };
 
-/// KeeperRocksNodeInfo is used in RocksDB keeper.
-/// It is serialized directly as POD to RocksDB.
-struct KeeperRocksNodeInfo
-{
-    NodeStats stats;
-    ACLId acl_id = 0; /// 0 -- no ACL by default
-    int32_t num_children = 0;
-
-    int32_t numChildren() const
-    {
-        if (stats.isEphemeral())
-            return 0;
-        return num_children;
-    }
-
-    void setNumChildren(int32_t value) { num_children = value; }
-    void increaseNumChildren() { ++num_children; }
-    void decreaseNumChildren() { --num_children; }
-
-    /// dummy interface for test
-    void addChild(std::string_view) {}
-    auto getChildren() const
-    {
-        return std::vector<int>(numChildren());
-    }
-
-    void copyStats(const Coordination::Stat & stat);
-};
-
-/// KeeperRocksNode is the memory structure used by RocksDB
-struct KeeperRocksNode : public KeeperRocksNodeInfo
-{
-#if USE_ROCKSDB
-    friend struct RocksDBContainer<KeeperRocksNode>;
-#endif
-    using Meta = KeeperRocksNodeInfo;
-
-    uint64_t size_bytes = 0; // only for compatible, should be deprecated
-
-    uint64_t sizeInBytes() const { return stats.data_size + sizeof(KeeperRocksNodeInfo); }
-
-    void setData(String new_data)
-    {
-        stats.data_size = static_cast<uint32_t>(new_data.size());
-        if (stats.data_size != 0)
-        {
-            data = std::unique_ptr<char[]>(new char[new_data.size()]);
-            memcpy(data.get(), new_data.data(), stats.data_size);
-        }
-    }
-
-    void shallowCopy(const KeeperRocksNode & other)
-    {
-        stats = other.stats;
-        acl_id = other.acl_id;
-        num_children = other.num_children;
-        if (stats.data_size != 0)
-        {
-            data = std::unique_ptr<char[]>(new char[stats.data_size]);
-            memcpy(data.get(), other.data.get(), stats.data_size);
-        }
-
-        /// cached_digest = other.cached_digest;
-    }
-    void invalidateDigestCache() const;
-    UInt64 getDigest(std::string_view path) const;
-    String getEncodedString();
-    void decodeFromString(const String & buffer_str);
-    void recalculateSize() {}
-    std::string_view getData() const noexcept { return {data.get(), stats.data_size}; }
-
-    void setResponseStat(Coordination::Stat & response_stat) const;
-
-    void reset()
-    {
-        serialized = false;
-    }
-    bool empty() const
-    {
-        return stats.data_size == 0 && stats.mzxid == 0;
-    }
-    std::unique_ptr<char[]> data{nullptr};
-    mutable UInt64 cached_digest = 0; /// we cached digest for this node.
-private:
-    bool serialized = false;
-};
-
 /// KeeperMemNode should have as minimal size as possible to reduce memory footprint
 /// of stored nodes
 /// New fields should be added to the struct only if it's really necessary
@@ -322,9 +230,26 @@ struct KeeperStorageStats
     std::atomic<int64_t> last_zxid = 0;
 };
 
-class KeeperStorageBase
+/// Keeper state machine almost equal to the ZooKeeper's state machine.
+/// Implements all logic of operations, data changes, sessions allocation.
+/// In-memory and not thread safe.
+class KeeperStorage
 {
 public:
+    using Container = SnapshotableHashTable<KeeperMemNode>;
+    using Node = KeeperMemNode;
+
+#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
+    static_assert(sizeof(CompactChildrenSet) == 16);
+    static_assert(sizeof(KeeperMemNode) == 104);
+    static_assert(
+        sizeof(ListNode<Node>) <= 128,
+        "std::list node containing ListNode<Node> is > 144 bytes (sizeof(ListNode<Node>) + 16 bytes for pointers) which will increase "
+        "memory consumption");
+    static_assert(std::is_nothrow_move_assignable_v<CompactChildrenSet>);
+    static_assert(std::is_nothrow_move_constructible_v<CompactChildrenSet>);
+#endif
+
     static String generateDigest(const String & userdata);
 
     struct AuthID
@@ -384,7 +309,7 @@ public:
 
     struct Delta;
 
-    using DeltaIterator = std::list<KeeperStorageBase::Delta>::const_iterator;
+    using DeltaIterator = std::list<KeeperStorage::Delta>::const_iterator;
     struct DeltaRange
     {
         DeltaIterator begin_it;
@@ -393,7 +318,7 @@ public:
         DeltaIterator begin() const;
         DeltaIterator end() const;
         bool empty() const;
-        const KeeperStorageBase::Delta & front() const;
+        const KeeperStorage::Delta & front() const;
     };
 
     /// Element of RemoveRecursive's list of nodes to remove.
@@ -498,7 +423,7 @@ public:
 
     bool removePersistentWatch(const String& path, Coordination::RemoveWatchRequest::WatchType type, int64_t session_id);
 protected:
-    KeeperStorageBase(int64_t tick_time_ms, const KeeperContextPtr & keeper_context, const String & superdigest_);
+    KeeperStorage(int64_t tick_time_ms, const KeeperContextPtr & keeper_context, const String & superdigest_);
 
     /// Expiration queue for session, allows to get dead sessions at some point of time
     SessionExpiryQueue session_expiry_queue;
@@ -532,36 +457,8 @@ protected:
     int64_t getNextZXIDLocked() const TSA_REQUIRES(transaction_mutex);
 
     std::atomic<bool> initialized{false};
-};
 
-/// Keeper state machine almost equal to the ZooKeeper's state machine.
-/// Implements all logic of operations, data changes, sessions allocation.
-/// In-memory and not thread safe.
-template<typename TContainer>
-class KeeperStorage : public KeeperStorageBase
-{
 public:
-    using Container = TContainer;
-    using Node = Container::Node;
-
-#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
-    static_assert(sizeof(CompactChildrenSet) == 16);
-    static_assert(sizeof(KeeperMemNode) == 104);
-    static_assert(
-        sizeof(ListNode<Node>) <= 128,
-        "std::list node containing ListNode<Node> is > 128 bytes (sizeof(ListNode<Node>) + 16 bytes for pointers) which will increase "
-        "memory consumption");
-    static_assert(std::is_nothrow_move_assignable_v<CompactChildrenSet>);
-    static_assert(std::is_nothrow_move_constructible_v<CompactChildrenSet>);
-#endif
-
-
-#if USE_ROCKSDB
-    static constexpr bool use_rocksdb = std::is_same_v<Container, RocksDBContainer<KeeperRocksNode>>;
-#else
-    static constexpr bool use_rocksdb = false;
-#endif
-
     /// Main hashtable with nodes. Contain all information about data.
     /// All other structures expect session_and_timeout can be restored from
     /// container.
@@ -580,7 +477,7 @@ public:
 
     struct UncommittedState
     {
-        explicit UncommittedState(KeeperStorage & storage_) : storage(storage_) { }
+        explicit UncommittedState(KeeperStorage & storage_);
 
         ~UncommittedState();
 
@@ -657,7 +554,7 @@ public:
 
         mutable std::mutex deltas_mutex;
         std::list<Delta> deltas TSA_GUARDED_BY(deltas_mutex);
-        KeeperStorage<Container> & storage;
+        KeeperStorage & storage;
     };
 
     struct UncommittedNodeRef
@@ -708,7 +605,7 @@ public:
 
     /// Used internally by `preprocess` and `processLocal` implementations.
     /// They usually have acl_id readily available, so we don't have to look up the node here.
-    bool checkACL(ACLId acl_id, int32_t permissions, int64_t session_id, bool committed);
+    bool checkACL(ACLId acl_id, int32_t permissions, int64_t session_id, bool committed) const;
 
     /// Used externally. Locks storage mutex and looks up the node.
     bool checkCommittedACL(std::string_view path, int32_t permissions, int64_t session_id);
@@ -811,7 +708,7 @@ public:
         const NodeStats & new_parent_stats, int32_t new_parent_num_children,
         std::deque<SubtreeNodeToRemove> nodes_to_remove);
     void prepareRemoveEphemeralNodes(const std::unordered_set<std::string> & paths, int64_t session_id);
-    void prepareAddAuth(std::shared_ptr<KeeperStorageBase::AuthID> new_auth, int64_t session_id);
+    void prepareAddAuth(std::shared_ptr<KeeperStorage::AuthID> new_auth, int64_t session_id);
 
     /// Helpers used by other `prepare*` implementations.
     void prepareWriteCommon(std::string_view path, UncommittedNodeRef node);
