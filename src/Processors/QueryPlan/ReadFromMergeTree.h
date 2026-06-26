@@ -431,6 +431,10 @@ public:
     /// (the `do_not_merge_across_partitions_select_final` rule, which may also be decided automatically).
     bool doNotMergePartsAcrossPartitionsFinal() const;
 
+    /// The computed SAMPLE filter (predicate over the sampling key) when this read uses sampling, else empty.
+    /// A distributed read ships it to the worker, which reapplies it after reading parts like the local path.
+    std::optional<FilterDAGInfo> getSamplingFilter() const;
+
     /// Throws if this is a bucketed distributed read using a feature it cannot reproduce from pinned
     /// marks (read-in-order, deferred FINAL filters, a projection, or direct text index tasks).
     void verifyBucketedReadSupported() const;

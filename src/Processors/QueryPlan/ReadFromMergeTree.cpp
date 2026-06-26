@@ -1593,6 +1593,14 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
     return true;
 }
 
+std::optional<FilterDAGInfo> ReadFromMergeTree::getSamplingFilter() const
+{
+    const auto & sampling = getAnalysisResult().sampling;
+    if (!sampling.use_sampling)
+        return {};
+    return FilterDAGInfo{sampling.filter_expression->clone(), sampling.filter_function->getColumnName(), /*do_remove_column=*/false};
+}
+
 Pipe ReadFromMergeTree::readNonIntersectingWithEngineFilter(
     RangesInDataParts && parts,
     const MergeTreeIndexBuildContextPtr & index_build_context,
