@@ -348,6 +348,20 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
             input_header.getPositionByName(column.column_name));
     }
 
+    // We only need to materialize (remove Const/LowCardinality/Sparse from) the columns we actually
+    // read while computing the window functions: the PARTITION BY and ORDER BY keys and the function
+    // arguments. Everything else is passed through to the output untouched.
+    should_materialize.assign(input_header.columns(), 0);
+    for (const auto index : partition_by_indices)
+        should_materialize[index] = 1;
+
+    for (const auto index : order_by_indices)
+        should_materialize[index] = 1;
+
+    for (const auto & workspace : workspaces)
+        for (auto argument_column_indice : workspace.argument_column_indices)
+            should_materialize[argument_column_indice] = 1;
+
     // Choose a row comparison function for RANGE OFFSET frame based on the
     // type of the ORDER BY column.
     if (window_description.frame.type == WindowFrame::FrameType::RANGE
@@ -1098,13 +1112,17 @@ void WindowTransform::writeOutCurrentRow()
     }
 }
 
-static void assertSameColumns(const Columns & left_all,
-    const Columns & right_all)
+static void assertSameColumns(const Columns & left_all, const Columns & right_all, const std::vector<UInt8> & columns_to_check)
 {
     chassert(left_all.size() == right_all.size());
 
     for (size_t i = 0; i < left_all.size(); ++i)
     {
+        // Only the materialized columns are guaranteed to match the (materialized) header structure;
+        // the pass-through columns are left in their original representation.
+        if (!columns_to_check[i])
+            continue;
+
         const auto * left_column = left_all[i].get();
         const auto * right_column = right_all[i].get();
 
@@ -1166,11 +1184,15 @@ void WindowTransform::appendChunk(Chunk & chunk)
         // Aggregator does.
         // Likewise, aggregate functions can't work with LowCardinality,
         // so we have to materialize them too.
-        // Just materialize everything.
+        // We only materialize the columns we actually read: the PARTITION BY / ORDER BY keys and
+        // the function arguments. The other columns are emitted to the output as-is from original_input_columns to
+        // avoid paying unnecessary Const/LowCardinality/Sparse cost.
         auto columns = chunk.detachColumns();
         block.original_input_columns = columns;
-        for (auto & column : columns)
-            column = recursiveRemoveLowCardinality(std::move(column)->convertToFullColumnIfReplicated()->convertToFullColumnIfConst()->convertToFullColumnIfSparse());
+        for (size_t i = 0; i < columns.size(); ++i)
+            if (should_materialize[i])
+                columns[i] = recursiveRemoveLowCardinality(std::move(columns[i])->convertToFullColumnIfReplicated()->convertToFullColumnIfConst()->convertToFullColumnIfSparse());
+
         block.input_columns = std::move(columns);
 
         // Initialize output columns.
@@ -1186,7 +1208,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         // As a debugging aid, assert that all chunks have the same C++ type of
         // columns, that also matches the input header, because we often have to
         // work across chunks.
-        assertSameColumns(input_header.getColumns(), block.input_columns);
+        assertSameColumns(input_header.getColumns(), block.input_columns, should_materialize);
     }
 
     // Start the calculations. First, advance the partition end.
