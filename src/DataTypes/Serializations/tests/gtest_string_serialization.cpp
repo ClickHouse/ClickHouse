@@ -11,12 +11,15 @@
 
 #include <gtest/gtest.h>
 
+#include <cstring>
+
 namespace DB
 {
     namespace ErrorCodes
     {
         extern const int MEMORY_LIMIT_EXCEEDED;
         extern const int CANNOT_READ_ALL_DATA;
+        extern const int TOO_LARGE_STRING_SIZE;
     }
 }
 
@@ -209,5 +212,61 @@ TEST(StringSerialization, WithSizeStreamShortDataStreamThrows)
     catch (const DB::Exception & e)
     {
         ASSERT_EQ(e.code(), DB::ErrorCodes::CANNOT_READ_ALL_DATA);
+    }
+}
+
+/// The symmetric corruption: the SIZES stream (not the data stream) is the corrupt one. The two
+/// substreams are stored separately, so a bad granule / version skew / seek can desync them with a
+/// garbage per-row length. A single length with bit 63 set makes the accumulated offset (and hence
+/// bytes_to_read) >= 2^63; the pre-read data.resize() then reaches Allocator::checkSize, which
+/// throws a LOGICAL_ERROR ("Too large size ... passed to allocator") that aborts under
+/// debug/sanitizer builds (the observed CI crash). A corrupt part must fail loudly at the point of
+/// deserialization (TOO_LARGE_STRING_SIZE) rather than abort the server -- mirroring the bound the
+/// single-stream path already enforces in deserializeBinaryImpl.
+TEST(StringSerialization, WithSizeStreamCorruptSizeStreamThrows)
+{
+    MainThreadStatus::getInstance();
+    constexpr size_t rows = 500;
+    auto src = makeVariedStringColumn(rows);
+
+    auto serialization = SerializationString::create(MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
+
+    WriteBufferFromOwnString sizes_out;
+    WriteBufferFromOwnString data_out;
+    {
+        ISerialization::SerializeBinaryBulkSettings settings;
+        ISerialization::SerializeBinaryBulkStatePtr state;
+        settings.position_independent_encoding = false;
+        settings.getter = makeSizeStreamGetter<WriteBuffer *>(sizes_out, data_out);
+        serialization->serializeBinaryBulkWithMultipleStreams(*src, 0, src->size(), settings, state);
+    }
+
+    /// The sizes stream is a sequence of raw little-endian UInt64 lengths. Overwrite the first one
+    /// with a value that has bit 63 set; the data stream is left intact.
+    std::string sizes_bytes = sizes_out.str();
+    ASSERT_GE(sizes_bytes.size(), sizeof(UInt64));
+    const UInt64 corrupt_size = 0x8000000000000000ULL | 1ULL;
+    memcpy(sizes_bytes.data(), &corrupt_size, sizeof(UInt64));
+
+    ReadBufferFromString sizes_in(sizes_bytes);
+    ReadBufferFromString data_in(data_out.str());
+
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    ISerialization::DeserializeBinaryBulkStatePtr state;
+    settings.position_independent_encoding = false;
+    settings.getter = makeSizeStreamGetter<ReadBuffer *>(sizes_in, data_in);
+    serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+
+    ColumnPtr result = ColumnString::create();
+    try
+    {
+        serialization->deserializeBinaryBulkWithMultipleStreams(result, 0, rows, settings, state, nullptr);
+        FAIL() << "deserialize accepted a corrupt sizes stream and produced offsets.back()="
+               << assert_cast<const ColumnString &>(*result).getOffsets().back()
+               << " vs chars.size()=" << assert_cast<const ColumnString &>(*result).getChars().size();
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::TOO_LARGE_STRING_SIZE);
     }
 }
