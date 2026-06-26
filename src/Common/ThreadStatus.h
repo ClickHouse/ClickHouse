@@ -176,6 +176,11 @@ private:
     /// (their presence propagates up the parent chain so that elapsed-time accounting covers them).
     size_t active_thread_count TSA_GUARDED_BY(mutex) = 0;
 
+    /// Count of simultaneously working threads directly attached to this group, excluding threads of
+    /// descendant scope groups. Drives `peak_threads_usage`, which must not be inflated by nested
+    /// scopes (e.g. the async materialized-view executor running under an `INSERT`).
+    size_t directly_attached_thread_count TSA_GUARDED_BY(mutex) = 0;
+
     /// Peak threads count in the group. Counts only threads directly attached to this group, not
     /// threads of descendant scope groups: the latter must not inflate the parent query's
     /// `peak_threads_usage` (e.g. the async materialized-view executor running under an `INSERT`).
@@ -184,10 +189,12 @@ private:
     Stopwatch effective_group_stopwatch TSA_GUARDED_BY(mutex) = Stopwatch(STOPWATCH_DEFAULT_CLOCK, 0, /* is running */ false);
     UInt64 elapsed_group_ns TSA_GUARDED_BY(mutex) = 0;
 
-    /// Shared implementation of linkThread. `count_towards_peak` is true only for the group the
-    /// thread directly attaches to; the recursive parent-chain calls pass false so a nested scope's
-    /// threads do not inflate the parent query's `peak_threads_usage`.
-    void linkThreadImpl(UInt64 thread_id, bool count_towards_peak);
+    /// Shared implementation of linkThread/unlinkThread. `directly_attached` is true only for the
+    /// group the thread directly attaches to; the recursive parent-chain calls pass false so a
+    /// nested scope's threads still contribute to the parent's elapsed-time accounting
+    /// (`active_thread_count`) but do not inflate the parent query's `peak_threads_usage`.
+    void linkThreadImpl(UInt64 thread_id, bool directly_attached);
+    void unlinkThreadImpl(bool directly_attached);
 
     static ThreadGroupPtr create(ContextPtr query_context);
 };

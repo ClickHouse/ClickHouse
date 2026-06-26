@@ -229,10 +229,10 @@ std::shared_ptr<ProfileEvents::Counters::Snapshot> ThreadGroup::getProfileCounte
 
 void ThreadGroup::linkThread(UInt64 thread_id)
 {
-    linkThreadImpl(thread_id, /*count_towards_peak=*/ true);
+    linkThreadImpl(thread_id, /*directly_attached=*/ true);
 }
 
-void ThreadGroup::linkThreadImpl(UInt64 thread_id, bool count_towards_peak)
+void ThreadGroup::linkThreadImpl(UInt64 thread_id, bool directly_attached)
 {
     /// Propagate the attach up the parent chain so that the parent's elapsed-time accounting and
     /// profile-event roll-up cover work done in this (descendant) scope. The parent must not count
@@ -240,7 +240,7 @@ void ThreadGroup::linkThreadImpl(UInt64 thread_id, bool count_towards_peak)
     /// of threads of the query itself, not of nested scopes such as the async materialized-view
     /// executor (which is created via `createForMaterializedView` as a child of the `INSERT` group).
     if (parent)
-        parent->linkThreadImpl(thread_id, /*count_towards_peak=*/ false);
+        parent->linkThreadImpl(thread_id, /*directly_attached=*/ false);
 
     std::lock_guard lock(mutex);
     thread_ids.insert(thread_id);
@@ -249,18 +249,37 @@ void ThreadGroup::linkThreadImpl(UInt64 thread_id, bool count_towards_peak)
         effective_group_stopwatch.restart();
 
     ++active_thread_count;
-    if (count_towards_peak)
-        peak_threads_usage = std::max(peak_threads_usage, active_thread_count);
+
+    /// `peak_threads_usage` is computed from `directly_attached_thread_count`, not from
+    /// `active_thread_count`. The latter is shared between direct and propagated descendant attaches,
+    /// so a direct attach updating the peak from it would still observe the descendant scopes'
+    /// threads already accumulated in it, inflating the parent query's peak.
+    if (directly_attached)
+    {
+        ++directly_attached_thread_count;
+        peak_threads_usage = std::max(peak_threads_usage, directly_attached_thread_count);
+    }
 }
 
 void ThreadGroup::unlinkThread()
 {
+    unlinkThreadImpl(/*directly_attached=*/ true);
+}
+
+void ThreadGroup::unlinkThreadImpl(bool directly_attached)
+{
     if (parent)
-        parent->unlinkThread();
+        parent->unlinkThreadImpl(/*directly_attached=*/ false);
 
     std::lock_guard lock(mutex);
     chassert(active_thread_count > 0);
     --active_thread_count;
+
+    if (directly_attached)
+    {
+        chassert(directly_attached_thread_count > 0);
+        --directly_attached_thread_count;
+    }
 
     if (active_thread_count == 0)
     {
