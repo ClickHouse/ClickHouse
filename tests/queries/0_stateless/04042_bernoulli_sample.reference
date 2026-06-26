@@ -47,6 +47,8 @@ bernoulli with skip index
 4955
 bernoulli with merge table
 9913
+bernoulli through alias to merge tree
+9913
 prewhere with bernoulli
 4955
 sample by key dominates the experimental flag

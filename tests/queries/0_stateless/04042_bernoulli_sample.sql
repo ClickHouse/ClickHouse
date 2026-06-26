@@ -158,6 +158,21 @@ SELECT count() FROM t_bernoulli_merge SAMPLE 0.1 SETTINGS bernoulli_sample_seed 
 DROP TABLE t_bernoulli_merge;
 DROP TABLE t_bernoulli_child;
 
+SELECT 'bernoulli through alias to merge tree';
+-- A wrapper storage (Alias) proxies capability checks to its target. For an alias to a
+-- MergeTree table without a SAMPLE BY key, SAMPLE must keep working under the experimental
+-- flag: the alias is transparent and the read goes through the target's MergeTree reading
+-- path, where the Bernoulli granule filter is applied. Regression guard for the eligibility
+-- gate (isMergeTree must be honoured through the wrapper, not rejected with SAMPLING_NOT_SUPPORTED).
+DROP TABLE IF EXISTS t_bernoulli_alias_target;
+DROP TABLE IF EXISTS t_bernoulli_alias;
+CREATE TABLE t_bernoulli_alias_target (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t_bernoulli_alias_target SELECT number FROM numbers(100000);
+CREATE TABLE t_bernoulli_alias ENGINE = Alias(currentDatabase(), 't_bernoulli_alias_target');
+SELECT count() FROM t_bernoulli_alias SAMPLE 0.1 SETTINGS bernoulli_sample_seed = 42;
+DROP TABLE t_bernoulli_alias;
+DROP TABLE t_bernoulli_alias_target;
+
 SELECT 'prewhere with bernoulli';
 SELECT count() FROM t_bernoulli SAMPLE 0.1 PREWHERE x >= 50000 SETTINGS bernoulli_sample_seed = 42;
 
