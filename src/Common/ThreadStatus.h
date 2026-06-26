@@ -17,7 +17,6 @@
 #include <functional>
 #include <mutex>
 #include <unordered_set>
-#include <vector>
 
 
 template <class T>

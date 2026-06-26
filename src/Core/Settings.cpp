@@ -3730,12 +3730,6 @@ If the timeout is reached and memory is not freed, an exception is thrown.
 Read more about [memory overcommit](memory-overcommit.md).
 )", 0) \
     \
-    DECLARE(UInt64, reserve_memory, 0, R"(
-Used in workload scheduling. The minimum amount of RAM reserved to be used for running a query on a single server. Reservation is made through the WORKLOAD hierarchy using the value of a `workload` query setting.
-If not enough memory is available to the workload, a query is prevented from starting and waits in pending state until the reservation can be fulfilled.
-A value of `0` means no reservation.
-This setting takes effect only if MEMORY RESERVATION resource is created.
-)", EXPERIMENTAL) \
     DECLARE(UInt64, max_network_bandwidth, 0, R"(
 Limits the speed of the data exchange over the network in bytes per second. This setting applies to every query.
 
@@ -7424,9 +7418,9 @@ Defines a rows limit for a single inserted data file in delta lake.
     DECLARE(NonZeroUInt64, delta_lake_insert_max_bytes_in_data_file, 1_GiB, R"(
 Defines a bytes limit for a single inserted data file in delta lake.
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_delta_lake_writes, false, R"(
+    DECLARE(Bool, allow_experimental_delta_lake_writes, false, R"(
 Enables delta-kernel writes feature.
-)", BETA, allow_delta_lake_writes) \
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
@@ -8335,6 +8329,9 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
     DECLARE(Bool, allow_experimental_ai_functions, false, R"(
 Enable experimental AI functions (e.g. `aiGenerateContent`). These functions make external HTTP calls to AI providers.
 )", EXPERIMENTAL) \
+    DECLARE(String, ai_function_credentials, "", R"(
+Name of the named collection that AI functions use for provider credentials and configuration (`provider`, `endpoint`, `model`, optional `api_key`, etc.). When empty, an exception is raised.
+)", EXPERIMENTAL) \
     DECLARE(UInt64, ai_function_request_timeout_sec, 60, R"(
 Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_function_max_retries`.
 )", EXPERIMENTAL) \
@@ -8524,14 +8521,14 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
     /// This is a common source of mistake (user don't know where to write user-level setting).
     static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
+    std::vector<String> getAllRegisteredNames() const override;
 
     void set(std::string_view name, const Field & value) override;
 
 private:
     void applyCompatibilitySetting(const String & compatibility);
 
-    UnorderedSetWithMemoryTracking<std::string_view> settings_changed_by_compatibility_setting;
+    std::unordered_set<std::string_view> settings_changed_by_compatibility_setting;
 };
 
 /** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).
@@ -8639,9 +8636,9 @@ void SettingsImpl::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfi
     }
 }
 
-VectorWithMemoryTracking<String> SettingsImpl::getAllRegisteredNames() const
+std::vector<String> SettingsImpl::getAllRegisteredNames() const
 {
-    VectorWithMemoryTracking<String> all_settings;
+    std::vector<String> all_settings;
     for (const auto & setting_field : all())
         all_settings.push_back(setting_field.getName());
     return all_settings;
@@ -8758,16 +8755,6 @@ std::string_view Settings::getDescription(std::string_view name) const
     return impl->getDescription(name);
 }
 
-std::string_view Settings::getTypeName(std::string_view name) const
-{
-    return impl->getTypeName(name);
-}
-
-String Settings::getDefaultValueString(std::string_view name) const
-{
-    return impl->getDefaultValueString(name);
-}
-
 bool Settings::tryGet(std::string_view name, Field & value) const
 {
     return impl->tryGet(name, value);
@@ -8788,7 +8775,7 @@ void Settings::setDefaultValue(std::string_view name)
     impl->resetToDefault(name);
 }
 
-VectorWithMemoryTracking<String> Settings::getHints(const String & name) const
+std::vector<String> Settings::getHints(const String & name) const
 {
     return impl->getHints(name);
 }
@@ -8808,9 +8795,9 @@ void Settings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
-VectorWithMemoryTracking<std::string_view> Settings::getAllRegisteredNames() const
+std::vector<std::string_view> Settings::getAllRegisteredNames() const
 {
-    VectorWithMemoryTracking<std::string_view> setting_names;
+    std::vector<std::string_view> setting_names;
     for (const auto & setting : impl->all())
     {
         setting_names.emplace_back(setting.getName());
@@ -8818,9 +8805,9 @@ VectorWithMemoryTracking<std::string_view> Settings::getAllRegisteredNames() con
     return setting_names;
 }
 
-VectorWithMemoryTracking<std::string_view> Settings::getAllAliasNames() const
+std::vector<std::string_view> Settings::getAllAliasNames() const
 {
-    VectorWithMemoryTracking<std::string_view> alias_names;
+    std::vector<std::string_view> alias_names;
     const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();
     for (const auto & [_, aliases] : settings_to_aliases)
     {
@@ -8829,9 +8816,9 @@ VectorWithMemoryTracking<std::string_view> Settings::getAllAliasNames() const
     return alias_names;
 }
 
-VectorWithMemoryTracking<std::string_view> Settings::getChangedAndObsoleteNames() const
+std::vector<std::string_view> Settings::getChangedAndObsoleteNames() const
 {
-    VectorWithMemoryTracking<std::string_view> setting_names;
+    std::vector<std::string_view> setting_names;
     for (const auto & setting : impl->allChanged())
     {
         if (setting.getTier() == SettingsTierType::OBSOLETE)
@@ -8840,9 +8827,9 @@ VectorWithMemoryTracking<std::string_view> Settings::getChangedAndObsoleteNames(
     return setting_names;
 }
 
-VectorWithMemoryTracking<std::string_view> Settings::getUnchangedNames() const
+std::vector<std::string_view> Settings::getUnchangedNames() const
 {
-    VectorWithMemoryTracking<std::string_view> setting_names;
+    std::vector<std::string_view> setting_names;
     for (const auto & setting : impl->allUnchanged())
     {
         setting_names.emplace_back(setting.getName());
