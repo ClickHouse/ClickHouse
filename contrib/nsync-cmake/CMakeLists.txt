@@ -22,7 +22,6 @@ set(NSYNC_CPP_SOURCES
 set(NSYNC_PRIVATE_INCLUDE_DIRS
     "${NSYNC_SOURCE_DIR}/internal"
     "${NSYNC_SOURCE_DIR}/platform/c++11"
-    "${NSYNC_SOURCE_DIR}/platform/posix"
 )
 
 set(NSYNC_PUBLIC_COMPILE_DEFINITIONS
@@ -60,6 +59,8 @@ if (ARCH_AMD64)
 elseif (ARCH_AARCH64)
     list(APPEND NSYNC_PRIVATE_INCLUDE_DIRS "${NSYNC_SOURCE_DIR}/platform/aarch64")
 endif()
+
+list(APPEND NSYNC_PRIVATE_INCLUDE_DIRS "${NSYNC_SOURCE_DIR}/platform/posix")
 
 set_source_files_properties(${NSYNC_CPP_SOURCES} PROPERTIES LANGUAGE CXX)
 
