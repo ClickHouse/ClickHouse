@@ -33,8 +33,13 @@ struct DynamicS3DiskCredentialInfo
     /// The AST used `include`, so the resolved credentials' provenance cannot be trusted.
     bool has_include = false;
     /// The pre-resolution check exempted this disk from the restriction (e.g. a server-internal
-    /// `system`-database disk), so the post-`include` re-check must not re-apply it.
+    /// `system`-database disk, or a persisted `_server_credentials_allowed` marker), so the post-`include`
+    /// re-check must not re-apply it.
     bool restriction_exempt = false;
+    /// On a fresh create the disk relies on server-managed credentials and the session opted in, so the caller
+    /// should persist a `_server_credentials_allowed` marker in the stored definition. The marker is honored
+    /// (only) on later metadata loads, so the disk keeps working across restart without re-opting in.
+    bool persist_server_credentials_allowance = false;
     /// The safe credential forms the AST itself supplied with literal values; the resolved auth mode is
     /// validated against these.
     bool ast_has_explicit_key_pair = false;                 /// literal `access_key_id` + `secret_access_key`

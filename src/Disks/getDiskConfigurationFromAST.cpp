@@ -85,6 +85,9 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     bool has_google_adc_refresh_token = false;
     bool use_environment_credentials_off = false;
     bool has_role_arn = false;
+    /// A marker persisted in the stored definition when the disk was created with the credential opt-in (see
+    /// the write side below); honored only on metadata load, so a user cannot self-grant on a fresh create.
+    bool has_server_credentials_marker = false;
 
     /// `from_env`/`from_zk` substitute the value from a server-side source (an environment variable or a
     /// ZooKeeper node), so for credential/auth/type fields the literal placeholder must not be treated as a
@@ -168,6 +171,8 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             use_environment_credentials_off = !indirect && (value_str == "0" || boost::iequals(value_str, "false"));
         else if (key == "role_arn")
             has_role_arn = !value_str.empty() && !indirect;
+        else if (key == "_server_credentials_allowed")
+            has_server_credentials_marker = !indirect && value_str != "0" && !boost::iequals(value_str, "false");
 
         if (key == "include")
         {
@@ -222,12 +227,22 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         ? has_explicit_gcp_adc
         : (has_explicit_credentials || has_no_sign_request || allowed_anonymous);
 
+    /// Whether the disk relies on server-managed credentials (it would be refused under the restriction).
+    const bool relies_on_server_credentials
+        = maybe_s3_disk && (type_is_indirect || has_include || has_indirect_auth_field || !ast_has_explicit_credentials);
+
     /// A disk of a table in the `system` database is server-internal infrastructure (attached by the operator
     /// to ship system tables to S3 with the server's identity), exempt from the user-query restriction when the
     /// server setting allows it. Unlike the session setting this also applies on metadata reload, and `system`
     /// is not user-writable, so it does not relax the restriction for user queries.
     const bool system_disk_exempt = for_system_database
         && context->getGlobalContext()->getServerSettings()[ServerSetting::s3_allow_server_credentials_for_system_table_disks];
+
+    /// A disk created with the credential opt-in records it in its stored definition (see the write side and
+    /// createCustomDisk). The marker is honored only on metadata load -- on a fresh create it is ignored and
+    /// the session setting decides -- so a user cannot self-grant by adding it to a `CREATE`.
+    const bool marker_exempt = is_loading_from_existing_metadata && has_server_credentials_marker;
+    const bool restriction_exempt = system_disk_exempt || marker_exempt;
 
     if (info)
     {
@@ -236,39 +251,38 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         info->ast_has_no_sign_request = has_no_sign_request;
         info->ast_has_use_environment_credentials_off = allowed_anonymous;
         info->ast_has_explicit_gcp_adc = has_explicit_gcp_adc;
-        info->restriction_exempt = system_disk_exempt;
+        info->restriction_exempt = restriction_exempt;
+        /// Persist the opt-in for a fresh create that resolves server credentials and is currently allowed
+        /// (the session opted in), so the disk is not re-restricted on reload.
+        info->persist_server_credentials_allowance = !is_loading_from_existing_metadata && relies_on_server_credentials
+            && !has_server_credentials_marker && !context->shouldRestrictUserQueryS3Credentials();
     }
 
-    if (maybe_s3_disk && context->shouldRestrictUserQueryS3Credentials() && !system_disk_exempt)
+    if (relies_on_server_credentials && context->shouldRestrictUserQueryS3Credentials() && !restriction_exempt)
     {
-        /// Refuse anything that is not a safe explicit form (indirection, or no explicit credentials).
-        const bool denied = type_is_indirect || has_include || has_indirect_auth_field || !ast_has_explicit_credentials;
-        if (denied)
+        if (is_loading_from_existing_metadata
+            && context->getGlobalContext()->getServerSettings()[ServerSetting::s3_load_table_anonymously_if_credentials_restricted])
         {
-            if (is_loading_from_existing_metadata
-                && context->getGlobalContext()->getServerSettings()[ServerSetting::s3_load_table_anonymously_if_credentials_restricted])
-            {
-                LOG_WARNING(
-                    getLogger("getDiskConfigurationFromAST"),
-                    "Loading a dynamic S3 disk anonymously: it resolves server-managed credentials that are "
-                    "restricted for user queries (s3_allow_server_credentials_in_user_queries = 0). The disk will "
-                    "be inaccessible until its credentials resolve to a permitted source. Set the server setting "
-                    "s3_load_table_anonymously_if_credentials_restricted = 0 to fail loading instead.");
+            LOG_WARNING(
+                getLogger("getDiskConfigurationFromAST"),
+                "Loading a dynamic S3 disk anonymously: it resolves server-managed credentials that are "
+                "restricted for user queries (s3_allow_server_credentials_in_user_queries = 0). The disk will "
+                "be inaccessible until its credentials resolve to a permitted source. Set the server setting "
+                "s3_load_table_anonymously_if_credentials_restricted = 0 to fail loading instead.");
 
-                /// Force the disk anonymous once `include` is resolved (see forceAnonymousS3DiskConfig); we
-                /// cannot rewrite the DOM here because DiskFromAST processes `include` after this returns.
-                if (info)
-                    info->load_anonymously = true;
-            }
-            else
-                throw Exception(
-                    ErrorCodes::ACCESS_DENIED,
-                    "A dynamic S3 disk created from user SQL must provide a complete explicit "
-                    "`access_key_id`/`secret_access_key` pair, `no_sign_request`, or `use_environment_credentials = 0` "
-                    "(or, for `http_client = gcp_oauth`, a complete explicit Google ADC triple), with literal values "
-                    "and no `include`. It may not fall back to the server's own credentials. Enable the setting "
-                    "`s3_allow_server_credentials_in_user_queries` to allow it.");
+            /// Force the disk anonymous once `include` is resolved (see forceAnonymousS3DiskConfig); we
+            /// cannot rewrite the DOM here because DiskFromAST processes `include` after this returns.
+            if (info)
+                info->load_anonymously = true;
         }
+        else
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "A dynamic S3 disk created from user SQL must provide a complete explicit "
+                "`access_key_id`/`secret_access_key` pair, `no_sign_request`, or `use_environment_credentials = 0` "
+                "(or, for `http_client = gcp_oauth`, a complete explicit Google ADC triple), with literal values "
+                "and no `include`. It may not fall back to the server's own credentials. Enable the setting "
+                "`s3_allow_server_credentials_in_user_queries` to allow it.");
     }
 
     return xml_document;

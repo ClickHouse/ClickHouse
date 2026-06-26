@@ -170,11 +170,74 @@ public:
     }
 };
 
+/// Persist the credential opt-in into the stored disk definition. For each leaf dynamic S3 disk that resolves
+/// server-managed credentials and is currently allowed (the session opted in), add a `_server_credentials_allowed`
+/// marker, so on reload the disk is not re-restricted (the marker is honored only when loading from metadata).
+/// Operates on the original AST (not the flattening clone), so the marker reaches the stored metadata.
+class ServerCredentialMarkerInjector
+{
+public:
+    struct Data
+    {
+        ContextPtr context;
+        bool for_system_database;
+    };
+
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+
+    static void visit(ASTPtr & ast, Data & data)
+    {
+        if (!isDiskFunction(ast))
+            return;
+
+        auto * function = ast->as<ASTFunction>();
+        auto * args_expr = function->arguments ? function->arguments->as<ASTExpressionList>() : nullptr;
+        if (!args_expr)
+            return;
+        auto & args = args_expr->children;
+
+        /// Skip wrapper disks (a nested `disk = disk(...)`): the marker belongs on the inner leaf S3 disk, which
+        /// the visitor reaches separately. Skip a disk that is already marked.
+        for (const auto & arg : args)
+        {
+            const auto * eq = arg->as<ASTFunction>();
+            if (!eq || eq->name != "equals" || !eq->arguments || eq->arguments->children.size() != 2)
+                continue;
+            const auto * key = eq->arguments->children[0]->as<ASTIdentifier>();
+            if (key && key->name() == "_server_credentials_allowed")
+                return;
+            if (isDiskFunction(eq->arguments->children[1]))
+                return;
+        }
+
+        DynamicS3DiskCredentialInfo info;
+        getDiskConfigurationFromASTImpl(args, data.context, /* is_loading_from_existing_metadata */ false, &info, data.for_system_database);
+        if (info.persist_server_credentials_allowance)
+            args.push_back(makeASTFunction(
+                "equals",
+                make_intrusive<ASTIdentifier>("_server_credentials_allowed"),
+                make_intrusive<ASTLiteral>(static_cast<UInt64>(1))));
+    }
+};
+
 
 std::string DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast, ContextPtr context, bool attach, bool for_system_database)
 {
     if (!isDiskFunction(disk_function_ast))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a disk function");
+
+    /// On a fresh create, persist the credential opt-in into the definition (a `_server_credentials_allowed`
+    /// marker) so the disk keeps working across restart. This must happen BEFORE flattening, because the custom
+    /// disk's name is a hash of its definition: the marker has to be part of that definition so the disk
+    /// resolves to the same name (and storage path) when reloaded from metadata. The marker itself is an unknown
+    /// key to the disk factory and is ignored when building the client.
+    if (!attach)
+    {
+        ASTPtr to_mark = disk_function_ast;
+        using MarkerInjector = InDepthNodeVisitor<ServerCredentialMarkerInjector, false>;
+        MarkerInjector::Data inject_data{context, for_system_database};
+        MarkerInjector{inject_data}.visit(to_mark);
+    }
 
     auto ast = disk_function_ast->clone();
 

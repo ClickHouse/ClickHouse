@@ -2246,16 +2246,10 @@ def test_s3_server_credentials_anonymous_on_reload(started_cluster):
     instance.query("DROP TABLE IF EXISTS t_server_credentials_reload")
 
 
-def test_dynamic_s3_disk_anonymous_on_reload(started_cluster):
-    # A MergeTree table on an inline dynamic `disk(type = s3, ...)` that resolves the server's environment
-    # credentials must, after a restart, have its disk rebuilt anonymously instead of silently using the server
-    # identity -- and the server must still start. Exercises the disk metadata-load fallback through DiskFromAST /
-    # processIncludes / forceAnonymousS3DiskConfig.
-    #
-    # Unlike an `S3` engine table (which attaches without reading and only fails on query), a MergeTree table reads
-    # its parts from the disk at attach time, so an inaccessible disk makes the table fail to load. The contract we
-    # verify is therefore: the server starts (it is not bricked) and the table is inaccessible. The failed-load
-    # table cannot be dropped without restoring access, which is why this runs on its own node.
+def test_dynamic_s3_disk_persisted_opt_in_survives_reload(started_cluster):
+    # A dynamic `disk(type = s3, ...)` created with the credential opt-in records the allowance in its stored
+    # definition (a `_server_credentials_allowed` marker), so on restart it keeps using the server credentials
+    # instead of being downgraded to anonymous. The table stays readable across restart without re-opting in.
     instance = started_cluster.instances["s3_environment_credentials_restricted_disk"]
     bucket = started_cluster.minio_restricted_bucket
     disk_endpoint = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/dynamic_disk_reload/"
@@ -2274,17 +2268,12 @@ def test_dynamic_s3_disk_anonymous_on_reload(started_cluster):
     instance.query("INSERT INTO t_dynamic_disk SELECT * FROM numbers(100)", settings=allow)
     assert instance.query("SELECT count() FROM t_dynamic_disk").strip() == "100"
 
-    # On restart the disk is rebuilt from the stored definition under the default restriction: the server must
-    # start, and the disk must become anonymous (inaccessible) rather than using the server identity.
+    # The opt-in is persisted in the disk definition, so after a restart (no session opt-in in the reload
+    # context) the disk keeps its server credentials and the table is still readable -- no anonymous downgrade.
     instance.restart_clickhouse()
+    assert instance.query("SELECT count() FROM t_dynamic_disk").strip() == "100"
 
-    # The server started despite the inaccessible disk (it is not bricked by a definition that resolves the now
-    # restricted server credentials).
-    assert instance.query("SELECT 1").strip() == "1"
-    # The disk is anonymous and cannot read the private bucket even with the opt-in (it was rebuilt anonymously at
-    # load time), so the table is inaccessible -- it must not silently return data through the server identity.
-    with pytest.raises(helpers.client.QueryRuntimeException):
-        instance.query("SELECT count() FROM t_dynamic_disk", settings=allow)
+    instance.query("DROP TABLE t_dynamic_disk SYNC")
 
 
 def test_system_table_s3_disk_uses_server_credentials_with_server_setting(started_cluster):
