@@ -491,19 +491,30 @@ size_t ColumnAggregateFunction::serializedSizeEstimate() const
     if (rows == 0)
         return 0;
 
-    /// The on-disk footprint of a state equals its serialized size, so sample a few states and
-    /// extrapolate. Sampling keeps this cheap on large columns. States are immutable on the write
-    /// path, so serializing them here is safe even though they may live in shared arenas.
+    const size_t ptr_bytes = rows * sizeof(data[0]);
+
+    /// Fixed-layout states (trivial destructor, no arena) keep all their data in the sizeOfData() blob,
+    /// so size them from it without serializing. hasTrivialDestructor() reflects the combinator-wrapped
+    /// Data, so combinators are handled too.
+    if (func->hasTrivialDestructor() && !func->allocatesMemoryInArena())
+        return ptr_bytes + rows * func->sizeOfData();
+
+    /// Variable-size states (uniqExact, groupArray, quantiles, ...) have no cheap exact bound. Sample
+    /// strided states and scale by the largest sampled one; the max (not the average) errs toward
+    /// over-estimation so a skewed distribution is far less likely to keep an oversized granule. States
+    /// are immutable on the write path, so serializing them here is safe even if they live in shared arenas.
     static constexpr size_t max_samples = 16;
-    const size_t samples = std::min(rows, max_samples);
-    const size_t stride = rows / samples;
+    const size_t stride = std::max<size_t>(1, rows / max_samples);
 
-    NullWriteBuffer out;
-    for (size_t i = 0; i < samples; ++i)
+    size_t max_serialized = 0;
+    for (size_t i = 0; i * stride < rows; ++i)
+    {
+        NullWriteBuffer out;
         func->serialize(data[i * stride], out, version);
+        max_serialized = std::max<size_t>(max_serialized, out.count());
+    }
 
-    /// Average serialized size of the sampled states, extrapolated to all rows, plus the pointer array.
-    return rows * (out.count() / samples) + rows * sizeof(data[0]);
+    return ptr_bytes + rows * max_serialized;
 }
 
 size_t ColumnAggregateFunction::byteSizeAt(size_t) const

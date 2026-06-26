@@ -47,6 +47,35 @@ FROM (SELECT g, uniqExactMerge(s.1) AS u FROM amt_nested GROUP BY g);
 
 DROP TABLE IF EXISTS amt_nested;
 
+-- Skewed state sizes (most groups tiny, one group huge) must also be split: the size estimate scales
+-- by the largest sampled state, so a block dominated by a large state cannot keep one oversized granule.
+DROP TABLE IF EXISTS amt_skew;
+
+CREATE TABLE amt_skew (g UInt64, s AggregateFunction(uniqExact, UInt64))
+ENGINE = AggregatingMergeTree ORDER BY g
+SETTINGS index_granularity = 8192, index_granularity_bytes = 65536, min_bytes_for_wide_part = 0;
+
+INSERT INTO amt_skew
+SELECT g, uniqExactState(v)
+FROM
+(
+    SELECT 0 AS g, number AS v FROM numbers(300000)
+    UNION ALL
+    SELECT number AS g, number AS v FROM numbers(1, 999)
+) GROUP BY g;
+
+SELECT
+    max(data_uncompressed_bytes / marks) <= 65536 AS bytes_per_granule_within_cap,
+    any(marks) > 1 AS split_into_many_granules
+FROM system.parts WHERE table = 'amt_skew' AND active AND database = currentDatabase();
+
+SELECT
+    (SELECT uniqExactMerge(s) FROM amt_skew WHERE g = 0) = 300000
+    AND (SELECT max(u) FROM (SELECT uniqExactMerge(s) AS u FROM amt_skew WHERE g > 0 GROUP BY g)) = 1
+        AS skewed_groups_correct;
+
+DROP TABLE IF EXISTS amt_skew;
+
 -- Control: an ordinary String column of comparable per-row size already honors the cap.
 DROP TABLE IF EXISTS str_granule;
 
