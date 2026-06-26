@@ -25,8 +25,6 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
-#include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -1955,74 +1953,6 @@ void Planner::buildQueryPlanIfNeeded()
     extendQueryContextAndStoragesLifetime(query_plan, planner_context);
 }
 
-/// Estimate a subplan's output row count, used only to pre-size the INTERSECT/EXCEPT ALL counting
-/// map. Returns nullopt (unknown) unless the output cardinality can be derived exactly, so a
-/// cardinality-reducing operand (aggregation, LIMIT, DISTINCT, filter, ...) never inflates the
-/// reservation. Only row-count-preserving steps are walked through; everything else is unknown.
-static std::optional<UInt64> estimatePlanOutputRows(const QueryPlan::Node * node)
-{
-    if (!node || !node->step)
-        return {};
-
-    const auto * step = node->step.get();
-
-    /// Source leaves: trust the count only when nothing is pushed into the source that could
-    /// reduce its output below the scanned size (a WHERE/PREWHERE appears as filter actions or a
-    /// row-level/prewhere filter). The per-source estimate is virtual (numbers knows its domain;
-    /// others, incl. ReadFromMergeTree whose selected_rows is not yet known here, return unknown).
-    if (const auto * source = dynamic_cast<const SourceStepWithFilterBase *>(step))
-    {
-        if (source->getFilterActionsDAG() || source->getRowLevelFilter() || source->getPrewhereInfo())
-            return {};
-        return source->getOutputRowsEstimate();
-    }
-
-    /// LIMIT only caps a known child estimate at `limit` rows (after `offset`); it never raises it.
-    /// With an unknown child it yields no bound (the child may emit fewer than `limit` rows, e.g.
-    /// a single aggregated row), and WITH TIES can exceed the limit, so both stay unknown.
-    if (const auto * limit_step = dynamic_cast<const LimitStep *>(step))
-    {
-        if (node->children.size() != 1 || limit_step->withTies())
-            return {};
-
-        auto child_rows = estimatePlanOutputRows(node->children.front());
-        if (!child_rows)
-            return {};
-
-        UInt64 offset = limit_step->getOffset();
-        UInt64 after_offset = *child_rows > offset ? *child_rows - offset : 0;
-        return std::min(after_offset, static_cast<UInt64>(limit_step->getLimit()));
-    }
-
-    /// UNION ALL sums its inputs.
-    if (dynamic_cast<const UnionStep *>(step))
-    {
-        UInt64 sum = 0;
-        for (const auto * child : node->children)
-        {
-            auto child_rows = estimatePlanOutputRows(child);
-            if (!child_rows)
-                return {};
-            sum += *child_rows;
-        }
-        return sum;
-    }
-
-    /// Other single-input transforms preserve the child's row count only if their traits say so
-    /// (a plain projection or sort does; arrayJoin, FILTER, DISTINCT, aggregation do not). Relying
-    /// on the trait avoids mis-treating, e.g., an ExpressionStep that contains arrayJoin.
-    if (const auto * transforming = dynamic_cast<const ITransformingStep *>(step))
-    {
-        if (node->children.size() == 1 && transforming->getTransformTraits().preserves_number_of_rows)
-            return estimatePlanOutputRows(node->children.front());
-        return {};
-    }
-
-    /// Any other step (joins, set operations, ...) may change the row count, so the leaf sizes no
-    /// longer bound the output.
-    return {};
-}
-
 void Planner::buildPlanForUnionNode()
 {
     const auto & union_node = query_tree->as<UnionNode &>();
@@ -2099,13 +2029,8 @@ void Planner::buildPlanForUnionNode()
         else if (union_mode == SelectUnionMode::EXCEPT_DISTINCT)
             intersect_or_except_operator = IntersectOrExceptStep::Operator::EXCEPT_DISTINCT;
 
-        /// The transform accumulates the last (right) operand, so pre-size its counting map from that plan.
-        size_t right_rows_estimate = query_plans.empty()
-            ? 0
-            : estimatePlanOutputRows(query_plans.back()->getRootNode()).value_or(0);
-
-        auto union_step = std::make_unique<IntersectOrExceptStep>(
-            std::move(query_plans_headers), intersect_or_except_operator, max_threads, right_rows_estimate);
+        auto union_step
+            = std::make_unique<IntersectOrExceptStep>(std::move(query_plans_headers), intersect_or_except_operator, max_threads);
         query_plan.unitePlans(std::move(union_step), std::move(query_plans));
     }
 

@@ -1,19 +1,14 @@
 #include <Processors/Port.h>
 #include <Processors/Transforms/IntersectOrExceptTransform.h>
-#include <Common/MemoryTrackerUtils.h>
 
 namespace DB
 {
 
 /// After visitor is applied, ASTSelectIntersectExcept always has two child nodes.
-IntersectOrExceptTransform::IntersectOrExceptTransform(SharedHeader header_, Operator operator_, size_t right_rows_estimate_)
+IntersectOrExceptTransform::IntersectOrExceptTransform(SharedHeader header_, Operator operator_)
     : IProcessor(InputPorts(2, header_), {header_})
     , current_operator(operator_)
-    , right_rows_estimate(right_rows_estimate_)
 {
-    /// Arm the first reservation review to fire just before the counting table's first resize (its
-    /// load threshold is half the initial buffer). Subsequent reviews re-arm to each next resize.
-    counts_inserts_until_review = 1UL << (COUNTING_SET_INITIAL_SIZE_DEGREE - 1);
 }
 
 
@@ -150,92 +145,12 @@ void IntersectOrExceptTransform::work()
 
 template <typename Method>
 void IntersectOrExceptTransform::addToCounts(
-    Method & method, const ColumnRawPtrs & columns, size_t rows, CountingSetVariants & variants)
+    Method & method, const ColumnRawPtrs & columns, size_t rows, CountingSetVariants & variants) const
 {
     typename Method::State state(columns, key_sizes, nullptr);
 
     for (size_t i = 0; i < rows; ++i)
-    {
-        auto emplaced = state.emplaceKey(method.data, i, variants.string_pool);
-        ++emplaced.getMapped();
-
-        /// Growth tracking only matters for resizable tables; for fixed ones (key8/key16) the whole
-        /// block compiles away. Per-row cost is then just the (already-computed) inserted flag and a
-        /// decrement; the review, which reads the table size and may resize, runs amortized once
-        /// enough new keys accumulate.
-        if constexpr (requires { method.data.reserve(size_t{}); })
-        {
-            if (emplaced.isInserted() && --counts_inserts_until_review == 0)
-                reviewCountsReservation(method);
-        }
-    }
-}
-
-
-template <typename Method>
-void IntersectOrExceptTransform::reserveCounts(Method & method, size_t target)
-{
-    if constexpr (requires { method.data.reserve(target); })
-        method.data.reserve(target);
-}
-
-
-namespace
-{
-    constexpr size_t NEVER_AGAIN = std::numeric_limits<size_t>::max();
-
-    /// Jump straight to the target once the live key count is within this factor of it (bounds a
-    /// wrong target's over-reserve to this factor).
-    constexpr size_t COUNTS_RESERVE_GATE_FACTOR = 4;
-
-    /// With no row estimate, still pre-grow tables up to this many keys. A table that keeps getting
-    /// new keys is worth pre-sizing; the cap keeps the speculation small and leaves large
-    /// no-estimate tables to the hash table's natural growth.
-    constexpr size_t COUNTS_NO_ESTIMATE_LIMIT = 1 << 18;
-}
-
-template <typename Method>
-size_t IntersectOrExceptTransform::cappedReserveTarget(Method & method, size_t distinct, size_t target) const
-{
-    if (auto hard_limit = getCurrentQueryHardLimit())
-    {
-        Int64 available = static_cast<Int64>(*hard_limit) - getCurrentQueryMemoryUsage();
-        if (available <= 0)
-            return distinct;
-
-        size_t bytes_per_key = std::max<size_t>(1, method.data.getBufferSizeInBytes() / std::max<size_t>(distinct, 1));
-        size_t budget_keys = (static_cast<size_t>(available) / 4) / bytes_per_key;
-        target = std::min(target, budget_keys);
-    }
-    return target;
-}
-
-template <typename Method>
-void IntersectOrExceptTransform::reviewCountsReservation(Method & method)
-{
-    /// Called right before the table would resize itself (size has reached its load threshold).
-    size_t distinct = method.data.size();
-
-    /// Grow toward the estimate; without one, toward a small bound so small-but-growing tables still
-    /// skip their early resizes (see COUNTS_NO_ESTIMATE_LIMIT).
-    size_t target = right_rows_estimate ? right_rows_estimate : COUNTS_NO_ESTIMATE_LIMIT;
-
-    /// Not within reach of the target yet: let the table resize naturally and re-arm to review just
-    /// before its next resize (threshold is half the buffer; the grower keeps a 0.5 load factor).
-    if (distinct * COUNTS_RESERVE_GATE_FACTOR < target)
-    {
-        size_t max_fill = method.data.getBufferSizeInCells() / 2;
-        counts_inserts_until_review = max_fill > distinct ? max_fill - distinct : 1;
-        return;
-    }
-
-    /// Within reach of the target: reserve straight to it (capped), skipping this resize and the
-    /// rest of the cascade, then stop (no overshoot; beyond a no-estimate bound natural doubling
-    /// takes over).
-    counts_inserts_until_review = NEVER_AGAIN;
-    target = cappedReserveTarget(method, distinct, target);
-    if (target > distinct)
-        reserveCounts(method, target);
+        ++state.emplaceKey(method.data, i, variants.string_pool).getMapped();
 }
 
 
