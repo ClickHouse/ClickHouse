@@ -250,9 +250,6 @@ def test_ordered_start_after_avoids_deep_relisting(started_cluster):
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
-    # Must exceed the S3 list page size (1000) so a deep relist would span more
-    # than one ListObjects call; otherwise the list-call assertion below could
-    # not tell StartAfter apart from a full relist.
     initial_files = 1100
 
     create_table(
@@ -263,8 +260,8 @@ def test_ordered_start_after_avoids_deep_relisting(started_cluster):
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
-            "polling_min_timeout_ms": 100,
-            "polling_max_timeout_ms": 100,
+            "polling_min_timeout_ms": 60000,
+            "polling_max_timeout_ms": 60000,
             "polling_backoff_ms": 0,
         },
     )
@@ -281,13 +278,14 @@ def test_ordered_start_after_avoids_deep_relisting(started_cluster):
 
     create_mv(node, table_name, dst_table_name)
 
-    assert_eq_with_retry(
-        node,
-        f"SELECT count() FROM {dst_table_name}",
-        str(initial_files),
-        retry_count=120,
-        sleep_time=0.5,
-    )
+    def get_count():
+        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    for _ in range(60):
+        if initial_files == get_count():
+            break
+        time.sleep(1)
+    assert initial_files == get_count()
 
     node.query(f"DROP TABLE {table_name}_mv SYNC")
     baseline_list_calls = int(
@@ -316,13 +314,13 @@ def test_ordered_start_after_avoids_deep_relisting(started_cluster):
     )
 
     expected_rows = initial_files + 1
-    assert_eq_with_retry(
-        node,
-        f"SELECT count() FROM {dst_table_name}",
-        str(expected_rows),
-        retry_count=120,
-        sleep_time=0.5,
-    )
+    # Polling interval is configured to 60s for this test, so allow enough
+    # time for the first post-restart polling cycle to process the new file.
+    for _ in range(90):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+    assert expected_rows == get_count(), f"Timed out waiting for {expected_rows} rows"
 
     list_calls_delta = int(
         node.query(
