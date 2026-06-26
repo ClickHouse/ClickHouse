@@ -5,25 +5,11 @@
 #include <Analyzer/Utils.h>
 
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnMap.h>
-#include <Columns/ColumnVariant.h>
-#include <Columns/ColumnDynamic.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
 #include <DataTypes/FieldToDataType.h>
 #include <Common/SipHash.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypesBinaryEncoding.h>
-#include <Formats/FormatSettings.h>
-#include <IO/ReadBufferFromMemory.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -33,17 +19,11 @@
 
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTExpressionList.h>
 
 #include <Interpreters/convertFieldToType.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
     ConstantNode::ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression_, bool is_deterministic_)
     : IQueryTreeNode(children_size)
@@ -179,203 +159,6 @@ boost::intrusive_ptr<ASTLiteral> ConstantNode::getCachedAST(const F &ast_generat
     return make_intrusive<ASTLiteral>(*cached_ast);
 }
 
-namespace
-{
-
-UInt32 getDecimalFieldScale(const Field & field)
-{
-    switch (field.getType())
-    {
-        case Field::Types::Decimal32:
-            return field.safeGet<DecimalField<Decimal32>>().getScale();
-        case Field::Types::Decimal64:
-            return field.safeGet<DecimalField<Decimal64>>().getScale();
-        case Field::Types::Decimal128:
-            return field.safeGet<DecimalField<Decimal128>>().getScale();
-        case Field::Types::Decimal256:
-            return field.safeGet<DecimalField<Decimal256>>().getScale();
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a decimal field");
-    }
-}
-
-/// A decimal value has no exact literal syntax in SQL: a bare numeric literal is re-parsed on the
-/// receiving side as Float64 and loses precision for high-scale values. Serialize it as its exact
-/// textual form cast from a String to a Decimal type wide enough to hold every digit. The
-/// String -> Decimal conversion parses the digits exactly, so the value round-trips without loss.
-ASTPtr makeExactDecimalLeafAST(const Field & field)
-{
-    const String text = applyVisitor(FieldVisitorToString(), field);
-    const UInt32 scale = getDecimalFieldScale(field);
-
-    size_t digits = 0;
-    for (char c : text)
-        if (c >= '0' && c <= '9')
-            ++digits;
-
-    /// The carrier Decimal type must be wide enough to hold every significant digit.
-    const size_t needed_precision = digits > scale ? digits : scale;
-    const char * decimal_type_name = "Decimal256";
-    if (needed_precision <= 9)
-        decimal_type_name = "Decimal32";
-    else if (needed_precision <= 18)
-        decimal_type_name = "Decimal64";
-    else if (needed_precision <= 38)
-        decimal_type_name = "Decimal128";
-
-    const String carrier_type_name = String(decimal_type_name) + "(" + std::to_string(scale) + ")";
-    return makeASTFunction("_CAST", make_intrusive<ASTLiteral>(text), make_intrusive<ASTLiteral>(carrier_type_name));
-}
-
-ASTPtr makeASTFunctionFromList(std::string_view name, ASTs children)
-{
-    auto function = make_intrusive<ASTFunction>();
-    function->name = name;
-    function->arguments = make_intrusive<ASTExpressionList>();
-    function->children.push_back(function->arguments);
-    function->arguments->children = std::move(children);
-    return function;
-}
-
-/// True if the constant may contain a decimal leaf: a static Decimal anywhere in the type
-/// (Array/Tuple/Map/Variant/Nullable/...), or a Dynamic whose runtime value can be a decimal that is
-/// not visible in the declared type. Time64 is also backed by a scaled decimal value and, unlike
-/// DateTime64, is not serialized as text by getFieldFromColumnForASTLiteral, so it needs the exact
-/// path too. Used as a cheap guard to skip materializing the field for the common decimal-free
-/// constants; fieldContainsDecimal is the authoritative check on the value.
-bool typeMayContainDecimal(const IDataType & type)
-{
-    bool result = false;
-    auto check = [&](const IDataType & nested)
-    {
-        WhichDataType which(nested);
-        result |= which.isDecimal() || which.isTime64() || which.isDynamic();
-    };
-    check(type);
-    type.forEachChild(check);
-    return result;
-}
-
-/// Rebuild a constant's literal AST directly from its column and type, replacing every decimal-backed
-/// leaf (Decimal, and Time64 which is also a scaled decimal) with an exact String -> Decimal cast
-/// instead of a bare numeric literal that the receiving side would parse as Float64. Walking the type
-/// lets us reconstruct each leaf with its exact type, which matters under Variant/Dynamic where the
-/// active value must keep its own type (a Decimal carrier is not a member of Variant(Time64), and a
-/// Dynamic would otherwise store the carrier as Decimal instead of Time64). Subtrees that cannot
-/// contain a decimal are serialized by the default literal path, unchanged.
-ASTPtr columnToExactLiteralAST(const ColumnPtr & column, size_t row, const DataTypePtr & type)
-{
-    if (!typeMayContainDecimal(*type))
-        return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(column, row, type));
-
-    if (isColumnConst(*column))
-        return columnToExactLiteralAST(assert_cast<const ColumnConst &>(*column).getDataColumnPtr(), 0, type);
-
-    switch (type->getTypeId())
-    {
-        case TypeIndex::Nullable:
-        {
-            const auto & nullable_column = assert_cast<const ColumnNullable &>(*column);
-            if (nullable_column.isNullAt(row))
-                return make_intrusive<ASTLiteral>(Null());
-            return columnToExactLiteralAST(
-                nullable_column.getNestedColumnPtr(), row, assert_cast<const DataTypeNullable &>(*type).getNestedType());
-        }
-        case TypeIndex::Decimal32:
-        case TypeIndex::Decimal64:
-        case TypeIndex::Decimal128:
-        case TypeIndex::Decimal256:
-        {
-            /// Reconstruct with the value's exact decimal type so it remains a valid Variant member.
-            const String text = applyVisitor(FieldVisitorToString(), (*column)[row]);
-            return makeASTFunction("_CAST", make_intrusive<ASTLiteral>(text), make_intrusive<ASTLiteral>(type->getName()));
-        }
-        case TypeIndex::Time64:
-        {
-            /// Time64 is backed by a scaled decimal; reconstruct the exact decimal carrier, then cast
-            /// back to Time64 so the leaf keeps the Time64 type (needed under Variant/Dynamic).
-            auto carrier = makeExactDecimalLeafAST((*column)[row]);
-            return makeASTFunction("_CAST", std::move(carrier), make_intrusive<ASTLiteral>(type->getName()));
-        }
-        case TypeIndex::Array:
-        {
-            const auto & array_column = assert_cast<const ColumnArray &>(*column);
-            const auto & nested_type = assert_cast<const DataTypeArray &>(*type).getNestedType();
-            const auto & offsets = array_column.getOffsets();
-            const auto & nested_column = array_column.getDataPtr();
-            size_t start = offsets[static_cast<ssize_t>(row) - 1];
-            size_t end = offsets[row];
-            ASTs elements;
-            for (size_t i = start; i < end; ++i)
-                elements.push_back(columnToExactLiteralAST(nested_column, i, nested_type));
-            return makeASTFunctionFromList("array", std::move(elements));
-        }
-        case TypeIndex::Tuple:
-        {
-            const auto & element_types = assert_cast<const DataTypeTuple &>(*type).getElements();
-            const auto & element_columns = assert_cast<const ColumnTuple &>(*column).getColumns();
-            ASTs elements;
-            for (size_t i = 0; i != element_types.size(); ++i)
-                elements.push_back(columnToExactLiteralAST(element_columns[i], row, element_types[i]));
-            return makeASTFunctionFromList("tuple", std::move(elements));
-        }
-        case TypeIndex::Map:
-        {
-            const auto & map_type = assert_cast<const DataTypeMap &>(*type);
-            const auto & map_column = assert_cast<const ColumnMap &>(*column);
-            const auto & offsets = map_column.getNestedColumn().getOffsets();
-            const auto & keys = map_column.getNestedData().getColumnPtr(0);
-            const auto & values = map_column.getNestedData().getColumnPtr(1);
-            size_t start = offsets[static_cast<ssize_t>(row) - 1];
-            size_t end = offsets[row];
-            ASTs elements;
-            for (size_t i = start; i < end; ++i)
-            {
-                elements.push_back(columnToExactLiteralAST(keys, i, map_type.getKeyType()));
-                elements.push_back(columnToExactLiteralAST(values, i, map_type.getValueType()));
-            }
-            return makeASTFunctionFromList("map", std::move(elements));
-        }
-        case TypeIndex::Variant:
-        {
-            const auto & variant_types = assert_cast<const DataTypeVariant &>(*type).getVariants();
-            const auto & variant_column = assert_cast<const ColumnVariant &>(*column);
-            auto global_discr = variant_column.globalDiscriminatorAt(row);
-            if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
-                return make_intrusive<ASTLiteral>(Null());
-            return columnToExactLiteralAST(
-                variant_column.getVariantPtrByGlobalDiscriminator(global_discr),
-                variant_column.offsetAt(row),
-                variant_types[global_discr]);
-        }
-        case TypeIndex::Dynamic:
-        {
-            const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*column);
-            const auto & variant_column = dynamic_column.getVariantColumn();
-            auto global_discr = variant_column.globalDiscriminatorAt(row);
-            if (global_discr != dynamic_column.getSharedVariantDiscriminator())
-                return columnToExactLiteralAST(
-                    dynamic_column.getVariantColumnPtr(), row, dynamic_column.getVariantInfo().variant_type);
-
-            /// Value stored in the shared binary variant (e.g. Dynamic(max_types=0)): decode its type
-            /// and value and recurse, so a decimal-backed shared value is still serialized exactly
-            /// instead of falling back to a bare literal that the shard would parse as Float64.
-            const auto & shared_variant = dynamic_column.getSharedVariant();
-            auto value_data = shared_variant.getDataAt(variant_column.offsetAt(row));
-            ReadBufferFromMemory buf(value_data);
-            auto decoded_type = decodeDataType(buf);
-            auto tmp_column = decoded_type->createColumn();
-            tmp_column->reserve(1);
-            decoded_type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, FormatSettings{});
-            return columnToExactLiteralAST(std::move(tmp_column), 0, decoded_type);
-        }
-        default:
-            return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(column, row, type));
-    }
-}
-
-}
-
 ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     static const auto from_column = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node.constant_value.getColumn(), 0, node.constant_value.getType())); };
@@ -396,7 +179,7 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     /// constants.
     if (typeMayContainDecimal(*constant_value_type))
     {
-        auto exact_ast = columnToExactLiteralAST(constant_value.getColumn(), 0, constant_value_type);
+        auto exact_ast = columnConstantToExactLiteralAST(constant_value.getColumn(), 0, constant_value_type);
         if (!options.add_cast_for_constants)
             return exact_ast;
         return makeASTFunction("_CAST", std::move(exact_ast), make_intrusive<ASTLiteral>(constant_value_type->getName()));
