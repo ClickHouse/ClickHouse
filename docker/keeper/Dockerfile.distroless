@@ -146,7 +146,7 @@ RUN mkdir -p \
 # Stage 2: Production distroless image.
 # ──────────────────────────────────────────────────────────────────────────────
 # Pinned 2026-04-02. Refresh: docker pull gcr.io/distroless/cc-debian13:nonroot && docker inspect --format='{{index .RepoDigests 0}}' gcr.io/distroless/cc-debian13:nonroot
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:9c4fe2381c2e6d53c4cfdefeff6edbd2a67ec7713e2c3ca6653806cbdbf27a1e AS production
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:d3cda6e91129130d7229a1806b6a73d292ef245ab032da7851907798024cefba AS production
 
 COPY --from=ch-builder /output/ /
 
@@ -169,7 +169,7 @@ ENTRYPOINT ["/usr/bin/clickhouse", "docker-init", "--keeper"]
 #           at /busybox/sh for interactive troubleshooting.
 # ──────────────────────────────────────────────────────────────────────────────
 # Pinned 2026-04-02. Refresh: docker pull gcr.io/distroless/cc-debian13:debug-nonroot && docker inspect --format='{{index .RepoDigests 0}}' gcr.io/distroless/cc-debian13:debug-nonroot
-FROM gcr.io/distroless/cc-debian13:debug-nonroot@sha256:d47b319b1047dff7cdee335e3e61468f3610fac20060653aabe3786d6ecba621 AS debug
+FROM gcr.io/distroless/cc-debian13:debug-nonroot@sha256:61e8df8909b98d2cf65fa8f620ee8292be40becd9de3b85d42852bee3f86fdb0 AS debug
 
 COPY --from=ch-builder /output/ /
 
