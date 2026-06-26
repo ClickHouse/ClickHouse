@@ -1178,10 +1178,11 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         const bool allow_server_credentials_in_user_queries
             = args.context->getSettingsRef()[Setting::s3_allow_server_credentials_in_user_queries];
 
-        /// A database is replayed from its stored `ATTACH DATABASE` statement with plain `ATTACH` (unlike tables,
-        /// which use `FORCE_ATTACH`), so `isLoadingFromExistingMetadata` is too narrow; treat any attach as a
-        /// metadata load so a now-restricted catalog is left unavailable instead of aborting startup.
-        const bool is_loading_from_existing_metadata = args.mode >= LoadingStrictnessLevel::ATTACH;
+        /// A database is replayed from its stored `ATTACH DATABASE` statement with plain `ATTACH` on startup
+        /// (unlike tables, which use `FORCE_ATTACH`), so `isLoadingFromExistingMetadata` is too narrow. Treat an
+        /// internal attach (server startup / restore) as a metadata load so a now-restricted catalog is left
+        /// unavailable instead of aborting startup; a user `ATTACH DATABASE` stays fail-closed and is rejected.
+        const bool is_loading_from_existing_metadata = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
 
         return std::make_shared<DatabaseDataLake>(
             args.database_name,

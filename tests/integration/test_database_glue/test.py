@@ -1434,3 +1434,25 @@ def test_glue_catalog_unavailable_after_restart_under_restriction(started_cluste
     ), error
 
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_glue_catalog_user_attach_under_restriction_is_rejected(started_cluster):
+    # The unavailable-on-load fallback applies only to an internal load (server startup / restore). A user
+    # ATTACH DATABASE of a catalog that resolves server-managed credentials must stay fail-closed and be
+    # rejected, not silently attached as an unavailable database.
+    node = started_cluster.instances["node1"]
+    db_name = f"glue_user_attach_{uuid.uuid4().hex}"
+    allow = {"s3_allow_server_credentials_in_user_queries": 1}
+
+    create_clickhouse_glue_database(
+        started_cluster, node, db_name, with_credentials=False, query_settings=allow
+    )
+    node.query(f"DETACH DATABASE {db_name}")
+
+    # Re-attaching as a user query under the default restriction must fail closed.
+    error = node.query_and_get_error(f"ATTACH DATABASE {db_name}")
+    assert "ACCESS_DENIED" in error or "server-managed" in error, error
+
+    # Re-attach with the opt-in so the database can be cleaned up.
+    node.query(f"ATTACH DATABASE {db_name}", settings=allow)
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
