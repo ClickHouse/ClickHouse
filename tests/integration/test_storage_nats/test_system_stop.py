@@ -532,6 +532,85 @@ def test_cancel_during_direct_select_does_not_drop_messages(nats_cluster):
     )
 
 
+def test_commit_on_select_consumes_only_when_enabled(nats_cluster):
+    # A direct SELECT consumes (acks) the JetStream messages it reads only with nats_commit_on_select = 1,
+    # like kafka_commit_on_select / rabbitmq_commit_on_select. By default (0) it reads without acking, so
+    # every message stays pending (num_ack_pending == n); with 1 each is acked (pending == 0). The
+    # materialized-view path is unaffected (covered by test_jetstream_acks_after_insert).
+    n = 5
+    for commit_on_select, expect_consumed in [(0, False), (1, True)]:
+        stream = f"js_cos_stream_{commit_on_select}"
+        subject = f"js_cos_subject_{commit_on_select}"
+        durable = f"js_cos_durable_{commit_on_select}"
+        table = f"nats_cos_{commit_on_select}"
+
+        # Long ack-wait so unacked messages are not redelivered mid-test: the "not consumed" case is
+        # then observed deterministically via num_ack_pending, not a redelivery race.
+        jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=60)
+
+        # The default (0) is exercised by omitting the setting entirely, proving the default value.
+        commit_setting = (
+            f",\n                         nats_commit_on_select = {commit_on_select}"
+            if commit_on_select
+            else ""
+        )
+        instance.query(
+            f"""
+            CREATE TABLE test.{table} (key UInt64, value UInt64)
+                ENGINE = NATS
+                SETTINGS nats_url = 'nats1:4444',
+                         nats_subjects = '{subject}',
+                         nats_stream = '{stream}',
+                         nats_consumer_name = '{durable}',
+                         nats_format = 'JSONEachRow',
+                         nats_secure = 1,
+                         nats_username = '{nats_user}',
+                         nats_password = '{nats_pass}'{commit_setting};
+            """
+        )
+
+        jetstream_publish(nats_cluster, subject, 0, n)
+
+        # Drain all n keys via repeated direct SELECTs (max_block_size = 1, one message per SELECT);
+        # with nats_commit_on_select = 1 each is auto-acked on delivery, otherwise it stays pending.
+        collected = set()
+        deadline = time.time() + 60
+        while time.time() < deadline and len(collected) < n:
+            res = instance.query(
+                f"SELECT key FROM test.{table} "
+                "SETTINGS stream_like_engine_allow_direct_select = 1",
+                ignore_error=True,
+            )
+            for line in res.split():
+                if line.strip():
+                    collected.add(int(line))
+        assert collected == set(range(n)), (
+            f"direct SELECT did not return all keys (commit_on_select={commit_on_select}): "
+            f"{sorted(collected)}"
+        )
+
+        # Acks and the consumer-info pending count update asynchronously, so poll until it reaches the
+        # target (it only moves toward n or 0 here, never away, so polling is robust).
+        expected_pending = 0 if expect_consumed else n
+
+        def pending():
+            return jetstream_ack_pending(nats_cluster, stream, durable)
+
+        for _ in range(40):
+            if pending() == expected_pending:
+                break
+            time.sleep(0.5)
+
+        if expect_consumed:
+            assert pending() == 0, (
+                "nats_commit_on_select = 1: a direct SELECT must acknowledge the messages it reads"
+            )
+        else:
+            assert pending() == n, (
+                "default nats_commit_on_select = 0: a direct SELECT must not consume messages"
+            )
+
+
 def test_system_stop_all_background(nats_cluster):
     table = "nats_allbg"
     subject = "allbg_subject"

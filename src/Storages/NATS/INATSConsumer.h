@@ -43,7 +43,7 @@ public:
     };
 
     bool isSubscribed() const;
-    void subscribe();
+    void subscribe(bool auto_ack = false);
     void unsubscribe(bool finish_queue);
 
     void ackConsumed();
@@ -83,8 +83,11 @@ protected:
 
     virtual bool needsAck() const { return false; }
 
+    bool manualAck() const { return manual_ack; }
+
 private:
     NATSConnectionPtr connection;
+    bool manual_ack = true;
     std::vector<NATSSubscriptionPtr> subscriptions;
     const std::vector<String> subjects;
     LoggerPtr log;

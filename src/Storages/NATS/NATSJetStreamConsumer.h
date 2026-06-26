@@ -23,7 +23,7 @@ public:
         uint32_t queue_size,
         const std::atomic<bool> & stopped);
 
-    bool needsAck() const override { return true; }
+    bool needsAck() const override { return manualAck(); }
 
 protected:
     void subscribeImpl() override;

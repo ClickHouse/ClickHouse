@@ -53,6 +53,7 @@ namespace NATSSetting
     extern const NATSSettingsString nats_credential_file;
     extern const NATSSettingsMilliseconds nats_flush_interval_ms;
     extern const NATSSettingsBool nats_wait_for_flush_interval;
+    extern const NATSSettingsBool nats_commit_on_select;
     extern const NATSSettingsString nats_format;
     extern const NATSSettingsStreamingHandleErrorMode nats_handle_error_mode;
     extern const NATSSettingsUInt64 nats_max_block_size;
@@ -403,6 +404,7 @@ void StorageNATS::read(
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto nats_source = std::make_shared<NATSSource>(*this, storage_snapshot, modified_context, column_names, 1, (*nats_settings)[NATSSetting::nats_handle_error_mode]);
+        nats_source->setCommitOnSelect((*nats_settings)[NATSSetting::nats_commit_on_select]);
 
         auto converting_dag = ActionsDAG::makeConvertingActions(
             nats_source->getPort().getHeader().getColumnsWithTypeAndName(),

@@ -36,6 +36,8 @@ public:
 
     void setWaitForFlushInterval(bool value) { wait_for_flush_interval = value; }
 
+    void setCommitOnSelect(bool value) { commit_on_select = value; }
+
     bool wasConsumptionAborted() const { return consumption_aborted; }
 
 private:
@@ -61,6 +63,7 @@ private:
 
     Poco::Timespan max_execution_time = 0;
     bool wait_for_flush_interval = false;
+    bool commit_on_select = false;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
 
     NATSSource(

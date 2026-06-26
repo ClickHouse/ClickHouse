@@ -104,7 +104,7 @@ Chunk NATSSource::generate()
 
         if (consumer && !consumer->isSubscribed())
         {
-            consumer->subscribe();
+            consumer->subscribe(commit_on_select);
             unsubscribe_on_destroy = true;
         }
     }
