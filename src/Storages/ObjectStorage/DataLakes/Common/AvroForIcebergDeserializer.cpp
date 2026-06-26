@@ -137,6 +137,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
     }
 
     std::optional<Int64> sequence_number;
+    std::optional<Int64> file_sequence_number;
 
     if (format_version > 1)
     {
@@ -154,6 +155,13 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
         else
         {
             sequence_number = sequence_number_value.safeGet<Int64>();
+        }
+
+        if (hasPath(f_file_sequence_number))
+        {
+            const auto file_sequence_number_value = getValueFromRowByName(row_index, f_file_sequence_number);
+            if (!file_sequence_number_value.isNull())
+                file_sequence_number = file_sequence_number_value.safeGet<Int64>();
         }
     }
 
@@ -275,6 +283,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 row_index,
                 status,
                 sequence_number,
+                file_sequence_number,
                 snapshot_id,
                 partition_key_value,
                 columns_infos,
@@ -324,6 +333,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 row_index,
                 status,
                 sequence_number,
+                file_sequence_number,
                 snapshot_id,
                 partition_key_value,
                 columns_infos,
@@ -357,6 +367,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 row_index,
                 status,
                 sequence_number,
+                file_sequence_number,
                 snapshot_id,
                 partition_key_value,
                 columns_infos,

@@ -787,7 +787,10 @@ void generateExistingManifestFile(
         {
             Int64 seq = parsed.parsed_sequence_number.value_or(entry->sequence_number);
             setVersionedField(manifest, seq, Iceberg::f_sequence_number);
-            setVersionedField(manifest, seq, Iceberg::f_file_sequence_number);
+            /// `file_sequence_number` is a distinct field; preserve the original value when present
+            /// and fall back to the resolved data sequence number only when it was inherited (null).
+            Int64 file_seq = parsed.parsed_file_sequence_number.value_or(seq);
+            setVersionedField(manifest, file_seq, Iceberg::f_file_sequence_number);
         }
 
         avro::GenericRecord & data_file = manifest.field(Iceberg::f_data_file).value<avro::GenericRecord>();
