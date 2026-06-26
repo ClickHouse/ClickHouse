@@ -279,8 +279,6 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
 
 void LimitByTransform::transform(Chunk & chunk)
 {
-    LOG_TEST(getLogger("LimitByTransform"), "Transform a chunk in LimitByTransform");
-
     /// `output_slices` is a member scratch buffer reused across chunks. A previous call may
     /// have thrown after populating it (for example MEMORY_LIMIT_EXCEEDED while the grouping
     /// hash table grows), and `ISimpleTransform::work` keeps this transform alive and calls
@@ -406,8 +404,6 @@ void LimitBySortedStreamTransform::processRun(UInt64 run_start_row, UInt64 run_r
 
 void LimitBySortedStreamTransform::transform(Chunk & chunk)
 {
-    LOG_TEST(getLogger("LimitBySortedStreamTransform"), "Transform a chunk in LimitBySortedStreamTransform");
-
     /// See `LimitByTransform::transform`: a previous call may have thrown after populating
     /// this reused scratch buffer, so start each chunk from empty.
     output_slices.clear();
