@@ -1,5 +1,4 @@
 from multiprocessing.dummy import Pool
-import pytest
 
 from helpers.iceberg_utils import (
     create_iceberg_table,
@@ -39,8 +38,10 @@ def test_concurrent_reads(started_cluster_iceberg):
 
     def run_concurrent_queries(i):
         def select(_):
+            # Bound per-query fan-out so the concurrent readers don't exhaust the global thread pool.
             instance.query(
                 f"SELECT * FROM {TABLE_NAME}",
+                settings={"max_threads": 4},
             )
                 
 
@@ -68,8 +69,8 @@ def test_concurrent_reads(started_cluster_iceberg):
         select_async = select_pool.map_async(select, range(num_select_threads))
         
         try:
-            insert_results = insert_async.get()
-            select_results = select_async.get()
+            insert_async.get()
+            select_async.get()
         except Exception as e:
             raise e
         finally:
