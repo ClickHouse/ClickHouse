@@ -19,9 +19,6 @@
 02950_dictionary_ssd_cache_short_circuit
 03405_ssd_cache_incorrect_min_max_lifetimes_and_block_size
 
-# Uses BSD 'ps' / procfs which differ on macOS (no '/proc', different ps options).
-01317_no_password_in_command_line
-
 # Reason not yet investigated.
 01473_event_time_microseconds
 01569_query_profiler_big_query_id
