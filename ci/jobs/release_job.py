@@ -545,9 +545,17 @@ def main():
                 # `docker-container` builder (the default `docker` driver cannot
                 # produce a multi-platform image or push to a registry).
                 "docker run --privileged --rm tonistiigi/binfmt --install all",
-                "docker buildx inspect mybuilder >/dev/null 2>&1"
-                " || docker buildx create --name mybuilder --driver docker-container",
-                "docker buildx use mybuilder",
+                # Create the builder with host networking. The default
+                # docker-container sandbox network on the ephemeral runner has
+                # no working egress for RUN steps (busybox wget in the alpine
+                # image hits "Network unreachable" reaching
+                # packages.clickhouse.com — an IPv6 address without a route),
+                # while the host's IPv4 egress works. `network=host` makes RUN
+                # steps use the host network stack. Recreate unconditionally so
+                # a pre-provisioned builder without this option is replaced.
+                "docker buildx rm mybuilder >/dev/null 2>&1 || true",
+                "docker buildx create --name mybuilder --driver docker-container"
+                " --driver-opt network=host --use",
                 "docker buildx inspect --bootstrap",
             ],
             workdir=REPO_PATH,
