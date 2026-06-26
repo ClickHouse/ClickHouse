@@ -420,6 +420,16 @@ AlterDropPartitionExecutor::findTargetManifests(const SnapshotState & state, con
         if (target_manifest.entries_to_remove.empty())
             continue;
 
+        /// A touched manifest may also contain equality-delete entries, which the rewrite path does
+        /// not classify or carry over. Removing or rewriting the manifest would silently drop them and
+        /// resurrect the rows they suppress. Fail close until equality deletes are preserved across a
+        /// partial rewrite. Manifests with only equality deletes are never touched (handled above).
+        if (!handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "DROP PARTITION is not supported on Iceberg tables where an affected manifest '{}' contains equality deletes",
+                manifest_key.manifest_file_path);
+
         if (target_manifest.entries_to_keep.empty())
             result.fully_matched.emplace_back(std::move(target_manifest));
         else
