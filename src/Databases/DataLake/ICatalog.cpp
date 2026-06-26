@@ -317,11 +317,18 @@ namespace
 {
 
 /// True if some string starting with `prefix` can match the SQL LIKE `pattern`
-/// (case-sensitive). Decides whether namespace `N` (as `N + "."`) may hold a match.
+/// (case-sensitive, default backslash escape). Decides whether namespace `N`
+/// (tested as `N + "."`) may hold a table matching `name LIKE pattern`.
+///
+/// This helper only prunes namespaces, so it must never reject one that ClickHouse
+/// `LIKE` could match — a false negative would silently drop rows from
+/// `system.tables`. A false positive only costs an unnecessary table listing.
+/// Whenever it meets a construct it cannot model exactly (a multi-byte `_` match or
+/// an invalid trailing escape) it conservatively reports a possible match.
 bool likeCanMatchWithPrefix(std::string_view prefix, std::string_view pattern)
 {
-    size_t i = 0;            /// index into prefix
-    size_t j = 0;            /// index into pattern
+    size_t i = 0;            /// byte index into prefix
+    size_t j = 0;            /// byte index into pattern
     size_t star_j = std::string_view::npos;  /// position of last '%' in pattern
     size_t star_i = 0;       /// prefix index recorded when last '%' was seen
 
@@ -339,21 +346,50 @@ bool likeCanMatchWithPrefix(std::string_view prefix, std::string_view pattern)
             }
             if (pc == '_')
             {
+                /// ClickHouse `LIKE` matches `_` against one whole character. For an
+                /// ASCII byte that is exactly one byte; for a multi-byte UTF-8 lead
+                /// byte the width depends on the regexp encoding, which we cannot
+                /// model reliably here, so report a possible match instead of risking
+                /// a dropped namespace.
+                if (static_cast<unsigned char>(prefix[i]) >= 0x80)
+                    return true;
                 ++i;
                 ++j;
                 continue;
             }
-            if (pc == '\\' && j + 1 < pattern.size())
+            if (pc == '\\')
             {
-                if (prefix[i] == pattern[j + 1])
+                /// A trailing backslash is an invalid LIKE escape; the outer predicate
+                /// will surface the error, so just don't prune on it here.
+                if (j + 1 >= pattern.size())
+                    return true;
+
+                const char next = pattern[j + 1];
+                if (next == '%' || next == '_' || next == '\\')
                 {
-                    ++i;
-                    j += 2;
-                    continue;
+                    /// Escaped metacharacter: matches that single literal character.
+                    if (prefix[i] == next)
+                    {
+                        ++i;
+                        j += 2;
+                        continue;
+                    }
+                }
+                else
+                {
+                    /// Unknown escape: ClickHouse keeps the backslash as a literal `\`
+                    /// and matches `next` on its own in a later iteration.
+                    if (prefix[i] == '\\')
+                    {
+                        ++i;
+                        ++j;
+                        continue;
+                    }
                 }
             }
             else if (prefix[i] == pc)
             {
+                /// Literal character (multi-byte UTF-8 literals match byte by byte).
                 ++i;
                 ++j;
                 continue;
