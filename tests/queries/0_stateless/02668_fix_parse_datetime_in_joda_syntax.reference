@@ -1,0 +1,4 @@
+Query: select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.1234567', 'yyyy-MM-dd HH:mm:ss.SSSSSSS', 'UTC')
+Expected error: Precision 7 is invalid (must be \[0, 6\])
+Result:
+OK
