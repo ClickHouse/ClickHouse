@@ -687,11 +687,13 @@ class CHServer:
     LEFT_SERVER_KEEPER_PORT = 9181
     LEFT_SERVER_KEEPER_RAFT_PORT = 9234
     LEFT_SERVER_INTERSERVER_PORT = 9009
+    LEFT_SERVER_HTTP_PORT = 8123
     # patched version
     RIGHT_SERVER_PORT = 19001
     RIGHT_SERVER_KEEPER_PORT = 19181
     RIGHT_SERVER_KEEPER_RAFT_PORT = 19234
     RIGHT_SERVER_INTERSERVER_PORT = 19009
+    RIGHT_SERVER_HTTP_PORT = 18123
 
     def __init__(self, is_left=False):
         if is_left:
@@ -699,6 +701,7 @@ class CHServer:
             keeper_port = self.LEFT_SERVER_KEEPER_PORT
             raft_port = self.LEFT_SERVER_KEEPER_RAFT_PORT
             inter_server_port = self.LEFT_SERVER_INTERSERVER_PORT
+            http_port = self.LEFT_SERVER_HTTP_PORT
             serever_path = f"{temp_dir}/perf_wd/left"
             log_file = f"{serever_path}/server.log"
         else:
@@ -706,6 +709,7 @@ class CHServer:
             keeper_port = self.RIGHT_SERVER_KEEPER_PORT
             raft_port = self.RIGHT_SERVER_KEEPER_RAFT_PORT
             inter_server_port = self.RIGHT_SERVER_INTERSERVER_PORT
+            http_port = self.RIGHT_SERVER_HTTP_PORT
             serever_path = f"{temp_dir}/perf_wd/right"
             log_file = f"{serever_path}/server.log"
 
@@ -716,9 +720,14 @@ class CHServer:
         self.server_path = serever_path
         self.name = "Reference" if is_left else "Patched"
 
+        # The perf-comparison config removes <http_port>; re-enable it on the
+        # command line (a documented config override, see Server.cpp) with a
+        # distinct port per server, so that shell-script tests can talk to the
+        # server over HTTP.
         self.start_cmd = f"{serever_path}/clickhouse-server --config-file={serever_path}/config/config.xml \
             -- --path {serever_path}/db --user_files_path {serever_path}/db/user_files \
             --top_level_domains_path {serever_path}/top_level_domains --tcp_port {server_port} \
+            --http_port {http_port} \
             --keeper_server.tcp_port {keeper_port} --keeper_server.raft_configuration.server.port {raft_port} \
             --keeper_server.storage_path {serever_path}/coordination --zookeeper.node.port {keeper_port} \
             --interserver_http_port {inter_server_port}"
@@ -815,6 +824,8 @@ class CHServer:
         res, out, err = Shell.get_res_stdout_stderr(
             f"./tests/performance/scripts/perf.py --host localhost localhost \
                 --port {cls.LEFT_SERVER_PORT} {cls.RIGHT_SERVER_PORT} \
+                --binary {perf_left}/clickhouse {perf_right}/clickhouse \
+                --http-port {cls.LEFT_SERVER_HTTP_PORT} {cls.RIGHT_SERVER_HTTP_PORT} \
                 --runs {runs} --max-queries {max_queries} \
                 --profile-seconds 10 \
                 {test_file}",
@@ -1017,6 +1028,16 @@ def main():
             f"cp -r ./tests/config/top_level_domains {perf_wd}",
             f"rm {perf_right_config}/config.d/storage_conf_local.xml",  # Avoid conflicts on the filesystem cache dirs
             f"chmod +x {ch_path}/clickhouse",
+            # The reference build (left) is downloaded as a bare `clickhouse`
+            # binary, but the patched build (right) was only symlinked under its
+            # subcommand names below. Shell-script perf queries
+            # (<query type="shell">) invoke the multi-call binary directly via
+            # $CLICKHOUSE_BINARY / $CLICKHOUSE_LOCAL / $CLICKHOUSE_CLIENT, which
+            # compare.sh builds from `right/clickhouse`; without this symlink
+            # `right/clickhouse local` fails with "No such file or directory" and
+            # the query is dropped from the comparison. Mirror the reference
+            # layout so `right/clickhouse` exists too.
+            f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse",
             f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse-server",
             f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse-local",
             f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse-client",
