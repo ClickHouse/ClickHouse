@@ -2276,6 +2276,38 @@ def test_dynamic_s3_disk_persisted_opt_in_survives_reload(started_cluster):
     instance.query("DROP TABLE t_dynamic_disk SYNC")
 
 
+def test_dynamic_s3_disk_user_marker_is_not_honored(started_cluster):
+    # The `_server_credentials_allowed` marker is an internal mechanism written by the server only for a disk
+    # that needed server credentials while the session opted in. A user must not be able to pre-seed it in a
+    # disk definition to bypass the restriction on a later reload, so any user-supplied marker is stripped.
+    instance = started_cluster.instances["s3_environment_credentials_restricted_disk"]
+    bucket = started_cluster.minio_restricted_bucket
+    disk_endpoint = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/user_marker/"
+
+    # A disk that resolves the server credentials is still refused at create time even if the marker is
+    # pre-seeded: the marker is ignored on a fresh create (it is only honored when loading from metadata).
+    instance.query("DROP TABLE IF EXISTS t_user_marker SYNC")
+    assert "ACCESS_DENIED" in instance.query_and_get_error(
+        f"CREATE TABLE t_user_marker (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS "
+        f"disk = disk(type = s3, endpoint = '{disk_endpoint}', use_environment_credentials = 1, "
+        f"_server_credentials_allowed = 1)"
+    )
+
+    # A disk with explicit keys is allowed (it does not rely on server credentials), but the pre-seeded marker
+    # is stripped from the stored definition, so it cannot be trusted to relax the check on a later reload.
+    instance.query(
+        f"CREATE TABLE t_user_marker (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS "
+        f"disk = disk(type = s3, endpoint = '{disk_endpoint}', access_key_id = 'minio', "
+        f"secret_access_key = 'ClickHouse_Minio_P@ssw0rd', _server_credentials_allowed = 1)"
+    )
+    create_query = instance.query(
+        "SELECT create_table_query FROM system.tables WHERE database = 'default' AND name = 't_user_marker'"
+    )
+    assert "_server_credentials_allowed" not in create_query, create_query
+
+    instance.query("DROP TABLE t_user_marker SYNC")
+
+
 def test_system_table_s3_disk_uses_server_credentials_with_server_setting(started_cluster):
     # A dynamic S3 disk of a `system`-database table is server-internal infrastructure (the cloud operator
     # attaches system tables to S3 with the server's identity). With the server setting

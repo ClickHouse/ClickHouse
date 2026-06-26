@@ -16,6 +16,8 @@
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -196,17 +198,28 @@ public:
             return;
         auto & args = args_expr->children;
 
-        /// Skip wrapper disks (a nested `disk = disk(...)`): the marker belongs on the inner leaf S3 disk, which
-        /// the visitor reaches separately. Skip a disk that is already marked.
-        for (const auto & arg : args)
+        auto is_marker = [](const ASTPtr & arg)
         {
             const auto * eq = arg->as<ASTFunction>();
             if (!eq || eq->name != "equals" || !eq->arguments || eq->arguments->children.size() != 2)
-                continue;
+                return false;
             const auto * key = eq->arguments->children[0]->as<ASTIdentifier>();
-            if (key && key->name() == "_server_credentials_allowed")
-                return;
-            if (isDiskFunction(eq->arguments->children[1]))
+            return key && key->name() == "_server_credentials_allowed";
+        };
+
+        /// Strip any marker the user put in the definition. This runs only on a fresh create (not on metadata
+        /// load), so a server-written marker in stored metadata is never stripped. As a result a persisted
+        /// marker is only ever one this injector wrote below for a disk that actually needed server credentials
+        /// while the session had the opt-in -- a user cannot pre-seed it to bypass the restriction on reload.
+        args.erase(std::remove_if(args.begin(), args.end(), is_marker), args.end());
+
+        /// A wrapper disk (a nested `disk = disk(...)`) is not itself an S3 disk; the marker belongs on the
+        /// inner leaf S3 disk, which the visitor reaches separately. (Markers were already stripped above.)
+        for (const auto & arg : args)
+        {
+            const auto * eq = arg->as<ASTFunction>();
+            if (eq && eq->name == "equals" && eq->arguments && eq->arguments->children.size() == 2
+                && isDiskFunction(eq->arguments->children[1]))
                 return;
         }
 
