@@ -223,13 +223,19 @@ def test_legacy_async_blocks_cleanup(cluster):
             ORDER BY k
             """
         )
+        # Pin both the floor and the cap of the cleanup schedule low. The /async_blocks sweep is the
+        # background cleanup thread, whose adaptive scheduler backs off up to max_cleanup_delay_period
+        # (default 300s) when a pass finds nothing to clean. Without the low cap a single early pass
+        # (before all the ids are written) reschedules 5 minutes out and never re-runs within the test.
+        # max_cleanup_delay_period must be greater than cleanup_delay_period, hence 2.
         node_new.query(
             f"""
             CREATE TABLE test_legacy_async_blocks_cleanup (k UInt32)
             ENGINE=ReplicatedMergeTree('{zk_path}', '{{replica}}')
             ORDER BY k
             SETTINGS replicated_deduplication_window_for_async_inserts = {window},
-                     cleanup_delay_period = 1, cleanup_delay_period_random_add = 1
+                     cleanup_delay_period = 1, cleanup_delay_period_random_add = 1,
+                     max_cleanup_delay_period = 2
             """
         )
 
