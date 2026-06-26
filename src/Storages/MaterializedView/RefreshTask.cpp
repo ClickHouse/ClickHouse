@@ -948,6 +948,14 @@ void RefreshTask::executeRefresh()
     String error_message;
     std::optional<UUID> new_table_uuid;
 
+    /// Use a deduplication token for APPEND, but only when coordinated: refresh_seq is then shared
+    /// across replicas via the znode, so retries/handoffs of one occurrence reuse the token. Without
+    /// coordination (all_replicas) the znode is per-replica in memory, each replica appends on its
+    /// own, and they must not deduplicate against each other.
+    String insert_deduplication_token;
+    if (refresh_append && coordination.coordinated)
+        insert_deduplication_token = fmt::format("{}:{}", view->getStorageID().getShortName(), execution.znode.refresh_seq);
+
     String log_comment = fmt::format("refresh of {}", view->getStorageID().getFullTableName());
     if (execution.znode.attempt_number > 1)
         log_comment += fmt::format(" (attempt {}/{})", execution.znode.attempt_number, refresh_settings[RefreshSetting::refresh_retries] + 1);
@@ -958,7 +966,7 @@ void RefreshTask::executeRefresh()
     try
     {
         CurrentMetrics::Increment metric_inc(CurrentMetrics::RefreshingViews);
-        new_table_uuid = executeRefreshUnlocked(root_znode_version, deps, log_comment, error_message);
+        new_table_uuid = executeRefreshUnlocked(root_znode_version, deps, log_comment, error_message, insert_deduplication_token);
     }
     catch (...)
     {
@@ -1000,7 +1008,7 @@ void RefreshTask::executeRefresh()
     scheduling_task->schedule();
 }
 
-std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message)
+std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message, const String & insert_deduplication_token)
 {
     StorageID view_storage_id = view->getStorageID();
     LOG_DEBUG(getLogger(), "Refreshing view");
@@ -1033,6 +1041,8 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             if (root_znode_version != -1)
                 refresh_context->setDDLAdditionalChecksOnEnqueue({zkutil::makeCheckRequest(coordination.path, root_znode_version)});
         }
+        else if (!insert_deduplication_token.empty())
+            refresh_context->setSetting("insert_deduplication_token", insert_deduplication_token);
 
         {
             /// Create a table.
@@ -1336,6 +1346,9 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
         else
             znode.previous_attempt_error = znode.last_attempt_error;
     }
+
+    if (znode.attempt_number == 0)
+        znode.refresh_seq += 1;
 
     znode.attempt_number += 1;
     znode.last_attempt_time = std::chrono::floor<std::chrono::seconds>(now);
@@ -1757,6 +1770,8 @@ String RefreshTask::CoordinationZnode::toString() const
     last_success_dependencies.writeText(out);
     out << "\n";
 
+    out << "refresh_seq: " << refresh_seq << "\n";
+
     return out.str();
 }
 
@@ -1846,6 +1861,7 @@ void RefreshTask::CoordinationZnode::parse(const String & data, bool running_zno
 
     optional_field("last_success_end_time_ns", last_success_end_time);
     optional_field("last_success_dependencies", last_success_dependencies);
+    optional_field("refresh_seq", refresh_seq);
 
     if (!next_field_name.empty())
     {
