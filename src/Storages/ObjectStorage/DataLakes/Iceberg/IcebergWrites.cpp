@@ -197,10 +197,6 @@ void writePartitionRecord(
                     return avro::GenericDatum(partition_values[i].safeGet<Float64>());
                 case TypeIndex::String:
                     return avro::GenericDatum(partition_values[i].safeGet<String>());
-                case TypeIndex::Decimal32:
-                    return avro::GenericDatum(partition_values[i].safeGet<Decimal32>().getValue());
-                case TypeIndex::Decimal64:
-                    return avro::GenericDatum(partition_values[i].safeGet<Decimal64>().getValue());
                 default:
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
