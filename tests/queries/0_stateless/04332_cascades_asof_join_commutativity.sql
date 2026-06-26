@@ -1,5 +1,6 @@
--- Tags: no-darwin
+-- Tags: no-darwin, no-old-analyzer
 -- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
+-- no-old-analyzer: distributed Cascades planning requires the analyzer, like the other make_distributed_plan tests.
 
 -- `JoinCommutativity` must not swap ASOF joins: the "closest preceding value"
 -- is resolved per left row, so the result depends on which side is which.

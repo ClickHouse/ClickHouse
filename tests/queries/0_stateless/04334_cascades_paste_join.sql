@@ -1,5 +1,6 @@
--- Tags: no-darwin
+-- Tags: no-darwin, no-old-analyzer
 -- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
+-- no-old-analyzer: distributed Cascades planning requires the analyzer, like the other make_distributed_plan tests.
 
 -- `PASTE JOIN` pairs rows by position, so neither side may be partitioned
 -- independently of the other. Broadcasting the right side while the left is

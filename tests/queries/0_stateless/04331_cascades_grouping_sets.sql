@@ -1,5 +1,6 @@
--- Tags: no-darwin
+-- Tags: no-darwin, no-old-analyzer
 -- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
+-- no-old-analyzer: distributed Cascades planning requires the analyzer, like the other make_distributed_plan tests.
 
 -- Shuffle and two-phase aggregation strategies must not be applied to
 -- `GROUPING SETS` aggregations: `params.keys` is the union of all sets' keys,

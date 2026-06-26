@@ -1,5 +1,6 @@
--- Tags: no-darwin
+-- Tags: no-darwin, no-old-analyzer
 -- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
+-- no-old-analyzer: distributed Cascades planning requires the analyzer, like the other make_distributed_plan tests.
 
 -- Regression test: a distributed Cascades plan must not split a MergeTree read into per-node
 -- mark-range buckets for FINAL on engines with specialized merging (ReplacingMergeTree, ...).
