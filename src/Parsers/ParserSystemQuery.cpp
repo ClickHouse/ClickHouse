@@ -17,8 +17,6 @@
 
 #include <base/EnumReflection.h>
 
-#include <limits>
-
 
 namespace DB
 {
@@ -285,7 +283,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {"DROP COMPILED EXPRESSION CACHE", Type::CLEAR_COMPILED_EXPRESSION_CACHE},
             {"DROP ICEBERG METADATA CACHE", Type::CLEAR_ICEBERG_METADATA_CACHE},
             {"DROP PARQUET METADATA CACHE", Type::CLEAR_PARQUET_METADATA_CACHE},
-            {"DROP POINT IN POLYGON CACHE", Type::CLEAR_POINT_IN_POLYGON_CACHE},
             {"DROP FILESYSTEM CACHE", Type::CLEAR_FILESYSTEM_CACHE},
             {"DROP DISTRIBUTED CACHE", Type::CLEAR_DISTRIBUTED_CACHE},
             {"DROP DISK METADATA CACHE", Type::CLEAR_DISK_METADATA_CACHE},
@@ -638,7 +635,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             String time_str = ast->as<ASTLiteral &>().value.safeGet<String>();
             ReadBufferFromString buf(time_str);
-            time_t time = 0;
+            time_t time;
             readDateTimeText(time, buf);
             res->fake_time_for_view = Int64(time);
 
@@ -701,9 +698,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {
                 res->distributed_cache_server_id = ast->as<ASTLiteral>()->value.safeGet<String>();
             }
-
-            if (!parseQueryWithOnCluster(res, pos, expected))
-                return false;
 
             break;
         }
@@ -819,7 +813,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return true;
             };
 
-            ServerType::Type base_type = {};
+            ServerType::Type base_type;
             std::string base_custom_name;
 
             ServerType::Types exclude_type;
@@ -835,7 +829,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                     base_type != ServerType::Type::QUERIES_CUSTOM)
                     return false;
 
-                ServerType::Type current_type = {};
+                ServerType::Type current_type;
                 std::string current_custom_name;
 
                 while (true)
@@ -967,7 +961,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 res->instrumentation_handler_name = temporary_identifier->as<ASTIdentifier &>().name();
             else
             {
-                expected.add(pos, "handler name (LOG, SLEEP, or PROFILE)");
+                expected.add(pos, "handler name (LOG or PROFILE)");
                 return false;
             }
 
@@ -997,36 +991,23 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
 
 
-            ASTPtr arg_ast;
-            while (ParserLiteral{}.parse(pos, arg_ast, expected))
+            ASTPtr params_ast;
+            while (ParserLiteral{}.parse(pos, params_ast, expected))
             {
-                const auto & value = arg_ast->as<ASTLiteral &>().value;
+                const auto & value = params_ast->as<ASTLiteral &>().value;
                 if (value.getType() == Field::Types::String)
-                    res->instrumentation_arguments.emplace_back(value.safeGet<String>());
+                    res->instrumentation_parameters.emplace_back(value.safeGet<String>());
                 else if (value.getType() == Field::Types::Int64)
-                    res->instrumentation_arguments.emplace_back(value.safeGet<Int64>());
+                    res->instrumentation_parameters.emplace_back(value.safeGet<Int64>());
                 else if (value.getType() == Field::Types::UInt64)
-                {
-                    UInt64 uint_value = value.safeGet<UInt64>();
-                    if (uint_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
-                    {
-                        expected.add(pos, "integer literal not exceeding Int64 maximum");
-                        return false;
-                    }
-                    res->instrumentation_arguments.emplace_back(static_cast<Int64>(uint_value));
-                }
+                    res->instrumentation_parameters.emplace_back(static_cast<Int64>(value.safeGet<UInt64>()));
                 else if (value.getType() == Field::Types::Float64)
-                    res->instrumentation_arguments.emplace_back(value.safeGet<Float64>());
-                else
-                {
-                    expected.add(pos, "string, integer, or float literal argument");
-                    return false;
-                }
+                    res->instrumentation_parameters.emplace_back(value.safeGet<Float64>());
             }
 
-            if (res->instrumentation_arguments.empty())
+            if (res->instrumentation_parameters.empty())
             {
-                expected.add(pos, "at least one argument (string, integer, or float literal)");
+                expected.add(pos, "at least one parameter (string literal)");
                 return false;
             }
 
