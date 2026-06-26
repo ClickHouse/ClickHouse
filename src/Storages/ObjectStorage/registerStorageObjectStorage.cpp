@@ -1,6 +1,7 @@
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Databases/DataLake/RestCatalog.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
@@ -25,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -45,10 +47,40 @@ namespace
 // LocalObjectStorage is only supported for Iceberg Datalake operations where Avro format is required. For regular file access, use FileStorage instead.
 #if USE_AWS_S3 || USE_AZURE_BLOB_STORAGE || USE_HDFS || USE_AVRO
 
+std::shared_ptr<DataLake::ICatalog> prepareCatalogForObjectStorage(
+    const StorageFactory::Arguments & args,
+    const StorageObjectStorageConfigurationPtr & configuration,
+    [[maybe_unused]] ContextPtr context)
+{
+    auto catalog = configuration->getCatalog(context, args.table_id);
+    if (!catalog || catalog->getCatalogType() != DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE)
+        return catalog;
+
+#if USE_AWS_S3
+    auto s3_configuration = std::dynamic_pointer_cast<StorageS3Configuration>(configuration);
+    if (!s3_configuration)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is not S3 type for BigLake catalog");
+
+    auto biglake_catalog = std::dynamic_pointer_cast<DataLake::BigLakeCatalog>(catalog);
+    if (!biglake_catalog)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Catalog is not BigLake type");
+
+    s3_configuration->setInitializationAsBigLake(
+        biglake_catalog->getGoogleADCClientId(),
+        biglake_catalog->getGoogleADCClientSecret(),
+        biglake_catalog->getGoogleADCRefreshToken());
+#else
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server does not contain support for storage type S3 for Iceberg BigLake catalog");
+#endif
+
+    return catalog;
+}
+
 std::shared_ptr<StorageObjectStorage>
 createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorageConfigurationPtr configuration)
 {
     const auto context = args.getLocalContext();
+    auto catalog = prepareCatalogForObjectStorage(args, configuration, context);
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
 
     // Use format settings from global server context + settings from
@@ -84,7 +116,10 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
         // and we want to avoid it when we load the table after a server restart.
-        configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE, std::nullopt),
+        configuration->createObjectStorage(
+            context,
+            /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE,
+            catalog ? catalog->getCredentialsConfigurationCallback(args.table_id) : std::nullopt),
         context_copy, /// Use global context.
         args.table_id,
         args.columns,
@@ -92,7 +127,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         args.comment,
         format_settings,
         args.mode,
-        configuration->getCatalog(context, args.table_id),
+        std::move(catalog),
         args.query.if_not_exists,
         /* is_datalake_query*/ false,
         /* distributed_processing */ false,

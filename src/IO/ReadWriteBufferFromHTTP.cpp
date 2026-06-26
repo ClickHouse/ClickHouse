@@ -26,6 +26,7 @@ bool isRetriableError(const Poco::Net::HTTPResponse::HTTPStatus http_status) noe
         Poco::Net::HTTPResponse::HTTPStatus::HTTP_UNAUTHORIZED,
         Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND,
         Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN,
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT,
         Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_IMPLEMENTED,
         Poco::Net::HTTPResponse::HTTPStatus::HTTP_METHOD_NOT_ALLOWED};
 
