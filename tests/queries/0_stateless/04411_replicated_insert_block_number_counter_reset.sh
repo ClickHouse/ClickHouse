@@ -27,32 +27,37 @@ $CLICKHOUSE_CLIENT --query "
 # exactly the path the table was created with (single source of truth, no duplicated literal).
 ZK_PATH=$($CLICKHOUSE_CLIENT --query "SELECT zookeeper_path FROM system.replicas WHERE database = currentDatabase() AND table = 'rmt'")
 
-# Stop merges so the surviving part keeps block number 0. A background merge could otherwise
-# replace all_0_0_0 with a covering part, and the forced collision below would no longer hit an
-# exact-name match (that race made this test flaky when it inserted several parts).
+# Stop merges so the surviving part is not replaced by a covering part: the forced collision
+# below needs an exact-name match against the part that stays in the working set.
 $CLICKHOUSE_CLIENT --query "SYSTEM STOP MERGES rmt"
 
-# One insert into the fresh table deterministically produces part all_0_0_0 (block number 0).
+# A single insert produces one surviving part. Its block number is NOT guaranteed to be 0:
+# under load a background allocation can consume lower block numbers, so the part can land on
+# block 1 (all_1_1_0) or higher. Read the part's actual block number instead of assuming 0;
+# the reset below is aligned to it so the collision is deterministic (assuming a fixed block
+# made this test flaky: ~3% of runs got all_1_1_0 and the reset-to-0 insert no longer collided).
 $CLICKHOUSE_CLIENT --async_insert 0 --query "INSERT INTO rmt VALUES (0)"
+BLOCK=$($CLICKHOUSE_CLIENT --query "SELECT min_block_number FROM system.parts WHERE database = currentDatabase() AND table = 'rmt' AND active")
 
-# Precondition guard: the surviving part must be at block 0 for the reset below to collide with it.
-$CLICKHOUSE_CLIENT --query "SELECT name FROM system.parts WHERE database = currentDatabase() AND table = 'rmt' AND active"
-
-# Roll the partition block-number counter back to zero while the part stays in the working set.
-# Recreating /block_numbers/all resets its sequential counter (the next allocated block number is
-# derived from the node's cversion), mimicking a ZooKeeper metadata reset under a surviving local
-# part. keeper-client can transiently fail under load and the reset would silently not take effect,
-# so retry until system.zookeeper confirms the counter is back at zero. This keeps the collision
-# below deterministic; without it the next INSERT may get block 1 and not collide (flaky).
+# Roll the partition block-number counter so the NEXT allocation re-issues the surviving part's
+# block number. The number handed out is the cversion of /block_numbers/all (child-create count),
+# so recreating the node resets it to 0 and creating BLOCK throwaway children advances it to BLOCK.
+# This mimics a ZooKeeper metadata reset that re-hands-out a block number already used locally.
+# keeper-client can transiently fail under parallel CI load and its errors go to /dev/null, so
+# retry until system.zookeeper confirms cversion == BLOCK before the colliding INSERT (reading
+# cversion does not change it, and with merges stopped on one quiescent part nothing else does).
 for _ in {1..30}; do
     $CLICKHOUSE_KEEPER_CLIENT -q "rmr '$ZK_PATH/block_numbers/all'" >/dev/null 2>&1
     $CLICKHOUSE_KEEPER_CLIENT -q "touch '$ZK_PATH/block_numbers/all'" >/dev/null 2>&1
+    for ((i = 0; i < BLOCK; i++)); do
+        $CLICKHOUSE_KEEPER_CLIENT -q "create '$ZK_PATH/block_numbers/all/block-' 'x' persistent sequential" >/dev/null 2>&1
+    done
     cversion=$($CLICKHOUSE_CLIENT --query "SELECT cversion FROM system.zookeeper WHERE path = '$ZK_PATH/block_numbers' AND name = 'all'")
-    [ "$cversion" = "0" ] && break
+    [ "$cversion" = "$BLOCK" ] && break
     sleep 0.3
 done
 
-# The next INSERT re-issues block number 0 and collides with the surviving local all_0_0_0.
+# The next INSERT re-issues the surviving part's block number and collides with it locally.
 # It must fail with DUPLICATE_DATA_PART, NOT raise a LOGICAL_ERROR (which aborts the server in
 # debug/sanitizer builds).
 $CLICKHOUSE_CLIENT --async_insert 0 --query "INSERT INTO rmt VALUES (99)" 2>&1 \
