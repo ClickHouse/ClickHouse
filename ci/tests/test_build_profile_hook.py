@@ -2,17 +2,19 @@
 
 See ClickHouse/ClickHouse#84159.
 
-Two layers are covered:
+Layers covered:
 
 * The producer (``utils/prepare-time-trace/prepare-time-trace.sh``): for a build
   with no readable objects (cross-arch/non-Linux) it must leave
   ``binary_sizes.txt`` empty, not write a junk ``0`` row that no consumer can
   parse.
+* The build subset gate (``_should_profile``): telemetry is collected only for
+  an explicit subset of builds (amd_release, arm_release) so that ~25 Build
+  variants do not upload at once and cross the shared cluster's per-user memory
+  limit.
 * The hook artifact selection (``_has_data`` / ``_upload_profile_artifacts``):
   no-op for builds without profile data, upload for builds that have it, and
-  treat a remote-upload rejection as best-effort (logged, never fatal) so a
-  successful build is not reported as failed when the shared analytics DB
-  rejects the telemetry INSERT.
+  propagate (not swallow) an upload rejection so lost telemetry stays visible.
 * The upload transport (``LogCluster.do_query``): the telemetry INSERT runs
   with parallel parsing disabled so its peak parse memory stays under the
   shared cluster's per-user limit.
@@ -23,10 +25,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from ci.jobs.scripts.job_hooks.build_profile_hook import (
     _has_data,
+    _should_profile,
     _upload_profile_artifacts,
 )
 from ci.jobs.scripts.log_cluster import LogCluster
@@ -66,6 +71,19 @@ def test_producer_no_objects_leaves_binary_sizes_empty(tmp_path):
     binary_sizes = out_dir / "binary_sizes.txt"
     assert binary_sizes.exists()
     assert binary_sizes.read_bytes() == b""
+
+
+# --- build subset gate ----------------------------------------------------
+
+
+def test_should_profile_only_release_builds():
+    """Telemetry is collected only for the explicit release-build subset."""
+    assert _should_profile("amd_release")
+    assert _should_profile("arm_release")
+    assert not _should_profile("amd_debug")
+    assert not _should_profile("amd_asan_ubsan")
+    assert not _should_profile("arm_tsan")
+    assert not _should_profile("amd_darwin")
 
 
 # --- hook artifact selection ----------------------------------------------
@@ -122,7 +140,7 @@ def test_cross_arch_build_no_data_is_noop(tmp_path):
     recorded = []
     insert = _record_inserts(recorded)
     _upload_profile_artifacts(
-        "amd_darwin",
+        "arm_release",
         "2026-06-11 00:00:00",
         [
             (insert, tmp_path / "profile.json"),
@@ -145,7 +163,7 @@ def test_native_build_uploads_all(tmp_path):
     recorded = []
     insert = _record_inserts(recorded)
     _upload_profile_artifacts(
-        "amd_debug",
+        "amd_release",
         "2026-06-11 00:00:00",
         [(insert, f) for f in files],
     )
@@ -153,12 +171,13 @@ def test_native_build_uploads_all(tmp_path):
     assert recorded == [str(f) for f in files]
 
 
-def test_remote_upload_rejection_is_best_effort(tmp_path):
-    """A remote-upload rejection must not fail the build post-hook.
+def test_upload_rejection_propagates(tmp_path):
+    """An upload rejection must NOT be swallowed: it propagates to the caller.
 
-    insert_* raises AssertionError when the shared analytics DB rejects the
-    INSERT (e.g. Code 241 MEMORY_LIMIT_EXCEEDED when all Build variants upload
-    at once). That is telemetry-only and must be swallowed, not propagated.
+    With the upload restricted to a small build subset the per-user-limit
+    contention is gone, so a genuine INSERT rejection now means a real lost
+    upload. It must surface (the hook fails loudly) rather than be reported as
+    success.
     """
     f = tmp_path / "binary_sizes.txt"
     f.write_text("1 a.o")
@@ -166,31 +185,10 @@ def test_remote_upload_rejection_is_best_effort(tmp_path):
     def failing_insert(build_name, start_time, file):
         raise AssertionError("upload rejected")
 
-    # Must not raise.
-    _upload_profile_artifacts(
-        "amd_debug", "2026-06-11 00:00:00", [(failing_insert, f)]
-    )
-
-
-def test_one_artifact_rejection_does_not_block_the_rest(tmp_path):
-    """One rejected artifact must not stop the remaining uploads."""
-    a = tmp_path / "profile.json"
-    a.write_text("[]")
-    b = tmp_path / "binary_sizes.txt"
-    b.write_text("1 a.o")
-
-    recorded = []
-
-    def insert(build_name, start_time, file):
-        if str(file).endswith("profile.json"):
-            raise AssertionError("upload rejected")
-        recorded.append(str(file))
-
-    _upload_profile_artifacts(
-        "amd_debug", "2026-06-11 00:00:00", [(insert, a), (insert, b)]
-    )
-
-    assert recorded == [str(b)]
+    with pytest.raises(AssertionError):
+        _upload_profile_artifacts(
+            "amd_release", "2026-06-11 00:00:00", [(failing_insert, f)]
+        )
 
 
 # --- upload transport: parallel parsing disabled --------------------------
