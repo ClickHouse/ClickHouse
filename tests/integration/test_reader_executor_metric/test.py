@@ -60,18 +60,21 @@ ALL_EVENTS = {**METRIC_EVENTS, **POOL_EVENTS}
 # or 0 (stateless: a short-lived one-shot connection per window). max_threads=8 because
 # the read pool hands each thread non-contiguous task ranges, which is where long
 # connections get abandoned (the incomplete-connection / reset regime).
-def _settings(use_long_conn):
-    return {
+def _settings(use_long_conn, extra=None):
+    s = {
         "use_reader_executor": 1,
         "max_threads": 8,
         "reader_executor_use_long_connections": 1 if use_long_conn else 0,
     }
+    if extra:
+        s.update(extra)
+    return s
 
 
 # Page-cache path: a raw-S3 disk (no file cache) plus this setting makes the
 # executor route reads through the userspace page cache (block-granular, 1 MiB).
-def _pc_settings(use_long_conn):
-    s = _settings(use_long_conn)
+def _pc_settings(use_long_conn, extra=None):
+    s = _settings(use_long_conn, extra)
     s["use_page_cache_for_disks_without_file_cache"] = 1
     return s
 
@@ -221,9 +224,9 @@ def _drop_pc():
     node.query("SYSTEM DROP UNCOMPRESSED CACHE")
 
 
-def _measure(query, use_long_conn, pc=False):
+def _measure(query, use_long_conn, pc=False, extra=None):
     qid = str(uuid.uuid4())
-    node.query(query, query_id=qid, settings=_pc_settings(use_long_conn) if pc else _settings(use_long_conn))
+    node.query(query, query_id=qid, settings=_pc_settings(use_long_conn, extra) if pc else _settings(use_long_conn, extra))
     node.query("SYSTEM FLUSH LOGS")
     extra = ["ReaderExecutorModeledCostMicroseconds", "ReaderExecutorRequestedBytes"]
     cols = ", ".join(f"ProfileEvents['{e}']" for e in list(ALL_EVENTS.values()) + extra)
@@ -251,12 +254,14 @@ def _warm_even_blocks(use_long_conn):
     node.query(f"SELECT sum(v), sum(k) FROM t WHERE {ranges}", settings=_settings(use_long_conn))
 
 
-def _collect_samples(query, use_long_conn, state):
-    """Gather SAMPLES measurements for one (load, mode, cache-state) cell."""
+def _collect_samples(query, use_long_conn, state, extra=None):
+    """Gather SAMPLES measurements for one (load, mode, cache-state) cell. `extra` is
+    applied only to the MEASURED reads, never the priming/warming, so the cache state
+    is identical across A/B arms and only the measured query differs."""
     if state == "warm":
         _drop_caches()
         _measure(query, use_long_conn)  # prime once, then measure the warm cache
-        return [_measure(query, use_long_conn) for _ in range(SAMPLES)]
+        return [_measure(query, use_long_conn, extra=extra) for _ in range(SAMPLES)]
     if state == "fragmented":
         # Re-establish the half-warm cache per sample (measuring it would
         # otherwise populate the cold blocks and turn the cache fully warm).
@@ -264,13 +269,13 @@ def _collect_samples(query, use_long_conn, state):
         for _ in range(SAMPLES):
             _drop_caches()
             _warm_even_blocks(use_long_conn)
-            samples.append(_measure(query, use_long_conn))
+            samples.append(_measure(query, use_long_conn, extra=extra))
         return samples
     # cold
     samples = []
     for _ in range(SAMPLES):
         _drop_caches()
-        samples.append(_measure(query, use_long_conn))
+        samples.append(_measure(query, use_long_conn, extra=extra))
     return samples
 
 
@@ -366,6 +371,50 @@ def test_metric_values_and_stability(started_cluster):
     print(banner)
 
     assert not band_violations, "metric band violations:\n" + "\n".join(band_violations)
+
+
+# Plan-window A/B under concurrent load (Stage 3c). Setting
+# `reader_executor_plan_look_ahead_max_window` == `reader_executor_window_size` collapses
+# the generalized plan to a fixed small window; the server default (32 MiB) is the variable
+# window. The single-thread unit grid showed the long-connection carry makes the two
+# cost-equivalent on a sequential scan (identical source GETs). This runs the same
+# comparison under `max_threads=8` with eviction pressure (cold + fragmented), the regime
+# where a large window can pin far-ahead segments a small one would let evict before the
+# serve arrives, dodging a re-fetch. The printed ratios are the evidence that decides
+# whether the variable-window machinery earns its keep (Stage 4); the assertion is only a
+# loose pathology guard, not a tight equivalence gate (under-load variance is real).
+def test_fixed_small_vs_variable_window(started_cluster):
+    window = node.query("SELECT getSetting('reader_executor_window_size')").strip()
+    fixed_small = {"reader_executor_plan_look_ahead_max_window": int(window)}
+    report = []
+    pathological = []
+    for name in ("sequential", "aggregation", "prewhere"):
+        q = LOADS[name]
+        for state in ("cold", "fragmented"):
+            var_s = _collect_samples(q, True, state)
+            small_s = _collect_samples(q, True, state, extra=fixed_small)
+            var_cpm = sum(_cost_per_mib(s) for s in var_s) / len(var_s)
+            small_cpm = sum(_cost_per_mib(s) for s in small_s) / len(small_s)
+            var_r = sum(s["R"] for s in var_s) / len(var_s)
+            small_r = sum(s["R"] for s in small_s) / len(small_s)
+            ratio = small_cpm / var_cpm if var_cpm else 1.0
+            line = (
+                f"[{name}/{state}] variable: R={var_r:.0f} cost/MiB={var_cpm:.2f} | "
+                f"fixed-small: R={small_r:.0f} cost/MiB={small_cpm:.2f} | small/var={ratio:.2f}"
+            )
+            report.append(line)
+            logging.info(line)
+            assert small_r > 0, f"{name}/{state}: fixed-small executor did not run (R=0 -> likely legacy fallback)"
+            # Pathology guard: a fixed-small window must not cost dramatically more than the
+            # variable one. A breach here is the signal that the variable window earns its keep.
+            if ratio > 2.0:
+                pathological.append(f"{name}/{state}: fixed-small cost/MiB {small_cpm:.2f} is {ratio:.2f}x variable {var_cpm:.2f}")
+
+    banner = "\n=== plan-window A/B (variable vs fixed-small, live, under load) ===\n" + "\n".join(report) + "\n"
+    logging.info(banner)
+    print(banner)
+
+    assert not pathological, "fixed-small window pathology:\n" + "\n".join(pathological)
 
 
 def test_page_cache_path(started_cluster):
