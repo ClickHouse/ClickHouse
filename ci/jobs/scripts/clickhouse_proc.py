@@ -154,14 +154,20 @@ class ClickHouseProc:
             )
         print(f"Started setup_minio.sh asynchronously with PID {self.minio_proc.pid}")
 
-        if Shell.check(
-            "/mc ls clickminio/test | grep -q .",
-            verbose=False,
-            retries=6,
-        ):
-            return True
-        print("Failed to start minio")
-        return False
+        # setup_minio.sh exits 0 only after IAM (user/policy/anonymous) is applied
+        # and test data is uploaded; the minio server itself is nohup'd and survives.
+        # Wait on the script: a bucket-listable poll returns mid-IAM-reload, so the
+        # server could start and hit a transient S3 AccessDenied during disk access
+        # check. Its internal readiness wait is 60s; pad here.
+        try:
+            returncode = self.minio_proc.wait(timeout=120)
+        except subprocess.TimeoutExpired:
+            print("Failed to start minio: setup_minio.sh did not finish in time")
+            return False
+        if returncode != 0:
+            print(f"setup_minio.sh exited with code {returncode}")
+            return False
+        return True
 
     def start_azurite(self):
         # Raise the open files limit before launching azurite-rs.
