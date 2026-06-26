@@ -15,6 +15,7 @@ from helpers.s3_queue_common import (
     generate_random_string,
 )
 from helpers.config_cluster import minio_secret_key
+from helpers.test_tools import assert_eq_with_retry
 
 AVAILABLE_MODES = ["unordered", "ordered"]
 
@@ -249,6 +250,9 @@ def test_ordered_start_after_avoids_deep_relisting(started_cluster):
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
+    # Must exceed the S3 list page size (1000) so a deep relist would span more
+    # than one ListObjects call; otherwise the list-call assertion below could
+    # not tell StartAfter apart from a full relist.
     initial_files = 1100
 
     create_table(
@@ -259,8 +263,8 @@ def test_ordered_start_after_avoids_deep_relisting(started_cluster):
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
-            "polling_min_timeout_ms": 60000,
-            "polling_max_timeout_ms": 60000,
+            "polling_min_timeout_ms": 100,
+            "polling_max_timeout_ms": 100,
             "polling_backoff_ms": 0,
         },
     )
@@ -277,14 +281,13 @@ def test_ordered_start_after_avoids_deep_relisting(started_cluster):
 
     create_mv(node, table_name, dst_table_name)
 
-    def get_count():
-        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
-
-    for _ in range(60):
-        if initial_files == get_count():
-            break
-        time.sleep(1)
-    assert initial_files == get_count()
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM {dst_table_name}",
+        str(initial_files),
+        retry_count=120,
+        sleep_time=0.5,
+    )
 
     node.query(f"DROP TABLE {table_name}_mv SYNC")
     baseline_list_calls = int(
@@ -313,13 +316,13 @@ def test_ordered_start_after_avoids_deep_relisting(started_cluster):
     )
 
     expected_rows = initial_files + 1
-    # Polling interval is configured to 60s for this test, so allow enough
-    # time for the first post-restart polling cycle to process the new file.
-    for _ in range(90):
-        if expected_rows == get_count():
-            break
-        time.sleep(1)
-    assert expected_rows == get_count(), f"Timed out waiting for {expected_rows} rows"
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM {dst_table_name}",
+        str(expected_rows),
+        retry_count=120,
+        sleep_time=0.5,
+    )
 
     list_calls_delta = int(
         node.query(
@@ -1124,9 +1127,9 @@ def test_mv_settings(started_cluster, mode, limit):
     )
 
     num_rows = 10
+    files_to_generate = 5
 
     def insert():
-        files_to_generate = 5
         table_name_suffix = f"{uuid.uuid4()}"
         for i in range(files_to_generate):
             file_name = f"file_{table_name}_{table_name_suffix}_{i}.csv"
@@ -1147,14 +1150,15 @@ def test_mv_settings(started_cluster, mode, limit):
     )
     node.query(f"SYSTEM STOP MERGES {dst_table_name}")
 
-    def get_count():
-        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
-
-    expected_rows = num_rows
-    for _ in range(100):
-        if expected_rows == get_count():
-            break
-        time.sleep(1)
+    # All inserted rows must land in the destination before the part-count check.
+    expected_rows = num_rows * files_to_generate
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM {dst_table_name}",
+        str(expected_rows),
+        retry_count=120,
+        sleep_time=0.5,
+    )
 
     assert expected_parts_num == int(
         node.query(
