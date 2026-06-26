@@ -10,9 +10,9 @@
 -- the FUNCTION_IS_NULL/FUNCTION_IS_NOT_NULL handler in sparse index analysis (KeyCondition.cpp) is
 -- reached only when a present prefix column keeps the loaded sparse key set non-empty: the
 -- `a >= 90 AND b IS NULL/IS NOT NULL` cases below constrain `a`, so checkInRange runs and meets the
--- missing `b` column. Filtering on `b` alone caps the loaded key set to zero, so markRangesFromPKRange
--- returns BoolMask(true, true) before checkInRange and never reaches that branch -- those queries only
--- cover the empty-sparse fallback and legacy/lightweight parity. primary_key_lazy_load = 0 keeps
+-- missing `b` column. Filtering on `b` alone references only the truncated suffix, which is not loaded
+-- in the sparse prefix, so the used key columns reduce to nothing usable and no granule is pruned --
+-- those queries only cover the empty-sparse fallback and legacy/lightweight parity. primary_key_lazy_load = 0 keeps
 -- primary_key_bytes_in_memory populated.
 
 DROP TABLE IF EXISTS t_sparse_pk_trunc_isnull;
@@ -40,8 +40,8 @@ SELECT 'b skipped from sparse index',
 
 -- { echoOn }
 
--- Filtering only on the truncated suffix `b`: the loaded sparse key set is empty, so
--- markRangesFromPKRange returns BoolMask(true, true) before checkInRange and no granule is pruned
+-- Filtering only on the truncated suffix `b`: the only referenced key column is not loaded in the
+-- sparse prefix, so no usable key column remains and no granule is pruned
 -- (Granules: 100/100). This covers the empty-sparse fallback and that the lightweight path (=1)
 -- matches the legacy path (=0); the `!is_key_col_present` branch itself is exercised by the
 -- prefix-constrained cases below.
