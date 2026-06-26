@@ -13,7 +13,7 @@
 using namespace Coordination;
 
 
-int mainEntryExampleZkutilTestCommandsNewLib(int argc, char ** argv)
+int main(int argc, char ** argv)
 try
 {
     if (argc < 2)
@@ -39,12 +39,12 @@ try
             host_string.erase(0, strlen("secure://"));
 
         node.host = host_string;
-        node.original_index = static_cast<UInt8>(i);
+        node.original_index = i;
 
         nodes.emplace_back(node);
     }
 
-    ZooKeeper zk(nodes, args, nullptr, nullptr);
+    ZooKeeper zk(nodes, args, nullptr);
 
     Poco::Event event(true);
 
@@ -126,9 +126,8 @@ try
                     std::cerr << "Watch (list) on /, Error: " << errorMessage(response.error) << '\n';
                 else
                     std::cerr << "Watch (list) on /, path: " << response.path << ", type: " << response.type << '\n';
-            }),
-        false,
-        false);
+            })
+        );
 
     //event.wait();
 

@@ -1,4 +1,3 @@
-#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationFixedString.h>
 
 #include <Columns/ColumnFixedString.h>
@@ -26,27 +25,6 @@ namespace ErrorCodes
 }
 
 static constexpr size_t MAX_STRINGS_SIZE = 1ULL << 30;
-
-
-UInt128 SerializationFixedString::getHash(size_t n_)
-{
-    SipHash hash;
-    hash.update("FixedString");
-    hash.update(n_);
-    return hash.get128();
-}
-
-static const char * getEndWithOptionalTrim(const char * pos, size_t n, const FormatSettings & settings)
-{
-    const char * end = pos + n;
-    if (!settings.trim_fixed_string)
-        return end;
-
-    while (end > pos && end[-1] == '\0')
-        --end;
-
-    return end;
-}
 
 void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
@@ -136,19 +114,16 @@ void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffe
 }
 
 
-void SerializationFixedString::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationFixedString::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-    const char * end = getEndWithOptionalTrim(pos, n, settings);
-    writeString(pos, end - pos, ostr);
+    writeString(reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]), n, ostr);
 }
 
 
-void SerializationFixedString::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationFixedString::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-    const char * end = getEndWithOptionalTrim(pos, n, settings);
-    writeAnyEscapedString<'\''>(pos, end, ostr);
+    writeAnyEscapedString<'\''>(pos, pos + n, ostr);
 }
 
 
@@ -208,16 +183,11 @@ static inline bool tryRead(const SerializationFixedString & self, IColumn & colu
     {
         return reader(data) && SerializationFixedString::tryAlignStringLength(self.getN(), data, prev_size);
     }
-    catch (...) // Ok: tryRead is a try-pattern
+    catch (...)
     {
         data.resize_assume_reserved(prev_size);
         return false;
     }
-}
-
-SerializationPtr SerializationFixedString::create(size_t n_)
-{
-    return ISerialization::pooled(getHash(n_), [=] { return new SerializationFixedString(n_); });
 }
 
 
@@ -235,18 +205,10 @@ bool SerializationFixedString::tryDeserializeTextEscaped(IColumn & column, ReadB
 }
 
 
-void SerializationFixedString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationFixedString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-    const char * end = getEndWithOptionalTrim(pos, n, settings);
-    if (settings.values.escape_quote_with_quote)
-    {
-        writeChar('\'', ostr);
-        writeAnyEscapedString<'\'', true, false>(pos, end, ostr);
-        writeChar('\'', ostr);
-    }
-    else
-        writeAnyQuotedString<'\''>(pos, end, ostr);
+    writeAnyQuotedString<'\''>(pos, pos + n, ostr);
 }
 
 
@@ -275,8 +237,7 @@ bool SerializationFixedString::tryDeserializeWholeText(IColumn & column, ReadBuf
 void SerializationFixedString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-    const char * end = getEndWithOptionalTrim(pos, n, settings);
-    writeJSONString(pos, end, ostr, settings);
+    writeJSONString(pos, pos + n, ostr, settings);
 }
 
 
@@ -290,19 +251,17 @@ bool SerializationFixedString::tryDeserializeTextJSON(IColumn & column, ReadBuff
     return tryRead(*this, column, [&istr, &settings](ColumnFixedString::Chars & data) { return tryReadJSONStringInto(data, istr, settings.json); });
 }
 
-void SerializationFixedString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationFixedString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-    const char * end = getEndWithOptionalTrim(pos, n, settings);
-    writeXMLStringForTextElement(pos, end, ostr);
+    writeXMLStringForTextElement(pos, pos + n, ostr);
 }
 
 
-void SerializationFixedString::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationFixedString::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-    const char * end = getEndWithOptionalTrim(pos, n, settings);
-    writeCSVString(pos, end, ostr);
+    writeCSVString(pos, pos + n, ostr);
 }
 
 
@@ -319,12 +278,10 @@ bool SerializationFixedString::tryDeserializeTextCSV(IColumn & column, ReadBuffe
 void SerializationFixedString::serializeTextMarkdown(
     const DB::IColumn & column, size_t row_num, DB::WriteBuffer & ostr, const DB::FormatSettings & settings) const
 {
-    const char * pos = reinterpret_cast<const char *>(&(assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]));
-    const char * end = getEndWithOptionalTrim(pos, n, settings);
-
     if (settings.markdown.escape_special_characters)
     {
-        writeMarkdownEscapedString(pos, end - pos, ostr);
+        writeMarkdownEscapedString(
+            reinterpret_cast<const char *>(&(assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num])), n, ostr);
     }
     else
         serializeTextEscaped(column, row_num, ostr, settings);

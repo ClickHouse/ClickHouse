@@ -1,9 +1,8 @@
-#include <Common/CurrentMemoryTracker.h>
-#include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
-#include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
+#include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+
+#include <Common/CurrentMemoryTracker.h>
 
 
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
@@ -26,9 +25,10 @@ MemoryTracker * getMemoryTracker()
     if (auto * thread_memory_tracker = DB::CurrentThread::getMemoryTracker())
         return thread_memory_tracker;
 
-    /// total_memory_tracker can be used before MainThreadStatus is initialized,
-    /// but only after its own initialization and before teardown.
-    if (DB::MainThreadStatus::initialized() || isTotalMemoryTrackerInitialized())
+    /// Note, we cannot use total_memory_tracker earlier (i.e. just after static variable initialized without this check),
+    /// since the initialization order of static objects is not defined, and total_memory_tracker may not be initialized yet.
+    /// So here we relying on MainThreadStatus initialization.
+    if (DB::MainThreadStatus::initialized())
         return &total_memory_tracker;
 
     return nullptr;
@@ -86,7 +86,7 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
             }
         }
 
-        return AllocationTrace(current_thread->getEffectiveSampleProbability(size));
+        return AllocationTrace(memory_tracker->getSampleProbability(size));
     }
 
     return AllocationTrace(0);
@@ -100,12 +100,14 @@ void CurrentMemoryTracker::check()
 
 AllocationTrace CurrentMemoryTracker::alloc(Int64 size)
 {
-    return allocImpl(size, /*throw_if_memory_exceeded=*/ true);
+    bool throw_if_memory_exceeded = true;
+    return allocImpl(size, throw_if_memory_exceeded);
 }
 
 AllocationTrace CurrentMemoryTracker::allocNoThrow(Int64 size)
 {
-    return allocImpl(size, /*throw_if_memory_exceeded=*/ false);
+    bool throw_if_memory_exceeded = false;
+    return allocImpl(size, throw_if_memory_exceeded);
 }
 
 AllocationTrace CurrentMemoryTracker::free(Int64 size)
@@ -132,7 +134,7 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
             return memory_tracker->free(-untracked_memory);
         }
 
-        return AllocationTrace(current_thread->getEffectiveSampleProbability(size));
+        return AllocationTrace(memory_tracker->getSampleProbability(size));
     }
 
     return AllocationTrace(0);

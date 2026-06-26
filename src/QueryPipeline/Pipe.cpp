@@ -168,6 +168,9 @@ Pipe::Pipe(ProcessorPtr source)
 {
     checkSource(*source);
 
+    if (collected_processors)
+        collected_processors->emplace_back(source);
+
     output_ports.push_back(&source->getOutputs().front());
     header = output_ports.front()->getSharedHeader();
     processors->emplace_back(std::move(source));
@@ -326,18 +329,15 @@ Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors, bool allow
             extremes.emplace_back(pipe.extremes_port);
     }
 
-    Processors totals_processors;
-    res.totals_port = uniteTotals(totals, res.header, totals_processors);
-    res.processors->append_range(totals_processors);
+    size_t num_processors = res.processors->size();
 
-    Processors extremes_processors;
-    res.extremes_port = uniteExtremes(extremes, res.header, extremes_processors);
-    res.processors->append_range(extremes_processors);
+    res.totals_port = uniteTotals(totals, res.header, *res.processors);
+    res.extremes_port = uniteExtremes(extremes, res.header, *res.processors);
 
     if (res.collected_processors)
     {
-        res.collected_processors->append_range(std::move(totals_processors));
-        res.collected_processors->append_range(std::move(extremes_processors));
+        for (; num_processors < res.processors->size(); ++num_processors)
+            res.collected_processors->emplace_back(res.processors->at(num_processors));
     }
 
     return res;
@@ -670,7 +670,7 @@ void Pipe::addChains(std::vector<Chain> chains)
         connect(*output_ports[i], chains[i].getInputPort());
         output_ports[i] = &chains[i].getOutputPort();
 
-        auto added_processors = std::move(chains[i].getProcessors());
+        auto added_processors = Chain::getProcessors(std::move(chains[i]));
         for (auto & transform : added_processors)
         {
             if (collected_processors)

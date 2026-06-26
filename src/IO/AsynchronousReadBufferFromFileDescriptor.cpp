@@ -1,7 +1,6 @@
 #include <ctime>
 #include <optional>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
@@ -55,6 +54,12 @@ std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescripto
     request.ignore = bytes_to_ignore;
     request.direct_io = direct_io;
     bytes_to_ignore = 0;
+
+    /// This is a workaround of a read pass EOF bug in linux kernel with pread()
+    if (file_size.has_value() && file_offset_of_buffer_end >= *file_size)
+    {
+        return std::async(std::launch::deferred, [] { return IAsynchronousReader::Result{.size = 0, .offset = 0}; });
+    }
 
     return reader.submit(request);
 }
@@ -119,23 +124,14 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     else
     {
         /// No pending request. Do synchronous read.
+
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::SynchronousReadWaitMicroseconds);
-        /// * If prefetch() was never called, internal_buffer may point to existing_memory, so we want
-        ///   to read into it while leaving `memory` empty.
-        /// * If prefetch() was called, `memory` is not empty, and internal_buffer may point to
-        ///   prefetch_buffer (if it initially pointed to `memory`, then `memory` and prefetch_buffer
-        ///   were swapped). In this case it's important that we use `memory` instead of
-        ///   `internal_buffer` here. This ensures that we never point working_buffer into
-        ///   prefetch_buffer as that would cause data race if prefetch() is called afterwards.
-        char * buf = memory.size() == 0 ? internal_buffer.begin() : memory.data();
-        chassert(memory.size() == 0 || memory.size() == internal_buffer.size());
-        result = asyncReadInto(buf, internal_buffer.size(), DEFAULT_PREFETCH_PRIORITY).get();
+        result = asyncReadInto(memory.data(), memory.size(), DEFAULT_PREFETCH_PRIORITY).get();
     }
 
-    chassert(!result.page_cache_cell);
     chassert(result.size >= result.offset);
     size_t bytes_read = result.size - result.offset;
-    file_offset_of_buffer_end = result.file_offset_of_buffer_end;
+    file_offset_of_buffer_end += result.size;
 
     if (throttler)
         throttler->throttle(result.size);
@@ -143,7 +139,8 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     if (bytes_read)
     {
         /// Adjust the working buffer so that it ignores `offset` bytes.
-        working_buffer = Buffer(result.buf + result.offset, result.buf + result.size);
+        internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
+        working_buffer = Buffer(memory.data() + result.offset, memory.data() + result.size);
         pos = working_buffer.begin();
     }
 
@@ -179,7 +176,7 @@ AsynchronousReadBufferFromFileDescriptor::AsynchronousReadBufferFromFileDescript
     , required_alignment(alignment)
     , fd(fd_)
     , throttler(throttler_)
-    , query_id(CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext() != nullptr ? CurrentThread::getQueryId() : "")
+    , query_id(CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr ? CurrentThread::getQueryId() : "")
     , current_reader_id(getRandomASCIIString(8))
     , prefetches_log(prefetches_log_)
 {
@@ -295,10 +292,6 @@ void AsynchronousReadBufferFromFileDescriptor::rewind()
     pos = working_buffer.begin();
     file_offset_of_buffer_end = 0;
     bytes_to_ignore = 0;
-
-    /// A previous read cycle may have failed, leaving the buffer in a canceled state.
-    /// Reset so the next read cycle can proceed normally after rewind.
-    canceled = false;
 }
 
 std::optional<size_t> AsynchronousReadBufferFromFileDescriptor::tryGetFileSize()

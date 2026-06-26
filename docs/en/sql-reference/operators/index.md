@@ -1,11 +1,13 @@
 ---
 description: 'Documentation for Operators'
+displayed_sidebar: 'sqlreference'
 sidebar_label: 'Operators'
 sidebar_position: 38
 slug: /sql-reference/operators/
 title: 'Operators'
-doc_type: 'reference'
 ---
+
+# Operators
 
 ClickHouse transforms operators to their corresponding functions at the query parsing stage according to their priority, precedence, and associativity.
 
@@ -19,17 +21,17 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 
 `-a` – The `negate (a)` function.
 
-For tuple negation: [tupleNegate](../../sql-reference/functions/tuple-functions.md#tupleNegate).
+For tuple negation: [tupleNegate](../../sql-reference/functions/tuple-functions.md#tuplenegate).
 
 ## Multiplication and Division Operators {#multiplication-and-division-operators}
 
 `a * b` – The `multiply (a, b)` function.
 
-For multiplying tuple by number: [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tupleMultiplyByNumber), for scalar product: [dotProduct](/sql-reference/functions/array-functions#arrayDotProduct).
+For multiplying tuple by number: [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tuplemultiplybynumber), for scalar product: [dotProduct](/sql-reference/functions/array-functions#arrayDotProduct).
 
 `a / b` – The `divide(a, b)` function.
 
-For dividing tuple by number: [tupleDivideByNumber](../../sql-reference/functions/tuple-functions.md#tupleDivideByNumber).
+For dividing tuple by number: [tupleDivideByNumber](../../sql-reference/functions/tuple-functions.md#tupledividebynumber).
 
 `a % b` – The `modulo(a, b)` function.
 
@@ -37,11 +39,11 @@ For dividing tuple by number: [tupleDivideByNumber](../../sql-reference/function
 
 `a + b` – The `plus(a, b)` function.
 
-For tuple addiction: [tuplePlus](../../sql-reference/functions/tuple-functions.md#tuplePlus).
+For tuple addiction: [tuplePlus](../../sql-reference/functions/tuple-functions.md#tupleplus).
 
 `a - b` – The `minus(a, b)` function.
 
-For tuple subtraction: [tupleMinus](../../sql-reference/functions/tuple-functions.md#tupleMinus).
+For tuple subtraction: [tupleMinus](../../sql-reference/functions/tuple-functions.md#tupleminus).
 
 ## Comparison Operators {#comparison-operators}
 
@@ -68,61 +70,18 @@ For tuple subtraction: [tupleMinus](../../sql-reference/functions/tuple-function
 `a > b` – The `greater(a, b)` function.
 
 ### like function {#like-function}
-`a LIKE b` – The `like(a, b)` function.
+`a LIKE s` – The `like(a, b)` function.
 
 ### notLike function {#notlike-function}
-`a NOT LIKE b` – The `notLike(a, b)` function.
+`a NOT LIKE s` – The `notLike(a, b)` function.
 
 ### ilike function {#ilike-function}
-`a ILIKE b` – The `ilike(a, b)` function.
+`a ILIKE s` – The `ilike(a, b)` function.
 
 ### BETWEEN function {#between-function}
 `a BETWEEN b AND c` – The same as `a >= b AND a <= c`.
 
 `a NOT BETWEEN b AND c` – The same as `a < b OR a > c`.
-
-### is not distinct from operator (`<=>`) {#is-not-distinct-from}
-
-:::note
-From 25.10 you can use `<=>` in the same way as any other operator.
-Before 25.10 it could only be used in JOIN expressions, for example:
-
-```sql
-CREATE TABLE a (x String) ENGINE = Memory;
-INSERT INTO a VALUES ('ClickHouse');
-
-SELECT * FROM a AS a1 JOIN a AS a2 ON a1.x <=> a2.x;
-
-┌─x──────────┬─a2.x───────┐
-│ ClickHouse │ ClickHouse │
-└────────────┴────────────┘
-```
-:::
-
-The `<=>` operator is the `NULL`-safe equality operator, equivalent to `IS NOT DISTINCT FROM`.
-It works like the regular equality operator (`=`), but it treats `NULL` values as comparable.
-Two `NULL` values are considered equal, and a `NULL` compared to any non-`NULL` value returns 0 (false) rather than `NULL`.
-
-```sql
-SELECT
-  'ClickHouse' <=> NULL,
-  NULL <=> NULL
-```
-
-```response
-┌─isNotDistinc⋯use', NULL)─┬─isNotDistinc⋯NULL, NULL)─┐
-│                        0 │                        1 │
-└──────────────────────────┴──────────────────────────┘
-```
-
-## Operators for Working with Strings {#operators-for-working-with-strings}
-
-### OVERLAY {#overlay}
-
-- `OVERLAY(string PLACING replacement FROM offset)` - The `overlay(string, replacement, offset)` function.
-- `OVERLAY(string PLACING replacement FROM offset FOR length)` - The `overlay(string, replacement, offset, length)` function.
-- `OVERLAYUTF8(string PLACING replacement FROM offset)` - The `overlayUTF8(string, replacement, offset)` function.
-- `OVERLAYUTF8(string PLACING replacement FROM offset FOR length)` - The `overlayUTF8(string, replacement, offset, length)` function.
 
 ## Operators for Working with Data Sets {#operators-for-working-with-data-sets}
 
@@ -141,7 +100,7 @@ See [IN operators](../../sql-reference/operators/in.md) and [EXISTS](../../sql-r
 `a GLOBAL NOT IN ...` – The `globalNotIn(a, b)` function.
 
 ### in subquery function {#in-subquery-function}
-`a = ANY (subquery)` – The `in(a, subquery)` function.
+`a = ANY (subquery)` – The `in(a, subquery)` function.  
 
 ### notIn subquery function {#notin-subquery-function}
 `a != ANY (subquery)` – The same as `a NOT IN (SELECT singleValueOrNull(*) FROM subquery)`.
@@ -150,17 +109,19 @@ See [IN operators](../../sql-reference/operators/in.md) and [EXISTS](../../sql-r
 `a = ALL (subquery)` – The same as `a IN (SELECT singleValueOrNull(*) FROM subquery)`.
 
 ### notIn subquery function {#notin-subquery-function-1}
-`a != ALL (subquery)` – The `notIn(a, subquery)` function.
+`a != ALL (subquery)` – The `notIn(a, subquery)` function. 
 
 **Examples**
 
 Query with ALL:
 
-```sql title="Query"
+```sql
 SELECT number AS a FROM numbers(10) WHERE a > ALL (SELECT number FROM numbers(3, 3));
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─a─┐
 │ 6 │
 │ 7 │
@@ -171,11 +132,13 @@ SELECT number AS a FROM numbers(10) WHERE a > ALL (SELECT number FROM numbers(3,
 
 Query with ANY:
 
-```sql title="Query"
+```sql
 SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3, 3));
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─a─┐
 │ 4 │
 │ 5 │
@@ -198,26 +161,16 @@ Extract parts from a given date. For example, you can retrieve a month from a gi
 
 The `part` parameter specifies which part of the date to retrieve. The following values are available:
 
+- `DAY` — The day of the month. Possible values: 1–31.
+- `MONTH` — The number of a month. Possible values: 1–12.
+- `YEAR` — The year.
 - `SECOND` — The second. Possible values: 0–59.
 - `MINUTE` — The minute. Possible values: 0–59.
 - `HOUR` — The hour. Possible values: 0–23.
-- `DAY` — The day of the month. Possible values: 1–31.
-- `WEEK` — The ISO 8601 week number. Possible values: 1–53.
-- `MONTH` — The number of a month. Possible values: 1–12.
-- `QUARTER` — The quarter. Possible values: 1–4.
-- `YEAR` — The year.
-- `EPOCH` — The Unix timestamp (seconds since 1970-01-01 00:00:00 UTC). Note: for `DateTime64`, the subsecond part is truncated.
-- `DOW` — The day of the week (PostgreSQL-compatible). 0 = Sunday, 6 = Saturday.
-- `DOY` — The day of the year. Possible values: 1–366.
-- `ISODOW` — The ISO day of the week. 1 = Monday, 7 = Sunday.
-- `ISOYEAR` — The ISO 8601 week-numbering year.
-- `CENTURY` — The century. For example, the year 2024 is in the 21st century.
-- `DECADE` — The decade (year divided by 10). For example, the year 2024 has decade 202.
-- `MILLENNIUM` — The millennium. For example, the year 2024 is in the 3rd millennium.
 
 The `part` parameter is case-insensitive.
 
-The `date` parameter specifies the date or the time to process. The [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), and [DateTime64](../../sql-reference/data-types/datetime64.md) types are supported.
+The `date` parameter specifies the date or the time to process. Either [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md) type is supported.
 
 Examples:
 
@@ -225,9 +178,6 @@ Examples:
 SELECT EXTRACT(DAY FROM toDate('2017-06-15'));
 SELECT EXTRACT(MONTH FROM toDate('2017-06-15'));
 SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
-SELECT EXTRACT(EPOCH FROM toDateTime('2024-01-15 12:30:45', 'UTC'));
-SELECT EXTRACT(DOW FROM toDate('2024-01-15'));
-SELECT EXTRACT(CENTURY FROM toDate('2024-01-01'));
 ```
 
 In the following example we create a table and insert into it a value with the `DateTime` type.
@@ -238,8 +188,8 @@ CREATE TABLE test.Orders
     OrderId UInt64,
     OrderName String,
     OrderDate DateTime
-) ENGINE = MergeTree
-ORDER BY ();
+)
+ENGINE = Log;
 ```
 
 ```sql
@@ -281,7 +231,7 @@ Types of intervals:
 
 You can also use a string literal when setting the `INTERVAL` value. For example, `INTERVAL 1 HOUR` is identical to the `INTERVAL '1 hour'` or `INTERVAL '1' hour`.
 
-:::tip
+:::tip    
 Intervals with different types can't be combined. You can't use expressions like `INTERVAL 4 DAY 1 HOUR`. Specify intervals in units that are smaller or equal to the smallest unit of the interval, for example, `INTERVAL 25 HOUR`. You can use consecutive operations, like in the example below.
 :::
 
@@ -317,7 +267,7 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL '4' day + INTERV
 └─────────────────────┴────────────────────────────────────────────────────────────┘
 ```
 
-:::note
+:::note    
 The `INTERVAL` syntax or `addDays` function are always preferred. Simple addition or subtraction (syntax like `now() + ...`) doesn't consider time settings. For example, daylight saving time.
 :::
 
@@ -336,57 +286,7 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 6
 **See Also**
 
 - [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type
-- [toInterval](/sql-reference/functions/type-conversion-functions#toIntervalYear) type conversion functions
-
-### Date and Time Addition {#date-time-addition}
-
-A [Date](../../sql-reference/data-types/date.md) or [Date32](../../sql-reference/data-types/date32.md) value can be added to a [Time](../../sql-reference/data-types/time.md) or [Time64](../../sql-reference/data-types/time64.md) value using the `+` operator. The result is a [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md) representing the date at the given time of day. The operation is commutative.
-
-The result type depends on the operand types:
-
-| Left operand | Right operand | Result type |
-|---|---|---|
-| `Date` | `Time` | `DateTime` |
-| `Date` | `Time64(s)` | `DateTime64(s)` |
-| `Date32` | `Time` | `DateTime64(0)` |
-| `Date32` | `Time64(s)` | `DateTime64(s)` |
-
-:::note
-The result uses the [session timezone](../../operations/settings/settings.md#session_timezone) (or server default timezone if no session timezone is set). The [`date_time_overflow_behavior`](../../operations/settings/settings-formats.md#date_time_overflow_behavior) setting controls what happens when the result is outside the representable range.
-:::
-
-Examples:
-
-```sql
-SET use_legacy_to_time = 0;
-SELECT toDate('2024-07-15') + toTime('14:30:25') AS dt, toTypeName(dt);
-```
-
-```text
-┌──────────────────dt─┬─toTypeName(dt)─┐
-│ 2024-07-15 14:30:25 │ DateTime       │
-└─────────────────────┴────────────────┘
-```
-
-```sql
-SELECT toDate('2024-07-15') + toTime64('14:30:25.123456', 6) AS dt, toTypeName(dt);
-```
-
-```text
-┌─────────────────────────dt─┬─toTypeName(dt)─┐
-│ 2024-07-15 14:30:25.123456 │ DateTime64(6)  │
-└────────────────────────────┴────────────────┘
-```
-
-```sql
-SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt);
-```
-
-```text
-┌──────────────────────dt─┬─toTypeName(dt)─┐
-│ 2024-07-15 23:59:59.999 │ DateTime64(3)  │
-└─────────────────────────┴────────────────┘
-```
+- [toInterval](/sql-reference/functions/type-conversion-functions#tointervalyear) type conversion functions
 
 ## Logical AND Operator {#logical-and-operator}
 
@@ -494,34 +394,3 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 ```
 
 Can be optimized by enabling the [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NOT NULL FROM table` transforms to `SELECT NOT n.null FROM TABLE`.
-
-## Checking Boolean Values {#checking-boolean-values}
-
-ClickHouse supports the `IS TRUE`, `IS FALSE`, `IS UNKNOWN`, `IS NOT TRUE`, `IS NOT FALSE`, and `IS NOT UNKNOWN` operators.
-They are used with [Bool](../../sql-reference/data-types/boolean.md) and `Nullable(Bool)` expressions.
-
-- `expr IS TRUE` returns `1` only if `expr` is `true`.
-- `expr IS FALSE` returns `1` only if `expr` is `false`.
-- `expr IS UNKNOWN` returns `1` only if `expr` is `NULL`.
-- `expr IS NOT TRUE` returns `1` if `expr` is `false` or `NULL`.
-- `expr IS NOT FALSE` returns `1` if `expr` is `true` or `NULL`.
-- `expr IS NOT UNKNOWN` returns `1` if `expr` is not `NULL`.
-
-For boolean expressions, `IS UNKNOWN` is equivalent to `IS NULL`, and `IS NOT UNKNOWN` is equivalent to `IS NOT NULL`.
-
-<!-- -->
-
-```sql
-CREATE TABLE t_bool (x Nullable(Bool)) ENGINE = Memory;
-INSERT INTO t_bool VALUES (true), (false), (NULL);
-
-SELECT
-    x,
-    x IS TRUE,
-    x IS FALSE,
-    x IS UNKNOWN,
-    x IS NOT TRUE,
-    x IS NOT FALSE,
-    x IS NOT UNKNOWN
-FROM t_bool;
-```

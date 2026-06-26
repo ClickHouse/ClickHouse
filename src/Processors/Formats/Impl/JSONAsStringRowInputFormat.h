@@ -4,6 +4,7 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <IO/PeekableReadBuffer.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeObject.h>
 
 namespace DB
@@ -57,7 +58,7 @@ private:
     void readJSONObject(IColumn & column) override;
 };
 
-class JSONAsStringExternalSchemaReader final : public IExternalSchemaReader
+class JSONAsStringExternalSchemaReader : public IExternalSchemaReader
 {
 public:
     NamesAndTypesList readSchema() override
@@ -66,7 +67,7 @@ public:
     }
 };
 
-class JSONAsObjectExternalSchemaReader final : public IExternalSchemaReader
+class JSONAsObjectExternalSchemaReader : public IExternalSchemaReader
 {
 public:
     explicit JSONAsObjectExternalSchemaReader(const FormatSettings & settings_);

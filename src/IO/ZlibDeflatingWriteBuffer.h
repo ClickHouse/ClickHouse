@@ -60,8 +60,8 @@ private:
     /// Flush all pending data and write zlib footer to the underlying buffer.
     /// After the first call to this function, subsequent calls will have no effect and
     /// an attempt to write to this buffer will result in exception.
-    void finalFlushBefore() override;
-    void finalFlushAfter() override;
+    void finalizeBefore() override;
+    void finalizeAfter() override;
 
     z_stream zstr;
     bool compress_empty = true;

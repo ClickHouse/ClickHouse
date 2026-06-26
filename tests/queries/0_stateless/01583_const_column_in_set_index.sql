@@ -1,5 +1,3 @@
-SET query_plan_optimize_prewhere = 1;
-
 drop table if exists insub;
 
 create table insub (i int, j int) engine MergeTree order by i settings index_granularity = 1;

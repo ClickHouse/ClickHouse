@@ -1,7 +1,6 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Port.h>
 #include <QueryPipeline/Chain.h>
-#include <Core/Block.h>
 
 namespace DB
 {

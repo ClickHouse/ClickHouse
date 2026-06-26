@@ -12,7 +12,7 @@ namespace DB
 
 ReadSettings getReadSettings()
 {
-    auto query_context = CurrentThread::tryGetQueryContext();
+    auto query_context = CurrentThread::getQueryContext();
     if (query_context)
         return query_context->getReadSettings();
 
@@ -44,6 +44,14 @@ ReadSettings ReadSettings::adjustBufferSize(size_t file_size) const
     res.remote_fs_buffer_size = std::min(std::max(1ul, file_size), remote_fs_buffer_size);
     /// Note, we do not touch prefetch_buffer_size since in case of filesystem_cache_prefer_bigger_buffer_size
     /// the buffer may exceed the limit up to prefetch_buffer_size, but it will not exceed total file size.
+    return res;
+}
+
+ReadSettings ReadSettings::withNestedBuffer() const
+{
+    ReadSettings res = *this;
+    res.remote_read_buffer_restrict_seek = true;
+    res.remote_read_buffer_use_external_buffer = true;
     return res;
 }
 

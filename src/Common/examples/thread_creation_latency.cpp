@@ -5,10 +5,17 @@
 
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
 
+
+int value = 0;
+
+static void f() { ++value; }
+static void * g(void *) { f(); return {}; }
+
+using ThreadFromGlobalPoolSimple = ThreadFromGlobalPoolImpl</* propagate_opentelemetry_context= */ false, /* global_trace_collector_allowed= */ false>;
+using SimpleThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolSimple>;
 
 namespace CurrentMetrics
 {
@@ -25,16 +32,6 @@ namespace DB
     }
 }
 
-namespace
-{
-
-int value = 0;
-
-void f() { ++value; }
-void * g(void *) { f(); return {}; }
-
-using ThreadFromGlobalPoolSimple = ThreadFromGlobalPoolImpl</* propagate_opentelemetry_context= */ false, /* global_trace_collector_allowed= */ false>;
-using SimpleThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolSimple>;
 
 template <typename F>
 void test(size_t n, const char * name, F && kernel)
@@ -63,16 +60,15 @@ void test(size_t n, const char * name, F && kernel)
         << std::fixed << std::setprecision(2)
         << n << " ops in "
         << watch.elapsedSeconds() << " sec., "
-        << static_cast<double>(n) / watch.elapsedSeconds() << " ops/sec., "
-        << "avg latency: " << watch.elapsedSeconds() / static_cast<double>(n) * 1000000 << " μs, "
+        << n / watch.elapsedSeconds() << " ops/sec., "
+        << "avg latency: " << watch.elapsedSeconds() / n * 1000000 << " μs, "
         << "max latency: " << max_seconds * 1000000 << " μs "
         << "(res = " << value << ")"
         << std::endl;
 }
 
-}
 
-int mainEntryExampleThreadCreationLatency(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     size_t n = argc == 2 ? DB::parse<UInt64>(argv[1]) : 100000;
 

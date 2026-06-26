@@ -55,7 +55,6 @@ INSERT INTO event_types SELECT
 FROM numbers(20);
 
 SET optimize_sorting_by_input_stream_properties = 1;
-set ignore_format_null_for_explain = 0;
 
 -- We check only that no exception was thrown
 EXPLAIN PIPELINE

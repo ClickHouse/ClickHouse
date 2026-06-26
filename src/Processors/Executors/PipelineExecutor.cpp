@@ -11,7 +11,6 @@
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <Common/logger_useful.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/ExecutingGraph.h>
@@ -94,17 +93,6 @@ const Processors & PipelineExecutor::getProcessors() const
     return graph->getProcessors();
 }
 
-static IProcessor::CancelReason toCancelReason(PipelineExecutor::ExecutionStatus status)
-{
-    switch (status)
-    {
-        case PipelineExecutor::ExecutionStatus::CancelledByUser:    return IProcessor::CancelReason::CancelledByUser;
-        case PipelineExecutor::ExecutionStatus::CancelledByTimeout: return IProcessor::CancelReason::CancelledByTimeout;
-        case PipelineExecutor::ExecutionStatus::Exception:          return IProcessor::CancelReason::Exception;
-        default:                                                    return IProcessor::CancelReason::Unknown;
-    }
-}
-
 void PipelineExecutor::cancel(ExecutionStatus reason)
 {
     /// It is allowed to cancel not started query by user.
@@ -113,7 +101,7 @@ void PipelineExecutor::cancel(ExecutionStatus reason)
 
     tryUpdateExecutionStatus(ExecutionStatus::Executing, reason);
     finish();
-    graph->cancel(toCancelReason(reason));
+    graph->cancel();
 }
 
 void PipelineExecutor::cancelReading()
@@ -121,7 +109,7 @@ void PipelineExecutor::cancelReading()
     if (!cancelled_reading)
     {
         cancelled_reading = true;
-        graph->cancel(IProcessor::CancelReason::PartialResult);
+        graph->cancel(/*cancel_all_processors*/ false);
     }
 }
 
@@ -149,13 +137,13 @@ void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
 
         /// Log all of the LOGICAL_ERROR exceptions.
         for (auto & node : graph->nodes)
-            if (node.exception && getExceptionErrorCode(node.exception) == ErrorCodes::LOGICAL_ERROR)
-                tryLogException(node.exception, log);
+            if (node->exception && getExceptionErrorCode(node->exception) == ErrorCodes::LOGICAL_ERROR)
+                tryLogException(node->exception, log);
 
         /// Rethrow the first exception.
         for (auto & node : graph->nodes)
-            if (node.exception)
-                std::rethrow_exception(node.exception);
+            if (node->exception)
+                std::rethrow_exception(node->exception);
 
         /// Exception which happened in executing thread, but not at processor.
         tasks.rethrowFirstThreadException();
@@ -195,8 +183,8 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
 
     /// Execution can be stopped because of exception. Check and rethrow if any.
     for (auto & node : graph->nodes)
-        if (node.exception)
-            std::rethrow_exception(node.exception);
+        if (node->exception)
+            std::rethrow_exception(node->exception);
 
     finalizeExecution();
 
@@ -253,20 +241,20 @@ void PipelineExecutor::finalizeExecution()
     bool all_processors_finished = true;
     for (auto & node : graph->nodes)
     {
-        if (node.status != ExecutingGraph::ExecStatus::Finished)
+        if (node->status != ExecutingGraph::ExecStatus::Finished)
         {
             /// Single thread, do not hold mutex
             all_processors_finished = false;
             break;
         }
-        if (node.processor() && read_progress_callback)
+        if (node->processor && read_progress_callback)
         {
             /// Some executors might have reported progress as part of their finish() call
             /// For example, when reading from parallel replicas the coordinator will cancel the queries as soon as it
             /// enough data (on LIMIT), but as the progress report is asynchronous it might not be reported until the
             /// connection is cancelled and all packets drained
             /// To cover these cases we check if there is any pending progress in the processors to report
-            if (auto read_progress = node.processor()->getReadProgress())
+            if (auto read_progress = node->processor->getReadProgress())
             {
                 if (read_progress->counters.total_rows_approx)
                     read_progress_callback->addTotalRowsApprox(read_progress->counters.total_rows_approx);
@@ -294,10 +282,10 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, IAcquiredSlot * cp
     auto & context = tasks.getThreadContext(thread_num);
     LOG_TEST(log,
               "Thread finished. Total time: {} sec. Execution time: {} sec. Processing time: {} sec. Wait time: {} sec.",
-              static_cast<double>(context.total_time_ns) / 1e9,
-              static_cast<double>(context.execution_time_ns) / 1e9,
-              static_cast<double>(context.processing_time_ns) / 1e9,
-              static_cast<double>(context.wait_time_ns) / 1e9);
+              context.total_time_ns / 1e9,
+              context.execution_time_ns / 1e9,
+              context.processing_time_ns / 1e9,
+              context.wait_time_ns / 1e9);
 #endif
 }
 
@@ -380,7 +368,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_sl
                 Queue async_queue;
 
                 /// Prepare processor after execution.
-                auto status = graph->updateNode(context.getTask(), queue, async_queue);
+                auto status = graph->updateNode(context.getProcessorID(), queue, async_queue);
                 if (status == ExecutingGraph::UpdateNodeStatus::Exception)
                     cancel(ExecutionStatus::Exception);
 
@@ -478,7 +466,7 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
     //    the ConcurrencyControl class is used instead of resource scheduler
     if (concurrency_control)
     {
-        auto query_context = CurrentThread::tryGetQueryContext();
+        auto query_context = CurrentThread::getQueryContext();
         ResourceLink master_thread_link;
         ResourceLink worker_thread_link;
         bool workload_cpu_scheduling_is_enabled = false;
@@ -570,7 +558,7 @@ void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
         /// Start new thread
         pool->scheduleOrThrowOnError([this, thread_num, thread_group = CurrentThread::getGroup(), my_slot = std::move(slot)]
         {
-            ThreadGroupSwitcher switcher(thread_group, ThreadName::QUERY_ASYNC_EXECUTOR);
+            ThreadGroupSwitcher switcher(thread_group, "QueryPipelineEx");
 
             try
             {
@@ -632,15 +620,15 @@ String PipelineExecutor::dumpPipeline() const
     {
         {
             WriteBufferFromOwnString buffer;
-            buffer << "(" << node.num_executed_jobs << " jobs";
+            buffer << "(" << node->num_executed_jobs << " jobs";
 
 #ifndef NDEBUG
-            buffer << ", execution time: " << static_cast<double>(node.execution_time_ns) / 1e9 << " sec.";
-            buffer << ", preparation time: " << static_cast<double>(node.preparation_time_ns) / 1e9 << " sec.";
+            buffer << ", execution time: " << node->execution_time_ns / 1e9 << " sec.";
+            buffer << ", preparation time: " << node->preparation_time_ns / 1e9 << " sec.";
 #endif
 
             buffer << ")";
-            node.processor()->setDescription(buffer.str());
+            node->processor->setDescription(buffer.str());
         }
     }
 
@@ -651,8 +639,8 @@ String PipelineExecutor::dumpPipeline() const
 
     for (const auto & node : graph->nodes)
     {
-        proc_list.emplace_back(node.processor());
-        statuses.emplace_back(node.last_processor_status);
+        proc_list.emplace_back(node->processor);
+        statuses.emplace_back(node->last_processor_status);
     }
 
     WriteBufferFromOwnString out;

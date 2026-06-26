@@ -24,7 +24,6 @@ namespace ErrorCodes
 
 ClientInfo::ClientInfo()
 {
-    connection_address = std::make_shared<Poco::Net::SocketAddress>();
     current_address = std::make_shared<Poco::Net::SocketAddress>();
     initial_address = std::make_shared<Poco::Net::SocketAddress>();
 }

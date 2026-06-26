@@ -5,8 +5,6 @@
 #include <base/sort.h>
 
 #include <Common/iota.h>
-#include <Columns/ColumnSparse.h>
-#include <QueryPipeline/QueryPipeline.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -44,11 +42,7 @@ IPolygonDictionary::IPolygonDictionary(
 {
     setup();
     loadData();
-    /// `calculateBytesAllocated` is intentionally not called here: the base
-    /// constructor runs before derived class members (the lookup index) are
-    /// initialized, and a virtual dispatch from the base would skip the
-    /// derived `getIndexBytesAllocated`. Each concrete subclass calls
-    /// `calculateBytesAllocated` from its own constructor instead.
+    calculateBytesAllocated();
 }
 
 void IPolygonDictionary::convertKeyColumns(Columns & key_columns, DataTypes & key_types) const
@@ -160,52 +154,14 @@ ColumnPtr IPolygonDictionary::getColumn(
                         default_value_provider.value());
                 }
             }
-            else if constexpr (std::is_same_v<ValueType, Map>)
-            {
-                if (is_short_circuit)
-                {
-                    getItemsShortCircuitImpl<ValueType>(
-                        requested_key_points,
-                        [&](size_t row) { return (*attribute_values_column)[row].safeGet<Map>(); },
-                        [&](Map & value) { result_column_typed.insert(value); },
-                        default_mask.value());
-                }
-                else
-                {
-                    getItemsImpl<ValueType>(
-                        requested_key_points,
-                        [&](size_t row) { return (*attribute_values_column)[row].safeGet<Map>(); },
-                        [&](Map & value) { result_column_typed.insert(value); },
-                        default_value_provider.value());
-                }
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
-            {
-                if (is_short_circuit)
-                {
-                    getItemsShortCircuitImpl<ValueType>(
-                        requested_key_points,
-                        [&](size_t row) { return (*attribute_values_column)[row].safeGet<Object>(); },
-                        [&](Object & value) { result_column_typed.insert(value); },
-                        default_mask.value());
-                }
-                else
-                {
-                    getItemsImpl<ValueType>(
-                        requested_key_points,
-                        [&](size_t row) { return (*attribute_values_column)[row].safeGet<Object>(); },
-                        [&](Object & value) { result_column_typed.insert(value); },
-                        default_value_provider.value());
-                }
-            }
-            else if constexpr (std::is_same_v<ValueType, std::string_view>)
+            else if constexpr (std::is_same_v<ValueType, StringRef>)
             {
                 if (is_short_circuit)
                 {
                     getItemsShortCircuitImpl<ValueType>(
                         requested_key_points,
                         [&](size_t row) { return attribute_values_column->getDataAt(row); },
-                        [&](std::string_view value) { result_column_typed.insertData(value.data(), value.size()); },
+                        [&](StringRef value) { result_column_typed.insertData(value.data, value.size); },
                         default_mask.value());
                 }
                 else
@@ -213,7 +169,7 @@ ColumnPtr IPolygonDictionary::getColumn(
                     getItemsImpl<ValueType>(
                         requested_key_points,
                         [&](size_t row) { return attribute_values_column->getDataAt(row); },
-                        [&](std::string_view value) { result_column_typed.insertData(value.data(), value.size()); },
+                        [&](StringRef value) { result_column_typed.insertData(value.data, value.size); },
                         default_value_provider.value());
                 }
             }
@@ -313,7 +269,7 @@ void IPolygonDictionary::blockToAttributes(const DB::Block & block)
     for (size_t i = 0; i < attributes_columns.size(); ++i)
     {
         const auto & block_column = block.safeGetByPosition(i + skip_key_column_offset);
-        auto column = removeSpecialRepresentations(block_column.column->convertToFullColumnIfConst());
+        const auto & column = block_column.column;
 
         attributes_columns[i]->assumeMutable()->insertRangeFrom(*column, 0, column->size());
     }
@@ -332,74 +288,63 @@ void IPolygonDictionary::blockToAttributes(const DB::Block & block)
 
 void IPolygonDictionary::loadData()
 {
-    BlockIO io = source_ptr->loadAll();
+    QueryPipeline pipeline(source_ptr->loadAll());
 
-    io.executeWithCallbacks([&]()
-    {
-        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-        io.pipeline.setConcurrencyControl(false);
+    DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+    pipeline.setConcurrencyControl(false);
+    Block block;
+    while (executor.pull(block))
+        blockToAttributes(block);
 
-        Block block;
-        while (executor.pull(block))
-            blockToAttributes(block);
-    });
-
-    /// Correct and sort polygons by area, applying the same permutation to `polygon_index_to_attribute_value_index`. The
-    /// sort runs over an index permutation and the two destination vectors are rebuilt via `std::move`, so each polygon's
-    /// inner ring storage is transferred rather than deep-copied -- keeping peak load-time memory close to 1x the polygon
-    /// storage.
+    /// Correct and sort polygons by area and update polygon_index_to_attribute_value_index after sort
     PaddedPODArray<double> areas;
     areas.resize_fill(polygons.size());
 
-    VectorWithMemoryTracking<size_t> order(polygons.size());
+    std::vector<std::pair<Polygon, size_t>> polygon_ids;
+    polygon_ids.reserve(polygons.size());
 
     for (size_t i = 0; i < polygons.size(); ++i)
     {
         auto & polygon = polygons[i];
         bg::correct(polygon);
+
         areas[i] = bg::area(polygon);
-        order[i] = i;
+        polygon_ids.emplace_back(polygon, i);
     }
 
-    ::sort(order.begin(), order.end(), [&areas](size_t lhs, size_t rhs)
+    ::sort(polygon_ids.begin(), polygon_ids.end(), [& areas](const auto & lhs, const auto & rhs)
     {
-        return areas[lhs] < areas[rhs];
+        return areas[lhs.second] < areas[rhs.second];
     });
 
-    VectorWithMemoryTracking<Polygon> sorted_polygons;
-    sorted_polygons.reserve(polygons.size());
-    VectorWithMemoryTracking<size_t> sorted_ids;
-    sorted_ids.reserve(polygon_index_to_attribute_value_index.size());
+    std::vector<size_t> correct_ids;
+    correct_ids.reserve(polygon_ids.size());
 
-    for (size_t idx : order)
+    for (size_t i = 0; i < polygon_ids.size(); ++i)
     {
-        sorted_polygons.emplace_back(std::move(polygons[idx]));
-        sorted_ids.emplace_back(polygon_index_to_attribute_value_index[idx]);
+        auto & polygon = polygon_ids[i];
+        correct_ids.emplace_back(polygon_index_to_attribute_value_index[polygon.second]);
+        polygons[i] = polygon.first;
     }
 
-    polygons = std::move(sorted_polygons);
-    polygon_index_to_attribute_value_index = std::move(sorted_ids);
+    polygon_index_to_attribute_value_index = std::move(correct_ids);
 }
 
 void IPolygonDictionary::calculateBytesAllocated()
 {
+    /// Index allocated by subclass not counted because it take a small part in relation to attributes and polygons
+
     if (configuration.store_polygon_key_column)
         bytes_allocated += key_attribute_column->allocatedBytes();
 
     for (const auto & column : attributes_columns)
         bytes_allocated += column->allocatedBytes();
 
-    bytes_allocated += polygons.capacity() * sizeof(Polygon);
-    for (const auto & polygon : polygons)
+    for (auto & polygon : polygons)
         bytes_allocated += bg::num_points(polygon) * sizeof(Point);
-
-    bytes_allocated += polygon_index_to_attribute_value_index.capacity() * sizeof(size_t);
-
-    /// Subclasses that build a lookup index (grid, slabs) report it here.
-    bytes_allocated += getIndexBytesAllocated();
 }
 
-VectorWithMemoryTracking<IPolygonDictionary::Point> IPolygonDictionary::extractPoints(const Columns & key_columns)
+std::vector<IPolygonDictionary::Point> IPolygonDictionary::extractPoints(const Columns & key_columns)
 {
     if (key_columns.size() != 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected two columns of coordinates with type Float64");
@@ -412,7 +357,7 @@ VectorWithMemoryTracking<IPolygonDictionary::Point> IPolygonDictionary::extractP
 
     const auto rows = key_columns.front()->size();
 
-    VectorWithMemoryTracking<Point> result;
+    std::vector<Point> result;
     result.reserve(rows);
 
     for (size_t row = 0; row < rows; ++row)
@@ -436,7 +381,7 @@ VectorWithMemoryTracking<IPolygonDictionary::Point> IPolygonDictionary::extractP
 
 ColumnUInt8::Ptr IPolygonDictionary::hasKeys(const Columns & key_columns, const DataTypes &) const
 {
-    VectorWithMemoryTracking<IPolygonDictionary::Point> points = extractPoints(key_columns);
+    std::vector<IPolygonDictionary::Point> points = extractPoints(key_columns);
 
     auto result = ColumnUInt8::create(points.size());
     auto & out = result->getData();
@@ -459,7 +404,7 @@ ColumnUInt8::Ptr IPolygonDictionary::hasKeys(const Columns & key_columns, const 
 
 template <typename AttributeType, typename ValueGetter, typename ValueSetter, typename DefaultValueExtractor>
 void IPolygonDictionary::getItemsImpl(
-    const VectorWithMemoryTracking<IPolygonDictionary::Point> & requested_key_points,
+    const std::vector<IPolygonDictionary::Point> & requested_key_points,
     ValueGetter && get_value,
     ValueSetter && set_value,
     DefaultValueExtractor & default_value_extractor) const
@@ -490,7 +435,7 @@ void IPolygonDictionary::getItemsImpl(
             {
                 set_value(default_value.safeGet<Array>());
             }
-            else if constexpr (std::is_same_v<AttributeType, std::string_view>)
+            else if constexpr (std::is_same_v<AttributeType, StringRef>)
             {
                 auto default_value_string = default_value.safeGet<String>();
                 set_value(default_value_string);
@@ -508,7 +453,7 @@ void IPolygonDictionary::getItemsImpl(
 
 template <typename AttributeType, typename ValueGetter, typename ValueSetter>
 void IPolygonDictionary::getItemsShortCircuitImpl(
-    const VectorWithMemoryTracking<IPolygonDictionary::Point> & requested_key_points,
+    const std::vector<IPolygonDictionary::Point> & requested_key_points,
     ValueGetter && get_value,
     ValueSetter && set_value,
     IColumn::Filter & default_mask) const
@@ -595,8 +540,8 @@ struct Offset
 
 struct Data
 {
-    VectorWithMemoryTracking<IPolygonDictionary::Polygon> & dest;
-    VectorWithMemoryTracking<size_t> & ids;
+    std::vector<IPolygonDictionary::Polygon> & dest;
+    std::vector<size_t> & ids;
 
     void addPolygon(bool new_multi_polygon = false)
     {

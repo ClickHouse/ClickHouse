@@ -1,7 +1,6 @@
 #include <Access/AccessControl.h>
 
 #include <Columns/getLeastSuperColumn.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
@@ -29,7 +28,6 @@ namespace Setting
     extern const SettingsUInt64 max_rows_in_distinct;
     extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsBool optimize_distinct_in_order;
 }
 
@@ -53,7 +51,7 @@ static Block getCommonHeader(const SharedHeaders & headers)
                             common_header.dumpNames(), headers[query_num]->dumpNames());
     }
 
-    VectorWithMemoryTracking<const ColumnWithTypeAndName *> columns(num_selects);
+    std::vector<const ColumnWithTypeAndName *> columns(num_selects);
     for (size_t column_num = 0; column_num < num_columns; ++column_num)
     {
         for (size_t i = 0; i < num_selects; ++i)
@@ -142,8 +140,7 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
             auto actions_dag = ActionsDAG::makeConvertingActions(
                     plans[i]->getCurrentHeader()->getColumnsWithTypeAndName(),
                     result_header->getColumnsWithTypeAndName(),
-                    ActionsDAG::MatchColumnsMode::Position,
-                    context);
+                    ActionsDAG::MatchColumnsMode::Position);
             auto converting_step = std::make_unique<ExpressionStep>(plans[i]->getCurrentHeader(), std::move(actions_dag));
             converting_step->setStepDescription("Conversion before UNION");
             plans[i]->addStep(std::move(converting_step));
@@ -153,11 +150,7 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
     }
 
     const Settings & settings = context->getSettingsRef();
-    auto step = std::make_unique<IntersectOrExceptStep>(
-        std::move(headers),
-        final_operator,
-        getMaxThreadsForAvailableMemory(
-            settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]));
+    auto step = std::make_unique<IntersectOrExceptStep>(std::move(headers), final_operator, settings[Setting::max_threads]);
     query_plan.unitePlans(std::move(step), std::move(plans));
 
     const auto & query = query_ptr->as<ASTSelectIntersectExceptQuery &>();
@@ -201,6 +194,25 @@ void InterpreterSelectIntersectExceptQuery::ignoreWithTotals()
 {
     for (auto & interpreter : nested_interpreters)
         interpreter->ignoreWithTotals();
+}
+
+void InterpreterSelectIntersectExceptQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
+{
+    for (const auto & interpreter : nested_interpreters)
+    {
+        if (const auto * select_interpreter = dynamic_cast<const InterpreterSelectQuery *>(interpreter.get()))
+        {
+            auto filter = select_interpreter->getRowPolicyFilter();
+            if (filter)
+            {
+                for (const auto & row_policy : filter->policies)
+                {
+                    auto name = row_policy->getFullName().toString();
+                    elem.used_row_policies.emplace(std::move(name));
+                }
+            }
+        }
+    }
 }
 
 void registerInterpreterSelectIntersectExceptQuery(InterpreterFactory & factory)

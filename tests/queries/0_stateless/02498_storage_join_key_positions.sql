@@ -2,7 +2,6 @@
 -- It generates plan with _reading_ from storage join, but reading from storage join with complex keys is currently not supported.
 
 SET enable_parallel_replicas = 0;
-SET enable_join_transitive_predicates = 0; -- CI may inject True; transitive predicate inference deduplicates the duplicate key1 condition on line 61, reducing 4 conditions to 3 and making the join succeed instead of throwing INCOMPATIBLE_TYPE_OF_JOIN
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS tj;
@@ -48,7 +47,7 @@ SELECT * FROM t1 ALL INNER JOIN tj ON 1 != 1; -- { serverError INCOMPATIBLE_TYPE
 -- Here is another error code because equality is handled differently in CollectJoinOnKeysVisitor.
 -- We can change the error code, but it will become inconsistent for other cases
 -- where we actually expect AMBIGUOUS_COLUMN_NAME instead of INVALID_JOIN_ON_EXPRESSION/INCOMPATIBLE_TYPE_OF_JOIN.
--- These checks are more reliable after switching to the analyzer, they return INCOMPATIBLE_TYPE_OF_JOIN consistent with cases above
+-- These checks are more reliable after switching to a new analyzer, they return INCOMPATIBLE_TYPE_OF_JOIN consistent with cases above
 SELECT * FROM t1 ALL INNER JOIN tj ON 1 == 1; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN,AMBIGUOUS_COLUMN_NAME }
 SELECT * FROM t1 ALL INNER JOIN tj ON 1 == 2; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN,AMBIGUOUS_COLUMN_NAME }
 

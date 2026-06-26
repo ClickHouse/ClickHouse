@@ -9,7 +9,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/castTypeToEither.h>
 #include <IO/WriteHelpers.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -35,14 +34,14 @@ struct DecimalOpHelpers
      *
      * Here and below we use UInt8 for storing digits (0-9 range with maximum carry of 9 will definitely fit this)
      */
-    static VectorWithMemoryTracking<UInt8> multiply(const VectorWithMemoryTracking<UInt8> & num1, const VectorWithMemoryTracking<UInt8> & num2)
+    static std::vector<UInt8> multiply(const std::vector<UInt8> & num1, const std::vector<UInt8> & num2)
     {
-        const auto len1 = static_cast<UInt16>(num1.size());
-        const auto len2 = static_cast<UInt16>(num2.size());
+        UInt16 const len1 = num1.size();
+        UInt16 const len2 = num2.size();
         if (len1 == 0 || len2 == 0)
             return {0};
 
-        VectorWithMemoryTracking<UInt8> result(len1 + len2, 0);
+        std::vector<UInt8> result(len1 + len2, 0);
         UInt16 i_n1 = 0;
         UInt16 i_n2;
 
@@ -85,9 +84,9 @@ struct DecimalOpHelpers
         return result;
     }
 
-    static VectorWithMemoryTracking<UInt8> divide(const VectorWithMemoryTracking<UInt8> & number, const Int256 & divisor)
+    static std::vector<UInt8> divide(const std::vector<UInt8> & number, const Int256 & divisor)
     {
-        VectorWithMemoryTracking<UInt8> result;
+        std::vector<UInt8> result;
         const auto max_index = number.size() - 1;
 
         UInt16 idx = 0;
@@ -104,29 +103,29 @@ struct DecimalOpHelpers
 
         while (max_index >= idx)
         {
-            result.push_back(static_cast<UInt8>(temp / divisor));
+            result.push_back(temp / divisor);
             temp = (temp % divisor) * 10 + number[idx];
             ++idx;
         }
-        result.push_back(static_cast<UInt8>(temp / divisor));
+        result.push_back(temp / divisor);
 
         return result;
     }
 
-    static VectorWithMemoryTracking<UInt8> toDigits(Int256 x)
+    static std::vector<UInt8> toDigits(Int256 x)
     {
-        VectorWithMemoryTracking<UInt8> result;
+        std::vector<UInt8> result;
         if (x >= 10)
             result = toDigits(x / 10);
 
-        result.push_back(static_cast<UInt8>(x % 10));
+        result.push_back(x % 10);
         return result;
     }
 
-    static UInt256 fromDigits(const VectorWithMemoryTracking<UInt8> & digits)
+    static UInt256 fromDigits(const std::vector<UInt8> & digits)
     {
         Int256 result = 0;
-        UInt32 scale = 0;
+        Int256 scale = 0;
         for (auto i = digits.rbegin(); i != digits.rend(); ++i)
         {
             result += DecimalUtils::scaleMultiplier<Decimal256>(scale) * (*i);
@@ -195,9 +194,9 @@ struct DecimalArithmeticsImpl
         using SecondArgColumnType = typename SecondArgType::ColumnType;
         using ResultColumnType = typename ResultType::ColumnType;
 
-        auto scale_a = static_cast<UInt16>(getDecimalScale(*arguments[0].type));
-        auto scale_b = static_cast<UInt16>(getDecimalScale(*arguments[1].type));
-        auto result_scale = static_cast<UInt16>(getDecimalScale(*result_type->getPtr()));
+        UInt16 scale_a = getDecimalScale(*arguments[0].type);
+        UInt16 scale_b = getDecimalScale(*arguments[1].type);
+        UInt16 result_scale = getDecimalScale(*result_type->getPtr());
 
         auto op = Processor<ResultType, Transform>{std::move(transform)};
 
@@ -232,7 +231,7 @@ struct DecimalArithmeticsImpl
 
 
 template <typename Transform>
-class FunctionsDecimalArithmetics final : public IFunction
+class FunctionsDecimalArithmetics : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;
@@ -256,8 +255,7 @@ public:
         if (!isDecimal(arguments[0].type) || !isDecimal(arguments[1].type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments for {} function must be Decimal", getName());
 
-        auto scale
-            = static_cast<UInt8>(std::max(getDecimalScale(*arguments[0].type->getPtr()), getDecimalScale(*arguments[1].type->getPtr())));
+        UInt8 scale = std::max(getDecimalScale(*arguments[0].type->getPtr()), getDecimalScale(*arguments[1].type->getPtr()));
 
         if (arguments.size() == 3)
         {

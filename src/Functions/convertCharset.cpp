@@ -40,7 +40,7 @@ namespace
   * When bytes are illegal in 'from' charset or are not representable in 'to' charset,
   *  behavior is implementation specific.
   */
-class FunctionConvertCharset final : public IFunction
+class FunctionConvertCharset : public IFunction
 {
 private:
     struct Converter : private boost::noncopyable
@@ -118,10 +118,8 @@ private:
                 UErrorCode status = U_ZERO_ERROR;
                 int32_t res = ucnv_toUChars(
                     converter_from->impl,
-                    uchars.data(),
-                    static_cast<int32_t>(uchars.size()),
-                    reinterpret_cast<const char *>(&from_chars[current_from_offset]),
-                    static_cast<int32_t>(from_string_size),
+                    uchars.data(), uchars.size(),
+                    reinterpret_cast<const char *>(&from_chars[current_from_offset]), from_string_size,
                     &status);
 
                 if (!U_SUCCESS(status))
@@ -242,7 +240,7 @@ Returns string `s` converted from the encoding `from` to encoding `to`.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionConvertCharset>(documentation);
 }

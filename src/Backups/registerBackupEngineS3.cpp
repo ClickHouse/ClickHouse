@@ -1,7 +1,6 @@
 #include "config.h"
 
 #include <Backups/BackupFactory.h>
-#include <Core/Settings.h>
 #include <Common/Exception.h>
 
 #if USE_AWS_S3
@@ -30,11 +29,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SUPPORT_IS_DISABLED;
-}
-
-namespace Setting
-{
-extern const SettingsUInt64 archive_adaptive_buffer_max_size_bytes;
 }
 
 #if USE_AWS_S3
@@ -120,7 +114,6 @@ void registerBackupEngineS3(BackupFactory & factory)
             archive_params.compression_method = params.compression_method;
             archive_params.compression_level = params.compression_level;
             archive_params.password = params.password;
-            archive_params.adaptive_buffer_max_size = params.context->getSettingsRef()[Setting::archive_adaptive_buffer_max_size_bytes];
         }
         else
         {
@@ -141,11 +134,28 @@ void registerBackupEngineS3(BackupFactory & factory)
                 params.write_settings,
                 params.context,
                 params.is_internal_backup);
+            /// We assume object storage of backup files and original disk use same endpoint, bucket and credentials.
+            auto uri_for_lightweight = S3::URI{s3_uri};
+            /// We set the prefix to "" because in meta file, object key is absolute path.
+            uri_for_lightweight.key = "";
+            auto lightweight_snapshot_writer = std::make_shared<BackupWriterS3>(
+                uri_for_lightweight,
+                access_key_id,
+                secret_access_key,
+                role_arn,
+                role_session_name,
+                params.allow_s3_native_copy,
+                params.s3_storage_class,
+                params.read_settings,
+                params.write_settings,
+                params.context,
+                params.is_internal_backup);
 
             return std::make_unique<BackupImpl>(
                 params.backup_info,
                 archive_params,
-                reader);
+                reader,
+                lightweight_snapshot_writer);
         }
         else if (params.open_mode == IBackup::OpenMode::READ)
         {

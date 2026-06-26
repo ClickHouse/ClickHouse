@@ -36,11 +36,11 @@ void StorageSystemFormats::fillData(MutableColumns & res_columns, ContextPtr con
 
         const auto & [name, creators] = pair;
         String format_name = creators.name;
-        bool has_input_format(creators.input_creator != nullptr || creators.random_access_input_creator != nullptr || creators.random_access_input_creator_with_metadata != nullptr);
+        bool has_input_format(creators.input_creator != nullptr || creators.random_access_input_creator != nullptr);
         bool has_output_format(creators.output_creator != nullptr);
         bool supports_parallel_parsing(creators.file_segmentation_engine_creator != nullptr || creators.random_access_input_creator != nullptr);
         String content_type = has_output_format ? FormatFactory::instance().getContentType(format_name, settings) : "";
-        bool supports_random_access = creators.random_access_input_creator != nullptr || creators.random_access_input_creator_with_metadata != nullptr;
+        bool supports_random_access = creators.random_access_input_creator != nullptr;
         bool has_schema_inference = creators.schema_reader_creator != nullptr;
         bool has_external_schema = creators.external_schema_reader_creator != nullptr;
         bool prefers_large_blocks = creators.prefers_large_blocks;

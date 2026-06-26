@@ -5,7 +5,6 @@
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WithFileSize.h>
 #include <IO/WriteBufferFromVector.h>
-#include <Common/ProfileEvents.h>
 
 #include <shared_mutex>
 
@@ -14,14 +13,6 @@ namespace DB::ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_READ_ALL_DATA;
-}
-
-namespace ProfileEvents
-{
-    extern const Event ParquetFetchWaitTimeMicroseconds;
-    extern const Event ParquetPrefetcherReadRandomRead;
-    extern const Event ParquetPrefetcherReadSeekAndRead;
-    extern const Event ParquetPrefetcherReadEntireFile;
 }
 
 namespace DB::Parquet
@@ -78,7 +69,7 @@ void Prefetcher::determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOp
         if (!reader_->eof() && reader_->available() >= expected_prefix.size() &&
             memcmp(reader_->position(), expected_prefix.data(), expected_prefix.size()) != 0)
         {
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Not a Parquet file (wrong magic bytes at the start)");
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Not a parquet file (wrong magic bytes at the start)");
         }
 
         WriteBufferFromVector<PaddedPODArray<char>> out(entire_file);
@@ -100,7 +91,6 @@ void Prefetcher::readSync(char * to, size_t n, size_t offset)
     {
         case ReadMode::RandomRead:
             nread = reader->readBigAt(to, n, offset, /*progress_callback*/ nullptr);
-            ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadRandomRead);
             break;
         case ReadMode::SeekAndRead:
         {
@@ -111,13 +101,11 @@ void Prefetcher::readSync(char * to, size_t n, size_t offset)
             reader->seek(offset, SEEK_SET);
             reader->setReadUntilPosition(offset + n);
             nread = reader->readBig(to, n);
-            ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadSeekAndRead);
             break;
         }
         case ReadMode::EntireFileIsInMemory:
             memcpy(to, entire_file.data() + offset, n);
             nread = n;
-            ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadEntireFile);
             break;
     }
     if (nread != n)
@@ -138,7 +126,7 @@ PrefetchHandle Prefetcher::registerRange(size_t offset, size_t length, bool like
 
 void Prefetcher::finalizeRanges()
 {
-    bool already_finalized = ranges_finalized.exchange(true);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+    bool already_finalized = ranges_finalized.exchange(true);
     chassert(!already_finalized);
     auto & ranges = range_sets[0].ranges;
     std::sort(ranges.begin(), ranges.end(), [](const RangeState & a, const RangeState & b)
@@ -178,7 +166,7 @@ void Prefetcher::startPrefetch(const std::vector<PrefetchHandle *> & requests_to
 
         if (!handle->memory)
         {
-            size_t memory_usage = static_cast<size_t>(static_cast<double>(req->length) * task->memory_amplification);
+            size_t memory_usage = size_t(req->length * task->memory_amplification);
             handle->memory = MemoryUsageToken(memory_usage, diff);
         }
     }
@@ -324,10 +312,6 @@ void Prefetcher::pickRangesAndCreateTaskIfNotExists(RequestState * initial_req, 
             start_idx = idx - 1;
             total_length_of_covered_ranges += r.length();
             start_offset = std::min(start_offset, r.start);
-            /// A range found to the left may extend past the current end (e.g. when ranges
-            /// share the same start offset but have different lengths, and the sort placed
-            /// the longer range first). We must extend end_offset to cover it.
-            end_offset = std::max(end_offset, r.end);
         }
         else if (s != RequestState::State::Cancelled)
         {
@@ -358,8 +342,6 @@ void Prefetcher::pickRangesAndCreateTaskIfNotExists(RequestState * initial_req, 
             end_idx = idx + 1;
             total_length_of_covered_ranges += r.length();
             end_offset = std::max(end_offset, r.end);
-            /// (This currently doesn't do anything because ranges are sorted by `start`, but why not.)
-            start_offset = std::min(start_offset, r.start);
         }
         else if (s != RequestState::State::Cancelled)
         {
@@ -372,7 +354,7 @@ void Prefetcher::pickRangesAndCreateTaskIfNotExists(RequestState * initial_req, 
     Task & task = tasks.emplace_back();
     task.offset = start_offset;
     task.length = end_offset - task.offset;
-    task.memory_amplification = 1. * static_cast<double>(task.length) / static_cast<double>(total_length_of_covered_ranges);
+    task.memory_amplification = 1. * task.length / total_length_of_covered_ranges;
     size_t initial_refcount = end_idx - start_idx + 1;
     task.refcount.store(initial_refcount);
 
@@ -407,10 +389,7 @@ void Prefetcher::decreaseTaskRefcount(Task * task, size_t amount)
         return;
 
     if (task->state.exchange(Task::State::Deallocated) != Task::State::Running)
-    {
         task->buf = {};
-        task->cached_region.reset();
-    }
 }
 
 void Prefetcher::scheduleTask(Task * task)
@@ -430,43 +409,20 @@ std::span<const char> Prefetcher::getRangeData(const PrefetchHandle & request)
     const RequestState * req = request.request;
     chassert(req->state == RequestState::State::HasTask);
     Task * task = req->task;
-    Task::State s = task->state.load(std::memory_order_acquire);
-    if (s == Task::State::Scheduled || s == Task::State::Running)
+    auto s = task->state.load(std::memory_order_acquire);
+    if (s == Task::State::Scheduled)
     {
-        Stopwatch wait_time;
-
-        if (s == Task::State::Scheduled)
-        {
-            s = runTask(task);
-            chassert(s != Task::State::Scheduled);
-        }
-
-        if (s == Task::State::Running) // (not `else`, the runTask above may return Running)
-        {
-            task->completion.wait();
-            s = task->state.load();
-        }
-
-        ProfileEvents::increment(ProfileEvents::ParquetFetchWaitTimeMicroseconds, wait_time.elapsedMicroseconds());
+        s = runTask(task);
+        chassert(s != Task::State::Scheduled);
+    }
+    if (s == Task::State::Running)
+    {
+        task->completion.wait();
+        s = task->state.load();
     }
     if (s == Task::State::Exception)
         rethrowException(task);
     chassert(s == Task::State::Done);
-
-    if (task->cached_region.has_value())
-    {
-        /// Zero-copy path: serve data directly from cache cells.
-        size_t req_file_offset = task->offset + req->task_offset;
-
-        const auto & r = task->cached_region.value();
-        chassert(r.file_offset <= req_file_offset);
-        chassert(r.file_offset + r.size >= req_file_offset + req->length);
-
-        size_t offset_in_region = req_file_offset - r.file_offset;
-
-        return std::span(r.data + offset_in_region, req->length);
-    }
-
     chassert(req->task_offset + req->length <= task->buf.size());
     return std::span(task->buf.data() + req->task_offset, req->length);
 }
@@ -479,49 +435,8 @@ Prefetcher::Task::State Prefetcher::runTask(Task * task)
     auto final_state = Task::State::Done;
     try
     {
-        /// When the reader supports zero-copy cached reads, get retained cache cells
-        /// instead of allocating a buffer and copying data into it.
-        if (read_mode == ReadMode::RandomRead && reader->supportsReadAtRetainCells() && task->length > 0)
-        {
-            auto cached_regions = reader->readBigAtRetainCells(task->length, task->offset);
-            chassert(!cached_regions.empty());
-
-            if (cached_regions.size() == 1)
-            {
-                /// We got lucky and the Task's range is all in one cache cell. Zero-copy it.
-                auto & cr = cached_regions[0];
-                task->cached_region = Task::CachedReadRegion{
-                    .handle = std::move(cr.handle),
-                    .data = cr.data,
-                    .size = cr.size,
-                    .file_offset = cr.file_offset,
-                };
-            }
-            else
-            {
-                /// If the data spans multiple cache blocks, pre-assemble it into task->buf now
-                /// (on the single-threaded producer side) to avoid a data race in getRangeData,
-                /// where multiple consumer threads could try to lazily populate task->buf concurrently.
-                if (cached_regions.size() > 1)
-                {
-                    task->buf.resize(task->length);
-                    size_t copied = 0;
-                    for (const auto & region : cached_regions)
-                    {
-                        memcpy(task->buf.data() + copied, region.data, region.size);
-                        copied += region.size;
-                    }
-                    chassert(copied == task->length);
-                }
-            }
-
-            ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadRandomRead);
-        }
-        else
-        {
-            task->buf.resize(task->length);
-            readSync(task->buf.data(), task->length, task->offset);
-        }
+        task->buf.resize(task->length);
+        readSync(task->buf.data(), task->length, task->offset);
     }
     catch (...)
     {
@@ -539,7 +454,6 @@ Prefetcher::Task::State Prefetcher::runTask(Task * task)
     {
         chassert(s == Task::State::Deallocated);
         task->buf = {};
-        task->cached_region.reset();
     }
 
     task->completion.notify();

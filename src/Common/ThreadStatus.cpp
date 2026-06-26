@@ -1,14 +1,11 @@
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
-#include <Common/setThreadName.h>
 #include <Common/memory.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Core/Settings.h>
 #include <base/getPageSize.h>
 #include <Interpreters/Context.h>
 
@@ -20,6 +17,8 @@
 
 namespace DB
 {
+thread_local ThreadStatus constinit * current_thread = nullptr;
+
 namespace ErrorCodes
 {
     extern const int CANNOT_ALLOCATE_MEMORY;
@@ -86,7 +85,7 @@ struct ThreadStack
 
     static size_t getSize()
     {
-        auto size = std::max<size_t>({UNWIND_MINSIGSTKSZ, static_cast<size_t>(MINSIGSTKSZ), static_cast<size_t>(getPageSize())});
+        auto size = std::max<size_t>(UNWIND_MINSIGSTKSZ, MINSIGSTKSZ);
 
         if constexpr (guardPagesEnabled())
             size += getPageSize();
@@ -96,6 +95,7 @@ struct ThreadStack
     void * getData() const { return data; }
 
 private:
+    /// 16 KiB - not too big but enough to handle error.
     void * data = nullptr;
 };
 
@@ -105,6 +105,10 @@ static thread_local ThreadStack alt_stack;
 static thread_local bool has_alt_stack = false;
 #endif
 
+ThreadGroup::ThreadGroup()
+    : master_thread_id(CurrentThread::get().thread_id)
+    , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>(false))
+{}
 
 ThreadStatus::ThreadStatus()
     : thread_id(getThreadId())
@@ -184,7 +188,7 @@ const String & ThreadStatus::getQueryId() const
     return query_id;
 }
 
-ContextPtr ThreadStatus::tryGetQueryContext() const
+ContextPtr ThreadStatus::getQueryContext() const
 {
     return query_context.lock();
 }
@@ -237,7 +241,7 @@ void ThreadStatus::flushUntrackedMemory()
         return;
 
     MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
-    Int64 current_untracked_memory = untracked_memory;
+    Int64 current_untracked_memory = current_thread->untracked_memory;
     untracked_memory = 0;
     memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
 }
@@ -345,7 +349,7 @@ MainThreadStatus::~MainThreadStatus()
     /// the file descriptors are closed, which will throw errors.
     /// As we don't really care about stats of the main thread (they won't be used) it's simpler to just disable them before the
     /// implicit ~ThreadStatus is called here
-    getInstance().taskstats = nullptr;
+    getInstance().taskstats.reset();
     main_thread = nullptr;
 }
 
