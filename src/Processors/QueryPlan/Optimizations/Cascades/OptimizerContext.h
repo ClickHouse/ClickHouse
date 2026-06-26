@@ -33,10 +33,6 @@ public:
 
     CostEstimator & getCostEstimator() { return cost_estimator; }
 
-    /// Compute the cost budget for optimizing a child input group.
-    /// budget = parent_limit - sum(other children's best subtree costs)
-    CostLimit computeChildCostLimit(GroupExpressionPtr parent_expression, size_t child_index, CostLimit parent_limit);
-
     /// Fast-path costing: if all inputs already have best implementations,
     /// compute the expression's cost directly and update the group's best plan.
     /// Returns true if the expression was handled (all inputs ready), false otherwise.

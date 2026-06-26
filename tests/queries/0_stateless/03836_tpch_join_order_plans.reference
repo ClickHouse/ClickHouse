@@ -455,10 +455,10 @@ Expression (Project names)
                         JoinLogical (Broadcast HashJoin )
                           Expression ((WHERE + Change column names to column identifiers))
                             ReadFromMergeTree (ParallelRead default.lineitem)
-                          Expression (Project only used columns)
-                            Expression (WHERE)
-                              BroadcastExchange
-                                GatherExchange
+                          BroadcastExchange
+                            GatherExchange
+                              Expression (Project only used columns)
+                                Expression (WHERE)
                                   JoinLogical (Shuffle HashJoin )
                                     Expression (Create result for always true EXISTS expression)
                                       Filter (WHERE)

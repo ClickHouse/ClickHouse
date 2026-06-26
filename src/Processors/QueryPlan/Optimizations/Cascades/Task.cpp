@@ -1,4 +1,5 @@
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <Processors/QueryPlan/Optimizations/Cascades/Task.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
@@ -16,33 +17,21 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
         group_id, required_properties.dump());
     auto group = optimizer_context.getGroup(group_id);
 
-    /// Branch-and-bound: skip this group if it already has a satisfying plan and either:
-    /// (a) the group has been fully processed (explored + optimized for these properties),
-    ///     so re-running is a no-op — this avoids wasting tasks on repeated visits; or
-    /// (b) the cost limit is finite and the current best is within budget,
-    ///     so no further optimization can help the parent.
+    /// Skip this group only if it is already fully processed (explored + implemented +
+    /// enforced) for these properties and has a satisfying plan — re-running would be a no-op.
+    /// We deliberately do NOT prune just because a current best is within a finite cost budget:
+    /// the budget is an upper bound, not a lower bound, so such pruning is unsound for
+    /// optimality, and it can return before stage-3 enforcers add the distributed alternatives.
     {
         const auto & cost_config = optimizer_context.getMemo().getCostConfig();
-        auto best = group->getBestImplementation(required_properties, cost_config);
-        if (best.expression)
+        bool group_fully_processed = group->isExplored()
+            && group->isOptimizedFor(required_properties)
+            && group->isEnforcedFor(required_properties);
+        if (group_fully_processed && group->getBestImplementation(required_properties, cost_config).expression)
         {
-            /// Stage 3 (enforcers) must have run too: otherwise a local best added in stage 2
-            /// short-circuits here and enforcer-built distributed plans (e.g. GatherExchange to
-            /// satisfy {1 node}) are never generated or costed.
-            bool group_fully_processed = group->isExplored()
-                && group->isOptimizedFor(required_properties)
-                && group->isEnforcedFor(required_properties);
-            bool within_budget = std::isfinite(cost_limit)
-                && best.cost.subtree_cost.total(cost_config) <= cost_limit;
-            if (group_fully_processed || within_budget)
-            {
-                if (group_fully_processed)
-                    group->setFullyDoneFor(required_properties);
-                LOG_TEST(optimizer_context.log, "Pruned OptimizeGroupTask group #{}: "
-                    "best cost {} <= limit {}",
-                    group_id, best.cost.subtree_cost.total(cost_config), cost_limit);
-                return;
-            }
+            group->setFullyDoneFor(required_properties);
+            LOG_TEST(optimizer_context.log, "OptimizeGroupTask group #{}: already fully processed", group_id);
+            return;
         }
     }
 
@@ -237,8 +226,6 @@ void ApplyRuleTask::execute(OptimizerContext & optimizer_context)
 
     auto new_expressions = rule->apply(expression, required_properties, optimizer_context.getMemo());
 
-    const auto & cost_config = optimizer_context.getMemo().getCostConfig();
-
     for (const auto & new_expression : new_expressions)
     {
         if (rule->isTransformation())
@@ -252,12 +239,9 @@ void ApplyRuleTask::execute(OptimizerContext & optimizer_context)
             if (optimizer_context.tryUpdateBestPlanDirectly(new_expression))
                 continue;
 
-            /// Branch-and-bound: use the current best cost for this group as the limit
-            /// for optimizing inputs of new implementations.
-            auto group = optimizer_context.getGroup(new_expression->group_id);
-            Float64 best_cost = group->getBestCostForProperties(new_expression->properties, cost_config);
-            CostLimit updated_limit = std::isfinite(best_cost) ? std::min(best_cost, cost_limit) : cost_limit;
-            optimizer_context.pushTask(std::make_shared<OptimizeInputsTask>(new_expression, 0, updated_limit));
+            /// Finite branch-and-bound budgets are disabled for now (see OptimizeInputsTask);
+            /// pass the incoming limit through unchanged.
+            optimizer_context.pushTask(std::make_shared<OptimizeInputsTask>(new_expression, 0, cost_limit));
         }
     }
 }
@@ -315,35 +299,27 @@ void OptimizeInputsTask::execute(OptimizerContext & optimizer_context)
     else
     {
         const auto & input = expression->inputs[input_index_to_optimize];
-        const auto & cost_config = optimizer_context.getMemo().getCostConfig();
-
-        /// Budget-based early termination: if the costs of already-optimized siblings
-        /// already exceed the limit, this expression cannot beat the current best.
-        /// Abandon the entire remaining OptimizeInputsTask chain.
-        CostLimit child_limit = optimizer_context.computeChildCostLimit(expression, input_index_to_optimize, cost_limit);
-        if (std::isfinite(child_limit) && child_limit <= 0)
-        {
-            LOG_TEST(optimizer_context.log, "Pruned remaining inputs for '{}' in group #{}: "
-                "budget exhausted (remaining limit {})",
-                expression->getDescription(), expression->group_id, child_limit);
-            return;
-        }
-
         auto child_group = optimizer_context.getGroup(input.group_id);
 
-        /// Skip pushing OptimizeGroupTask for this child if it is already fully optimized
-        /// and has a satisfying implementation — the task would be a no-op.
-        bool child_already_done = child_group->isExplored()
-            && child_group->isOptimizedFor(input.required_properties)
-            && child_group->getBestImplementation(input.required_properties, cost_config).expression;
+        /// Skip pushing OptimizeGroupTask for this child only if it is already FULLY done
+        /// (explored + implemented + enforced) for the required properties — matching
+        /// tryUpdateBestPlanDirectly. A child that merely has an early local best may still
+        /// gain a cheaper enforcer-built alternative, so it must keep being optimized.
+        bool child_already_done = child_group->isFullyDoneFor(input.required_properties);
 
         optimizer_context.pushTask(
             std::make_shared<OptimizeInputsTask>(expression, input_index_to_optimize + 1, cost_limit));
 
         if (!child_already_done)
         {
+            /// Finite child cost budgets are disabled for now: deriving them from sibling best
+            /// costs is unsound, because an in-progress sibling best is an upper bound, not a
+            /// lower bound, so it can prune a parent expression that would still become cheapest.
+            /// Pass an unbounded limit; total work is bounded by the optimizer task budget,
+            /// which fails closed (see CascadesOptimizer::optimize).
             optimizer_context.pushTask(
-                std::make_shared<OptimizeGroupTask>(input.group_id, input.required_properties, child_limit));
+                std::make_shared<OptimizeGroupTask>(input.group_id, input.required_properties,
+                    std::numeric_limits<CostLimit>::infinity()));
         }
     }
 }

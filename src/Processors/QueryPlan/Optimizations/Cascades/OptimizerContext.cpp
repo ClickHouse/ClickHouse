@@ -136,32 +136,6 @@ void OptimizerContext::deriveStatistics(GroupId group_id)
     statistics_derivation.deriveStatistics(group_id);
 }
 
-CostLimit OptimizerContext::computeChildCostLimit(
-    GroupExpressionPtr parent_expression,
-    size_t child_index,
-    CostLimit parent_limit)
-{
-    if (!std::isfinite(parent_limit))
-        return parent_limit;
-
-    const auto & cost_config = memo.getCostConfig();
-    CostLimit remaining = parent_limit;
-
-    for (size_t i = 0; i < parent_expression->inputs.size(); ++i)
-    {
-        if (i == child_index)
-            continue;
-
-        const auto & input = parent_expression->inputs[i];
-        auto group = getGroup(input.group_id);
-        Float64 sibling_cost = group->getBestCostForProperties(input.required_properties, cost_config);
-        if (std::isfinite(sibling_cost))
-            remaining -= sibling_cost;
-    }
-
-    return remaining;
-}
-
 bool OptimizerContext::tryUpdateBestPlanDirectly(GroupExpressionPtr expression)
 {
     const auto & cost_config = memo.getCostConfig();
