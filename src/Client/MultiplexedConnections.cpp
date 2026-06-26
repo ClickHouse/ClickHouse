@@ -218,22 +218,6 @@ void MultiplexedConnections::sendQuery(
 }
 
 
-void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
-{
-    std::lock_guard lock(cancel_mutex);
-
-    if (sent_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send uuids after query is sent.");
-
-    for (ReplicaState & state : replica_states)
-    {
-        Connection * connection = state.connection;
-        if (connection != nullptr)
-            connection->sendIgnoredPartUUIDs(uuids);
-    }
-}
-
-
 void MultiplexedConnections::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
 {
     std::lock_guard lock(cancel_mutex);

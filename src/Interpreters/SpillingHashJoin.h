@@ -54,7 +54,8 @@ public:
         SharedHeader right_sample_block_,
         TemporaryDataOnDiskScopePtr tmp_data_,
         size_t initial_num_buckets_,
-        size_t max_num_buckets_);
+        size_t max_num_buckets_,
+        const StatsCollectingParams & stats_collecting_params_ = {});
 
     /// Concurrent mode: wraps a ConcurrentHashJoin. `plan_key_ndv_` is forwarded to the
     /// `ConcurrentHashJoin` to size/skip its exact-size deferred build (see that constructor).
