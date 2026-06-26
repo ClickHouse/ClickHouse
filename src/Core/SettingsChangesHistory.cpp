@@ -42,6 +42,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.7",
         {
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
+            {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},
+            {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
