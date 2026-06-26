@@ -27,7 +27,12 @@ check() {
 # convertFieldToType (the constant column). Original report: toTypeName of such a literal.
 check "SELECT $(python3 -c "print('['*2500 + '1' + ']'*2500)")"
 
-# Deeply nested function calls: AST formatting, hashing, cloning and secret-argument masking.
+# Deeply nested function calls during normal execution: the secret-argument masking walk
+# (childrenHaveSecretParts) runs first and guards these.
 check "SELECT $(python3 -c "print('array('*30000 + '1' + ')'*30000)")"
 check "SELECT $(python3 -c "print('tuple('*30000 + '1' + ')'*30000)")"
 check "SELECT 1$(python3 -c "print('+1'*30000)")"
+
+# formatQuery parses and formats an AST without the secret-parts walk, so it directly
+# exercises the AST formatting recursion guard (IAST::format).
+check "SELECT formatQuery(\$\$SELECT $(python3 -c "print('array('*30000 + '1' + ')'*30000)")\$\$)"
