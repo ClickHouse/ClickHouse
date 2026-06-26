@@ -375,6 +375,23 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
+    # sccache-warmup builds (MasterCI only): compile amd_release / arm_release
+    # with the PR release builds' cmake flags (see PR_CACHE_WARMUP_BUILD_TYPES
+    # in build_clickhouse.py) while keeping the shared sccache read-write. This
+    # populates the cache so that read-only PR release builds get cache hits.
+    # They provide no artifacts and run no profile/master-head post hooks - the
+    # only purpose is to warm sccache.
+    sccache_warmup_build_jobs = common_build_job_config.parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.AMD_RELEASE_PR_CACHE_WARMUP,
+            runs_on=RunnerLabels.ARM_LARGE,
+            timeout=3 * 3600,
+        ),
+        Job.ParamSet(
+            parameter=BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP,
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
+    )
     extra_validation_build_jobs = common_build_job_config.set_post_hooks(
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
@@ -1378,6 +1395,20 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/sqllogic_test.py",
                 "./tests/sqllogic/",
+            ],
+        ),
+        requires=[ArtifactNames.CH_ARM_RELEASE],
+        run_in_docker="clickhouse/stateless-test",
+        timeout=10800,
+    )
+    sqlstorm_test_job = Job.Config(
+        name=JobNames.SQL_STORM_TEST,
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
+        command="python3 ./ci/jobs/sqlstorm_test.py",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/sqlstorm_test.py",
+                "./tests/sqlstorm/",
             ],
         ),
         requires=[ArtifactNames.CH_ARM_RELEASE],

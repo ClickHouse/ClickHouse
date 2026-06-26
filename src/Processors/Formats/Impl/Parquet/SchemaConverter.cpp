@@ -170,10 +170,20 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
 
 void SchemaConverter::processSubtree(TraversalNode & node)
 {
-    /// A deeply nested schema (e.g. a long chain of REQUIRED groups) recurses here per level.
-    /// The definition-level cap below only counts OPTIONAL/REPEATED nesting, so without this an
-    /// untrusted file could overflow the stack (uncatchable crash) instead of throwing.
+    /// Reject deeply nested schemas before recursing. The def-level guard below (def == UINT8_MAX)
+    /// only counts OPTIONAL/REPEATED nodes, so a chain of REQUIRED groups would bypass it and
+    /// overflow the native stack. Track the real recursion depth unconditionally and reject early;
+    /// checkStackSize is a last-resort backstop if max_parser_depth is raised.
+    /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
     checkStackSize();
+    ++recursion_depth;
+    SCOPE_EXIT({ --recursion_depth; });
+    if (options.format.max_parser_depth != 0 && recursion_depth > options.format.max_parser_depth)
+        throw Exception(
+            ErrorCodes::TOO_DEEP_RECURSION,
+            "Parquet schema is nested deeper than the limit ({}). It can be raised with the setting "
+            "'max_parser_depth', but a very deeply nested schema is rarely intentional",
+            options.format.max_parser_depth);
 
     if (node.type_hint)
         chassert(node.requested);
