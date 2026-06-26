@@ -43,6 +43,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
             {"analyzer_enable_short_column_names_from_subquery", false, false, "New compatibility setting: when enabled, an outer query may refer to a subquery/CTE projection column whose name is an unaliased qualified identifier like `b.f1` by its short name `f1`. Closes the long-standing divergence from SQL-standard column naming (see issues #87022, #66133, #94858, #94558). Additive: the canonical dotted name keeps working. The fallback does not apply while resolving `JOIN USING` column lists — use an explicit `AS` alias or the canonical dotted name for that form."},
+            {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},
+            {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
