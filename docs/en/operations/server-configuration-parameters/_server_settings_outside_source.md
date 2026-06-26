@@ -537,6 +537,40 @@ Example:
 </http_handlers>
 ```
 
+### Prometheus protocol handlers {#http_handlers-prometheus}
+
+An `http_handlers` rule can serve a Prometheus protocol by setting the handler `type` to one of:
+
+| `type`               | Protocol                                                                                    |
+|----------------------|---------------------------------------------------------------------------------------------|
+| `prometheus_metrics` | Expose metrics for scraping (`prometheus` is accepted as an alias)                           |
+| `prometheus_write`   | Remote-write samples into a [TimeSeries](/engines/table-engines/special/time_series) table   |
+| `prometheus_read`    | Remote-read from a `TimeSeries` table                                                        |
+| `prometheus_query`   | Prometheus query API over a `TimeSeries` table                                               |
+| `prometheus_api_v1`  | Prometheus HTTP API v1 over a `TimeSeries` table                                             |
+
+For the `prometheus_write`, `prometheus_read`, `prometheus_query` and `prometheus_api_v1` types, the target `TimeSeries` table can be pinned in the handler with a `<table>` element (a qualified `database.table` is accepted):
+
+```xml
+<http_handlers>
+    <my_rule>
+        <url>/write</url>
+        <handler>
+            <type>prometheus_write</type>
+            <table>my_db.my_time_series</table>
+        </handler>
+    </my_rule>
+</http_handlers>
+```
+
+When `<table>` is omitted, the target table is resolved per request. Each of the database and table names is taken, in order of priority, from:
+
+1. the handler configuration (`<database>` / `<table>`);
+2. the `database` / `table` URL query parameters;
+3. the `X-ClickHouse-Database` / `X-ClickHouse-Table` HTTP headers.
+
+A name pinned in the configuration cannot be overridden by a query parameter (a conflicting parameter is an error). The headers have the lowest priority and are consulted only for a name still unset by both the configuration and the query parameters; they never error on a conflict. A qualified `database.table` (from the configuration or the `table` query parameter) is split into its database and table before the `X-ClickHouse-Database` header is consulted. If no database is resolved by any source it falls back to `default`; if no table is resolved the request fails.
+
 ## http_server_default_response {#http_server_default_response}
 
 The page that is shown by default when you access the ClickHouse HTTP(s) server.
