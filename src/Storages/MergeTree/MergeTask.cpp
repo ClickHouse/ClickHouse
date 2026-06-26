@@ -859,6 +859,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
         global_ctx->new_data_part->ttl_infos,
         global_ctx->time_of_merge);
+    global_ctx->is_explicit_recompression
+        = global_ctx->data->isExplicitRecompression(global_ctx->new_data_part->ttl_infos, global_ctx->time_of_merge);
 
     switch (global_ctx->chosen_merge_algorithm)
     {
@@ -946,7 +948,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         ctx->blocks_are_granules_size,
         global_ctx->context->getWriteSettings(),
         &global_ctx->written_offset_substreams,
-        WriteOrigin::MergeOrMutation);
+        WriteOrigin::MergeOrMutation,
+        global_ctx->is_explicit_recompression);
 
     global_ctx->rows_written = 0;
     ctx->initial_reservation = global_ctx->space_reservation ? global_ctx->space_reservation->getSize() : 0;
@@ -1837,7 +1840,8 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         global_ctx->to->getIndexGranularity(),
         global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,
         &global_ctx->written_offset_substreams,
-        global_ctx->to->getSkipIndicesPackedWriter());
+        global_ctx->to->getSkipIndicesPackedWriter(),
+        global_ctx->is_explicit_recompression);
 
     ctx->column_elems_written = 0;
 }

@@ -35,7 +35,8 @@ public:
         bool blocks_are_granules_size,
         const WriteSettings & write_settings,
         WrittenOffsetSubstreams * written_offset_substreams,
-        WriteOrigin write_origin);
+        WriteOrigin write_origin,
+        bool is_explicit_recompression = false);
 
     Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
 

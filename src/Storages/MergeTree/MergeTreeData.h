@@ -1308,9 +1308,12 @@ public:
     ExpressionActionsPtr
     getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
 
-    /// Get compression codec for part according to TTL rules and <compression>
-    /// section from config.xml.
+    /// Get compression codec for part according to TTL rules and <compression> section from config.xml.
     CompressionCodecPtr getCompressionCodecForPart(size_t part_size_compressed, const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t current_time) const;
+
+    /// True if a `RECOMPRESS` TTL applies to a part with these `ttl_infos` at `current_time` and its codec is not `Default`.
+    /// Such a codec is an explicit per-part directive, so adaptive codec selection must not override it.
+    bool isExplicitRecompression(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t current_time) const;
 
     std::shared_ptr<QueryIdHolder> getQueryIdHolder(const String & query_id, UInt64 max_concurrent_queries) const;
 
