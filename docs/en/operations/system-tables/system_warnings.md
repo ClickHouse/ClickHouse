@@ -3,14 +3,13 @@ description: 'This table contains warning messages about clickhouse server.'
 keywords: [ 'system table', 'warnings' ]
 slug: /operations/system-tables/system_warnings
 title: 'system.warnings'
-doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
-<SystemTableCloud/>
+# system.warnings
 
-## Description {#description}
+<SystemTableCloud/>
 
 This table shows warnings about the ClickHouse server.
 Warnings of the same type are combined into a single warning.
@@ -26,21 +25,23 @@ The table can be configured with these settings:
 - [max_part_num_to_warn](../server-configuration-parameters/settings.md#max_part_num_to_warn)
 - [max_pending_mutations_to_warn](../server-configuration-parameters/settings.md#max_pending_mutations_to_warn)
 - [max_pending_mutations_execution_time_to_warn](/operations/server-configuration-parameters/settings#max_pending_mutations_execution_time_to_warn)
-- [max_named_collection_num_to_warn](../server-configuration-parameters/settings.md#max_named_collection_num_to_warn)
-- [resource_overload_warnings](/operations/settings/server-overload#resource-overload-warnings)
 
-## Columns {#columns}
+Columns:
 
 - `message` ([String](../../sql-reference/data-types/string.md)) — Warning message.
 - `message_format_string` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — The format string used to format the message.
 
-## Example {#example}
+**Example**
 
-```sql title="Query"
+Query:
+
+```sql
  SELECT * FROM system.warnings LIMIT 2 \G;
 ```
 
-```text title="Response"
+Result:
+
+```text
 Row 1:
 ──────
 message:               The number of active parts is more than 10.

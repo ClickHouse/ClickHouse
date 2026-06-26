@@ -1,25 +1,23 @@
 #include <chrono>
-#include <thread>
 #include <gtest/gtest.h>
 
-#include <Common/Scheduler/ITimeSharedNode.h>
+#include <Common/Scheduler/ISchedulerNode.h>
 
 using namespace DB;
 
-class FakeSchedulerNode : public ITimeSharedNode
+class FakeSchedulerNode : public ISchedulerNode
 {
 public:
-    explicit FakeSchedulerNode(String & log_, EventQueue & event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
-        : ITimeSharedNode(event_queue_, config, config_prefix)
+    explicit FakeSchedulerNode(String & log_, EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
+        : ISchedulerNode(event_queue_, config, config_prefix)
         , log(log_)
     {}
 
-    ~FakeSchedulerNode() override
+    const String & getTypeName() const override
     {
-        parent = nullptr; // to avoid chassert in ISchedulerNode destructor, should be detached from parent before destruction
+        static String type_name("fake");
+        return type_name;
     }
-
-    std::string_view getTypeName() const override { return "fake"; }
 
     void attachChild(const SchedulerNodePtr & child) override
     {
@@ -36,9 +34,9 @@ public:
         return nullptr;
     }
 
-    void activateChild(ITimeSharedNode & child) override
+    void activateChild(ISchedulerNode * child) override
     {
-        log += " A" + child.basename;
+        log += " A" + child->basename;
     }
 
     bool isActive() override
@@ -64,18 +62,17 @@ private:
 struct QueueTest {
     String log;
     EventQueue event_queue;
-    EventQueue::SchedulerThread scheduler_thread{&event_queue};
     FakeSchedulerNode root_node;
 
     QueueTest()
-        : root_node(log, event_queue)
+        : root_node(log, &event_queue)
     {}
 
     SchedulerNodePtr makeNode(const String & name)
     {
-        auto node = std::make_shared<FakeSchedulerNode>(log, event_queue);
+        auto node = std::make_shared<FakeSchedulerNode>(log, &event_queue);
         node->basename = name;
-        node->setParentNode(&root_node);
+        node->setParent(&root_node);
         return std::static_pointer_cast<ISchedulerNode>(node);
     }
 
@@ -93,7 +90,7 @@ struct QueueTest {
 
     void activate(const SchedulerNodePtr & node)
     {
-        event_queue.enqueueActivation(*node);
+        event_queue.enqueueActivation(node.get());
     }
 
     void event(const String & text)
