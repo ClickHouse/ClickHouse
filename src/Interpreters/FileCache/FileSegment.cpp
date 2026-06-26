@@ -563,7 +563,8 @@ bool FileSegment::reserve(
     size_t size_to_reserve,
     size_t lock_wait_timeout_milliseconds,
     std::string & failure_reason,
-    FileCacheReserveStat * reserve_stat)
+    FileCacheReserveStat * reserve_stat,
+    size_t reserve_hint)
 {
     if (!size_to_reserve)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Zero space reservation is not allowed");
@@ -619,6 +620,12 @@ bool FileSegment::reserve(
         {
             chassert(range().size() >= reserved_size);
             size_to_reserve = std::min(granule, range().size() - reserved_size);
+
+            /// Don't reserve ahead past what the read will consume: `already_reserved_size +
+            /// size_to_reserve` is the space reserved beyond the download offset, capped at the hint.
+            /// The hint is always >= the needed reservation, so this never drops below it.
+            if (reserve_hint && already_reserved_size + size_to_reserve > reserve_hint)
+                size_to_reserve = reserve_hint - already_reserved_size;
         }
     }
 
