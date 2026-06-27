@@ -59,7 +59,8 @@ def stop_clickhouse(cluster, node, cleanup_disks):
     node.exec_in_container(["rm", "-rf", "/var/lib/clickhouse/coordination/logs"])
     node.exec_in_container(["rm", "-rf", "/var/lib/clickhouse/coordination/snapshots"])
 
-    s3_objects = list_s3_objects(cluster, prefix="")
+    # Wipe everything, including any leftover "tmp_" markers, so the bucket is clean.
+    s3_objects = list_s3_objects(cluster, prefix="", exclude_tmp=False)
     if len(s3_objects) == 0:
         return
 
@@ -106,7 +107,15 @@ def setup_local_storage(cluster, node):
     )
 
 
-def list_s3_objects(cluster, prefix=""):
+# Keeper writes an empty "tmp_<name>" marker on the target disk while moving a snapshot/log
+# file between disks and removes it once the copy completes (moveFileBetweenDisks in
+# KeeperCommon.cpp). Such markers are never real snapshots/logs: the server skips
+# "tmp_"-prefixed entries when scanning disks. A listing taken while a move is in flight can
+# transiently observe a marker, so exclude it instead of counting it as a snapshot/log file.
+tmp_keeper_file_prefix = "tmp_"
+
+
+def list_s3_objects(cluster, prefix="", exclude_tmp=True):
     minio = cluster.minio_client
     prefix_len = len(prefix)
     return [
@@ -114,11 +123,16 @@ def list_s3_objects(cluster, prefix=""):
         for obj in minio.list_objects(
             cluster.minio_bucket, prefix=prefix, recursive=True
         )
+        if not (
+            exclude_tmp
+            and os.path.basename(obj.object_name).startswith(tmp_keeper_file_prefix)
+        )
     ]
 
 
 def get_local_files(path, node):
     files = node.exec_in_container(["ls", path]).strip().split("\n")
+    files = [f for f in files if not f.startswith(tmp_keeper_file_prefix)]
     files.sort()
     return files
 
