@@ -274,12 +274,13 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     {
         auto & set_query = select_settings->as<ASTSetQuery &>();
 
-        /// `limit` / `offset` settings are applied earlier in `executeQuery`
-        /// (`applyQueryConstructionSettings` / `wrapNestedConstructionSettings`) by wrapping the
-        /// query — including subqueries that carry the setting in their own `SETTINGS` clause — as a
-        /// derived table with an outer `LIMIT` / `OFFSET`. Drop them here so they are not re-applied
-        /// to this (sub)query's context; the query tree's `LIMIT` / `OFFSET` come from the SQL
-        /// clauses below.
+        /// `limit` / `offset` settings are materialized earlier by wrapping the query — including
+        /// subqueries that carry the setting in their own `SETTINGS` clause — as a derived table with an
+        /// outer `LIMIT` / `OFFSET` (`applyQueryConstructionSettings` / `wrapNestedConstructionSettings`
+        /// in `executeQuery` for directly executed queries; the `StorageView` constructor for a stored
+        /// view's inner query, which bypasses `executeQuery`). By the time the query tree is built the
+        /// settings are therefore already consumed; drop any that remain so they are not re-applied to
+        /// this (sub)query's context — the query tree's `LIMIT` / `OFFSET` come from the SQL clauses below.
         set_query.changes.removeSetting("limit");
         set_query.changes.removeSetting("offset");
 
