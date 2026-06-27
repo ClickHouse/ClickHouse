@@ -15,6 +15,11 @@
 #include <utility>
 #include <vector>
 
+namespace ProfileEvents
+{
+    extern const Event ZooKeeperWatchTriggeredClusterMetadata;
+}
+
 namespace DB
 {
 
@@ -230,8 +235,7 @@ void ClusterMetadataDDLWorker::scheduleTasks(bool /*reinitialized*/)
     zookeeper->getChildrenWatch(
         queue_dir,
         &stat,
-        Coordination::WatchCallbackPtrOrEventPtr{queue_updated_event, ProfileEvents::ZooKeeperWatchTriggeredOther});
-    zookeeper->get(max_log_ptr_path, nullptr, queue_updated_event);
+        Coordination::WatchCallbackPtrOrEventPtr{queue_updated_event, ProfileEvents::ZooKeeperWatchTriggeredClusterMetadata});
 
     const UInt32 log_ptr = getLogPointer();
     const UInt32 max_log_ptr = getMaxLogPointer();

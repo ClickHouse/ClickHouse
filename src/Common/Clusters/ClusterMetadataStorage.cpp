@@ -93,6 +93,8 @@ ClusterMetadataStorage::ClusterMetadataStorage(
         }
     }
 #else
+    (void)encryption_key_hex_;
+    (void)encryption_key_fingerprint;
     if (encrypted)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster metadata encryption requires building with SSL support");
 #endif
