@@ -7,6 +7,8 @@
 #include <IO/Operators.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <string_view>
 #include <type_traits>
@@ -148,7 +150,7 @@ class BaseSettings : public TTraits::Data
         using is_transparent = void;
         size_t operator()(std::string_view txt) const { return std::hash<std::string_view>{}(txt); }
     };
-    using CustomSettingMap = std::unordered_map<String, SettingFieldCustom, StringHash, std::equal_to<>>;
+    using CustomSettingMap = UnorderedMapWithMemoryTracking<String, SettingFieldCustom, StringHash, std::equal_to<>>;
 
 public:
     BaseSettings() = default;
@@ -225,6 +227,9 @@ public:
 
     /// Get the type name of a setting (e.g., "UInt64", "String")
     std::string_view getTypeName(std::string_view name) const;
+
+    /// Get the default value of a setting as a string
+    String getDefaultValueString(std::string_view name) const;
 
     /// Get the description of a setting
     std::string_view getDescription(std::string_view name) const;
@@ -491,6 +496,18 @@ std::string_view BaseSettings<TTraits>::getTypeName(std::string_view name) const
         return accessor.getTypeName(index);
     if (tryGetCustomSetting(name))
         return "Custom";
+    BaseSettingsHelpers::throwSettingNotFound(name);
+}
+
+template <typename TTraits>
+String BaseSettings<TTraits>::getDefaultValueString(std::string_view name) const
+{
+    name = TTraits::resolveName(name);
+    const auto & accessor = Traits::Accessor::instance();
+    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+        return accessor.getDefaultValueString(index);
+    if (tryGetCustomSetting(name))
+        return {};
     BaseSettingsHelpers::throwSettingNotFound(name);
 }
 
@@ -1052,7 +1069,7 @@ bool BaseSettings<TTraits>::SettingFieldRef::isHotReload() const
   * - Setting aliases
   */
 
-using AliasMap = std::unordered_map<std::string_view, std::string_view>;
+using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_view>;
 
 // ---------------------------------------------------------------------------
 // Helper macros for constexpr typed-array layout generation.
@@ -1331,8 +1348,8 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
                 size_t data_offset;                             /* Byte offset within Data struct */ \
             }; \
             \
-            std::vector<FieldInfo> field_infos;                                     /* Metadata for all settings */ \
-            std::unordered_map<std::string_view, size_t> name_to_index_map;         /* Fast name -> index lookup */ \
+            VectorWithMemoryTracking<FieldInfo> field_infos;                        /* Metadata for all settings */ \
+            UnorderedMapWithMemoryTracking<std::string_view, size_t> name_to_index_map; /* Fast name -> index lookup */ \
             /* Canonical default-constructed instance. Used to reset individual settings to their */ \
             /* declared defaults via a typed copy (see resetValueToDefault) and to read the default */ \
             /* string representation (see getDefaultValueString). Initialized once via the tag */ \
@@ -1349,12 +1366,12 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
                    LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_)}; \
         \
         /** Reverse map: setting name -> list of aliases */ \
-        using SettingsToAliasesMap = std::unordered_map<std::string_view, std::vector<std::string_view>>; \
+        using SettingsToAliasesMap = UnorderedMapWithMemoryTracking<std::string_view, VectorWithMemoryTracking<std::string_view>>; \
         static inline const SettingsToAliasesMap & settingsToAliases() \
         { \
             static SettingsToAliasesMap setting_to_aliases_mapping = [] \
             { \
-                std::unordered_map<std::string_view, std::vector<std::string_view>> map; \
+                UnorderedMapWithMemoryTracking<std::string_view, VectorWithMemoryTracking<std::string_view>> map; \
                 for (const auto & [alias, destination] : aliases_to_settings) \
                     map[destination].push_back(alias); \
                 return map; \
