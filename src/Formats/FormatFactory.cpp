@@ -9,7 +9,6 @@
 #include <IO/ParallelReadBuffer.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteHelpers.h>
-#include <IO/BufferWithOwnMemory.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
@@ -1230,7 +1229,7 @@ FormatFactory & FormatFactory::instance()
     return ret;
 }
 
-VectorWithMemoryTracking<String> FormatFactory::getAllRegisteredNames() const
+std::vector<String> FormatFactory::getAllRegisteredNames() const
 {
     return KnownFormatNames::instance().getAllRegisteredNames();
 }

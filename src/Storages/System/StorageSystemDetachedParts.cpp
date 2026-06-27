@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemDetachedParts.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -386,6 +385,3 @@ void ReadFromSystemDetachedParts::initializePipeline(QueryPipelineBuilder & pipe
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDetachedParts) }

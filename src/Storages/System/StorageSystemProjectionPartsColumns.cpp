@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemProjectionPartsColumns.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
@@ -262,6 +261,3 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemProjectionPartsColumns) }

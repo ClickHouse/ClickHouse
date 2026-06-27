@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(OS_LINUX)
 
 #include <atomic>
 #include <Common/Fiber.h>

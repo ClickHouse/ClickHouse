@@ -1,6 +1,5 @@
 #pragma once
 
-#include <limits>
 #include <base/arithmeticOverflow.h>
 #include <base/types.h>
 #include <Core/DecimalFunctions.h>
@@ -210,7 +209,7 @@ struct ToStartOfDayImpl
     }
     static UInt32 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toDate(ExtendedDayNum(d)), 0, std::numeric_limits<UInt32>::max()));
+        return static_cast<UInt32>(time_zone.toDate(ExtendedDayNum(d)));
     }
     static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -1758,10 +1757,10 @@ public:
     }
     static UInt32 execute(Int32 d, const DateLUTImpl &)
     {
-        /// Compute in `Int64` and saturate to `[0, UInt32 max]`. This keeps the result monotonic
-        /// over the whole raw `Date32` domain (it would otherwise wrap for `d` before year 0) and
-        /// avoids signed integer overflow for out-of-range `d` near `INT32_MAX`.
-        return static_cast<UInt32>(std::clamp<Int64>(Int64(DAYS_BETWEEN_YEARS_0_AND_1970) + d, 0, std::numeric_limits<UInt32>::max()));
+        /// Cast to `UInt32` so the addition is performed in unsigned arithmetic
+        /// and out-of-range `d` (e.g. fuzzer-supplied values near `INT32_MAX`)
+        /// does not trigger a signed integer overflow.
+        return DAYS_BETWEEN_YEARS_0_AND_1970 + static_cast<UInt32>(d);
     }
     static UInt32 execute(UInt16 d, const DateLUTImpl &)
     {
@@ -2030,8 +2029,7 @@ struct ToStartOfISOYearImpl
             return 0;
         Int32 day_num = time_zone.toDayNum(t);
         day_num = std::min(day_num, Int32(DATE_LUT_MAX_DAY_NUM));
-        const int res = time_zone.toFirstDayNumOfISOYear(ExtendedDayNum(day_num));
-        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
+        return static_cast<UInt16>(time_zone.toFirstDayNumOfISOYear(ExtendedDayNum(day_num)));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2042,8 +2040,7 @@ struct ToStartOfISOYearImpl
         if (d < 0)
             return 0;
         Int32 safe_day = std::min(d, static_cast<Int32>(DATE_LUT_MAX_DAY_NUM));
-        const int res = time_zone.toFirstDayNumOfISOYear(ExtendedDayNum(safe_day));
-        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
+        return static_cast<UInt16>(time_zone.toFirstDayNumOfISOYear(ExtendedDayNum(safe_day)));
     }
     static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -2153,7 +2150,7 @@ struct ToYearNumSinceEpochImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return time_zone.toYearSinceEpoch(ExtendedDayNum(d));
         else
-            return static_cast<UInt16>(std::clamp<Int64>(time_zone.toYearSinceEpoch(ExtendedDayNum(d)), 0, std::numeric_limits<UInt16>::max()));
+            return static_cast<UInt16>(time_zone.toYearSinceEpoch(ExtendedDayNum(d)));
     }
     static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -2249,7 +2246,7 @@ struct ToMonthNumSinceEpochImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return time_zone.toMonthNumSinceEpoch(ExtendedDayNum(d));
         else
-            return static_cast<UInt16>(std::clamp<Int64>(time_zone.toMonthNumSinceEpoch(ExtendedDayNum(d)), 0, std::numeric_limits<UInt16>::max()));
+            return static_cast<UInt16>(time_zone.toMonthNumSinceEpoch(ExtendedDayNum(d)));
     }
     static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -2281,7 +2278,7 @@ struct ToRelativeWeekNumImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return time_zone.toRelativeWeekNum(ExtendedDayNum(d));
         else
-            return static_cast<UInt16>(std::clamp<Int64>(time_zone.toRelativeWeekNum(ExtendedDayNum(d)), 0, std::numeric_limits<UInt16>::max()));
+            return static_cast<UInt16>(time_zone.toRelativeWeekNum(ExtendedDayNum(d)));
     }
     static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -2313,7 +2310,7 @@ struct ToRelativeDayNumImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return static_cast<Int32>(static_cast<ExtendedDayNum>(d));
         else
-            return static_cast<UInt16>(std::clamp<Int64>(d, 0, DATE_LUT_MAX_DAY_NUM));
+            return static_cast<UInt16>(static_cast<ExtendedDayNum>(d));
     }
     static UInt16 execute(UInt16 d, const DateLUTImpl &)
     {
@@ -2348,7 +2345,7 @@ struct ToRelativeHourNumImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return static_cast<Int64>(time_zone.toStableRelativeHourNum(ExtendedDayNum(d)));
         else
-            return static_cast<UInt32>(std::clamp<Int64>(time_zone.toRelativeHourNum(ExtendedDayNum(d)), 0, std::numeric_limits<UInt32>::max()));
+            return static_cast<UInt32>(time_zone.toRelativeHourNum(ExtendedDayNum(d)));
     }
     ALWAYS_INLINE static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -2383,7 +2380,7 @@ struct ToRelativeMinuteNumImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return static_cast<Int64>(time_zone.toRelativeMinuteNum(ExtendedDayNum(d)));
         else
-            return static_cast<UInt32>(std::clamp<Int64>(time_zone.toRelativeMinuteNum(ExtendedDayNum(d)), 0, std::numeric_limits<UInt32>::max()));
+            return static_cast<UInt32>(time_zone.toRelativeMinuteNum(ExtendedDayNum(d)));
     }
     static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -2412,7 +2409,7 @@ struct ToRelativeSecondNumImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return static_cast<Int64>(time_zone.fromDayNum(ExtendedDayNum(d)));
         else
-            return static_cast<UInt32>(std::clamp<Int64>(time_zone.fromDayNum(ExtendedDayNum(d)), 0, std::numeric_limits<UInt32>::max()));
+            return static_cast<UInt32>(time_zone.fromDayNum(ExtendedDayNum(d)));
     }
     static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {

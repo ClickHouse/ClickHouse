@@ -1,5 +1,4 @@
 #include <DataTypes/DataTypeArray.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -221,6 +220,3 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDictionaries) }
