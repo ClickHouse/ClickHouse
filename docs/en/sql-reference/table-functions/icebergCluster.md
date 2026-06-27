@@ -52,4 +52,4 @@ SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/c
 **See Also**
 
 - [Iceberg engine](/engines/table-engines/integrations/iceberg.md)
-- [Iceberg table function](sql-reference/table-functions/iceberg.md)
+- [Iceberg table function](/sql-reference/table-functions/iceberg.md)
