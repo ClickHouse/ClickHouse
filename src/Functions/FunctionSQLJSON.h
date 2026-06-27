@@ -490,6 +490,11 @@ public:
             Name::name, arguments, function_json_value_return_type_allow_nullable);
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>::getReturnTypeForDynamic();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// Choose JSONParser.
@@ -546,6 +551,8 @@ public:
 
         return std::make_shared<DataTypeUInt8>();
     }
+
+    static DataTypePtr getReturnTypeForDynamic() { return std::make_shared<DataTypeUInt8>(); }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
@@ -615,6 +622,8 @@ public:
 
         return std::make_shared<DataTypeString>();
     }
+
+    static DataTypePtr getReturnTypeForDynamic() { return std::make_shared<DataTypeString>(); }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
@@ -702,6 +711,8 @@ public:
 
         return std::make_shared<DataTypeString>();
     }
+
+    static DataTypePtr getReturnTypeForDynamic() { return std::make_shared<DataTypeString>(); }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
