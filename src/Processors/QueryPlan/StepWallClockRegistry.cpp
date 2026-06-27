@@ -10,12 +10,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-
 StepWallClockRegistry::StepWallClockRegistry()
 : query_start_ns(clock_gettime_ns())
 {
@@ -47,16 +41,7 @@ void StepWallClockRegistry::populateFromPlan(const QueryPlan & plan)
     }
 }
 
-StepWallClock & StepWallClockRegistry::get(const IQueryPlanStep * step_ptr, size_t group) const
-{
-    auto key = std::make_pair(step_ptr, group);
-
-    if (auto clock_it = clocks.find(key); clock_it != clocks.end())
-        return *(clock_it->second);
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "The clocks for measuring wall clock time for step {} with group {} were not found.", step_ptr->getName(), step_ptr->getStepGroupName(group));
-}
-
-const StepWallClock * StepWallClockRegistry::find(const IQueryPlanStep * step_ptr, size_t group) const
+StepWallClock * StepWallClockRegistry::find(const IQueryPlanStep * step_ptr, size_t group) const
 {
     auto it = clocks.find({step_ptr, group});
     return it != clocks.end() ? it->second.get() : nullptr;

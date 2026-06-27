@@ -103,8 +103,10 @@ bool ExecutionThreadContext::executeTask()
         /// and are not attributed to any query plan step, so there is no clock for them.
         if (const auto * step = node->processor()->getQueryPlanStep())
         {
-            clock = &step_to_wall_clock_registry->get(step, group);
-            clock->onEnter();
+            clock = step_to_wall_clock_registry->find(step, group);
+            chassert(clock);
+            if (clock)
+                clock->onEnter();
         }
     }
 
