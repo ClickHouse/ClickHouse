@@ -124,10 +124,13 @@ def render_issue_comment(pr_number: int, section_body: str) -> str:
     """Render the bot-owned comment posted on an issue a PR resolved.
 
     Wraps the same version-info section used in PR bodies in the section markers
-    so it can be found and updated idempotently, prefixed with a line crediting
-    the resolving PR.
+    so it can be found and updated idempotently, with a `Resolved by` item added
+    as the first entry of the list (right after the `### Version info` header).
     """
-    inner = f"Resolved by #{pr_number}.\n\n{section_body}"
+    header, _, rest = section_body.partition("\n")
+    inner = f"{header}\n- Resolved by: #{pr_number}"
+    if rest:
+        inner += f"\n{rest}"
     return f"{SECTION_START}\n{inner}\n{SECTION_END}"
 
 

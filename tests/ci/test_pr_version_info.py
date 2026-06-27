@@ -98,9 +98,12 @@ class TestRenderIssueComment(unittest.TestCase):
         comment = render_issue_comment(12345, section)
         self.assertTrue(comment.startswith(SECTION_START))
         self.assertTrue(comment.endswith(SECTION_END))
-        self.assertIn("Resolved by #12345.", comment)
         self.assertIn("Merged into: `26.6.1.1`", comment)
         self.assertIn("Backported to: `25.12.1.100`", comment)
+        # `Resolved by` is the first list item, right after the header.
+        self.assertIn(
+            "### Version info\n- Resolved by: #12345\n- Merged into:", comment
+        )
 
     def test_idempotent_markers(self):
         # The markers must match the PR-body section markers so the comment can
