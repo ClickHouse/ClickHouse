@@ -260,7 +260,7 @@ The following authentication types are supported inside `<auth_methods>`:
 - `<auth_methods>` must contain at least one authentication method.
 - Each wrapper element inside `<auth_methods>` must contain exactly one authentication type (with the exception of `<ssh_keys>`, which can contain multiple, for backwards compatibility).
 - TOTP (`<time_based_one_time_password>`) is specified at the user level (outside `<auth_methods>`) and applies to all password-based methods in the list. At least one password-based method is required when TOTP is enabled.
-- `<valid_until>` can be placed at the user level to apply the same expiry to all methods, or inside an individual method wrapper to expire only that method. See [`user_name/valid_until`](#user-namevalid-until).
+- `<valid_until>` can be placed inside an individual method wrapper to set that method's expiry, or at the user level (alongside `<auth_methods>`) to set the same expiry for all methods. If both are present, the user-level value overwrites any per-method values. See [`user_name/valid_until`](#user-namevalid-until).
 
 **Example: `auth_methods` with TOTP**
 
@@ -288,9 +288,9 @@ In this example, TOTP verification is applied to the password-based method (`<pa
 
 ### user_name/valid_until {#user-namevalid-until}
 
-Sets an expiration time for the user's authentication, equivalent to the `VALID UNTIL` clause on [`CREATE USER`](/sql-reference/statements/create/user). Authentication is rejected at connection time once the expiry has passed; existing sessions are not terminated.
+Sets an expiration time for the user's authentication, equivalent to the `VALID UNTIL` clause on [`CREATE USER`](/sql-reference/statements/create/user). Expiration is checked at connection time. For native TCP connections it is also re-checked before each subsequent query; for HTTP and gRPC it is only checked at login.
 
-Accepted values: a date/time string in `YYYY-MM-DD HH:MM:SS` format, a plain date (`YYYY-MM-DD`), or `infinity` (no expiration).
+Accepted values: a date/time string in `YYYY-MM-DD HH:MM:SS` format, a plain date (`YYYY-MM-DD`), or `infinity` (no expiration). The datetime is interpreted in the server's local timezone.
 
 When used with `<auth_methods>`, `<valid_until>` can also be placed inside an individual method wrapper; see [Multiple Authentication Methods](#multiple-authentication-methods).
 
