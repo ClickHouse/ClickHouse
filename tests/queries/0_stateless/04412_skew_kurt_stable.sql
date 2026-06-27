@@ -37,9 +37,55 @@ SELECT
         - (SELECT kurtPopStable(x) FROM (SELECT (number % 7) + if(number % 13 = 0, 5, 0) AS x FROM numbers(20000)))
     ), 10) AS kurt_pop_merge;
 
+-- (c2) Merge correctness for samp variants
+SELECT
+    round(abs(
+        (SELECT skewSampStableMerge(s) FROM (
+            SELECT skewSampStableState(x) AS s FROM (SELECT (number % 7) + if(number % 13 = 0, 5, 0) AS x FROM numbers(10000))
+            UNION ALL
+            SELECT skewSampStableState(x) AS s FROM (SELECT (number % 7) + if(number % 13 = 0, 5, 0) AS x FROM numbers(10000, 10000))
+        ))
+        - (SELECT skewSampStable(x) FROM (SELECT (number % 7) + if(number % 13 = 0, 5, 0) AS x FROM numbers(20000)))
+    ), 10) AS skew_samp_merge,
+    round(abs(
+        (SELECT kurtSampStableMerge(s) FROM (
+            SELECT kurtSampStableState(x) AS s FROM (SELECT (number % 7) + if(number % 13 = 0, 5, 0) AS x FROM numbers(10000))
+            UNION ALL
+            SELECT kurtSampStableState(x) AS s FROM (SELECT (number % 7) + if(number % 13 = 0, 5, 0) AS x FROM numbers(10000, 10000))
+        ))
+        - (SELECT kurtSampStable(x) FROM (SELECT (number % 7) + if(number % 13 = 0, 5, 0) AS x FROM numbers(20000)))
+    ), 10) AS kurt_samp_merge;
+
 -- (d) Edge cases: empty and singleton return NaN
 SELECT isNaN(skewPopStable(x)), isNaN(skewSampStable(x)), isNaN(kurtPopStable(x)), isNaN(kurtSampStable(x))
 FROM (SELECT 1 AS x LIMIT 0);
 
 SELECT isNaN(skewPopStable(x)), isNaN(skewSampStable(x)), isNaN(kurtPopStable(x)), isNaN(kurtSampStable(x))
 FROM (SELECT 1 AS x);
+
+-- (e) Constant input: m2 = 0 so all four return NaN
+SELECT isNaN(skewPopStable(x)), isNaN(skewSampStable(x)), isNaN(kurtPopStable(x)), isNaN(kurtSampStable(x))
+FROM (SELECT 5 AS x FROM numbers(100));
+
+-- (f) Asymmetric split (1 vs 19999) exercises the non-comparable branch in mergeWith
+SELECT
+    round(abs(
+        (SELECT skewPopStableMerge(s) FROM (
+            SELECT skewPopStableState(x) AS s FROM (SELECT (number % 7) + if(number % 13 = 0, 5, 0) AS x FROM numbers(1))
+            UNION ALL
+            SELECT skewPopStableState(x) AS s FROM (SELECT (number % 7) + if(number % 13 = 0, 5, 0) AS x FROM numbers(1, 19999))
+        ))
+        - (SELECT skewPopStable(x) FROM (SELECT (number % 7) + if(number % 13 = 0, 5, 0) AS x FROM numbers(20000)))
+    ), 10) AS skew_asymmetric_merge,
+    round(abs(
+        (SELECT kurtPopStableMerge(s) FROM (
+            SELECT kurtPopStableState(x) AS s FROM (SELECT (number % 7) + if(number % 13 = 0, 5, 0) AS x FROM numbers(1))
+            UNION ALL
+            SELECT kurtPopStableState(x) AS s FROM (SELECT (number % 7) + if(number % 13 = 0, 5, 0) AS x FROM numbers(1, 19999))
+        ))
+        - (SELECT kurtPopStable(x) FROM (SELECT (number % 7) + if(number % 13 = 0, 5, 0) AS x FROM numbers(20000)))
+    ), 10) AS kurt_asymmetric_merge;
+
+-- (g) Two-element sample: count=2 satisfies count>1 so samp variants return a value, not NaN
+SELECT isNaN(skewSampStable(x)), isNaN(kurtSampStable(x))
+FROM (SELECT number + 1 AS x FROM numbers(2));
