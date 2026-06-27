@@ -157,6 +157,7 @@ void registerNpySchemaReader(FormatFactory & factory);
 void registerFormSchemaReader(FormatFactory & factory);
 
 void registerInputFormatGeoJSON(FormatFactory & factory);
+void registerOutputFormatGeoJSON(FormatFactory & factory);
 void registerGeoJSONSchemaReader(FormatFactory & factory);
 
 void registerFileExtensions(FormatFactory & factory);
@@ -258,6 +259,7 @@ void registerFormats()
     registerInputFormatJSONAsString(factory);
     registerInputFormatJSONAsObject(factory);
     registerInputFormatGeoJSON(factory);
+    registerOutputFormatGeoJSON(factory);
     registerInputFormatLineAsString(factory);
 #if USE_HIVE
     registerInputFormatHiveText(factory);

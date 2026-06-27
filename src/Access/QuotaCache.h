@@ -36,6 +36,8 @@ public:
 private:
     using Interval = EnabledQuota::Interval;
     using Intervals = EnabledQuota::Intervals;
+    using SingleQuota = EnabledQuota::SingleQuota;
+    using Quotas = EnabledQuota::Quotas;
 
     struct QuotaInfo
     {
@@ -65,7 +67,7 @@ private:
     std::unordered_map<UUID /* quota id */, QuotaInfo> all_quotas;
     bool all_quotas_read = false;
     /// Set by the per-entity handler; the rebuild is coalesced to once per notification batch.
-    bool need_choose_quota = false;
+    bool need_choose_quota TSA_GUARDED_BY(mutex) = false;
     scope_guard subscription;
     scope_guard batch_subscription;
     std::map<EnabledQuota::Params, std::weak_ptr<EnabledQuota>> enabled_quotas;
