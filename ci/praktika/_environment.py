@@ -369,7 +369,7 @@ class _Environment(MetaClasses.Serializable):
                 env = cls.from_workflow_data()
                 env.dump()
                 return env
-            except FileNotFoundError as e:
+            except FileNotFoundError:
                 # For workflows without Config job
                 print(
                     f"NOTE: Workflow context file [{Settings.WORKFLOW_STATUS_FILE}] does not exist - read context from GH event"
@@ -425,7 +425,7 @@ class _Environment(MetaClasses.Serializable):
             prefix = f"REFs/{branch}"
         assert sha or latest
         if latest:
-            prefix += f"/latest"
+            prefix += "/latest"
         elif sha:
             prefix += f"/{sha}"
         return prefix
