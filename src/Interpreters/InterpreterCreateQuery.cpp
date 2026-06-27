@@ -2321,11 +2321,25 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         chassert(done);
         created = true;
 
-        /// If table has dependencies - add them to the graph
-        addTableDependencies(create, query_ptr, getContext());
-
-        /// Try fill temporary table
-        BlockIO fill_io = fillTableIfNeeded(create);
+        /// Try fill temporary table. For a materialized view with POPULATE this subscribes the (temporary)
+        /// view and snapshots the source atomically; the later EXCHANGE/RENAME carries the subscription over
+        /// to the final name. Falls back to the regular path when atomic population does not apply.
+        BlockIO fill_io;
+        bool filled_atomically = false;
+        if (shouldPopulateMaterializedViewAtomically(create))
+        {
+            if (auto result = fillMaterializedViewAtomically(create))
+            {
+                fill_io = std::move(*result);
+                filled_atomically = true;
+            }
+        }
+        if (!filled_atomically)
+        {
+            /// If table has dependencies - add them to the graph
+            addTableDependencies(create, query_ptr, getContext());
+            fill_io = fillTableIfNeeded(create);
+        }
         /// For queries like 'CREATE OR REPLACE TABLE ... AS SELECT * INSERT' might take a long time,
         /// passing this callback allows tcp sessions to send progress, stats and logs.
         /// It prevents getting socket timeout as well.
@@ -2498,11 +2512,11 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 
 bool InterpreterCreateQuery::shouldPopulateMaterializedViewAtomically(const ASTCreateQuery & create) const
 {
-    /// `CREATE OR REPLACE`/`REPLACE` go through doCreateOrReplaceTable (which returns before the atomic
-    /// dispatch in createTable) and keep the legacy population path, so exclude them here.
+    /// Used both by createTable (plain CREATE) and by doCreateOrReplaceTable (CREATE OR REPLACE / REPLACE);
+    /// the latter populates a temporary table that is then atomically swapped in, so the cut applies to that
+    /// temporary view's subscription and the swap carries it over.
     return create.isCreateQueryWithImmediateInsertSelect()
         && create.is_materialized_view && !create.is_window_view && !create.is_clone_as && !internal
-        && !create.replace_table && !create.replace_view
         && getContext()->getSettingsRef()[Setting::materialized_views_populate_atomically];
 }
 
