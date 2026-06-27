@@ -1397,15 +1397,15 @@ Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, cons
 }
 
 /// True if a value of this type may contain a decimal-backed leaf that needs exact serialization:
-/// a static Decimal anywhere, a Time64 (also a scaled decimal, and unlike DateTime64 it is not
-/// rendered as text), or a Dynamic whose runtime value can be a decimal not visible in the type.
+/// a static Decimal/DateTime64/Time64 anywhere (all scaled decimals), or a Dynamic whose runtime
+/// value can be a decimal not visible in the type.
 bool typeMayContainDecimal(const IDataType & type)
 {
     bool result = false;
     auto check = [&](const IDataType & nested)
     {
         WhichDataType which(nested);
-        result |= which.isDecimal() || which.isTime64() || which.isDynamic();
+        result |= which.isDecimal() || which.isDateTime64() || which.isTime64() || which.isDynamic();
     };
     check(type);
     type.forEachChild(check);
@@ -1461,12 +1461,18 @@ ASTPtr makeExactDecimalCarrierAST(const Field & field)
     const String text = decimalFieldToText(field);
     const UInt32 scale = decimalFieldScale(field);
 
-    size_t digits = 0;
+    /// Required precision is the number of integer-part digits plus the scale. Counting all digit
+    /// characters of the (trailing-zero-stripped) text would undercount when the fractional part is
+    /// zero, e.g. "1698543000" with scale 9 needs precision 19, not 10.
+    size_t integer_digits = 0;
     for (char c : text)
+    {
+        if (c == '.')
+            break;
         if (c >= '0' && c <= '9')
-            ++digits;
-
-    const size_t needed_precision = digits > scale ? digits : scale;
+            ++integer_digits;
+    }
+    const size_t needed_precision = (integer_digits != 0 ? integer_digits : 1) + scale;
     const char * decimal_type_name = "Decimal256";
     if (needed_precision <= 9)
         decimal_type_name = "Decimal32";
@@ -1506,9 +1512,12 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             return makeASTFunction(
                 "_CAST", make_intrusive<ASTLiteral>(decimalFieldToText((*column)[row])),
                 make_intrusive<ASTLiteral>(type->getName()));
+        case TypeIndex::DateTime64:
         case TypeIndex::Time64:
-            /// Time64 is a scaled decimal; cast the exact decimal carrier back to Time64 so the leaf
-            /// keeps its type (needed under Variant/Dynamic).
+            /// DateTime64/Time64 are backed by a scaled decimal. Serialize the exact (UTC-based) decimal
+            /// ticks via the carrier and cast back to the original type. Local date-time text would be
+            /// ambiguous across DST overlaps in non-UTC time zones (two UTC instants format alike, and
+            /// parsing picks one side), and a bare numeric literal would round through Float64.
             return makeASTFunction(
                 "_CAST", makeExactDecimalCarrierAST((*column)[row]), make_intrusive<ASTLiteral>(type->getName()));
         case TypeIndex::Array:

@@ -37,6 +37,13 @@ FROM remote('127.0.0.{1,2}', system.one);
 SELECT DISTINCT materialize(toDateTime64('2023-10-17 12:51:26.123456789', 9, 'UTC')) AS ts
 FROM remote('127.0.0.{1,2}', system.one);
 
+-- A DateTime64 value at a DST overlap in a non-UTC time zone must reach every shard as the exact
+-- instant: serializing it as local date-time text is ambiguous (two distinct UTC instants format to
+-- the same local value, e.g. 2023-10-29 02:30:00 in Europe/Berlin), so DISTINCT would return two
+-- different instants instead of one.
+SELECT DISTINCT toUnixTimestamp64Nano(materialize(fromUnixTimestamp64Nano(1698543000000000000, 'Europe/Berlin')))
+FROM remote('127.0.0.{1,2}', system.one);
+
 -- Decimals nested in Array/Tuple/Map must be exact too. Without an exact serialization the remote
 -- shard rounds the value and the differing column name makes the query fail with NOT_FOUND_COLUMN_IN_BLOCK.
 SELECT DISTINCT materialize([toDecimal64('123456789012.34567', 5)]) AS c
