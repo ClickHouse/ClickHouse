@@ -364,9 +364,12 @@ groupBloomFilterState(filter_size_bytes, num_hashes[, seed])(column)
         {"seed", "Seed for hash functions. Default: 0."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns the Bloom filter state as `AggregateFunction(groupBloomFilter, T)` when using the `-State` combinator. "
+        "Returns the Bloom filter state as `AggregateFunction(groupBloomFilter, T)` (default form) or "
+        "`AggregateFunction(groupBloomFilter(params...), T)` (parameterized form, e.g. `AggregateFunction(groupBloomFilter(1000), String)`) "
+        "when using the `-State` combinator. "
+        "The parameterized form must repeat the same parameters when defining `AggregatingMergeTree` columns explicitly. "
         "The finalized form throws an exception because Bloom filters do not have a meaningful scalar result.",
-        {"AggregateFunction(groupBloomFilter, T)"}
+        {"AggregateFunction(groupBloomFilter[(parameters...)], T)"}
     };
     FunctionDocumentation::Examples examples = {
         {
