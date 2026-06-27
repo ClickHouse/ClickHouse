@@ -3729,7 +3729,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Tuple element-wise arithmetic (Tuple, Tuple → Tuple)
         {"tupleDivide", "tupleIntDiv", "tupleIntDivOrZero", "tupleMinus", "tupleModulo", "tupleMultiply", "tuplePlus"},
         /// Snowflake ID ↔ DateTime conversions
-        {"dateTimeToSnowflake", "dateTimeToSnowflakeID", "snowflakeIDToDateTime", "snowflakeToDateTime"},
+        {"dateTimeToSnowflakeID", "snowflakeIDToDateTime"},
         /// IP CIDR range functions (IP, UInt8 → Tuple)
         {"IPv4CIDRToRange", "IPv6CIDRToRange"},
         /// IP string predicates (String → UInt8)
