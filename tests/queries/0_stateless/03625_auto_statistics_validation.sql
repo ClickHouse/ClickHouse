@@ -7,7 +7,9 @@ CREATE TABLE t_auto_statistics_validation (x UInt64) ENGINE = MergeTree ORDER BY
 CREATE TABLE t_auto_statistics_validation (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS auto_statistics_types = 'minmax, nonexisting, countmin'; -- { serverError INCORRECT_QUERY }
 
 CREATE TABLE t_auto_statistics_validation (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS auto_statistics_types = ''; DROP TABLE t_auto_statistics_validation;
-CREATE TABLE t_auto_statistics_validation (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS auto_statistics_types = 'minmax, countmin, uniq'; DROP TABLE t_auto_statistics_validation;
+-- 'minmax' is deprecated and rejected, even via auto statistics
+CREATE TABLE t_auto_statistics_validation (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS auto_statistics_types = 'minmax, countmin, uniq'; -- { serverError INCORRECT_QUERY }
+CREATE TABLE t_auto_statistics_validation (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS auto_statistics_types = 'basic, countmin, uniq'; DROP TABLE t_auto_statistics_validation;
 
 CREATE TABLE t_auto_statistics_validation (x UInt64) ENGINE = MergeTree ORDER BY x;
 
@@ -16,6 +18,7 @@ ALTER TABLE t_auto_statistics_validation MODIFY SETTING auto_statistics_types = 
 ALTER TABLE t_auto_statistics_validation MODIFY SETTING auto_statistics_types = 'minmax, nonexisting, countmin'; -- { serverError INCORRECT_QUERY }
 
 ALTER TABLE t_auto_statistics_validation MODIFY SETTING auto_statistics_types = '';
-ALTER TABLE t_auto_statistics_validation MODIFY SETTING auto_statistics_types = 'minmax, countmin, uniq';
+ALTER TABLE t_auto_statistics_validation MODIFY SETTING auto_statistics_types = 'minmax, countmin, uniq'; -- { serverError INCORRECT_QUERY }
+ALTER TABLE t_auto_statistics_validation MODIFY SETTING auto_statistics_types = 'basic, countmin, uniq';
 
 DROP TABLE t_auto_statistics_validation;

@@ -1260,6 +1260,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
             {"allow_experimental_text_index_positions", false, false, "New setting"},
+            {"auto_statistics_types", "minmax, uniq", "basic, uniq", "Deprecate the `minmax` statistics type and replace it with `basic` (a superset of `minmax`) in the default auto statistics"},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",

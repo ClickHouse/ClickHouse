@@ -1257,17 +1257,17 @@ They can be used for prewhere optimization only if we enable `set use_statistics
 #### Part Pruning with Statistics {#part-pruning-with-statistics}
 
 When `use_statistics_for_part_pruning` is enabled, statistics can be used for part pruning.
-Currently, only `MinMax` and `Basic` statistics support part pruning. When such statistics are defined on a column, ClickHouse tracks the minimum and maximum values for that column in each part.
+Currently, only `Basic` statistics (and the deprecated `MinMax`) support part pruning. When such statistics are defined on a column, ClickHouse tracks the minimum and maximum values for that column in each part.
 Part pruning allows to skip reading entire data parts when the query filter condition cannot match any rows in that part.
 
 **Example:**
 
 ```sql
--- Create a table with MinMax statistics on the 'value' column
+-- Create a table with Basic statistics on the 'value' column
 CREATE TABLE test_stats
 (
     id UInt64,
-    value Int64 STATISTICS(MinMax)
+    value Int64 STATISTICS(Basic)
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -1301,9 +1301,13 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
     Syntax: `basic`
 
-- `MinMax`
+- `MinMax` (deprecated)
 
     The minimum and maximum column value which allows to estimate the selectivity of range filters on numeric columns.
+
+    :::note
+    `MinMax` is deprecated and can no longer be created (`CREATE TABLE ... STATISTICS(minmax)` and `ALTER TABLE ... ADD/MODIFY STATISTICS ... TYPE minmax` throw an exception). It is a subset of `Basic`, which should be used instead. Existing tables and parts that still reference `minmax` keep working.
+    :::
 
     Syntax: `minmax`
 
