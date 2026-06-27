@@ -214,7 +214,9 @@ static struct InitFiu
     PAUSEABLE(transaction_after_commit_pause) \
     REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
     REGULAR(tcp_handler_fail_connection_setup) \
-    REGULAR(distributed_plan_status_check_reenqueue_fault)
+    REGULAR(distributed_plan_status_check_reenqueue_fault) \
+    ONCE(zk_send_thread_request_window_throw) \
+    ONCE(zk_send_thread_operations_insert_throw)
 
 namespace FailPoints
 {

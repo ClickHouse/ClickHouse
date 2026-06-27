@@ -50,6 +50,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"reader_executor_use_long_connections", true, true, "New experimental setting to reuse a bounded long source connection across windows in the ReaderExecutor; disabling it forces the stateless one-shot-per-window path."},
             {"reader_executor_decrypt_ahead", false, false, "New experimental setting to decrypt prefetched bytes on the ReaderExecutor read-ahead worker, ahead of serving, instead of at the serve boundary on the query thread."},
             {"reader_executor_plan_look_ahead_max_window", 8388608, 8388608, "New experimental setting: fixed plan-window size for the ReaderExecutor (floored at reader_executor_window_size, default one window); raise it to plan further ahead."},
+            {"format_geojson_validate_geometry", true, true, "New setting that controls whether the GeoJSON format enforces RFC 7946 geometry validity (minimum points per line and ring, ring closure, non-empty multi-geometries) when reading and writing"},
+            {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},
+            {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
@@ -61,7 +64,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_lightweight_primary_key_index_analysis", false, true, "New setting to optimize primary key index analysis for tables with long primary keys"},
             {"ai_function_embedding_max_batch_size", 100, 100, "New setting"},
             {"enable_nullable_tuple_type", false, false, "Nullable Tuple is now Beta. Added as an alias for 'allow_experimental_nullable_tuple_type'."},
-            {"ai_function_credentials", "", "", "New setting"},
             {"enable_sharding_aggregator", false, false, "New setting to enable sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase; this is efficient for high cardinality keys with evenly distributed data."},
             {"allow_experimental_text_index_lazy_apply", false, false, "New setting to gate experimental lazy posting list apply mode"},
             {"text_index_posting_list_apply_mode", "materialize", "materialize", "New setting for lazy posting list apply mode"},
@@ -1268,7 +1270,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
-
+            {"allow_experimental_text_index_positions", false, false, "New setting"},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",
