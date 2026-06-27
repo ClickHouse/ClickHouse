@@ -1,7 +1,7 @@
 ---
 description: 'Returns the sample skewness of a sequence. Unlike skewSamp, this function uses
-  a numerically stable algorithm. It works slower but provides a lower computational
-  error.'
+  a numerically stable single-pass algorithm and is accurate even when the mean is
+  large relative to the standard deviation.'
 slug: /sql-reference/aggregate-functions/reference/skewsampstable
 title: 'skewSampStable'
 doc_type: 'reference'

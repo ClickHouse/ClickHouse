@@ -1,7 +1,7 @@
 ---
 description: 'Returns the population skewness of a sequence. Unlike skewPop, this function uses
-  a numerically stable algorithm. It works slower but provides a lower computational
-  error.'
+  a numerically stable single-pass algorithm and is accurate even when the mean is
+  large relative to the standard deviation.'
 slug: /sql-reference/aggregate-functions/reference/skewpopstable
 title: 'skewPopStable'
 doc_type: 'reference'
