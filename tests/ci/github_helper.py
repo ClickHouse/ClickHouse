@@ -3,7 +3,7 @@
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from os import path as p
 from pathlib import Path
@@ -61,6 +61,9 @@ class PullRequestInfo:
     node_id: str
     html_url: str
     repo: str
+    # Numbers of the issues this PR resolves, taken from GitHub's "Development"
+    # links (`closingIssuesReferences`), restricted to the PR's own repository.
+    closing_issue_numbers: List[int] = field(default_factory=list)
 
 
 class GitHub(github.Github):
@@ -200,11 +203,23 @@ class GitHub(github.Github):
         mergeCommit { oid }
         labels(first: 100) { nodes { name } }
         baseRepository { nameWithOwner }
+        closingIssuesReferences(first: 50) {
+            nodes { number repository { nameWithOwner } }
+        }
     """
 
     @staticmethod
     def _pr_info_from_node(node: dict) -> PullRequestInfo:
         merge_commit = node["mergeCommit"] or {}
+        repo = node["baseRepository"]["nameWithOwner"]
+        # Keep only same-repo closing references: a `Closes #N` for an issue in
+        # another repository would collide with this repo's issue numbering.
+        closing = (node.get("closingIssuesReferences") or {}).get("nodes") or []
+        closing_issue_numbers = [
+            issue["number"]
+            for issue in closing
+            if (issue.get("repository") or {}).get("nameWithOwner") == repo
+        ]
         return PullRequestInfo(
             number=node["number"],
             head_ref=node["headRefName"],
@@ -215,7 +230,8 @@ class GitHub(github.Github):
             body=node["body"] or "",
             node_id=node["id"],
             html_url=node["url"],
-            repo=node["baseRepository"]["nameWithOwner"],
+            repo=repo,
+            closing_issue_numbers=closing_issue_numbers,
         )
 
     def _graphql(self, query: str, variables: dict) -> dict:
@@ -404,6 +420,36 @@ class GitHub(github.Github):
         return self._get_repo_obj_cached(  # type: ignore
             repo, "get_issue", cache_file, number, obj_updated_at=obj_updated_at
         )
+
+    def upsert_issue_comment(
+        self,
+        repo: Repository,
+        issue_number: int,
+        marker: str,
+        body: str,
+        dry_run: bool = False,
+    ) -> Optional[str]:
+        """Create or update a single marker-identified comment on an issue.
+
+        Idempotent: scans the issue's comments for one containing ``marker``
+        (a bot-owned delimiter); if found, it is edited only when the body
+        actually changed; otherwise a new comment is created. Returns
+        ``"created"``, ``"updated"``, or ``None`` when nothing changed.
+
+        The issue is fetched live (not via the pickle cache) so the comment
+        list reflects the current state.
+        """
+        issue = repo.get_issue(issue_number)
+        for comment in issue.get_comments():
+            if marker in (comment.body or ""):
+                if (comment.body or "") == body:
+                    return None
+                if not dry_run:
+                    comment.edit(body)
+                return "updated"
+        if not dry_run:
+            issue.create_comment(body)
+        return "created"
 
     def _get_repo_obj_cached(
         self,
