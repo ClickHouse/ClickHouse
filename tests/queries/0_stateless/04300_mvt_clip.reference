@@ -55,3 +55,7 @@ MULTIPOLYGON(((4097 -1,-1 -1,-1 4097,4097 4097,4097 -1)))
 1
 -- MVTEncodeGeom: a polygon with a hole keeps the hole through clipping
 MULTIPOLYGON(((3969 -1,-1 -1,-1 4097,3969 4097,3969 -1),(1056 3767,1056 1850,2221 1850,2221 3767,1056 3767)))
+-- MVTEncodeGeom: clip=false still validates a self-intersecting polygon through wagyu (repaired into valid polygons, like PostGIS)
+MULTIPOLYGON(((1366 2550,2276 1461,455 1461,1366 2550)),((1366 2550,455 3639,2276 3639,1366 2550)))
+-- MVTEncodeGeom: clip=false validates but does not clip to the tile (the repaired geometry keeps its out-of-tile coordinates)
+MULTIPOLYGON(((2048 2493,4551 662,-455 662,2048 2493)),((2048 2493,-455 4324,4551 4324,2048 2493)))

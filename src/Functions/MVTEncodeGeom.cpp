@@ -56,6 +56,15 @@ namespace GeoDisc
 constexpr double mercator_max = 4294967296.0; /// 2^32
 /// Latitude bound of the Web Mercator projection (it diverges at the poles).
 constexpr double latitude_limit = 85.05112877980659;
+#if USE_WAGYU
+/// wagyu normalizes collinear edges with Int64 products of coordinate deltas (`slopes_equal`); a delta is at most
+/// the width of the clip window, so the product overflows Int64 once the window half-width approaches 2^31 (this
+/// includes the corners of the window itself - a 2^31 half-width gives a 2^32 edge whose squared delta is 2^64).
+/// The non-clipping path therefore bounds geometry to a 2^30 window: a 2^31-wide edge keeps every product at 2^62
+/// (< 2^63), and 2^30 is exactly the pixel span of the whole world at zoom 18 / extent 4096 (2^18 * 4096), so
+/// realistic geometry is validated but never clipped; only geometry projected beyond it (extreme zoom/extent) is.
+constexpr double max_wagyu_coordinate = 1073741824.0; /// 2^30
+#endif
 
 /// Per-row projection from geographic (lon, lat) degrees to tile-local pixel space.
 struct Projection
@@ -425,22 +434,8 @@ public:
             /// Snap to the integer pixel grid before clipping (clip-vs-snap ordering, matching PostGIS).
             roundToGrid(polygons);
 
-            if (!clip)
-            {
-                /// Repair ring orientation and closure of the geometry that is emitted directly; the clip path
-                /// below instead validates through wagyu, which is independent of the input ring winding.
-                bg::correct(polygons);
-                /// A single empty input is wrapped into a Multi container holding one empty element, so the
-                /// container is non-empty despite having no vertices; check the vertex count to map it to NULL.
-                if (bg::num_points(polygons) == 0)
-                {
-                    builder.addNull();
-                    return;
-                }
-                builder.addMultiPolygon(polygons);
-                return;
-            }
-
+            /// A single empty input is wrapped into a Multi container holding one empty element, so the
+            /// container is non-empty despite having no vertices; check the vertex count to map it to NULL.
             if (bg::num_points(polygons) == 0)
             {
                 builder.addNull();
@@ -448,15 +443,26 @@ public:
             }
 
 #if USE_WAGYU
-            /// Clip and validate with wagyu: unlike bg::intersection it repairs self-intersections and nested rings
-            /// into MVT-valid polygons. wagyu removes collinear points using Int64 products of coordinate deltas,
-            /// which overflow for geometry far from the tile, so each ring is first bounded to the tile box with a
-            /// Sutherland-Hodgman pre-clip (keeping the in-tile portion); the even-odd fill rule then resolves
-            /// self-intersections independently of the input ring winding.
-            const Float64 lo_x = bg::get<bg::min_corner, 0>(box);
-            const Float64 lo_y = bg::get<bg::min_corner, 1>(box);
-            const Float64 hi_x = bg::get<bg::max_corner, 0>(box);
-            const Float64 hi_y = bg::get<bg::max_corner, 1>(box);
+            /// Validate (and optionally clip) with wagyu: unlike bg::intersection it repairs self-intersections
+            /// and nested rings into MVT-valid polygons. Both the clipping and non-clipping paths run through
+            /// wagyu (as PostGIS does); the only difference is the clip window - the tile-plus-buffer box when
+            /// clipping, otherwise the full 2^31 coordinate range so realistic geometry is validated but not
+            /// clipped. wagyu normalizes collinear edges with Int64 products of coordinate deltas that overflow
+            /// past 2^31, so each ring is first Sutherland-Hodgman pre-clipped to the window (bounding the
+            /// coordinates); the even-odd fill rule then resolves self-intersections independently of the input
+            /// ring winding.
+            /// Default to the full 2^30 window (validate without clipping); narrow it to the tile box when clipping.
+            Float64 lo_x = -max_wagyu_coordinate;
+            Float64 lo_y = -max_wagyu_coordinate;
+            Float64 hi_x = max_wagyu_coordinate;
+            Float64 hi_y = max_wagyu_coordinate;
+            if (clip)
+            {
+                lo_x = bg::get<bg::min_corner, 0>(box);
+                lo_y = bg::get<bg::min_corner, 1>(box);
+                hi_x = bg::get<bg::max_corner, 0>(box);
+                hi_y = bg::get<bg::max_corner, 1>(box);
+            }
 
             namespace wg = mapbox::geometry::wagyu;
             wg::wagyu<Int64> clipper;
@@ -493,10 +499,15 @@ public:
             bg::correct(result);
             builder.addMultiPolygon(result);
 #else
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Clipping polygons in MVTEncodeGeom requires the wagyu library, which is disabled in this build; "
-                "pass clip = false to project the polygon without clipping");
+            if (clip)
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Clipping polygons in MVTEncodeGeom requires the wagyu library, which is disabled in this build; "
+                    "pass clip = false to project the polygon without clipping");
+            /// Without wagyu the unclipped path still emits the projected geometry, repairing only ring orientation
+            /// and closure (self-intersections are not repaired - that needs wagyu).
+            bg::correct(polygons);
+            builder.addMultiPolygon(polygons);
 #endif
         };
 

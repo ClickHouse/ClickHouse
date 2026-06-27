@@ -109,3 +109,9 @@ SELECT MVTEncodeGeom([[(100.0, 10.0), (150.0, 50.0), (100.0, 50.0), (150.0, 10.0
 
 SELECT '-- MVTEncodeGeom: a polygon with a hole keeps the hole through clipping';
 SELECT wkt(MVTEncodeGeom([[(13.3, 52.4), (13.7, 52.4), (13.7, 52.7), (13.3, 52.7), (13.3, 52.4)], [(13.45, 52.5), (13.55, 52.5), (13.55, 52.6), (13.45, 52.6), (13.45, 52.5)]]::Polygon, 10, 550, 335));
+
+SELECT '-- MVTEncodeGeom: clip=false still validates a self-intersecting polygon through wagyu (repaired into valid polygons, like PostGIS)';
+SELECT wkt(MVTEncodeGeom([[(10.0, 10.0), (50.0, 50.0), (10.0, 50.0), (50.0, 10.0), (10.0, 10.0)]]::Polygon, 2, 2, 1, 4096, 0, false));
+
+SELECT '-- MVTEncodeGeom: clip=false validates but does not clip to the tile (the repaired geometry keeps its out-of-tile coordinates)';
+SELECT wkt(MVTEncodeGeom([[(-10.0, -5.0), (100.0, 60.0), (-10.0, 60.0), (100.0, -5.0), (-10.0, -5.0)]]::Polygon, 2, 2, 1, 4096, 0, false));
