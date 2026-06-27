@@ -16,12 +16,12 @@ extern const int RECEIVED_EMPTY_DATA;
 }
 
 /// Accumulates class, n-gram, and count observations and then compiles them into an immutable model.
-template <Tokenizer Tok>
+template <typename Tokenizer>
 class NaiveBayesTrainer
 {
 public:
-    NaiveBayesTrainer(UInt32 n, double alpha, Tok tokenizer = {})
-        : data(std::make_unique<NaiveBayesData<Tok>>(n, alpha, std::move(tokenizer)))
+    NaiveBayesTrainer(UInt32 n, double alpha, String start_token, String end_token, Tokenizer tokenizer = {})
+        : data(std::make_unique<NaiveBayesData<Tokenizer>>(n, alpha, std::move(start_token), std::move(end_token), std::move(tokenizer)))
     {
     }
 
@@ -64,7 +64,7 @@ public:
     /// arrays (reusing the existing n-gram index and arena), frees the accumulation buffers (`entries` and
     /// `class_totals`), and returns the finished model. The explicit priors are consulted, and required, only
     /// when the mode is explicit.
-    NaiveBayesModel<Tok> finalize(PriorsMode mode, const std::map<UInt32, double> & explicit_priors = {})
+    NaiveBayesModel<Tokenizer> finalize(PriorsMode mode, const std::map<UInt32, double> & explicit_priors = {})
     {
         if (data->ngram_to_index.empty())
             throw Exception(
@@ -144,7 +144,7 @@ public:
         data->entries = PODArray<NaiveBayesEntry>{};
         data->class_totals = ClassCountMap{};
 
-        return NaiveBayesModel<Tok>(std::move(data));
+        return NaiveBayesModel<Tokenizer>(std::move(data));
     }
 
 private:
@@ -205,7 +205,7 @@ private:
         }
     }
 
-    std::unique_ptr<NaiveBayesData<Tok>> data;
+    std::unique_ptr<NaiveBayesData<Tokenizer>> data;
 
     /// Reused buffers for rewriting each source n-gram into its canonical form during accumulation.
     NaiveBayesScratch canonicalization_scratch;

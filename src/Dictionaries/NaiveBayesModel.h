@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <concepts>
 #include <cstring>
 #include <limits>
 #include <memory>
@@ -42,12 +41,6 @@ struct NaiveBayesScratch
     std::vector<std::pair<UInt32, double>> probabilities;
 };
 
-template <class T>
-concept Tokenizer = requires {
-    { T::start_token } -> std::convertible_to<std::string_view>;
-    { T::end_token } -> std::convertible_to<std::string_view>;
-};
-
 /// What `prepareNgram` returns for one source n-gram: the key to store, the number of tokens it resolves to
 /// (validated against n), and whether it is well-formed for the tokenizer. Only code-point mode can report
 /// `valid == false`, when the bytes are not valid UTF-8.
@@ -58,28 +51,31 @@ struct PreparedNgram
     bool valid = true;
 };
 
+/// A tokenizer policy turns input text into the n-grams to look up (`enumerateNgrams`, the query path) and
+/// canonicalizes/validates a source n-gram (`prepareNgram`, the load path). The only policies are the three
+/// below: BytePolicy, CodePointPolicy, and TokenPolicy.
+
 /// Byte-level tokenizer: each token is a single byte.
 struct BytePolicy
 {
-    static constexpr std::string_view start_token{"\x01", 1};
-    static constexpr std::string_view end_token{"\xFF", 1};
-
-    /// Builds `(n - 1)` start bytes, the input, then `(n - 1)` end bytes, and yields every length-`n` window
-    /// as a contiguous view into that buffer. Returns the number of n-grams.
+    /// Pads the input with `(n - 1)` start bytes and `(n - 1)` end bytes. Each side is padded only when its
+    /// token is configured, independently of the other (none by default), then yields every length-`n` window
+    /// as a contiguous view into the buffer. Returns the number of n-grams.
     template <typename Visit>
     size_t enumerateNgrams(std::string_view text, UInt32 n, std::string_view start, std::string_view end, NaiveBayesScratch & scratch, Visit && visit) const
     {
-        const size_t pad = n - 1;
+        const size_t start_pad = start.empty() ? 0 : n - 1;
+        const size_t end_pad = end.empty() ? 0 : n - 1;
         auto & buf = scratch.padded;
-        buf.resize(pad + text.size() + pad);
+        buf.resize(start_pad + text.size() + end_pad);
 
-        for (size_t i = 0; i < pad; ++i)
+        for (size_t i = 0; i < start_pad; ++i)
             buf[i] = start[0];
 
-        memcpy(buf.data() + pad, text.data(), text.size());
+        memcpy(buf.data() + start_pad, text.data(), text.size());
 
-        for (size_t i = 0; i < pad; ++i)
-            buf[pad + text.size() + i] = end[0];
+        for (size_t i = 0; i < end_pad; ++i)
+            buf[start_pad + text.size() + i] = end[0];
 
         const size_t total = buf.size();
         if (total < n)
@@ -98,29 +94,26 @@ struct BytePolicy
 /// CodePoint-level tokenizer: each token is a single Unicode (UTF-8) code point.
 struct CodePointPolicy
 {
-    // U+10FFFE -> F4 8F BF BE
-    static constexpr std::string_view start_token{"\xF4\x8F\xBF\xBE"};
-    // U+10FFFF -> F4 8F BF BF
-    static constexpr std::string_view end_token{"\xF4\x8F\xBF\xBF"};
-
-    /// Builds `(n - 1)` start tokens, the input, then `(n - 1)` end tokens, records each code point boundary,
-    /// and yields every window of `n` consecutive code points as a contiguous view. Returns the number of n-grams.
+    /// Pads the input with `(n - 1)` start and end tokens, each side only when its token is configured and
+    /// independently of the other (none by default), records each code point boundary, and yields every window
+    /// of `n` consecutive code points as a contiguous view. Returns the number of n-grams.
     template <typename Visit>
     size_t enumerateNgrams(
         std::string_view text, UInt32 n, std::string_view start, std::string_view end, NaiveBayesScratch & scratch, Visit && visit) const
     {
-        const size_t pad = n - 1;
+        const size_t start_pad = start.empty() ? 0 : n - 1;
+        const size_t end_pad = end.empty() ? 0 : n - 1;
         auto & buf = scratch.padded;
-        buf.resize(pad * start.size() + text.size() + pad * end.size());
+        buf.resize(start_pad * start.size() + text.size() + end_pad * end.size());
         size_t pos = 0;
-        for (size_t i = 0; i < pad; ++i)
+        for (size_t i = 0; i < start_pad; ++i)
         {
             memcpy(buf.data() + pos, start.data(), start.size());
             pos += start.size();
         }
         memcpy(buf.data() + pos, text.data(), text.size());
         pos += text.size();
-        for (size_t i = 0; i < pad; ++i)
+        for (size_t i = 0; i < end_pad; ++i)
         {
             memcpy(buf.data() + pos, end.data(), end.size());
             pos += end.size();
@@ -166,9 +159,6 @@ struct CodePointPolicy
 /// Token-level tokenizer: each token is a whitespace-delimited word.
 struct TokenPolicy
 {
-    static constexpr std::string_view start_token{"<s>"};
-    static constexpr std::string_view end_token{"</s>"};
-
     void tokenize(std::string_view text, VectorWithMemoryTracking<std::string_view> & tokens) const
     {
         tokens.reserve(tokens.size() + text.size() / 3);
@@ -212,19 +202,22 @@ struct TokenPolicy
         }
     }
 
-    /// Tokenizes into words, pads with `(n - 1)` start and end tokens, and yields each window of `n` words
-    /// joined with single spaces. The token views and the join buffer live in the scratch and keep their
-    /// capacity across rows. Returns the number of n-grams.
+    /// Tokenizes into words, pads with `(n - 1)` start and end tokens, each side only when its token is
+    /// configured and independently of the other (none by default), and yields each window of `n` words joined
+    /// with single spaces. The token views and the join buffer live in the scratch and keep their capacity
+    /// across rows. Returns the number of n-grams.
     template <typename Visit>
     size_t enumerateNgrams(
         std::string_view text, UInt32 n, std::string_view start, std::string_view end, NaiveBayesScratch & scratch, Visit && visit) const
     {
         auto & tokens = scratch.tokens;
         tokens.clear();
-        for (UInt32 i = 0; i + 1 < n; ++i)
+        const UInt32 start_pad = start.empty() ? 0 : n - 1;
+        const UInt32 end_pad = end.empty() ? 0 : n - 1;
+        for (UInt32 i = 0; i < start_pad; ++i)
             tokens.push_back(start);
         tokenize(text, tokens);
-        for (UInt32 i = 0; i + 1 < n; ++i)
+        for (UInt32 i = 0; i < end_pad; ++i)
             tokens.push_back(end);
 
         if (tokens.size() < n)
@@ -309,6 +302,14 @@ enum class PriorsMode : uint8_t
     Explicit, /// Probabilities given explicitly per class.
 };
 
+/// Which tokenizer policy a dictionary uses; selects the `*Policy` at load time and the padding-token format.
+enum class TokenizerMode : uint8_t
+{
+    Byte, /// Each token is a single byte.
+    CodePoint, /// Each token is one Unicode code point.
+    Token, /// Each token is a whitespace-delimited word.
+};
+
 /// Holds all of the state of a Naive Bayes model for one tokenizer policy. It is accumulated by a trainer,
 /// then compiled in place into the query-ready compressed-sparse-row (CSR) form, and finally owned by the
 /// immutable model. It owns an arena and is therefore neither copyable nor movable (the n-gram keys are views
@@ -318,14 +319,14 @@ enum class PriorsMode : uint8_t
 /// `slice_class_index[slice_offsets[i] .. slice_offsets[i + 1])` and the matching `slice_delta` range, where
 /// the index is the value stored for the n-gram in `ngram_to_index`. The accumulation buffers (`entries` and
 /// `class_totals`) are freed once the CSR arrays are built.
-template <Tokenizer Tok>
+template <typename Tokenizer>
 struct NaiveBayesData
 {
-    NaiveBayesData(UInt32 n_, double alpha_, Tok tokenizer_)
+    NaiveBayesData(UInt32 n_, double alpha_, String start_token_, String end_token_, Tokenizer tokenizer_)
         : n(n_)
         , alpha(alpha_)
-        , start_token(Tok::start_token)
-        , end_token(Tok::end_token)
+        , start_token(std::move(start_token_))
+        , end_token(std::move(end_token_))
         , tokenizer(std::move(tokenizer_))
     {
     }
@@ -335,10 +336,10 @@ struct NaiveBayesData
     /// Laplace smoothing parameter.
     double alpha;
 
-    /// Start / end padding tokens.
+    /// Start / end padding tokens added at each end of the query input; empty when padding is disabled (the default).
     String start_token;
     String end_token;
-    Tok tokenizer;
+    Tokenizer tokenizer;
 
     /// Arena owning all the n-gram key bytes that `ngram_to_index` views into.
     Arena pool;
@@ -378,11 +379,11 @@ struct NaiveBayesData
 ///
 /// An instance can only be produced by finalizing a trainer, which guarantees a model is fully built before
 /// it can be used.
-template <Tokenizer Tok>
+template <typename Tokenizer>
 class NaiveBayesModel
 {
 public:
-    explicit NaiveBayesModel(std::unique_ptr<NaiveBayesData<Tok>> data_)
+    explicit NaiveBayesModel(std::unique_ptr<NaiveBayesData<Tokenizer>> data_)
         : data(std::move(data_))
     {
     }
@@ -439,7 +440,7 @@ public:
 
     UInt64 getAllocatedBytes() const
     {
-        UInt64 total = sizeof(*this) + sizeof(NaiveBayesData<Tok>);
+        UInt64 total = sizeof(*this) + sizeof(NaiveBayesData<Tokenizer>);
         total += data->pool.allocatedBytes();
         total += data->ngram_to_index.getBufferSizeInBytes();
         total += data->class_id_of.allocated_bytes() + data->log_prior.allocated_bytes() + data->base.allocated_bytes();
@@ -516,7 +517,7 @@ private:
             entry.second /= sum_exp;
     }
 
-    std::unique_ptr<NaiveBayesData<Tok>> data;
+    std::unique_ptr<NaiveBayesData<Tokenizer>> data;
 };
 
 }

@@ -27,8 +27,14 @@ public:
     struct Configuration
     {
         UInt32 n;
-        String mode; /// "byte", "codepoint", "token"
+        TokenizerMode mode;
+
         double alpha;
+        /// Padding tokens added at each end of the query input (n-1 each); empty means no padding (the default).
+        /// Resolved to the bytes to pad with: a single byte for byte mode, the UTF-8 of a code point for
+        /// codepoint mode, and the literal token for token mode.
+        String start_token;
+        String end_token;
         PriorsMode priors_mode;
         /// These probabilities are consulted only when the priors mode is explicit.
         std::map<UInt32, double> explicit_priors;
