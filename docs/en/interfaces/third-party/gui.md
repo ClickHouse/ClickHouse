@@ -410,7 +410,7 @@ Features:
 
 ### Yandex DataLens {#yandex-datalens}
 
-[Yandex DataLens](https://cloud.yandex.ru/services/datalens) is a service of data visualization and analytics.
+[Yandex DataLens](https://cloud.yandex.com/services/datalens) is a service of data visualization and analytics.
 
 Features:
 
