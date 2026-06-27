@@ -101,6 +101,8 @@ public:
     bool supportsParallelInsert() const override { return true; }
     std::optional<UInt64> totalBytes(ContextPtr) const override;
 
+    std::optional<UInt128> getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const override;
+
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool /*async_insert*/) override;
 
     std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & query, ContextPtr context) override;

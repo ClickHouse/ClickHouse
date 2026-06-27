@@ -248,6 +248,11 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
             "(the `TO` target, or the implicit `.inner.*` table). Empty for other engines."
         },
         {"definer", std::make_shared<DataTypeString>(), "SQL security definer's name used for the table."},
+        {"modification_hash", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt128>()),
+            "A value that is guaranteed to change whenever the data behind the table changes (similar to an ETag). "
+            "NULL if the engine cannot tell whether its data has changed. Computing it may be expensive for some "
+            "engines (e.g. Merge, Distributed, URL), so it is only calculated when this column is selected."
+        },
     };
 
     description.setAliases({
@@ -954,6 +959,29 @@ protected:
                 {
                     if (metadata_snapshot && metadata_snapshot->sql_security_type == SQLSecurityType::DEFINER)
                         res_columns[res_index++]->insert(*metadata_snapshot->definer);
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    std::optional<UInt128> modification_hash;
+                    try
+                    {
+                        if (table && metadata_snapshot)
+                        {
+                            auto snapshot = table->getStorageSnapshotWithoutData(metadata_snapshot, context);
+                            modification_hash = table->getModificationHash(snapshot, context);
+                        }
+                    }
+                    catch (const Exception &)
+                    {
+                        /// Even if the method throws, it should not prevent querying system.tables.
+                        tryLogCurrentException("StorageSystemTables");
+                    }
+
+                    if (modification_hash)
+                        res_columns[res_index++]->insert(*modification_hash);
                     else
                         res_columns[res_index++]->insertDefault();
                 }

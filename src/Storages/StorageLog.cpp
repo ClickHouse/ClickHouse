@@ -6,6 +6,7 @@
 
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
+#include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Core/Settings.h>
 
@@ -1159,6 +1160,17 @@ std::optional<UInt64> StorageLog::totalRows(ContextPtr) const
 std::optional<UInt64> StorageLog::totalBytes(ContextPtr) const
 {
     return total_bytes;
+}
+
+std::optional<UInt128> StorageLog::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr) const
+{
+    /// Log engines are append-only (apart from TRUNCATE which resets the sizes), so the total number
+    /// of rows and bytes on disk together with the structure version uniquely describe the data state.
+    SipHash hash;
+    hash.update(storage_snapshot->metadata->getColumns().toString());
+    hash.update(total_rows.load(std::memory_order_relaxed));
+    hash.update(total_bytes.load(std::memory_order_relaxed));
+    return hash.get128();
 }
 
 void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)

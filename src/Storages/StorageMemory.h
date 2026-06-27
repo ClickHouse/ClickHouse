@@ -89,6 +89,8 @@ public:
     std::optional<UInt64> totalRows(ContextPtr) const override;
     std::optional<UInt64> totalBytes(ContextPtr) const override;
 
+    std::optional<UInt128> getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const override;
+
     /** Delays initialization of StorageMemory::read() until the first read is actually happen.
       * Usually, fore code like this:
       *

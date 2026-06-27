@@ -184,8 +184,40 @@ struct HasSystemTablesMatcher
     }
 };
 
+/// Collects the tables referenced by a query so that their modification hashes can be combined into a
+/// single value (see computeQueryReferencedTablesModificationHash). If the query uses a table function
+/// (e.g. url(), remote()), the set of underlying objects cannot be reliably enumerated this way, so we
+/// give up and signal that consistency cannot be verified.
+struct CollectReferencedTablesMatcher
+{
+    struct Data
+    {
+        std::vector<StorageID> table_ids;
+        bool cannot_verify = false;
+    };
+
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+
+    static void visit(const ASTPtr & node, Data & data)
+    {
+        if (data.cannot_verify)
+            return;
+
+        if (const auto * table_expression = node->as<ASTTableExpression>())
+        {
+            if (table_expression->table_function)
+                data.cannot_verify = true;
+        }
+        else if (const auto * table_identifier = node->as<ASTTableIdentifier>())
+        {
+            data.table_ids.push_back(table_identifier->getTableId());
+        }
+    }
+};
+
 using HasNonDeterministicFunctionsVisitor = InDepthNodeVisitor<HasNonDeterministicFunctionsMatcher, true>;
 using HasSystemTablesVisitor = InDepthNodeVisitor<HasSystemTablesMatcher, true>;
+using CollectReferencedTablesVisitor = InDepthNodeVisitor<CollectReferencedTablesMatcher, true>;
 
 }
 
@@ -203,6 +235,53 @@ static bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
     HasSystemTablesMatcher::Data finder_data{context};
     HasSystemTablesVisitor(finder_data).visit(ast);
     return finder_data.has_system_tables;
+}
+
+std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, ContextPtr context)
+{
+    CollectReferencedTablesMatcher::Data finder_data;
+    CollectReferencedTablesVisitor(finder_data).visit(ast);
+
+    /// The query uses a table function or another construct we cannot resolve - we cannot guarantee
+    /// consistency.
+    if (finder_data.cannot_verify)
+        return {};
+
+    const String & current_database = context->getCurrentDatabase();
+
+    std::vector<UInt128> table_hashes;
+    for (auto table_id : finder_data.table_ids)
+    {
+        if (table_id.database_name.empty())
+            table_id.database_name = current_database;
+
+        auto storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
+        if (!storage)
+            return {}; /// Could not resolve a referenced table (e.g. a CTE) - cannot verify consistency.
+
+        auto metadata = storage->getInMemoryMetadataPtr(context, false);
+        auto snapshot = storage->getStorageSnapshotWithoutData(metadata, context);
+        auto table_hash = storage->getModificationHash(snapshot, context);
+        if (!table_hash)
+            return {}; /// A referenced table cannot tell whether it changed.
+
+        /// Fold the table identity into the hash so that two tables with identical contents do not
+        /// cancel out when combined.
+        SipHash per_table;
+        per_table.update(table_id.database_name);
+        per_table.update(table_id.table_name);
+        per_table.update(*table_hash);
+        table_hashes.push_back(per_table.get128());
+    }
+
+    /// Combine in a deterministic, order-independent way.
+    std::sort(table_hashes.begin(), table_hashes.end());
+
+    SipHash hash;
+    hash.update(table_hashes.size());
+    for (const auto & table_hash : table_hashes)
+        hash.update(table_hash);
+    return hash.get128();
 }
 
 bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check)
@@ -407,7 +486,7 @@ ASTPtr removeTableAliases(ASTPtr ast)
 /// When `pre_cleaned` is true, the caller has already cloned the AST and stripped planner table
 /// aliases (`removeTableAliases`). Skip both steps to avoid mutating the original AST or running
 /// `removeTableAliases` twice (which would over-strip chains like `__table1.__table2.x` -> `x`).
-IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Settings & settings, const bool is_subquery, const bool pre_cleaned = false)
+IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Settings & settings, const bool is_subquery, std::optional<UInt128> referenced_tables_modification_hash = {}, const bool pre_cleaned = false)
 {
     if (!pre_cleaned)
     {
@@ -460,6 +539,13 @@ IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Set
         hash.update(setting.second);
     }
 
+    /// When `query_cache_use_only_when_data_was_not_changed` is enabled, the combined modification hash of
+    /// the referenced tables is folded into the key. As a result, a cached entry can only be found while
+    /// the data behind the query is unchanged - once any referenced table changes, the key changes too and
+    /// the query is recomputed.
+    if (referenced_tables_modification_hash)
+        hash.update(*referenced_tables_modification_hash);
+
     return getSipHash128AsPair(hash);
 }
 
@@ -471,17 +557,18 @@ String queryStringFromAST(ASTPtr ast)
 /// For subqueries, clones the AST once, strips aliases, and returns both hash and query string from the cleaned AST.
 /// For non-subqueries, computes hash (which clones internally) and query string from the original AST.
 std::pair<IASTHash, String> calculateASTHashAndQueryString(
-    ASTPtr ast, const String & current_database, const Settings & settings, bool is_subquery)
+    ASTPtr ast, const String & current_database, const Settings & settings, bool is_subquery,
+    std::optional<UInt128> referenced_tables_modification_hash)
 {
     if (is_subquery)
     {
         auto cleaned = removeTableAliases(ast->clone());
         /// Get the query string before `calculateASTHash` mutates the AST (it strips cache-related SETTINGS).
         auto qs = queryStringFromAST(cleaned);
-        auto hash = calculateASTHash(cleaned, current_database, settings, is_subquery, /*pre_cleaned=*/ true);
+        auto hash = calculateASTHash(cleaned, current_database, settings, is_subquery, referenced_tables_modification_hash, /*pre_cleaned=*/ true);
         return {hash, std::move(qs)};
     }
-    auto hash = calculateASTHash(ast, current_database, settings, is_subquery);
+    auto hash = calculateASTHash(ast, current_database, settings, is_subquery, referenced_tables_modification_hash);
     auto qs = queryStringFromAST(ast);
     return {hash, std::move(qs)};
 }
@@ -500,7 +587,8 @@ QueryResultCache::Key::Key(
     std::chrono::time_point<std::chrono::system_clock> created_at_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
     bool is_compressed_,
-    bool is_subquery_)
+    bool is_subquery_,
+    std::optional<UInt128> referenced_tables_modification_hash_)
     : header(header_)
     , user_id(user_id_)
     , current_user_roles(current_user_roles_)
@@ -514,7 +602,7 @@ QueryResultCache::Key::Key(
 {
     /// For subqueries, both hashing and display need a cloned AST with table aliases stripped.
     /// Compute both from a single clone via `calculateASTHashAndQueryString`.
-    auto [hash, qs] = calculateASTHashAndQueryString(ast_, current_database, settings, is_subquery_);
+    auto [hash, qs] = calculateASTHashAndQueryString(ast_, current_database, settings, is_subquery_, referenced_tables_modification_hash_);
     ast_hash = hash;
     query_string = std::move(qs);
 }
@@ -526,7 +614,8 @@ QueryResultCache::Key::Key(
     const String & query_id_,
     std::optional<UUID> user_id_,
     const std::vector<UUID> & current_user_roles_,
-    bool is_subquery_)
+    bool is_subquery_,
+    std::optional<UInt128> referenced_tables_modification_hash_)
     : QueryResultCache::Key(
             ast_,
             current_database,
@@ -539,7 +628,8 @@ QueryResultCache::Key::Key(
             std::chrono::system_clock::from_time_t(1),
             std::chrono::system_clock::from_time_t(1),
             false,
-            is_subquery_)
+            is_subquery_,
+            referenced_tables_modification_hash_)
     /// ^^ dummy values for everything except AST, current database, query_id, user name/roles
 {
 }

@@ -1,5 +1,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/SipHash.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -200,6 +201,25 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     /// rows and bytes counters into the MultiVersion-ed struct, then everything would be consistent.
     snapshot_data->rows_approx = total_size_rows.load(std::memory_order_relaxed);
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
+}
+
+std::optional<UInt128> StorageMemory::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr /*context*/) const
+{
+    SipHash hash;
+
+    /// Structure version.
+    hash.update(storage_snapshot->metadata->getColumns().toString());
+
+    /// Every modification (insert, mutation, truncate) replaces the whole set of blocks with a freshly
+    /// allocated vector, so its identity is a reliable version marker. The row count is mixed in to make
+    /// an accidental reuse of the same address harmless.
+    if (const auto * snapshot_data = dynamic_cast<const SnapshotData *>(storage_snapshot->data.get()))
+    {
+        hash.update(reinterpret_cast<uintptr_t>(snapshot_data->blocks.get()));
+        hash.update(snapshot_data->rows_approx);
+    }
+
+    return hash.get128();
 }
 
 void StorageMemory::readImpl(

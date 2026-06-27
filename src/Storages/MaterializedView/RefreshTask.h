@@ -335,6 +335,15 @@ private:
     std::vector<StorageID> initial_dependencies;
     const bool refresh_append;
 
+    /// `REFRESH ... IF CHANGED`: skip a scheduled refresh if none of the tables the view reads from
+    /// changed since the last refresh that actually rebuilt the view.
+    bool refresh_if_changed = false;
+    /// Combined modification hash of the tables the view reads from, as of the last refresh that
+    /// actually rebuilt the view. In-memory only - a refresh after server restart runs once even if
+    /// nothing changed. nullopt if no refresh has rebuilt the view yet on this replica, or if the
+    /// source tables cannot report their modification state.
+    std::optional<UInt128> last_refresh_source_hash;
+
     RefreshSet::Handle set_handle;
 
     /// Calls doScheduling() from background thread.
@@ -382,7 +391,7 @@ private:
 
     /// Perform an actual refresh: create new table, run INSERT SELECT, exchange tables, drop old table.
     /// Mutex must be unlocked.
-    std::optional<UUID> executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message);
+    std::optional<UUID> executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message, bool if_changed, bool out_of_schedule, const std::optional<UInt128> & previous_source_hash, bool & out_unchanged, std::optional<UInt128> & out_source_hash);
 
     DependencyRefreshInfo getInfoForDependentViewsLocked(const std::unique_lock<std::mutex> &) const;
 

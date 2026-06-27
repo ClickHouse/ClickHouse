@@ -109,6 +109,8 @@ public:
     bool storesDataOnDisk() const override;
     Strings getDataPaths() const override;
 
+    std::optional<UInt128> getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const override;
+
     /// Check if the format supports reading only some subset of columns.
     /// Is is useful because such formats could effectively skip unknown columns
     /// So we can create a header of only required columns in read method and ask

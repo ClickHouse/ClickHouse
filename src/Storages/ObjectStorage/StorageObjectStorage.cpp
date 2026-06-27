@@ -3,6 +3,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/parseGlobs.h>
 #include <Core/LogsLevel.h>
@@ -458,6 +459,63 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
 
     is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context) : configuration->update(object_storage, query_context);
     return configuration->totalBytes(query_context);
+}
+
+std::optional<UInt128> StorageObjectStorage::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
+{
+    /// Heavy path: list the objects behind the table and hash their ETags, sizes and modification times.
+    /// Not supported for data lakes (the set of objects is derived from external metadata) and for the
+    /// non-initiator side of cluster functions.
+    if (distributed_processing || configuration->isDataLakeConfiguration())
+        return {};
+
+    try
+    {
+        is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context)
+                          : configuration->update(object_storage, query_context);
+
+        auto query_settings = configuration->getQuerySettings(query_context);
+        query_settings.throw_on_zero_files_match = false;
+        query_settings.ignore_non_existent_file = true;
+
+        auto file_iterator = StorageObjectStorageSource::createFileIterator(
+            configuration,
+            query_settings,
+            object_storage,
+            /*storage_metadata=*/ nullptr,
+            /*distributed_processing=*/ false,
+            query_context,
+            /*predicate=*/ nullptr,
+            /*filter_actions_dag=*/ nullptr,
+            /*virtual_columns=*/ {},
+            /*hive_columns=*/ {},
+            /*read_keys=*/ nullptr,
+            /*file_progress_callback=*/ {});
+        file_iterator->setEmitProfileEvents(false);
+
+        SipHash hash;
+        hash.update(storage_snapshot->metadata->getColumns().toString());
+
+        while (auto object_info = file_iterator->next(0))
+        {
+            auto metadata = object_info->getObjectMetadata();
+            if (!metadata)
+                metadata = object_storage->tryGetObjectMetadata(object_info->getPath(), /*with_tags=*/ false);
+            if (!metadata)
+                return {}; /// Cannot obtain metadata for an object: assume the data may have changed.
+
+            hash.update(object_info->getPath());
+            hash.update(metadata->etag);
+            hash.update(metadata->size_bytes);
+            hash.update(metadata->last_modified.epochTime());
+        }
+
+        return hash.get128();
+    }
+    catch (...)
+    {
+        return {}; /// Could not list the objects: assume the data may have changed.
+    }
 }
 
 void StorageObjectStorage::read(

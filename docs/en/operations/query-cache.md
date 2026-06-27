@@ -31,6 +31,13 @@ Transactionally inconsistent caching is traditionally provided by client tools o
 configuration is often duplicated. With ClickHouse's query cache, the caching logic moves to the server side. This reduces maintenance
 effort and avoids redundancy.
 
+Alternatively, setting [query_cache_use_only_when_data_was_not_changed](/operations/settings/settings#query_cache_use_only_when_data_was_not_changed)
+makes the query cache consistent with respect to data changes: a cached result is reused only while none of the tables referenced by the query
+were changed since the entry was cached. Once any referenced table changes, the query is recomputed. This relies on each table engine being
+able to report whether its data changed; if a query references a table that cannot do so (for example a table function such as `url`), the
+query cache is not used for that query. Note that checking the referenced tables on each lookup may be expensive for some engines (e.g.
+`Merge`, `Distributed`, `URL`).
+
 ## Configuration settings and usage {#configuration-settings-and-usage}
 
 :::note

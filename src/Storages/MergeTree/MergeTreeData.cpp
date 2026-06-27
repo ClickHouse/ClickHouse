@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
+#include <Common/SipHash.h>
 #include <Common/threadPoolCallbackRunner.h>
 
 #include <Access/AccessControl.h>
@@ -10963,6 +10964,45 @@ StorageSnapshotPtr
 MergeTreeData::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
     return createStorageSnapshot(metadata_snapshot, query_context, true);
+}
+
+std::optional<UInt128> MergeTreeData::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr /*context*/) const
+{
+    SipHash hash;
+
+    /// Structure version: changes when columns, indices, projections, etc. change.
+    /// This catches metadata-only ALTERs (e.g. ADD COLUMN with a DEFAULT) that change query results
+    /// without creating a mutation.
+    hash.update(storage_snapshot->metadata->getColumns().toString());
+
+    /// Data version: the set of active data parts. Each part is uniquely identified by its
+    /// (partition_id, min_block, max_block, level, mutation), which changes on every insert, merge
+    /// (level/blocks change) and mutation (mutation version changes). For engines that rewrite data
+    /// on merges (Replacing, Collapsing, ...) this is exactly the "block ranges of data parts".
+    auto add_part_info = [&](const MergeTreePartInfo & info)
+    {
+        hash.update(info.partition_id);
+        hash.update(info.min_block);
+        hash.update(info.max_block);
+        hash.update(info.level);
+        hash.update(info.mutation);
+    };
+
+    /// Prefer the parts captured by the snapshot, so the result describes exactly the data that the
+    /// snapshot refers to. Fall back to the current set of active parts for snapshots taken without data.
+    if (const auto * snapshot_data = dynamic_cast<const SnapshotData *>(storage_snapshot->data.get());
+        snapshot_data && snapshot_data->parts)
+    {
+        for (const auto & part : *snapshot_data->parts)
+            add_part_info(part.data_part->info);
+    }
+    else
+    {
+        for (const auto & part : getDataPartsVectorForInternalUsage())
+            add_part_info(part->info);
+    }
+
+    return hash.get128();
 }
 
 void MergeTreeData::incrementInsertedPartsProfileEvent(MergeTreeDataPartType type)

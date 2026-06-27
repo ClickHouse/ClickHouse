@@ -1,0 +1,7 @@
+mt not null	1
+mt stable	1
+mt changed on insert	1
+mt changed on merge	1
+mem changed on insert	1
+log changed on insert	1
+system table null	1

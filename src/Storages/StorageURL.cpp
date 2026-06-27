@@ -37,6 +37,7 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/HTTPHeaderFilter.h>
+#include <Common/SipHash.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/NamedCollections/NamedCollections.h>
@@ -1522,6 +1523,48 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
                    .create(credentials);
 
     return buf->tryGetLastModificationTime();
+}
+
+std::optional<UInt128> IStorageURLBase::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const
+{
+    const auto & settings = context->getSettingsRef();
+
+    Poco::URI request_uri(uri);
+    Poco::Net::HTTPBasicCredentials credentials;
+    StorageURLSource::setCredentials(credentials, request_uri);
+
+    ReadWriteBufferFromHTTP::HTTPFileInfo file_info;
+    try
+    {
+        auto buf = BuilderRWBufferFromHTTP(request_uri)
+                       .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                       .withSettings(context->getReadSettings())
+                       .withTimeouts(getHTTPTimeouts(context))
+                       .withHostFilter(&context->getRemoteHostFilter())
+                       .withBufSize(settings[Setting::max_read_buffer_size])
+                       .withRedirects(settings[Setting::max_http_get_redirects])
+                       .withHeaders(headers)
+                       .create(credentials);
+
+        file_info = buf->getFileInfo();
+    }
+    catch (...)
+    {
+        return {}; /// Could not reach the server: assume the data may have changed.
+    }
+
+    /// If the server reports neither an ETag, nor a size, nor a modification time, we cannot tell
+    /// whether the data changed.
+    if (file_info.etag.empty() && !file_info.file_size.has_value() && !file_info.last_modified.has_value())
+        return {};
+
+    SipHash hash;
+    hash.update(storage_snapshot->metadata->getColumns().toString());
+    hash.update(uri);
+    hash.update(file_info.etag);
+    hash.update(file_info.file_size.value_or(0));
+    hash.update(file_info.last_modified.value_or(0));
+    return hash.get128();
 }
 
 StorageURL::StorageURL(

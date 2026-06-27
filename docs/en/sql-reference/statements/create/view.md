@@ -229,6 +229,7 @@ For your convenience, the old documentation is located [here](https://pastila.nl
 ```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 REFRESH [EVERY|AFTER interval [OFFSET interval]]
+[IF CHANGED]
 [RANDOMIZE FOR interval]
 [DEPENDS ON [db.]name [, [db.]name [, ...]]]
 [SETTINGS name = value [, name = value [, ...]]]
@@ -279,6 +280,16 @@ REFRESH EVERY 5 MONTHS -- every 5 months, different months each year (as 12 is n
 ```sql
 REFRESH EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 1 HOUR -- every day at random time between 01:30 and 02:30
 ```
+
+### IF CHANGED {#if-changed}
+
+`IF CHANGED` skips a scheduled refresh if none of the tables the view's `SELECT` reads from changed since the last refresh that actually rebuilt the view:
+
+```sql
+REFRESH EVERY 1 MINUTE IF CHANGED -- check every minute, but only refresh if a source table changed
+```
+
+This avoids recomputing the view when the underlying data is unchanged. Change detection uses the same mechanism as the [`modification_hash`](/operations/system-tables/tables) column of `system.tables`. If a source table cannot tell whether its data changed (for example a table function such as `url`), the refresh is not skipped. A manual `SYSTEM REFRESH VIEW` always rebuilds the view, ignoring `IF CHANGED`. The check is best-effort: after a server restart, or on a replica that did not previously run the refresh, one refresh may run even if nothing changed.
 
 At most one refresh may be running at a time, for a given view. E.g. if a view with `REFRESH EVERY 1 MINUTE` takes 2 minutes to refresh, it'll just be refreshing every 2 minutes. If it then becomes faster and starts refreshing in 10 seconds, it'll go back to refreshing every minute. (In particular, it won't refresh every 10 seconds to catch up with a backlog of missed refreshes - there's no such backlog.)
 

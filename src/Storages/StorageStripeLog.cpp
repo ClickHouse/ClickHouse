@@ -4,6 +4,7 @@
 
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 
@@ -591,6 +592,17 @@ std::optional<UInt64> StorageStripeLog::totalRows(ContextPtr) const
 std::optional<UInt64> StorageStripeLog::totalBytes(ContextPtr) const
 {
     return total_bytes;
+}
+
+std::optional<UInt128> StorageStripeLog::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr) const
+{
+    /// Append-only apart from TRUNCATE, so the total rows and bytes plus the structure version describe
+    /// the data state.
+    SipHash hash;
+    hash.update(storage_snapshot->metadata->getColumns().toString());
+    hash.update(total_rows.load(std::memory_order_relaxed));
+    hash.update(total_bytes.load(std::memory_order_relaxed));
+    return hash.get128();
 }
 
 

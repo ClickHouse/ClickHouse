@@ -113,6 +113,7 @@ namespace Setting
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
     extern const SettingsBool enable_reads_from_query_cache;
     extern const SettingsBool query_cache_for_subqueries;
+    extern const SettingsBool query_cache_use_only_when_data_was_not_changed;
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
@@ -2137,10 +2138,21 @@ void Planner::buildPlanForQueryNode()
     if (local_can_use_cache)
         settings_copy = settings;
 
+    /// When the query cache is restricted to consistent results, fold the combined modification hash of the
+    /// referenced tables into the (subquery) cache key. If consistency cannot be guaranteed, the subquery is
+    /// not cached.
+    std::optional<UInt128> referenced_tables_modification_hash;
+    if (should_cache && settings[Setting::query_cache_use_only_when_data_was_not_changed])
+    {
+        referenced_tables_modification_hash = computeQueryReferencedTablesModificationHash(ast, query_context);
+        if (!referenced_tables_modification_hash)
+            should_cache = false;
+    }
+
     /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then add a ReadFromQueryResultCacheStep instead of building the rest of the plan.
     if (should_cache && settings[Setting::enable_reads_from_query_cache])
     {
-        QueryResultCache::Key key(ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(), /* is_subquery = */ true);
+        QueryResultCache::Key key(ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(), /* is_subquery = */ true, referenced_tables_modification_hash);
         auto reader = std::make_shared<QueryResultCacheReader>(query_result_cache->createReader(key));
         if (reader->hasCacheEntryForKey())
         {
@@ -2673,7 +2685,8 @@ void Planner::buildPlanForQueryNode()
             settings[Setting::query_cache_share_between_users],
             created_at, expires_at,
             settings[Setting::query_cache_compress_entries],
-            /* is_subquery = */ true);
+            /* is_subquery = */ true,
+            referenced_tables_modification_hash);
 
         const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_result_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
         if (num_query_runs <= settings[Setting::query_cache_min_query_runs])

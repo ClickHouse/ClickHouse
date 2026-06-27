@@ -113,6 +113,8 @@ RefreshTask::RefreshTask(
 {
     createLogger(view->getStorageID());
 
+    refresh_if_changed = strategy.if_changed;
+
     auto component_guard = Coordination::setCurrentComponent("RefreshTask::RefreshTask");
     if (strategy.settings != nullptr)
         refresh_settings.applyChanges(strategy.settings->changes);
@@ -399,6 +401,7 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
         std::lock_guard guard(mutex);
 
         refresh_schedule = RefreshSchedule(new_strategy);
+        refresh_if_changed = new_strategy.if_changed;
         std::vector<StorageID> deps = parseRefreshDependencies(
             new_strategy, view ? view->getStorageID().database_name : String{});
 
@@ -955,12 +958,17 @@ void RefreshTask::executeRefresh()
         log_comment += fmt::format(" (attempt {}/{})", execution.znode.attempt_number, refresh_settings[RefreshSetting::refresh_retries] + 1);
 
     std::vector<StorageID> deps = set_handle.getDependencies();
+    bool out_of_schedule = execution.out_of_schedule;
+    bool if_changed = refresh_if_changed;
+    std::optional<UInt128> previous_source_hash = last_refresh_source_hash;
 
     lock.unlock();
+    bool unchanged = false;
+    std::optional<UInt128> source_hash;
     try
     {
         CurrentMetrics::Increment metric_inc(CurrentMetrics::RefreshingViews);
-        new_table_uuid = executeRefreshUnlocked(root_znode_version, deps, log_comment, error_message);
+        new_table_uuid = executeRefreshUnlocked(root_znode_version, deps, log_comment, error_message, if_changed, out_of_schedule, previous_source_hash, unchanged, source_hash);
     }
     catch (...)
     {
@@ -977,10 +985,19 @@ void RefreshTask::executeRefresh()
     znode.last_attempt_time = end_time_seconds;
     znode.last_attempt_error = error_message;
     znode.refresh_running = false;
-    if (new_table_uuid.has_value())
+    /// `unchanged` is the `REFRESH ... IF CHANGED` skip: the source data did not change, so we treat
+    /// the timeslot as completed (advancing the schedule and resetting retries) but do NOT touch the
+    /// last-success state - the view's data is unchanged, so dependent views must not be triggered.
+    if (new_table_uuid.has_value() || unchanged)
     {
         znode.last_attempt_succeeded = true;
         znode.last_completed_timeslot = refresh_schedule.timeslotForCompletedRefresh(znode.last_completed_timeslot, start_time_seconds, end_time_seconds, execution.out_of_schedule);
+        znode.previous_attempt_error = "";
+        znode.attempt_number = 0;
+        znode.randomize();
+    }
+    if (new_table_uuid.has_value())
+    {
         znode.last_success_time = start_time_seconds;
         znode.last_success_duration = std::chrono::milliseconds(stopwatch.elapsedMilliseconds());
         znode.last_success_table_uuid = *new_table_uuid;
@@ -990,9 +1007,9 @@ void RefreshTask::executeRefresh()
             /// Must monotonically increase, dependencies rely on it.
             znode.last_success_end_time += std::chrono::nanoseconds(1);
         znode.last_success_dependencies = std::move(execution.dependencies);
-        znode.previous_attempt_error = "";
-        znode.attempt_number = 0;
-        znode.randomize();
+
+        /// Remember the source state this refresh was built from, for the next IF CHANGED check.
+        last_refresh_source_hash = source_hash;
     }
     execution.znode = znode;
 
@@ -1002,7 +1019,7 @@ void RefreshTask::executeRefresh()
     scheduling_task->schedule();
 }
 
-std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message)
+std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message, bool if_changed, bool out_of_schedule, const std::optional<UInt128> & previous_source_hash, bool & out_unchanged, std::optional<UInt128> & out_source_hash)
 {
     StorageID view_storage_id = view->getStorageID();
     LOG_DEBUG(getLogger(), "Refreshing view");
@@ -1027,6 +1044,26 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
         refresh_context = view->createRefreshContext(log_comment);
 
         syncDependenciesForRefresh(deps, refresh_context);
+
+        /// `REFRESH ... IF CHANGED`: if none of the tables the view reads from changed since the last
+        /// refresh that rebuilt the view, skip this refresh entirely. An explicit `SYSTEM REFRESH VIEW`
+        /// (out_of_schedule) always rebuilds, ignoring this check.
+        if (if_changed)
+        {
+            auto view_metadata = view->getInMemoryMetadataPtr(refresh_context, false);
+            if (auto select_ast = view_metadata->select.select_query)
+                out_source_hash = computeQueryReferencedTablesModificationHash(select_ast, refresh_context);
+
+            /// An explicit `SYSTEM REFRESH VIEW` (out_of_schedule) always rebuilds, but we still recompute
+            /// the source hash above so that subsequent scheduled refreshes can be skipped.
+            if (!out_of_schedule && out_source_hash.has_value() && previous_source_hash.has_value()
+                && *out_source_hash == *previous_source_hash)
+            {
+                LOG_DEBUG(getLogger(), "Skipping refresh because none of the source tables changed (REFRESH ... IF CHANGED)");
+                out_unchanged = true;
+                return std::nullopt;
+            }
+        }
 
         if (!refresh_append)
         {

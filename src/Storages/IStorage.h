@@ -2,6 +2,7 @@
 
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
+#include <Core/Types.h>
 #include <Databases/IDatabase.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/CancellationCode.h>
@@ -704,6 +705,25 @@ public:
     ///
     /// Does not take underlying Storage (if any) into account
     virtual std::optional<UInt64> totalBytesUncompressed(const Settings &) const { return {}; }
+
+    /// Returns a value that is guaranteed to change whenever the data behind the table changes.
+    /// There are no other guarantees: it is not a hash of the data, so two tables with identical
+    /// data may have different values, and the value may also change without the data changing.
+    /// Conceptually it is similar to an HTTP ETag.
+    ///
+    /// The way it is calculated is implementation-specific. For example, tables of the MergeTree
+    /// family return a hash of the block number ranges of their data parts and the table structure
+    /// version. File-like engines use the size and modification time, and so on.
+    ///
+    /// The storage snapshot is taken into account, so the result describes the state of the data
+    /// that the snapshot refers to (important when one subquery uses a snapshot and another does not).
+    ///
+    /// Returns nullopt if the storage cannot tell whether its data has changed - in that case the
+    /// caller must assume the worst (that the data could have changed).
+    ///
+    /// Used to detect when tables behind a query have changed, e.g. for query cache consistency
+    /// and for `REFRESH ... IF CHANGED` of refreshable materialized views.
+    virtual std::optional<UInt128> getModificationHash(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr /*context*/) const { return {}; }
 
     /// Number of rows INSERTed since server start.
     ///

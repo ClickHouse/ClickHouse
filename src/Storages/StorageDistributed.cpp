@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 
@@ -29,6 +30,7 @@
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Macros.h>
+#include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
 #include <Common/escapeForFileName.h>
 #include <Common/formatReadable.h>
@@ -70,6 +72,7 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -1705,6 +1708,98 @@ size_t StorageDistributed::getShardCount() const
 ClusterPtr StorageDistributed::getCluster() const
 {
     return owned_cluster ? owned_cluster : getContext()->getCluster(cluster_name);
+}
+
+static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
+    const Cluster & cluster,
+    const Cluster::ShardInfo & shard_info,
+    const StorageID & table_id,
+    ContextPtr context)
+{
+    if (shard_info.isLocal())
+    {
+        auto storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
+        if (!storage)
+            return {};
+        auto metadata = storage->getInMemoryMetadataPtr(context, false);
+        auto snapshot = storage->getStorageSnapshotWithoutData(metadata, context);
+        return storage->getModificationHash(snapshot, context);
+    }
+
+    /// Ask the shard for the modification hash of the underlying table through system.tables.
+    const String query = "SELECT modification_hash FROM system.tables WHERE database = "
+        + quoteString(table_id.database_name) + " AND name = " + quoteString(table_id.table_name);
+
+    auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef(), table_id);
+
+    auto type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt128>());
+    auto sample_block = std::make_shared<const Block>(Block{{type->createColumn(), type, "modification_hash"}});
+
+    RemoteQueryExecutor executor(shard_info.pool, query, sample_block, new_context);
+    executor.setPoolMode(PoolMode::GET_ONE);
+
+    std::optional<UInt128> result;
+    for (Block current = executor.readBlock(); !current.empty(); current = executor.readBlock())
+    {
+        const auto & column = current.getByName("modification_hash").column;
+        for (size_t i = 0; i < column->size(); ++i)
+        {
+            Field value = (*column)[i];
+            if (value.isNull())
+            {
+                executor.finish();
+                return {}; /// The shard cannot tell whether its table changed.
+            }
+            result = value.safeGet<UInt128>();
+        }
+    }
+    executor.finish();
+
+    return result; /// nullopt if the table was not found on the shard.
+}
+
+std::optional<UInt128> StorageDistributed::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const
+{
+    /// Heavy path: ask every shard for the modification hash of the underlying table and combine the
+    /// answers. Only used when explicitly requested.
+
+    /// Table functions have no stable identity on the shards, so we cannot ask system.tables about them.
+    if (remote_table_function_ptr)
+        return {};
+
+    try
+    {
+        auto cluster = getCluster();
+        if (!cluster)
+            return {};
+
+        const StorageID remote_table_id{remote_database, remote_table};
+
+        std::vector<UInt128> shard_hashes;
+        for (const auto & shard_info : cluster->getShardsInfo())
+        {
+            auto shard_hash = getModificationHashOfRemoteTableInShard(*cluster, shard_info, remote_table_id, context);
+            if (!shard_hash)
+                return {}; /// A shard cannot tell whether it changed - assume the worst for the whole table.
+            shard_hashes.push_back(*shard_hash);
+        }
+
+        /// Combine in a deterministic, order-independent way.
+        std::sort(shard_hashes.begin(), shard_hashes.end());
+
+        SipHash hash;
+        hash.update(storage_snapshot->metadata->getColumns().toString());
+        hash.update(remote_database);
+        hash.update(remote_table);
+        hash.update(shard_hashes.size());
+        for (const auto & shard_hash : shard_hashes)
+            hash.update(shard_hash);
+        return hash.get128();
+    }
+    catch (...)
+    {
+        return {}; /// Could not reach a shard: assume the data may have changed.
+    }
 }
 
 ClusterPtr StorageDistributed::getOptimizedCluster(

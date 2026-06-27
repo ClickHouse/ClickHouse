@@ -78,6 +78,8 @@ public:
         const Poco::Net::HTTPBasicCredentials & credentials,
         const ContextPtr & context);
 
+    std::optional<UInt128> getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const override;
+
 protected:
     friend class ReadFromURL;
 

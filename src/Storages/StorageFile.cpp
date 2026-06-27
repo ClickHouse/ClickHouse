@@ -54,6 +54,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 #include <Common/CurrentThread.h>
+#include <Common/SipHash.h>
 #include <Common/checkStackSize.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -2396,6 +2397,35 @@ Strings StorageFile::getDataPaths() const
     if (paths.empty())
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Table '{}' is in readonly mode", getStorageID().getNameForLogs());
     return paths;
+}
+
+std::optional<UInt128> StorageFile::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr) const
+{
+    /// Not supported for file descriptors, globs and archives - we cannot cheaply and reliably tell
+    /// whether the underlying data changed in these cases.
+    if (use_table_fd || is_path_with_globs || archive_info.has_value())
+        return {};
+
+    SipHash hash;
+    hash.update(storage_snapshot->metadata->getColumns().toString());
+
+    std::shared_lock lock(rwlock);
+    for (const auto & path : paths)
+    {
+        std::error_code ec;
+        auto size = fs::file_size(path, ec);
+        if (ec)
+            return {}; /// Cannot stat the file (e.g. it does not exist yet): assume the data may have changed.
+        auto mtime = fs::last_write_time(path, ec);
+        if (ec)
+            return {};
+
+        hash.update(path);
+        hash.update(size);
+        hash.update(mtime.time_since_epoch().count());
+    }
+
+    return hash.get128();
 }
 
 void StorageFile::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
