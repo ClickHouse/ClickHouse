@@ -10,6 +10,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
+FP=rmt_fetch_part_pause_before_part_log
+
+cleanup() { $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $FP" 2>/dev/null || true; }
+trap cleanup EXIT
+
 # Replica 'a' executes the merge locally and assigns the MERGE_PARTS log entry. Replica 'b' uses
 # the Manual selector (so it accepts SYSTEM SCHEDULE/SYNC MERGES) and always_fetch_merged_part=1,
 # so it satisfies the merge by FETCHING the result part from 'a' instead of merging locally. The
@@ -36,7 +41,7 @@ $CLICKHOUSE_CLIENT -m -q "
 # Pause the fetch on 'b' right after the fetched part becomes active but before its DOWNLOAD_PART
 # part_log row is written. This holds that window open deterministically (independent of machine
 # load) so the test can observe whether SYSTEM SYNC MERGES waits for the part_log write.
-$CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT rmt_fetch_part_pause_before_part_log"
+$CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT $FP"
 
 # Assign the merge on 'a' and schedule it on 'b'; 'b' then fetches all_0_1_1 and blocks at the pause.
 $CLICKHOUSE_CLIENT -m -q "
@@ -44,18 +49,26 @@ $CLICKHOUSE_CLIENT -m -q "
     OPTIMIZE TABLE sm_a FINAL SETTINGS alter_sync = 1, optimize_throw_if_noop = 1;
 "
 
-# Wait until the fetch has reached the pause: the fetched part is active on 'b' but its
+# Prove the fetch actually reached the post-commit/pre-part_log pause window before running
+# SYSTEM SYNC MERGES. SYSTEM WAIT FAILPOINT ... PAUSE blocks until a thread is parked at the
+# failpoint and returns non-zero (timeout exit 124) if none does. Without this guard a test that
+# only polled for the fetched part to become active could pass spuriously: if the fetch had
+# already written its DOWNLOAD_PART row before the poll observed the part, the final count would
+# be 1 without the fetch wait being the reason. Fail loudly if the fetch never reaches the window.
+if ! timeout 60 $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT $FP PAUSE"; then
+    echo "FAIL: fetch did not reach $FP within 60s"
+    exit 1
+fi
+
+# Sanity check (after the failpoint is known paused): the fetched part is active on 'b' but its
 # DOWNLOAD_PART part_log row has not been written yet.
-for _ in {1..600}; do
-    active=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'sm_b' AND name = 'all_0_1_1' AND active")
-    [ "$active" = "1" ] && break
-    sleep 0.1
-done
+active=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'sm_b' AND name = 'all_0_1_1' AND active")
+[ "$active" = "1" ] || echo "FAIL: expected fetched part all_0_1_1 active on sm_b while paused, got $active"
 
 # Release the pause shortly after, in the background. On a correct server SYSTEM SYNC MERGES below
 # blocks until this release (it waits for the part_log write); on a server without the fix it
 # returns immediately while the fetch is still paused.
-( sleep 3; $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT rmt_fetch_part_pause_before_part_log" ) &
+( sleep 3; $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $FP" ) &
 releaser=$!
 
 # SYNC MERGES must not return until the DOWNLOAD_PART row is queued, so the flush right after must
@@ -69,8 +82,8 @@ $CLICKHOUSE_CLIENT -m -q "
       AND event_type = 'DownloadPart' AND part_name = 'all_0_1_1';
 "
 
-wait "$releaser" 2>/dev/null
-$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT rmt_fetch_part_pause_before_part_log"
+wait "$releaser" 2>/dev/null || true
+$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $FP" 2>/dev/null || true
 
 $CLICKHOUSE_CLIENT -m -q "
     DROP TABLE sm_a SYNC;
