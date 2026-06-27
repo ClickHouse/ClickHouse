@@ -33,3 +33,9 @@ echo "$PAGE" | grep -oF 'const ALLOWED_ATTRS' | head -n1
 # `javascript:`, `data:`, `vbscript:`, ... are dropped from `href`/`src`.
 echo "$PAGE" | grep -oF 'function isUnsafeURL' | head -n1
 echo "$PAGE" | grep -oF "scheme !== 'http' && scheme !== 'https' && scheme !== 'mailto'" | head -n1
+
+# ... and rejects resource sinks that auto-load against this credentialed origin when the document
+# renders: a same-origin `src` (e.g. `![x](/?query=SELECT%201)`) and a `url(...)` inside a `style`.
+echo "$PAGE" | grep -oF 'function isSameOriginURL' | head -n1
+echo "$PAGE" | grep -oF "name === 'src' && (isUnsafeURL(attr.value) || isSameOriginURL(attr.value))" | head -n1
+echo "$PAGE" | grep -oF 'function sanitizeStyle' | head -n1

@@ -5,3 +5,6 @@ const ALLOWED_TAGS
 const ALLOWED_ATTRS
 function isUnsafeURL
 scheme !== 'http' && scheme !== 'https' && scheme !== 'mailto'
+function isSameOriginURL
+name === 'src' && (isUnsafeURL(attr.value) || isSameOriginURL(attr.value))
+function sanitizeStyle

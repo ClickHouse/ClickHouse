@@ -621,9 +621,12 @@
        `<img src=x onerror=...>` or `[x](javascript:...)` that runs in this origin, reads the
        `user`/`password` fields, and issues same-origin queries. Every rendered document is
        therefore sanitized against an allowlist before it reaches the DOM: elements not on the
-       list are dropped with their subtree, attributes not on the list are removed, and `href`/`src`
-       values are kept only for safe URL schemes. The allowlist covers what Markdown, the admonition
-       and math extensions, and KaTeX (its HTML and the parallel MathML) legitimately produce.
+       list are dropped with their subtree, attributes not on the list are removed, `href`/`src`
+       values are kept only for safe URL schemes, and resource sinks that auto-load when the
+       document renders — a same-origin `src`, or a `url(...)` in a `style` — are rejected so that
+       untrusted documentation cannot make the browser fetch `/?query=...` from this origin on its
+       own. The allowlist covers what Markdown, the admonition and math extensions, and KaTeX (its
+       HTML and the parallel MathML) legitimately produce.
        ---------------------------------------------------------------------------------------- */
 
     const ALLOWED_TAGS = new Set([
@@ -665,6 +668,33 @@
         return scheme !== 'http' && scheme !== 'https' && scheme !== 'mailto';
     }
 
+    /// Whether a URL resolves to this page's own origin. `src` values that do are rejected: unlike a
+    /// link (`href`), a `src` is fetched automatically when the document renders, so a same-origin
+    /// `src` such as `![x](/?query=SELECT%201)` would make the browser issue an unintended query
+    /// against the very ClickHouse server whose credentials live in this origin. Cross-origin images
+    /// remain allowed; only the credentialed same origin is special.
+    function isSameOriginURL(value) {
+        try {
+            return new URL(value, location.href).origin === location.origin;
+        } catch (e) {
+            return false; /// Unparseable (e.g. a bare fragment): not a resource load against this origin.
+        }
+    }
+
+    /// Sanitize the value of a `style` attribute, or return `null` to drop the attribute entirely.
+    /// CSS can also auto-load resources — `url(...)`, `image-set(...)`, `cross-fade(...)` — so a
+    /// `style="background:url('/?query=SELECT%201')"` is the same hazard as a same-origin `src`.
+    /// KaTeX's inline styles are plain layout declarations (dimensions, offsets, colors) that never
+    /// contain those functions, nor CSS escapes; so the safe and robust rule is to drop any `style`
+    /// that uses a resource-loading function or hides one behind a backslash escape (e.g. `u\72l(`).
+    function sanitizeStyle(value) {
+        if (value.includes('\\'))
+            return null;
+        if (/(?:^|[^\w-])(?:url|image-set|-webkit-image-set|cross-fade)\s*\(/i.test(value))
+            return null;
+        return value;
+    }
+
     /// Sanitize a parsed DOM subtree in place (see the block comment above).
     function sanitizeNode(node) {
         /// Snapshot the children first: the loop removes nodes and attributes as it goes.
@@ -677,7 +707,9 @@
                 for (const attr of [...child.attributes]) {
                     const name = attr.name.toLowerCase();
                     if (!ALLOWED_ATTRS.has(name)
-                        || ((name === 'href' || name === 'src') && isUnsafeURL(attr.value))) {
+                        || (name === 'href' && isUnsafeURL(attr.value))
+                        || (name === 'src' && (isUnsafeURL(attr.value) || isSameOriginURL(attr.value)))
+                        || (name === 'style' && sanitizeStyle(attr.value) === null)) {
                         child.removeAttribute(attr.name);
                     }
                 }
