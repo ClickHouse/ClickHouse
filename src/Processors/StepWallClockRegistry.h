@@ -16,8 +16,7 @@ public:
 
     void populateFromPlan(const QueryPlan & plan);
 
-    StepWallClock & get(const IQueryPlanStep *, size_t group) const;
-    const StepWallClock * find(const IQueryPlanStep *, size_t group) const;
+    StepWallClock * find(const IQueryPlanStep *, size_t group) const;
 private:
 
     using StepAndGroup = std::pair<const IQueryPlanStep *, size_t>;

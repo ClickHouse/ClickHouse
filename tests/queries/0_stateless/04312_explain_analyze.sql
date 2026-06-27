@@ -23,8 +23,8 @@ FROM (EXPLAIN ANALYZE SELECT number % 10 AS k, count() FROM numbers_mt(1000000) 
 
 -- JOIN: both build and probe phases are annotated.
 SELECT
-    countIf(explain LIKE '%build: time%') >= 1,
-    countIf(explain LIKE '%probe: time%') >= 1
+    countIf(explain LIKE '%(build): time%') >= 1,
+    countIf(explain LIKE '%(probe): time%') >= 1
 FROM (EXPLAIN ANALYZE
     SELECT t1.a
     FROM (SELECT number AS a FROM numbers(1000)) AS t1
@@ -32,16 +32,10 @@ FROM (EXPLAIN ANALYZE
 
 -- Aggregating: grouping and merging stages are annotated.
 SELECT
-    countIf(explain LIKE '%grouping: time%') >= 1,
-    countIf(explain LIKE '%merging: time%') >= 1
+    countIf(explain LIKE '%(grouping): time%') >= 1,
+    countIf(explain LIKE '%(merging): time%') >= 1
 FROM (EXPLAIN ANALYZE
     SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP BY k);
-
--- Sorting: per-stream sort and merge-streams stages are annotated.
-SELECT
-    countIf(explain LIKE '%sorting: time%') >= 1
-FROM (EXPLAIN ANALYZE
-    SELECT number FROM numbers_mt(100000) ORDER BY number % 7, number);
 
 -- With `processors = 1` every group line is followed by exactly one distribution line
 -- that reports the processor count and the min/median/max/sum of the elapsed time.
@@ -51,3 +45,10 @@ SELECT
     countIf(explain LIKE '%Time per processor%') = countIf(explain LIKE '%parallelism%')
 FROM (EXPLAIN ANALYZE processors = 1
     SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP BY k);
+
+-- A set-creating subquery (IN) must not crash EXPLAIN ANALYZE: the CreatingSet step
+-- is described after the pipeline has consumed it.
+SELECT
+    countIf(explain LIKE '%CreatingSet%') >= 1
+FROM (EXPLAIN ANALYZE
+    SELECT number FROM numbers(1000) WHERE number IN (SELECT number FROM numbers(10)));

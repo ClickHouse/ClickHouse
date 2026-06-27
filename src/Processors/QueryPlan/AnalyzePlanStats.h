@@ -17,8 +17,6 @@
 namespace DB
 {
 
-class QueryPlan;
-
 /// Aggregated statistics for a single plan step (across all of its processors and groups).
 struct StepStats
 {
@@ -26,9 +24,6 @@ struct StepStats
     UInt64 input_bytes = 0;
     UInt64 output_rows = 0;
     UInt64 output_bytes = 0;
-
-    /// Sum of this step's per-group wall-clock times (the step's own time).
-    UInt64 total_step_time_ns = 0;
 };
 
 /// Statistics for a single (step, group): timing aggregated over the group's processors.
@@ -55,7 +50,7 @@ class AnalyzeStepsStats
     using ElapsedTimesPerStepGroup = std::unordered_map<StepAndGroup, ElapsedTimes, boost::hash<StepAndGroup>>;
 
 public:
-    AnalyzeStepsStats(const QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_);
+    AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 execution_query_time_ns_);
 
     /// Print the stats. When with_distribution is set, also print the per-processor
     /// elapsed time distribution (min/median/max/sum) for each (step, group).
@@ -65,7 +60,6 @@ private:
     void collectIoStats(const Processors & processors);
     ElapsedTimesPerStepGroup collectTimingStats(const QueryPipeline & pipeline, const Processors & processors);
     void computeDistribution(const ElapsedTimesPerStepGroup & elapsed_per_step_group);
-    void computeStepTimes(const QueryPlan & plan);
 
     std::unordered_map<const IQueryPlanStep *, StepStats> stats_by_step;
     std::unordered_map<StepAndGroup, StepGroupStats, boost::hash<StepAndGroup>> stats_by_step_group;
