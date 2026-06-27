@@ -1179,49 +1179,64 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
         if (auto query_context = CurrentThread::tryGetQueryContext())
             query_status = query_context->getProcessListElement();
 
-        for (size_t i = 0; i < slots; ++i)
+        /// A replay task throwing (e.g. `checkTimeLimit` on `KILL QUERY`) is rethrown from a later
+        /// `scheduleOrThrow` or from `wait` below, but tasks already scheduled keep running and read
+        /// each slot's `buffered_blocks`. If that exception escaped here, the pipeline teardown would
+        /// destroy this join (and free `buffered_blocks`) while those tasks are still in flight - a
+        /// use-after-free. Drain the pool on every exit path before propagating, mirroring the
+        /// constructor and destructor guards in this file.
+        try
         {
-            pool->scheduleOrThrow(
-                [&, i, query_status, thread_group = CurrentThread::getGroup()]()
-                {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::CONCURRENT_JOIN);
-
-                    auto & hash_join = hash_joins[i];
-                    if (query_status)
-                        query_status->checkTimeLimit();
-
-                    if (global_reserve_size && hash_join->data->twoLevelMapIsUsed())
-                        reserveBucketsBySize(
-                            *hash_join->data,
-                            i,
-                            global_reserve_size,
-                            slots,
-                            external_join_threshold,
-                            /*cap_to_external_threshold=*/false,
-                            ProfileEvents::HashJoinDeferredPreallocatedElementsInHashTables);
-
-                    for (auto & scattered_block : hash_join->buffered_blocks)
+            for (size_t i = 0; i < slots; ++i)
+            {
+                pool->scheduleOrThrow(
+                    [&, i, query_status, thread_group = CurrentThread::getGroup()]()
                     {
+                        ThreadGroupSwitcher switcher(thread_group, ThreadName::CONCURRENT_JOIN);
+
+                        auto & hash_join = hash_joins[i];
                         if (query_status)
                             query_status->checkTimeLimit();
-                        auto [block, selector] = std::move(scattered_block).detachData();
-                        hash_join->data->addBlockToJoin(block, std::move(selector), /*check_limits=*/false);
-                    }
-                    hash_join->clearBuffers();
 
-                    /// `addBlockToJoin(..., check_limits=false)` early-returns before maintaining
-                    /// `keys_to_join` and before the memory-pressure shrink, so compensate here, as
-                    /// `GraceHashJoin` does with `getAndSetRightTableKeys` after its own
-                    /// `check_limits=false` inserts. Without this, `avgPerKeyRows` would see zero
-                    /// keys and silently flip the `output_by_row_list` emit heuristic to the
-                    /// per-row path. The bucket merge below sums the per-slot `keys_to_join`
-                    /// into slot 0, so this must run before it.
-                    hash_join->data->getAndSetRightTableKeys();
-                    size_t total_bytes = hash_join->data->getTotalByteCount();
-                    hash_join->data->shrinkStoredBlocksToFit(total_bytes);
-                });
+                        if (global_reserve_size && hash_join->data->twoLevelMapIsUsed())
+                            reserveBucketsBySize(
+                                *hash_join->data,
+                                i,
+                                global_reserve_size,
+                                slots,
+                                external_join_threshold,
+                                /*cap_to_external_threshold=*/false,
+                                ProfileEvents::HashJoinDeferredPreallocatedElementsInHashTables);
+
+                        for (auto & scattered_block : hash_join->buffered_blocks)
+                        {
+                            if (query_status)
+                                query_status->checkTimeLimit();
+                            auto [block, selector] = std::move(scattered_block).detachData();
+                            hash_join->data->addBlockToJoin(block, std::move(selector), /*check_limits=*/false);
+                        }
+                        hash_join->clearBuffers();
+
+                        /// `addBlockToJoin(..., check_limits=false)` early-returns before maintaining
+                        /// `keys_to_join` and before the memory-pressure shrink, so compensate here, as
+                        /// `GraceHashJoin` does with `getAndSetRightTableKeys` after its own
+                        /// `check_limits=false` inserts. Without this, `avgPerKeyRows` would see zero
+                        /// keys and silently flip the `output_by_row_list` emit heuristic to the
+                        /// per-row path. The bucket merge below sums the per-slot `keys_to_join`
+                        /// into slot 0, so this must run before it.
+                        hash_join->data->getAndSetRightTableKeys();
+                        size_t total_bytes = hash_join->data->getTotalByteCount();
+                        hash_join->data->shrinkStoredBlocksToFit(total_bytes);
+                    });
+            }
+            pool->wait();
         }
-        pool->wait();
+        catch (...)
+        {
+            /// Join the still-running replay tasks before this slot's buffers are freed.
+            pool->wait();
+            throw;
+        }
 
         /// Enforce `max_rows_in_join` / `max_bytes_in_join` against the real maps now that the
         /// deferred build is materialized (and before the bucket merge below, while each slot still
