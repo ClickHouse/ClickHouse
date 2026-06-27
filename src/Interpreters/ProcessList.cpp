@@ -1279,6 +1279,14 @@ void ProcessList::increaseQueryKindAmount(const IAST::QueryKind & query_kind)
         query_kind_amounts[query_kind] = 1;
     else
         found->second += 1;
+
+    /// Grow `query_kind_pending_teardowns` in lockstep with `query_kind_amounts`: both maps are only ever
+    /// grown here and neither erases keys, so they share one key set. Creating the key now — on the normal
+    /// registration path, where throwing `bad_alloc` is fine (the `admission_rollback` guard in `insert`
+    /// releases the slot) — guarantees it already exists by the time the query releases its admission slot.
+    /// That lets `increaseAdmissionPendingTeardowns` be allocation-free, which is required because it runs
+    /// from cleanup/destructor paths (`BlockIO::~BlockIO`), where a throw would call `std::terminate`.
+    query_kind_pending_teardowns.try_emplace(query_kind, 0);
 }
 
 void ProcessList::decreaseQueryKindAmount(const IAST::QueryKind & query_kind)
@@ -1302,11 +1310,15 @@ ProcessList::QueryAmount ProcessList::getQueryKindAmount(const IAST::QueryKind &
 
 void ProcessList::increaseAdmissionPendingTeardowns(const IAST::QueryKind & query_kind, const String & user)
 {
-    /// Perform the only potentially-allocating operation (inserting a new query-kind key) first, so this
-    /// function is all-or-nothing: if `operator[]` throws while rehashing, no counter has been incremented
-    /// yet and the caller can leave admission-slot ownership untouched.
-    auto & kind_pending_teardowns = query_kind_pending_teardowns[query_kind];
-    ++kind_pending_teardowns;
+    /// Must be allocation-free / non-throwing: it runs from the early-release path
+    /// (`QueryStatus::releaseAdmissionSlot`), which is reachable from `BlockIO::~BlockIO`, where a throw
+    /// would call `std::terminate`. The per-kind key is pre-created in `increaseQueryKindAmount` when the
+    /// query is first counted (an admission slot is only ever held by a non-internal query, and such a
+    /// query is always counted there), so the lookup below always finds it and never inserts; everything
+    /// else here is a plain integer increment.
+    auto kind_found = query_kind_pending_teardowns.find(query_kind);
+    chassert(kind_found != query_kind_pending_teardowns.end());
+    ++kind_found->second;
     ++admission_pending_teardowns;
     if (auto found = user_to_queries.find(user); found != user_to_queries.end())
         ++found->second.admission_pending_teardowns;
@@ -1391,14 +1403,13 @@ void QueryStatus::releaseAdmissionSlot()
         if (!holds_admission_slot)
             return; /// Double-check under lock.
 
-        /// Record the pending teardown *before* clearing ownership. `increaseAdmissionPendingTeardowns`
-        /// is the only step here that can allocate (and therefore throw); if it fails, the slot is still
-        /// owned (`holds_admission_slot` stays true) and the destructor releases it through the normal
-        /// path, so no admission slot is leaked and the teardown counters stay consistent. Once the
-        /// accounting has succeeded, the remaining work - flipping the flags and transferring the slot via
-        /// `releaseAdmissionSlotLocked` - is allocation-free and cannot throw.
+        /// This whole sequence is allocation-free and cannot throw: `increaseAdmissionPendingTeardowns`
+        /// only touches counters whose storage is pre-created at query registration (see its comment), and
+        /// `releaseAdmissionSlotLocked` only manipulates `admission_running` and the waiter deque. That
+        /// matters because `releaseAdmissionSlot` runs from cleanup/destructor paths (`BlockIO::~BlockIO`,
+        /// `BlockIO::reset`), where a throw would call `std::terminate`, or would abort `BlockIO::onFinish`
+        /// before the pipeline is finalized and the memory reservation is released.
         process_list.increaseAdmissionPendingTeardowns(query_kind, client_info.current_user);
-
         holds_admission_slot = false;
         admission_slot_released_early = true;
         process_list.releaseAdmissionSlotLocked(lock);
