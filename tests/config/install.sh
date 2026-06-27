@@ -388,17 +388,18 @@ if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
     fi
 
     if check_clickhouse_version 25.5; then
-      if check_clickhouse_version 26.6; then
-        ln -sf $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/
-      else
-        # use_real_disk_size was added in 26.6; strip it so that older servers (e.g. in the upgrade check) do not fail with UNKNOWN_SETTING
-        sed "s|<use_real_disk_size>1</use_real_disk_size>||" $SRC_PATH/config.d/storage_conf.xml >$DEST_SERVER_PATH/config.d/storage_conf.xml
-      fi
       ln -sf $SRC_PATH/config.d/storage_conf_02944.xml $DEST_SERVER_PATH/config.d/
     else
-      sed -e "s|<allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>||" -e "s|<use_real_disk_size>1</use_real_disk_size>||" $SRC_PATH/config.d/storage_conf.xml >$DEST_SERVER_PATH/config.d/storage_conf.xml
       sed "s|<allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>||" $SRC_PATH/config.d/storage_conf_02944.xml >$DEST_SERVER_PATH/config.d/storage_conf_02944.xml
     fi
+    # storage_conf.xml may carry settings unknown to the previous-release server: strip them by version.
+    # allow_dynamic_cache_resize was added in 25.5; use_real_disk_size in 26.6; keep_free_space_eviction_threads in 26.7.
+    # --remove-destination: an earlier install may have left this path as a symlink to the
+    # source; without it cp would follow the link and fail with "same file" under set -e.
+    cp --remove-destination $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/storage_conf.xml
+    check_clickhouse_version 25.5 || sed -i "s|<allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>||" $DEST_SERVER_PATH/config.d/storage_conf.xml
+    check_clickhouse_version 26.6 || sed -i "s|<use_real_disk_size>1</use_real_disk_size>||" $DEST_SERVER_PATH/config.d/storage_conf.xml
+    check_clickhouse_version 26.7 || sed -i "s|<keep_free_space_eviction_threads>4</keep_free_space_eviction_threads>||" $DEST_SERVER_PATH/config.d/storage_conf.xml
     ln -sf $SRC_PATH/config.d/storage_conf_02963.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_02961.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_03517.xml $DEST_SERVER_PATH/config.d/
