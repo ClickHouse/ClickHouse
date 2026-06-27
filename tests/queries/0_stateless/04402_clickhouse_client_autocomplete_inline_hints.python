@@ -180,11 +180,16 @@ def main():
     )
 
     # 5. Priority: an identifier already present in the query is hinted before others.
-    #    "ReplicatedMergeTree" is typed earlier, so for the prefix "Repl" it must rank before
+    #    "ReplicatedMergeTree" is typed earlier, so for the prefix "Repl" it must be ranked before
     #    the alphabetically-first "ReplacingMergeTree".
+    #
+    #    Only the *rendered* hints are prefixed with the gray HINT_COLOR; the echoed input is
+    #    syntax-highlighted differently. Anchor the comparison on the colored hint text so the test
+    #    actually proves the ranking: matching the bare word would also find the typed
+    #    "ReplicatedMergeTree" in the input line and pass even if the prioritization were removed.
     def in_query_first(o):
-        a = o.rfind("ReplicatedMergeTree")
-        b = o.rfind("ReplacingMergeTree")
+        a = o.rfind(HINT_COLOR + "ReplicatedMergeTree")
+        b = o.rfind(HINT_COLOR + "ReplacingMergeTree")
         return a != -1 and b != -1 and a < b
 
     run_with_timeout(
