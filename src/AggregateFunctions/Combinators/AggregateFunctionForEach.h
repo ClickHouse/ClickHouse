@@ -84,7 +84,7 @@ private:
 
             char * new_state = arena.alignedAlloc(allocation_size, nested_func->alignOfData());
 
-            size_t i = 0;
+            size_t i;
             try
             {
                 for (i = 0; i < new_size; ++i)
@@ -259,7 +259,7 @@ public:
         }
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         const AggregateFunctionForEachData & rhs_state = data(rhs);
         AggregateFunctionForEachData & state = ensureAggregateData(place, rhs_state.dynamic_array_size, *arena);
