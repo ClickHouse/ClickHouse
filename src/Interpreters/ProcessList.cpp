@@ -223,13 +223,22 @@ ProcessList::EntryPtr ProcessList::insert(
         const bool admission_tracked = !is_unlimited_query && admission_queue_enabled;
         const bool needs_admission = admission_tracked && max_size;
 
-        if (needs_admission && admission_running >= max_size)
+        /// Connection liveness callback and its polling interval, shared by the FIFO admission wait and the
+        /// post-handoff secondary-limit waits below. Both can park a query that holds (or is about to hold)
+        /// an admission slot, so both must drop the slot if the client disconnects meanwhile. Computed only
+        /// for admission-tracked queries; left empty otherwise, so the waits skip the liveness loop.
+        std::function<bool()> is_alive;
+        UInt64 alive_check_interval_ms = 0;
+        if (admission_tracked)
         {
-            auto is_alive = query_context->getConnectionAliveCheck();
-            const auto alive_check_interval_ms = std::clamp(static_cast<UInt64>(
+            is_alive = query_context->getConnectionAliveCheck();
+            alive_check_interval_ms = std::clamp(static_cast<UInt64>(
                 query_context->getServerSettings()[ServerSetting::admission_queue_alive_check_interval_ms]),
                 UInt64(500), UInt64(10000));
+        }
 
+        if (needs_admission && admission_running >= max_size)
+        {
             /// Stack-allocate a waiter and enqueue it (FIFO).
             AdmissionWaiter waiter;
             admission_queue.push_back(&waiter);
@@ -361,9 +370,39 @@ ProcessList::EntryPtr ProcessList::insert(
         /// (admission queue disabled) the checks keep their legacy behavior.
         auto passes_secondary_limit = [&](auto && under_limit, auto && drain_can_clear)
         {
-            if (got_admission_slot)
-                query_finished.wait_until(lock, admission_deadline,
-                    [&] { return under_limit() || !drain_can_clear(); });
+            if (!got_admission_slot)
+                return under_limit();
+
+            /// We hold an admission slot and may park here until the relevant early-release teardowns
+            /// drain. Mirror the FIFO admission loop's liveness handling: if the client disconnects while
+            /// we wait, stop holding `admission_running` for an abandoned request — throw so the
+            /// `admission_rollback` guard hands the slot to the next waiter, instead of keeping other
+            /// clients queued behind a dead one for up to the fallback timeout. Reaching the deadline is
+            /// not an error here: fall through and let `under_limit()` decide, so the caller throws the
+            /// precise `TOO_MANY_SIMULTANEOUS_QUERIES` message for the limit in question.
+            auto should_stop = [&] { return under_limit() || !drain_can_clear(); };
+            if (is_alive && alive_check_interval_ms > 0)
+            {
+                while (!should_stop())
+                {
+                    auto now = std::chrono::steady_clock::now();
+                    if (now >= admission_deadline)
+                        break;
+
+                    auto chunk = std::min(
+                        std::chrono::milliseconds(alive_check_interval_ms),
+                        std::chrono::duration_cast<std::chrono::milliseconds>(admission_deadline - now));
+
+                    query_finished.wait_for(lock, chunk, should_stop);
+
+                    if (!should_stop() && is_alive && !is_alive())
+                        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
+                                        "Query admission cancelled: client disconnected while waiting at a secondary limit");
+                }
+            }
+            else
+                query_finished.wait_until(lock, admission_deadline, should_stop);
+
             return under_limit();
         };
 
