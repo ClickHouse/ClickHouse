@@ -1415,12 +1415,13 @@ class JobConfigs:
             include_paths=["./ci/jobs/sqlancer_job.sh", "./ci/docker/sqlancer-test"],
         ),
         run_in_docker="clickhouse/sqlancer-test",
-        timeout=3600,
+        # 5h sqlancer run (set in sqlancer_job.sh) plus server start/teardown.
+        timeout=3600 * 5 + 1800,
     ).parametrize(
         Job.ParamSet(
-            parameter="arm_debug",
+            parameter="arm_ubsan",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.CH_ARM_DEBUG],
+            requires=[ArtifactNames.CH_ARM_UBSAN],
         ),
     )
     sqltest_master_job = Job.Config(

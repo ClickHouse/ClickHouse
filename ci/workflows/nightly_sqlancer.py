@@ -10,11 +10,12 @@ from ci.defs.defs import (
 )
 from ci.defs.job_configs import JobConfigs
 
-# SQLancer runs against a debug ClickHouse server, so build the arm_debug binary
-# in this workflow to satisfy the job's `CH_ARM_DEBUG` artifact requirement.
-debug_build_job = Job.Config.get_job(
-    JobConfigs.build_jobs, f"Build ({BuildTypes.ARM_DEBUG})"
-).set_provides(ArtifactNames.CH_ARM_DEBUG, reset=True)
+# SQLancer runs against a UBSan ClickHouse server (the long run is a good place
+# to surface undefined behaviour), so build the arm_ubsan binary in this
+# workflow to satisfy the job's `CH_ARM_UBSAN` artifact requirement.
+ubsan_build_job = Job.Config.get_job(
+    JobConfigs.build_jobs, f"Build ({BuildTypes.ARM_UBSAN})"
+).set_provides(ArtifactNames.CH_ARM_UBSAN, reset=True)
 
 # TODO: add alert on workflow failure
 
@@ -23,7 +24,7 @@ workflow = Workflow.Config(
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
     jobs=[
-        debug_build_job,
+        ubsan_build_job,
         *JobConfigs.sqlancer_master_jobs,
     ],
     artifacts=[
@@ -34,7 +35,8 @@ workflow = Workflow.Config(
     enable_cache=True,
     enable_report=True,
     enable_cidb=True,
-    cron_schedules=["13 6 * * *"],
+    # Every 3 days (the run itself is ~5h); day-of-month step.
+    cron_schedules=["13 6 */3 * *"],
     pre_hooks=["python3 ./ci/jobs/scripts/workflow_hooks/store_data.py"],
 )
 
