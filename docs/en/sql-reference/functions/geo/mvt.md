@@ -44,13 +44,9 @@ When `clip` is enabled (the default), the geometry is clipped to the tile expand
 `[-buffer, extent + buffer]` on each axis); geometry that falls entirely outside becomes `NULL`. This is the analogue of
 PostGIS `ST_AsMVTGeom`.
 
-Polygons are validated with [`wagyu`](https://github.com/mapbox/wagyu) so the result is always valid under the Mapbox
-Vector Tile winding rules: self-intersecting ("bow-tie") rings are repaired into valid polygons and ring nesting is
-corrected. This applies whether or not `clip` is enabled — with `clip = false` the geometry is validated but not clipped
-to the tile. Because `wagyu` works on 64-bit integer coordinates, polygon coordinates are bounded to a `2^30` window
-before validation — exactly the pixel span of the whole world at `zoom` 18 and `extent` 4096 — so for realistic tiles
-geometry is validated but never clipped, and the bound only affects geometry placed at extreme `zoom` or `extent`
-values.
+Polygon coordinates are bounded to a `2^30` window before validation — exactly the pixel span of the whole world at
+`zoom` 18 and `extent` 4096 — so for realistic tiles geometry is validated but never clipped, and the bound only
+affects geometry placed at extreme `zoom` or `extent` values.
 
 The output geometry type depends on the input: a `Point` returns a `Point`; a `LineString` or `MultiLineString` returns a
 `MultiLineString`; a `Ring`, `Polygon` or `MultiPolygon` returns a `MultiPolygon` (clipping may split a geometry into
