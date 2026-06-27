@@ -25,7 +25,7 @@ ClickHouse supports several types of user defined functions (UDFs):
 <BetaBadge/>
 
 :::note
-This feature is supported in beta in ClickHouse Cloud
+In ClickHouse Cloud, executable UDFs are in public beta and are created through the Cloud console UI. See [User-defined functions in Cloud](/cloud/features/user-defined-functions) for the Cloud-specific workflow.
 :::
 
 ClickHouse can call any external executable program or script to process data.
