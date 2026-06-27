@@ -1105,10 +1105,148 @@ FROM series
         };
     };
 
-    factory.registerFunction("skewPopStable",  {make_higher_moment(MomentKind::skewPopStable),  {}});
-    factory.registerFunction("skewSampStable", {make_higher_moment(MomentKind::skewSampStable), {}});
-    factory.registerFunction("kurtPopStable",  {make_higher_moment(MomentKind::kurtPopStable),  {}});
-    factory.registerFunction("kurtSampStable", {make_higher_moment(MomentKind::kurtSampStable), {}});
+    /// skewPopStable documentation
+    FunctionDocumentation::Description description_skewPopStable = R"(
+Computes the [population skewness](https://en.wikipedia.org/wiki/Skewness) of a sequence.
+
+Unlike [`skewPop`](/sql-reference/aggregate-functions/reference/skewpop), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) single-pass algorithm based on Terriberry (2007) and is accurate even when the mean is large relative to the standard deviation.
+    )";
+    FunctionDocumentation::Syntax syntax_skewPopStable = R"(
+skewPopStable(expr)
+    )";
+    FunctionDocumentation::Parameters parameters_skewPopStable = {};
+    FunctionDocumentation::Arguments arguments_skewPopStable = {
+        {"expr", "An expression returning a number.", {"Expression"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_skewPopStable = {"Returns the population skewness of the distribution. Returns `nan` if `m2 = 0` (constant input).", {"Float64"}};
+    FunctionDocumentation::Examples examples_skewPopStable = {
+    {
+        "Symmetric distribution",
+        R"(
+SELECT skewPopStable(number) FROM numbers(100);
+        )",
+        R"(
+┌─skewPopStable(number)─┐
+│                     0 │
+└───────────────────────┘
+        )"
+    },
+    {
+        "Numerically stable at large offset",
+        R"(
+SELECT skewPopStable(number + 1e15) FROM numbers(100);
+        )",
+        R"(
+┌─skewPopStable(number + 1e15)─┐
+│                            0 │
+└──────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_skewPopStable = {26, 7};
+    FunctionDocumentation::Category category_skewPopStable = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_skewPopStable = {description_skewPopStable, syntax_skewPopStable, arguments_skewPopStable, parameters_skewPopStable, returned_value_skewPopStable, examples_skewPopStable, introduced_in_skewPopStable, category_skewPopStable};
+
+    factory.registerFunction("skewPopStable", {make_higher_moment(MomentKind::skewPopStable), documentation_skewPopStable});
+
+    /// skewSampStable documentation
+    FunctionDocumentation::Description description_skewSampStable = R"(
+Computes the [sample skewness](https://en.wikipedia.org/wiki/Skewness) of a sequence.
+
+Unlike [`skewSamp`](/sql-reference/aggregate-functions/reference/skewsamp), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) single-pass algorithm based on Terriberry (2007) and is accurate even when the mean is large relative to the standard deviation.
+    )";
+    FunctionDocumentation::Syntax syntax_skewSampStable = R"(
+skewSampStable(expr)
+    )";
+    FunctionDocumentation::Parameters parameters_skewSampStable = {};
+    FunctionDocumentation::Arguments arguments_skewSampStable = {
+        {"expr", "An expression returning a number.", {"Expression"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_skewSampStable = {"Returns the sample skewness of the distribution. Returns `nan` if `n <= 1` or `m2 = 0` (constant input).", {"Float64"}};
+    FunctionDocumentation::Examples examples_skewSampStable = {
+    {
+        "Symmetric distribution",
+        R"(
+SELECT skewSampStable(number) FROM numbers(100);
+        )",
+        R"(
+┌─skewSampStable(number)─┐
+│                      0 │
+└────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_skewSampStable = {26, 7};
+    FunctionDocumentation::Category category_skewSampStable = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_skewSampStable = {description_skewSampStable, syntax_skewSampStable, arguments_skewSampStable, parameters_skewSampStable, returned_value_skewSampStable, examples_skewSampStable, introduced_in_skewSampStable, category_skewSampStable};
+
+    factory.registerFunction("skewSampStable", {make_higher_moment(MomentKind::skewSampStable), documentation_skewSampStable});
+
+    /// kurtPopStable documentation
+    FunctionDocumentation::Description description_kurtPopStable = R"(
+Computes the [population kurtosis](https://en.wikipedia.org/wiki/Kurtosis) of a sequence.
+
+Unlike [`kurtPop`](/sql-reference/aggregate-functions/reference/kurtpop), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) single-pass algorithm based on Terriberry (2007) and is accurate even when the mean is large relative to the standard deviation.
+    )";
+    FunctionDocumentation::Syntax syntax_kurtPopStable = R"(
+kurtPopStable(expr)
+    )";
+    FunctionDocumentation::Parameters parameters_kurtPopStable = {};
+    FunctionDocumentation::Arguments arguments_kurtPopStable = {
+        {"expr", "An expression returning a number.", {"Expression"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_kurtPopStable = {"Returns the population kurtosis of the distribution. Returns `nan` if `m2 = 0` (constant input).", {"Float64"}};
+    FunctionDocumentation::Examples examples_kurtPopStable = {
+    {
+        "Uniform distribution",
+        R"(
+SELECT kurtPopStable(number) FROM numbers(100);
+        )",
+        R"(
+┌─kurtPopStable(number)─┐
+│    1.7997599759975997 │
+└───────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_kurtPopStable = {26, 7};
+    FunctionDocumentation::Category category_kurtPopStable = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_kurtPopStable = {description_kurtPopStable, syntax_kurtPopStable, arguments_kurtPopStable, parameters_kurtPopStable, returned_value_kurtPopStable, examples_kurtPopStable, introduced_in_kurtPopStable, category_kurtPopStable};
+
+    factory.registerFunction("kurtPopStable", {make_higher_moment(MomentKind::kurtPopStable), documentation_kurtPopStable});
+
+    /// kurtSampStable documentation
+    FunctionDocumentation::Description description_kurtSampStable = R"(
+Computes the [sample kurtosis](https://en.wikipedia.org/wiki/Kurtosis) of a sequence.
+
+Unlike [`kurtSamp`](/sql-reference/aggregate-functions/reference/kurtsamp), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) single-pass algorithm based on Terriberry (2007) and is accurate even when the mean is large relative to the standard deviation.
+    )";
+    FunctionDocumentation::Syntax syntax_kurtSampStable = R"(
+kurtSampStable(expr)
+    )";
+    FunctionDocumentation::Parameters parameters_kurtSampStable = {};
+    FunctionDocumentation::Arguments arguments_kurtSampStable = {
+        {"expr", "An expression returning a number.", {"Expression"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_kurtSampStable = {"Returns the sample kurtosis of the distribution. Returns `nan` if `n <= 1` or `m2 = 0` (constant input).", {"Float64"}};
+    FunctionDocumentation::Examples examples_kurtSampStable = {
+    {
+        "Uniform distribution",
+        R"(
+SELECT kurtSampStable(number) FROM numbers(100);
+        )",
+        R"(
+┌─kurtSampStable(number)─┐
+│     1.7639447524752476 │
+└────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_kurtSampStable = {26, 7};
+    FunctionDocumentation::Category category_kurtSampStable = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_kurtSampStable = {description_kurtSampStable, syntax_kurtSampStable, arguments_kurtSampStable, parameters_kurtSampStable, returned_value_kurtSampStable, examples_kurtSampStable, introduced_in_kurtSampStable, category_kurtSampStable};
+
+    factory.registerFunction("kurtSampStable", {make_higher_moment(MomentKind::kurtSampStable), documentation_kurtSampStable});
 }
 
 }
