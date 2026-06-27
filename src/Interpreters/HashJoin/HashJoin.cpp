@@ -193,7 +193,8 @@ HashJoin::HashJoin(
     size_t reserve_num_,
     const String & instance_id_,
     bool is_concurrent_hash_join_,
-    bool enable_row_store_)
+    bool enable_row_store_,
+    const StatsCollectingParams & stats_collecting_params_)
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
@@ -210,6 +211,7 @@ HashJoin::HashJoin(
     , enable_lazy_columns_replication(table_join->enableColumnsLazyReplication())
     , enable_prefetch(table_join->enableSoftwarePrefetchInJoin())
     , is_concurrent_hash_join(is_concurrent_hash_join_)
+    , stats_collecting_params(stats_collecting_params_)
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
@@ -1450,6 +1452,21 @@ HashJoin::~HashJoin()
         LOG_TEST(log, "{}Join data has been already released", instance_log_id);
         return;
     }
+
+    try
+    {
+        if (build_phase_finished && stats_collecting_params.isCollectionAndUseEnabled())
+        {
+            if (const auto ht_size = getTotalRowCount())
+                getHashTablesStatistics<HashJoinEntry>().update(
+                    {.ht_size = ht_size, .source_rows = data->rows_to_join}, stats_collecting_params);
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
     LOG_TEST(
         log,
         "{}Join data is being destroyed, {} bytes and {} rows in hash table",
@@ -2937,6 +2954,8 @@ void HashJoin::onBuildPhaseFinish()
     }
     updateNonJoinedRowsStatus();
     finalizeRowStoreStatus();
+
+    build_phase_finished = true;
 
     LOG_TRACE(log, "{}Join data is built, {} and {} rows in hash table", instance_log_id, ReadableSize(getTotalByteCount()), getTotalRowCount());
 }
