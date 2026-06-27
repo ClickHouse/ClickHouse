@@ -1141,6 +1141,22 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 break;
             }
 
+            /// Tags are not fetched during listing (it lists with with_tags = false), so populate
+            /// them on demand here, once per file, only when _tags is requested.
+            if (read_from_format_info.requested_virtual_columns.contains("_tags"))
+            {
+                if (const auto & object_info_for_tags = reader.getObjectInfo())
+                {
+                    auto metadata_with_tags = object_info_for_tags->getObjectMetadata();
+                    if (metadata_with_tags && metadata_with_tags->tags.empty())
+                    {
+                        metadata_with_tags->tags
+                            = object_storage->getObjectMetadata(object_info_for_tags->getPath(), /*with_tags=*/true).tags;
+                        object_info_for_tags->setObjectMetadata(*metadata_with_tags);
+                    }
+                }
+            }
+
             const auto * object_info = dynamic_cast<const ObjectStorageQueueObjectInfo *>(reader.getObjectInfo().get());
             file_metadata = object_info->file_metadata;
 
@@ -1294,6 +1310,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                     .size = object_metadata->size_bytes,
                     .last_modified = object_metadata->last_modified,
                     .etag = &(object_metadata->etag),
+                    .tags = &(object_metadata->tags),
                 },
                 getContext(),
                 format_settings);
