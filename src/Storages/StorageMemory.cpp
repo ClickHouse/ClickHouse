@@ -192,8 +192,16 @@ VirtualColumnsDescription StorageMemory::createVirtuals()
 
 StorageMemory::~StorageMemory() = default;
 
-StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
+StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
+    /// A pinned snapshot is captured in advance for atomic `CREATE MATERIALIZED VIEW ... POPULATE`,
+    /// so the population reads exactly the data that existed when the view was subscribed to new inserts.
+    if (query_context)
+    {
+        if (auto pinned = query_context->getPinnedStorageSnapshot(getStorageID().uuid))
+            return pinned;
+    }
+
     auto snapshot_data = std::make_unique<SnapshotData>();
     snapshot_data->blocks = data.get();
     /// Not guaranteed to match `blocks`, but that's ok. It would probably be better to move

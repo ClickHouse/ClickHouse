@@ -135,7 +135,7 @@ Materialized views store data transformed by the corresponding [SELECT](../../..
 
 When creating a materialized view without `TO [db].[table]`, you must specify `ENGINE` – the table engine for storing data.
 
-When creating a materialized view with `TO [db].[table]`, you can't also use `POPULATE`.
+When creating a materialized view with `TO [db].[table]`, you can also use `POPULATE` to backfill the target table from the existing source data (the target table may already contain data, in which case the backfilled rows are appended).
 
 A materialized view is implemented as follows: when inserting data to the table specified in `SELECT`, part of the inserted data is converted by this `SELECT` query, and the result is inserted in the view.
 
@@ -153,14 +153,14 @@ Setting `materialized_views_ignore_errors=true` on the `INSERT` query only chang
 `materialized_views_ignore_errors` is `true` by default for `system.*_log` tables.
 :::
 
-If you specify `POPULATE`, the existing table data is inserted into the view when creating it, as if making a `CREATE TABLE ... AS SELECT ...` . Otherwise, the query contains only the data inserted in the table after creating the view. We **do not recommend** using `POPULATE`, since data inserted in the table during the view creation will not be inserted in it.
+If you specify `POPULATE`, the existing source table data is inserted into the view when creating it. Otherwise, the view contains only the data inserted into the source table after the view is created.
+
+`POPULATE` is **atomic** by default (setting `materialized_views_populate_atomically = 1`): the view is subscribed to new inserts of the source table and a snapshot of the existing data is taken together, under a brief exclusive lock on the source table, so that every row inserted concurrently with the population is delivered to the view **exactly once** — neither missed nor duplicated. The (possibly long-running) population then reads the pinned snapshot without holding any lock.
 
 :::note
-Given that `POPULATE` works like `CREATE TABLE ... AS SELECT ...` it has limitations:
-- It is not supported with Replicated database
-- It is not supported in ClickHouse cloud
+Atomicity requires the source table to support reading a pinned point-in-time snapshot — the `MergeTree` family and `Memory`. For any other source (a view, `Distributed`, `Merge`, `Buffer`, the `Log` family, or a table not in an `Atomic` database), the population falls back to the legacy, non-atomic behavior (recorded in the server log): the existing data is read with a separate, uncoordinated snapshot, so rows inserted during the population can be missed or duplicated. In that case create the view and run a separate `INSERT ... SELECT` if you need exact data. Setting `materialized_views_populate_atomically = 0` forces this legacy behavior for all sources.
 
-Instead a separate `INSERT ... SELECT` can be used.
+`POPULATE` is not supported with `Replicated` databases (use `database_replicated_allow_heavy_create` to override) and is not supported in ClickHouse Cloud.
 :::
 
 A `SELECT` query can contain `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`. Note that the corresponding conversions are performed independently on each block of inserted data. For example, if `GROUP BY` is set, data is aggregated during insertion, but only within a single packet of inserted data. The data won't be further aggregated. The exception is when using an `ENGINE` that independently performs data aggregation, such as `SummingMergeTree`.
