@@ -21,6 +21,7 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
+#include <Core/SortCursor.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -518,7 +519,10 @@ void WindowTransform::advancePartitionEnd()
     chassert(prev_frame_start < partition_end || partition_start == partition_end);
     chassert(first_block_number <= prev_frame_start.block);
     const auto block_rows = blockRowsNumber(partition_end);
-    for (; partition_end.row < block_rows; ++partition_end.row)
+
+    // First, check whether the first unprocessed row already belongs to the next partition, by
+    // comparing it against the reference row (prev_frame_start, which may live in another block, so
+    // we can't fold it into the equal-range scan below).
     {
         size_t i = 0;
         for (; i < partition_by_columns; ++i)
@@ -543,8 +547,21 @@ void WindowTransform::advancePartitionEnd()
         }
     }
 
-    // Went until the end of block, go to the next.
-    chassert(partition_end.row == block_rows);
+    // partition_end.row matches the reference on all PARTITION BY keys, so the partition extends over
+    // the contiguous run of rows equal to it. The input is sorted by PARTITION BY, so we find that
+    // run's end within this block with a fast equal-range scan.
+    const size_t partition_end_row = getEqualRangeEndAssumeSorted(
+        inputAt(partition_end), partition_by_indices, partition_end.row, block_rows, 1 /* nan_direction_hint */);
+
+    if (partition_end_row < block_rows)
+    {
+        // Found the partition boundary inside this block.
+        partition_end.row = partition_end_row;
+        partition_ended = true;
+        return;
+    }
+
+    // The partition runs to the end of this block, go to the next.
     ++partition_end.block;
     partition_end.row = 0;
 
@@ -845,10 +862,56 @@ void WindowTransform::advanceFrameEndCurrentRow()
     // Equality would mean "no data to process", for which we checked above.
     chassert(frame_end.row < rows_end);
 
-    // Advance frame_end while it is still peers with the current row.
-    for (; frame_end.row < rows_end; ++frame_end.row)
+    // Advance frame_end to the end of the current row's peer group.
+    if (window_description.frame.type != WindowFrame::FrameType::ROWS)
     {
-        if (!arePeers(current_row, frame_end))
+        // RANGE/GROUPS: peers are the rows whose ORDER BY values equal current_row's (or all rows if
+        // there is no ORDER BY). The input is sorted by ORDER BY within the partition, so we find the
+        // peer group's end with a fast equal-range scan.
+        // First check whether frame_end is still a peer of current_row -- the reference (current_row)
+        // may be in a different block, so we compare against it directly.
+        const size_t order_by_columns = order_by_indices.size();
+        size_t i = 0;
+        for (; i < order_by_columns; ++i)
+        {
+            const auto * reference_column = inputAt(current_row)[order_by_indices[i]].get();
+            const auto * compared_column = inputAt(frame_end)[order_by_indices[i]].get();
+            if (compared_column->compareAt(frame_end.row, current_row.row, *reference_column, 1 /* nan_direction_hint */) != 0)
+            {
+                break;
+            }
+        }
+
+        if (i < order_by_columns)
+        {
+            // frame_end is already past the current row's peer group.
+            frame_ended = true;
+            return;
+        }
+
+        // frame_end is a peer; extend over the run of equal ORDER BY values within this block,
+        // narrowing key by key (the data is sorted lexicographically). With no ORDER BY, all rows are peers,
+        // so the scan will just return the end of the block.
+        const UInt64 peer_group_end_row
+            = getEqualRangeEndAssumeSorted(inputAt(frame_end), order_by_indices, frame_end.row, rows_end, 1 /* nan_direction_hint */);
+
+        if (peer_group_end_row < rows_end)
+        {
+            frame_end.row = peer_group_end_row;
+            frame_ended = true;
+            return;
+        }
+        frame_end.row = rows_end;
+    }
+    else
+    {
+        // ROWS frame: a row is only its own peer, so the peer group is just current_row, and
+        // frame_end sits at current_row on entry -- advancing it one row reaches the peer group's
+        // end.
+        if (frame_end == current_row)
+            ++frame_end.row;
+
+        if (frame_end.row < rows_end)
         {
             frame_ended = true;
             return;
