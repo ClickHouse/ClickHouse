@@ -50,6 +50,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
 #include <Common/ThreadStatus.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Core/Settings.h>
@@ -1200,33 +1201,35 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     std::move(cancel_callback),
                     query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
 
-            /// SelectedRows / SelectedBytes are cumulative thread-group counters for the whole outer query.
-            /// EXPLAIN ANALYZE can appear as a table expression, so an earlier analyze subquery in the same
-            /// outer query may have already advanced them. Snapshot the baseline before executing and report
-            /// only the delta produced by this inner pipeline.
-            UInt64 read_rows_before = 0;
-            UInt64 read_bytes_before = 0;
-            if (auto thread_group = CurrentThread::getGroup())
+            ThreadGroupPtr analyze_thread_group;
+            if (auto outer_thread_group = CurrentThread::getGroup())
             {
-                read_rows_before  = thread_group->performance_counters[ProfileEvents::SelectedRows];
-                read_bytes_before = thread_group->performance_counters[ProfileEvents::SelectedBytes];
+                analyze_thread_group = std::make_shared<ThreadGroup>(outer_thread_group);
+                analyze_thread_group->memory_tracker.setDescription("EXPLAIN ANALYZE");
             }
 
             watch.restart();
-            executor.execute();
+            {
+                std::optional<ThreadGroupSwitcher> switcher;
+                if (analyze_thread_group)
+                    switcher.emplace(analyze_thread_group, ThreadName::COMPLETED_PIPELINE_EXECUTOR, /*allow_existing_group=*/true);
+                executor.execute();
+            }
             UInt64 execute_ns = watch.elapsed();
 
             UInt64 total_time_ns = planning_ns + execute_ns;
 
             UInt64 read_rows = 0;
             UInt64 read_bytes = 0;
-            Int64  peak_memory = 0;
+            /// No thread group means the pipeline's resource usage cannot be attributed, so the peak is
+            /// omitted from the header (see formatHeaderExplainAnalyze, which skips it for negative values).
+            Int64  peak_memory = -1;
 
-            if (auto thread_group = CurrentThread::getGroup())
+            if (analyze_thread_group)
             {
-                read_rows   = thread_group->performance_counters[ProfileEvents::SelectedRows] - read_rows_before;
-                read_bytes  = thread_group->performance_counters[ProfileEvents::SelectedBytes] - read_bytes_before;
-                peak_memory = thread_group->memory_tracker.getPeak();
+                read_rows   = analyze_thread_group->performance_counters[ProfileEvents::SelectedRows];
+                read_bytes  = analyze_thread_group->performance_counters[ProfileEvents::SelectedBytes];
+                peak_memory = analyze_thread_group->memory_tracker.getPeak();
             }
 
             AnalyzeStepsStats steps_to_stats(pipeline, execute_ns);
