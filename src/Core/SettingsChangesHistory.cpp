@@ -43,6 +43,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
             {"allow_lossy_numeric_supertype", false, false, "New setting that lets if/multiIf/coalesce/ifNull/array/map resolve all-numeric branches with no lossless common type (e.g. Decimal + Float64) to a numeric supertype (Float64) instead of a Variant, so the result can be aggregated."},
+            {"format_geojson_validate_geometry", true, true, "New setting that controls whether the GeoJSON format enforces RFC 7946 geometry validity (minimum points per line and ring, ring closure, non-empty multi-geometries) when reading and writing"},
+            {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},
+            {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
