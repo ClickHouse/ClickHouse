@@ -84,7 +84,9 @@ namespace
                     auto & block_column = result.safeGetByPosition(result_block_index);
                     auto & result_block_column = result_block.safeGetByPosition(result_block_index);
 
-                    result_block_column.column->assumeMutable()->insertRangeFrom(*block_column.column, 0, block_column.column->size());
+                    auto mutable_column = IColumn::mutate(std::move(result_block_column.column));
+                    mutable_column->insertRangeFrom(*block_column.column, 0, block_column.column->size());
+                    result_block_column.column = std::move(mutable_column);
                 }
             }
 
