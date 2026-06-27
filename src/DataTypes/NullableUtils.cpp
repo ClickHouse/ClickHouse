@@ -169,9 +169,13 @@ void applyParentNullMapToExtractedSubcolumn(
 
 DataTypePtr NullableSubcolumnCreator::create(const DataTypePtr & prev) const
 {
-    if (!canExtractedSubcolumnsBeInsideNullable(prev))
-        return prev;
-    return makeNullableSafe(prev);
+    if (canExtractedSubcolumnsBeInsideNullable(prev))
+        return makeNullableSafe(prev);
+
+    /// A non-nullable `LowCardinality(T)` cannot be wrapped in `Nullable`, but it must still be able to
+    /// represent the outer column's NULLs, so promote it to `LowCardinality(Nullable(T))`. For every other
+    /// type this returns `prev` unchanged, matching the previous behaviour.
+    return makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(prev);
 }
 
 SerializationPtr NullableSubcolumnCreator::create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const
@@ -195,14 +199,29 @@ ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
     if (canExtractedSubcolumnsBeInsideNullable(prev))
         return ColumnNullable::create(prev, null_map);
 
-    /// The extracted subcolumn cannot be wrapped into Nullable, but if it can represent NULL itself,
-    /// mark rows that are NULL in the outer column as NULL in it.
-    if (null_map && canContainNull(*prev))
+    if (null_map)
     {
         const auto & outer_null_map_data = assert_cast<const ColumnUInt8 &>(*null_map).getData();
-        auto mutable_column = IColumn::mutate(prev);
-        applyParentNullMapToExtractedSubcolumn(mutable_column, outer_null_map_data, 0, 0);
-        return mutable_column;
+
+        /// The extracted subcolumn cannot be wrapped into Nullable, but if it can already represent NULL
+        /// itself, mark rows that are NULL in the outer column as NULL in it.
+        if (canContainNull(*prev))
+        {
+            auto mutable_column = IColumn::mutate(prev);
+            applyParentNullMapToExtractedSubcolumn(mutable_column, outer_null_map_data, 0, 0);
+            return mutable_column;
+        }
+
+        /// A non-nullable `LowCardinality(T)` cannot represent NULL as-is, but it can once promoted to
+        /// `LowCardinality(Nullable(T))` -- which is what the type `create(DataTypePtr)` returns. Promote the
+        /// column the same way with `cloneNullable()` before folding in the outer null map, so the extracted
+        /// (type, column) pair stays consistent.
+        if (const auto * prev_lc = checkAndGetColumn<ColumnLowCardinality>(prev.get()))
+        {
+            auto mutable_column = prev_lc->cloneNullable();
+            applyParentNullMapToExtractedSubcolumn(mutable_column, outer_null_map_data, 0, 0);
+            return mutable_column;
+        }
     }
 
     return prev;
