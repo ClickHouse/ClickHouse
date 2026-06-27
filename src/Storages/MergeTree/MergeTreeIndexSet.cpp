@@ -4,6 +4,7 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 
@@ -49,7 +50,7 @@ MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
     const Block & index_sample_block_,
     size_t max_rows_,
     MutableColumns && mutable_columns_,
-    std::vector<Range> && set_hyperrectangle_)
+    Ranges && set_hyperrectangle_)
     : index_name(index_name_)
     , max_rows(max_rows_)
     , block(index_sample_block_.cloneWithColumns(std::move(mutable_columns_)))
@@ -584,7 +585,11 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
             /// "It's a bug!" exception from `__bitWrapperFunc` at execution time. Fall back to
             /// `UNKNOWN_FIELD` so that the index does not prune granules and the query goes
             /// through the regular filter path.
-            if (WhichDataType(removeNullable(atom_node_ptr->result_type)).isInteger())
+            const auto & atom_result_type = atom_node_ptr->result_type;
+            const bool is_integer_atom = WhichDataType(atom_result_type).isLowCardinality()
+                ? WhichDataType(removeLowCardinality(atom_result_type)).isInteger()
+                : WhichDataType(removeNullable(atom_result_type)).isInteger();
+            if (is_integer_atom)
             {
                 auto bit_wrapper_function = FunctionFactory::instance().get("__bitWrapperFunc", context);
                 result_node = &result_dag.addFunction(bit_wrapper_function, {atom_node_ptr}, {});
