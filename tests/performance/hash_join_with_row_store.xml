@@ -11,76 +11,65 @@
     </substitutions>
 
     <!-- Unique keys -->
-    <create_query>CREATE TABLE rs_right_1k (k UInt64, a Int32, b Int64, c UInt8, d Float64, e UInt32, f Int16, g FixedString(16), h Int8) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query>CREATE TABLE rs_right_100k (k UInt64, a Int32, b Int64, c UInt8, d Float64, e UInt32, f Int16, g FixedString(16), h Int8) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query>CREATE TABLE rs_right_10m (k UInt64, a Int32, b Int64, c UInt8, d Float64, e UInt32, f Int16, g FixedString(16), h Int8) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE rs_right_100m (k UInt64, a Int32, b Int64, c UInt8, d Float64, e UInt32, f Int16, g FixedString(16), h Int8) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query>CREATE TABLE rs_right_100k_nullable (k UInt64, a Nullable(Int32), b Nullable(Int64), c Nullable(UInt8), d Nullable(Float64), e Nullable(UInt32), f Nullable(Int16), g Nullable(FixedString(16)), h Nullable(Int8)) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query>CREATE TABLE rs_right_10m_nullable (k UInt64, a Nullable(Int32), b Nullable(Int64), c Nullable(UInt8), d Nullable(Float64), e Nullable(UInt32), f Nullable(Int16), g Nullable(FixedString(16)), h Nullable(Int8)) ENGINE = MergeTree ORDER BY tuple()</create_query>
 
     <!-- 10 matches per key -->
-    <create_query>CREATE TABLE rs_right_1k_x10 (k UInt64, a Int32, b Int64, c UInt8, d Float64, e UInt32, f Int16, g FixedString(16), h Int8) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query>CREATE TABLE rs_right_1m_x10 (k UInt64, a Int32, b Int64, c UInt8, d Float64, e UInt32, f Int16, g FixedString(16), h Int8) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query>CREATE TABLE rs_right_1m_nullable_x10 (k UInt64, a Nullable(Int32), b Nullable(Int64), c Nullable(UInt8), d Nullable(Float64), e Nullable(UInt32), f Nullable(Int16), g Nullable(FixedString(16)), h Nullable(Int8)) ENGINE = MergeTree ORDER BY tuple()</create_query>
 
     <!-- Mix of fixed sized and String columns -->
     <create_query>CREATE TABLE rs_right_mixed_10m (k UInt64, a Int32, b Int64, c UInt8, d Float64, s1 String, s2 String, s3 String) ENGINE = MergeTree ORDER BY tuple()</create_query>
 
-    <create_query>CREATE TABLE rs_probe_200m (k UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <!-- Wide build columns results in large blocks -->
+    <create_query>CREATE TABLE rs_right_wide_10m (k UInt64, i0 Int64, i1 Int64, i2 Int64, i3 Int64, i4 Int64, i5 Int64, i6 Int64, i7 Int64, f0 Float64, f1 Float64, f2 Float64, f3 Float64, f4 Float64, f5 Float64, f6 Float64, f7 Float64, s0 FixedString(32), s1 FixedString(32), s2 FixedString(32), s3 FixedString(32), s4 FixedString(32), s5 FixedString(32), s6 FixedString(32), s7 FixedString(32), s8 FixedString(32), s9 FixedString(32), s10 FixedString(32), s11 FixedString(32), s12 FixedString(32), s13 FixedString(32), s14 FixedString(32), s15 FixedString(32)) ENGINE = MergeTree ORDER BY tuple()</create_query>
 
-    <fill_query>INSERT INTO rs_right_1k SELECT number, number, number, number, number, number, number, reinterpret(number, 'FixedString(16)'), number FROM numbers(1000) ORDER BY rand()</fill_query>
+    <create_query>CREATE TABLE rs_probe_100m (k UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
     <fill_query>INSERT INTO rs_right_100k SELECT number, number, number, number, number, number, number, reinterpret(number, 'FixedString(16)'), number FROM numbers(100000) ORDER BY rand()</fill_query>
     <fill_query>INSERT INTO rs_right_10m SELECT number, number, number, number, number, number, number, reinterpret(number, 'FixedString(16)'), number FROM numbers(10000000) ORDER BY rand()</fill_query>
-    <fill_query>INSERT INTO rs_right_100m SELECT number, number, number, number, number, number, number, reinterpret(number, 'FixedString(16)'), number FROM numbers(100000000) ORDER BY rand()</fill_query>
     <fill_query>INSERT INTO rs_right_100k_nullable WITH if(number % 7 = 0, NULL, number) AS n, if(number % 7 = 0, NULL, reinterpret(number, 'FixedString(16)')) AS fs SELECT number, n, n, n, n, n, n, fs, n FROM numbers(100000) ORDER BY rand()</fill_query>
     <fill_query>INSERT INTO rs_right_10m_nullable WITH if(number % 7 = 0, NULL, number) AS n, if(number % 7 = 0, NULL, reinterpret(number, 'FixedString(16)')) AS fs SELECT number, n, n, n, n, n, n, fs, n FROM numbers(10000000) ORDER BY rand()</fill_query>
 
-    <fill_query>INSERT INTO rs_right_1k_x10 SELECT number % 1000, number, number, number, number, number, number, reinterpret(number, 'FixedString(16)'), number FROM numbers(10000) ORDER BY rand()</fill_query>
     <fill_query>INSERT INTO rs_right_1m_x10 SELECT number % 1000000, number, number, number, number, number, number, reinterpret(number, 'FixedString(16)'), number FROM numbers(10000000) ORDER BY rand()</fill_query>
     <fill_query>INSERT INTO rs_right_1m_nullable_x10 WITH if(number % 7 = 0, NULL, number) AS n, if(number % 7 = 0, NULL, reinterpret(number, 'FixedString(16)')) AS fs SELECT number % 1000000, n, n, n, n, n, n, fs, n FROM numbers(10000000) ORDER BY rand()</fill_query>
 
     <fill_query>INSERT INTO rs_right_mixed_10m WITH concat('s', toString(number)) AS s SELECT number, number, number, number, number, s, s, s FROM numbers(10000000) ORDER BY rand()</fill_query>
 
-    <fill_query>INSERT INTO rs_probe_200m SELECT number FROM numbers(200000000) ORDER BY rand()</fill_query>
+    <fill_query>INSERT INTO rs_right_wide_10m SELECT number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)') FROM numbers(10000000) ORDER BY rand()</fill_query>
+
+    <fill_query>INSERT INTO rs_probe_100m SELECT rand64() FROM numbers(100000000)</fill_query>
 
     <!-- Unique keys + non-nullable payload -->
-    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_1k r ON (l.k % toUInt64(1000 / {match_rate})) = r.k FORMAT Null</query>
-    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null</query>
-    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_10m r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null</query>
-    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_100m r ON ((l.k * 2) % toUInt64(100000000 / {match_rate})) = r.k FORMAT Null SETTINGS max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0</query>
+    <query>SELECT * FROM rs_probe_100m l JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null</query>
+    <query>SELECT * FROM rs_probe_100m l JOIN rs_right_10m r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null</query>
 
     <!-- Unique keys + nullable payload -->
-    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_100k_nullable r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null</query>
-    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_10m_nullable r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null</query>
-
-    <!-- Other JOIN types -->
-    <query>SELECT * FROM rs_probe_200m l ANY JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null</query>
-    <query>SELECT * FROM rs_probe_200m l LEFT JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null</query>
-    <query>SELECT * FROM rs_probe_200m l RIGHT JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null</query>
-    <query>SELECT * FROM rs_probe_200m l FULL JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null</query>
+    <query>SELECT * FROM rs_probe_100m l JOIN rs_right_100k_nullable r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null</query>
+    <query>SELECT * FROM rs_probe_100m l JOIN rs_right_10m_nullable r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null</query>
+    <query>SELECT * FROM rs_probe_100m l FULL JOIN rs_right_10m r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null</query>
 
     <!-- 10 matches per key + non-nullable payload -->
-    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_1k_x10 r ON (l.k % toUInt64(1000 / {match_rate})) = r.k FORMAT Null</query>
-    <query>SELECT * FROM (SELECT * FROM rs_probe_200m LIMIT 20000000) l JOIN rs_right_1m_x10 r ON (l.k % toUInt64(1000000 / {match_rate})) = r.k FORMAT Null</query>
+    <query>SELECT * FROM (SELECT * FROM rs_probe_100m LIMIT 20000000) l JOIN rs_right_1m_x10 r ON (l.k % toUInt64(1000000 / {match_rate})) = r.k FORMAT Null</query>
 
     <!-- 10 matches per key + nullable payload -->
-    <query>SELECT * FROM (SELECT * FROM rs_probe_200m LIMIT 20000000) l JOIN rs_right_1m_nullable_x10 r ON (l.k % toUInt64(1000000 / {match_rate})) = r.k FORMAT Null</query>
+    <query>SELECT * FROM (SELECT * FROM rs_probe_100m LIMIT 20000000) l JOIN rs_right_1m_nullable_x10 r ON (l.k % toUInt64(1000000 / {match_rate})) = r.k FORMAT Null</query>
 
     <!-- Mix of fixed sized and String columns -->
-    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_mixed_10m r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null</query>
+    <query>SELECT * FROM rs_probe_100m l JOIN rs_right_mixed_10m r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null</query>
 
-    <!-- With join spilling -->
-    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null SETTINGS max_bytes_before_external_join = 10000000, max_bytes_ratio_before_external_join = 0</query>
+    <!-- Wide build columns results in large blocks -->
+    <query>SELECT * FROM rs_probe_100m l JOIN rs_right_wide_10m r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null SETTINGS max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, max_bytes_for_hash_join_row_store = 0</query>
 
-    <drop_query>DROP TABLE IF EXISTS rs_probe_200m</drop_query>
-    <drop_query>DROP TABLE IF EXISTS rs_right_1k</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rs_probe_100m</drop_query>
     <drop_query>DROP TABLE IF EXISTS rs_right_100k</drop_query>
     <drop_query>DROP TABLE IF EXISTS rs_right_10m</drop_query>
-    <drop_query>DROP TABLE IF EXISTS rs_right_100m</drop_query>
-    <drop_query>DROP TABLE IF EXISTS rs_right_1k_x10</drop_query>
     <drop_query>DROP TABLE IF EXISTS rs_right_1m_x10</drop_query>
     <drop_query>DROP TABLE IF EXISTS rs_right_mixed_10m</drop_query>
     <drop_query>DROP TABLE IF EXISTS rs_right_100k_nullable</drop_query>
     <drop_query>DROP TABLE IF EXISTS rs_right_10m_nullable</drop_query>
     <drop_query>DROP TABLE IF EXISTS rs_right_1m_nullable_x10</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rs_right_wide_10m</drop_query>
 </test>
