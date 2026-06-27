@@ -9,13 +9,14 @@
 
 SET enable_analyzer = 1;
 
--- full_sorting_merge is the only enabled algorithm and cannot do SEMI/ANTI:
--- a clean error, not a server abort.
-SELECT count() FROM (SELECT number AS x FROM numbers(10)) AS a
+-- full_sorting_merge is the only enabled algorithm and cannot do SEMI/ANTI. Assert via
+-- EXPLAIN: the fix declines at planning time so EXPLAIN already errors, while the unfixed
+-- server builds the plan and only errors later at execution (so its EXPLAIN succeeds).
+EXPLAIN SELECT count() FROM (SELECT number AS x FROM numbers(10)) AS a
 SEMI LEFT JOIN (SELECT number AS x FROM numbers(5)) AS b ON a.x = b.x
 SETTINGS join_algorithm = 'full_sorting_merge'; -- { serverError NOT_IMPLEMENTED }
 
-SELECT count() FROM (SELECT number AS x FROM numbers(10)) AS a
+EXPLAIN SELECT count() FROM (SELECT number AS x FROM numbers(10)) AS a
 ANTI LEFT JOIN (SELECT number AS x FROM numbers(5)) AS b ON a.x = b.x
 SETTINGS join_algorithm = 'full_sorting_merge'; -- { serverError NOT_IMPLEMENTED }
 
