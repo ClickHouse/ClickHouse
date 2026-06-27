@@ -13,6 +13,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <vector>
 
 
 namespace DB
@@ -55,26 +56,20 @@ public:
     /// against the `QUERIES_PER_NORMALIZED_HASH` limit.
     void usedPerNormalizedHash(UInt64 normalized_query_hash) const;
 
-    /// For `NORMALIZED_QUERY_HASH` keyed quotas: resolves intervals for a specific hash,
-    /// then tracks resource consumption against the resolved intervals.
-    void usedForNormalizedQuery(UInt64 normalized_query_hash, QuotaType quota_type, QuotaValue value, bool check_exceeded = true) const;
+    /// Tracks consumption of a per-query counter (e.g. `QUERIES`, `QUERY_SELECTS`, `ERRORS`)
+    /// against every governing quota. For `NORMALIZED_QUERY_HASH` quotas the consumption is
+    /// accounted against the intervals resolved for `normalized_query_hash`; for all other
+    /// quotas it is accounted against the shared session intervals.
+    void usedForQuery(UInt64 normalized_query_hash, QuotaType quota_type, QuotaValue value, bool check_exceeded = true) const;
 
-    /// Checks if the quota exceeded. If so, throws an exception.
+    /// Checks if any of the governing quotas is exceeded. If so, throws an exception.
     void checkExceeded() const;
     void checkExceeded(QuotaType quota_type) const;
 
     void reset(QuotaType quota_type) const;
 
-    /// Returns the information about quota consumption.
-    std::optional<QuotaUsage> getUsage() const;
-
-    /// Returns true if this quota is keyed by `NORMALIZED_QUERY_HASH`.
-    /// When true, callers should use `usedForNormalizedQuery` instead of `used`.
-    bool isKeyedByNormalizedQueryHash() const
-    {
-        std::lock_guard lock(resolved_intervals_mutex);
-        return interval_resolver != nullptr;
-    }
+    /// Returns the information about consumption of all governing quotas.
+    std::vector<QuotaUsage> getAllUsage() const;
 
 
 private:
@@ -119,17 +114,38 @@ private:
     /// Used when the quota is keyed by `NORMALIZED_QUERY_HASH`.
     using IntervalResolver = std::function<boost::shared_ptr<const Intervals>(const String & key)>;
 
+    /// Tracks consumption of a single quota governing this user/context. A user/context may be
+    /// governed by several quotas at once (e.g. one keyed by IP address and another by normalized
+    /// query hash); each of them is represented by a `SingleQuota` and all of them are enforced.
+    struct SingleQuota
+    {
+        /// Session-level intervals. For most key types these hold the counters directly.
+        /// For `NORMALIZED_QUERY_HASH` quotas the actual counters are resolved lazily per query
+        /// hash (see `interval_resolver`); these intervals then only carry the shared
+        /// `QUERIES_PER_NORMALIZED_HASH` bookkeeping.
+        boost::shared_ptr<const Intervals> intervals;
+
+        /// Non-null only for `NORMALIZED_QUERY_HASH` quotas: resolves intervals per query hash.
+        IntervalResolver interval_resolver;
+
+        /// Cache of resolved intervals per normalized query hash.
+        mutable std::mutex resolved_intervals_mutex;
+        mutable HashMap<UInt64, boost::shared_ptr<const Intervals>> resolved_intervals_cache;
+    };
+
+    /// All quotas governing this user/context. Swapped atomically by `QuotaCache` whenever quota
+    /// definitions change.
+    using Quotas = std::vector<std::unique_ptr<SingleQuota>>;
+
+    /// Resolves (and caches) the per-hash intervals of `quota` for `normalized_query_hash`.
+    /// `quota.interval_resolver` must be set.
+    static boost::shared_ptr<const Intervals> resolveIntervalsForHash(const SingleQuota & quota, UInt64 normalized_query_hash);
+
     struct Impl;
 
     const Params params;
-    boost::atomic_shared_ptr<const Intervals> intervals; /// atomically changed by QuotaUsageManager
-    std::atomic<bool> empty = false; /// Use a separate flag to avoid loading intervals, which is way more expensive than an atomic bool
-
-    /// For `NORMALIZED_QUERY_HASH` keyed quotas: callback to resolve intervals per hash.
-    IntervalResolver interval_resolver;
-    /// Cache of resolved intervals per normalized query hash.
-    mutable std::mutex resolved_intervals_mutex;
-    mutable HashMap<UInt64, boost::shared_ptr<const Intervals>> resolved_intervals_cache;
+    boost::atomic_shared_ptr<const Quotas> quotas; /// atomically changed by QuotaCache when quotas change
+    std::atomic<bool> empty = false; /// Use a separate flag to avoid loading `quotas`, which is way more expensive than an atomic bool
 };
 
 }
