@@ -1,0 +1,6 @@
+codebook_length	32
+code_length_8bit	2
+code_length_9bit	4
+self_distance	0
+ranking_l2	1
+column_self_is_nearest	1

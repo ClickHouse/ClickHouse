@@ -171,7 +171,9 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 5; }
     bool useDefaultImplementationForConstants() const override { return false; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3, 4}; }
+    /// The codebook (arg 1) need not be a query constant: it may be the result of `pqTrain` (not constant-folded). Only
+    /// the scalar params are required constant; `getCodebook` accepts a const or a uniform full column.
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2, 3, 4}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -189,6 +191,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        /// Dry-run / empty blocks pass zero-row (and possibly non-const) columns; nothing to encode, and the codebook is
+        /// not materialized yet.
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
         const UInt64 dimensions = getConstUInt(arguments[2], name, 2);
         const UInt64 m = getConstUInt(arguments[3], name, 3);
         const UInt64 nbits = getConstUInt(arguments[4], name, 4);
