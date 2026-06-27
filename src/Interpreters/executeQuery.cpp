@@ -63,6 +63,7 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
@@ -1408,100 +1409,20 @@ static bool isConstructionSettingName(std::string_view name)
         || name == "limit" || name == "offset" || name == "page";
 }
 
-/// Collect (deduplicated) the names of any construction settings that appear in a `SETTINGS` clause
-/// anywhere in the AST subtree.
-static void collectConstructionSettings(const IAST * ast, std::vector<String> & found)
+/// True if any `SETTINGS` clause anywhere in the AST subtree carries a query-construction setting
+/// (`select` / `filter` / `order` / `sort` / `limit` / `offset` / `page`). Exposed (via
+/// `QueryConstructionSettings.h`) so a stored view's inner query — which bypasses this file's wrapping
+/// — can cheaply decide whether it needs construction-settings materialization before execution.
+bool hasConstructionSettings(const IAST & ast)
 {
-    if (!ast)
-        return;
-    if (const auto * set_query = ast->as<ASTSetQuery>())
-    {
+    if (const auto * set_query = ast.as<ASTSetQuery>())
         for (const auto & change : set_query->changes)
-            if (isConstructionSettingName(change.name)
-                && std::find(found.begin(), found.end(), change.name) == found.end())
-                found.push_back(change.name);
-    }
-    for (const auto & child : ast->children)
-        collectConstructionSettings(child.get(), found);
-}
-
-/// The query-construction settings (`select` / `filter` / `order` / `sort` / `limit` / `offset` /
-/// `page`) shape the result a query returns to the client. `INSERT … SELECT`, `CREATE … AS SELECT`
-/// and similar statements return no such result, so these settings are deliberately not applied to
-/// them (see `applyQueryConstructionSettings` and the nested wrappers, which stop at those query
-/// kinds). Accepting them silently would be a foot-gun — e.g.
-/// `INSERT INTO dst SETTINGS filter = 'x > 0' SELECT * FROM src` would insert the *unfiltered* rows.
-/// Reject them with a clear error instead.
-///
-/// Two sources are checked. First, the whole statement subtree is scanned, so a construction setting
-/// in the statement's own `SETTINGS`, in the source `SELECT`'s `SETTINGS`, or in any nested
-/// subquery's `SETTINGS` is caught. Second, the effective context is inspected: a construction
-/// setting can also arrive out-of-band, with no `SETTINGS` node in the AST for the scan to find — an
-/// HTTP URL parameter (`/?limit=2&query=INSERT …`), a repeated `?filter=` or a URL-path filter (kept
-/// in the HTTP combined-filter channel), or a session-level `SET filter = …`. `applyQueryConstructionSettings`
-/// returns for a write query, so such a setting would otherwise be silently ignored and the write
-/// would process all rows. None of these take effect for a write statement, so reject them too.
-static void rejectConstructionSettingsOnWriteQuery(const ASTPtr & ast, const Context & context)
-{
-    if (!ast)
-        return;
-
-    /// `EXPLAIN <write query> SETTINGS …` carries the settings on the explained query.
-    if (const auto * explain_query = ast->as<ASTExplainQuery>())
-    {
-        rejectConstructionSettingsOnWriteQuery(explain_query->getExplainedQuery(), context);
-        return;
-    }
-
-    const char * query_kind = nullptr;
-    if (const auto * insert_query = ast->as<ASTInsertQuery>())
-    {
-        if (!insert_query->select)
-            return; /// `INSERT … VALUES` / `INSERT … FROM INFILE`: no source query to shape.
-        query_kind = "INSERT ... SELECT";
-    }
-    else if (const auto * create_query = ast->as<ASTCreateQuery>())
-    {
-        if (!create_query->select)
-            return; /// plain `CREATE TABLE` without `AS SELECT`.
-        query_kind = "CREATE ... AS SELECT";
-    }
-    else
-        return;
-
-    std::vector<String> found;
-    collectConstructionSettings(ast.get(), found);
-
-    /// Also reject construction settings carried by the effective context — HTTP URL parameters, a
-    /// session-level `SET …`, an inherited profile default, or the HTTP combined-filter channel — none
-    /// of which appear as a `SETTINGS` node in the AST for the scan above to see.
-    const auto & settings = context.getSettingsRef();
-    auto note = [&](const char * name, bool present)
-    {
-        if (present && std::find(found.begin(), found.end(), name) == found.end())
-            found.emplace_back(name);
-    };
-    note("select", !settings[Setting::select].value.empty());
-    note("filter", !settings[Setting::filter].value.empty() || !context.getHTTPCombinedFilter().empty());
-    note("order", !settings[Setting::order].value.empty());
-    note("sort", !settings[Setting::sort].value.empty());
-    note("limit", settings[Setting::limit].value != 0);
-    note("offset", settings[Setting::offset].value != 0);
-    note("page", settings[Setting::page].value != 0);
-
-    if (found.empty())
-        return;
-
-    std::sort(found.begin(), found.end());
-    String names_list;
-    for (const auto & name : found)
-        names_list += (names_list.empty() ? "`" : ", `") + name + "`";
-
-    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-        "Query-construction settings ({}) shape the result a query returns to the client, so they are "
-        "not supported on {}, which returns no such result — they would otherwise be silently ignored. "
-        "Use explicit `WHERE` / `ORDER BY` / `LIMIT` clauses in the source query instead.",
-        names_list, query_kind);
+            if (isConstructionSettingName(change.name))
+                return true;
+    for (const auto & child : ast.children)
+        if (child && hasConstructionSettings(*child))
+            return true;
+    return false;
 }
 
 /// Recursively materialize the construction settings (`select` / `filter` / `order` / `sort` and
@@ -1511,17 +1432,51 @@ static void rejectConstructionSettingsOnWriteQuery(const ASTPtr & ast, const Con
 /// / filters / orders that subquery's result, but does not affect deeper subqueries or the outer
 /// query. The session/user settings are NOT read here — they apply only to the outermost query (from
 /// the context, in `applyQueryConstructionSettings`).
-static void wrapNestedConstructionSettings(
+void wrapNestedConstructionSettings(
     ASTPtr & ast, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
 {
     if (!ast)
         return;
 
-    /// Construction settings shape a query's result; `INSERT … SELECT`, `CREATE … AS SELECT` and
-    /// similar queries do not return a result, so the settings are irrelevant to them and to their
-    /// source `SELECT`. Stop here so neither the source query nor any subquery inside it is wrapped.
-    if (ast->as<ASTInsertQuery>() || ast->as<ASTCreateQuery>())
+    /// `INSERT … SELECT` and an *immediate* `CREATE … AS SELECT` (`CREATE TABLE … AS SELECT`, or a
+    /// `POPULATE`d materialized view) run their source `SELECT` right now, so a construction setting
+    /// the source `SELECT` carries in its own `SETTINGS` clause must be materialized onto it — exactly
+    /// as for a standalone `SELECT` (e.g. `INSERT INTO a SELECT … SETTINGS limit = 1` inserts one row).
+    /// The source `SELECT` is stored both as the `select` member and in `children`; recurse into the
+    /// member and keep the matching `children` entry in sync, so the rewrite is visible where
+    /// `InterpreterInsertQuery` / `InterpreterCreateQuery` read it. Settings on the `INSERT` / `CREATE`
+    /// node itself (not on the source `SELECT`) are left alone — like any setting, they do not
+    /// propagate into the `SELECT`, so they have no effect on the result it produces.
+    if (auto * insert_query = ast->as<ASTInsertQuery>())
+    {
+        if (insert_query->select)
+        {
+            ASTPtr old_select = insert_query->select;
+            wrapNestedConstructionSettings(insert_query->select, max_query_size, max_parser_depth, max_parser_backtracks);
+            if (insert_query->select != old_select)
+                for (auto & child : insert_query->children)
+                    if (child == old_select)
+                    {
+                        child = insert_query->select;
+                        break;
+                    }
+        }
         return;
+    }
+    if (auto * create_query = ast->as<ASTCreateQuery>())
+    {
+        /// An ordinary view / non-`POPULATE` materialized or window view stores its `SELECT` and runs it
+        /// on read, so its construction settings stay in the stored definition and are materialized at
+        /// read time (in the `StorageView` constructor). Only the immediate-insert kind is wrapped here.
+        if (create_query->select && create_query->isCreateQueryWithImmediateInsertSelect())
+        {
+            ASTPtr select_ptr = create_query->select->ptr();
+            wrapNestedConstructionSettings(select_ptr, max_query_size, max_parser_depth, max_parser_backtracks);
+            if (select_ptr.get() != create_query->select)
+                create_query->replace(create_query->select, select_ptr);
+        }
+        return;
+    }
 
     /// Bottom-up: handle inner-most subqueries before their parents.
     for (auto & child : ast->children)
@@ -1560,11 +1515,36 @@ static void wrapPerArmConstructionSettings(
     if (!ast)
         return;
 
-    /// Construction settings shape a query's result; they are irrelevant for `INSERT … SELECT`,
-    /// `CREATE … AS SELECT` and similar non-result queries, so stop here (see
+    /// Descend into an `INSERT … SELECT` / immediate `CREATE … AS SELECT` source `SELECT` and keep the
+    /// `select` member in sync, so per-arm settings on a source `UNION` are materialized too (see
     /// `wrapNestedConstructionSettings`).
-    if (ast->as<ASTInsertQuery>() || ast->as<ASTCreateQuery>())
+    if (auto * insert_query = ast->as<ASTInsertQuery>())
+    {
+        if (insert_query->select)
+        {
+            ASTPtr old_select = insert_query->select;
+            wrapPerArmConstructionSettings(insert_query->select, max_query_size, max_parser_depth, max_parser_backtracks);
+            if (insert_query->select != old_select)
+                for (auto & child : insert_query->children)
+                    if (child == old_select)
+                    {
+                        child = insert_query->select;
+                        break;
+                    }
+        }
         return;
+    }
+    if (auto * create_query = ast->as<ASTCreateQuery>())
+    {
+        if (create_query->select && create_query->isCreateQueryWithImmediateInsertSelect())
+        {
+            ASTPtr select_ptr = create_query->select->ptr();
+            wrapPerArmConstructionSettings(select_ptr, max_query_size, max_parser_depth, max_parser_backtracks);
+            if (select_ptr.get() != create_query->select)
+                create_query->replace(create_query->select, select_ptr);
+        }
+        return;
+    }
 
     /// Bottom-up: handle inner-most unions before their parents.
     for (auto & child : ast->children)
@@ -2208,14 +2188,6 @@ static BlockIO executeQueryImpl(
             /// values are not read into the context as (spurious) query-level settings.
             wrapPerArmConstructionSettings(out_ast,
                 max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-
-            /// Construction settings are result modifiers and are not applied to write-producing
-            /// statements (`INSERT … SELECT` / `CREATE … AS SELECT`); reject them there instead of
-            /// silently ignoring them — whether they appear in the query's AST or are carried by the
-            /// effective context (HTTP URL parameters / combined filter, session `SET`, profile
-            /// defaults). Runs after the request/session settings are on the context, but before the
-            /// query's own `SETTINGS` clause is read into it below (that case is covered by the AST scan).
-            rejectConstructionSettingsOnWriteQuery(out_ast, *context);
 
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
             /// to allow settings to take effect.
