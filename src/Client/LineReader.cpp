@@ -175,13 +175,21 @@ replxx::Replxx::hints_t LineReader::Suggest::getHints(
     const String & prefix, size_t prefix_length, const char * word_break_characters,
     const Words & priority_words, size_t max_hints)
 {
+    /// Mirror `set_complete_on_empty(false)`: do not show hints when there is nothing typed to
+    /// complete (otherwise the whole dictionary would be hinted). Determine this *before* matching:
+    /// the hint callback runs on every repaint with a zero delay, and for an empty hint context
+    /// (e.g. the cursor right after `SELECT `) the empty last word matches every suggestion, so
+    /// `getMatchingWords` would otherwise fold and stable-sort the entire dictionary only to have
+    /// the result dropped here.
+    auto last_word_pos = prefix.find_last_of(word_break_characters);
+    const std::string_view last_word = (std::string::npos == last_word_pos)
+        ? std::string_view{prefix}
+        : std::string_view{prefix}.substr(last_word_pos + 1);
+    if (last_word.empty())
+        return {};
+
     bool last_word_empty = false;
     Words matched = getMatchingWords(prefix, prefix_length, word_break_characters, priority_words, last_word_empty);
-
-    /// Mirror `set_complete_on_empty(false)`: do not show hints when there is nothing typed to
-    /// complete (otherwise the whole dictionary would be hinted).
-    if (last_word_empty)
-        return {};
 
     if (matched.size() > max_hints)
         matched.resize(max_hints);
