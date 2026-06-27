@@ -1602,4 +1602,17 @@ ASTPtr columnConstantToExactLiteralAST(const ColumnPtr & column, size_t row, con
     return columnConstantToExactLiteralASTImpl(column, row, type);
 }
 
+ASTPtr makeCastToTypeNameAST(ASTPtr value, const String & type_name)
+{
+    if (const auto * func = value->as<ASTFunction>();
+        func && func->name == "_CAST" && func->arguments && func->arguments->children.size() == 2)
+    {
+        if (const auto * type_literal = func->arguments->children[1]->as<ASTLiteral>();
+            type_literal && type_literal->value.getType() == Field::Types::String
+            && type_literal->value.safeGet<String>() == type_name)
+            return value;
+    }
+    return makeASTFunction("_CAST", std::move(value), make_intrusive<ASTLiteral>(type_name));
+}
+
 }

@@ -298,7 +298,9 @@ ASTPtr tryBuildAdditionalFilterAST(
             auto literal = columnConstantToExactLiteralAST(node->column, 0, node->result_type);
             /// Need to enforce type of the literal, because some type is not comparable to its native type
             /// E.g. `Date` has native type `UInt32`, but comparing `Date` with `UInt32` is not allowed.
-            auto casted_literal = makeASTFunction("_CAST", literal, make_intrusive<ASTLiteral>(node->result_type->getName()));
+            /// makeCastToTypeNameAST skips the wrap when the exact serialization already cast the value to
+            /// the result type (scalar Decimal/DateTime64/Time64), avoiding a redundant identity cast.
+            auto casted_literal = makeCastToTypeNameAST(std::move(literal), node->result_type->getName());
             node_to_ast[node] = std::move(casted_literal);
             stack.pop();
             continue;

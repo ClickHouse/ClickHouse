@@ -229,4 +229,9 @@ bool typeMayContainDecimal(const IDataType & type);
 /// getFieldFromColumnForASTLiteral.
 ASTPtr columnConstantToExactLiteralAST(const ColumnPtr & column, size_t row, const DataTypePtr & type);
 
+/// Wrap `value` in `_CAST(value, type_name)`, but skip the wrapping when `value` is already a
+/// `_CAST(..., type_name)` to the same type (e.g. the exact carrier produced for a scalar
+/// Decimal/DateTime64/Time64 constant), avoiding a redundant identity cast in the serialized AST.
+ASTPtr makeCastToTypeNameAST(ASTPtr value, const String & type_name);
+
 }
