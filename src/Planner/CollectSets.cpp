@@ -15,8 +15,10 @@
 #include <Analyzer/SetUtils.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Access/Common/AccessFlags.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/Set.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
@@ -109,7 +111,16 @@ std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const Que
         if (!set)
             return std::nullopt;
 
-        return LookupSetFromStorage{std::move(set), table_node->getStorageID()};
+        /// The regular `IN table` path builds a plan for the right table that performs a `SELECT`
+        /// access check on the columns it reads (`checkAccessRights`). The lookup fast path builds
+        /// the `Set` directly from storage and never plans that read, so it must enforce the same
+        /// check here on the lookup key columns; otherwise a user without `SELECT` on the right
+        /// table could probe its keys through `IN table`.
+        auto storage_id = table_node->getStorageID();
+        if (storage_id.hasDatabase())
+            query_context->checkAccess(AccessType::SELECT, storage_id, key_names);
+
+        return LookupSetFromStorage{std::move(set), std::move(storage_id)};
     }
 
     auto * query_node = table_expression->as<QueryNode>();
@@ -186,7 +197,15 @@ std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const Que
     if (!set)
         return std::nullopt;
 
-    return LookupSetFromStorage{std::move(set), inner_table_node->getStorageID()};
+    /// Same `SELECT` access check as for the direct `IN table` case above: the trivial
+    /// `IN (SELECT key FROM table)` subquery would be access-checked by the regular plan, but the
+    /// lookup fast path replaces it with a ready set built from storage, so check access on the
+    /// lookup key columns here too.
+    auto storage_id = inner_table_node->getStorageID();
+    if (storage_id.hasDatabase())
+        query_context->checkAccess(AccessType::SELECT, storage_id, key_names);
+
+    return LookupSetFromStorage{std::move(set), std::move(storage_id)};
 }
 
 class CollectSetsVisitor : public ConstInDepthQueryTreeVisitor<CollectSetsVisitor>
