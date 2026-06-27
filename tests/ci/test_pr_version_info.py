@@ -15,8 +15,11 @@ from pr_version_info import (
     SECTION_START,
     MergedPR,
     has_backport_label,
+    has_ignore_label,
     original_pr_number_from_backport_ref,
     partition_merged_prs,
+    release_from_backport_ref,
+    render_issue_comment,
     render_section,
     upsert_section,
     version_key,
@@ -89,6 +92,27 @@ class TestUpsertSection(unittest.TestCase):
         self.assertNotIn("old", updated)
 
 
+class TestRenderIssueComment(unittest.TestCase):
+    def test_wraps_section_with_markers_and_credit(self):
+        section = render_section("26.6.1.1", ["25.12.1.100"])
+        comment = render_issue_comment(12345, section)
+        self.assertTrue(comment.startswith(SECTION_START))
+        self.assertTrue(comment.endswith(SECTION_END))
+        self.assertIn("Merged into: `26.6.1.1`", comment)
+        self.assertIn("Backported to: `25.12.1.100`", comment)
+        # `Resolved by` is the first list item, right after the header.
+        self.assertIn(
+            "### Version info\n- Resolved by: #12345\n- Merged into:", comment
+        )
+
+    def test_idempotent_markers(self):
+        # The markers must match the PR-body section markers so the comment can
+        # be found and updated on later runs.
+        comment = render_issue_comment(1, render_section("26.6.1.1", []))
+        self.assertEqual(comment.count(SECTION_START), 1)
+        self.assertEqual(comment.count(SECTION_END), 1)
+
+
 class TestVersionKey(unittest.TestCase):
     def test_orders_numerically(self):
         versions = ["25.8.1.200", "26.6.1.1", "25.12.1.100"]
@@ -111,6 +135,13 @@ class TestBackportRefParsing(unittest.TestCase):
     def test_non_backport_ref(self):
         self.assertIsNone(original_pr_number_from_backport_ref("my-feature-branch"))
         self.assertIsNone(original_pr_number_from_backport_ref("cherrypick/25.12/1"))
+
+    def test_release_extraction(self):
+        self.assertEqual(release_from_backport_ref("backport/25.12/92538"), "25.12")
+        self.assertEqual(
+            release_from_backport_ref("backport/release/26.5/58548"), "release/26.5"
+        )
+        self.assertIsNone(release_from_backport_ref("my-feature-branch"))
 
 
 class TestHasBackportLabel(unittest.TestCase):
@@ -159,6 +190,31 @@ class TestPartitionMergedPRs(unittest.TestCase):
         prs = [MergedPR(300, "some-fix", "25.12", [])]
         backports, originals, need_scan = partition_merged_prs(prs, "master")
         self.assertEqual((backports, originals, need_scan), (set(), set(), set()))
+
+    def test_ignore_label_pr_is_dropped(self):
+        # The automated periodic upstream-sync PR merges to master but must not
+        # get a version-info section.
+        prs = [
+            MergedPR(
+                400, "sync-upstream/master", "master", ["pr-periodic-sync-upstream"]
+            ),
+            MergedPR(401, "feature-branch", "master", ["pr-must-backport"]),
+        ]
+        backports, originals, need_scan = partition_merged_prs(prs, "master")
+        self.assertEqual(backports, set())
+        self.assertEqual(originals, {401})
+        self.assertEqual(need_scan, {401})
+
+
+class TestHasIgnoreLabel(unittest.TestCase):
+    def test_periodic_sync_label(self):
+        self.assertTrue(has_ignore_label(["pr-periodic-sync-upstream"]))
+
+    def test_other_labels(self):
+        self.assertFalse(has_ignore_label(["pr-sync-upstream", "pr-backport"]))
+
+    def test_no_labels(self):
+        self.assertFalse(has_ignore_label([]))
 
 
 if __name__ == "__main__":

@@ -304,11 +304,18 @@ DOCKERS = [
 class BuildTypes(metaclass=MetaClasses.WithIter):
     AMD_DEBUG = "amd_debug"
     AMD_RELEASE = "amd_release"
+    # sccache-warmup variants of the release builds (MasterCI only): PR-style
+    # cmake flags (no official-build flag, debug symbols stripped, no PGO/BOLT),
+    # but built on master so the shared sccache is populated read-write for
+    # read-only PR builds to reuse. See build_clickhouse.py and
+    # PR_CACHE_WARMUP_BUILD_TYPES.
+    AMD_RELEASE_PR_CACHE_WARMUP = "amd_release_pr_cache_warmup"
     AMD_BINARY = "amd_binary"
     AMD_ASAN_UBSAN = "amd_asan_ubsan"
     AMD_TSAN = "amd_tsan"
     AMD_MSAN = "amd_msan"
     ARM_RELEASE = "arm_release"
+    ARM_RELEASE_PR_CACHE_WARMUP = "arm_release_pr_cache_warmup"
     ARM_DEBUG = "arm_debug"
     ARM_ASAN_UBSAN = "arm_asan_ubsan"
     ARM_TSAN = "arm_tsan"
@@ -363,8 +370,27 @@ class JobNames:
     BUZZHOUSE = "BuzzHouse"
     BUILDOCKER = "BuildDockers"
     BUGFIX_VALIDATE = "Bugfix validation"
-    BUGFIX_VALIDATE_IT = "Bugfix validation (integration tests)"
-    BUGFIX_VALIDATE_FT = "Bugfix validation (functional tests)"
+    # Per-arch bugfix validation jobs. Each runs the new/modified test on
+    # master HEAD and on the PR, and reports one of three top-level statuses:
+    #   * `OK`     : bug reproduced on master HEAD AND fixed on PR (validated)
+    #   * `SKIPPED`: bug did not reproduce on master HEAD on this arch
+    #                (no-repro: another arch can still validate)
+    #   * `ERROR`  : infrastructure error / inconclusive run (no signal)
+    # The runners (`ci/jobs/functional_tests.py`,
+    # `ci/jobs/integration_test_job.py`) propagate `SKIPPED` to the top-level
+    # `R` directly so the post-hook does not treat the no-repro case as
+    # validated; see `invert_bugfix_validation_status`.
+    # Per-arch jobs are configured with `allow_failure=True` so a genuine
+    # `ERROR` (sanitizer assert, OOM, runner termination) does not block PR
+    # merge on its own. The merge-blocking decision is made by the
+    # `new_tests_check.py` post-hook, which uses strict `is_success` (`OK` or
+    # `XFAIL`); `SKIPPED`/`ERROR`/`FAIL` per-arch jobs do NOT count as a
+    # validation. The bug is considered validated as long as AT LEAST ONE
+    # per-arch job is strict-success.
+    BUGFIX_VALIDATE_FT_AMD = "Bugfix validation (functional tests, amd64)"
+    BUGFIX_VALIDATE_FT_ARM = "Bugfix validation (functional tests, aarch64)"
+    BUGFIX_VALIDATE_IT_AMD = "Bugfix validation (integration tests, amd64)"
+    BUGFIX_VALIDATE_IT_ARM = "Bugfix validation (integration tests, aarch64)"
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
     LIBFUZZER_TEST = "libFuzzer tests"
@@ -419,6 +445,7 @@ class ArtifactNames:
     CH_LOONGARCH64 = "CH_LOONGARCH64_BIN"
 
     FAST_TEST = "FAST_TEST"
+
     UNITTEST_AMD_ASAN_UBSAN = "UNITTEST_AMD_ASAN_UBSAN"
     UNITTEST_AMD_TSAN = "UNITTEST_AMD_TSAN"
     UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
