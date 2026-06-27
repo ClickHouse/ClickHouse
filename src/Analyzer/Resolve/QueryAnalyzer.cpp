@@ -3075,6 +3075,24 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
   *
   * 4. If node has alias, update its value in scope alias map. Deregister alias from expression_aliases_in_resolve_process.
   */
+
+/** Return true if `scope` owns the source of the column `node`, i.e. the column's source table
+  * expression is registered (or being resolved) in this scope's FROM section. A column whose
+  * source is not owned by `scope` but by an ancestor query scope is a correlated column.
+  *
+  * Read-only: unlike `checkCorrelatedColumn`, this does not register the column in any
+  * `addCorrelatedColumn` set; it only inspects scope ownership.
+  */
+static bool scopeOwnsColumnSource(const IdentifierResolveScope * scope, const QueryTreeNodePtr & node)
+{
+    if (node->getNodeType() != QueryTreeNodeType::COLUMN)
+        return true;
+
+    const auto column_source = node->as<ColumnNode>()->getColumnSource();
+    return scope->registered_table_expression_nodes.contains(column_source)
+        || scope->table_expressions_in_resolve_process.contains(column_source.get());
+}
+
 ProjectionNames QueryAnalyzer::resolveExpressionNode(
     QueryTreeNodePtr & node,
     IdentifierResolveScope & scope,
@@ -3519,6 +3537,10 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
     if (!in_aggregate_or_grouping_function_scope)
     {
+        /// Set once the scope walk passes a subquery's own query scope to reach the outer query
+        /// that owns a correlated column's source. Distinguishes a correlated reference (handled
+        /// in place below) from an ordinary one (cloned).
+        bool crossed_query_boundary = false;
         for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
         {
             if (!scope_ptr->nullable_group_by_keys.empty())
@@ -3526,20 +3548,43 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                 auto it = scope_ptr->nullable_group_by_keys.find(node);
                 if (it != scope_ptr->nullable_group_by_keys.end())
                 {
-                    /// Clone the GROUP BY key and convert it to Nullable. For a constant we clone the
-                    /// matched node itself rather than the stored key `it->second`: two constants equal
-                    /// in value and type but with different source expressions share a single map entry,
-                    /// and the source expression determines the action node name (hence which aggregation
-                    /// key column the projection reads), so the matched node's own one must be preserved.
-                    node = (node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second)->clone();
-                    node->convertToNullable();
+                    if (crossed_query_boundary)
+                    {
+                        /// Correlated column referencing an outer nullable GROUP BY key. Convert it
+                        /// in place: the same node object is shared with the subquery's
+                        /// correlated-columns set (populated during identifier resolution), and the
+                        /// planner matches that set against the decorrelated input by identity.
+                        /// Cloning here (as in the ordinary case) would desynchronize the set from
+                        /// the usage and break decorrelation ("Not found column ...").
+                        node->convertToNullable();
+                    }
+                    else
+                    {
+                        /// Clone the GROUP BY key and convert it to Nullable. For a constant we clone the
+                        /// matched node itself rather than the stored key `it->second`: two constants equal
+                        /// in value and type but with different source expressions share a single map entry,
+                        /// and the source expression determines the action node name (hence which aggregation
+                        /// key column the projection reads), so the matched node's own one must be preserved.
+                        node = (node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second)->clone();
+                        node->convertToNullable();
+                    }
                     break;
                 }
             }
 
-            /// Check parent scopes until find current query scope.
+            /// Normally we stop at the current query scope: a column belonging to this query must
+            /// not pick up an ancestor query's GROUP BY nullability. A correlated column is the
+            /// exception — its source lives in an outer query, so `group_by_use_nulls` on that
+            /// outer GROUP BY makes the correlated value Nullable and we must keep walking up to
+            /// the scope that owns it. Without this, a correlated reference to an outer nullable
+            /// GROUP BY key stays non-Nullable while the decorrelated plan feeds in the real
+            /// Nullable column, producing a type mismatch ("Unexpected return type ...").
             if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
-                break;
+            {
+                if (scopeOwnsColumnSource(scope_ptr, node))
+                    break;
+                crossed_query_boundary = true;
+            }
         }
     }
 
