@@ -1740,6 +1740,57 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
             if (!isFunctionReallyMonotonic(func, type))
                 return false;
 
+            /// `assumeNotNull` is not always monotonic on `Nullable` input:
+            /// `NULL` sorts after every non-`NULL` value, but `assumeNotNull` maps a `NULL` row
+            /// to an ordinary nested value, which then sorts among non-`NULL` keys instead of at
+            /// the end.
+            ///
+            /// That would be unsafe if we were transforming a key range. Here we are doing
+            /// something weaker: we only push the constant side of the predicate through the key
+            /// expression, then build a relaxed atom from the transformed constant.
+            ///
+            /// Example:
+            ///   key: `ORDER BY assumeNotNull(d)`, where `d` is `Nullable(Date)`
+            ///   predicate: `d < '2015-01-01'`
+            ///
+            /// `NULL` constants are rejected before we get here, so the constant side is unchanged:
+            /// `assumeNotNull('2015-01-01') = '2015-01-01'`.
+            ///
+            /// The relaxed rewrite is:
+            ///   `d < '2015-01-01'` -> `assumeNotNull(d) <= '2015-01-01'`
+            ///
+            /// At pruning time, `checkInHyperrectangle` sees only the key range of the granule,
+            /// `[k_min, k_max]`, where the key is `assumeNotNull(d)`.
+            ///
+            /// Suppose the granule values of `d` were `['2014-12-31', '2015-01-02']`.
+            /// Then the key-sorted range is the same: `['2014-12-31', '2015-01-02']`.
+            /// This range intersects `(-Inf, '2015-01-01']`, so we keep the granule.
+            /// That is correct, because it contains a matching row.
+            ///
+            /// Suppose the granule values of `d` were `[NULL, '2016-01-01', '2035-01-01']`.
+            /// The non-`NULL` rows are all to the right of the bound, but the `NULL` row may
+            /// contribute some ordinary key value through `assumeNotNull`.
+            /// If that key is `<= '2015-01-01'`, then the key range intersects
+            /// `(-Inf, '2015-01-01']` and we keep the granule as a false positive.
+            /// If that key is `> '2015-01-01'`, then pruning is still correct, because the
+            /// original predicate is false for both the non-`NULL` rows and the `NULL` row.
+            ///
+            /// Suppose the relaxed atom does prune the granule.
+            /// Then the key-sorted range is entirely to the right of the bound, for example
+            /// `['2015-01-02', '2016-01-01']`.
+            /// In that case the granule cannot contain any non-`NULL` row with
+            /// `d < '2015-01-01'`, because such a row would contribute a key
+            /// `<= '2015-01-01'` inside the same range.
+            ///
+            /// So the rewrite may over-read, but it does not incorrectly prune matching rows.
+            ///
+            /// The same argument applies to `>`, `>=`, `<=`, and `=`.
+            /// It does not apply to `!=`: `notEquals` is in `no_relaxed_atom_functions`, so if
+            /// analysis would need to push the constant through a monotonic function chain, we do
+            /// not create a relaxed atom for `!=` on this path.
+            if (func.getName() == "assumeNotNull")
+                return true;
+
             /// Range is irrelevant in this case.
             auto monotonicity = func.getMonotonicityForRange(type, Field(), Field());
             if (!monotonicity.is_always_monotonic)
@@ -2995,8 +3046,6 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
 
                 if (cur_node->type == ActionsDAG::ActionType::FUNCTION && cur_node->children.size() <= 2)
                 {
-                    is_valid_chain = always_monotonic(*cur_node->function_base, *cur_node->result_type);
-
                     const ActionsDAG::Node * next_node = nullptr;
                     for (const auto * arg : cur_node->children)
                     {
@@ -3011,6 +3060,11 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
 
                     if (!next_node)
                         is_valid_chain = false;
+
+                    /// next_node is the non-constant child of cur_node, so next_node->result_type
+                    /// is the child's output type, which is the input type to cur_node's function.
+                    if (is_valid_chain)
+                        is_valid_chain = always_monotonic(*cur_node->function_base, *next_node->result_type);
 
                     cur_node = next_node;
                 }
@@ -3467,7 +3521,10 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             out.point_in_polygon_function_name = func_name;
 
             /// Analyze [(0, 0), (8, 4), (5, 8), (0, 2)]
-            chassert(WhichDataType(const_type).isArray());
+            /// The polygon argument may be a constant of a wrapper type (Variant, Dynamic, ...)
+            /// holding an array; only a plain Array constant can be turned into a skip-index atom.
+            if (!WhichDataType(const_type).isArray())
+                return false;
             for (const auto & elem : const_value.safeGet<Array>())
             {
                 if (elem.getType() != Field::Types::Tuple)
