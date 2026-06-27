@@ -1262,11 +1262,11 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
             {"allow_experimental_text_index_positions", false, false, "New setting"},
+            {"skip_empty_columns_on_insert", false, false, "New setting to skip writing all type-default columns on INSERT"},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",
         {
-            {"skip_empty_columns_on_insert", false, false, "New setting to skip writing all type-default columns on INSERT"},
             {"packed_skip_index_max_bytes", 0, 0, "New setting. Pack any skip-index substream whose serialized on-disk size is at most this many bytes into a single skp_idx.packed archive per part; larger substreams stay in the standalone skp_idx_<name>.idx2 / .mrk2 layout. Decision is made per substream at write time."},
             {"allow_tuple_element_aggregation", false, false, "New setting"},
             {"shared_merge_tree_enable_keeper_parts_extra_data", false, true, "Enable coordinated merges by default"},
