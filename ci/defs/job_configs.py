@@ -1377,7 +1377,7 @@ class JobConfigs:
                 "./docs/en/",
             ],
         ),
-        run_in_docker="clickhouse/docs-builder"
+        run_in_docker="clickhouse/docs-builder",
     )
     docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,

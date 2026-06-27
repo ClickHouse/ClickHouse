@@ -91,6 +91,14 @@ SECRETS = [
         type=Secret.Type.AWS_SSM_SECRET,
         region="us-east-1",
     ),
+    Secret.Config(
+        name="mintlify-api-key",
+        type=Secret.Type.AWS_SSM_PARAMETER,
+    ),
+    Secret.Config(
+        name="mintlify-project-id",
+        type=Secret.Type.AWS_SSM_PARAMETER,
+    ),
 ]
 
 DOCKERS = [
