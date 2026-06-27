@@ -412,7 +412,7 @@ void EnabledQuota::usedForQuery(UInt64 normalized_query_hash, QuotaType quota_ty
 }
 
 
-void EnabledQuota::usedForQuery(UInt64 normalized_query_hash, const std::pair<QuotaType, QuotaValue> & usage1, const std::pair<QuotaType, QuotaValue> & usage2, bool check_exceeded) const
+void EnabledQuota::usedForQuery(UInt64 normalized_query_hash, const std::vector<std::pair<QuotaType, QuotaValue>> & usages, bool check_exceeded) const
 {
     if (empty)
         return;
@@ -423,26 +423,8 @@ void EnabledQuota::usedForQuery(UInt64 normalized_query_hash, const std::pair<Qu
         auto target = resolveTargetIntervals(*quota, normalized_query_hash);
         if (!target)
             continue;
-        Impl::used(getUserName(), *target, usage1.first, usage1.second, current_time, check_exceeded);
-        Impl::used(getUserName(), *target, usage2.first, usage2.second, current_time, check_exceeded);
-    }
-}
-
-
-void EnabledQuota::usedForQuery(UInt64 normalized_query_hash, const std::pair<QuotaType, QuotaValue> & usage1, const std::pair<QuotaType, QuotaValue> & usage2, const std::pair<QuotaType, QuotaValue> & usage3, bool check_exceeded) const
-{
-    if (empty)
-        return;
-    auto loaded = quotas.load();
-    auto current_time = std::chrono::system_clock::now();
-    for (const auto & quota : *loaded)
-    {
-        auto target = resolveTargetIntervals(*quota, normalized_query_hash);
-        if (!target)
-            continue;
-        Impl::used(getUserName(), *target, usage1.first, usage1.second, current_time, check_exceeded);
-        Impl::used(getUserName(), *target, usage2.first, usage2.second, current_time, check_exceeded);
-        Impl::used(getUserName(), *target, usage3.first, usage3.second, current_time, check_exceeded);
+        for (const auto & usage : usages)
+            Impl::used(getUserName(), *target, usage.first, usage.second, current_time, check_exceeded);
     }
 }
 
