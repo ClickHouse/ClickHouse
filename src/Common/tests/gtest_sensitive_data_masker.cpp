@@ -244,7 +244,10 @@ TEST(Common, ExceptionAddMessageMasked)
 
     try
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "boom");
+        // Use a non-fatal error code here: constructing a LOGICAL_ERROR exception
+        // aborts the process in debug/sanitizer builds, so the specific code is
+        // incidental -- this test only needs an Exception to exercise addMessage() masking.
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "boom");
     }
     catch (Exception & e)
     {
