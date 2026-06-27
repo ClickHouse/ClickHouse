@@ -1785,6 +1785,21 @@ void QueryResultCache::loadEntrysFromDisk()
                 continue;
             }
 
+            /// A matching name alone is not proof of ownership. If `query_cache.path` is misconfigured to a
+            /// safe-but-wrong relative directory (one that passes `isQueryResultCacheDiskPathSafe` but already
+            /// holds unrelated data), that directory may contain children whose names happen to match the
+            /// cache-entry pattern, e.g. `999/123_456`. Such a directory has no cache metadata, so the
+            /// deserialization below would throw and it would be removed as "broken" - deleting unrelated data
+            /// on startup. Use `key_metadata.txt` as the ownership marker: `writeDisk` always writes it as the
+            /// first file of every entry (and cleans up partial writes on failure), so a cache-shaped directory
+            /// without it is not a query-result-cache entry. Distinguish "not ours" (no metadata - log and skip,
+            /// never remove) from "ours but broken" (metadata present but unloadable - removed below).
+            if (!disk->existsFile(entry_path / "key_metadata.txt"))
+            {
+                LOG_WARNING(logger, "Skipping unexpected entry under query result cache path (no cache metadata, not a cache entry): {}", entry_path.string());
+                continue;
+            }
+
             /// A single malformed or partially-written entry must not abort loading of the whole cache (and
             /// therefore server startup). Parse and deserialize each entry defensively: on any error, log it
             /// and remove only the broken entry.

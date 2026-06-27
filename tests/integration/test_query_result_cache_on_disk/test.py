@@ -206,12 +206,16 @@ def test_disk_load_does_not_delete_foreign_dirs(start_cluster):
     )
 
     # Plant foreign content under the cache path:
-    #  - a foreign first-level directory whose name is not a hash bucket (1 to 3 digits), and
+    #  - a foreign first-level directory whose name is not a hash bucket (1 to 3 digits),
     #  - a foreign entry directory inside a bucket-shaped directory whose name does not match the
-    #    "<low64>_<high64>" cache-entry pattern.
-    # `loadEntrysFromDisk` must skip both (they are not query-result-cache entries) and must never remove
+    #    "<low64>_<high64>" cache-entry pattern, and
+    #  - a foreign directory whose name DOES match the cache-entry pattern ("999/123_456") but which has no
+    #    `key_metadata.txt`, i.e. it is not actually a query-result-cache entry.
+    # `loadEntrysFromDisk` must skip all three (they are not query-result-cache entries) and must never remove
     # them. This is the fail-closed guard against a misconfigured `query_cache.path` pointing at a directory
-    # that also holds unrelated data.
+    # that also holds unrelated data. The third case is the important one: a name match alone is not proof of
+    # ownership, so the loader must additionally require the `key_metadata.txt` ownership marker before treating
+    # a directory as a (possibly broken) cache entry to be removed.
     node.exec_in_container(
         [
             "bash",
@@ -225,6 +229,14 @@ def test_disk_load_does_not_delete_foreign_dirs(start_cluster):
             "bash",
             "-c",
             f"mkdir -p '{CACHE_ROOT}/999/foreign_entry' && echo keep > '{CACHE_ROOT}/999/foreign_entry/important.txt'",
+        ],
+        user="root",
+    )
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"mkdir -p '{CACHE_ROOT}/999/123_456' && echo keep > '{CACHE_ROOT}/999/123_456/important.txt'",
         ],
         user="root",
     )
@@ -249,6 +261,14 @@ def test_disk_load_does_not_delete_foreign_dirs(start_cluster):
     assert (
         node.exec_in_container(
             ["bash", "-c", f"cat '{CACHE_ROOT}/999/foreign_entry/important.txt'"],
+            user="root",
+        ).strip()
+        == "keep"
+    )
+    # The cache-shaped but metadata-less directory must be preserved too (no `key_metadata.txt` => not ours).
+    assert (
+        node.exec_in_container(
+            ["bash", "-c", f"cat '{CACHE_ROOT}/999/123_456/important.txt'"],
             user="root",
         ).strip()
         == "keep"
