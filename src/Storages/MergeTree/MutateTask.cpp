@@ -2029,6 +2029,7 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
             auto merge_task = std::make_unique<MergeTextIndexesTask>(
                 std::move(segments),
                 ctx->new_data_part,
+                (*ctx->mutate_entry)->rows_written,
                 index,
                 /*merged_part_offsets=*/ nullptr,
                 reader_settings,
@@ -2213,7 +2214,7 @@ private:
             if (ctx->indices_to_drop_names.contains(idx.name))
                 continue;
 
-            auto index_ptr = MergeTreeIndexFactory::instance().get(idx, *ctx->data->getSettings());
+            auto index_ptr = MergeTreeIndexFactory::instance().get(ctx->metadata_snapshot, idx, *ctx->data->getSettings());
 
             /// For packed part we need to recalculate all indices because they are stored inside packed parts format
             /// For compact parts we need to recalculate indices because rewrite of compact part may produce a little bit different data part
@@ -3134,7 +3135,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
     {
         if (ctx->indices_to_drop_names.contains(index.name))
         {
-            ctx->indices_to_drop.insert(index_factory.get(index, *ctx->data->getSettings()));
+            ctx->indices_to_drop.insert(index_factory.get(metadata_snapshot, index, *ctx->data->getSettings()));
             continue;
         }
 
@@ -3144,7 +3145,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         if (need_recalculate)
         {
             bool inserted = false;
-            auto index_ptr = index_factory.get(index, *ctx->data->getSettings());
+            auto index_ptr = index_factory.get(metadata_snapshot, index, *ctx->data->getSettings());
 
             if (dynamic_cast<const MergeTreeIndexText *>(index_ptr.get()))
                 inserted = ctx->text_indices_to_recalc.insert(index_ptr).second;
@@ -3251,7 +3252,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
                 if (already_in_recalc.contains(index.name))
                     continue;
 
-                auto index_ptr = index_factory.get(index, *ctx->data->getSettings());
+                auto index_ptr = index_factory.get(metadata_snapshot, index, *ctx->data->getSettings());
                 const String file_name = index_ptr->getFileName();
                 for (const auto & sub : index_ptr->getSubstreams())
                 {
