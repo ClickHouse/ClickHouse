@@ -3852,7 +3852,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("vertical,E", "Same as --format=Vertical or FORMAT Vertical or \\G at end of command")
 
         ("highlight,hilite", po::value<bool>()->default_value(true), "Toggle syntax highlighting of the command prompt and the echoed queries (can also use --hilite)")
-        ("hints", po::value<bool>()->default_value(true), "Show as-you-type autocompletion hints (ghost text) in interactive mode; navigate with Up/Down or Ctrl-Up/Ctrl-Down, accept with Tab, Right, or Enter. Requires --highlight and suggestions (disabled by --disable_suggestion). Disable with --hints 0.")
+        ("hints", po::value<bool>()->default_value(true), "Show as-you-type autocompletion hints (ghost text) in interactive mode; navigate with Up/Down or Ctrl-Up/Ctrl-Down. Accept the inline hint with Tab or Right; Enter accepts a hint only after one is explicitly selected, otherwise it runs the query. Requires --highlight and suggestions (disabled by --disable_suggestion). Disable with --hints 0.")
 
         ("ignore-error", "Do not stop processing after an error occurred")
         ("stacktrace", "Print stack traces of exceptions")
