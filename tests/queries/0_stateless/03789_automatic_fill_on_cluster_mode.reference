@@ -25,3 +25,8 @@ Test 9: ALTER TABLE ATTACH PARTITION is not rewritten ON CLUSTER
 Test 9 verification: ATTACH PARTITION restored the data	1
 Test 9 verification: ATTACH PARTITION does NOT contain ON CLUSTER
 1
+Test 10: ALTER/OPTIMIZE of an implicit temporary table stays local
+Test 10 verification: ALTER added the column to the session table	1
+Test 10 verification: OPTIMIZE kept the session data	1
+Test 10 verification: ALTER of the temporary table does NOT contain ON CLUSTER
+1

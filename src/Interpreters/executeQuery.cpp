@@ -1484,6 +1484,18 @@ static BlockIO executeQueryImpl(
                     return database && database->getEngineName() == "Replicated";
                 };
 
+                /// `DROP`/`TRUNCATE`/`ALTER`/`OPTIMIZE` of a table with an omitted database may target a
+                /// session-local temporary (external) table: the interpreters resolve the unqualified name
+                /// via `tryResolveStorageID(..., ResolveExternal)`/`ResolveAll` even without the explicit
+                /// `TEMPORARY` keyword (the parser does not set `isTemporary` for, say, `ALTER TABLE t`).
+                /// Such a statement must operate on the session table and stay local, so treat it as
+                /// temporary when the name resolves to a temporary table.
+                auto resolves_to_temporary = [&](const StorageID & table_id)
+                {
+                    return table_id.database_name.empty()
+                        && static_cast<bool>(context->tryResolveStorageID(table_id, Context::ResolveExternal));
+                };
+
                 bool target_is_replicated_database = false;
 
                 /// Temporary tables and views are session-local objects that cannot be created or
@@ -1562,17 +1574,6 @@ static BlockIO executeQueryImpl(
                 {
                     target_is_temporary = drop_query->isTemporary();
 
-                    /// `DROP TABLE t` / `TRUNCATE TABLE t` with an omitted database may target a
-                    /// session-local temporary (external) table: `InterpreterDropQuery` resolves the
-                    /// name via `tryResolveStorageID(..., ResolveExternal)` even without the explicit
-                    /// `TEMPORARY` keyword. Such a statement must operate on the session table and stay
-                    /// local, so treat it as temporary when the name resolves to a temporary table.
-                    auto resolves_to_temporary = [&](const StorageID & table_id)
-                    {
-                        return table_id.database_name.empty()
-                            && static_cast<bool>(context->tryResolveStorageID(table_id, Context::ResolveExternal));
-                    };
-
                     /// A multi-table `DROP TABLE a.t1, b.t2` keeps its targets in `database_and_tables`
                     /// while `getDatabase` stays empty, so inspect every listed table and classify each
                     /// one: targets in a `Replicated` database or temporary tables must stay local, while
@@ -1631,6 +1632,18 @@ static BlockIO executeQueryImpl(
                 else if (const auto * query_with_table = dynamic_cast<const ASTQueryWithTableAndOutput *>(out_ast.get()))
                 {
                     target_is_temporary = query_with_table->isTemporary();
+
+                    /// `ALTER TABLE t ...` and `OPTIMIZE TABLE t` with an omitted database may target a
+                    /// session-local temporary (external) table: the interpreters resolve the unqualified
+                    /// name to the session table later (`Context::ResolveAll`), and the parser does not set
+                    /// `isTemporary` for them even against a temporary table. Filling the cluster would route
+                    /// the operation through distributed DDL and leave the session table untouched, so treat
+                    /// it as temporary when the name resolves to a temporary table, mirroring the `DROP`
+                    /// handling above. A database-level statement carries no table, so skip the check there:
+                    /// constructing a `StorageID` from it would throw because the table name is empty.
+                    if (!target_is_temporary && !query_with_table->getTable().empty()
+                        && resolves_to_temporary(StorageID(*query_with_table)))
+                        target_is_temporary = true;
 
                     /// A database-level `ALTER` (`ALTER DATABASE ... MODIFY COMMENT/SETTING`) is not
                     /// coordinated by the `Replicated` database engine: `InterpreterAlterQuery::executeToDatabase`

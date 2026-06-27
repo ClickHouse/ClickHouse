@@ -122,3 +122,24 @@ SELECT count() = 0 FROM system.query_log WHERE current_database = currentDatabas
   AND query LIKE 'ALTER TABLE test_auto_fill_attach%ATTACH PARTITION%'
   AND query LIKE '%ON CLUSTER%';
 DROP TABLE test_auto_fill_attach;
+
+SELECT 'Test 10: ALTER/OPTIMIZE of an implicit temporary table stays local';
+-- `ALTER TABLE t` and `OPTIMIZE TABLE t` with an omitted database resolve to a session-local
+-- temporary table even without the `TEMPORARY` keyword (the parser does not set isTemporary for
+-- them). Auto-fill must not inject ON CLUSTER, otherwise the operation would be routed through
+-- distributed DDL and the session table would be left untouched. Verify the operations actually
+-- affect the session table.
+CREATE TEMPORARY TABLE test_auto_fill_alter_temp (id UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO test_auto_fill_alter_temp VALUES (1), (2);
+ALTER TABLE test_auto_fill_alter_temp ADD COLUMN new_column UInt64 DEFAULT 7;
+SELECT 'Test 10 verification: ALTER added the column to the session table', sum(new_column) = 14 FROM test_auto_fill_alter_temp;
+OPTIMIZE TABLE test_auto_fill_alter_temp FINAL;
+SELECT 'Test 10 verification: OPTIMIZE kept the session data', count() = 2 FROM test_auto_fill_alter_temp;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT 'Test 10 verification: ALTER of the temporary table does NOT contain ON CLUSTER';
+SELECT count() = 0 FROM system.query_log WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND query LIKE 'ALTER TABLE test_auto_fill_alter_temp%'
+  AND query LIKE '%ON CLUSTER%';
+DROP TEMPORARY TABLE test_auto_fill_alter_temp;
