@@ -205,6 +205,9 @@ public:
     void removeAlias()
     {
         alias = {};
+        /// The quote flag has no meaning without an alias and could otherwise leak through
+        /// equality, format, and serialization paths.
+        alias_is_double_quoted = false;
     }
 
     /// Returns true if the expression was parenthesized in the original query

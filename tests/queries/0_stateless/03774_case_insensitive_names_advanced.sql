@@ -130,9 +130,9 @@ SELECT t.value FROM test_alias AS T ORDER BY t.value;
 SELECT T.Value FROM test_alias AS t ORDER BY T.Value;
 
 -- Cross-join with aliases
-SELECT a.value, B.value 
-FROM test_alias AS A 
-CROSS JOIN test_alias AS B 
+SELECT a.value, B.value
+FROM test_alias AS A
+CROSS JOIN test_alias AS B
 WHERE a.value = 10 AND b.value = 30;
 
 DROP TABLE IF EXISTS test_nested;
@@ -259,5 +259,3 @@ DROP TABLE IF EXISTS test_nested;
 DROP TABLE IF EXISTS test_having;
 DROP TABLE IF EXISTS test_empty;
 DROP TABLE IF EXISTS test_lambda;
-
-

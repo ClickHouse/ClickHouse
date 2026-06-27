@@ -321,32 +321,52 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
             database_name = resolved_db;
     }
 
-    /// Case-insensitive resolution for table name (if not double-quoted and under setting).
-    /// Mirror the default-mode lookup order in `Context::resolveStorageID`: temporary/external
-    /// tables shadow regular tables when no database is specified, so try temp first and only
-    /// fall through to the current database when no temp match exists.
+    /// Case-insensitive resolution for table name. Precedence (matches default-mode for the exact
+    /// passes, then adds folded fallbacks):
+    ///   1) exact temp/external table
+    ///   2) exact regular table in the effective database
+    ///   3) folded temp/external table
+    ///   4) folded regular table
+    /// A folded temp match must NOT shadow an exact regular table: `FROM temp` against a regular
+    /// `temp` and a temp `Temp` resolves to the regular one. The exact passes use existence
+    /// probes (`findExternalTable`/`isTableExist`) rather than `tryResolveStorageID`, which only
+    /// resolves the namespace without checking whether the table actually exists.
     if (table_name_case_insensitive)
     {
-        bool resolved_as_temp = false;
+        bool exact_match_exists = false;
         if (database_name.empty() && !context->isGlobalContext())
-        {
-            String resolved_temp_table = context->tryResolveExternalTableNameCaseInsensitive(table_name);
-            if (!resolved_temp_table.empty())
-            {
-                table_name = std::move(resolved_temp_table);
-                resolved_as_temp = true;
-            }
-        }
+            exact_match_exists = static_cast<bool>(context->findExternalTable(table_name));
 
-        if (!resolved_as_temp)
+        if (!exact_match_exists)
         {
             String effective_db = database_name.empty() ? context->getCurrentDatabase() : database_name;
-            auto database = DatabaseCatalog::instance().tryGetDatabase(effective_db);
-            if (database)
+            if (auto database = DatabaseCatalog::instance().tryGetDatabase(effective_db))
+                exact_match_exists = database->isTableExist(table_name, context);
+        }
+
+        if (!exact_match_exists)
+        {
+            bool resolved_as_temp = false;
+            if (database_name.empty() && !context->isGlobalContext())
             {
-                String resolved_table = database->tryResolveTableNameCaseInsensitive(table_name, context);
-                if (!resolved_table.empty())
-                    table_name = resolved_table;
+                String resolved_temp_table = context->tryResolveExternalTableNameCaseInsensitive(table_name);
+                if (!resolved_temp_table.empty())
+                {
+                    table_name = std::move(resolved_temp_table);
+                    resolved_as_temp = true;
+                }
+            }
+
+            if (!resolved_as_temp)
+            {
+                String effective_db = database_name.empty() ? context->getCurrentDatabase() : database_name;
+                auto database = DatabaseCatalog::instance().tryGetDatabase(effective_db);
+                if (database)
+                {
+                    String resolved_table = database->tryResolveTableNameCaseInsensitive(table_name, context);
+                    if (!resolved_table.empty())
+                        table_name = resolved_table;
+                }
             }
         }
     }
@@ -1162,7 +1182,13 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     /// A double-quoted table alias stays case-sensitive even when the reference is unquoted
     const bool alias_case_insensitive = part_case_insensitive(0) && !table_expression_node->isAliasDoubleQuoted();
 
-    if ((!table_name.empty() && strings_equal(path_start, table_name, part_case_insensitive(0)))
+    /// A double-quoted CTE definition (`WITH "MyCte" AS ...`) pins the CTE name to its canonical
+    /// case; an unquoted `mycte.x` must not bind to it. Non-CTE table names come from storage so
+    /// they're already canonical and can fold as usual.
+    const bool table_name_case_insensitive
+        = part_case_insensitive(0) && !table_expression_data.table_name_is_double_quoted;
+
+    if ((!table_name.empty() && strings_equal(path_start, table_name, table_name_case_insensitive))
         || (!table_alias.empty() && strings_equal(path_start, table_alias, alias_case_insensitive)))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
 

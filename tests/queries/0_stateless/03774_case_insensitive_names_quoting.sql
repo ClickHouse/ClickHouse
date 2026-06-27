@@ -139,4 +139,3 @@ DROP TABLE IF EXISTS test_compound;
 DROP TABLE IF EXISTS test_alias;
 DROP TABLE IF EXISTS test_special;
 DROP TABLE IF EXISTS test_default;
-

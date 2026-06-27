@@ -117,8 +117,11 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
 
         /// Quoted aliases are semantic in `standard` mode (case-sensitive vs case-insensitive);
         /// otherwise hash/equality would deduplicate `expr AS x` and `expr AS "x"` despite the
-        /// two registering differently in `QueryExpressionsAliasVisitor`.
+        /// two registering differently in `QueryExpressionsAliasVisitor`. Consult the quote bit
+        /// only when both sides actually have an alias — otherwise a node whose alias was removed
+        /// would still compare unequal to its semantically-identical sibling because of stale quote state.
         if (compare_options.compare_aliases
+            && !lhs_node_to_compare->alias.empty()
             && lhs_node_to_compare->alias_is_double_quoted != rhs_node_to_compare->alias_is_double_quoted)
             return false;
 

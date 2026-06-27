@@ -47,6 +47,10 @@ struct AnalysisTableExpressionData
     std::string table_expression_description;
     std::string database_name;
     std::string table_name;
+    /// True iff `table_name` originated from a CTE defined with a double-quoted name
+    /// (`WITH "MyCte" AS ...`). Qualifier matching in `standard` mode keeps such names exact so
+    /// an unquoted `mycte.x` does not bind to a CTE defined as `"MyCte"`.
+    bool table_name_is_double_quoted = false;
     bool should_qualify_columns = true;
     bool supports_subcolumns = false;
     NamesAndTypes column_names_and_types;

@@ -48,7 +48,13 @@ Alice	Smith	0
 --- Folded subcolumn lookup returns canonical column name ---
 hello
 --- JOIN USING (Key, key) with distinct exact columns is valid ---
-1	a	a
+1	a
 --- Materialized CTE double-quoted name stays case-sensitive in qualifier ---
 --- INTERPOLATE quoted target survives format/reparse ---
 1
+--- Non-materialized CTE double-quoted name stays case-sensitive ---
+--- Exact regular table beats folded temporary table ---
+42
+--- REPLACE folded target rewrites WHERE/HAVING ---
+0
+0

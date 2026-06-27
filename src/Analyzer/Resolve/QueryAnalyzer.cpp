@@ -1948,7 +1948,7 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
                 /// how an explicit reference is typed. The merged key's type is wrong here: in a
                 /// nested JOIN it reflects the OUTER join's siblings, while `t.col` only follows
                 /// the joins `t` participates in. Without this, an aggregate over the qualified
-                /// matcher can segfault (Bad cast Nullable mismatch) — see 04329.
+                /// matcher throws a bad-cast exception on Nullable type mismatch — see 04329.
                 if (is_qualified_matcher)
                 {
                     Identifier explicit_identifier = matched_qualified_identifier;
@@ -2680,6 +2680,12 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                         matched_replace_target.empty() ? column_name : matched_replace_target);
 
                 replace_transformer_mappings[column_name] = replace_expression;
+                /// Store under the user's target spelling too so a WHERE/HAVING reference written
+                /// with the same case (e.g. `WHERE age = 0` after `REPLACE (0 AS age)` against
+                /// physical column `Age`) finds the mapping by exact name. The WHERE/HAVING
+                /// rewriter additionally does a case-insensitive fallback in `standard` mode.
+                if (!matched_replace_target.empty() && matched_replace_target != column_name)
+                    replace_transformer_mappings[matched_replace_target] = replace_expression;
 
                 node = replace_expression->clone();
                 node_projection_names = resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -2808,11 +2814,32 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
                         if (auto * identifier = current->as<IdentifierNode>())
                         {
-                            auto it = replace_transformer_mappings.find(identifier->getIdentifier().getFullName());
+                            const auto & ident_full_name = identifier->getIdentifier().getFullName();
+                            auto it = replace_transformer_mappings.find(ident_full_name);
                             if (it != replace_transformer_mappings.end())
                             {
                                 current = it->second->clone();
                                 return;
+                            }
+                            /// `standard` mode: an unquoted-last-part reference folds case-insensitively
+                            /// against the projection-replacement targets, mirroring how
+                            /// `findReplacementExpression` matches projection columns.
+                            if (scope.isStandardMode())
+                            {
+                                const auto & quote_styles = identifier->getQuoteStyles();
+                                const bool last_part_quoted
+                                    = !quote_styles.empty() && quote_styles.back() == IdentifierQuoteStyle::DoubleQuote;
+                                if (!last_part_quoted)
+                                {
+                                    for (const auto & [key, expr] : replace_transformer_mappings)
+                                    {
+                                        if (Poco::icompare(key, ident_full_name) == 0)
+                                        {
+                                            current = expr->clone();
+                                            return;
+                                        }
+                                    }
+                                }
                             }
                         }
 
@@ -4403,6 +4430,8 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     else if (query_node || union_node)
     {
         table_expression_data.table_name = query_node ? query_node->getCTEName() : union_node->getCTEName();
+        table_expression_data.table_name_is_double_quoted
+            = query_node ? query_node->isCTENameDoubleQuoted() : union_node->isCTENameDoubleQuoted();
         table_expression_data.table_expression_description = "subquery";
     }
     else if (table_function_node)

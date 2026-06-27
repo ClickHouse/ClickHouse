@@ -151,3 +151,27 @@ SELECT '--- INTERPOLATE quoted target survives format/reparse ---';
 -- Bot review: after analysis the target child is a ColumnNode, not an IdentifierNode. The quote
 -- bit must come from the InterpolateNode itself so the round-trip keeps `"x"` quoted.
 SELECT formatQuery($$ SELECT x FROM (SELECT 1 AS x) ORDER BY x WITH FILL FROM 1 TO 3 INTERPOLATE ("x" AS x + 1) $$) LIKE '%INTERPOLATE ("x"%';
+
+SELECT '--- Non-materialized CTE double-quoted name stays case-sensitive ---';
+-- WITH "MyCte" AS (...) ... unquoted `mycte.x` must not bind to the double-quoted CTE name.
+WITH "MyCte" AS (SELECT 1 AS x) SELECT mycte.x FROM "MyCte"; -- { serverError UNKNOWN_IDENTIFIER }
+
+SELECT '--- Exact regular table beats folded temporary table ---';
+-- A folded temp match (e.g. temp `TempPrec`) must not shadow an exact regular table `tempprec`.
+DROP TABLE IF EXISTS tempprec;
+CREATE TABLE tempprec (x Int32) ENGINE = Memory;
+INSERT INTO tempprec VALUES (42);
+CREATE TEMPORARY TABLE TempPrec (x Int32);
+INSERT INTO TempPrec VALUES (7);
+SELECT x FROM tempprec;
+DROP TEMPORARY TABLE TempPrec;
+DROP TABLE tempprec;
+
+SELECT '--- REPLACE folded target rewrites WHERE/HAVING ---';
+-- `REPLACE (0 AS age)` against physical column `Age` must apply the same replacement to
+-- references in WHERE and HAVING.
+DROP TABLE IF EXISTS t_replace_filter;
+CREATE TABLE t_replace_filter (Age Int32) ENGINE = Memory;
+INSERT INTO t_replace_filter VALUES (5), (10);
+SELECT * REPLACE (0 AS age) FROM t_replace_filter WHERE age = 0;
+DROP TABLE t_replace_filter;

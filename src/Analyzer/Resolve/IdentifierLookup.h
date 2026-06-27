@@ -77,12 +77,16 @@ struct IdentifierLookup
     }
 
     /// used for expression lookups (table.column), the last part is the column name that
-    /// looked up in the column map, so its quote style determines case sensitivity
+    /// looked up in the column map, so its quote style determines case sensitivity.
+    /// Index through `isPartDoubleQuoted` so a quote vector that's shorter than the identifier
+    /// (or empty) cannot be silently misaligned with `back()`.
     bool isLastPartDoubleQuoted() const
     {
-        if (is_part_double_quoted.empty())
+        const size_t parts = identifier.getPartsSize();
+        if (parts == 0)
             return false;
-        return is_part_double_quoted.back();
+        chassert(is_part_double_quoted.empty() || is_part_double_quoted.size() == parts);
+        return isPartDoubleQuoted(parts - 1);
     }
 
     /// In SQL-standard mode, a part participates in case-insensitive matching only if it was not double-quoted.
