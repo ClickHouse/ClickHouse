@@ -1170,10 +1170,12 @@ void WindowTransform::writeOutCurrentRow()
         {
             // Same frame as the previous row -> same result. When that row is in this same block its
             // result is already in result_column one position back, so copy it instead of
-            // re-finalizing. Inserting result_column into itself is safe here because the output
-            // column is pre-reserved to block.rows in appendChunk, so this append never reallocates.
+            // re-finalizing. We copy the column into itself with insertRangeFrom (not insertFrom):
+            // insertRangeFrom appends via resize + memcpy from a disjoint source range, which is
+            // self-safe even if the append reallocates and even for nested columns (Array, Variant,
+            // Dynamic, JSON) whose sub-columns are not covered by the top-level reserve.
             chassert(result_column->size() == current_row.row);
-            result_column->insertFrom(*result_column, current_row.row - 1);
+            result_column->insertRangeFrom(*result_column, current_row.row - 1, 1);
         }
         else if (ws.is_aggregate_function_state)
         {
