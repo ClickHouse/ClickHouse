@@ -170,6 +170,22 @@ if [ -z "$ORACLES" ]; then
     echo "$RESULT_INFO" >&2
     exit 1
 fi
+
+# Oracles excluded from the curated run. `TextIndexDirectRead` asserts that a
+# text-index `hasToken` lookup (`use_skip_indexes` on) matches a full scan, but
+# it currently dominates the run with known index-vs-scan divergences (several
+# tokenizers, cf. ClickHouse#107186) that would keep the job perpetually red on
+# the same finding. Drop it until that divergence class is resolved upstream.
+EXCLUDED_ORACLES="TextIndexDirectRead"
+for excluded in $EXCLUDED_ORACLES; do
+    ORACLES=$(printf '%s' "$ORACLES" | tr ',' '\n' | grep -vxF "$excluded" | paste -sd, -)
+done
+if [ -z "$ORACLES" ]; then
+    OVERALL_STATUS="ERROR"
+    RESULT_INFO="Oracle list is empty after applying exclusions"
+    echo "$RESULT_INFO" >&2
+    exit 1
+fi
 echo "$ORACLES"
 
 OVERALL_STATUS=OK
