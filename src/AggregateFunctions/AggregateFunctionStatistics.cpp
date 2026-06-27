@@ -620,6 +620,7 @@ private:
                        / (static_cast<Float64>(d.count) * d.m2 * d.m2);
             }
         }
+        UNREACHABLE();
     }
 
 public:
@@ -648,7 +649,7 @@ public:
         data(place).update(*columns[0], row_num);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).mergeWith(data(rhs));
     }

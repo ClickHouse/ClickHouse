@@ -103,6 +103,61 @@ SELECT
     kurtPopStable(x) = 1.75 AS kurt_exact_175
 FROM (SELECT number + 1 AS x FROM numbers(7));
 
+-- (k) Cross-distribution unequal-size merge: exercises delta-correction terms in mergeWith
+-- Two partitions with different means and shapes (300 rows vs 9000 rows) make delta large,
+-- so the delta^2/delta^3/delta^4 Pébay correction terms contribute significantly.
+-- A wrong coefficient in those terms produces a large error here even if same-distribution
+-- splits pass.
+SELECT
+    round(abs(
+        (SELECT skewPopStableMerge(s) FROM (
+            SELECT skewPopStableState(x) AS s FROM (SELECT (number % 3) + 1 AS x FROM numbers(300))
+            UNION ALL
+            SELECT skewPopStableState(x) AS s FROM (SELECT (number % 11) + 1 AS x FROM numbers(9000))
+        ))
+        - (SELECT skewPopStable(x) FROM (
+            SELECT (number % 3) + 1 AS x FROM numbers(300)
+            UNION ALL
+            SELECT (number % 11) + 1 AS x FROM numbers(9000)
+        ))
+    ), 10) AS skew_cross_dist_merge,
+    round(abs(
+        (SELECT skewSampStableMerge(s) FROM (
+            SELECT skewSampStableState(x) AS s FROM (SELECT (number % 3) + 1 AS x FROM numbers(300))
+            UNION ALL
+            SELECT skewSampStableState(x) AS s FROM (SELECT (number % 11) + 1 AS x FROM numbers(9000))
+        ))
+        - (SELECT skewSampStable(x) FROM (
+            SELECT (number % 3) + 1 AS x FROM numbers(300)
+            UNION ALL
+            SELECT (number % 11) + 1 AS x FROM numbers(9000)
+        ))
+    ), 10) AS skew_samp_cross_dist_merge,
+    round(abs(
+        (SELECT kurtPopStableMerge(s) FROM (
+            SELECT kurtPopStableState(x) AS s FROM (SELECT (number % 3) + 1 AS x FROM numbers(300))
+            UNION ALL
+            SELECT kurtPopStableState(x) AS s FROM (SELECT (number % 11) + 1 AS x FROM numbers(9000))
+        ))
+        - (SELECT kurtPopStable(x) FROM (
+            SELECT (number % 3) + 1 AS x FROM numbers(300)
+            UNION ALL
+            SELECT (number % 11) + 1 AS x FROM numbers(9000)
+        ))
+    ), 10) AS kurt_cross_dist_merge,
+    round(abs(
+        (SELECT kurtSampStableMerge(s) FROM (
+            SELECT kurtSampStableState(x) AS s FROM (SELECT (number % 3) + 1 AS x FROM numbers(300))
+            UNION ALL
+            SELECT kurtSampStableState(x) AS s FROM (SELECT (number % 11) + 1 AS x FROM numbers(9000))
+        ))
+        - (SELECT kurtSampStable(x) FROM (
+            SELECT (number % 3) + 1 AS x FROM numbers(300)
+            UNION ALL
+            SELECT (number % 11) + 1 AS x FROM numbers(9000)
+        ))
+    ), 10) AS kurt_samp_cross_dist_merge;
+
 -- (j) Three-way merge: three partitions combined equals one-shot aggregation
 SELECT
     round(abs(
