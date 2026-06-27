@@ -1,0 +1,21 @@
+-- `limit` in the view definition caps the view result (3 rows)
+3
+-- the construction setting is preserved verbatim in SHOW CREATE
+CREATE VIEW default.v_limit
+(
+    `x` UInt64
+)
+AS SELECT x
+FROM default.t_src
+ORDER BY x ASC
+SETTINGS limit = 3
+-- `filter` in the view definition filters the view result (x >= 7)
+3
+7
+8
+9
+-- `sort` + `limit` in the view definition select the top rows (the two largest)
+8
+9
+-- the construction setting also applies through the analyzer view inlining
+3

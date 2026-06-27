@@ -1,0 +1,7 @@
+-- ?limit= shapes a plain SELECT (2 rows)
+0
+1
+-- ?limit= on INSERT ... SELECT does not propagate to the SELECT (all 10 rows inserted)
+10
+-- ?filter= (combined-filter channel) on INSERT ... SELECT does not propagate either (all 10 rows)
+10

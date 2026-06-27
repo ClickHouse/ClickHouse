@@ -8,8 +8,10 @@
 3
 -- a trailing query-level SETTINGS limit still caps the whole union (3, not 5 + 3)
 3
--- construction settings are result modifiers, so they are REJECTED on INSERT ... SELECT (count = 0, nothing inserted)
-0
+-- a construction setting on the INSERT statement itself does not propagate to the SELECT (all 10 rows)
+10
+-- but a construction setting on the source SELECT is effective (2 rows)
+2
 -- filter in a subquery SETTINGS filters that subquery (numbers 6..9 -> 4)
 4
 -- select in a subquery SETTINGS projects that subquery
@@ -28,5 +30,5 @@ FROM
     FROM numbers(10)
 )
 WHERE greater(number, 5)
--- construction settings are likewise REJECTED on CREATE ... AS SELECT (table not created)
-0
+-- a construction setting on the source SELECT of CREATE ... AS SELECT is effective (3 rows)
+3
