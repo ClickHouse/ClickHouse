@@ -797,25 +797,19 @@ void HTTPHandler::processQuery(
 
     if (!path_info.table.empty())
     {
-        /// `qualified_table` is SQL text spliced into a generated query (`SELECT * FROM …`), so it
-        /// must be back-quoted. `implicit_table_identifier` is the value of the
-        /// `implicit_table_at_top_level` setting, which the analyzer consumes as a raw `Identifier`
-        /// (it splits on `.` and does NOT strip SQL quoting — see `QueryTreeBuilder::buildJoinTree`),
-        /// so it must be the unquoted name parts. Back-quoting it here would push the backticks into
-        /// the identifier name parts and break FROM-less queries for databases/tables whose names
-        /// need quoting (e.g. `/weird-db/my-table?query=SELECT+*`).
+        /// `qualified_table` is the back-quoted `database.table` (or just `table`) from the URL path.
+        /// It is used both as SQL text spliced into a generated query (`SELECT * FROM <qualified_table>`)
+        /// and as the value of the `implicit_table_at_top_level` setting for a FROM-less query. The
+        /// analyzer parses that setting as a quoted compound identifier (see
+        /// `QueryTreeBuilder::buildJoinTree`), so back-quoting is required and correct: it lets a
+        /// database/table whose name needs quoting (e.g. `/weird-db/my-table`) and — crucially — a table
+        /// name that contains a literal dot (e.g. `/db/my.table` → `` `db`.`my.table` ``) resolve to the
+        /// right identifier parts instead of being split on every `.`.
         String qualified_table;
-        String implicit_table_identifier;
         if (!path_info.database.empty())
-        {
             qualified_table = backQuoteIfNeed(path_info.database) + "." + backQuoteIfNeed(path_info.table);
-            implicit_table_identifier = path_info.database + "." + path_info.table;
-        }
         else
-        {
             qualified_table = backQuoteIfNeed(path_info.table);
-            implicit_table_identifier = path_info.table;
-        }
 
         /// Validate up-front that the table from the URL path actually exists, so a typo like
         /// `/sashboards` produces a single clean response that combines the closest table-name
@@ -870,7 +864,7 @@ void HTTPHandler::processQuery(
         /// Always set implicit_table_at_top_level so a FROM-less SELECT (whether user-supplied
         /// or auto-generated) picks up the table from the URL path.
         SettingsChanges implicit_change;
-        implicit_change.setSetting("implicit_table_at_top_level", implicit_table_identifier);
+        implicit_change.setSetting("implicit_table_at_top_level", qualified_table);
         context->checkSettingsConstraints(implicit_change, SettingSource::QUERY);
         context->applySettingsChanges(implicit_change);
 

@@ -29,6 +29,8 @@
 #include <Parsers/ASTStreamSettings.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseQuery.h>
 
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/MatcherNode.h>
@@ -64,6 +66,9 @@ namespace Setting
     extern const SettingsBool enable_order_by_all;
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
 }
 
 
@@ -855,9 +860,22 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
           */
         if (!is_subquery)
         {
-            String implicit_table = context->getSettingsRef()[Setting::implicit_table_at_top_level];
+            const String & implicit_table = context->getSettingsRef()[Setting::implicit_table_at_top_level];
             if (!implicit_table.empty())
-                return std::make_shared<IdentifierNode>(Identifier(implicit_table));
+            {
+                /// Parse the value as a (possibly back-quoted) compound identifier rather than splitting
+                /// the raw string on every `.`. This lets a single name part contain a literal dot when
+                /// it is back-quoted — e.g. `db`.`my.table` resolves to database `db`, table `my.table`,
+                /// not the three parts `db`, `my`, `table`. A plain unquoted `db.table` parses to the
+                /// same parts as before, so existing callers are unaffected.
+                const auto & settings = context->getSettingsRef();
+                ParserCompoundIdentifier parser;
+                ASTPtr identifier_ast = parseQuery(
+                    parser, implicit_table.data(), implicit_table.data() + implicit_table.size(),
+                    "implicit_table_at_top_level setting",
+                    settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                return std::make_shared<IdentifierNode>(Identifier(identifier_ast->as<ASTIdentifier &>().name_parts));
+            }
         }
 
         return std::make_shared<IdentifierNode>(Identifier("system.one"));
