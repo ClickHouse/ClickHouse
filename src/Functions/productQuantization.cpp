@@ -154,8 +154,11 @@ public:
                         "Sample vector #{} has {} elements but function {} was declared with {} dimensions", begin + j, vbuf.size(), name, dimensions);
                 std::memcpy(flat.data() + j * dimensions, vbuf.data(), dimensions * sizeof(float));
             }
-            std::vector<float> codebook = ProductQuantization::trainCodebook(flat.data(), num_samples, dimensions, m, nbits);
-            std::memcpy(&chars[r * fs_bytes], codebook.data(), fs_bytes);
+            /// `trainCodebook` owns the (transient) codebook buffer; copy it straight into the result FixedString.
+            std::memcpy(
+                &chars[r * fs_bytes],
+                ProductQuantization::trainCodebook(flat.data(), num_samples, dimensions, m, nbits).data(),
+                fs_bytes);
         }
         return col_res;
     }

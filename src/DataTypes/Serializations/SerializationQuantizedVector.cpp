@@ -10,6 +10,7 @@
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 #include <algorithm>
 #include <cstring>
@@ -22,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
+    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
 namespace
@@ -72,26 +74,42 @@ struct SerializeStatePQ : public ISerialization::SerializeBinaryBulkState
     bool trained = false;
 };
 
+/// Holds the part's single codebook value once read, so it is broadcast to every granule without re-reading the stream.
+struct DeserializeStatePQCodebook : public ISerialization::DeserializeBinaryBulkState
+{
+    ColumnPtr codebook; /// a one-row column, or null until the first granule reads it
+};
+
 /// Read serialization for the per-part codebook subcolumn. The codebook is stored as a SINGLE value per part (written
-/// once at the suffix, every granule mark points at it), but a scan asks for one value per row. Reading it as a plain
+/// once at the suffix; every granule's mark points at it), but a scan asks for one value per row. Reading it as a plain
 /// FixedString would try to read `limit` values from a one-value stream (and materialize `limit` copies of a large
-/// blob). Instead we read exactly one value and return a `ColumnConst` broadcast to `limit` rows - O(1) memory, and the
-/// distance function sees the codebook as a per-block constant.
+/// blob). Instead we read the one value ONCE into the deserialize state and return a `ColumnConst` broadcast to `limit`
+/// rows for every granule - O(1) memory, and the distance function sees the codebook as a per-block constant. Reading
+/// the stream on every granule (the previous approach) exhausts the one-value stream and fails on multi-granule parts.
 class SerializationPQCodebook final : public SerializationWrapper
 {
 public:
-    explicit SerializationPQCodebook(const SerializationPtr & nested_) : SerializationWrapper(nested_) {}
+    SerializationPQCodebook(const SerializationPtr & nested_, const DataTypePtr & value_type_)
+        : SerializationWrapper(nested_), value_type(value_type_) {}
 
     /// Created via the serialization pool so it carries a stable hash (required when attached to a column), mirroring
     /// SerializationNamed::create.
-    static SerializationPtr create(const SerializationPtr & nested_)
+    static SerializationPtr create(const SerializationPtr & nested_, const DataTypePtr & value_type_)
     {
         if (!nested_->supportsPooling())
-            return std::shared_ptr<ISerialization>(new SerializationPQCodebook(nested_));
+            return std::shared_ptr<ISerialization>(new SerializationPQCodebook(nested_, value_type_));
         SipHash hash;
         hash.update("PQCodebook");
         hash.update(nested_->getHash());
-        return ISerialization::pooled(hash.get128(), [&] { return new SerializationPQCodebook(nested_); });
+        return ISerialization::pooled(hash.get128(), [&] { return new SerializationPQCodebook(nested_, value_type_); });
+    }
+
+    void deserializeBinaryBulkStatePrefix(
+        DeserializeBinaryBulkSettings & /*settings*/,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsDeserializeStatesCache * /*cache*/) const override
+    {
+        state = std::make_shared<DeserializeStatePQCodebook>();
     }
 
     void deserializeBinaryBulkWithMultipleStreams(
@@ -99,27 +117,43 @@ public:
         size_t /*rows_offset*/,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & /*state*/,
+        DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * /*cache*/) const override
     {
-        settings.path.push_back(Substream::Regular);
-        ReadBuffer * stream = settings.getter(settings.path);
-        settings.path.pop_back();
-        if (!stream)
-            return;
-
+        /// The reader keeps `state` across granules (it is `deserialize_binary_bulk_state_map[name]`). Ensure it is our
+        /// type and reuse it; if a prior pass populated the map with a different state, replace it on the first call.
+        auto * pq_state = typeid_cast<DeserializeStatePQCodebook *>(state.get());
+        if (!pq_state)
+        {
+            auto new_state = std::make_shared<DeserializeStatePQCodebook>();
+            pq_state = new_state.get();
+            state = std::move(new_state);
+        }
         const size_t prev_size = column ? column->size() : 0;
 
-        /// The one-value column holding the codebook (the data column of the resulting ColumnConst).
-        const IColumn & value_template = (column && isColumnConst(*column))
-            ? assert_cast<const ColumnConst &>(*column).getDataColumn()
-            : *column;
-        auto value = value_template.cloneEmpty();
-        /// Read exactly one codebook value (all rows in the part share it), regardless of `limit`.
-        nested_serialization->deserializeBinaryBulk(*value, *stream, /*rows_offset=*/0, /*limit=*/1, /*avg_value_size_hint=*/0.0);
+        /// Read the part's single codebook value exactly once (the stream holds one value for the whole part); every
+        /// granule reuses it. The first granule of a read range is positioned at the codebook's start by its mark.
+        if (!pq_state->codebook)
+        {
+            settings.path.push_back(Substream::Regular);
+            ReadBuffer * stream = settings.getter(settings.path);
+            settings.path.pop_back();
+            if (!stream)
+                return;
 
-        column = ColumnConst::create(std::move(value), prev_size + limit);
+            auto value = value_type->createColumn();
+            nested_serialization->deserializeBinaryBulk(*value, *stream, /*rows_offset=*/0, /*limit=*/1, /*avg_value_size_hint=*/0.0);
+            if (value->size() != 1)
+                throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+                    "Expected exactly one per-part PQ codebook value but read {}", value->size());
+            pq_state->codebook = std::move(value);
+        }
+
+        column = ColumnConst::create(pq_state->codebook, prev_size + limit);
     }
+
+private:
+    DataTypePtr value_type;
 };
 
 }
@@ -140,7 +174,7 @@ SerializationQuantizedVector::SerializationQuantizedVector(const SerializationPt
         codebook_bytes = ProductQuantization::codebookFloats(params_.dimensions, params_.m, params_.bits) * sizeof(float);
         codebook_type = std::make_shared<DataTypeFixedString>(codebook_bytes);
         codebook_serialization = SerializationNamed::create(
-            SerializationPQCodebook::create(codebook_type->getDefaultSerialization()),
+            SerializationPQCodebook::create(codebook_type->getDefaultSerialization(), codebook_type),
             pq_codebook_subcolumn_name, ISerialization::Substream::PQCodebook);
     }
 }
