@@ -1,0 +1,6 @@
+-- 1 MiB configured, generous ram ratio: applied unclamped --
+1048576
+-- 1 GiB configured, tiny ram ratio: clamped below it but still positive --
+1
+-- pointInPolygon still works under the tiny cap --
+1
