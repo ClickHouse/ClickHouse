@@ -2517,12 +2517,12 @@ Show internal aliases (such as __table1) in EXPLAIN PLAN instead of those specif
 Default format used by `EXPLAIN PLAN`.
 
 Possible values:
-- `pretty` (default since 26.6) — `actions`, `compact`, and `pretty` default to `true`, producing a compact, pretty, action-annotated plan.
-- `legacy` — pre-26.6 output.
+- `pretty` (default since 26.7) — `actions`, `compact`, and `pretty` default to `true`, producing a compact, pretty, action-annotated plan.
+- `legacy` — pre-26.7 output.
 
 Specifying the `actions`, `compact`, or `pretty` options explicitly in the `EXPLAIN` statement (for example, `EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`) always overrides this setting.
 
-`EXPLAIN PLAN` with `json = 1` or `distributed = 1` keeps the legacy (pre-26.6) defaults regardless of this setting, unless `actions`, `compact`, or `pretty` are set explicitly. The pretty output cannot represent JSON results or per-shard distributed plans, so those modes are only rendered correctly in legacy form.
+`EXPLAIN PLAN` with `json = 1` or `distributed = 1` keeps the legacy (pre-26.7) defaults regardless of this setting, unless `actions`, `compact`, or `pretty` are set explicitly. The pretty output cannot represent JSON results or per-shard distributed plans, so those modes are only rendered correctly in legacy form.
 )", 0) \
     \
     DECLARE(UInt64, query_plan_max_step_description_length, 500, R"(

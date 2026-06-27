@@ -2,6 +2,8 @@
 -- Tests that match() utilizes the text index
 SET explain_query_plan_default = 'legacy';
 
+DROP TABLE IF EXISTS tab;
+
 CREATE TABLE tab
 (
     id UInt32,

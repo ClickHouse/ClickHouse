@@ -1,4 +1,4 @@
--- Tags: no-random-merge-tree-settings
+-- Tags: no-random-merge-tree-settings, long
 -- add_minmax_index_for_numeric_columns=0: Different plan (would use the index on x)
 SET explain_query_plan_default = 'legacy';
 
