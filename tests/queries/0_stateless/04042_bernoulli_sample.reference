@@ -67,3 +67,6 @@ bernoulli survives FINAL merge-path reconstruction
 bernoulli survives read-in-order split across streams
 1
 1
+bernoulli survives join-by-shards layer reconstruction
+1
+1

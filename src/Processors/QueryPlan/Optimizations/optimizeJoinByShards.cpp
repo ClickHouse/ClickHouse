@@ -237,6 +237,15 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
         if (!analysis_result)
             analysis_result = source->selectRangesToRead();
 
+        /// Bernoulli sampling attaches a per-part `bernoulli_filter` to `parts_with_ranges`
+        /// only later, in `ReadFromMergeTree::initializePipeline` (after the per-query seed
+        /// exists). The layers built below are copied before that, so the `readByLayers` path
+        /// would read those layer copies with a null `bernoulli_filter` and bypass sampling,
+        /// returning unsampled rows. Skip the sharding optimization whenever any source uses
+        /// Bernoulli sampling — correctness takes precedence over the sharding speedup.
+        if (analysis_result->sampling.use_bernoulli_sampling)
+            return;
+
         size_t added_parts = all_parts.size();
         /// Renumber part_index_in_query to be contiguous starting from added_parts.
         /// filterPartsByQueryConditionCache may drop parts from selectRangesToRead(),

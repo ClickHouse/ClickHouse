@@ -271,6 +271,44 @@ SELECT
         SETTINGS bernoulli_sample_seed = 42, max_threads = 4, optimize_read_in_order = 1));
 DROP TABLE t_bernoulli_order;
 
+SELECT 'bernoulli survives join-by-shards layer reconstruction';
+-- With query_plan_join_shard_by_pk_ranges, optimizeJoinByShards builds
+-- AnalysisResult::split_parts.layers during query-plan optimization, before
+-- ReadFromMergeTree::initializePipeline attaches the per-part Bernoulli filter (the per-query
+-- seed only exists then). spreadMarkRanges prefers those prebuilt layers (readByLayers), so the
+-- layer copies reach the read task with a null bernoulli_filter and sampling is bypassed,
+-- returning the full (unsampled) join. optimizeJoinByShards must be skipped for Bernoulli reads.
+-- The extra settings are what make the optimizer fire (matching 03357_join_pk_sharding): no
+-- table swap, no runtime filters, no parallel replicas, statistics off, and multiple streams.
+DROP TABLE IF EXISTS t_bernoulli_join_l;
+DROP TABLE IF EXISTS t_bernoulli_join_r;
+CREATE TABLE t_bernoulli_join_l (x UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE t_bernoulli_join_r (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t_bernoulli_join_l SELECT number FROM numbers(100000);
+INSERT INTO t_bernoulli_join_r SELECT number FROM numbers(100000);
+-- A 0.1 sample of the left side joined 1:1 must be far below the full 100000 (it would be
+-- exactly 100000 if the filter were dropped on the readByLayers path).
+SELECT count() < 40000 FROM t_bernoulli_join_l AS l SAMPLE 0.1 INNER JOIN t_bernoulli_join_r AS r ON l.x = r.x
+SETTINGS bernoulli_sample_seed = 42, query_plan_join_shard_by_pk_ranges = 1, max_threads = 4,
+    query_plan_join_swap_table = 0, enable_join_runtime_filters = 0,
+    allow_experimental_parallel_reading_from_replicas = 0, use_statistics = 0,
+    max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
+-- The optimized (shard-by-PK) plan must return the same sampled count as the unoptimized plan.
+SELECT
+    (SELECT count() FROM t_bernoulli_join_l AS l SAMPLE 0.1 INNER JOIN t_bernoulli_join_r AS r ON l.x = r.x
+        SETTINGS bernoulli_sample_seed = 42, query_plan_join_shard_by_pk_ranges = 0, max_threads = 4,
+        query_plan_join_swap_table = 0, enable_join_runtime_filters = 0,
+        allow_experimental_parallel_reading_from_replicas = 0, use_statistics = 0,
+        max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0)
+    =
+    (SELECT count() FROM t_bernoulli_join_l AS l SAMPLE 0.1 INNER JOIN t_bernoulli_join_r AS r ON l.x = r.x
+        SETTINGS bernoulli_sample_seed = 42, query_plan_join_shard_by_pk_ranges = 1, max_threads = 4,
+        query_plan_join_swap_table = 0, enable_join_runtime_filters = 0,
+        allow_experimental_parallel_reading_from_replicas = 0, use_statistics = 0,
+        max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0);
+DROP TABLE t_bernoulli_join_l;
+DROP TABLE t_bernoulli_join_r;
+
 DROP TABLE t_bernoulli;
 DROP TABLE t_bernoulli_empty;
 DROP TABLE t_bernoulli_memory;
