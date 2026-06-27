@@ -843,6 +843,7 @@ The string encoding of the tuple data type presents similar challenges as with t
 For example, in the following table, the tuple contains an enum with a tick and parenthesis in the name, which can cause parsing issues if not handled properly:
 
 ```sql
+SET enable_nullable_tuple_type = 1;
 CREATE OR REPLACE TABLE foo
 (
    `t` Tuple(
@@ -862,7 +863,6 @@ A map can be viewed as an `Array(Tuple(K, V))`, where `K` is the key type and `V
 For example, a map with `String` keys and `UInt32` values:
 
 ```sql
-SET enable_nullable_tuple_type = 1;
 SELECT CAST(map('foo', 1, 'bar', 2), 'Map(String, UInt32)') AS m
 ```
 
@@ -891,7 +891,6 @@ While for the end user `Variant(T1, T2)` means exactly the same as `Variant(T2, 
 Consider the following example:
 
 ```sql
-SET enable_nullable_tuple_type = 1;
 SET allow_experimental_variant_type = 1,
     allow_suspicious_variant_types = 1;
 CREATE OR REPLACE TABLE foo
@@ -938,7 +937,6 @@ SELECT * FROM foo FORMAT RowBinary;
 A `NULL` value is encoded with a discriminant byte of `0xFF`:
 
 ```sql
-SET enable_nullable_tuple_type = 1;
 SELECT NULL :: Variant(UInt32, String)
 ```
 
@@ -961,7 +959,6 @@ Where `BinaryTypeIndex` is a single byte identifying the type. See the reference
 A `NULL` Dynamic value is encoded with `BinaryTypeIndex` `0x00` (the `Nothing` type), with no additional bytes:
 
 ```sql
-SET enable_nullable_tuple_type = 1;
 SELECT NULL::Dynamic
 ```
 
@@ -972,7 +969,6 @@ SELECT NULL::Dynamic
 **Examples:**
 
 ```sql
-SET enable_nullable_tuple_type = 1;
 SELECT 42::Dynamic
 ```
 
@@ -982,7 +978,6 @@ SELECT 42::Dynamic
 ```
 
 ```sql
-SET enable_nullable_tuple_type = 1;
 SELECT toDateTime64('2024-01-15 10:30:00', 3, 'America/New_York')::Dynamic
 ```
 
@@ -1163,7 +1158,6 @@ Geo is a category of data types that represent geographical data. It includes:
 The wire format of the Geo values is exactly the same as with Tuple and Array. `RowBinaryWithNamesAndTypes` format headers will contain the aliases for these types, e.g., `Point`, `Ring`, `Polygon`, `MultiPolygon`, `LineString`, and `MultiLineString`.
 
 ```sql
-SET enable_nullable_tuple_type = 1;
 SELECT    (1.0, 2.0)                                       :: Point           AS point,
     [(3.0, 4.0), (5.0, 6.0)]                         :: Ring            AS ring,
     [[(7.0, 8.0), (9.0, 10.0)], [(11.0, 12.0)]]      :: Polygon         AS polygon,
@@ -1259,7 +1253,6 @@ Wire format structure:
 Sample encoding of a `Point` as `Geometry`:
 
 ```sql
-SET enable_nullable_tuple_type = 1;
 SELECT ((1.0, 2.0)::Point)::Geometry
 ```
 
@@ -1295,7 +1288,6 @@ All component arrays in a single row **must have the same length**. This is a se
 With the default setting, `Nested` is flattened into independent arrays. Each sub-column becomes a separate `Array` column with a dot-separated name:
 
 ```sql
-SET enable_nullable_tuple_type = 1;
 CREATE OR REPLACE TABLE foo
 (
     n Nested(a String, b Int32)
@@ -1331,7 +1323,6 @@ Each array is serialized independently, as described in the [Array](#array) sect
 With `flatten_nested = 0`, `Nested` is preserved as a single column of type `Array(Tuple(...))`. The column name is not dot-separated:
 
 ```sql
-SET enable_nullable_tuple_type = 1;
 SET flatten_nested = 0;
 CREATE OR REPLACE TABLE foo
 (
@@ -1369,7 +1360,6 @@ Note how the fields are interleaved per element (a₁, b₁, a₂, b₂) rather 
 For example, `SimpleAggregateFunction(max, UInt32)` is encoded the same way as a plain `UInt32`:
 
 ```sql
-SET enable_nullable_tuple_type = 1;
 CREATE TABLE test_saf
 (
     key UInt32,
@@ -1399,7 +1389,6 @@ The internal format varies by function. Some simple examples:
 **`countState`** — stores the count as a VarUInt (LEB128):
 
 ```sql
-SET enable_nullable_tuple_type = 1;
 SELECT countState(number) FROM numbers(5)
 ```
 
@@ -1410,7 +1399,6 @@ SELECT countState(number) FROM numbers(5)
 **`sumState`** — stores the accumulated sum in a fixed-size integer. The width depends on the argument type (`UInt64` for integer arguments):
 
 ```sql
-SET enable_nullable_tuple_type = 1;
 SELECT sumState(toUInt32(number)) FROM numbers(5) -- sum = 0+1+2+3+4 = 10
 ```
 
@@ -1421,7 +1409,6 @@ SELECT sumState(toUInt32(number)) FROM numbers(5) -- sum = 0+1+2+3+4 = 10
 **`minState` / `maxState`** — stores a flag byte followed by the value in the underlying type. The flag is `0x00` for an empty state (no values seen) or `0x01` when a value is present:
 
 ```sql
-SET enable_nullable_tuple_type = 1;
 SELECT maxState(toUInt32(number)) FROM numbers(5) -- max = 4
 ```
 
@@ -1433,7 +1420,6 @@ SELECT maxState(toUInt32(number)) FROM numbers(5) -- max = 4
 An empty state (no rows aggregated):
 
 ```sql
-SET enable_nullable_tuple_type = 1;
 SELECT minState(toUInt32(number)) FROM numbers(0)
 ```
 
@@ -1467,7 +1453,6 @@ Wire format: identical to `Array(element_type)`:
 Sample encoding of `QBit(Float32, 4)` containing `[1.0, 2.0, 3.0, 4.0]`:
 
 ```sql
-SET enable_nullable_tuple_type = 1;
 SELECT [1.0, 2.0, 3.0, 4.0]::QBit(Float32, 4)
 ```
 
