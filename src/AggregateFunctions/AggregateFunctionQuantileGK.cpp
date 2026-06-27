@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 namespace
@@ -272,6 +273,11 @@ public:
 
         size_t sampled_len = 0;
         readBinaryLittleEndian(sampled_len, buf);
+        /// Guard against allocation bombs: a crafted state can declare a huge
+        /// length and make resize_exact allocate gigabytes before any data is read.
+        if (sampled_len > 100'000'000)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Too large array size ({}) in quantileGK deserialization", sampled_len);
         sampled.resize_exact(sampled_len);
 
         for (size_t i = 0; i < sampled_len; ++i)

@@ -1434,7 +1434,9 @@ void MergeTreeRangeReader::updatePerformanceCounters(size_t num_rows_read)
 {
     ProfileEvents::increment(ProfileEvents::RowsReadByMainReader, main_reader * num_rows_read);
     ProfileEvents::increment(ProfileEvents::RowsReadByPrewhereReaders, (!main_reader) * num_rows_read);
-    performance_counters->rows_read += num_rows_read;
+    /// Null when predicate_statistics_sample_rate = 0 (default): skip the counter work.
+    if (performance_counters)
+        performance_counters->rows_read += num_rows_read;
 }
 
 static void checkCombinedFiltersSize(size_t bytes_in_first_filter, size_t second_filter_size)
@@ -1701,7 +1703,11 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
             result.columns.erase(result.columns.begin() + filter_column_pos);
 
         FilterWithCachedCount current_filter(current_step_filter);
-        performance_counters->rows_passed_filter += current_filter.countBytesInFilter();
+        /// Null when predicate_statistics_sample_rate = 0 (default). countBytesInFilter()
+        /// is an O(rows) scan that the following optimize() does not otherwise need, so
+        /// keep it behind the guard.
+        if (performance_counters)
+            performance_counters->rows_passed_filter += current_filter.countBytesInFilter();
         result.optimize(current_filter, can_read_incomplete_granules, false);
 
         if (prewhere_info->need_filter && !result.filterWasApplied())

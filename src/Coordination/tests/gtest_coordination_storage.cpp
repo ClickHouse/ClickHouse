@@ -807,7 +807,7 @@ TYPED_TEST(CoordinationTest, TestListRequestTypes)
 
     const auto get_children = [&](const auto list_request_type)
     {
-        const auto list_request = std::make_shared<ZooKeeperFilteredListRequest>();
+        const auto list_request = std::make_shared<ZooKeeperListRequest>();
         int new_zxid = ++zxid;
         list_request->path = std::string{parentNodePath(test_path)};
         list_request->list_request_type = list_request_type;
@@ -883,7 +883,7 @@ TYPED_TEST(CoordinationTest, TestGetChildrenWithStatsAndData)
     const auto get_children_with_options = [&](const auto & path, bool with_stat, bool with_data)
     {
         int new_zxid = ++zxid;
-        const auto list_request = std::make_shared<ZooKeeperFilteredListWithStatsAndDataRequest>();
+        const auto list_request = std::make_shared<ZooKeeperListRequest>();
         list_request->path = path;
         list_request->list_request_type = ListRequestType::ALL;
         list_request->with_stat = with_stat;
@@ -1029,7 +1029,7 @@ TYPED_TEST(CoordinationTest, TestGetChildrenWithStatsAndData)
     {
         SCOPED_TRACE("Non-existent path");
         int new_zxid = ++zxid;
-        const auto list_request = std::make_shared<ZooKeeperFilteredListWithStatsAndDataRequest>();
+        const auto list_request = std::make_shared<ZooKeeperListRequest>();
         list_request->path = "/nonexistent";
         list_request->list_request_type = ListRequestType::ALL;
         list_request->with_stat = true;

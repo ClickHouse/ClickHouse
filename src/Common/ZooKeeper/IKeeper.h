@@ -10,6 +10,7 @@
 #include <limits>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -568,10 +569,17 @@ struct ListRequest : virtual Request
 {
     String path;
 
+    /// FILTERED_LIST extension.
+    std::optional<ListRequestType> list_request_type;
+
+    /// LIST_WITH_STAT_AND_DATA extension.
+    std::optional<bool> with_stat;
+    std::optional<bool> with_data;
+
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
-    size_t bytesSize() const override { return path.size(); }
+    size_t bytesSize() const override { return path.size() + sizeof(list_request_type) + sizeof(with_stat) + sizeof(with_data); }
 };
 
 struct ListResponse : virtual Response
