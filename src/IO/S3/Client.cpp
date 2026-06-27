@@ -443,6 +443,17 @@ template void Client::setKMSHeaders<PutObjectRequest>(PutObjectRequest & request
 
 Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 {
+    /// Route every attempt (initial, wrong-region, redirected) through one exit so that a query killed
+    /// while a HeadObject request is in flight is reported as a cancellation instead of the stale
+    /// S3/network outcome.
+    auto outcome = headObjectInternal(request);
+    if (!outcome.IsSuccess())
+        throwIfQueryWasCanceled();
+    return outcome;
+}
+
+Model::HeadObjectOutcome Client::headObjectInternal(HeadObjectRequest & request) const
+{
     const auto & bucket = request.GetBucket();
 
     request.setApiMode(api_mode);
@@ -465,8 +476,6 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
     auto result = HeadObject(static_cast<const Model::HeadObjectRequest&>(request));
     if (result.IsSuccess())
         return result;
-
-    throwIfQueryWasCanceled();
 
     const auto & error = result.GetError();
 

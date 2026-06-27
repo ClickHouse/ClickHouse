@@ -303,6 +303,10 @@ private:
     std::optional<S3::URI> getURIFromError(const Aws::S3::S3Error & error) const;
     std::optional<Aws::S3::S3Error> updateURIForBucketForHead(const std::string & bucket) const;
 
+    /// Implements HeadObject (region/redirect handling). The public HeadObject wraps it so that a
+    /// failed outcome from any attempt surfaces a cancellation when the query was killed.
+    Model::HeadObjectOutcome headObjectInternal(HeadObjectRequest & request) const;
+
     std::optional<S3::URI> getURIForBucket(const std::string & bucket) const;
 
     bool checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const;
