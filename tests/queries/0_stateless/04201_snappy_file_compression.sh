@@ -13,7 +13,18 @@ mkdir -p "${DIR}"
 chmod 777 "${DIR}"
 trap 'rm -rf "${DIR}"' EXIT
 
+BASIC_FILE="${DIR}/basic.tsv.snappy"
 FRAMED_FILE="${DIR}/framed.tsv.snappy"
+
+# Round-trip with the default `snappy_mode='basic'` (Hadoop snappy block format).
+${CLICKHOUSE_CLIENT} -q "
+INSERT INTO TABLE FUNCTION file('${BASIC_FILE}', 'TSV', 'x UInt32', 'snappy')
+SELECT number FROM numbers(5);
+"
+${CLICKHOUSE_CLIENT} -q "
+SELECT x FROM file('${BASIC_FILE}', 'TSV', 'x UInt32', 'snappy')
+ORDER BY x;
+"
 
 # Round-trip with `snappy_mode='framed'` (snappy framing format).
 ${CLICKHOUSE_CLIENT} -q "

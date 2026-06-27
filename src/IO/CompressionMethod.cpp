@@ -15,6 +15,7 @@
 #include <IO/Bzip2ReadBuffer.h>
 #include <IO/Bzip2WriteBuffer.h>
 #include <IO/HadoopSnappyReadBuffer.h>
+#include <IO/HadoopSnappyWriteBuffer.h>
 #include <IO/SnappyFramedReadBuffer.h>
 #include <IO/SnappyWriteBuffer.h>
 
@@ -203,7 +204,7 @@ std::unique_ptr<WriteBuffer> createWriteCompressedWrapper(
     {
         if (snappy_mode == SnappyMode::Framed)
             return std::make_unique<SnappyWriteBuffer>(std::forward<WriteBufferT>(nested), buf_size, existing_memory, alignment, compress_empty);
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Snappy write compression is only supported in framed mode (SET snappy_mode = 'framed')");
+        return std::make_unique<HadoopSnappyWriteBuffer>(std::forward<WriteBufferT>(nested), buf_size, existing_memory, alignment, compress_empty);
     }
 #endif
 

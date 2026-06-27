@@ -2338,7 +2338,7 @@ Note that the raw snappy block format produced by a single `snappy::Compress` ca
 
 Possible values:
 
-- `basic` — Hadoop snappy block format. Compatible with files written by Hadoop. Read-only (writing is not supported in this mode).
+- `basic` — Hadoop snappy block format. Compatible with files read and written by Hadoop. Supports both reading and writing.
 - `framed` — Snappy framing format, the standard streaming format defined by Google. Supports both reading and writing.
 )", 0) \
     \
