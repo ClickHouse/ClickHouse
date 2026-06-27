@@ -111,7 +111,9 @@
 
         #results {
             width: 24rem;
-            min-width: 16rem;
+            /* Cap the result list at 30% of the width so it does not dominate narrow (mobile) screens.
+               On wide screens 24rem is the smaller value and wins, so the layout is unchanged there. */
+            max-width: 30%;
             overflow-y: auto;
             border-right: 1px solid var(--border);
             background: var(--panel-bg);
