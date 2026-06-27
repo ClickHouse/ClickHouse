@@ -134,6 +134,8 @@ SELECT naiveBayesClassifier('sentiment_model', 'this is terrible');
 | **priors_mode**  | How class prior probabilities are determined: `uniform`, `proportional`, or `explicit`. See below. | `uniform` | `proportional` |
 | **priors**       | Explicit class priors, required when `priors_mode` is `explicit`. Must sum to `1.0`. | `'0=0.6,1=0.4'` | — |
 | **store_source** | Retain the source n-gram rows so `SELECT * FROM dictionary` works. Doubles memory. | `1` | `0` |
+| **start_token**  | Optional boundary token prepended `(n-1)` times to the query input. Independent of `end_token`: set one, both, or neither; an empty value means that side is not padded (same as omitting it). The two may be equal. For `byte`/`codepoint` mode give a number (decimal or `0x` hex); for `token` mode a literal token. | `'0x01'` / `'0x10FFFE'` / `'<s>'` | — (no padding) |
+| **end_token**    | Optional boundary token appended `(n-1)` times to the query input. Independent of `start_token`; same per-mode format. | `'0xFF'` / `'0x10FFFF'` / `'</s>'` | — (no padding) |
 
 **Prior modes:**
 - `proportional` (default) — each class's prior is proportional to its total n-gram count in the training data, i.e. classes seen more often are more likely a priori. Use this when the training class frequencies reflect the real-world frequencies you expect at query time.
@@ -148,11 +150,12 @@ SELECT naiveBayesClassifier('sentiment_model', 'this is terrible');
 Uses Naive Bayes classification with [Laplace smoothing](https://en.wikipedia.org/wiki/Additive_smoothing) based on n-gram probabilities per [Jurafsky & Martin, Chapter 4](https://web.stanford.edu/~jurafsky/slp3/4.pdf).
 
 **Tokenization modes:**
-- `byte`: Each byte is one token. Boundary markers: `0x01` (start), `0xFF` (end).
-- `codepoint`: Each Unicode scalar value is one token. Boundary markers: `U+10FFFE` (start), `U+10FFFF` (end).
-- `token`: Whitespace-delimited words. Boundary markers: `<s>` (start), `</s>` (end).
+- `byte`: Each byte is one token.
+- `codepoint`: Each Unicode scalar value is one token.
+- `token`: Whitespace-delimited words.
 
-For n > 1, the classifier pads the input with `(n - 1)` boundary tokens at each end before extracting n-grams.
+**Padding (boundary tokens):**
+By default the input is tokenized as-is, with no padding. Setting `start_token` and/or `end_token` gives the leading and/or trailing n-grams positional context: the classifier pads that side of the input with `(n - 1)` copies of the token before extracting n-grams (this has no effect for `n = 1`). The two sides are independent — set one for one-sided padding, both, or neither — and an empty value is treated the same as omitting it (no padding on that side). Padding helps only if the training n-grams were produced with the *same* boundary tokens — the dictionary consumes pre-aggregated n-grams and cannot add them itself, so the convention is shared between your training pipeline and the layout. Choose rare values that will not collide with real data, for example `0x01`/`0xFF` (byte), `U+10FFFE`/`U+10FFFF` (codepoint), or `<s>`/`</s>` (token). Raw bytes cannot pass through the dictionary configuration, so `byte` and `codepoint` tokens are given as numbers (decimal or `0x` hex) and resolved to the corresponding byte / UTF-8 code point, while `token` mode takes the literal token string.
 
 **Dictionary structure:**
 The `PRIMARY KEY` must be a single `String` column holding the n-gram — it is the value passed in at query time (the text to classify), not a stored lookup key. Alongside the key, declare exactly two unsigned-integer attributes: the class label and the occurrence count. The `class_attribute` layout parameter names which attribute is the class label; the other is the count, so the two attributes may be declared in either order.
