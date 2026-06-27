@@ -32,7 +32,7 @@ CREATE DICTIONARY lang_byte_2
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_byte_data_gen'))
-LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'byte' alpha 1.0 priors_mode 'proportional'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'byte' alpha 1.0 priors_mode 'proportional' start_token '0x01' end_token '0xFF'))
 LIFETIME(0)
 "
 

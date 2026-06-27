@@ -7,6 +7,10 @@
 # held-out test set it scores ~99.4%; on this committed 300-sentences-per-language subsample it
 # scores ~99.6% overall, with the weakest class (English) at ~0.97. We assert robust thresholds so
 # the test guards against regressions in the classifier or tokenization without being brittle.
+#
+# The model was trained with U+10FFFE / U+10FFFF boundary code points, so the dictionary specifies matching
+# start_token / end_token to use those features (padding is opt-in and off by default). This also exercises
+# the padding code path on real data.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -30,7 +34,7 @@ CREATE DICTIONARY lang_codepoint_2
 )
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'nb_lang_model'))
-LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'codepoint'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'codepoint' start_token '0x10FFFE' end_token '0x10FFFF'))
 LIFETIME(0)
 "
 
