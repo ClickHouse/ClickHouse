@@ -1081,6 +1081,11 @@ void WindowTransform::writeOutCurrentRow()
     chassert(current_row < partition_end);
     chassert(current_row.block >= first_block_number);
 
+    // Whether this row's frame equals the previous row's. When current_row_number == 1 it's the first
+    // row of the partition, so there's no previous row in this partition (and thus no previous frame)
+    // to compare against.
+    const bool frame_unchanged = current_row_number > 1 && frame_start == prev_frame_start && frame_end == prev_frame_end;
+
     const auto & block = blockAt(current_row);
     for (size_t wi = 0; wi < workspaces.size(); ++wi)
     {
@@ -1089,25 +1094,33 @@ void WindowTransform::writeOutCurrentRow()
         if (ws.window_function_impl)
         {
             ws.window_function_impl->windowInsertResultInto(this, wi);
+            continue;
+        }
+
+        IColumn * result_column = block.output_columns[wi].get();
+        const auto * a = ws.aggregate_function.get();
+        auto * buf = ws.aggregate_function_state.data();
+        // FIXME does it also allocate the result on the arena?
+        // We'll have to pass it out with blocks then...
+
+        if (frame_unchanged && !ws.is_aggregate_function_state && current_row.row > 0)
+        {
+            // Same frame as the previous row -> same result. When that row is in this same block its
+            // result is already in result_column one position back, so copy it instead of
+            // re-finalizing. Inserting result_column into itself is safe here because the output
+            // column is pre-reserved to block.rows in appendChunk, so this append never reallocates.
+            chassert(result_column->size() == current_row.row);
+            result_column->insertFrom(*result_column, current_row.row - 1);
+        }
+        else if (ws.is_aggregate_function_state)
+        {
+            /// We should use insertMergeResultInto to insert result into ColumnAggregateFunction
+            /// correctly if result contains AggregateFunction's states
+            a->insertMergeResultInto(buf, *result_column, arena.get());
         }
         else
         {
-            IColumn * result_column = block.output_columns[wi].get();
-            const auto * a = ws.aggregate_function.get();
-            auto * buf = ws.aggregate_function_state.data();
-            // FIXME does it also allocate the result on the arena?
-            // We'll have to pass it out with blocks then...
-
-            if (ws.is_aggregate_function_state)
-            {
-                /// We should use insertMergeResultInto to insert result into ColumnAggregateFunction
-                /// correctly if result contains AggregateFunction's states
-                a->insertMergeResultInto(buf, *result_column, arena.get());
-            }
-            else
-            {
-                a->insertResultInto(buf, *result_column, arena.get());
-            }
+            a->insertResultInto(buf, *result_column, arena.get());
         }
     }
 }
