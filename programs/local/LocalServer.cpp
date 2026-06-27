@@ -4,6 +4,7 @@
 #include <exception>
 #include <Common/Config/getLocalConfigPath.h>
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/PerCPUMemory.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Core/Defines.h>
@@ -185,6 +186,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_thread_pool_size;
     extern const ServerSettingsUInt64 max_unexpected_parts_loading_thread_pool_size;
+    extern const ServerSettingsUInt64 max_per_cpu_untracked_memory;
+    extern const ServerSettingsUInt64 per_cpu_untracked_memory_thread_buffer;
     extern const ServerSettingsUInt64 min_allocation_size_to_throw_on_memory_limit;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsBool show_addresses_in_stack_traces;
@@ -1343,6 +1346,9 @@ void LocalServer::processConfig()
 
     CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(
         server_settings[ServerSetting::min_allocation_size_to_throw_on_memory_limit]);
+
+    per_cpu_memory.setBudgetCapacity(server_settings[ServerSetting::max_per_cpu_untracked_memory]);
+    per_cpu_memory.setThreadBuffer(server_settings[ServerSetting::per_cpu_untracked_memory_thread_buffer]);
 
     size_t page_cache_min_size = server_settings[ServerSetting::page_cache_min_size];
     size_t page_cache_max_size = server_settings[ServerSetting::page_cache_max_size];

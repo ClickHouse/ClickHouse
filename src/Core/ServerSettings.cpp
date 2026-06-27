@@ -31,6 +31,7 @@
 #include <Common/Config/ConfigReloader.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/MemoryTracker.h>
+#include <Common/PerCPUMemory.h>
 
 #include <Common/DNSResolver.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -341,6 +342,12 @@ namespace
     :::
 
     As a special case, a value of `0` (default) means the server may consume all available memory (excluding further restrictions imposed by `max_server_memory_usage_to_ram_ratio`).
+    )", 0) \
+    DECLARE(UInt64, max_per_cpu_untracked_memory, (8 * 1024 * 1024), R"(
+    Upper bound, in bytes, on the untracked memory all threads running on one CPU may hold at once before it is flushed to the memory tracker. While `max_untracked_memory` bounds a single thread, this bounds the per-CPU total, so many threads cannot multiply their per-thread allowance into a large server-wide overcommit. The total untracked memory is therefore bounded by roughly `number_of_cpus * max_per_cpu_untracked_memory`. A value of `0` disables the per-CPU bound (only the per-thread `max_untracked_memory` applies). Linux only.
+    )", 0) \
+    DECLARE(UInt64, per_cpu_untracked_memory_thread_buffer, (32 * 1024), R"(
+    Amount of untracked memory, in bytes, each thread may hold without touching the shared per-CPU budget. It amortizes the cost of the per-CPU bookkeeping for small allocations and is the slack added on top of `max_per_cpu_untracked_memory * number_of_cpus` in the worst case. A value of `0` removes the slack: every allocation updates the shared per-CPU counter (most precise, but more contention). Linux only.
     )", 0) \
     DECLARE(UInt64, min_allocation_size_to_throw_on_memory_limit, 0, R"(
     Minimum size, in bytes, of a generic C++ allocation (the kind made by standard containers, strings, `std::vector` growth, smart pointers, etc.) that is allowed to raise `MEMORY_LIMIT_EXCEEDED` once `max_server_memory_usage` is reached. Smaller generic allocations are still counted against the memory tracker but are allowed to succeed even past the limit, which reduces spurious failures during cleanup and exception-handling paths near OOM.
@@ -1870,6 +1877,8 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
         = {
             {"max_server_memory_usage", {std::to_string(total_memory_tracker.getHardLimit()), ChangeableWithoutRestart::Yes}},
             {"min_allocation_size_to_throw_on_memory_limit", {std::to_string(CurrentMemoryTracker::getMinAllocationSizeBytesToThrow()), ChangeableWithoutRestart::Yes}},
+            {"max_per_cpu_untracked_memory", {std::to_string(per_cpu_memory.budgetCapacity()), ChangeableWithoutRestart::Yes}},
+            {"per_cpu_untracked_memory_thread_buffer", {std::to_string(per_cpu_memory.threadBuffer()), ChangeableWithoutRestart::Yes}},
 
             {"max_table_size_to_drop", {std::to_string(context->getMaxTableSizeToDrop()), ChangeableWithoutRestart::Yes}},
             {"max_named_collection_num_to_warn", {std::to_string(context->getMaxNamedCollectionNumToWarn()), ChangeableWithoutRestart::Yes}},

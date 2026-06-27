@@ -265,13 +265,28 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
 
     if (!column_names_allowed_to_select.empty())
     {
-        auto it = column_names_and_types.begin();
-        while (it != column_names_and_types.end())
+        /// Keep only the columns the user is allowed to read, so that a trivial query reads a column
+        /// it has access to. But if none of the allowed columns is a physical column (e.g. the user is
+        /// granted access only to ALIAS columns, which are not physical and therefore never appear in
+        /// `column_names_and_types`), the filter below would remove everything. In that case we keep all
+        /// physical columns: reading any of them just to determine the number of rows for a trivial query
+        /// (such as `SELECT count()`) is allowed, because computing an accessible ALIAS column requires
+        /// reading its physical source columns anyway and no column values are exposed to the user.
+        bool has_allowed_physical_column = std::any_of(
+            column_names_and_types.begin(),
+            column_names_and_types.end(),
+            [&](const auto & column) { return column_names_allowed_to_select.contains(column.name); });
+
+        if (has_allowed_physical_column)
         {
-            if (!column_names_allowed_to_select.contains(it->name))
-                it = column_names_and_types.erase(it);
-            else
-                ++it;
+            auto it = column_names_and_types.begin();
+            while (it != column_names_and_types.end())
+            {
+                if (!column_names_allowed_to_select.contains(it->name))
+                    it = column_names_and_types.erase(it);
+                else
+                    ++it;
+            }
         }
     }
 
