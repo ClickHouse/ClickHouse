@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemNumbers.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <mutex>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -55,3 +56,6 @@ void StorageSystemNumbers::readImpl(
         column_names, query_info, storage_snapshot, context, shared_from_this(), max_block_size, num_streams));
 }
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemNumbers) }
