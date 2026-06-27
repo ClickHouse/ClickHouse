@@ -3,6 +3,7 @@
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -75,6 +76,8 @@ protected:
 
         if (data_parts.empty())
             return {};
+
+        auto component_guard = Coordination::setCurrentComponent("MergeTreeAnalyzeIndexSource::generate");
 
         auto ranges = getIndexAnalysis();
         MutableColumns res_columns = header->cloneEmptyColumns();
