@@ -44,3 +44,12 @@ SELECT number, (SELECT 42) AS c
 FROM numbers(3)
 GROUP BY number WITH ROLLUP
 ORDER BY number NULLS LAST;
+
+-- The exact query shape the CI AST fuzzer aborted on (https://github.com/ClickHouse/ClickHouse/pull/108685),
+-- scaled down and without FORMAT CSV: a multi-column projection with a correlated scalar subquery over a
+-- GROUPING SETS key under WITH TOTALS.
+SELECT number, number + 1, concat('string: ', (SELECT toString(number))) AS c
+FROM numbers(3)
+GROUP BY GROUPING SETS ((number))
+WITH TOTALS
+ORDER BY number;

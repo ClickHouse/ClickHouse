@@ -18,3 +18,8 @@ Nullable(String)
 1	42
 2	42
 \N	42
+0	1	string: 0
+1	2	string: 1
+2	3	string: 2
+
+\N	\N	\N
