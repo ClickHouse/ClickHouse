@@ -207,6 +207,9 @@
             color: #EEE;
             padding: 0.8rem 1rem;
             overflow-x: auto;
+            /* Keep code blocks tight: the relaxed prose line-height (1.5 on `#doc`) would space out
+               code lines, so reset it to 1 here. */
+            line-height: 1;
             font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
             /* Code blocks are always dark, so their scrollbar is dark in both themes. */
             scrollbar-width: thin;
