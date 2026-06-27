@@ -3,6 +3,7 @@
 #include <Columns/ColumnReplicated.h>
 #include <Columns/IColumn.h>
 #include <base/types.h>
+#include <base/getL2CacheSize.h>
 #include <Common/Exception.h>
 
 #include <algorithm>
@@ -169,22 +170,8 @@ void RowDataStore::init(const Columns & columns)
     }
 }
 
-void RowDataStore::gatherRows(const Columns & columns, size_t start, size_t length)
+void RowDataStore::doGatherRows(const Columns & columns, size_t start, size_t length, char * dst)
 {
-    if (columns.size() != layout.size())
-        throw Exception(
-            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
-            "Number of appended columns ({}) does not match the number of columns in the layout ({}).",
-            columns.size(),
-            layout.size());
-
-    if (length == 0)
-        return;
-
-    size_t data_size = chars.size();
-    chars.resize(data_size + length * row_length);
-    char * dst = chars.data() + data_size;
-
     for (size_t i = 0; i < layout.size(); ++i)
     {
         const auto & field_layout = layout[i];
@@ -229,9 +216,45 @@ void RowDataStore::gatherRows(const Columns & columns, size_t start, size_t leng
 
 #undef APPLY_FOR_FIELD_SIZES
 
+void RowDataStore::gatherRows(const Columns & columns, size_t start, size_t length)
+{
+    if (columns.size() != layout.size())
+        throw Exception(
+            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+            "Number of appended columns ({}) does not match the number of columns in the layout ({}).",
+            columns.size(),
+            layout.size());
+
+    if (length == 0)
+        return;
+
+    size_t data_size = chars.size();
+    chars.resize(data_size + length * row_length);
+    char * dst = chars.data() + data_size;
+
+    const size_t batch_size = getBatchSize().value_or(length);
+    for (size_t batch_start = 0; batch_start < length; batch_start += batch_size)
+    {
+        const size_t remaining_batch_size = std::min(batch_size, length - batch_start);
+        doGatherRows(columns, start + batch_start, remaining_batch_size, dst + batch_start * row_length);
+    }
+}
+
 RowDataStore::FieldLayout RowDataStore::getFieldLayout(size_t input_col_index) const
 {
     return layout[input_col_index];
+}
+
+static constexpr UInt64 MIN_BYTES_IN_BATCH = 32 * 1024;
+static constexpr UInt64 MAX_BYTES_IN_BATCH = 512 * 1024;
+
+std::optional<size_t> RowDataStore::getBatchSize() const
+{
+    if (row_length == 0)
+        return std::nullopt;
+
+    const size_t batch_bytes = std::clamp<size_t>(getL2CacheSize() / 4, MIN_BYTES_IN_BATCH, MAX_BYTES_IN_BATCH);
+    return std::max<size_t>(1, batch_bytes / row_length);
 }
 
 bool isRowStorageUseful(const ColumnPtr & column)

@@ -114,7 +114,7 @@ namespace DB
     DECLARE(Bool, use_hash_table_stats_for_join_reordering, false, "Enable using collected hash table statistics for cardinality estimation during join reordering", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range)", 0) \
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.)", 0) \
-    DECLARE(UInt64, min_columns_for_hash_join_row_store, 3, "Minimum number of payload columns to trigger transforming hash join payload to row major. 0 disables the row transformation.", 0) \
+    DECLARE(UInt64, min_columns_for_hash_join_row_store, 3, "Minimum number of payload columns to trigger transforming hash join payload to row-major. 0 disables the row-major transformation.", 0) \
     DECLARE(UInt64, max_bytes_for_hash_join_row_store, 128_MiB, "Maximum number of bytes per hash join instance to place into the row-major hash join storage. For `parallel_hash` the build is split across instances, so the budget is scaled by the number of instances. 0 means no limit.", 0) \
 
 

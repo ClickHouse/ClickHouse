@@ -43,6 +43,7 @@
 
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
+#include <Interpreters/HashJoin/fillJoinOutputColumns.h>
 
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
@@ -1514,10 +1515,26 @@ struct CollectorNonJoined
         const Mapped & mapped,
         VectorWithMemoryTracking<const ColumnsInfo *> & columns_infos,
         VectorWithMemoryTracking<UInt32> & row_numbers,
-        PaddedPODArray<const char *> & row_store_ptrs)
+        PaddedPODArray<const char *> & row_store_ptrs,
+        std::optional<size_t> & row_store_batch_size)
     {
         constexpr bool mapped_asof = std::is_same_v<Mapped, AsofRowRefs>;
         [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<Mapped, RowRef>;
+
+        [[maybe_unused]] auto collect_row = [&](const ColumnsInfo * columns_info, UInt32 row_num)
+        {
+            if constexpr (with_columns)
+            {
+                columns_infos.push_back(columns_info);
+                row_numbers.push_back(row_num);
+            }
+            if constexpr (with_row_store)
+            {
+                row_store_ptrs.emplace_back(columns_info->row_store->getRowAt(row_num));
+                if (!row_store_batch_size)
+                    row_store_batch_size = columns_info->row_store->getBatchSize();
+            }
+        };
 
         if constexpr (mapped_asof)
         {
@@ -1525,26 +1542,12 @@ struct CollectorNonJoined
         }
         else if constexpr (mapped_one)
         {
-            if constexpr (with_columns)
-            {
-                columns_infos.push_back(mapped.columns_info);
-                row_numbers.push_back(mapped.row_num);
-            }
-            if constexpr (with_row_store)
-                row_store_ptrs.emplace_back(mapped.columns_info->row_store->getRowAt(mapped.row_num));
+            collect_row(mapped.columns_info, mapped.row_num);
         }
         else
         {
             for (auto it = mapped.begin(); it.ok(); ++it)
-            {
-                if constexpr (with_columns)
-                {
-                    columns_infos.push_back(it->columns_info);
-                    row_numbers.push_back(it->row_num);
-                }
-                if constexpr (with_row_store)
-                    row_store_ptrs.emplace_back(it->columns_info->row_store->getRowAt(it->row_num));
-            }
+                collect_row(it->columns_info, it->row_num);
         }
     }
 };
@@ -1668,21 +1671,6 @@ private:
             f.template operator()<true, true>();
     }
 
-    void addOutputs(
-        MutableColumns & columns_right,
-        const ColumnsWithRowNumbers & columns_with_row_numbers,
-        const PaddedPODArray<const char *> & row_store_ptrs)
-    {
-        for (size_t dst_idx = 0; dst_idx < output_access_indexes.size(); ++dst_idx)
-        {
-            const auto & output_access_index = output_access_indexes[dst_idx];
-            if (output_access_index.type == ColumnAccessIndex::Type::RowStore)
-                columns_right[dst_idx]->fillFromRowStorePtrs(row_store_ptrs, output_access_index.field_offset, output_access_index.field_size);
-            else
-                columns_right[dst_idx]->fillFromBlocksAndRowNumbers(output_access_index.index, columns_with_row_numbers);
-        }
-    }
-
     size_t fillColumnsFromData(const HashJoin::ScatteredColumnsList & columns, MutableColumns & columns_right)
     {
         if (!position.has_value())
@@ -1756,6 +1744,7 @@ private:
         }
 
         [[maybe_unused]] PaddedPODArray<const char *> row_store_ptrs;
+        [[maybe_unused]] std::optional<size_t> row_store_batch_size;
         if constexpr (with_row_store)
             row_store_ptrs.reserve(max_block_size);
 
@@ -1795,7 +1784,11 @@ private:
                             row_nums.push_back(static_cast<UInt32>(row));
                         }
                         if constexpr (with_row_store)
+                        {
                             row_store_ptrs.emplace_back(mapped_block.columns_info.row_store->getRowAt(row));
+                            if (!row_store_batch_size)
+                                row_store_batch_size = mapped_block.columns_info.row_store->getBatchSize();
+                        }
                     }
                 }
             }
@@ -1839,7 +1832,7 @@ private:
                     if (!parent.isUsed(offset))
                     {
                         const Mapped & mapped = it->getMapped();
-                        CollectorNonJoined<Mapped>::template collect<with_row_store, with_columns>(mapped, many_columns, row_nums, row_store_ptrs);
+                        CollectorNonJoined<Mapped>::template collect<with_row_store, with_columns>(mapped, many_columns, row_nums, row_store_ptrs, row_store_batch_size);
                     }
 
                     ++it;
@@ -1859,7 +1852,7 @@ private:
                         continue;
 
                     const Mapped & mapped = it->getMapped();
-                    CollectorNonJoined<Mapped>::template collect<with_row_store, with_columns>(mapped, many_columns, row_nums, row_store_ptrs);
+                    CollectorNonJoined<Mapped>::template collect<with_row_store, with_columns>(mapped, many_columns, row_nums, row_store_ptrs, row_store_batch_size);
 
                     if (collected() >= max_block_size)
                     {
@@ -1870,7 +1863,7 @@ private:
             }
         }
 
-        addOutputs(columns_right, columns_with_row_numbers, row_store_ptrs);
+        fillJoinOutputColumns</*with_defaults=*/ false>(columns_right, output_access_indexes, row_store_ptrs, row_store_batch_size, columns_with_row_numbers);
         return collected();
     }
 
@@ -1896,6 +1889,7 @@ private:
         }
 
         [[maybe_unused]] PaddedPODArray<const char *> row_store_ptrs;
+        [[maybe_unused]] std::optional<size_t> row_store_batch_size;
         if constexpr (with_row_store)
             row_store_ptrs.reserve(max_block_size);
 
@@ -1925,12 +1919,16 @@ private:
                         row_nums.push_back(static_cast<UInt32>(row));
                     }
                     if constexpr (with_row_store)
+                    {
                         row_store_ptrs.emplace_back(columns->columns_info.row_store->getRowAt(row));
+                        if (!row_store_batch_size)
+                            row_store_batch_size = columns->columns_info.row_store->getBatchSize();
+                    }
                 }
             }
         }
 
-        addOutputs(columns_right, columns_with_row_numbers, row_store_ptrs);
+        fillJoinOutputColumns</*with_defaults=*/ false>(columns_right, output_access_indexes, row_store_ptrs, row_store_batch_size, columns_with_row_numbers);
         rows_added += collected();
     }
 };
@@ -2792,8 +2790,10 @@ void HashJoin::tryConvertToFixedHashMap()
 
 bool HashJoin::isRowStoreSupported() const
 {
+    /// ANY joins materialize eagerly and doesn't run the batched fill the row store accelerates.
     return table_join->minColumnsForHashJoinRowStore() > 0
         && kind != JoinKind::Cross
+        && strictness != JoinStrictness::Any
         && !table_join->getClauses().empty()
         && !table_join->getMixedJoinExpression();
 }

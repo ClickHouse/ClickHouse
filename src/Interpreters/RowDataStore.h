@@ -3,6 +3,7 @@
 #include <Columns/IColumn_fwd.h>
 #include <Common/PODArray.h>
 
+#include <optional>
 #include <vector>
 
 
@@ -60,6 +61,9 @@ public:
 
     FieldLayout getFieldLayout(size_t input_col_index) const;
 
+    /// Derives optimal batch size for reading and writing into the row store based on L2 cache size.
+    std::optional<size_t> getBatchSize() const;
+
     const char * getRowAt(size_t index) const { return chars.data() + index * row_length; }
     size_t size() const { return row_length != 0 ? chars.size() / row_length : 0; }
     size_t byteSizeAt(size_t /*n*/) const { return row_length; }
@@ -75,6 +79,10 @@ private:
     bool init_flag = false;
 
     explicit RowDataStore(RowLayout && layout_);
+
+    /// Read `length` consecutive rows from `columns` starting at `start` and pack them into the row-major buffer.
+    /// For nullable fields the null flag is written at the field's first byte followed by the value.
+    void doGatherRows(const Columns & columns, size_t start, size_t length, char * dst);
 };
 
 bool isRowStorageUseful(const ColumnPtr & column);

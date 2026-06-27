@@ -1051,14 +1051,14 @@ void ColumnNullable::fillFromRowRefsWithRowStore(const DataTypePtr & type, size_
     getNestedColumn().fillFromRowRefsWithRowStoreAndNullMap(removeNullable(type), source_field_offset, source_field_size, row_refs_begin, row_refs_end, getNullMapData());
 }
 
-void ColumnNullable::fillFromRowStorePtrs(const DataTypePtr & type, const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size)
+void ColumnNullable::fillFromRowStorePtrs(const DataTypePtr & type, const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count)
 {
-    getNestedColumn().fillFromRowStorePtrsWithNullMap(removeNullable(type), row_store_ptrs, field_offset, field_size, getNullMapData());
+    getNestedColumn().fillFromRowStorePtrsWithNullMap(removeNullable(type), row_store_ptrs, field_offset, field_size, getNullMapData(), begin, count);
 }
 
-void ColumnNullable::fillFromRowStorePtrs(const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size)
+void ColumnNullable::fillFromRowStorePtrs(const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count)
 {
-    getNestedColumn().fillFromRowStorePtrsWithNullMap(row_store_ptrs, field_offset, field_size, getNullMapData());
+    getNestedColumn().fillFromRowStorePtrsWithNullMap(row_store_ptrs, field_offset, field_size, getNullMapData(), begin, count);
 }
 
 ColumnPtr makeNullable(const ColumnPtr & column)
