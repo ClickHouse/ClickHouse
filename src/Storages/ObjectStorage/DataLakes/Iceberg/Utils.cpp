@@ -93,6 +93,7 @@ namespace DB::Setting
 {
     extern const SettingsUInt64 iceberg_metadata_staleness_ms;
     extern const SettingsUInt64 output_format_compression_level;
+    extern const SettingsSnappyMode snappy_mode;
 }
 
 /// Hard to imagine a hint file larger than 10 MB
@@ -271,7 +272,12 @@ void writeMessageToFile(
     if (compression_method != CompressionMethod::None)
     {
         auto settings = context->getSettingsRef();
-        auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(std::move(buffer_metadata), compression_method, static_cast<int>(settings[Setting::output_format_compression_level]));
+        auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(
+            std::move(buffer_metadata),
+            compression_method,
+            static_cast<int>(settings[Setting::output_format_compression_level]),
+            /*zstd_window_log=*/ 0,
+            settings[Setting::snappy_mode]);
         compressed_buffer_metadata->write(data.data(), data.size());
         compressed_buffer_metadata->finalize();
     }
