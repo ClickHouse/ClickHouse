@@ -1017,8 +1017,12 @@ String getNumericVariantSupertypeHint(const DataTypePtr & type)
     if (!tryGetLossyNumericSupertype(variant_type->getVariants()))
         return {};
 
-    return ". Its alternatives are all numeric; enable setting 'allow_lossy_numeric_supertype' to use a numeric "
-           "supertype (with possible precision loss) instead of a Variant";
+    /// Only the final Variant type is visible here, not whether it was inferred (setting applies)
+    /// or stored/cast (it does not), so keep the wording conditional and point the latter at a cast.
+    return ". When this Variant is the inferred common type of if/multiIf/coalesce/ifNull/array/map "
+           "over numeric alternatives, enable setting 'allow_lossy_numeric_supertype' to use a numeric "
+           "supertype (with possible precision loss) instead; a stored Variant column or explicit cast "
+           "is not affected by the setting and needs typed subcolumns or a cast to a specific type";
 }
 
 DataTypePtr tryGetLeastSupertype(const DataTypes & types)
