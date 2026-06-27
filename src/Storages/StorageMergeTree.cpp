@@ -1767,8 +1767,9 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     MergeMutateSelectedEntryPtr mutate_entry;
 
     /// A read-only table (the `table_readonly` MergeTree setting, used e.g. for rotated system log tables)
-    /// must not waste background CPU. Only TTL drop/delete merges are still performed to reclaim disk space
-    /// from expired data; regular merges and mutations are skipped.
+    /// performs no modifications on disk and wastes no background CPU: no merges (regular, recompression, or
+    /// TTL), mutations, or part moves run on it. Tables with a TTL are never marked read-only (see
+    /// `SystemLog::prepareTable`), so skipping TTL merges here cannot strand expired data.
     const bool table_is_readonly = (*getSettings())[MergeTreeSetting::table_readonly];
 
     auto shared_lock = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);

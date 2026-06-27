@@ -6,8 +6,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# A read-only table (the `table_readonly` MergeTree setting) must not waste background CPU
-# on regular merges, but it must still drop expired data via TTL so that disk is reclaimed.
+# A read-only table (the `table_readonly` MergeTree setting) performs no modifications on disk and
+# wastes no background CPU: neither regular merges nor TTL drop/delete merges run on it.
 
 ${CLICKHOUSE_CLIENT} -m -q "
 DROP TABLE IF EXISTS t_readonly;
@@ -62,9 +62,12 @@ DROP TABLE t_readonly;
 DROP TABLE t_writable;
 "
 
-# Now check that TTL still reclaims disk on a read-only table.
+# Now check that a read-only table does NOT drop expired data via TTL: it must not modify data on
+# disk at all. A writable control table with the same TTL proves the background TTL merge path is
+# actively making progress; the read-only table must keep its expired part untouched.
 ${CLICKHOUSE_CLIENT} -m -q "
 DROP TABLE IF EXISTS t_readonly_ttl;
+DROP TABLE IF EXISTS t_writable_ttl;
 
 -- The TTL margin must be much larger than one day: the test runs with a randomized
 -- session_timezone, so today() may differ from the server date by a day in either direction.
@@ -72,24 +75,32 @@ CREATE TABLE t_readonly_ttl (d Date, x UInt64)
 ENGINE = MergeTree ORDER BY x
 TTL d + INTERVAL 1 MONTH
 SETTINGS ttl_only_drop_parts = 1, merge_with_ttl_timeout = 0;
+CREATE TABLE t_writable_ttl (d Date, x UInt64)
+ENGINE = MergeTree ORDER BY x
+TTL d + INTERVAL 1 MONTH
+SETTINGS ttl_only_drop_parts = 1, merge_with_ttl_timeout = 0;
 
--- Stop merges before inserting the expired part, so it cannot be dropped by a
--- regular TTL merge before the table is marked read-only. The drop observed below
--- can then only happen through the read-only scheduling path.
+-- Stop merges before inserting the expired part, so it cannot be dropped by a TTL merge
+-- before the read-only table is marked.
 SYSTEM STOP MERGES t_readonly_ttl;
+SYSTEM STOP MERGES t_writable_ttl;
 
--- One fully expired part and one fresh part.
+-- One fully expired part and one fresh part in each table.
 INSERT INTO t_readonly_ttl VALUES (today() - 100, 1);
 INSERT INTO t_readonly_ttl VALUES (today(), 2);
+INSERT INTO t_writable_ttl VALUES (today() - 100, 1);
+INSERT INTO t_writable_ttl VALUES (today(), 2);
 
 ALTER TABLE t_readonly_ttl MODIFY SETTING table_readonly = 1;
 SYSTEM START MERGES t_readonly_ttl;
+SYSTEM START MERGES t_writable_ttl;
 "
 
-# Wait until the expired part is dropped by a background TTL merge.
+# Wait until the writable control table drops its expired part via a background TTL merge.
+# This proves the background TTL merge path is actively making progress right now.
 dropped=0
 for _ in $(seq 1 120); do
-    count=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_readonly_ttl")
+    count=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_writable_ttl")
     if [[ "$count" -eq 1 ]]; then
         dropped=1
         break
@@ -97,14 +108,15 @@ for _ in $(seq 1 120); do
     sleep 0.5
 done
 
-if [[ "$dropped" -eq 1 ]]; then
-    echo "TTL drop on readonly: OK"
-else
-    echo "TTL drop on readonly: FAIL (remaining rows: $(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_readonly_ttl"))"
+if [[ "$dropped" -ne 1 ]]; then
+    echo "FAIL: writable control table TTL did not run in the background"
 fi
 
-# The surviving row must be the fresh one.
-echo "surviving row:"
-${CLICKHOUSE_CLIENT} -q "SELECT x FROM t_readonly_ttl ORDER BY x"
+# The read-only table must still have BOTH rows: no TTL merge should have happened.
+echo "readonly ttl rows:"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_readonly_ttl"
 
-${CLICKHOUSE_CLIENT} -q "DROP TABLE t_readonly_ttl"
+${CLICKHOUSE_CLIENT} -m -q "
+DROP TABLE t_readonly_ttl;
+DROP TABLE t_writable_ttl;
+"

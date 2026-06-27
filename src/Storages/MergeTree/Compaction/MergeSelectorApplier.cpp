@@ -50,7 +50,6 @@ struct ChooseContext
     const PartitionIdToTTLs & next_recompress_times;
     const time_t current_time;
     const bool aggressive;
-    const bool readonly;
 };
 
 MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, MergeType type)
@@ -94,8 +93,7 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
     }
 
     /// Recompression - 3 priority
-    /// A read-only table only reclaims disk via drop/delete; recompression rewrites parts, so skip it.
-    if (!ctx.readonly && !ctx.merge_constraints.empty() && ctx.metadata_snapshot.hasAnyRecompressionTTL())
+    if (!ctx.merge_constraints.empty() && ctx.metadata_snapshot.hasAnyRecompressionTTL())
     {
         TTLRecompressMergeSelector recompress_ttl_selector(ctx.next_recompress_times, ctx.current_time);
 
@@ -216,17 +214,18 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
         .next_recompress_times = next_recompress_times,
         .current_time = current_time,
         .aggressive = aggressive,
-        .readonly = readonly,
     };
+
+    /// A read-only table (the `table_readonly` MergeTree setting) does not modify any data on disk and
+    /// wastes no background CPU: no merges of any kind run on it — not regular merges, not recompression,
+    /// and not TTL drop/delete merges. A table with a TTL is never marked read-only (see
+    /// `SystemLog::prepareTable`), so skipping TTL merges here cannot strand expired data.
+    if (readonly)
+        return {};
 
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && can_use_ttl_merges)
         if (auto choices = tryChooseTTLMerge(ctx); !choices.empty())
             return choices;
-
-    /// A read-only table (the `table_readonly` MergeTree setting) only performs TTL drop/delete merges
-    /// to reclaim disk space; it does not run regular merges, so that no background CPU is wasted on it.
-    if (readonly)
-        return {};
 
     return tryChooseRegularMerge(ctx);
 }

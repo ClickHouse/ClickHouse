@@ -834,16 +834,31 @@ void SystemLog<LogElement>::prepareTable()
 
             InterpreterRenameQuery(rename, query_context).execute();
 
-            /// Mark the old (renamed) table as readonly if it's a non-replicated MergeTree.
+            /// Mark the old (renamed) table as readonly if it's a non-replicated MergeTree without a TTL.
             /// This prevents the old table from wasting CPU on background operations.
+            ///
             /// `table_readonly` is only supported for `StorageMergeTree`: `StorageReplicatedMergeTree`
             /// rejects `ALTER TABLE ... MODIFY SETTING table_readonly` with `NOT_IMPLEMENTED`, so issuing
             /// it for a replicated system log table (configured via a custom `<engine>`) would throw and
             /// abort the flush, losing the current batch of log entries. Skip the marking in that case.
+            ///
+            /// A `table_readonly` table performs no modifications on disk at all, including TTL drop/delete
+            /// merges. So if the table has a TTL (e.g. the default `event_date + INTERVAL 30 DAY DELETE`
+            /// retention that most system logs use), marking it readonly would prevent its expired data
+            /// from ever being reclaimed. Keep such tables writable so background TTL still runs; only
+            /// tables without any TTL are frozen as readonly.
             {
                 StorageID old_table_id(table_id.database_name, table_id.table_name + "_" + toString(suffix));
                 auto old_table = DatabaseCatalog::instance().tryGetTable(old_table_id, getContext());
-                if (old_table && old_table->isMergeTree() && !old_table->supportsReplication())
+
+                bool old_table_has_ttl = false;
+                if (old_table)
+                {
+                    auto old_metadata = old_table->getInMemoryMetadataPtr(getContext(), false);
+                    old_table_has_ttl = old_metadata->hasAnyTTL();
+                }
+
+                if (old_table && old_table->isMergeTree() && !old_table->supportsReplication() && !old_table_has_ttl)
                 {
                     auto alter_context = Context::createCopy(context);
                     alter_context->makeQueryContext();

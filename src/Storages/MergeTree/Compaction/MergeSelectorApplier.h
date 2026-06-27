@@ -32,8 +32,9 @@ public:
     const bool aggressive = false;
     const IMergeSelector::RangeFilter range_filter = nullptr;
     const StorageID storage_id;
-    /// If true, the table is read-only (the `table_readonly` MergeTree setting): only TTL drop/delete merges
-    /// (which reclaim disk by removing expired data) are allowed; regular and recompression merges are skipped.
+    /// If true, the table is read-only (the `table_readonly` MergeTree setting): no merges of any kind run —
+    /// neither regular merges, nor recompression, nor TTL drop/delete merges. (Tables with a TTL are never
+    /// marked read-only, so no TTL work is stranded; see `SystemLog::prepareTable`.)
     const bool readonly = false;
 
     MergeSelectorApplier(
