@@ -621,12 +621,12 @@ TEST_F(ReaderExecutorMetric, WarmSequential)
     EXPECT_GT(live.cache_reads, 0u) << "served from cache";
 }
 
-/// Alternating cached/cold segments, full scan. Each cold segment is its own contiguous
-/// cold run, so the long connection opens once per cold segment, bounds at the next cached
-/// segment (`boundedReach` clamps the reach at the next wide cached run), and drains
-/// cleanly there -> one reach-bounded GET per cold run, no over-run into a cached hole.
-/// Stateless: one short-lived connection per window -> higher R. Neither mode leaves an
-/// incomplete connection.
+/// Alternating cached/cold segments, full scan. The cell-aligned plan fetches each cold
+/// segment as its own cell: the long connection opens per cold run and is abandoned at the
+/// next cached cell (its remaining tail past the bound too big to drain), so the checkerboard
+/// leaves one incomplete connection per cold/cached transition. The full-cell prefill is
+/// consumed by the scan, so there is no net over-read. Stateless: one short-lived connection
+/// per window.
 TEST_F(ReaderExecutorMetric, Checkerboard)
 {
     ReadList even;
@@ -634,8 +634,8 @@ TEST_F(ReaderExecutorMetric, Checkerboard)
         even.emplace_back(s * SEGMENT, SEGMENT);
     auto [live, stateless] = runMatrix("checkerboard", even, {{0, std::nullopt}});
 
-    EXPECT_EQ(live.requests, 17u) << "live: one reach-bounded GET per cold segment, plus one ramp GET as the plan grows";
-    EXPECT_EQ(live.incomplete, 0u) << "live: each cold-run connection drains at the next cached segment, none abandoned";
+    EXPECT_EQ(live.requests, 25u) << "live: a reach-bounded GET per cold cell, cell-aligned";
+    EXPECT_EQ(live.incomplete, 8u) << "live: each cold-run connection is abandoned at the next cached cell";
     EXPECT_EQ(live.over_read, 0u) << "the wide cold fetch's full-segment prefill is consumed by the scan -> zero net over-read";
     EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
     EXPECT_LE(stateless.requests, live.requests) << "stateless: a connection per window; with full-segment fetch each cold segment is one GET either way";

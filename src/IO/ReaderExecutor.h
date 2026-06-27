@@ -67,15 +67,11 @@ public:
     static constexpr size_t DEFAULT_MAX_TAIL_FOR_DRAIN = 1 * 1024 * 1024; /// 1 MiB
     static constexpr size_t CHAINED_BUFFER_BLOCK_SIZE = 1 * 1024 * 1024; /// 1 MiB per ChainedBuffers node
     /// Look-ahead span over which residency is planned ONCE (plan-then-stream),
-    /// amortising cache discovery across many windows. Planning is disabled
-    /// when this is below `window_size`.
-    static constexpr size_t DEFAULT_PLAN_LOOK_AHEAD = 64 * 1024 * 1024; /// 64 MiB
-    /// Single size ceiling for the generalized plan window. The base request span
-    /// (`window_size` on a random/first read, the continuity `predictedReach` once
-    /// sequential) is clamped to it, segment folding extends within it, and it caps
-    /// the result. Pressure-scaled (x1, x1, x0.25, x0.25 over Normal/Elevated/High/
-    /// Critical). Replaces the legacy `lookahead_window`/`plan_look_ahead_window`
-    /// pair on the generalized path; `read_extent_end` does not size the plan.
+    /// amortising cache discovery across many windows.
+    /// Single size ceiling for the plan window. The base request span (`window_size` on a
+    /// random/first read, the continuity `predictedReach` once sequential) is clamped to it,
+    /// segment folding extends within it, and it caps the result. Pressure-scaled (x1, x1,
+    /// x0.25, x0.25 over Normal/Elevated/High/Critical). `read_extent_end` does not size the plan.
     static constexpr size_t DEFAULT_PLAN_LOOK_AHEAD_MAX_WINDOW = 32 * 1024 * 1024; /// 32 MiB
     /// A warranted long connection opens with at least this much range and never streams
     /// past the cap. The continuous-read prediction may under-predict at the start of a run
@@ -101,19 +97,10 @@ public:
         size_t block_size = CHAINED_BUFFER_BLOCK_SIZE;
         String log_file_path;
         size_t max_tail_for_drain = DEFAULT_MAX_TAIL_FOR_DRAIN;
-        size_t plan_look_ahead_window = DEFAULT_PLAN_LOOK_AHEAD;
-        /// Flat residency-lookup look-ahead once a read is detected sequential
-        /// (`reader_executor_lookahead_window`); decouples the held cache readers
-        /// from the per-mark-range read-until bound.
-        size_t lookahead_window = 16 * 1024 * 1024;
-        /// Generalize plan-window construction: extend the plan rightward to fold
-        /// ALL affected cache segments (hits as well as misses) on every tier into
-        /// the geometry, pin them, and reuse the plan across read-extent advances
-        /// while the cursor stays inside the pinned span. OFF preserves the legacy
-        /// miss-only widening (every query stays bounded by `plan_end`).
-        bool generalized_plan_window = true;
-        /// Single size ceiling for the generalized plan window, pressure-scaled at
-        /// use (see `DEFAULT_PLAN_LOOK_AHEAD_MAX_WINDOW`).
+        /// Single fixed size for the plan window (see `DEFAULT_PLAN_LOOK_AHEAD_MAX_WINDOW`).
+        /// The plan extends the request rightward to fold ALL affected cache segments
+        /// (hits as well as misses) on every tier into the geometry, pins them, and reuses
+        /// the plan across read-extent advances while the cursor stays inside the pinned span.
         size_t plan_look_ahead_max_window = DEFAULT_PLAN_LOOK_AHEAD_MAX_WINDOW;
         /// Long-connection sizing bounds (see `DEFAULT_LONG_CONNECTION_OPEN_RANGE` /
         /// `DEFAULT_LONG_CONNECTION_MAX_BOUND`).
@@ -989,13 +976,7 @@ private:
     /// came from decrypt-ahead bytes and is already plaintext, so the serve
     /// boundary must NOT run `decryptWindow` on it.
     bool served_window_is_plaintext = false;
-    /// Look-ahead span for plan-then-stream; raised to at least `window_size`.
-    size_t plan_look_ahead_window;
-    /// Flat continuity look-ahead for the residency lookup span (`boundedPlanSpan`),
-    /// from `reader_executor_lookahead_window`. Legacy path only.
-    size_t lookahead_window;
-    /// Generalized plan window: gate + single pressure-scaled size ceiling (Options).
-    bool generalized_plan_window;
+    /// Single fixed size for the plan window (Options).
     size_t plan_look_ahead_max_window;
     /// Long-connection sizing bounds (Options): open range floor and hard cap.
     size_t long_connection_open_range;

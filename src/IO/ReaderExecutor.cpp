@@ -250,9 +250,6 @@ ReaderExecutor::ReaderExecutor(
     , block_size(options.block_size)
     , max_tail_for_drain(options.max_tail_for_drain)
     , decrypt_ahead(options.decrypt_ahead)
-    , plan_look_ahead_window(std::max(options.plan_look_ahead_window, options.window_size))
-    , lookahead_window(options.lookahead_window)
-    , generalized_plan_window(options.generalized_plan_window)
     , plan_look_ahead_max_window(std::max(options.plan_look_ahead_max_window, options.window_size))
     , long_connection_open_range(options.long_connection_open_range)
     , long_connection_max_bound(options.long_connection_max_bound)
@@ -588,7 +585,7 @@ std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t st
     transient_options.block_size = block_size;
     transient_options.log_file_path = log_file_path;
     transient_options.max_tail_for_drain = max_tail_for_drain;
-    transient_options.plan_look_ahead_window = plan_look_ahead_window;
+    transient_options.plan_look_ahead_max_window = plan_look_ahead_max_window;
     transient_options.long_connection_limit = long_connection_limit;
     auto t = std::make_unique<ReaderExecutor>(source, stored_objects, caches, std::move(transient_options));
 
@@ -2020,10 +2017,8 @@ size_t ReaderExecutor::boundedReach(size_t phys_off) const
             reach = std::min(reach, wide);
     }
     /// Cap the long-connection reach so an over-predicted continuous run cannot open or
-    /// extend a GET beyond the bound (generalized path only; legacy reach is already
-    /// bounded by the narrower legacy look-ahead).
-    if (generalized_plan_window)
-        reach = std::min(reach, phys_off + long_connection_max_bound);
+    /// extend a GET beyond the bound.
+    reach = std::min(reach, phys_off + long_connection_max_bound);
     return reach;
 }
 
@@ -2076,18 +2071,15 @@ size_t ReaderExecutor::longConnectionBound(const StoredObject & object, size_t o
         : object_end;
     const size_t reach = boundedReach(phys_offset);
     size_t phys_bound = std::max(extent, reach);
-    if (generalized_plan_window)
-    {
-        /// A warranted long connection opens with at least `long_connection_open_range`
-        /// and never streams past `long_connection_max_bound`: it bounds an over-predicted
-        /// continuous-read reach so the GET drains within the cap instead of running away.
-        /// The open-range floor is for forward-spanning reads only -- a one-shot `readBigAt`
-        /// transient stays bounded to its request (no continuity, no look-ahead), so flooring
-        /// it would over-read past the requested piece of an object.
-        if (!is_transient)
-            phys_bound = std::max(phys_bound, phys_offset + long_connection_open_range);
-        phys_bound = std::min(phys_bound, phys_offset + long_connection_max_bound);
-    }
+    /// A warranted long connection opens with at least `long_connection_open_range`
+    /// and never streams past `long_connection_max_bound`: it bounds an over-predicted
+    /// continuous-read reach so the GET drains within the cap instead of running away.
+    /// The open-range floor is for forward-spanning reads only -- a one-shot `readBigAt`
+    /// transient stays bounded to its request (no continuity, no look-ahead), so flooring
+    /// it would over-read past the requested piece of an object.
+    if (!is_transient)
+        phys_bound = std::max(phys_bound, phys_offset + long_connection_open_range);
+    phys_bound = std::min(phys_bound, phys_offset + long_connection_max_bound);
     phys_bound = std::min(phys_bound, object_end);
     return phys_bound - object_base;
 }
@@ -2903,16 +2895,16 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
         read_plan = std::move(empty);
         return;
     }
-    /// Cross-cache expansion (generalized): the coarser lower tiers report misses
-    /// SEGMENT-aligned, so a miss touching the base request extends past it to the cell
-    /// boundary. Learn that extent with a read-only probe, then probe EVERY tier over the
-    /// expanded `probe_range` below so a faster tier's coverage of the miss tail fills the
-    /// lower cell DOWN (`UpperCacheRead`) - or, covering the whole cell, prunes the lower
-    /// writer - rather than the tail being fetched from the source. This is the "expands from
-    /// segments" half of the plan window (the request being `boundedPlanSpan`); misses are
-    /// segment-bounded, so it adds at most a cell beyond the request.
+    /// Cell-aligned expansion: a cache reports misses SEGMENT-aligned, so a miss touching the
+    /// base request extends past it to the cell boundary. Learn that extent with a read-only
+    /// probe, then probe EVERY tier over the expanded `probe_range` below so a faster tier's
+    /// coverage of the miss tail fills the lower cell DOWN (`UpperCacheRead`) - or, covering the
+    /// whole cell, prunes the lower writer - rather than the tail being fetched from the source.
+    /// This is the "expands from segments" half of the plan window (the request being
+    /// `boundedPlanSpan`); misses are segment-bounded, so it adds at most a cell beyond the
+    /// request. Runs for a single tier too, so its writer spans the whole touched cell (the
+    /// in-flight pin attaches inside it) and its plan is cell-aligned like a multi-tier plan.
     ByteRange probe_range = plan_range;
-    if (generalized_plan_window && caches.size() > 1)
     {
         size_t probe_end = plan_range.end();
         for (auto & cache : caches)
@@ -2943,12 +2935,10 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// `upper_hits` (the running union of already-processed, faster tiers' hits) lets a
     /// slower tier PRUNE the miss cells a faster tier already holds. The streaming `covered`
     /// guard in `readPhysicalWindow` re-establishes the same priority when serving.
-    /// On the generalized path hits fold up to the ceiling OR the expanded `probe_range` end,
-    /// whichever is larger, so a hit segment straddling the expanded end folds whole into the
-    /// plan; the legacy path clips at the probe end.
-    const size_t resident_clip_end = generalized_plan_window
-        ? std::max(probe_range.end(), plan_range.offset + effectivePlanCeiling(geom->pressure_level))
-        : plan_range.end();
+    /// Hits fold up to the ceiling OR the expanded `probe_range` end, whichever is larger,
+    /// so a hit segment straddling the expanded end folds whole into the plan.
+    const size_t resident_clip_end
+        = std::max(probe_range.end(), plan_range.offset + effectivePlanCeiling(geom->pressure_level));
 
     IntervalSet upper_hits;
     for (auto & cache : caches)
@@ -2997,12 +2987,11 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
 
     chassert(geom->entries.size() == plan.bufs.size());
 
-    /// Generalized plan window: the cross-cache expansion already pulled the touched MISS
-    /// segments inside `[plan_start, plan_end)`, so extend `plan_end` only over a HIT segment
-    /// straddling the expanded end (fewer replans). The pin horizon equals the serve horizon
+    /// The cross-cache expansion already pulled the touched MISS segments inside
+    /// `[plan_start, plan_end)`, so extend `plan_end` only over a HIT segment straddling the
+    /// expanded end (fewer replans). The pin horizon equals the serve horizon
     /// (`pinned_end == plan_end`): no dead zone, and the schedule may cover the whole span
     /// because a miss tail a faster tier holds is filled DOWN (`UpperCacheRead`), not fetched.
-    if (generalized_plan_window)
     {
         size_t hit_end = geom->plan_end;
         for (const auto & e : geom->entries)
@@ -3024,14 +3013,11 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// read by the scan (User), so only the alignment slack around it is
     /// FillOnly. `schedule.retrieves[*].into` then drives `schedulePutStep` so a
     /// faster tier never receives slack bytes (see `ReadPlan::schedule`).
-    /// On the generalized path the User range is the whole extended span: the scan
-    /// reads through the folded hit tail as the cursor advances, so the schedule must
-    /// emit serve steps across `[plan_start, plan_end)`. The fold is all resident, so
-    /// this adds no fetch -- the gaps to fetch still lie only within the base request.
-    /// The legacy path keeps the base-window request.
-    const ByteRange schedule_request = generalized_plan_window
-        ? ByteRange{plan_range.offset, read_plan.geometry()->plan_end - plan_range.offset}
-        : ByteRange{plan_range.offset, plan_range.size};
+    /// The User range is the whole extended span: the scan reads through the folded hit
+    /// tail as the cursor advances, so the schedule must emit serve steps across
+    /// `[plan_start, plan_end)`. The fold is all resident, so this adds no fetch -- the
+    /// gaps to fetch still lie only within the base request.
+    const ByteRange schedule_request{plan_range.offset, read_plan.geometry()->plan_end - plan_range.offset};
     read_plan.schedule = buildSchedule(
         *read_plan.geometry(),
         schedule_request,
@@ -3097,48 +3083,32 @@ size_t ReaderExecutor::effectivePlanCeiling(MemoryPressureLevel level) const
 
 ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start, MemoryPressureLevel level) const
 {
-    if (generalized_plan_window)
+    const size_t ceiling = effectivePlanCeiling(level);
+    size_t want = 0;
+    if (is_transient)
     {
-        const size_t ceiling = effectivePlanCeiling(level);
-        size_t want = 0;
-        if (is_transient)
-        {
-            /// A one-shot `readBigAt` transient: the request span IS the plan base -- no
-            /// continuity, no look-ahead widening (the transient never inherits the
-            /// estimator, so `predictedReach` is 0). Segment folding still expands it so
-            /// the touched cache cells are filled to their boundaries, but the base does
-            /// NOT inflate to `window_size` when the request is smaller.
-            chassert(read_extent_end);
-            const size_t physical_extent_end = *read_extent_end + data_start_offset;
-            if (physical_start >= physical_extent_end)
-                return ByteRange{physical_start, 0};
-            want = std::min(physical_extent_end - physical_start, ceiling);
-        }
-        else
-        {
-            /// Unified sizing: the forward-serve continuity prediction clamped to
-            /// `[window_size, ceiling]` -- `window_size` on a fresh/random read
-            /// (prediction ~0), the prediction itself once a sequential run is
-            /// established. Independent of `read_extent_end` (which only clamps the
-            /// serve), so the plan survives mark-range advances and is reused.
-            want = std::min(std::max(lookup_continuity.predictedReach(), window_size), ceiling);
-        }
-        /// Segment folding then extends `want` (in `observeAndSchedule`) and the same
-        /// ceiling caps the result; the file end is the only natural bound below it.
-        if (!offset_map.hasUnknownSize())
-        {
-            const size_t physical_end = offset_map.totalSize();
-            if (physical_start >= physical_end)
-                return ByteRange{physical_start, 0};
-            want = std::min(want, physical_end - physical_start);
-        }
-        return ByteRange{physical_start, want};
+        /// A one-shot `readBigAt` transient: the request span IS the plan base -- no
+        /// continuity, no look-ahead widening (the transient never inherits the
+        /// estimator, so `predictedReach` is 0). Segment folding still expands it so
+        /// the touched cache cells are filled to their boundaries, but the base does
+        /// NOT inflate to `window_size` when the request is smaller.
+        chassert(read_extent_end);
+        const size_t physical_extent_end = *read_extent_end + data_start_offset;
+        if (physical_start >= physical_extent_end)
+            return ByteRange{physical_start, 0};
+        want = std::min(physical_extent_end - physical_start, ceiling);
     }
-
-    size_t want = plan_look_ahead_window;
-
-    /// Clamp to the physical file end when the size is known. An unknown-size source
-    /// plans the full look-ahead and discovers EOF via short reads.
+    else
+    {
+        /// Unified sizing: the forward-serve continuity prediction clamped to
+        /// `[window_size, ceiling]` -- `window_size` on a fresh/random read
+        /// (prediction ~0), the prediction itself once a sequential run is
+        /// established. Independent of `read_extent_end` (which only clamps the
+        /// serve), so the plan survives mark-range advances and is reused.
+        want = std::min(std::max(lookup_continuity.predictedReach(), window_size), ceiling);
+    }
+    /// Segment folding then extends `want` (in `observeAndSchedule`) and the same
+    /// ceiling caps the result; the file end is the only natural bound below it.
     if (!offset_map.hasUnknownSize())
     {
         const size_t physical_end = offset_map.totalSize();
@@ -3146,45 +3116,6 @@ ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start, MemoryPressureL
             return ByteRange{physical_start, 0};
         want = std::min(want, physical_end - physical_start);
     }
-    else if (!read_extent_end)
-    {
-        /// Unknown-size source with no advertised extent: planning the full look-ahead
-        /// would produce an enormous aligned-miss region from the last cached byte to the
-        /// look-ahead end (bytes that may not exist), and `openWriteBuffers` would `getOrSet`
-        /// millions of tiny segments for them (the legacy per-window `lookup` never did).
-        /// Cap to one window - just the bytes about to be fetched; EOF is learned via the
-        /// short read. A finite extent (below) bounds it precisely when set.
-        want = window_size;
-    }
-
-    /// Decouple the residency LOOKUP span from the read-until bound. The held cache
-    /// readers/view should live across mark ranges, not be rebuilt each time
-    /// `read_extent_end` advances (per-mark-range churn that defeats reader reuse and
-    /// is the warm-cache coordination cost). Cover at least the advertised extent (so
-    /// the current task is served), then extend up to the forward-serve continuity
-    /// prediction (`lookup_continuity`, fed by every forward serve - hit or miss), capped
-    /// above by the look-ahead window / object end. The SERVE stays bounded by
-    /// `read_extent_end` (`clampToExtent` / a machine's `extent_snapshot`), but the plan and
-    /// fetch extend past it so a sequential read pre-fetches/caches ahead; a non-continuous
-    /// read keeps `predictedReach` small, so the span falls back to the extent.
-    if (read_extent_end)
-    {
-        const size_t physical_extent_end = *read_extent_end + data_start_offset;
-        if (physical_start >= physical_extent_end)
-            return ByteRange{physical_start, 0};
-        const size_t extent_span = physical_extent_end - physical_start;
-        /// Sequential (the run has already covered this extent): the read is streaming, so
-        /// jump FLAT to the look-ahead cap - `predictedReach` only gates the decision, it does
-        /// NOT size the span (sizing by it tracks the cursor and ramps too slowly to clear the
-        /// rebuild margin). The cap is `lookahead_window`, halved per memory-pressure step and
-        /// floored at `window_size`, so the held readers pin less under pressure. Not yet
-        /// sequential: stay at the current extent (one mark range), as before.
-        const size_t cap = std::max<size_t>(window_size, lookahead_window >> static_cast<unsigned>(level));
-        const bool sequential = lookup_continuity.predictedReach() >= extent_span;
-        const size_t reach = sequential ? cap : extent_span;
-        want = std::min(want, std::max(extent_span, reach));
-    }
-
     return ByteRange{physical_start, want};
 }
 

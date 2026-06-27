@@ -423,12 +423,11 @@ TEST_F(ReaderExecutorCacheChain, ColdPopulatesAllLayers)
         << "warm chain must serve everything without touching the source";
 }
 
-/// Stage 1 of the generalized plan window: with the flag ON, a cache segment that
-/// STRADDLES the base-request edge folds WHOLE into the plan's serve/pin horizon
-/// (`plan_end`/`pinned_end`) instead of being clipped at the probe end as the legacy
-/// path does. The base request itself stays `window_size` (predictedReach is ~0 on the
-/// first plan), proving it is not sized by `read_extent_end`.
-TEST_F(ReaderExecutorCacheChain, GeneralizedPlanFoldsStraddlingHit)
+/// A cache segment that STRADDLES the base-request edge folds WHOLE into the plan's
+/// serve/pin horizon (`plan_end`/`pinned_end`) rather than being clipped at the probe
+/// end. The base request itself stays `window_size` (predictedReach is ~0 on the first
+/// plan), proving it is not sized by `read_extent_end`.
+TEST_F(ReaderExecutorCacheChain, PlanFoldsStraddlingHit)
 {
     constexpr size_t block_size = 16;
     constexpr size_t file_size = 20 * block_size; /// 320
@@ -456,38 +455,26 @@ TEST_F(ReaderExecutorCacheChain, GeneralizedPlanFoldsStraddlingHit)
         EXPECT_EQ(drainAll(warm), content);
     }
 
-    auto make_opts = [&](bool generalized)
+    auto make_opts = [&]()
     {
         ReaderExecutor::Options o;
         o.window_size = unaligned_window;
         o.min_bytes_for_seek = 0;
         o.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
-        o.generalized_plan_window = generalized;
         o.plan_look_ahead_max_window = file_size; /// ceiling well above the window
         return o;
     };
 
-    /// Legacy: with no extent the plan span is the whole look-ahead, clamped to the
-    /// file end -- here the entire 320-byte file -- and pinned_end mirrors plan_end.
+    /// The base request is `window_size` (predictedReach ~0 on the first plan -- NOT the
+    /// whole-file look-ahead, NOT the file end), and the page block straddling the 70-byte
+    /// probe edge folds whole, so the plan reaches the next 16-byte block boundary past the
+    /// window and stays well under the file end.
     {
-        ReaderExecutor ex(source, objects, caches, make_opts(false));
-        ex.readNextWindow(); /// builds the plan at pos 0
-        EXPECT_EQ(inspect(ex).planEnd(), file_size)
-            << "legacy plans the whole look-ahead window (clamped to the file)";
-        EXPECT_EQ(inspect(ex).pinnedEnd(), inspect(ex).planEnd())
-            << "legacy keeps pinned_end == plan_end";
-    }
-
-    /// Generalized: the base request is `window_size` (predictedReach ~0 on the first
-    /// plan -- NOT the whole-file look-ahead, NOT the file end), and the page block
-    /// straddling the 70-byte probe edge folds whole, so the plan reaches the next
-    /// 16-byte block boundary past the window and stays well under the file end.
-    {
-        ReaderExecutor ex(source, objects, caches, make_opts(true));
+        ReaderExecutor ex(source, objects, caches, make_opts());
         ex.readNextWindow();
         const size_t plan_end = inspect(ex).planEnd();
         EXPECT_GT(plan_end, unaligned_window)
-            << "generalized folds the straddling hit segment past the probe edge";
+            << "the straddling hit segment folds past the probe edge";
         EXPECT_LT(plan_end, file_size)
             << "the base request is window_size, not the whole-file look-ahead";
         EXPECT_EQ(plan_end % block_size, 0u)
@@ -496,12 +483,10 @@ TEST_F(ReaderExecutorCacheChain, GeneralizedPlanFoldsStraddlingHit)
     }
 }
 
-/// Stage 3: the generalized plan span is independent of `read_extent_end`, so advancing
-/// the extent per "mark range" does NOT rebuild the plan (the cursor stays inside the
-/// one plan that already reaches the file end). The legacy plan, sized by the extent,
-/// rebuilds on every advance. Both serve identical bytes -- proving serving across the
-/// reused plan (and its folded tail) is correct.
-TEST_F(ReaderExecutorCacheChain, GeneralizedPlanReusedAcrossExtentAdvances)
+/// The plan span is independent of `read_extent_end`, so advancing the extent per "mark
+/// range" does NOT rebuild the plan (the cursor stays inside the one plan that already
+/// reaches the file end) -- one observation for the whole scan, serving identical bytes.
+TEST_F(ReaderExecutorCacheChain, PlanReusedAcrossExtentAdvances)
 {
     constexpr size_t block_size = 16;
     constexpr size_t file_size = 16 * block_size; /// 256
@@ -530,13 +515,12 @@ TEST_F(ReaderExecutorCacheChain, GeneralizedPlanReusedAcrossExtentAdvances)
 
     /// Scan the file in `mark`-sized "mark ranges": advance the extent, then read up to
     /// it, repeat. Returns the bytes read and the number of plan (re)builds.
-    auto scan = [&](bool generalized) -> std::pair<String, UInt64>
+    auto scan = [&]() -> std::pair<String, UInt64>
     {
         ReaderExecutor::Options o;
         o.window_size = file_size; /// base request covers the whole (small) file
         o.min_bytes_for_seek = 0;
         o.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
-        o.generalized_plan_window = generalized;
         o.plan_look_ahead_max_window = file_size;
         ReaderExecutor ex(source, objects, caches, o);
 
@@ -558,16 +542,12 @@ TEST_F(ReaderExecutorCacheChain, GeneralizedPlanReusedAcrossExtentAdvances)
         return {out, inspect(ex).observationCount()};
     };
 
-    const auto [legacy_out, legacy_obs] = scan(false);
-    const auto [gen_out, gen_obs] = scan(true);
+    const auto [gen_out, gen_obs] = scan();
 
-    EXPECT_EQ(legacy_out, content);
     EXPECT_EQ(gen_out, content)
-        << "generalized serves identical bytes across extent advances";
+        << "serves identical bytes across extent advances";
     EXPECT_EQ(gen_obs, 1u)
-        << "generalized plans the whole file once and reuses it across every extent advance";
-    EXPECT_LT(gen_obs, legacy_obs)
-        << "legacy rebuilds the plan per extent advance; generalized does not";
+        << "plans the whole file once and reuses it across every extent advance";
 }
 
 /// With a prefetch pool the gap fills and promotes run INLINE on the read thread (the put

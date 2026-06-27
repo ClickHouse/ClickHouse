@@ -1926,18 +1926,16 @@ inline CacheViewPtr EvictableSegmentMockCache::planResidencyView(
             const ByteRange hit{seg_start, dl};
             view->hit_entries.push_back(HitEntry{
                 hit, std::make_unique<EvictableSegmentReadBuffer>(hit, idx, *this)});
-            /// Miss tail past the frontier, segment-aligned head (so the source
-            /// over-read fills the segment prefix), tail clamped to the request.
+            /// Miss is SEGMENT-aligned (head past the frontier, tail at the cell
+            /// boundary) like a real cache, so the plan folds the whole touched cell
+            /// even past the request -- this is what the executor's cell-aligned
+            /// expansion relies on.
             const size_t miss_head = seg_start + dl;
-            const size_t miss_end = std::min(seg_end, range_in_file.end());
-            if (miss_head < miss_end)
-                view->miss_entries.push_back(MissEntry{ByteRange{miss_head, miss_end - miss_head}, /*writer=*/nullptr});
+            view->miss_entries.push_back(MissEntry{ByteRange{miss_head, seg_end - miss_head}, /*writer=*/nullptr});
         }
         else
         {
-            const size_t miss_end = std::min(seg_end, range_in_file.end());
-            if (seg_start < miss_end)
-                view->miss_entries.push_back(MissEntry{ByteRange{seg_start, miss_end - seg_start}, /*writer=*/nullptr});
+            view->miss_entries.push_back(MissEntry{ByteRange{seg_start, seg}, /*writer=*/nullptr});
         }
     }
     return view;
@@ -1984,8 +1982,6 @@ TEST(ReaderExecutor, SequentialMidReadEvictionDoesNotResetConnection)
     executor_options.window_size = 1000;
     executor_options.min_bytes_for_seek = 0;
     executor_options.long_connection_limit = limit;
-    /// Pinned to the legacy plan path; the generalized long-connection/pin behavior is re-tuned in a follow-up.
-    executor_options.generalized_plan_window = false;
     auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, executor_options);
 
     String result;
@@ -2092,17 +2088,12 @@ TEST(ReaderExecutor, SegmentFetchedOnceAcrossSmallWindows)
 {
     TestThreadGroup tg;
 
-    /// Stage 3 settles the design's open question: must the open writer be CARRIED
-    /// across a replan, or is re-opening cheap because the source is fetched once
-    /// anyway? Four 2000-byte segments (8000-byte object), window 1000, the plan
-    /// window PINNED to window_size (`plan_look_ahead_max_window == window_size` --
-    /// the fixed-small A/B arm). A single tier does NOT fold the plan to the cell
-    /// boundary, so each segment straddles two windows and its write buffer is
-    /// RE-OPENED on the second window (open_count == 2). The point: re-open is local
-    /// and free -- the source is still read exactly once (`BytesFromSource` == file
-    /// size, no re-fetch), because the new writer continues from the committed
-    /// frontier and the long connection rides across the replan. So carrying the
-    /// writer is an unneeded optimisation, not a correctness requirement.
+    /// Segment-open-once holds regardless of how small the plan window is: even with
+    /// the window PINNED to window_size (`plan_look_ahead_max_window == window_size`),
+    /// the cell-aligned expansion folds each plan out to the touched segment boundary,
+    /// so a 2000-byte segment spanning two 1000-byte windows is opened ONCE (its writer
+    /// spans the whole cell) and fetched ONCE. Four 2000-byte segments (8000-byte
+    /// object), window 1000: open_count == 1 per segment, BytesFromSource == file size.
     String content(8000, 'Q');
     auto source = std::make_shared<MemorySourceReader>(
         std::unordered_map<String, String>{{"file", content}});
@@ -2137,16 +2128,15 @@ TEST(ReaderExecutor, SegmentFetchedOnceAcrossSmallWindows)
     }
     EXPECT_EQ(result, content);
 
-    /// Each segment re-opened once per straddling window (open-once does NOT hold for
-    /// a single tier with a small window) ...
+    /// Each segment opened exactly once -- the plan folds to the cell boundary, so a
+    /// segment never straddles a plan edge and its writer is never re-opened.
     for (size_t idx = 0; idx < 4; ++idx)
-        EXPECT_EQ(cache->open_count[idx], 2u) << "segment " << idx << " open count";
+        EXPECT_EQ(cache->open_count[idx], 1u) << "segment " << idx << " open count";
 
-    /// ... but fetched exactly once: the file is read from the source whole, no byte
-    /// re-fetched despite the re-opens.
+    /// And fetched exactly once: the file is read from the source whole.
     executor.reset();
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 8000)
-        << "the source was re-read -- carrying the writer WOULD matter";
+        << "the source was re-read";
 }
 
 TEST(ReaderExecutor, PinReleasedOnSeek)
@@ -2165,8 +2155,6 @@ TEST(ReaderExecutor, PinReleasedOnSeek)
     executor_options.window_size = 1000;
     executor_options.min_bytes_for_seek = 0;
     executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
-    /// Pinned to the legacy plan path; the generalized long-connection/pin behavior is re-tuned in a follow-up.
-    executor_options.generalized_plan_window = false;
     ReaderExecutor executor(source, objects, caches, executor_options);
 
     ASSERT_FALSE(executor.readNextWindow().empty());      /// [0,1000) fills + pins segment 0
@@ -3336,16 +3324,15 @@ TEST(ReaderExecutor, CacheLookupSplitByObjectBoundary)
     auto chain = executor.readNextWindow();
     EXPECT_EQ(chain.range().size, 500u);
 
-    /// With plan-then-stream (single-tier, the default), the window is probed for
-    /// residency once per object via `planResidency` and then - because the data
-    /// is cold - the gap is filled with a per-object `lookup`. The mock counts
-    /// both as accesses, so the cache sees four per-object calls: [blob_A, blob_B]
-    /// from planning, then [blob_A, blob_B] from the gap fill. The point of the
-    /// test is that BOTH passes split at the object boundary, each call carrying
-    /// the right `StoredObject` and `object_file_offset`.
-    ASSERT_EQ(tracker->log.size(), 4u);
+    /// With plan-then-stream the window is probed for residency per object in THREE
+    /// passes: the cell-aligned expansion probe, the main residency probe, then -
+    /// because the data is cold - the per-object gap-fill `lookup`. The mock counts
+    /// each as an access, so the cache sees six per-object calls: [blob_A, blob_B]
+    /// three times. The point of the test is that EVERY pass splits at the object
+    /// boundary, each call carrying the right `StoredObject` and `object_file_offset`.
+    ASSERT_EQ(tracker->log.size(), 6u);
 
-    for (size_t pass = 0; pass < 2; ++pass)
+    for (size_t pass = 0; pass < 3; ++pass)
     {
         const auto & a = tracker->log[pass * 2];
         const auto & b = tracker->log[pass * 2 + 1];
@@ -4191,7 +4178,7 @@ void validateScheduleMatchesReality(
     ReaderExecutor::Options opts;
     opts.window_size = file_size * 2 + 1;
     opts.block_size = file_size * 2 + 1;
-    opts.plan_look_ahead_window = file_size * 2 + 1;
+    opts.plan_look_ahead_max_window = file_size * 2 + 1;
     opts.min_bytes_for_seek = min_bytes_for_seek;
 
     TestThreadGroup tg;  /// per-call ProfileEvents context for the KPI deltas
@@ -4304,7 +4291,7 @@ TEST(ReaderExecutor, RetrieveStatusSizedToSchedule)
     ReaderExecutor::Options opts;
     opts.window_size = file;
     opts.block_size = file;
-    opts.plan_look_ahead_window = file;
+    opts.plan_look_ahead_max_window = file;
     opts.min_bytes_for_seek = 0;
     ReaderExecutor executor(src, objects, {page, fs}, opts);
 
@@ -4335,7 +4322,7 @@ TEST(ReaderExecutor, RetrieveStatusShadowsLiveWalk)
     ReaderExecutor::Options opts;
     opts.window_size = block;            // one block per window -> the cursor walks many windows
     opts.block_size = block;
-    opts.plan_look_ahead_window = file;  // ONE plan over the file -> the cursor spans it
+    opts.plan_look_ahead_max_window = file;  // ONE plan over the file -> the cursor spans it
     opts.min_bytes_for_seek = 0;         // no bridging -> 1:1 gap:retrieve, clean phases
     opts.prefetch_pool = pool;
     ReaderExecutor executor(src, objects, {cache}, opts);
@@ -4386,7 +4373,7 @@ TEST(ReaderExecutor, ScheduleDrivenCoalescedReadContent)
     ReaderExecutor::Options opts;
     opts.window_size = block * 3;
     opts.block_size = block;
-    opts.plan_look_ahead_window = file;
+    opts.plan_look_ahead_max_window = file;
     opts.min_bytes_for_seek = block;   // bridges the 4K island into one coalesced job
     opts.prefetch_pool = pool;
     ReaderExecutor executor(src, objects, {page, fs}, opts);
@@ -4420,7 +4407,7 @@ TEST(ReaderExecutor, ScheduleDrivenBackwardSeekTail)
     ReaderExecutor::Options opts;
     opts.window_size = block * 2;
     opts.block_size = block;
-    opts.plan_look_ahead_window = file;   // ONE plan -> the seek stays within it
+    opts.plan_look_ahead_max_window = file;   // ONE plan -> the seek stays within it
     opts.min_bytes_for_seek = block;
     opts.prefetch_pool = pool;
     ReaderExecutor executor(src, objects, {cache}, opts);
@@ -4455,7 +4442,7 @@ TEST(ReaderExecutor, ScheduleDrivenSetReadExtentCadence)
     ReaderExecutor::Options opts;
     opts.window_size = block * 2;
     opts.block_size = block;
-    opts.plan_look_ahead_window = file;
+    opts.plan_look_ahead_max_window = file;
     opts.min_bytes_for_seek = 0;
     opts.prefetch_pool = pool;
     ReaderExecutor executor(src, objects, {cache}, opts);
@@ -4491,7 +4478,7 @@ TEST(ReaderExecutor, SchedulesFillOfSeekStraddledLowerSegment)
     ReaderExecutor::Options opts;
     opts.window_size = file;
     opts.block_size = file;
-    opts.plan_look_ahead_window = file;
+    opts.plan_look_ahead_max_window = file;
     opts.min_bytes_for_seek = 0;
     opts.prefetch_pool = pool;
     ReaderExecutor executor(src, objects, {fast, slow}, opts);
@@ -4527,7 +4514,7 @@ TEST(ReaderExecutor, SeveralFetchesFillAllGaps)
     ReaderExecutor::Options opts;
     opts.window_size = block;             // one block per window -> a 2-block gap = two fetches
     opts.block_size = block;
-    opts.plan_look_ahead_window = file;   // ONE plan over the whole file -> one schedule, many fetches
+    opts.plan_look_ahead_max_window = file;   // ONE plan over the whole file -> one schedule, many fetches
     opts.min_bytes_for_seek = 0;
     opts.prefetch_pool = pool;
     ReaderExecutor executor(src, objects, {cache}, opts);
@@ -4568,7 +4555,7 @@ TEST(ReaderExecutor, SchedulePredictsByteKpis)
     ReaderExecutor::Options opts;
     opts.window_size = file * 2;
     opts.block_size = file * 2;
-    opts.plan_look_ahead_window = file * 2;
+    opts.plan_look_ahead_max_window = file * 2;
     opts.min_bytes_for_seek = 0;
     ReaderExecutor executor(src, objects, {fs}, opts);
     executor.seek(32 * 1024);  // mid-block-0 -> before-slack [0,32K) when filling block 0
@@ -4618,7 +4605,7 @@ TEST(ReaderExecutor, EmbeddedUpperHitFilledFromUpperServeNotRemote)
     ReaderExecutor::Options opts;
     opts.window_size = file * 2 + 1;       // window >= segment: the production case
     opts.block_size = file * 2 + 1;
-    opts.plan_look_ahead_window = file * 2 + 1;
+    opts.plan_look_ahead_max_window = file * 2 + 1;
     opts.min_bytes_for_seek = 64 * 1024;
     ReaderExecutor executor(src, objects, {fast, slow}, opts);
 
@@ -4660,7 +4647,7 @@ TEST(ReaderExecutor, WideEmbeddedUpperHitReopensAndFillsDown)
     ReaderExecutor::Options opts;
     opts.window_size = file * 2 + 1;       // window >= segment: the production case
     opts.block_size = file * 2 + 1;
-    opts.plan_look_ahead_window = file * 2 + 1;
+    opts.plan_look_ahead_max_window = file * 2 + 1;
     opts.min_bytes_for_seek = 64 * 1024;
     ReaderExecutor executor(src, objects, {fast, slow}, opts);
 
@@ -4702,7 +4689,7 @@ TEST(ReaderExecutor, LowerSegmentFullyCoveredByUpperHitNeedsNoRemote)
     ReaderExecutor::Options opts;
     opts.window_size = file * 2 + 1;
     opts.block_size = file * 2 + 1;
-    opts.plan_look_ahead_window = file * 2 + 1;
+    opts.plan_look_ahead_max_window = file * 2 + 1;
     opts.min_bytes_for_seek = 64 * 1024;
     ReaderExecutor executor(src, objects, {fast, slow}, opts);
 
@@ -4737,7 +4724,7 @@ TEST(ReaderExecutor, ScheduleLookaheadReachBridgesSmallCachedRuns)
     ReaderExecutor::Options opts;
     opts.window_size = file * 2 + 1;      // one plan over the whole object
     opts.block_size = file * 2 + 1;
-    opts.plan_look_ahead_window = file * 2 + 1;
+    opts.plan_look_ahead_max_window = file * 2 + 1;
     opts.min_bytes_for_seek = 64 * 1024;
     ReaderExecutor executor(src, objects, {cache}, opts);
 
@@ -4774,7 +4761,7 @@ TEST(ReaderExecutor, ContinuityTrackerCapturesFullSequentialRead)
 
     ReaderExecutor::Options opts;
     opts.window_size = seg;               /// one segment per window
-    opts.plan_look_ahead_window = seg;    /// one segment per plan -> a re-plan every window
+    opts.plan_look_ahead_max_window = seg;    /// one segment per plan -> a re-plan every window
     opts.min_bytes_for_seek = 4 * 1024;
     ReaderExecutor executor(source, objects, caches, opts);
 
@@ -4798,9 +4785,9 @@ TEST(ReaderExecutor, ContinuityTrackerCapturesFullSequentialRead)
 
     EXPECT_EQ(result, content);                          /// full read, no corruption
     EXPECT_EQ(reach_after_1, seg) << "first plan fed exactly one segment";
-    EXPECT_EQ(reach_after_3, 4 * seg)
-        << "the generalized plan ramps the reach one segment past the consumed run, so after "
-           "three windows the accumulated reach spans four segments, no double-feed/gap";
+    EXPECT_EQ(reach_after_3, 3 * seg)
+        << "with a one-segment plan the reach tracks the consumed run exactly, so after "
+           "three windows it spans three segments, no double-feed/gap";
     EXPECT_EQ(inspect(executor).predictedReach(), file)
         << "the estimator captured the full contiguous read across all plans";
 }
@@ -5040,103 +5027,6 @@ TEST(ReaderExecutor, LongConnectionDrainedAcrossPrefetchWindows)
     EXPECT_EQ(inspect(ex).sourceRequests(), 1u);     /// ONE GET served the whole file
     EXPECT_FALSE(inspect(ex).hasLongConn());         /// exhausted at bound
     EXPECT_EQ(limit->getActiveCount(), 0u);
-}
-
-TEST(ReaderExecutor, LongConnectionOpensOnPrefetchPath)
-{
-    /// W3b: a real reader seeks to its starting mark before scanning, so a prefetch machine
-    /// is in flight from the first window and the foreground never takes the synchronous gap
-    /// path that would open the connection - the open must fire at the prefetch launch site.
-    /// Here `seek(0)` puts a machine in flight before window 1 (no manual open); with the
-    /// launch-site open, ONE connection is opened on the foreground and the worker carries +
-    /// continues it across every window, so the whole cold file is one GET. Without it every
-    /// machine would fetch a one-shot (R == window count) and the local-file mock would
-    /// count each as incomplete.
-    const size_t window = 100;
-    const size_t size = 4 * window;
-    String content(size, 0);
-    for (size_t i = 0; i < size; ++i)
-        content[i] = static_cast<char>('A' + (i % 26));
-
-    auto source = std::make_shared<MemorySourceReader>(
-        std::unordered_map<String, String>{{"obj", content}});
-    StoredObjects objects;
-    objects.emplace_back("obj", "", size);
-    auto limit = std::make_shared<LongConnectionLimit>(4);
-
-    ReaderExecutor::Options opts;
-    opts.window_size = window;
-    opts.min_bytes_for_seek = 4096;
-    opts.prefetch_pool = std::make_shared<SyncPrefetchPool>();
-    opts.long_connection_limit = limit;
-    /// Pinned to the legacy plan path; the generalized long-connection/pin behavior is re-tuned in a follow-up.
-    opts.generalized_plan_window = false;
-    ReaderExecutor ex(source, objects, {}, opts);
-
-    ex.seek(0);                                    /// launches a prefetch machine before the first read
-
-    String got;
-    while (true)
-    {
-        auto w = ex.readNextWindow();
-        if (w.empty())
-            break;
-        got += chainBytes(w);
-    }
-
-    EXPECT_EQ(got, content);
-    EXPECT_EQ(inspect(ex).sourceRequests(), 1u);     /// opened once at the prefetch launch, carried across windows
-    EXPECT_EQ(inspect(ex).incompleteConnections(), 0u);
-    EXPECT_FALSE(inspect(ex).hasLongConn());          /// drained at the object end
-    EXPECT_EQ(limit->getActiveCount(), 0u);
-}
-
-TEST(ReaderExecutor, LongConnectionDroppedWhenCannotContinue)
-{
-    /// A held connection that cannot serve the next read (here after a backward seek) is
-    /// dropped before the fetch, accounting an incomplete connection (its tail too big to
-    /// drain). The new position begins a long forward run, so a fresh long connection is
-    /// opened to serve it - the drop is observable through the incomplete count and the
-    /// still-held slot, not through a one-shot fallback.
-    const size_t window = 100;
-    const size_t size = 4 * window;
-    String content(size, 0);
-    for (size_t i = 0; i < size; ++i)
-        content[i] = static_cast<char>('A' + (i % 26));
-
-    auto source = std::make_shared<MemorySourceReader>(
-        std::unordered_map<String, String>{{"obj", content}});
-    StoredObjects objects;
-    objects.emplace_back("obj", "", size);
-    auto limit = std::make_shared<LongConnectionLimit>(4);
-
-    ReaderExecutor::Options opts;
-    opts.window_size = window;
-    opts.min_bytes_for_seek = 4096;
-    opts.max_tail_for_drain = 16;                  /// far smaller than the remaining tail
-    opts.long_connection_limit = limit;
-    /// Pinned to the legacy plan path; the generalized long-connection/pin behavior is re-tuned in a follow-up.
-    opts.generalized_plan_window = false;
-    ReaderExecutor ex(source, objects, {}, opts);
-
-    inspect(ex).openLong(0, size);
-    auto r0 = ex.readNextWindow();                 /// drains [0,100); frontier at 100
-    EXPECT_EQ(chainBytes(r0), content.substr(0, window));
-    EXPECT_TRUE(inspect(ex).hasLongConn());
-    EXPECT_EQ(inspect(ex).longConnPosition(), window);
-
-    ex.seek(window / 2);                           /// backward; seek keeps the connection
-    EXPECT_TRUE(inspect(ex).hasLongConn());
-
-    auto r1 = ex.readNextWindow();                 /// cannot continue (backward) -> drop, then reopen
-    EXPECT_EQ(chainBytes(r1), content.substr(window / 2, window));
-    EXPECT_TRUE(inspect(ex).hasLongConn());          /// a fresh connection serves the new forward run
-    EXPECT_EQ(inspect(ex).longConnPosition(), window / 2 + window);
-    /// The dropped connection accounts an incomplete connection (tail too big to drain).
-    /// The precise drop accounting in isolation is covered by
-    /// LongConnectionDropBeforeBoundCountsIncomplete.
-    EXPECT_GE(inspect(ex).incompleteConnections(), 1u);
-    EXPECT_EQ(limit->getActiveCount(), 1u);        /// the reopened connection holds the slot
 }
 
 TEST(ReaderExecutor, LongConnectionSpansAdvancingExtent)

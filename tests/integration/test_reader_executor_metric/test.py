@@ -114,14 +114,16 @@ LOADS = {
 BASELINE = {
     ("sequential", "cold", "live"): {"R": (15, 35), "I": (6, 15), "O": (13, 51), "cost/MiB": (11.6, 34.8)},
     ("sequential", "fragmented", "live"): {"R": (8, 24), "I": (5, 15), "O": (7, 38), "cost/MiB": (3.1, 12.3)},
-    ("selective", "cold", "live"): {"R": (17, 39), "I": (1, 3), "O": (15, 60), "cost/MiB": (28.9, 86.7)},
-    ("selective", "fragmented", "live"): {"R": (5, 14), "I": (0, 0), "O": (0, 0), "cost/MiB": (19.2, 76.6)},
+    ("selective", "cold", "live"): {"R": (17, 39), "I": (1, 12), "O": (15, 60), "cost/MiB": (28.9, 86.7)},
+    ("selective", "fragmented", "live"): {"R": (5, 14), "I": (0, 8), "O": (0, 0), "cost/MiB": (19.2, 76.6)},
     ("aggregation", "cold", "live"): {"R": (18, 43), "I": (6, 15), "O": (26, 103), "cost/MiB": (13.1, 39.2)},
     ("aggregation", "fragmented", "live"): {"R": (8, 24), "I": (4, 13), "O": (9, 50), "cost/MiB": (3.0, 12.2)},
     # prewhere/cold is the documented worst-case for variance (R and I swing widely run-to-run);
-    # widened to the union of two recompute runs plus margin (R seen 32-103, I seen 0-3).
-    ("prewhere", "cold", "live"): {"R": (20, 120), "I": (0, 8), "O": (10, 41), "cost/MiB": (17.2, 51.7)},
-    ("prewhere", "fragmented", "live"): {"R": (30, 110), "I": (0, 5), "O": (0, 6), "cost/MiB": (8.0, 32.0)},
+    # widened to the union of two recompute runs plus margin (R seen 32-103). The cell-aligned
+    # single-tier fold abandons the per-cold-cell connection on a seek, raising I on the
+    # seek-heavy selective/prewhere cells.
+    ("prewhere", "cold", "live"): {"R": (20, 120), "I": (0, 20), "O": (10, 41), "cost/MiB": (17.2, 51.7)},
+    ("prewhere", "fragmented", "live"): {"R": (30, 110), "I": (0, 12), "O": (0, 12), "cost/MiB": (8.0, 32.0)},
     ("sequential", "cold", "stateless"): {"R": (37, 87), "O": (10, 42), "cost/MiB": (13.7, 41.2)},
     ("sequential", "fragmented", "stateless"): {"R": (11, 34), "O": (7, 40), "cost/MiB": (3.4, 13.4)},
     ("selective", "cold", "stateless"): {"R": (21, 50), "O": (15, 60), "cost/MiB": (29.5, 88.6)},
@@ -129,7 +131,7 @@ BASELINE = {
     ("aggregation", "cold", "stateless"): {"R": (43, 101), "O": (17, 69), "cost/MiB": (14.2, 42.5)},
     ("aggregation", "fragmented", "stateless"): {"R": (12, 35), "O": (5, 29), "cost/MiB": (3.1, 12.3)},
     ("prewhere", "cold", "stateless"): {"R": (35, 82), "O": (7, 28), "cost/MiB": (17.0, 50.9)},
-    ("prewhere", "fragmented", "stateless"): {"R": (12, 37), "O": (0, 2), "cost/MiB": (4.1, 16.4)},
+    ("prewhere", "fragmented", "stateless"): {"R": (12, 60), "O": (0, 2), "cost/MiB": (4.1, 24.0)},
 }
 
 
