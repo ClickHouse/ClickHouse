@@ -35,6 +35,8 @@
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
+#include <Processors/Transforms/BalancingTransform.h>
+#include <Processors/Transforms/InsertMemoryThrottle.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -82,6 +84,9 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsString insert_deduplication_token;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsBool enable_memory_based_pipeline_throttling;
+    extern const SettingsFloat insert_memory_throttle_high_watermark;
+    extern const SettingsFloat insert_memory_throttle_low_watermark;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 parallel_distributed_insert_select;
     extern const SettingsBool enable_parsing_to_custom_serialization;
@@ -476,6 +481,24 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
                 context->getSettingsRef()[Setting::insert_deduplication_token].value,
                 context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
                 in_header);
+        });
+    }
+
+    /// memory throttle for INSERTs
+    if (context->getSettingsRef()[Setting::enable_memory_based_pipeline_throttling])
+    {
+        InsertMemoryThrottle::Settings throttle_settings;
+        throttle_settings.enabled = true;
+        throttle_settings.high_threshold = context->getSettingsRef()[Setting::insert_memory_throttle_high_watermark];
+        throttle_settings.low_threshold = context->getSettingsRef()[Setting::insert_memory_throttle_low_watermark];
+
+        auto mem_provider = std::make_shared<QueryMemoryProvider>(nullptr);
+        auto insert_memory_throttle = std::make_shared<InsertMemoryThrottle>(throttle_settings, mem_provider);
+
+        /// BalancingTransform to create backpressure based on memory budget
+        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
+        {
+            return std::make_shared<BalancingTransform>(in_header, insert_memory_throttle);
         });
     }
 
