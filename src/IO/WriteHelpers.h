@@ -5,7 +5,6 @@
 #include <limits>
 #include <algorithm>
 #include <bit>
-
 #include <Common/FramePointers.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
@@ -22,7 +21,6 @@
 #include <Common/NaNUtils.h>
 #include <Common/Concepts.h>
 
-#include <IO/IsTriviallySerializable.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteIntText.h>
 #include <IO/VarInt.h>
@@ -111,16 +109,10 @@ inline void writeStringBinary(const char * s, WriteBuffer & buf)
 template <StdVector V>
 void writeVectorBinary(const V & v, WriteBuffer & buf)
 {
-    using T = typename V::value_type;
-
     writeVarUInt(v.size(), buf);
 
-    /// std::vector<bool> is bit-packed and has no contiguous element storage, so it cannot use the bulk path.
-    if constexpr (is_trivially_serializable<T> && !std::is_same_v<T, bool>)
-        buf.write(reinterpret_cast<const char *>(v.data()), v.size() * sizeof(T));
-    else
-        for (auto it = v.begin(); it != v.end(); ++it)
-            writeBinary(*it, buf);
+    for (auto it = v.begin(); it != v.end(); ++it)
+        writeBinary(*it, buf);
 }
 
 
@@ -1152,11 +1144,21 @@ inline void writeTimeTextCutTrailingZerosAlignToGroupOfThousands(Time64 time64, 
 }
 
 /// Methods for output in binary format.
-template <is_trivially_serializable T>
+template <typename T>
+requires is_arithmetic_v<T>
 inline void writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(std::string_view x, WriteBuffer & buf) { writeStringBinary(x, buf); }
+inline void writeBinary(const Decimal32 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const Decimal64 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const Decimal256 & x, WriteBuffer & buf) { writePODBinary(x.value, buf); }
+inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const LocalTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const IPv4 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const IPv6 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const UUID & x, WriteBuffer & buf)
 {

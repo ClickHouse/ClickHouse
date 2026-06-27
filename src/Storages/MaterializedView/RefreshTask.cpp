@@ -677,11 +677,6 @@ void RefreshTask::doScheduling(bool is_shutdown)
     auto component_guard = Coordination::setCurrentComponent("RefreshTask::doScheduling");
     std::unique_lock lock(mutex);
 
-    /// shutdown() runs doScheduling(is_shutdown=true) without holding the mutex, so a parallel
-    /// shutdown() can null `view` before we enter. Bail before dereferencing it below.
-    if (!view)
-        return;
-
     /// The way this function generally works is:
     ///  * Look at state in zookeeper and in memory and at current time.
     ///  * If some change is needed (e.g. write to zookeeper or start a refresh), make that change,
@@ -1171,17 +1166,9 @@ void RefreshTask::notifyDependentsIfNeeded(std::unique_lock<std::mutex> & lock)
     auto info = getInfoForDependentViewsLocked(lock);
     if (info != coordination.notified_dependents)
     {
-        /// Our callers (readZnodesIfNeeded, updateCoordinationState) release the mutex before
-        /// reaching here, so a parallel shutdown() may have nulled `view`. Bail in that case
-        /// (shutdown() does its own final notifyDependents()), and snapshot the accessors before
-        /// unlocking so they can't turn into a null deref while we are unlocked.
-        if (!view)
-            return;
         coordination.notified_dependents = info;
-        ContextPtr context = view->getContext();
-        StorageID view_storage_id = view->getStorageID();
         lock.unlock();
-        context->getRefreshSet().notifyDependents(view_storage_id);
+        view->getContext()->getRefreshSet().notifyDependents(view->getStorageID());
         lock.lock();
     }
 }
