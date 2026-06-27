@@ -101,16 +101,12 @@ namespace DB
         if (inner_table_function_ast)
         {
             auto inner_table_function = TableFunctionFactory::instance().get(inner_table_function_ast, context);
-            /// Enforce the inner function's source access (as execute() does), not the raw structure.
-            return inner_table_function->getActualTableStructureWithAccess(context, is_insert_query);
+            return inner_table_function->getActualTableStructure(context, is_insert_query);
         }
 
         String database_name = loop_database_name;
         if (database_name.empty())
             database_name = context->getCurrentDatabase();
-
-        /// Reading the schema requires SHOW COLUMNS, same as a direct DESCRIBE of the table.
-        context->checkAccess(AccessType::SHOW_COLUMNS, database_name, loop_table_name);
 
         auto database = DatabaseCatalog::instance().getDatabase(database_name);
         auto storage = database->tryGetTable(loop_table_name, context);

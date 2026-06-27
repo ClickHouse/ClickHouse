@@ -222,7 +222,7 @@ public:
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
     }
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
+    Names getAllRegisteredNames() const override;
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
 

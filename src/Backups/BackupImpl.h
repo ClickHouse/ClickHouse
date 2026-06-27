@@ -6,7 +6,6 @@
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupInfo.h>
 #include <Common/Logger_fwd.h>
-#include <atomic>
 #include <map>
 #include <mutex>
 

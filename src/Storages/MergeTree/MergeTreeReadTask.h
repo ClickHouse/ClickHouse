@@ -85,9 +85,9 @@ struct MergeTreeReadTaskColumns
     /// Column names to read during WHERE
     NamesAndTypesList columns;
     /// Column names to read during each PREWHERE step
-    NamesAndTypesLists pre_columns;
+    std::vector<NamesAndTypesList> pre_columns;
     /// Column names to read from patch parts.
-    NamesAndTypesLists patch_columns;
+    std::vector<NamesAndTypesList> patch_columns;
 
     String dump() const;
     Names getAllColumnNames() const;
@@ -193,8 +193,7 @@ public:
         const PrewhereExprInfo & prewhere_actions,
         MergeTreeIndexBuildContextPtr index_build_context,
         LazyMaterializingRowsPtr lazy_materializing_rows,
-        const ReadStepsPerformanceCounters & read_steps_performance_counters,
-        bool collect_predicate_statistics);
+        const ReadStepsPerformanceCounters & read_steps_performance_counters);
 
     void initializeIndexReader(const MergeTreeIndexBuildContextPtr & index_build_context, const LazyMaterializingRowsPtr & lazy_materializing_rows);
 
@@ -234,8 +233,7 @@ public:
     static MergeTreeReadersChain createReadersChain(
         const Readers & readers,
         const PrewhereExprInfo & prewhere_actions,
-        const ReadStepsPerformanceCounters & read_steps_performance_counters,
-        bool collect_predicate_statistics);
+        const ReadStepsPerformanceCounters & read_steps_performance_counters);
 
 private:
     using DataflowCacheUpdateCallback
