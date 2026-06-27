@@ -50,13 +50,9 @@ bool AIQuotaTracker::checkQuotas()
     return false;
 }
 
-void AIQuotaTracker::recordAttempt()
+void AIQuotaTracker::recordResponse(UInt64 in_tokens, UInt64 out_tokens)
 {
     ++api_calls;
-}
-
-void AIQuotaTracker::recordTokens(UInt64 in_tokens, UInt64 out_tokens)
-{
     input_tokens += in_tokens;
     output_tokens += out_tokens;
 }
