@@ -4,7 +4,6 @@
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Interpreters/RewriteRulesASTTraversal.h>
 #include <Common/RewriteRules/RewriteRules.h>
 #include <Core/ServerSettings.h>
 
@@ -22,7 +21,9 @@ BlockIO InterpreterAlterRewriteRuleQuery::execute()
 
     const auto & query = query_ptr->as<const ASTAlterRewriteRuleQuery &>();
 
-    checkRewriteRuleTemplateLimits(query.source_query, query.resulting_query, current_context);
+    /// `max_ast_depth` / `max_ast_elements` for the rule templates are enforced earlier, as
+    /// part of the generic `checkASTSizeLimits` pre-execution gate in `executeQuery` (before
+    /// the access check above), so they cannot be bypassed via wrappers such as `EXPLAIN AST`.
     RewriteRules::instance().updateRule(query);
     return {};
 }

@@ -42,16 +42,19 @@ bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied
         return false;
     }
 
-    /// Rewrite rules transform the query the user submitted to the initiator. A secondary
-    /// query (a fragment sent to a shard during distributed execution) has already been
-    /// rewritten on the initiator and must run as-is: re-applying rules on the shard would
-    /// rewrite/reject it a second time, and a rule named in the propagated `query_rules`
-    /// setting may not even exist on the shard (rule storage is local by default). So apply
-    /// rules only to the initial query.
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-    {
-        return false;
-    }
+    /// Rewrite rules transform the query the user submitted to the initiator. They must not
+    /// be re-applied to a secondary query (a fragment sent to a shard during distributed
+    /// execution): the fragment was already rewritten on the initiator, and a rule named in
+    /// the `query_rules` setting may not even exist on the shard (rule storage is local by
+    /// default). This is enforced on the initiator side, which strips `query_rules` from the
+    /// settings it sends to shards (see `MultiplexedConnections::sendQuery` /
+    /// `HedgedConnections::sendQuery`), so a genuine secondary query arrives with an empty
+    /// `query_rules` and returns early at the check below.
+    ///
+    /// We deliberately do NOT skip here based on `ClientInfo::query_kind`: that value comes
+    /// from the client and can be spoofed (`clickhouse-client --query_kind secondary_query`),
+    /// so trusting it would let a user bypass a profile-enforced REWRITE/REJECT rule simply by
+    /// labelling the query as a secondary one.
 
     /// `query_rules` lists the names of the active rewrite rules, applied in the listed
     /// order. By default it is empty and no rules are applied to the query. Check for the
@@ -138,8 +141,19 @@ bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied
                     /// substitutes an extra `ASTExpressionList` layer into the resulting query.
                     ASTPtr match_node = top1;
                     if (wrapped_parameter && query_parameter_type != "ExpressionList"
-                        && top1->as<ASTExpressionList>() && top1->children.size() == 1)
+                        && top1->as<ASTExpressionList>())
                     {
+                        /// A single-valued placeholder (`String`/`Int`/`Expression`/`Subquery`)
+                        /// captures exactly one node. If the query side holds a multi-item
+                        /// `ASTExpressionList` (for example `SELECT 1, 2`), there is no single
+                        /// node to bind, so the rule must not match — otherwise `{e:Expression}`
+                        /// would capture the whole `1, 2` list even though `Expression` is a
+                        /// single expression (`ExpressionList` is the placeholder for a list).
+                        if (top1->children.size() != 1)
+                        {
+                            is_template = false;
+                            break;
+                        }
                         match_node = top1->children[0];
                     }
                     auto add_to_matching_map = [&](ASTPtr cloned_ast)
@@ -217,40 +231,43 @@ bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied
 }
 
 
-void checkRewriteRuleTemplateLimits(const ASTPtr & source_query, const ASTPtr & resulting_query, ContextPtr context)
+void checkRewriteRuleTemplateLimits(const IAST & ast, const Settings & settings)
 {
-    const auto & settings = context->getSettingsRef();
+    const UInt64 max_ast_depth = settings[Setting::max_ast_depth];
+    const UInt64 max_ast_elements = settings[Setting::max_ast_elements];
+    if (!max_ast_depth && !max_ast_elements)
+        return;
 
-    auto check_limits = [&](const ASTPtr & ast)
+    auto check_limits = [&](const ASTPtr & node)
     {
-        if (!ast)
+        if (!node)
             return;
-        if (settings[Setting::max_ast_depth])
-            ast->checkDepth(settings[Setting::max_ast_depth]);
-        if (settings[Setting::max_ast_elements])
-            ast->checkSize(settings[Setting::max_ast_elements]);
+        if (max_ast_depth)
+            node->checkDepth(max_ast_depth);
+        if (max_ast_elements)
+            node->checkSize(max_ast_elements);
     };
 
     /// `checkDepth` / `checkSize` walk only `IAST::children`. A `CREATE RULE` / `ALTER RULE`
-    /// keeps its own source and result templates outside `children`, so the generic walk
-    /// never reaches them — even when the rule DDL is nested below a wrapper, e.g.
-    /// `EXPLAIN AST CREATE RULE inner AS (SELECT <huge>) REWRITE TO (SELECT 1)`. Walk the
-    /// whole template tree, and whenever a nested rule DDL node is found, check its template
-    /// fields explicitly (recursing into them, since they may contain further nested rule
-    /// DDL). Otherwise an oversized or very deep inner template would bypass the limits and
-    /// be persisted.
-    std::function<void(const ASTPtr &)> check_nested_rule_templates = [&](const ASTPtr & ast)
+    /// keeps its own source and result templates outside `children`, so the generic
+    /// `checkASTSizeLimits` walk in `executeQuery` never reaches them — even when the rule DDL
+    /// is nested below a wrapper, e.g. `EXPLAIN AST CREATE RULE inner AS (SELECT <huge>)
+    /// REWRITE TO (SELECT 1)`. Walk the whole AST through ordinary `children` (so wrappers are
+    /// covered) and, whenever a rule DDL node is found, check its template fields explicitly,
+    /// recursing into them since they may contain further nested rule DDL. Running this as part
+    /// of the generic pre-execution AST limit gate (before access checks and interpreter
+    /// dispatch) keeps an oversized or very deep template from bypassing the limits and being
+    /// persisted, including via wrappers that never reach the rule interpreter.
+    std::function<void(const IAST &)> walk = [&](const IAST & node)
     {
-        if (!ast)
-            return;
         const ASTPtr * nested_source = nullptr;
         const ASTPtr * nested_result = nullptr;
-        if (const auto * create_rule = ast->as<ASTCreateRewriteRuleQuery>())
+        if (const auto * create_rule = node.as<ASTCreateRewriteRuleQuery>())
         {
             nested_source = &create_rule->source_query;
             nested_result = &create_rule->resulting_query;
         }
-        else if (const auto * alter_rule = ast->as<ASTAlterRewriteRuleQuery>())
+        else if (const auto * alter_rule = node.as<ASTAlterRewriteRuleQuery>())
         {
             nested_source = &alter_rule->source_query;
             nested_result = &alter_rule->resulting_query;
@@ -259,17 +276,17 @@ void checkRewriteRuleTemplateLimits(const ASTPtr & source_query, const ASTPtr & 
         {
             check_limits(*nested_source);
             check_limits(*nested_result);
-            check_nested_rule_templates(*nested_source);
-            check_nested_rule_templates(*nested_result);
+            if (*nested_source)
+                walk(**nested_source);
+            if (*nested_result)
+                walk(**nested_result);
         }
-        for (const auto & child : ast->children)
-            check_nested_rule_templates(child);
+        for (const auto & child : node.children)
+            if (child)
+                walk(*child);
     };
 
-    check_limits(source_query);
-    check_limits(resulting_query);
-    check_nested_rule_templates(source_query);
-    check_nested_rule_templates(resulting_query);
+    walk(ast);
 }
 
 

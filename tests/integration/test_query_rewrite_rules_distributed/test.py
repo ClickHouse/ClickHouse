@@ -31,11 +31,11 @@ def test_secondary_query_skips_local_rule(started_cluster):
     # A rewrite rule stored only on the initiator (local storage, so node2 does not have it).
     node1.query("CREATE RULE rule_local AS (SELECT 123) REWRITE TO (SELECT 456)")
 
-    # A distributed query that enables the local rule. The `query_rules` setting propagates to
-    # the shards with the secondary query fragments, but node2 does not have `rule_local`.
-    # Rewrite rules are applied only to the initial query, never to the secondary fragments, so
-    # node2 must not throw `REWRITE_RULE_DOESNT_EXIST`, and the distributed query returns the
-    # full result (sum over both shards: (1 + 2 + 3) * 2 = 12).
+    # A distributed query that enables the local rule. Rewrite rules are applied only to the
+    # initial query, never to the secondary fragments: the initiator strips `query_rules` from
+    # the settings it sends to the shards, so node2 receives an empty `query_rules` and never
+    # looks up `rule_local`. node2 must therefore not throw `REWRITE_RULE_DOESNT_EXIST`, and the
+    # distributed query returns the full result (sum over both shards: (1 + 2 + 3) * 2 = 12).
     assert (
         node1.query(
             "SELECT sum(x) FROM dist_t", settings={"query_rules": "rule_local"}

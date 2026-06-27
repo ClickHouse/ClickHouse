@@ -29,6 +29,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsUInt64 parallel_replica_offset;
+    extern const SettingsString query_rules;
     extern const SettingsBool skip_unavailable_shards;
 }
 
@@ -200,6 +201,16 @@ void HedgedConnections::sendQuery(
         /// Queries in foreign languages are transformed to ClickHouse-SQL. Ensure the setting before sending.
         modified_settings[Setting::dialect] = Dialect::clickhouse;
         modified_settings[Setting::dialect].changed = false;
+
+        /// Rewrite rules are applied once, on the initiator, before the query is distributed.
+        /// Strip `query_rules` from the settings sent to shards: re-applying rules on a secondary
+        /// query would rewrite/reject it a second time, and a rule named here may not even exist
+        /// on the shard (rule storage is local by default). Stripping it — rather than skipping
+        /// rule application on the shard based on the client-controlled `query_kind` — also means
+        /// a client that spoofs `query_kind = secondary_query` cannot carry its own `query_rules`
+        /// past the initiator to bypass a profile-enforced rule.
+        modified_settings[Setting::query_rules] = "";
+        modified_settings[Setting::query_rules].changed = false;
 
         modified_settings[Setting::interactive_delay] = scaleInteractiveDelayByFanout(
             modified_settings[Setting::interactive_delay],
