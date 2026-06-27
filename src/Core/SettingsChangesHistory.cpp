@@ -44,6 +44,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
             {"output_format_parquet_column_field_ids", "", "", "New setting to specify explicit Parquet `field_id` overrides per column (`Map(String, Int32)`), useful for Iceberg compatibility."},
             {"output_format_parquet_auto_assign_field_ids", false, false, "New setting to auto-assign sequential Parquet `field_id`s to every output column, Iceberg-style."},
+            {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},
+            {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
