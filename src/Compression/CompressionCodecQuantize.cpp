@@ -2,6 +2,7 @@
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/registerCompressionCodecs.h>
+#include <Common/ProductQuantization.h>
 #include <Common/VectorQuantization.h>
 #include <Common/SipHash.h>
 #include <Parsers/IAST.h>
@@ -28,6 +29,8 @@ CompressionCodecQuantize::CompressionCodecQuantize(const QuantizeCodecParams & p
     args.emplace_back(make_intrusive<ASTLiteral>(params.method));
     args.emplace_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(params.dimensions)));
     args.emplace_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(params.bits)));
+    if (params.method == "pq")
+        args.emplace_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(params.m)));
     setCodecDescription("Quantize", args);
 }
 
@@ -64,9 +67,10 @@ namespace
 
 QuantizeCodecParams parseQuantizeCodecArguments(const ASTPtr & arguments)
 {
-    if (!arguments || arguments->children.size() < 2 || arguments->children.size() > 3)
+    if (!arguments || arguments->children.size() < 2 || arguments->children.size() > 4)
         throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE,
-            "Codec Quantize requires 2 or 3 parameters: Quantize(method, dimensions[, bits])");
+            "Codec Quantize requires 2 to 4 parameters: Quantize(method, dimensions[, bits[, m]]) "
+            "(the trained 'pq' method uses Quantize('pq', dimensions, nbits, m))");
 
     const auto * method_literal = arguments->children[0]->as<ASTLiteral>();
     if (!method_literal || method_literal->value.getType() != Field::Types::String)
@@ -79,18 +83,40 @@ QuantizeCodecParams parseQuantizeCodecArguments(const ASTPtr & arguments)
     QuantizeCodecParams params;
     params.method = method_literal->value.safeGet<String>();
     params.dimensions = dimensions_literal->value.safeGet<UInt64>();
-    params.bits = 0;
 
-    if (arguments->children.size() == 3)
+    if (arguments->children.size() >= 3)
     {
         const auto * bits_literal = arguments->children[2]->as<ASTLiteral>();
         if (!bits_literal || bits_literal->value.getType() != Field::Types::UInt64)
             throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Third argument of codec Quantize (bits) must be an unsigned integer");
         params.bits = bits_literal->value.safeGet<UInt64>();
     }
+    if (arguments->children.size() >= 4)
+    {
+        const auto * m_literal = arguments->children[3]->as<ASTLiteral>();
+        if (!m_literal || m_literal->value.getType() != Field::Types::UInt64)
+            throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Fourth argument of codec Quantize (m, number of subspaces) must be an unsigned integer");
+        params.m = m_literal->value.safeGet<UInt64>();
+    }
 
-    if (const std::string error = VectorQuantization::validateParams(params.method, params.dimensions, params.bits); !error.empty())
-        throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Codec Quantize: {}", error);
+    /// The trained 'pq' (Product Quantization) method takes (dimensions, nbits, m); the data-independent methods take
+    /// (dimensions[, bits]).
+    if (params.method == "pq")
+    {
+        if (arguments->children.size() != 4)
+            throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE,
+                "Codec Quantize method 'pq' requires Quantize('pq', dimensions, nbits, m)");
+        if (const std::string error = ProductQuantization::validateParams(params.dimensions, params.m, params.bits); !error.empty())
+            throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Codec Quantize: {}", error);
+    }
+    else
+    {
+        if (arguments->children.size() == 4)
+            throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE,
+                "Codec Quantize: the 4th parameter (m) is only valid for the 'pq' method");
+        if (const std::string error = VectorQuantization::validateParams(params.method, params.dimensions, params.bits); !error.empty())
+            throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Codec Quantize: {}", error);
+    }
 
     return params;
 }

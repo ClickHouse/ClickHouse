@@ -266,6 +266,10 @@ public:
             /// Written from the full-precision data and exposed as the readable subcolumn `<column>.quantized`.
             QuantizedCodes,
 
+            /// Per-part trained Product Quantization codebook (one value per part, see the `Quantize('pq', ...)` codec),
+            /// exposed as the readable subcolumn `<column>.pq_codebook`.
+            PQCodebook,
+
             Regular,
         };
 

@@ -8,13 +8,15 @@
 namespace DB
 {
 
-/// Parameters of the `Quantize` column codec: the data-independent quantization method, the number of vector
-/// dimensions, and (only for the `e8` method) the number of bits per sub-quantizer.
+/// Parameters of the `Quantize` column codec. `method` is the quantization method; `dimensions` the vector length.
+/// `bits` is the number of bits per sub-quantizer (used by `e8`, and as nbits per subspace by `pq`). `m` is the number
+/// of subspaces, used only by the trained `pq` (Product Quantization) method.
 struct QuantizeCodecParams
 {
     String method;
     size_t dimensions = 0;
     size_t bits = 0;
+    size_t m = 0;
 };
 
 /// `Quantize(method, dimensions[, bits])` is a column codec for dense vector columns (`Array(Float32)` and friends).
