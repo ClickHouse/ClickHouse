@@ -10,11 +10,11 @@ from ci.defs.defs import (
 )
 from ci.defs.job_configs import JobConfigs
 
-# SQLancer runs against a debug ClickHouse server, so build the amd_debug binary
-# in this workflow to satisfy the job's `CH_AMD_DEBUG` artifact requirement.
+# SQLancer runs against a debug ClickHouse server, so build the arm_debug binary
+# in this workflow to satisfy the job's `CH_ARM_DEBUG` artifact requirement.
 debug_build_job = Job.Config.get_job(
-    JobConfigs.build_jobs, f"Build ({BuildTypes.AMD_DEBUG})"
-).set_provides(ArtifactNames.CH_AMD_DEBUG, reset=True)
+    JobConfigs.build_jobs, f"Build ({BuildTypes.ARM_DEBUG})"
+).set_provides(ArtifactNames.CH_ARM_DEBUG, reset=True)
 
 # TODO: add alert on workflow failure
 
