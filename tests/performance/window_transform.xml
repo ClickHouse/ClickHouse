@@ -18,6 +18,7 @@ AS SELECT
 FROM numbers_mt(10000000);
     </create_query>
 
+    <!-- Lots of pass-through columns. -->
     <query><![CDATA[
         SELECT *, count() OVER () AS w FROM window_transform_wide_lc FORMAT Null;
     ]]></query>
@@ -35,6 +36,7 @@ FROM numbers_mt(10000000);
         SELECT cume_dist() OVER (ORDER BY k) FROM (SELECT number % 2000 AS k FROM numbers(1000000)) FORMAT Null;
     ]]></query>
 
+    <!-- Many rows that have the same frame and aggregate state that is expensive to finalize. -->
     <query><![CDATA[
         SELECT quantilesTDigest(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)(number) OVER () FROM numbers(1000000) FORMAT Null;
     ]]></query>
@@ -45,6 +47,15 @@ FROM numbers_mt(10000000);
 
     <query><![CDATA[
         SELECT sum(number) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM numbers(10000000) FORMAT Null;
+    ]]></query>
+
+    <!-- Partition-boundary and peer-group has big equal range. -->
+    <query><![CDATA[
+        SELECT count() OVER (PARTITION BY k) FROM (SELECT number % 8 AS k FROM numbers(50000000)) FORMAT Null;
+    ]]></query>
+
+    <query><![CDATA[
+        SELECT count() OVER (ORDER BY k RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM (SELECT number % 10 AS k FROM numbers(20000000)) FORMAT Null;
     ]]></query>
 
     <drop_query>DROP TABLE IF EXISTS window_transform_wide_lc</drop_query>
