@@ -65,6 +65,7 @@ static struct InitFiu
     ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
     ONCE(rmt_merge_task_sleep_in_prepare) \
     PAUSEABLE(rmt_fetch_part_pause_before_part_log) \
+    REGULAR(merge_throw_after_commit_before_part_log) \
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(s3_send_request_throw_expired_token) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
