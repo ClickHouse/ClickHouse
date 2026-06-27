@@ -14,6 +14,8 @@
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTCreateRewriteRuleQuery.h>
 #include <Parsers/ASTAlterRewriteRuleQuery.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTWithAlias.h>
 
 namespace DB
 {
@@ -26,6 +28,7 @@ namespace ErrorCodes
     extern const int REWRITE_RULE_UNKNOWN_QUERY_PARAMETER;
     extern const int REWRITE_RULE_UNSUPPORTED_QUERY_PARAMETER_TYPE;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -172,6 +175,72 @@ namespace
         return {};
     }
 
+    /// Returns true if `ast` contains an `INSERT` query carrying inline data (a `VALUES` /
+    /// `FORMAT` payload). Such a template is unsafe to persist: `ASTInsertQuery::clone` copies
+    /// the raw `data` / `end` pointers, which point into the buffer of the original
+    /// `CREATE RULE` query; that buffer is freed long before the stored rule is used, so a
+    /// later rewrite to `INSERT ... VALUES` / `INSERT ... FORMAT ...` would read dangling
+    /// memory. Inline data is also not part of `children` or the tree hash, so it cannot
+    /// participate in matching either. Walks ordinary `children` and the template fields of
+    /// any nested rule DDL (which live outside `children`).
+    bool containsInsertWithInlinedData(const ASTPtr & ast)
+    {
+        if (!ast)
+            return false;
+        if (const auto * insert = ast->as<ASTInsertQuery>(); insert && insert->hasInlinedData())
+            return true;
+        if (const auto * create_rule = ast->as<ASTCreateRewriteRuleQuery>())
+        {
+            if (containsInsertWithInlinedData(create_rule->source_query)
+                || containsInsertWithInlinedData(create_rule->resulting_query))
+                return true;
+        }
+        else if (const auto * alter_rule = ast->as<ASTAlterRewriteRuleQuery>())
+        {
+            if (containsInsertWithInlinedData(alter_rule->source_query)
+                || containsInsertWithInlinedData(alter_rule->resulting_query))
+                return true;
+        }
+        for (const auto & child : ast->children)
+            if (containsInsertWithInlinedData(child))
+                return true;
+        return false;
+    }
+
+    /// Returns the name of the first query parameter used as an alias (`expr AS {name:Type}`)
+    /// reachable from `ast`, or `std::nullopt`. Such a parameter is stored in
+    /// `ASTWithAlias::parametrised_alias`, which is NOT a child, so the placeholder walks above
+    /// (and the matcher / substitution in `RewriteRulesASTTraversal.cpp`, which also follow only
+    /// `children`) never see it: the rule would be stored with an alias placeholder that is
+    /// never validated, bound or substituted. Walks ordinary `children` and the template fields
+    /// of any nested rule DDL.
+    std::optional<String> findParametrisedAlias(const ASTPtr & ast)
+    {
+        if (!ast)
+            return {};
+        if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(ast.get());
+            with_alias && with_alias->parametrised_alias)
+            return with_alias->parametrised_alias->name;
+        if (const auto * create_rule = ast->as<ASTCreateRewriteRuleQuery>())
+        {
+            if (auto found = findParametrisedAlias(create_rule->source_query))
+                return found;
+            if (auto found = findParametrisedAlias(create_rule->resulting_query))
+                return found;
+        }
+        else if (const auto * alter_rule = ast->as<ASTAlterRewriteRuleQuery>())
+        {
+            if (auto found = findParametrisedAlias(alter_rule->source_query))
+                return found;
+            if (auto found = findParametrisedAlias(alter_rule->resulting_query))
+                return found;
+        }
+        for (const auto & child : ast->children)
+            if (auto found = findParametrisedAlias(child))
+                return found;
+        return {};
+    }
+
     /// Validates a rule's source/result templates at DDL time so that invalid rule
     /// metadata is rejected on `CREATE RULE` / `ALTER RULE` instead of turning into
     /// runtime exceptions for every matching query later on.
@@ -189,6 +258,32 @@ namespace
                     "Rewrite rule `{}` uses query parameter `{}` inside a nested CREATE RULE / "
                     "ALTER RULE template; placeholders in nested rule templates are not supported",
                     query.rule_name, *nested);
+
+        /// An `INSERT` query carrying inline data (`VALUES` / `FORMAT`) is unsafe to persist:
+        /// its raw `data` / `end` pointers reference the original `CREATE RULE` query buffer,
+        /// which is freed before the stored rule is ever used. The parser already rejects such a
+        /// template (the inline data swallows the closing parenthesis), but reject it here too so
+        /// the memory-safety invariant does not depend on that parser behaviour (the inline data
+        /// also cannot participate in matching, being outside `children`).
+        for (const auto & template_query : {query.source_query, query.resulting_query})
+            if (containsInsertWithInlinedData(template_query))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Rewrite rule `{}` uses an INSERT query with inline data (VALUES / FORMAT) in "
+                    "its template; INSERT templates with inline data are not supported",
+                    query.rule_name);
+
+        /// A query parameter used as an alias (`... AS {name:Type}`) is kept in
+        /// `ASTWithAlias::parametrised_alias`, outside `children`, so it is neither validated,
+        /// bound nor substituted by the matcher. Reject it instead of silently storing a rule
+        /// with an alias placeholder that does nothing.
+        for (const auto & template_query : {query.source_query, query.resulting_query})
+            if (auto alias = findParametrisedAlias(template_query))
+                throw Exception(
+                    ErrorCodes::REWRITE_RULE_UNSUPPORTED_QUERY_PARAMETER_TYPE,
+                    "Rewrite rule `{}` uses query parameter `{}` as an alias; query parameters in "
+                    "aliases are not supported in rewrite rule templates",
+                    query.rule_name, *alias);
 
         std::unordered_set<String> source_parameters;
         std::vector<String> source_duplicates;
@@ -274,11 +369,14 @@ RewriteRules::~RewriteRules()
 void RewriteRules::shutdown()
 {
     shutdown_called = true;
+    /// Only deactivate the task here; do not reset the holder. `deactivate` waits for any
+    /// in-flight `updateFunc` to return and prevents further runs, but the watcher's tail still
+    /// reads `update_task` (`operator bool` / `operator->` when rescheduling). Reassigning the
+    /// holder here would race with that unsynchronized read. Destruction of the holder is left
+    /// to the owner (the destructor, which runs after this `shutdown`), by which point no
+    /// `updateFunc` can be running.
     if (update_task)
-    {
         update_task->deactivate();
-        update_task = BackgroundSchedulePoolTaskHolder{};
-    }
     std::lock_guard lock(mutex);
     storage.reset();
 }
