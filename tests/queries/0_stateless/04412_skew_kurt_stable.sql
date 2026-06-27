@@ -89,3 +89,39 @@ SELECT
 -- (g) Two-element sample: count=2 satisfies count>1 so samp variants return a value, not NaN
 SELECT isNaN(skewSampStable(x)), isNaN(kurtSampStable(x))
 FROM (SELECT number + 1 AS x FROM numbers(2));
+
+-- (h) Scale invariance
+SELECT
+    round(abs(kurtPopStable(x*3) - kurtPopStable(x)), 10) AS kurt_scale_invariant,
+    round(skewPopStable(-x) + skewPopStable(x), 10) AS skew_negation_antisymmetric
+FROM (SELECT (number % 7) + if(number % 13 = 0, 5, 0) AS x FROM numbers(20000));
+
+-- (i) Known exact values: integers 1..7 form a symmetric uniform distribution
+-- skewPop = 0 exactly, kurtPop = 1.75 exactly
+SELECT
+    skewPopStable(x) = 0 AS skew_exact_zero,
+    kurtPopStable(x) = 1.75 AS kurt_exact_175
+FROM (SELECT number + 1 AS x FROM numbers(7));
+
+-- (j) Three-way merge: three partitions combined equals one-shot aggregation
+SELECT
+    round(abs(
+        (SELECT skewPopStableMerge(s) FROM (
+            SELECT skewPopStableState(x) AS s FROM (SELECT (number % 7) + if(number % 13 = 0, 5, 0) AS x FROM numbers(7000))
+            UNION ALL
+            SELECT skewPopStableState(x) AS s FROM (SELECT (number % 7) + if(number % 13 = 0, 5, 0) AS x FROM numbers(7000, 7000))
+            UNION ALL
+            SELECT skewPopStableState(x) AS s FROM (SELECT (number % 7) + if(number % 13 = 0, 5, 0) AS x FROM numbers(14000, 6000))
+        ))
+        - (SELECT skewPopStable(x) FROM (SELECT (number % 7) + if(number % 13 = 0, 5, 0) AS x FROM numbers(20000)))
+    ), 10) AS skew_three_way_merge,
+    round(abs(
+        (SELECT kurtPopStableMerge(s) FROM (
+            SELECT kurtPopStableState(x) AS s FROM (SELECT (number % 7) + if(number % 13 = 0, 5, 0) AS x FROM numbers(7000))
+            UNION ALL
+            SELECT kurtPopStableState(x) AS s FROM (SELECT (number % 7) + if(number % 13 = 0, 5, 0) AS x FROM numbers(7000, 7000))
+            UNION ALL
+            SELECT kurtPopStableState(x) AS s FROM (SELECT (number % 7) + if(number % 13 = 0, 5, 0) AS x FROM numbers(14000, 6000))
+        ))
+        - (SELECT kurtPopStable(x) FROM (SELECT (number % 7) + if(number % 13 = 0, 5, 0) AS x FROM numbers(20000)))
+    ), 10) AS kurt_three_way_merge;
