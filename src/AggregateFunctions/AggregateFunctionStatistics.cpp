@@ -475,7 +475,10 @@ public:
 
 
 /** Parallel and incremental algorithm for calculating skewness and kurtosis.
-  * Source: Terriberry, T. B. (2007) for the online update; Pébay, P. (2008) for the parallel merge.
+  * Source: Pébay, Terriberry, Kolla, Bennett (2016) "Numerically stable, scalable formulas for
+  *         parallel and online computation of higher-order multivariate central moments with
+  *         arbitrary weights", Computational Statistics 31:1305–1325, DOI 10.1007/s00180-015-0637-z.
+  *         Corollary 3.2 for the incremental update; Proposition 3.1 for the parallel merge.
   */
 struct AggregateFunctionHigherMomentsData
 {
