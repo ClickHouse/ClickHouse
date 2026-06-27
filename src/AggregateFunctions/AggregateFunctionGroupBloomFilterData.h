@@ -104,11 +104,18 @@ struct AggregateFunctionGroupBloomFilterData
 
     AggregateFunctionGroupBloomFilterData() = default;
 
-    void init(size_t filter_size_bytes_, size_t num_hashes_, size_t seed_ = BLOOM_FILTER_DEFAULT_SEED)
+    /// Store parameters without allocating the bitset.
+    /// The BloomFilter is created lazily on the first call to add().
+    void setParameters(size_t filter_size_bytes_, size_t num_hashes_, size_t seed_ = BLOOM_FILTER_DEFAULT_SEED)
     {
         filter_size_bytes = filter_size_bytes_;
         num_hashes = num_hashes_;
         seed = seed_;
+    }
+
+    void init(size_t filter_size_bytes_, size_t num_hashes_, size_t seed_ = BLOOM_FILTER_DEFAULT_SEED)
+    {
+        setParameters(filter_size_bytes_, num_hashes_, seed_);
         bloom_filter = std::make_unique<BloomFilter>(filter_size_bytes, num_hashes, seed);
     }
 
@@ -116,8 +123,12 @@ struct AggregateFunctionGroupBloomFilterData
 
     void add(const char * data, size_t len) // NOLINT(readability-make-member-function-const)
     {
-        if (bloom_filter)
-            bloom_filter->add(data, len);
+        /// Lazily allocate the bitset on the first inserted value so that
+        /// empty/skipped groups (e.g. groupBloomFilterIfState(…)(x, 0)) never
+        /// pay the allocation cost and serialize compactly with has_data = 0.
+        if (!bloom_filter)
+            bloom_filter = std::make_unique<BloomFilter>(filter_size_bytes, num_hashes, seed);
+        bloom_filter->add(data, len);
     }
 
     bool contains(const char * data, size_t len) const

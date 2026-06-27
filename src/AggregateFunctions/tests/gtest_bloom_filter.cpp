@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionGroupBloomFilterData.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <base/scope_guard.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
@@ -351,4 +352,66 @@ TEST(BloomFilterContains, WrongDateTime64BloomColumnThrowsAfterTypeValidation)
     EXPECT_THROW(
         executeBloomFilterContains(std::move(wrong_bloom_column), bloom_type, std::move(probe_column), value_type, 1),
         Exception);
+}
+
+/// Regression: create() must not allocate the bitset eagerly.
+/// Empty/skipped groups (e.g. from -If combinator when all conditions are false,
+/// or all-NULL nullable inputs) must stay compact in memory and serialize with has_data = 0.
+TEST(BloomFilterAggregateFunction, CreateDoesNotAllocateBitset)
+{
+    tryRegisterAggregateFunctions();
+
+    const auto value_type = std::make_shared<DataTypeUInt64>();
+    const auto aggregate_function = createGroupBloomFilterAggregate(value_type);
+
+    Arena arena;
+    AggregateDataPtr place = arena.alignedAlloc(aggregate_function->sizeOfData(), aggregate_function->alignOfData());
+    aggregate_function->create(place);
+    SCOPE_EXIT({ aggregate_function->destroy(place); });
+
+    const auto & data = *reinterpret_cast<const AggregateFunctionGroupBloomFilterData *>(place);
+
+    // Parameters must be stored ...
+    EXPECT_EQ(data.filter_size_bytes, 64u);
+    EXPECT_EQ(data.num_hashes, 3u);
+    EXPECT_EQ(data.seed, 0u);
+    // ... but the bitset must NOT have been allocated yet.
+    EXPECT_FALSE(data.isInitialized());
+
+    // Serialization of the empty state must be compact: 3 varints (params) + 1 flag byte,
+    // no payload.  The filter_size_bytes is 64 so a populated state would be 64+ bytes.
+    WriteBufferFromOwnString out;
+    aggregate_function->serialize(place, out, std::nullopt);
+    EXPECT_LT(out.str().size(), 16u); // header only, far below 64 bytes of payload
+}
+
+/// Regression: add() must lazily allocate the bitset on first value and then find it.
+TEST(BloomFilterAggregateFunction, AddLazilyAllocatesAndFinds)
+{
+    tryRegisterAggregateFunctions();
+
+    const auto value_type = std::make_shared<DataTypeUInt64>();
+    const auto aggregate_function = createGroupBloomFilterAggregate(value_type);
+
+    Arena arena;
+    AggregateDataPtr place = arena.alignedAlloc(aggregate_function->sizeOfData(), aggregate_function->alignOfData());
+    aggregate_function->create(place);
+    SCOPE_EXIT({ aggregate_function->destroy(place); });
+
+    const auto & data = *reinterpret_cast<const AggregateFunctionGroupBloomFilterData *>(place);
+    EXPECT_FALSE(data.isInitialized());
+
+    // Insert one value through the aggregate function's add() interface.
+    auto value_column = ColumnUInt64::create();
+    value_column->insertValue(UInt64(42));
+    const IColumn * columns[] = {value_column.get()};
+    aggregate_function->add(place, columns, 0, &arena);
+
+    // Now the bitset must have been allocated and the value must be found.
+    EXPECT_TRUE(data.isInitialized());
+    UInt64 probe = 42;
+    EXPECT_TRUE(data.contains(reinterpret_cast<const char *>(&probe), sizeof(probe)));
+    probe = 100;
+    // 100 was never inserted; this is probabilistic but with 64 bytes / 3 hashes false positives are negligible.
+    EXPECT_FALSE(data.contains(reinterpret_cast<const char *>(&probe), sizeof(probe)));
 }

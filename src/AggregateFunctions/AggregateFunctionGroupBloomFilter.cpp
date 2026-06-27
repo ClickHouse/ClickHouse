@@ -68,7 +68,11 @@ public:
     void create(AggregateDataPtr __restrict place) const override
     {
         new (place) AggregateFunctionGroupBloomFilterData();
-        this->data(place).init(filter_size_bytes, num_hashes, seed);
+        /// Store only the parameters; the bitset is allocated lazily on the
+        /// first add() call.  Empty/skipped groups (e.g. from the -If combinator
+        /// when all conditions are false, or from all-NULL nullable inputs) never
+        /// allocate any memory and serialize compactly with has_data = 0.
+        this->data(place).setParameters(filter_size_bytes, num_hashes, seed);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
