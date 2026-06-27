@@ -2768,10 +2768,10 @@ Possible values:
 
 - Positive integer number, in nanoseconds.
 
-    Recommended values:
+  Recommended values:
 
-            - 10000000 (100 times a second) nanoseconds and less for single queries.
-            - 1000000000 (once a second) for cluster-wide profiling.
+  - 10000000 (100 times a second) nanoseconds and less for single queries.
+  - 1000000000 (once a second) for cluster-wide profiling.
 
 - 0 for turning off the timer.
 
@@ -2788,10 +2788,10 @@ Possible values:
 
 - A positive integer number of nanoseconds.
 
-    Recommended values:
+  Recommended values:
 
-            - 10000000 (100 times a second) nanoseconds and more for single queries.
-            - 1000000000 (once a second) for cluster-wide profiling.
+  - 10000000 (100 times a second) nanoseconds and more for single queries.
+  - 1000000000 (once a second) for cluster-wide profiling.
 
 - 0 for turning off the timer.
 
@@ -4795,8 +4795,8 @@ Enables or disables the deduplication check for materialized views that receive 
 
 Possible values:
 
-      0 — Disabled.
-      1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 When enabled, ClickHouse performs deduplication of blocks in materialized views that depend on Replicated\* tables.
 This setting is useful for ensuring that materialized views do not contain duplicate data when the insertion operation is being retried due to a failure.

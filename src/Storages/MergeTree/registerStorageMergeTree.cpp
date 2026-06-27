@@ -3763,8 +3763,8 @@ The settings for rollup are defined by the [graphite_rollup](../../../operations
 
 Rollup configuration structure:
 
-      required-columns
-      patterns
+- required-columns
+- patterns
 
 ### Required columns {#required-columns}
 
