@@ -2,11 +2,13 @@
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/ProductQuantization.h>
 #include <Common/VectorQuantization.h>
 #include <Common/Exception.h>
+#include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 
 #include <algorithm>
@@ -70,6 +72,56 @@ struct SerializeStatePQ : public ISerialization::SerializeBinaryBulkState
     bool trained = false;
 };
 
+/// Read serialization for the per-part codebook subcolumn. The codebook is stored as a SINGLE value per part (written
+/// once at the suffix, every granule mark points at it), but a scan asks for one value per row. Reading it as a plain
+/// FixedString would try to read `limit` values from a one-value stream (and materialize `limit` copies of a large
+/// blob). Instead we read exactly one value and return a `ColumnConst` broadcast to `limit` rows - O(1) memory, and the
+/// distance function sees the codebook as a per-block constant.
+class SerializationPQCodebook final : public SerializationWrapper
+{
+public:
+    explicit SerializationPQCodebook(const SerializationPtr & nested_) : SerializationWrapper(nested_) {}
+
+    /// Created via the serialization pool so it carries a stable hash (required when attached to a column), mirroring
+    /// SerializationNamed::create.
+    static SerializationPtr create(const SerializationPtr & nested_)
+    {
+        if (!nested_->supportsPooling())
+            return std::shared_ptr<ISerialization>(new SerializationPQCodebook(nested_));
+        SipHash hash;
+        hash.update("PQCodebook");
+        hash.update(nested_->getHash());
+        return ISerialization::pooled(hash.get128(), [&] { return new SerializationPQCodebook(nested_); });
+    }
+
+    void deserializeBinaryBulkWithMultipleStreams(
+        ColumnPtr & column,
+        size_t /*rows_offset*/,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & /*state*/,
+        SubstreamsCache * /*cache*/) const override
+    {
+        settings.path.push_back(Substream::Regular);
+        ReadBuffer * stream = settings.getter(settings.path);
+        settings.path.pop_back();
+        if (!stream)
+            return;
+
+        const size_t prev_size = column ? column->size() : 0;
+
+        /// The one-value column holding the codebook (the data column of the resulting ColumnConst).
+        const IColumn & value_template = (column && isColumnConst(*column))
+            ? assert_cast<const ColumnConst &>(*column).getDataColumn()
+            : *column;
+        auto value = value_template.cloneEmpty();
+        /// Read exactly one codebook value (all rows in the part share it), regardless of `limit`.
+        nested_serialization->deserializeBinaryBulk(*value, *stream, /*rows_offset=*/0, /*limit=*/1, /*avg_value_size_hint=*/0.0);
+
+        column = ColumnConst::create(std::move(value), prev_size + limit);
+    }
+};
+
 }
 
 SerializationQuantizedVector::SerializationQuantizedVector(const SerializationPtr & nested_, const QuantizeCodecParams & params_)
@@ -88,7 +140,8 @@ SerializationQuantizedVector::SerializationQuantizedVector(const SerializationPt
         codebook_bytes = ProductQuantization::codebookFloats(params_.dimensions, params_.m, params_.bits) * sizeof(float);
         codebook_type = std::make_shared<DataTypeFixedString>(codebook_bytes);
         codebook_serialization = SerializationNamed::create(
-            codebook_type->getDefaultSerialization(), pq_codebook_subcolumn_name, ISerialization::Substream::PQCodebook);
+            SerializationPQCodebook::create(codebook_type->getDefaultSerialization()),
+            pq_codebook_subcolumn_name, ISerialization::Substream::PQCodebook);
     }
 }
 

@@ -200,6 +200,9 @@ bool optimizeVectorSearchWithQuantizedCodes(
     const String & method = params->method;
     const UInt64 dimensions = params->dimensions;
     const UInt64 bits = params->bits;
+    /// The trained `pq` method also needs the per-part codebook subcolumn, and ranks with `pqDistance`.
+    const bool is_pq = method == "pq";
+    const String codebook_column = search_column + "." + SerializationQuantizedVector::pq_codebook_subcolumn_name;
 
     /// Shortlist size k' = k * fetch_multiplier, clamped so that the inner LimitStep stays eligible for lazy
     /// materialization of the heavy vector column.
@@ -214,11 +217,16 @@ bool optimizeVectorSearchWithQuantizedCodes(
 
     /// All checks passed - rewrite the plan.
 
-    /// 1. Pull the codes subcolumn into the read list.
-    read_step->addReadColumn(codes_column);
+    /// 1. Pull the codes subcolumn (and, for the trained `pq` method, the per-part codebook subcolumn) into the read
+    /// list.
+    std::vector<String> extra_columns{codes_column};
+    if (is_pq)
+        extra_columns.push_back(codebook_column);
+    for (const auto & extra_column : extra_columns)
+        read_step->addReadColumn(extra_column);
 
-    /// 2. Propagate the codes subcolumn up through the filter/rename chain (bottom-up), so it is available where we
-    /// splice the shortlist (above all filters). Each Expression/Filter step would otherwise drop it.
+    /// 2. Propagate the extra subcolumns up through the filter/rename chain (bottom-up), so they are available where we
+    /// splice the shortlist (above all filters). Each Expression/Filter step would otherwise drop them.
     SharedHeader child_output = read_step->getOutputHeader();
     for (auto * chain_node : chain_nodes | std::views::reverse)
     {
@@ -228,11 +236,16 @@ bool optimizeVectorSearchWithQuantizedCodes(
         else if (auto * chain_filter = typeid_cast<FilterStep *>(chain_node->step.get()))
             chain_dag = &chain_filter->getExpression();
 
-        if (chain_dag && !chain_dag->tryFindInOutputs(codes_column))
+        if (chain_dag)
         {
-            const auto & codes_type = child_output->getByName(codes_column).type;
-            const auto & codes_input = chain_dag->addInput(codes_column, codes_type);
-            chain_dag->getOutputs().push_back(&codes_input);
+            for (const auto & extra_column : extra_columns)
+            {
+                if (chain_dag->tryFindInOutputs(extra_column))
+                    continue;
+                const auto & extra_type = child_output->getByName(extra_column).type;
+                const auto & extra_input = chain_dag->addInput(extra_column, extra_type);
+                chain_dag->getOutputs().push_back(&extra_input);
+            }
         }
         chain_node->step->updateInputHeader(child_output);
         child_output = chain_node->step->getOutputHeader();
@@ -243,8 +256,8 @@ bool optimizeVectorSearchWithQuantizedCodes(
     SharedHeader inner_input_header = child_output;
     QueryPlan::Node * inner_child_node = chain_nodes.empty() ? read_node : chain_nodes.front();
 
-    /// 3. Build the approximate-distance expression:
-    ///    _approx := quantizeDistance(vec.quantized, ref, method, dim, bits, is_l2).
+    /// 3. Build the approximate-distance expression: `quantizeDistance` for the data-independent methods, or
+    ///    `pqDistance` (with the per-part codebook) for the trained `pq` method.
     static constexpr auto approx_column_name = "__quantize_approx_distance";
     ActionsDAG approx_dag(inner_input_header->getColumnsWithTypeAndName());
     const auto & code_node = approx_dag.findInOutputs(codes_column);
@@ -271,11 +284,28 @@ bool optimizeVectorSearchWithQuantizedCodes(
     const auto & is_l2_node = approx_dag.addColumn(
         uint8_type->createColumnConst(1, Field(static_cast<UInt64>(is_l2 ? 1 : 0))), uint8_type, "__quantize_is_l2");
 
-    auto quantize_distance = FunctionFactory::instance().get("quantizeDistance", context);
-    ActionsDAG::NodeRawConstPtrs distance_arguments{
-        &code_node, &reference_node, &method_node, &dimensions_node, &bits_node, &is_l2_node};
-    const auto & approx_node = approx_dag.addFunction(quantize_distance, std::move(distance_arguments), approx_column_name);
-    approx_dag.getOutputs().push_back(&approx_node);
+    const ActionsDAG::Node * approx_node = nullptr;
+    if (is_pq)
+    {
+        /// _approx := pqDistance(vec.quantized, vec.pq_codebook, ref, dim, m, nbits, is_l2). The codebook is read as a
+        /// per-part broadcast column; `bits` carries nbits for the `pq` method.
+        const auto & codebook_node = approx_dag.findInOutputs(codebook_column);
+        const auto & m_node = approx_dag.addColumn(
+            uint64_type->createColumnConst(1, Field(static_cast<UInt64>(params->m))), uint64_type, "__quantize_m");
+        auto pq_distance = FunctionFactory::instance().get("pqDistance", context);
+        ActionsDAG::NodeRawConstPtrs distance_arguments{
+            &code_node, &codebook_node, &reference_node, &dimensions_node, &m_node, &bits_node, &is_l2_node};
+        approx_node = &approx_dag.addFunction(pq_distance, std::move(distance_arguments), approx_column_name);
+    }
+    else
+    {
+        /// _approx := quantizeDistance(vec.quantized, ref, method, dim, bits, is_l2).
+        auto quantize_distance = FunctionFactory::instance().get("quantizeDistance", context);
+        ActionsDAG::NodeRawConstPtrs distance_arguments{
+            &code_node, &reference_node, &method_node, &dimensions_node, &bits_node, &is_l2_node};
+        approx_node = &approx_dag.addFunction(quantize_distance, std::move(distance_arguments), approx_column_name);
+    }
+    approx_dag.getOutputs().push_back(approx_node);
 
     /// 4. Allocate the inner shortlist nodes (expression -> sorting -> limit), bottom-up so headers chain correctly.
     auto & inner_expression_node = nodes.emplace_back();

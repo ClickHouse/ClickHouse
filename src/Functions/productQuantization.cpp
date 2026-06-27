@@ -64,18 +64,24 @@ void checkVectorArgument(const DataTypePtr & type, const String & fn, size_t idx
             "Argument #{} of function {} must be Array(Float32|Float64|BFloat16)", idx + 1, fn);
 }
 
-/// Reinterpret a constant FixedString codebook argument as a flat float array; validates the byte size.
+/// Reinterpret the codebook FixedString argument as a flat float array; validates the byte size. The codebook is
+/// constant within a block: either a query-level constant (`ColumnConst`, ad-hoc use) or the per-part codebook read as
+/// a `ColumnConst` by `SerializationPQCodebook` (the planner path). A non-const full column is also accepted (all rows
+/// equal), reading row 0.
 const float * getCodebook(const ColumnWithTypeAndName & arg, const String & fn, size_t expected_floats)
 {
-    const auto * cb_const = checkAndGetColumnConst<ColumnFixedString>(arg.column.get());
-    if (!cb_const)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Codebook argument of function {} must be a constant FixedString", fn);
-    const auto & cb_fs = assert_cast<const ColumnFixedString &>(cb_const->getDataColumn());
-    if (cb_fs.getN() != expected_floats * sizeof(float))
+    const ColumnFixedString * cb_fs = nullptr;
+    if (const auto * cb_const = checkAndGetColumnConst<ColumnFixedString>(arg.column.get()))
+        cb_fs = &assert_cast<const ColumnFixedString &>(cb_const->getDataColumn());
+    else
+        cb_fs = checkAndGetColumn<ColumnFixedString>(arg.column.get());
+    if (!cb_fs || cb_fs->empty())
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Codebook argument of function {} must be a (constant) FixedString", fn);
+    if (cb_fs->getN() != expected_floats * sizeof(float))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Codebook of function {} has {} bytes but the given dimensions/m/nbits expect {}",
-            fn, cb_fs.getN(), expected_floats * sizeof(float));
-    return reinterpret_cast<const float *>(cb_fs.getChars().data());
+            fn, cb_fs->getN(), expected_floats * sizeof(float));
+    return reinterpret_cast<const float *>(cb_fs->getChars().data());
 }
 
 }
@@ -221,7 +227,9 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 7; }
     bool useDefaultImplementationForConstants() const override { return false; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3, 4, 5, 6}; }
+    /// The codebook (arg 1) is NOT a query constant in the planner path - it is the per-part codebook read as a
+    /// per-block ColumnConst. Only the scalar params (and the query vector) are required constant.
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2, 3, 4, 5, 6}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -241,6 +249,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        /// Dry-run / empty blocks pass zero-row (and possibly non-const) columns; nothing to compute, and the codebook
+        /// is not materialized yet.
+        if (input_rows_count == 0)
+            return ColumnFloat32::create();
+
         const UInt64 dimensions = getConstUInt(arguments[3], name, 3);
         const UInt64 m = getConstUInt(arguments[4], name, 4);
         const UInt64 nbits = getConstUInt(arguments[5], name, 5);
