@@ -125,7 +125,7 @@ by default). The data is also collected when the query finishes if the query tak
 - `ProfileEvent_TextIndexHeaderCacheHits` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a header has been found in the cache.
 - `ProfileEvent_TextIndexHeaderCacheMisses` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a header has not been found in the cache.
 - `ProfileEvent_TextIndexPostingsCacheHits` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a text index posting list has been found in the cache.
-- `ProfileEvent_TextIndexPostingsCacheMisses` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a a text index posting list has not been found in the cache.
+- `ProfileEvent_TextIndexPostingsCacheMisses` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a text index posting list has not been found in the cache.
 - `ProfileEvent_TextIndexReadSparseIndexBlocks` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a sparse index block has been read from the text index.
 - `ProfileEvent_TextIndexReaderTotalMicroseconds` ([UInt64](/sql-reference/data-types/int-uint)) — Total time spent reading the text index.
 - `ProfileEvent_TextIndexReadGranulesMicroseconds` ([UInt64](/sql-reference/data-types/int-uint)) — Total time spent reading and analyzing granules of the text index.
@@ -533,8 +533,6 @@ by default). The data is also collected when the query finishes if the query tak
   9. Part format related settings like 'enable_mixed_granularity_parts' are different on different replicas.
   The server successfully detected this situation and will download merged part from the replica to force the byte-identical result.
 - `ProfileEvent_DataAfterMutationDiffersFromReplica` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times data after mutation is not byte-identical to the data on other replicas. In addition to the reasons described in 'DataAfterMergeDiffersFromReplica', it is also possible due to non-deterministic mutation.
-- `ProfileEvent_PolygonsAddedToPool` ([UInt64](/sql-reference/data-types/int-uint)) — A polygon has been added to the cache (pool) for the 'pointInPolygon' function.
-- `ProfileEvent_PolygonsInPoolAllocatedBytes` ([UInt64](/sql-reference/data-types/int-uint)) — The number of bytes for polygons added to the cache (pool) for the 'pointInPolygon' function.
 - `ProfileEvent_NaiveBayesClassifierModelsLoaded` ([UInt64](/sql-reference/data-types/int-uint)) — Number of Naive Bayes Classifier models loaded.
 - `ProfileEvent_NaiveBayesClassifierModelsAllocatedBytes` ([UInt64](/sql-reference/data-types/int-uint)) — Number of bytes allocated for Naive Bayes Classifier models.
 - `ProfileEvent_USearchAddCount` ([UInt64](/sql-reference/data-types/int-uint)) — Number of vectors added to usearch indexes.
