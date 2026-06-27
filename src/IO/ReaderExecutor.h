@@ -66,13 +66,13 @@ public:
     /// (see `maybeDrainLongTail`) instead of being abandoned mid-response.
     static constexpr size_t DEFAULT_MAX_TAIL_FOR_DRAIN = 1 * 1024 * 1024; /// 1 MiB
     static constexpr size_t CHAINED_BUFFER_BLOCK_SIZE = 1 * 1024 * 1024; /// 1 MiB per ChainedBuffers node
-    /// Look-ahead span over which residency is planned ONCE (plan-then-stream),
-    /// amortising cache discovery across many windows.
-    /// Single size ceiling for the plan window. The base request span (`window_size` on a
-    /// random/first read, the continuity `predictedReach` once sequential) is clamped to it,
-    /// segment folding extends within it, and it caps the result. Pressure-scaled (x1, x1,
-    /// x0.25, x0.25 over Normal/Elevated/High/Critical). `read_extent_end` does not size the plan.
-    static constexpr size_t DEFAULT_PLAN_LOOK_AHEAD_MAX_WINDOW = 32 * 1024 * 1024; /// 32 MiB
+    /// The fixed plan window: residency is planned ONCE over this span (plan-then-stream),
+    /// amortising cache discovery across many serve windows; segment folding extends a plan
+    /// out to the touched cell boundaries within it. Defaults to one `window_size` (the A/B
+    /// showed a small plan is cost-equivalent to a large one - the long connection, not the
+    /// window, carries the cost); raise it to plan further ahead. `read_extent_end` does not
+    /// size the plan, so the plan survives mark-range advances and is reused.
+    static constexpr size_t DEFAULT_PLAN_LOOK_AHEAD_MAX_WINDOW = DEFAULT_WINDOW_SIZE;
     /// A warranted long connection opens with at least this much range and never streams
     /// past the cap. The continuous-read prediction may under-predict at the start of a run
     /// and over-predict at its end; these bound the resulting GET so an over-prediction
@@ -883,11 +883,10 @@ private:
     /// `physical_start`, clamped to the physical file end and the advertised
     /// read extent. Empty when the start sits at/past a bound. The single
     /// place the plan is bounded.
-    ByteRange boundedPlanSpan(size_t physical_start, MemoryPressureLevel level) const;
+    ByteRange boundedPlanSpan(size_t physical_start) const;
 
-    /// The generalized plan ceiling for a pressure level: `plan_look_ahead_max_window`
-    /// scaled x1, x1, x0.25, x0.25 over Normal/Elevated/High/Critical.
-    size_t effectivePlanCeiling(MemoryPressureLevel level) const;
+    /// The fixed plan window: `max(window_size, plan_look_ahead_max_window)`.
+    size_t effectivePlanCeiling() const;
 
     /// Whether the current plan already extends to the source end (known size). A
     /// margin-driven replan then only rebuilds the identical plan (and recreates the
@@ -1046,15 +1045,6 @@ private:
     /// Highest physical offset already fed to `continuity_tracker` from a plan, so
     /// overlapping re-plans never double-feed. Reset to the target on seek.
     size_t continuity_fed_end = 0;
-
-    /// A SECOND estimator, fed every SERVED range (the cache-read / consumer pattern,
-    /// hits included) and every seek - distinct from the source estimator above.
-    /// Constructed with `near_gap == 0` (strict contiguity): a hole in the served
-    /// pattern is a real discontinuity for the held cache readers, not a bridgeable
-    /// connection gap. `predictedReach` sizes the residency lookup span
-    /// (`boundedPlanSpan`) so the held `DiskCacheReader`s live across mark ranges
-    /// instead of being rebuilt per `read_extent_end` advance.
-    ContinuityTracker lookup_continuity;
 
     /// Logging / transient accounting.
     std::shared_ptr<ReaderExecutorLog> reader_executor_log;

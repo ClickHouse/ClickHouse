@@ -157,7 +157,7 @@ struct ReadSettings
     bool use_reader_executor = false;
     bool enable_reader_executor_log = false;
     size_t reader_executor_window_size = 8388608;
-    size_t reader_executor_plan_look_ahead_max_window = 33554432;
+    size_t reader_executor_plan_look_ahead_max_window = 8388608;
     size_t reader_executor_block_size = 1048576;
     size_t reader_executor_min_bytes_for_seek = 2097152;
     size_t reader_executor_max_tail_for_drain = 1048576;

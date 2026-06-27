@@ -564,11 +564,11 @@ TEST_F(ReaderExecutorMetric, ColdSequential)
 {
     auto [live, stateless] = runMatrix("cold_seq", {}, {{0, std::nullopt}});
 
-    /// Live: a cold sequential read grows the look-ahead, so the long connection spans the
-    /// whole scan and reopens only a couple of times; it drains cleanly. The wide cold fetch
-    /// rounds to whole cache segments, so `over_read` now reflects the full-segment prefill
-    /// (consumed by the scan, not waste).
-    EXPECT_EQ(live.requests, 12u) << "live: the cold scan reopens the reach-bounded long connection a handful of times";
+    /// Live: a cold sequential read plans a fixed small window, but the long connection still
+    /// spans the whole scan and reopens only a handful of times; it drains cleanly. The wide
+    /// cold fetch rounds to whole cache segments, so `over_read` reflects the full-segment
+    /// prefill (consumed by the scan, not waste).
+    EXPECT_EQ(live.requests, 8u) << "live: the cold scan reopens the reach-bounded long connection a handful of times";
     EXPECT_EQ(live.incomplete, 0u) << "the connection drains to its bound";
     EXPECT_EQ(live.over_read, 0u) << "the wide cold fetch's full-segment prefill is consumed by the scan -> zero net over-read";
     EXPECT_EQ(live.fetched, FILE_SIZE);
@@ -577,36 +577,31 @@ TEST_F(ReaderExecutorMetric, ColdSequential)
     EXPECT_EQ(stateless.incomplete, 0u) << "bounded one-shot reads never leave an incomplete connection";
 }
 
-/// A/B for the plan-window knob (`reader_executor_plan_look_ahead_max_window`): the
-/// variable window (default 32 MiB, continuity-sized) vs a fixed-small window pinned to
-/// `WINDOW`. Hypothesis: on a sequential cold scan the long-connection carry keeps the
-/// source GET count close even when the plan never widens past one window, because the
-/// connection spans the scan regardless of how often the plan is rebuilt. The
-/// eviction-under-pressure regime where the two can diverge is exercised by the
-/// integration test under concurrent load, not on this single-threaded sync path.
-TEST_F(ReaderExecutorMetric, FixedSmallWindowMatchesVariableGets)
+/// The plan-window knob (`reader_executor_plan_look_ahead_max_window`) is cost-neutral on the
+/// live path: the long-connection carry, not the plan-window size, carries the cost. Compare
+/// the small default (one window) against a wide whole-file plan on a sequential cold scan.
+/// The eviction-under-pressure / random-access regimes where a wider plan can help are
+/// exercised by the integration test and the scattered-read cases, not this sync path.
+TEST_F(ReaderExecutorMetric, PlanWindowSizeIsCostNeutral)
 {
-    auto [var_live, var_stateless] = runMatrix("ab_variable", {}, {{0, std::nullopt}});
-
-    plan_window_override = WINDOW;  /// fixed-small arm
-    auto [small_live, small_stateless] = runMatrix("ab_fixed_small", {}, {{0, std::nullopt}});
-    plan_window_override = 0;
+    plan_window_override = WINDOW;  /// a tiny one-window plan
+    auto [small_live, small_stateless] = runMatrix("ab_small", {}, {{0, std::nullopt}});
+    plan_window_override = 0;  /// the default plan window (one window_size)
+    auto [wide_live, wide_stateless] = runMatrix("ab_wide", {}, {{0, std::nullopt}});
 
     /// Both arms read the whole file and fetch every byte exactly once.
-    EXPECT_EQ(var_live.fetched, FILE_SIZE);
     EXPECT_EQ(small_live.fetched, FILE_SIZE);
-    EXPECT_EQ(var_live.requests, 12u) << "variable window: the continuity-sized plan reopens a handful of times";
-    /// The long-connection carry makes the plan window size irrelevant for source GETs on the
-    /// live path: fixed-small issues exactly as many GETs as the variable window, and the
-    /// modeled cost per MiB is within a few percent (a small Wc/Rc shift, S unchanged).
-    EXPECT_EQ(small_live.requests, var_live.requests)
-        << "fixed-small matches variable GETs -- the long connection spans the scan regardless of window";
-    EXPECT_NEAR(small_live.costPerMiB(), var_live.costPerMiB(), var_live.costPerMiB() * 0.05)
+    EXPECT_EQ(wide_live.fetched, FILE_SIZE);
+    /// On the live path the long connection spans the scan regardless of the plan window, so a
+    /// wide plan issues no more source GETs than the small default, at an equal modeled cost.
+    EXPECT_LE(wide_live.requests, small_live.requests)
+        << "a wide plan does not increase source GETs -- the long connection carries the scan";
+    EXPECT_NEAR(wide_live.costPerMiB(), small_live.costPerMiB(), small_live.costPerMiB() * 0.05)
         << "cost-equivalent on the live path";
-    /// Without the carry (stateless), the window DOES matter: a fixed-small window opens one
-    /// short-lived connection per window, so its GET count exceeds the variable window's.
-    EXPECT_GT(small_stateless.requests, var_stateless.requests)
-        << "no carry -> a small window means more one-shot connections";
+    /// Without the carry (stateless), the plan window DOES matter: the small default re-plans
+    /// (and re-fetches) more often, so its one-shot GET count exceeds the wide plan's.
+    EXPECT_GT(small_stateless.requests, wide_stateless.requests)
+        << "no carry -> a smaller plan means more one-shot connections";
 }
 
 /// Fully warm cache, full sequential scan -> no source requests; budget-invariant.
@@ -622,11 +617,10 @@ TEST_F(ReaderExecutorMetric, WarmSequential)
 }
 
 /// Alternating cached/cold segments, full scan. The cell-aligned plan fetches each cold
-/// segment as its own cell: the long connection opens per cold run and is abandoned at the
-/// next cached cell (its remaining tail past the bound too big to drain), so the checkerboard
-/// leaves one incomplete connection per cold/cached transition. The full-cell prefill is
-/// consumed by the scan, so there is no net over-read. Stateless: one short-lived connection
-/// per window.
+/// segment as its own cell: the long connection opens per cold run, bounds at the next cached
+/// cell, and drains cleanly there -> one reach-bounded GET per cold cell, none abandoned. The
+/// full-cell prefill is consumed by the scan, so there is no net over-read. Stateless: one
+/// short-lived connection per window.
 TEST_F(ReaderExecutorMetric, Checkerboard)
 {
     ReadList even;
@@ -634,8 +628,8 @@ TEST_F(ReaderExecutorMetric, Checkerboard)
         even.emplace_back(s * SEGMENT, SEGMENT);
     auto [live, stateless] = runMatrix("checkerboard", even, {{0, std::nullopt}});
 
-    EXPECT_EQ(live.requests, 25u) << "live: a reach-bounded GET per cold cell, cell-aligned";
-    EXPECT_EQ(live.incomplete, 8u) << "live: each cold-run connection is abandoned at the next cached cell";
+    EXPECT_EQ(live.requests, 16u) << "live: a reach-bounded GET per cold cell, cell-aligned";
+    EXPECT_EQ(live.incomplete, 0u) << "live: the fixed small plan bounds each connection at the next cached cell, draining cleanly";
     EXPECT_EQ(live.over_read, 0u) << "the wide cold fetch's full-segment prefill is consumed by the scan -> zero net over-read";
     EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
     EXPECT_LE(stateless.requests, live.requests) << "stateless: a connection per window; with full-segment fetch each cold segment is one GET either way";
@@ -656,7 +650,7 @@ TEST_F(ReaderExecutorMetric, SmallCachedGaps)
         warm.emplace_back(off, hole);
     auto [live, stateless] = runMatrix("small_gaps", warm, {{0, std::nullopt}});
 
-    EXPECT_EQ(live.requests, 19u) << "live: above-bound holes are not bridged; a reopen per cold run plus the over-reach reopens";
+    EXPECT_EQ(live.requests, 16u) << "live: above-bound holes are not bridged; a reopen per cold run plus the over-reach reopens";
     /// Accepted pending the deferred long-connection re-tuning: the continuity prediction
     /// can over-predict at a cold run's end, so the long connection over-reaches into the
     /// next above-bound hole and is abandoned -> incomplete > 0 on the live arm.
@@ -723,26 +717,25 @@ TEST_F(ReaderExecutorMetric, PrefixHitSuffixMiss)
     constexpr size_t half = FILE_SIZE / 2;
     auto [live, stateless] = runMatrix("prefix_hit", {{0, half}}, {{0, std::nullopt}});
 
-    EXPECT_EQ(live.requests, 5u) << "live: the cold suffix is served by a handful of reach-bounded GETs";
+    EXPECT_EQ(live.requests, 4u) << "live: the cold suffix is served by a handful of reach-bounded GETs";
     EXPECT_EQ(live.incomplete, 0u) << "the miss runs to EOF and drains cleanly";
     EXPECT_EQ(live.over_read, 0u) << "the wide cold fetch's full-segment prefill is consumed by the scan -> zero net over-read";
     EXPECT_EQ(stateless.incomplete, 0u);
     EXPECT_GT(stateless.requests, live.requests) << "stateless: one connection per window";
 }
 
-/// First half cold, second half warm. The wide look-ahead lets the long connection span
-/// the cold prefix in a couple of GETs and bound it at the cold/warm boundary, so it drains
-/// cleanly there rather than being abandoned when the read switches to the cached suffix.
+/// First half cold, second half warm. The long connection spans the cold prefix in a couple
+/// of GETs and its reach bounds it at the cold/warm boundary, so it drains cleanly there
+/// rather than being abandoned when the read switches to the cached suffix.
 TEST_F(ReaderExecutorMetric, SuffixHitPrefixMiss)
 {
     constexpr size_t half = FILE_SIZE / 2;
     auto [live, stateless] = runMatrix("suffix_hit", {{half, half}}, {{0, std::nullopt}});
 
-    EXPECT_EQ(live.requests, 8u) << "live: the cold prefix is served by a handful of reach-bounded GETs";
-    /// Accepted pending the deferred long-connection re-tuning: the continuity prediction
-    /// over-predicts at the prefix's end, so the long connection over-reaches past the
-    /// cold/warm boundary and is abandoned -> incomplete on the live arm.
-    EXPECT_EQ(live.incomplete, 1u) << "live: the over-reaching connection is abandoned at the cold/warm boundary (accepted, re-tuned in a follow-up)";
+    EXPECT_EQ(live.requests, 4u) << "live: the cold prefix is served by a handful of reach-bounded GETs";
+    /// The fixed small plan bounds the connection at the cold/warm boundary, so it drains
+    /// cleanly there rather than over-reaching into the cached suffix.
+    EXPECT_EQ(live.incomplete, 0u) << "live: the connection drains at the cold/warm boundary";
     EXPECT_EQ(live.over_read, 0u) << "the wide cold fetch's full-segment prefill is consumed by the scan -> zero net over-read";
     EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
 }
@@ -785,7 +778,7 @@ TEST_F(ReaderExecutorMetric, RandomScattered)
     for (const CostVector & r : {live, stateless})
     {
         EXPECT_EQ(r.requests, n_points) << "one GET per scattered point (seeks break reuse)";
-        EXPECT_EQ(r.over_read, 45056u) << "per point, the full-segment prefill from the wide cold fetch (stopgap pending the net-waste over_read metric)";
+        EXPECT_EQ(r.over_read, 77824u) << "per point, the full-cell prefill from the cell-aligned cold fetch the scattered point under-consumes (real waste on random access)";
     }
     EXPECT_EQ(live.incomplete, n_points) << "live: the over-reaching connection is abandoned per point (accepted, re-tuned in a follow-up)";
     EXPECT_EQ(stateless.incomplete, 0u) << "stateless: each one-shot read drains at its own extent";
@@ -812,7 +805,7 @@ TEST_F(ReaderExecutorMetric, RandomPartialSequences)
     for (const CostVector & r : {live, stateless})
     {
         EXPECT_EQ(r.requests, n_runs) << "one streamed GET per run";
-        EXPECT_EQ(r.over_read, 36864u) << "per run, the full-segment prefill from the wide cold fetch (stopgap pending the net-waste over_read metric)";
+        EXPECT_EQ(r.over_read, 69632u) << "per run, the full-cell prefill from the cell-aligned cold fetch the short run under-consumes (real waste on random access)";
     }
     EXPECT_EQ(live.incomplete, n_runs) << "live: the over-reaching connection is abandoned per run (accepted, re-tuned in a follow-up)";
     EXPECT_EQ(stateless.incomplete, 0u) << "stateless: each one-shot read drains at its extent";
@@ -848,13 +841,12 @@ TEST_F(ReaderExecutorMetric, SparseScatteredCold)
 /// Cold cache, read SEGMENT-sized chunks in DESCENDING order. Backward seeks defeat the
 /// long-connection's forward streaming, so each chunk costs a GET (vs a couple coalesced
 /// GETs for the forward cold scan) — the request-count penalty of reverse access. The
-/// look-ahead estimator sees non-contiguous (backward) serves, so it does NOT predict a
-/// forward run: each chunk's connection opens bound to just that chunk and drains cleanly,
-/// leaving no over-run to abandon at the backward seek. Accepted reverse degradation: a
-/// GET per chunk, no incomplete connections; the wide cold fetch rounds to whole cache
-/// segments, so `over_read` reflects the full-segment prefill (consumed by the scan / shared
-/// by concurrent readers, not true waste) — asserted as a stopgap pending the net-waste
-/// `over_read` metric.
+/// long-connection reach estimator sees non-contiguous (backward) serves, so it does NOT
+/// predict a forward run: each chunk's connection opens bound to just that chunk and drains
+/// cleanly, leaving no over-run to abandon at the backward seek. Accepted reverse
+/// degradation: a GET per chunk, no incomplete connections; the wide cold fetch rounds to
+/// whole cache segments, so `over_read` reflects the full-segment prefill (consumed by the
+/// scan), netting to zero.
 TEST_F(ReaderExecutorMetric, ReverseSequential)
 {
     ReadList reads;
@@ -862,11 +854,10 @@ TEST_F(ReaderExecutorMetric, ReverseSequential)
         reads.emplace_back(s * SEGMENT, SEGMENT);
     auto [live, stateless] = runMatrix("reverse_seq", {}, reads);
 
-    EXPECT_EQ(live.requests, 37u) << "backward seeks defeat forward streaming -> a GET per chunk (vs a couple forward)";
-    /// Accepted pending the deferred long-connection re-tuning: even on the reverse pattern the
-    /// prediction can over-reach a chunk, so a connection is occasionally abandoned at the
-    /// backward seek -> incomplete > 0 on the live arm.
-    EXPECT_EQ(live.incomplete, 1u) << "live: an over-reaching chunk connection is abandoned at the backward seek (accepted, re-tuned in a follow-up)";
+    EXPECT_EQ(live.requests, 32u) << "backward seeks defeat forward streaming -> a GET per chunk (vs a couple forward)";
+    /// Each chunk's connection opens bound to just that chunk (the reverse pattern predicts no
+    /// forward run) and drains cleanly at the backward seek.
+    EXPECT_EQ(live.incomplete, 0u) << "live: each chunk connection drains cleanly, none abandoned";
     EXPECT_EQ(live.over_read, 0u) << "the wide cold fetch's full-segment prefill is consumed by the (reverse) scan -> zero net over-read";
     EXPECT_EQ(stateless.incomplete, 0u);
 }

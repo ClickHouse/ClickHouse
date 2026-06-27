@@ -275,13 +275,6 @@ ReaderExecutor::ReaderExecutor(
     ContinuityTracker::Options continuity_options;
     continuity_options.near_gap = min_bytes_for_seek;
     continuity_tracker = ContinuityTracker(continuity_options);
-
-    /// The cache-read (served-pattern) estimator drives the residency lookup span.
-    /// `near_gap == 0`: unlike the source estimator it must NOT bridge gaps - a hole
-    /// in the served pattern breaks the held-reader run.
-    ContinuityTracker::Options lookup_options;
-    lookup_options.near_gap = 0;
-    lookup_continuity = ContinuityTracker(lookup_options);
 }
 
 ReaderExecutor::ReaderExecutor(
@@ -477,14 +470,6 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     /// logical (post-header); shift to the physical file offsets `overread_pending` is keyed on.
     if (chain.range().size)
         overread_pending.remove({chain.range().offset + data_start_offset, chain.range().size});
-    /// Feed every forward serve - hit OR miss - to the look-ahead estimator. It sizes the
-    /// plan / look-ahead window, which must grow on a sequential COLD read too (a cold scan
-    /// has no hits, so a hit-only feed left the window pinned to one mark range). The window
-    /// extends PAST `read_extent_end` on purpose: we plan and fetch ahead (whole cache
-    /// segments) while the SERVE stays bounded to the extent by `clampToExtent`. `onServe`'s
-    /// own contiguity test keeps a non-sequential (scattered) read from looking sequential.
-    if (chain.range().size)
-        lookup_continuity.onServe(position_phys, chain.range().size);
     advanceCursor();
     LOG_TRACE(log, "readNextWindow: got {} bytes, {} nodes, position advanced to {}",
         chain.range().size, chain.getNodes().size(), position);
@@ -525,7 +510,6 @@ void ReaderExecutor::seek(size_t new_position)
     /// Feed the seek to the continuity estimator and rewind the plan-feed watermark,
     /// so the post-seek plan re-feeds its predicted reads from here.
     continuity_tracker.onSeek(new_physical);
-    lookup_continuity.onSeek(new_physical);
     continuity_fed_end = new_physical;
 
     /// A seek away from the current frontier strands the in-flight fill segment;
@@ -2887,7 +2871,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
 
     /// TRIM: the plan span, bounded to the file end and the read extent. An empty
     /// span (the start already at/past a bound) publishes an empty plan.
-    const ByteRange plan_range = boundedPlanSpan(physical_start, geom->pressure_level);
+    const ByteRange plan_range = boundedPlanSpan(physical_start);
     if (plan_range.size == 0)
     {
         ReadPlan empty;
@@ -2938,7 +2922,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// Hits fold up to the ceiling OR the expanded `probe_range` end, whichever is larger,
     /// so a hit segment straddling the expanded end folds whole into the plan.
     const size_t resident_clip_end
-        = std::max(probe_range.end(), plan_range.offset + effectivePlanCeiling(geom->pressure_level));
+        = std::max(probe_range.end(), plan_range.offset + effectivePlanCeiling());
 
     IntervalSet upper_hits;
     for (auto & cache : caches)
@@ -3072,26 +3056,24 @@ bool ReaderExecutor::planReachesEnd() const
         && read_plan.geometry()->plan_end >= offset_map.totalSize();
 }
 
-size_t ReaderExecutor::effectivePlanCeiling(MemoryPressureLevel level) const
+size_t ReaderExecutor::effectivePlanCeiling() const
 {
-    /// x1, x1, x0.25, x0.25 over Normal/Elevated/High/Critical -- shift by 0 at the two
-    /// lower levels, by 2 (quarter) at High/Critical. The quarter floor lands on
-    /// `window_size` for the 32 MiB default, so the base request is never starved.
-    const unsigned shift = static_cast<unsigned>(level) < 2 ? 0u : 2u;
-    return std::max(window_size, plan_look_ahead_max_window >> shift);
+    /// A fixed plan window: at least `window_size`, raised to `plan_look_ahead_max_window`
+    /// when configured larger. Not pressure-scaled - the window is small by default, and
+    /// segment folding only ever adds the touched cells within it.
+    return std::max(window_size, plan_look_ahead_max_window);
 }
 
-ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start, MemoryPressureLevel level) const
+ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start) const
 {
-    const size_t ceiling = effectivePlanCeiling(level);
+    const size_t ceiling = effectivePlanCeiling();
     size_t want = 0;
     if (is_transient)
     {
-        /// A one-shot `readBigAt` transient: the request span IS the plan base -- no
-        /// continuity, no look-ahead widening (the transient never inherits the
-        /// estimator, so `predictedReach` is 0). Segment folding still expands it so
-        /// the touched cache cells are filled to their boundaries, but the base does
-        /// NOT inflate to `window_size` when the request is smaller.
+        /// A one-shot `readBigAt` transient: the request span IS the plan base. Segment
+        /// folding still expands it so the touched cache cells are filled to their
+        /// boundaries, but the base does NOT inflate to `window_size` when the request
+        /// is smaller.
         chassert(read_extent_end);
         const size_t physical_extent_end = *read_extent_end + data_start_offset;
         if (physical_start >= physical_extent_end)
@@ -3100,12 +3082,10 @@ ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start, MemoryPressureL
     }
     else
     {
-        /// Unified sizing: the forward-serve continuity prediction clamped to
-        /// `[window_size, ceiling]` -- `window_size` on a fresh/random read
-        /// (prediction ~0), the prediction itself once a sequential run is
-        /// established. Independent of `read_extent_end` (which only clamps the
-        /// serve), so the plan survives mark-range advances and is reused.
-        want = std::min(std::max(lookup_continuity.predictedReach(), window_size), ceiling);
+        /// A fixed plan window. Independent of `read_extent_end` (which only clamps the
+        /// serve), so the plan survives mark-range advances and is reused; segment folding
+        /// then extends it to the touched cell boundaries.
+        want = ceiling;
     }
     /// Segment folding then extends `want` (in `observeAndSchedule`) and the same
     /// ceiling caps the result; the file end is the only natural bound below it.

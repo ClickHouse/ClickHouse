@@ -769,8 +769,8 @@ Drain bound for the experimental `ReaderExecutor`: a long source connection drop
 Reuse a bounded long source connection across windows in the experimental `ReaderExecutor`. A long connection is one whose range exceeds the current read window; when disabled, the executor takes no connection-pool budget and every window opens a short-lived one-shot connection (the stateless path).)", EXPERIMENTAL) \
     DECLARE(Bool, reader_executor_decrypt_ahead, false, R"(
 Decrypt prefetched bytes on the read-ahead worker thread in the experimental `ReaderExecutor`, ahead of serving, instead of at the serve boundary on the query thread. Only the prefetch path is affected; cache hits and synchronous reads still decrypt on serve. Applies only to encrypted sources.)", EXPERIMENTAL) \
-    DECLARE(UInt64, reader_executor_plan_look_ahead_max_window, 33554432, R"(
-Ceiling (bytes) on the experimental `ReaderExecutor` plan window. The forward-serve continuity prediction is clamped to this, so a sequential read plans at most this far ahead (pinning that many cache segments). Setting it equal to `reader_executor_window_size` collapses the plan to a fixed small window without disabling continuity or cross-cache segment folding; the fetch-ahead distance is bounded separately by the fill-ahead lead.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_plan_look_ahead_max_window, 8388608, R"(
+Fixed plan-window size (bytes) for the experimental `ReaderExecutor`: residency is planned once over this span and reused across mark-range advances, with cell-aligned segment folding extending it to the touched cell boundaries. Floored at `reader_executor_window_size` (the default equals it - one window); raise it to plan further ahead and pin more cache segments. The fetch-ahead distance is bounded separately by the fill-ahead lead.)", EXPERIMENTAL) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(
 Enables or disables skipping empty files in S3 engine.
 

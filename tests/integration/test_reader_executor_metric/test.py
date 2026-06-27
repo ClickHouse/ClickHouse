@@ -125,11 +125,11 @@ BASELINE = {
     ("prewhere", "cold", "live"): {"R": (20, 120), "I": (0, 20), "O": (10, 41), "cost/MiB": (17.2, 51.7)},
     ("prewhere", "fragmented", "live"): {"R": (30, 110), "I": (0, 12), "O": (0, 12), "cost/MiB": (8.0, 32.0)},
     ("sequential", "cold", "stateless"): {"R": (37, 87), "O": (10, 42), "cost/MiB": (13.7, 41.2)},
-    ("sequential", "fragmented", "stateless"): {"R": (11, 34), "O": (7, 40), "cost/MiB": (3.4, 13.4)},
+    ("sequential", "fragmented", "stateless"): {"R": (11, 52), "O": (7, 40), "cost/MiB": (3.4, 17.0)},
     ("selective", "cold", "stateless"): {"R": (21, 50), "O": (15, 60), "cost/MiB": (29.5, 88.6)},
     ("selective", "fragmented", "stateless"): {"R": (5, 15), "O": (0, 0), "cost/MiB": (18.3, 73.1)},
     ("aggregation", "cold", "stateless"): {"R": (43, 101), "O": (17, 69), "cost/MiB": (14.2, 42.5)},
-    ("aggregation", "fragmented", "stateless"): {"R": (12, 35), "O": (5, 29), "cost/MiB": (3.1, 12.3)},
+    ("aggregation", "fragmented", "stateless"): {"R": (12, 50), "O": (5, 29), "cost/MiB": (3.1, 16.0)},
     ("prewhere", "cold", "stateless"): {"R": (35, 82), "O": (7, 28), "cost/MiB": (17.0, 50.9)},
     ("prewhere", "fragmented", "stateless"): {"R": (12, 60), "O": (0, 2), "cost/MiB": (4.1, 24.0)},
 }

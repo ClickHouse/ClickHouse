@@ -49,7 +49,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"reader_executor_max_tail_for_drain", 1048576, 1048576, "New experimental setting: drain bound below which the ReaderExecutor reads a dropped long connection out to its right bound so it returns to the pool reusable."},
             {"reader_executor_use_long_connections", true, true, "New experimental setting to reuse a bounded long source connection across windows in the ReaderExecutor; disabling it forces the stateless one-shot-per-window path."},
             {"reader_executor_decrypt_ahead", false, false, "New experimental setting to decrypt prefetched bytes on the ReaderExecutor read-ahead worker, ahead of serving, instead of at the serve boundary on the query thread."},
-            {"reader_executor_plan_look_ahead_max_window", 33554432, 33554432, "New experimental setting: ceiling on the ReaderExecutor plan window; setting it equal to reader_executor_window_size collapses the plan to a fixed small window."},
+            {"reader_executor_plan_look_ahead_max_window", 8388608, 8388608, "New experimental setting: fixed plan-window size for the ReaderExecutor (floored at reader_executor_window_size, default one window); raise it to plan further ahead."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
