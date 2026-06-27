@@ -263,6 +263,7 @@ namespace FailPoints
     extern const char replicated_table_remove_zk_before_get_children[];
     extern const char replicated_table_remove_zk_before_final_multi[];
     extern const char rmt_fetch_part_pause_before_part_log[];
+    extern const char rmt_fetch_throw_after_commit_before_part_log[];
 }
 
 namespace ErrorCodes
@@ -5640,6 +5641,11 @@ bool StorageReplicatedMergeTree::fetchPart(
         };
     }
 
+    /// Set once the fetched part has been committed (made active). The post-commit work below can
+    /// still throw before the DOWNLOAD_PART part_log row is queued; this lets the catch blocks tell
+    /// a post-commit failure (part already active, row owed) from a pre-commit one.
+    bool part_committed = false;
+
     try
     {
         part = get_part();
@@ -5652,6 +5658,12 @@ bool StorageReplicatedMergeTree::fetchPart(
 
             chassert(!part_to_clone || !is_zero_copy_part(part));
             replaced_parts = checkPartChecksumsAndCommit(transaction, part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true);
+            part_committed = true;
+
+            fiu_do_on(FailPoints::rmt_fetch_throw_after_commit_before_part_log,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after fetch commit before part_log");
+            });
 
             /** If a quorum is tracked for this part, you must update it.
               * If you do not have time, in case of losing the session, when you restart the server - see the `ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart` method.
@@ -5722,6 +5734,14 @@ bool StorageReplicatedMergeTree::fetchPart(
             LOG_TRACE(log, "Not fetching part: {}", e.message());
             return false;
         }
+
+        /// If the part was already committed (active) when a post-commit step threw, the
+        /// DOWNLOAD_PART row was not queued yet. Queue the (failed) row before unwinding so the
+        /// part_log entry exists for this active part: SYSTEM SYNC MERGES waits for an in-flight
+        /// fetch covering a scheduled part (currently_fetching_parts, still held here) and would
+        /// otherwise return after the SCOPE_EXIT erase with no part_log row to flush.
+        if (part_committed && !to_detached)
+            write_part_log(ExecutionStatus::fromCurrentException("", true));
 
         throw;
     }
