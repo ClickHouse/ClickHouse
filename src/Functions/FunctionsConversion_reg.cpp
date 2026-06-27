@@ -1209,8 +1209,8 @@ SELECT toTime(toDateTime(52225, 'UTC'))
 
     FunctionDocumentation::Description description_toTime64 = R"(
 Converts an input value to type [Time64](/sql-reference/data-types/time64).
-Supports conversion from String, FixedString, DateTime64, or numeric types representing microseconds since midnight.
-Provides microsecond precision for time values.
+Supports conversion from String, FixedString, DateTime64, or numeric types representing seconds since midnight.
+Provides sub-second precision for time values, up to `scale` fractional digits.
     )";
     FunctionDocumentation::Syntax syntax_toTime64 = "toTime64(x, scale)";
     FunctionDocumentation::Arguments arguments_toTime64 = {
