@@ -629,11 +629,43 @@
 
     /// Strip MDX-isms that occasionally leak into the documentation text: `import`/`export`
     /// statements and `<import ... >` directives are machinery for the website build, not content.
+    /// The components brought in by those `import`s (e.g. the `<ExperimentalBadge/>` of an
+    /// experimental feature, or a `<Tabs>` wrapper) are stripped as well: they are build machinery
+    /// too, and a self-closing custom tag like `<ExperimentalBadge/>` is otherwise parsed by the
+    /// HTML parser as an unclosed element — the self-closing slash is ignored for non-void elements —
+    /// that swallows the rest of the document as its children, so the sanitizer then drops the whole
+    /// body (the visible symptom: an experimental entity rendered as an empty page). Only the names
+    /// actually imported are removed, so literal `<...>` placeholders in the prose (e.g.
+    /// `<SearchPhrase>` in an XML example) are preserved.
     function preprocessMarkdown(md) {
-        return md
-            .replace(/^[ \t]*import\s+[\s\S]*?from\s+['"][^'"]+['"];?[ \t]*$/gm, '')
+        /// Collect the local names of imported MDX components: default imports
+        /// (`import ExperimentalBadge from '...'`) and named/aliased imports
+        /// (`import {Tabs, TabItem as Item} from '...'`).
+        const components = new Set();
+        const importRe = /^[ \t]*import\s+([\s\S]*?)\s+from\s+['"][^'"]+['"];?[ \t]*$/gm;
+        for (const m of md.matchAll(importRe)) {
+            const clause = m[1].trim();
+            const braced = /\{([^}]*)\}/.exec(clause);
+            const names = braced ? braced[1].split(',') : [clause];
+            for (const name of names) {
+                /// The local binding is the identifier after `as` when the import is aliased.
+                const id = /([A-Za-z_$][\w$]*)\s*$/.exec(name.trim());
+                if (id)
+                    components.add(id[1]);
+            }
+        }
+
+        let out = md
+            .replace(importRe, '')
             .replace(/^[ \t]*export\s+default\b.*$/gm, '')
             .replace(/<import\b[^>]*\/?>/gi, '');
+
+        /// Remove the opening, closing, and self-closing tags of those components, keeping any
+        /// content nested between an open/close pair.
+        for (const name of components)
+            out = out.replace(new RegExp('</?' + name + '(?:\\s[^>]*)?/?>', 'g'), '');
+
+        return out;
     }
 
     /* ----------------------------------------------------------------------------------------
