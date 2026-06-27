@@ -1365,16 +1365,38 @@ void MutationsInterpreter::prepare(bool dry_run)
             /// used only in the WHERE condition can change which rows participate in the TTL while the
             /// mutation copies the part's `rows_where_ttl_info` with stale bounds.
             ///
-            /// When any rewritten column feeds a row / group-by TTL *expression*, the recalculation
-            /// above forces every physical column into the mutation and re-evaluates the whole TTL
-            /// (a `TTL_TARGET` dependency, i.e. `ExecuteTTLType::NORMAL`), which re-evaluates the WHERE
-            /// condition too — that case is already handled. Otherwise nothing recomputes the WHERE
-            /// side. Making it recompute on its own would require teaching the shared
+            /// When a rewritten column feeds a row / rows-where / group-by TTL *expression*, the
+            /// recalculation above forces every physical column into the mutation and re-evaluates the
+            /// whole TTL (`ExecuteTTLType::NORMAL`), which re-evaluates the WHERE condition too — that
+            /// case is already handled and refusing it would over-reject. Otherwise nothing recomputes
+            /// the WHERE side. Making it recompute on its own would require teaching the shared
             /// `getColumnDependencies` to expand `where_expression_columns`, which would also change the
             /// UPDATE path; so, following the same fail-close approach used for subcolumn TTL
             /// dependencies above, refuse the command rather than leaving stale TTL bounds in the new part.
-            bool full_ttl_recalc = std::ranges::any_of(dependencies,
-                [](const auto & dependency) { return dependency.kind == ColumnDependency::TTL_TARGET; });
+            ///
+            /// The trigger must be checked against the row / rows-where / group-by TTL *expression*
+            /// columns specifically (mirroring `add_for_rows_ttl` in `getColumnDependencies`, the only
+            /// path that pulls in every physical column). A plain `TTL_TARGET` dependency is NOT a
+            /// sufficient signal: `getColumnDependencies` also emits `TTL_TARGET` for a *column* TTL
+            /// target (`x ... TTL c + INTERVAL ...`, which only resets that one target column and does
+            /// not re-evaluate any rows-where TTL). Keying off any `TTL_TARGET` let a column-TTL target
+            /// wrongly disable the refusal below and leave the part's `rows_where_ttl_info` stale.
+            /// Matching by exact name against `rewritten_columns` (rather than resolving subcolumns or
+            /// the transitive dependency closure) keeps this conservative: when in doubt it refuses
+            /// rather than risking a stale TTL bound.
+            auto rewritten_feeds_rows_ttl_expression = [&](const Names & expression_columns)
+            {
+                return std::ranges::any_of(expression_columns,
+                    [&](const auto & name) { return rewritten_columns.contains(name); });
+            };
+
+            bool full_ttl_recalc = false;
+            if (metadata_snapshot->hasRowsTTL())
+                full_ttl_recalc = rewritten_feeds_rows_ttl_expression(metadata_snapshot->getRowsTTL().expression_columns.getNames());
+            for (const auto & ttl_entry : metadata_snapshot->getRowsWhereTTLs())
+                full_ttl_recalc = full_ttl_recalc || rewritten_feeds_rows_ttl_expression(ttl_entry.expression_columns.getNames());
+            for (const auto & ttl_entry : metadata_snapshot->getGroupByTTLs())
+                full_ttl_recalc = full_ttl_recalc || rewritten_feeds_rows_ttl_expression(ttl_entry.expression_columns.getNames());
 
             if (!full_ttl_recalc)
             {

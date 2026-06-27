@@ -290,3 +290,33 @@ ALTER TABLE t_mat_ttl_index_full MODIFY COLUMN c DateTime MATERIALIZED toDateTim
 ALTER TABLE t_mat_ttl_index_full MATERIALIZE COLUMN c SETTINGS mutations_sync = 2;
 SELECT count() FROM t_mat_ttl_index_full WHERE y = 0 SETTINGS force_data_skipping_indices = 'idx_y';
 DROP TABLE t_mat_ttl_index_full;
+
+-- Case 27: A column used only in a rows-where TTL WHERE condition must be refused even when a separate
+-- *column* TTL produces a TTL_TARGET dependency for the materialized column. Materializing `c` feeds the
+-- column TTL `x TTL c + INTERVAL 1 SECOND` (so `c` yields a TTL_TARGET for `x`), but a column-TTL target
+-- does NOT re-evaluate the rows-where TTL `DELETE WHERE c > ...` — the part's rows-where TTL bounds would
+-- be left stale. The full-TTL-recalculation shortcut must therefore key off the row/group TTL
+-- *expression* columns (here `d`, which is unchanged), not any TTL_TARGET, so the command is refused.
+DROP TABLE IF EXISTS t_mat_ttl_where_column_ttl;
+CREATE TABLE t_mat_ttl_where_column_ttl
+    (a Int,
+     c DateTime MATERIALIZED toDateTime(1700000000 + a),
+     d DateTime MATERIALIZED toDateTime(1700000000 + a),
+     x UInt64 TTL c + INTERVAL 1 SECOND)
+    ENGINE = MergeTree() ORDER BY a TTL d + INTERVAL 1 DAY DELETE WHERE c > toDateTime(1500000000);
+ALTER TABLE t_mat_ttl_where_column_ttl MATERIALIZE COLUMN c; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_ttl_where_column_ttl;
+
+-- Case 28: The precise `full_ttl_recalc` must NOT over-reject when the materialized column feeds the
+-- rows-where TTL *expression* directly (which does force a full TTL recalculation that re-evaluates the
+-- WHERE too), even if it also drives a column TTL. Materializing `c`, used in the rows-where TTL
+-- expression `c + INTERVAL 1 DAY` (and the column TTL `x TTL c + ...`) and in its WHERE condition,
+-- must still be allowed.
+DROP TABLE IF EXISTS t_mat_ttl_expr_with_column_ttl;
+CREATE TABLE t_mat_ttl_expr_with_column_ttl
+    (a Int,
+     c DateTime MATERIALIZED toDateTime(1700000000 + a),
+     x UInt64 TTL c + INTERVAL 1 SECOND)
+    ENGINE = MergeTree() ORDER BY a TTL c + INTERVAL 1 DAY DELETE WHERE c > toDateTime(1500000000);
+ALTER TABLE t_mat_ttl_expr_with_column_ttl MATERIALIZE COLUMN c;
+DROP TABLE t_mat_ttl_expr_with_column_ttl;
