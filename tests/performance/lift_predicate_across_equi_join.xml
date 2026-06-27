@@ -2,39 +2,106 @@
     <settings>
         <enable_analyzer>1</enable_analyzer>
         <enable_join_runtime_filters>0</enable_join_runtime_filters>
+        <!-- Single thread makes the speedup visible in wall clock instead of being lost in
+             parallel-scan overhead, and brings full-scan baselines into the 1-2 s window
+             on the perf machine. -->
+        <max_threads>1</max_threads>
     </settings>
 
-    <create_query>CREATE TABLE lift_perf_orders   (k UInt64, payload String) ENGINE = MergeTree ORDER BY k</create_query>
-    <create_query>CREATE TABLE lift_perf_lineitem (k UInt64, payload String) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE lift_perf_orders   (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8192</create_query>
+    <create_query>CREATE TABLE lift_perf_lineitem (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8192</create_query>
 
-    <fill_query>INSERT INTO lift_perf_orders   SELECT number, toString(number) FROM numbers(10000000)</fill_query>
-    <fill_query>INSERT INTO lift_perf_lineitem SELECT number, toString(number) FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO lift_perf_orders   SELECT number FROM numbers(200000000) SETTINGS max_insert_threads = 8</fill_query>
+    <fill_query>INSERT INTO lift_perf_lineitem SELECT number FROM numbers(200000000) SETTINGS max_insert_threads = 8</fill_query>
 
-    <query short="1">
+    <!-- A: point lookup. With lift ON the target reads 1 granule (~ms), with lift OFF it does
+         a full scan (~2 s). Expect ~25-30x speedup. -->
+    <query>
         SELECT count()
-        FROM (SELECT * FROM lift_perf_orders WHERE k = 1234567) AS o
+        FROM (SELECT * FROM lift_perf_orders WHERE k = 100000000) AS o
         INNER JOIN lift_perf_lineitem AS l ON o.k = l.k
         SETTINGS query_plan_lift_predicate_across_join = 1
     </query>
-
-    <query short="1">
+    <query>
         SELECT count()
-        FROM (SELECT * FROM lift_perf_orders WHERE k = 1234567) AS o
+        FROM (SELECT * FROM lift_perf_orders WHERE k = 100000000) AS o
         INNER JOIN lift_perf_lineitem AS l ON o.k = l.k
         SETTINGS query_plan_lift_predicate_across_join = 0
     </query>
 
+    <!-- B: narrow range (~1k matches). Lift propagates the range, target prunes to a handful
+         of granules. -->
+    <query>
+        SELECT count()
+        FROM (SELECT * FROM lift_perf_orders WHERE k BETWEEN 100000000 AND 100001000) AS o
+        INNER JOIN lift_perf_lineitem AS l ON o.k = l.k
+        SETTINGS query_plan_lift_predicate_across_join = 1
+    </query>
+    <query>
+        SELECT count()
+        FROM (SELECT * FROM lift_perf_orders WHERE k BETWEEN 100000000 AND 100001000) AS o
+        INNER JOIN lift_perf_lineitem AS l ON o.k = l.k
+        SETTINGS query_plan_lift_predicate_across_join = 0
+    </query>
+
+    <!-- C: LEFT JOIN, range. Verifies lift works in LEFT direction (L->R) and the lifted
+         predicate reaches the right side's PK condition. -->
     <query>
         SELECT sum(l.k)
-        FROM (SELECT * FROM lift_perf_orders WHERE k BETWEEN 100000 AND 100100) AS o
+        FROM (SELECT * FROM lift_perf_orders WHERE k BETWEEN 50000000 AND 50010000) AS o
         LEFT JOIN lift_perf_lineitem AS l ON o.k = l.k
         SETTINGS query_plan_lift_predicate_across_join = 1
     </query>
-
     <query>
         SELECT sum(l.k)
-        FROM (SELECT * FROM lift_perf_orders WHERE k BETWEEN 100000 AND 100100) AS o
+        FROM (SELECT * FROM lift_perf_orders WHERE k BETWEEN 50000000 AND 50010000) AS o
         LEFT JOIN lift_perf_lineitem AS l ON o.k = l.k
+        SETTINGS query_plan_lift_predicate_across_join = 0
+    </query>
+
+    <!-- D: IN list on the equi-key. Lift propagates the set; target prunes to a few granules. -->
+    <query>
+        SELECT count()
+        FROM (SELECT * FROM lift_perf_orders WHERE k IN (10, 1000000, 50000000, 100000000, 150000000, 199999999)) AS o
+        INNER JOIN lift_perf_lineitem AS l ON o.k = l.k
+        SETTINGS query_plan_lift_predicate_across_join = 1
+    </query>
+    <query>
+        SELECT count()
+        FROM (SELECT * FROM lift_perf_orders WHERE k IN (10, 1000000, 50000000, 100000000, 150000000, 199999999)) AS o
+        INNER JOIN lift_perf_lineitem AS l ON o.k = l.k
+        SETTINGS query_plan_lift_predicate_across_join = 0
+    </query>
+
+    <!-- E: wide range, ~10% of target. Lift still wins but the gap narrows because the
+         pruned range itself is large. -->
+    <query>
+        SELECT count()
+        FROM (SELECT * FROM lift_perf_orders WHERE k BETWEEN 1 AND 20000000) AS o
+        INNER JOIN lift_perf_lineitem AS l ON o.k = l.k
+        SETTINGS query_plan_lift_predicate_across_join = 1
+    </query>
+    <query>
+        SELECT count()
+        FROM (SELECT * FROM lift_perf_orders WHERE k BETWEEN 1 AND 20000000) AS o
+        INNER JOIN lift_perf_lineitem AS l ON o.k = l.k
+        SETTINGS query_plan_lift_predicate_across_join = 0
+    </query>
+
+    <!-- F: overhead check. Filter is on a non-equi-key expression, lift bails out; query
+         time must be identical to lift OFF. -->
+    <query>
+        SELECT count()
+        FROM lift_perf_orders AS o
+        INNER JOIN lift_perf_lineitem AS l ON o.k = l.k
+        WHERE l.k % 1000 = 0
+        SETTINGS query_plan_lift_predicate_across_join = 1
+    </query>
+    <query>
+        SELECT count()
+        FROM lift_perf_orders AS o
+        INNER JOIN lift_perf_lineitem AS l ON o.k = l.k
+        WHERE l.k % 1000 = 0
         SETTINGS query_plan_lift_predicate_across_join = 0
     </query>
 
