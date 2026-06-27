@@ -294,4 +294,36 @@ PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_bad_src')) LAYOUT(NAIVE_BAYES(clas
 SELECT naiveBayesClassifier('nb_ok', 'good great'), naiveBayesClassifier('nb_ok', 'bad awful');
 DROP DICTIONARY nb_ok;
 
+-- ---------- Invalid padding tokens (start_token / end_token) ----------
+
+-- A byte-mode padding token must be a byte value in [0, 255].
+CREATE DICTIONARY nb_bad (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_bad_src')) LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'byte' start_token '300' end_token '0x01')) LIFETIME(0);
+SELECT dictGet('nb_bad', 'class_id', 'good'); -- { serverError BAD_ARGUMENTS }
+DROP DICTIONARY nb_bad;
+
+-- A byte-mode padding token must be numeric.
+CREATE DICTIONARY nb_bad (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_bad_src')) LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'byte' start_token 'zz' end_token '0x01')) LIFETIME(0);
+SELECT dictGet('nb_bad', 'class_id', 'good'); -- { serverError BAD_ARGUMENTS }
+DROP DICTIONARY nb_bad;
+
+-- A codepoint-mode padding token must not be a UTF-16 surrogate.
+CREATE DICTIONARY nb_bad (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_bad_src')) LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'codepoint' start_token '0xD800' end_token '0x10FFFF')) LIFETIME(0);
+SELECT dictGet('nb_bad', 'class_id', 'good'); -- { serverError BAD_ARGUMENTS }
+DROP DICTIONARY nb_bad;
+
+-- A codepoint-mode padding token must be a valid code point (<= 0x10FFFF).
+CREATE DICTIONARY nb_bad (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_bad_src')) LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'codepoint' start_token '0x110000' end_token '0x1')) LIFETIME(0);
+SELECT dictGet('nb_bad', 'class_id', 'good'); -- { serverError BAD_ARGUMENTS }
+DROP DICTIONARY nb_bad;
+
+-- A token-mode padding token must not contain whitespace.
+CREATE DICTIONARY nb_bad (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'nb_bad_src')) LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'token' start_token 'a b' end_token 'c')) LIFETIME(0);
+SELECT dictGet('nb_bad', 'class_id', 'good'); -- { serverError BAD_ARGUMENTS }
+DROP DICTIONARY nb_bad;
+
 DROP TABLE nb_bad_src;
