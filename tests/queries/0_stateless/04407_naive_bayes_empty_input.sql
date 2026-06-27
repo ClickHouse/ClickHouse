@@ -1,5 +1,5 @@
 -- naiveBayesClassifier and dictGet are equivalent, including for empty input: an empty string is
--- classified from the priors and boundary n-grams rather than rejected. This pins that equivalence for
+-- classified (from the priors, as it forms no n-grams) rather than rejected. This pins that equivalence for
 -- an n-1 and an n-2 model, that a batch containing an empty row classifies every row, and that the
 -- probability entry points also accept empty input.
 
