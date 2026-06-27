@@ -6,6 +6,7 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFunction.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 
@@ -52,10 +53,28 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapToArrayAdapter>(); }
     String getName() const override { return name; }
 
+    /// Functions that return a Map by selecting or reordering the original key-value pairs
+    /// (`mapFilter`, `mapSort` and its variants, `mapConcat`) must keep the exact key and value
+    /// types of the input Map, including `LowCardinality`. The generic
+    /// `useDefaultImplementationForLowCardinalityColumns` machinery strips nested `LowCardinality`
+    /// recursively (as it does for arrays), which would silently turn `Map(LowCardinality(String), String)`
+    /// into `Map(String, String)` and corrupt the metadata of a table created from such an expression.
+    /// `mapApply` is excluded because it rebuilds the elements from the lambda result, so its element
+    /// types follow the lambda (just like `arrayMap`).
+    static constexpr bool preserve_nested_low_cardinality = Adapter::preserve_low_cardinality && !std::is_same_v<Impl, FunctionArrayMap>;
+
     bool isVariadic() const override { return impl.isVariadic(); }
     size_t getNumberOfArguments() const override { return impl.getNumberOfArguments(); }
     bool useDefaultImplementationForNulls() const override { return impl.useDefaultImplementationForNulls(); }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return impl.useDefaultImplementationForLowCardinalityColumns(); }
+
+    bool useDefaultImplementationForLowCardinalityColumns() const override
+    {
+        if constexpr (preserve_nested_low_cardinality)
+            return false;
+        else
+            return impl.useDefaultImplementationForLowCardinalityColumns();
+    }
+
     bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants(); }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override  { return false; }
 
@@ -128,7 +147,29 @@ public:
     {
         auto nested_arguments = arguments;
         Adapter::extractNestedTypesAndColumns(nested_arguments);
-        return Adapter::wrapColumn(impl.executeImpl(nested_arguments, Adapter::extractResultType(result_type), input_rows_count));
+
+        if constexpr (preserve_nested_low_cardinality)
+        {
+            /// We disabled the default LowCardinality implementation to keep the key/value types in
+            /// the result type, so the framework no longer strips LowCardinality from the arguments.
+            /// The nested `impl` (e.g. `arrayFilter`) operates on full columns and its lambda argument
+            /// types were declared without LowCardinality, so we strip it here and restore it on the
+            /// result to match the declared result type.
+            const auto nested_result_type = Adapter::extractResultType(result_type);
+            const auto nested_result_type_no_lc = recursiveRemoveLowCardinality(nested_result_type);
+
+            for (auto & argument : nested_arguments)
+            {
+                argument.column = recursiveRemoveLowCardinality(argument.column);
+                argument.type = recursiveRemoveLowCardinality(argument.type);
+            }
+
+            auto nested_result = impl.executeImpl(nested_arguments, nested_result_type_no_lc, input_rows_count);
+            nested_result = recursiveLowCardinalityTypeConversion(nested_result, nested_result_type_no_lc, nested_result_type);
+            return Adapter::wrapColumn(std::move(nested_result));
+        }
+        else
+            return Adapter::wrapColumn(impl.executeImpl(nested_arguments, Adapter::extractResultType(result_type), input_rows_count));
     }
 
 private:
@@ -189,6 +230,9 @@ struct MapToNestedAdapter : public MapAdapterBase<MapToNestedAdapter<Name, retur
     using MapAdapterBase<MapToNestedAdapter, Name>::extractNestedTypes;
     using MapAdapterBase<MapToNestedAdapter, Name>::extractNestedTypesAndColumns;
 
+    /// Functions returning a Map should keep the key/value types (including LowCardinality) of the input.
+    static constexpr bool preserve_low_cardinality = returns_map;
+
     static DataTypePtr extractNestedType(const DataTypeMap & type_map)
     {
         return type_map.getNestedType();
@@ -226,6 +270,9 @@ template <typename Name, size_t position>
 struct MapToSubcolumnAdapter
 {
     static_assert(position <= 1, "position of Map subcolumn must be 0 or 1");
+
+    /// These functions return an Array or a scalar, not a Map (the array convention strips nested LowCardinality).
+    static constexpr bool preserve_low_cardinality = false;
 
     static void extractNestedTypes(DataTypes & types)
     {
@@ -343,6 +390,10 @@ struct MapLikeAdapter
     /// The SQL-level signature is `(Map, String pattern)`; the lambda is constructed internally,
     /// so the first user-facing argument is not a lambda.
     static constexpr bool first_argument_is_lambda = false;
+
+    /// These functions match keys/values with `LIKE`, which is defined only for String/FixedString.
+    /// Their LowCardinality handling is left to the generic machinery (nested LowCardinality is not preserved).
+    static constexpr bool preserve_low_cardinality = false;
 
     static void checkTypes(const DataTypes & types)
     {

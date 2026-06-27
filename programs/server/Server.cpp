@@ -61,6 +61,9 @@
 #include <Common/CPUID.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Server/createServer.h>
+#include <Server/socketBindListen.h>
+#include <Server/stopServers.h>
 #include <Server/waitServersToFinish.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -93,6 +96,7 @@
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Functions/pointInPolygon.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
@@ -228,6 +232,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 concurrent_threads_soft_limit_num;
     extern const ServerSettingsUInt64 concurrent_threads_soft_limit_ratio_to_cores;
     extern const ServerSettingsString concurrent_threads_scheduler;
+    extern const ServerSettingsBool concurrent_threads_lazy_allocation;
     extern const ServerSettingsUInt64 config_reload_interval_ms;
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
     extern const ServerSettingsString default_database;
@@ -297,6 +302,9 @@ namespace ServerSetting
     extern const ServerSettingsString unique_key_index_cache_policy;
     extern const ServerSettingsUInt64 unique_key_index_cache_size_bytes;
     extern const ServerSettingsDouble unique_key_index_cache_size_ratio;
+    extern const ServerSettingsString unique_key_bitmap_cache_policy;
+    extern const ServerSettingsUInt64 unique_key_bitmap_cache_size_bytes;
+    extern const ServerSettingsDouble unique_key_bitmap_cache_size_ratio;
     extern const ServerSettingsUInt64 max_fetch_partition_thread_pool_size;
     extern const ServerSettingsUInt64 max_active_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_backups_io_thread_pool_free_size;
@@ -379,6 +387,7 @@ namespace ServerSetting
     extern const ServerSettingsString primary_index_cache_policy;
     extern const ServerSettingsUInt64 primary_index_cache_size;
     extern const ServerSettingsDouble primary_index_cache_size_ratio;
+    extern const ServerSettingsUInt64 point_in_polygon_cache_size;
     extern const ServerSettingsBool dictionaries_lazy_load;
     extern const ServerSettingsBool wait_dictionaries_load_at_startup;
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
@@ -596,18 +605,7 @@ Poco::Net::SocketAddress Server::socketBindListen(
     UInt16 port,
     [[maybe_unused]] bool secure) const
 {
-    auto address = makeSocketAddress(host, port, &logger());
-    socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ server_settings[ServerSetting::listen_reuse_port]);
-    /// If caller requests any available port from the OS, discover it after binding.
-    if (port == 0)
-    {
-        address = socket.address();
-        LOG_DEBUG(&logger(), "Requested any available port (port == 0), actual port is {:d}", address.port());
-    }
-
-    socket.listen(/* backlog = */ server_settings[ServerSetting::listen_backlog]);
-
-    return address;
+    return DB::socketBindListen(server_settings, socket, host, port, &logger());
 }
 
 namespace
@@ -663,43 +661,17 @@ void Server::createServer(
     std::vector<ProtocolServerAdapter> & servers,
     CreateServerFunc && func) const
 {
-    /// For testing purposes, user may omit tcp_port or http_port or https_port in configuration file.
-    if (config.getString(port_name, "").empty())
-        return;
-
-    /// If we already have an active server for this listen_host/port_name, don't create it again
-    for (const auto & server : servers)
+    if (DB::createServer(config, listen_host, port_name, listen_try, start_server, servers, std::move(func), &logger()))
     {
-        if (!server.isStopping() && server.getListenHost() == listen_host && server.getPortName() == port_name)
-            return;
-    }
-
-    auto port = config.getInt(port_name);
-    try
-    {
-        servers.push_back(func(static_cast<UInt16>(port)));
-        if (start_server)
-        {
-            servers.back().start();
-            LOG_INFO(&logger(), "Listening for {}", servers.back().getDescription());
-        }
-        global_context->registerServerPort(port_name, static_cast<UInt16>(port));
-    }
-    catch (const Poco::Exception &)
-    {
-        if (listen_try)
-        {
-            LOG_WARNING(&logger(), "Listen [{}]:{} failed: {}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, "
-                "then consider to "
-                "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
-                "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
-                " Example for disabled IPv4: <listen_host>::</listen_host>",
-                listen_host, port, getCurrentExceptionMessage(false));
-        }
-        else
-        {
-            throw Exception(ErrorCodes::NETWORK_ERROR, "Listen [{}]:{} failed: {}", listen_host, port, getCurrentExceptionMessage(false));
-        }
+        /// Register the configured port rather than the actual bound port. `getServerPort` keeps a
+        /// single value per `port_name`, so with `tcp_port=0` (OS-assigned) and several `listen_host`
+        /// values (e.g. the default `::1` + `127.0.0.1`) each host binds a distinct ephemeral port and
+        /// registering the actual port would let the last host overwrite the others, leaving
+        /// `getServerPort` pointing at a port that is not listening on the host a client uses. When the
+        /// configured port is non-zero it equals the bound port anyway, so this preserves the previous
+        /// behavior in all cases. (`clickhouse-local` registers the actual bound port because it needs
+        /// the OS-assigned value, but it rejects the ambiguous `port=0` + multiple `listen_host` combo.)
+        global_context->registerServerPort(port_name, static_cast<UInt16>(config.getInt(port_name)));
     }
 }
 
@@ -2189,6 +2161,17 @@ try
     }
     global_context->setUniqueKeyIndexCache(unique_key_index_cache_policy_name, unique_key_index_cache_size, unique_key_index_cache_size_ratio);
 
+    /// UNIQUE KEY delete-bitmap cache. Zero size disables.
+    String unique_key_bitmap_cache_policy_name = server_settings[ServerSetting::unique_key_bitmap_cache_policy];
+    size_t unique_key_bitmap_cache_size = server_settings[ServerSetting::unique_key_bitmap_cache_size_bytes];
+    double unique_key_bitmap_cache_size_ratio = server_settings[ServerSetting::unique_key_bitmap_cache_size_ratio];
+    if (unique_key_bitmap_cache_size > max_cache_size)
+    {
+        unique_key_bitmap_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered UNIQUE KEY delete-bitmap cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(unique_key_bitmap_cache_size));
+    }
+    global_context->setDeleteBitmapCache(unique_key_bitmap_cache_policy_name, unique_key_bitmap_cache_size, unique_key_bitmap_cache_size_ratio);
+
     String primary_index_cache_policy = server_settings[ServerSetting::primary_index_cache_policy];
     size_t primary_index_cache_size = server_settings[ServerSetting::primary_index_cache_size];
     double primary_index_cache_size_ratio = server_settings[ServerSetting::primary_index_cache_size_ratio];
@@ -2326,6 +2309,14 @@ try
     size_t compiled_expression_cache_max_elements = server_settings[ServerSetting::compiled_expression_cache_elements_size];
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
+
+    size_t point_in_polygon_cache_size = server_settings[ServerSetting::point_in_polygon_cache_size];
+    if (point_in_polygon_cache_size > max_cache_size)
+    {
+        point_in_polygon_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered point in polygon cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(point_in_polygon_cache_size));
+    }
+    setPointInPolygonCacheMaxSizeInBytes(point_in_polygon_cache_size);
 
     NamedCollectionFactory::instance().loadIfNot();
     FileCacheFactory::instance().loadDefaultCaches(config(), global_context);
@@ -2564,7 +2555,8 @@ try
             auto [concurrent_threads_soft_limit, concurrency_control_scheduler] = global_context->setConcurrentThreadsSoftLimit(
                 new_server_settings[ServerSetting::concurrent_threads_soft_limit_num],
                 new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores],
-                new_server_settings[ServerSetting::concurrent_threads_scheduler]);
+                new_server_settings[ServerSetting::concurrent_threads_scheduler],
+                new_server_settings[ServerSetting::concurrent_threads_lazy_allocation]);
             LOG_INFO(log, "ConcurrencyControl limit is set to {} CPU slots with '{}' scheduler",
                 concurrent_threads_soft_limit == UnlimitedSlots ? std::string("UNLIMITED") : std::to_string(concurrent_threads_soft_limit),
                 concurrency_control_scheduler);
@@ -2706,6 +2698,7 @@ try
                 global_context->updateUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateMarkCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateUniqueKeyIndexCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateDeleteBitmapCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updatePrimaryIndexCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateIndexUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateIndexMarkCacheConfiguration(config(), max_cache_size_in_bytes);
@@ -2716,6 +2709,8 @@ try
                 global_context->updateMMappedFileCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateQueryResultCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateQueryConditionCacheConfiguration(config(), max_cache_size_in_bytes);
+                setPointInPolygonCacheMaxSizeInBytes(
+                    std::min<size_t>(new_server_settings[ServerSetting::point_in_polygon_cache_size], max_cache_size_in_bytes));
 #if USE_AVRO
                 global_context->updateIcebergMetadataFilesCacheConfiguration(config(), max_cache_size_in_bytes);
 #endif
@@ -4064,36 +4059,7 @@ void Server::stopServers(
     std::vector<ProtocolServerAdapter> & servers,
     const ServerType & server_type) const
 {
-    LoggerRawPtr log = &logger();
-
-    /// Remove servers once all their connections are closed
-    auto check_server = [&log](const char prefix[], auto & server)
-    {
-        if (!server.isStopping())
-            return false;
-        size_t current_connections = server.currentConnections();
-        LOG_DEBUG(log, "Server {}{}: {} ({} connections)",
-            server.getDescription(),
-            prefix,
-            !current_connections ? "finished" : "waiting",
-            current_connections);
-        return !current_connections;
-    };
-
-    std::erase_if(servers, std::bind_front(check_server, " (from one of previous remove)"));
-
-    for (auto & server : servers)
-    {
-        if (!server.isStopping())
-        {
-            const std::string server_port_name = server.getPortName();
-
-            if (server_type.shouldStop(server_port_name))
-                server.stop();
-        }
-    }
-
-    std::erase_if(servers, std::bind_front(check_server, ""));
+    DB::stopServers(servers, server_type, &logger());
 }
 
 void Server::updateServers(
