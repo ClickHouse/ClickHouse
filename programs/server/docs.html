@@ -498,7 +498,11 @@
         /// as a local file (`file://`) and pointed at a remote server, the queries are cross-origin
         /// (the browser sends `Origin: null`), and ClickHouse only adds `Access-Control-Allow-Origin`
         /// when `add_http_cors_header=1` is set; without it the searches would be blocked by CORS.
-        let url = `${$url.value}?default_format=JSONEachRow&enable_http_compression=1&add_http_cors_header=1`;
+        /// The configured URL may already carry query parameters (e.g. `http://host:8123/?database=db`),
+        /// so append with `&` in that case instead of a second `?`, exactly like `play.html`; otherwise
+        /// `default_format` would be folded into the existing parameter and the response would not be JSON.
+        const sep = $url.value.indexOf('?') >= 0 ? '&' : '?';
+        let url = `${$url.value}${sep}default_format=JSONEachRow&enable_http_compression=1&add_http_cors_header=1`;
         if ($user.value) {
             url += `&user=${encodeURIComponent($user.value)}`;
         }
@@ -960,8 +964,14 @@
 
     function toDocsURL(href) {
         const base = 'https://clickhouse.com/docs';
-        if (href.startsWith('/')) return base + href;
-        return base + '/' + href.replace(/^(\.\.?\/)+/, '');
+        /// The embedded documentation links to source files by their repository path, keeping the
+        /// `.md`/`.mdx` extension (e.g. `/operations/workload-scheduling.md`). Those extension URLs 404
+        /// on the docs site, while the extensionless routes work, so strip the extension from the path
+        /// part only, preserving any `#fragment`/`?query` suffix.
+        const [, path, suffix] = /^([^?#]*)(.*)$/.exec(href);
+        const cleanPath = path.replace(/\.mdx?$/, '');
+        if (cleanPath.startsWith('/')) return base + cleanPath + suffix;
+        return base + '/' + cleanPath.replace(/^(\.\.?\/)+/, '') + suffix;
     }
 
     /// Turn an inline `code` element into an in-app link when its text is a documented entity.
