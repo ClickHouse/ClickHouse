@@ -162,16 +162,17 @@ bool RabbitMQConsumer::nackMessages(const CommitInfo & commit_info, bool requeue
         return false;
     }
 
+    const int failed_flags = requeue ? AMQP::requeue : 0;
     for (const auto & delivery_tag : commit_info.failed_delivery_tags)
     {
-        if (consumer_channel->reject(delivery_tag))
+        if (consumer_channel->reject(delivery_tag, failed_flags))
             LOG_TRACE(
-                log, "Consumer rejected message with deliveryTag {} on channel {}",
-                delivery_tag, channel_id);
+                log, "Consumer did {} message with deliveryTag {} on channel {}",
+                verb, delivery_tag, channel_id);
         else
             LOG_WARNING(
-                log, "Failed to reject message with deliveryTag {} on channel {}",
-                delivery_tag, channel_id);
+                log, "Failed to {} message with deliveryTag {} on channel {}",
+                verb, delivery_tag, channel_id);
     }
 
     /// Nothing to reject.

@@ -49,6 +49,18 @@ def publish(rabbitmq_cluster, exchange, start, count):
     connection.close()
 
 
+def publish_raw(rabbitmq_cluster, exchange, body):
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.confirm_delivery()
+    channel.basic_publish(exchange=exchange, routing_key="", body=body)
+    connection.close()
+
+
 def setup_consuming_table(table, exchange):
     instance.query(
         f"""
@@ -706,3 +718,50 @@ def test_drop_during_cancel_all_background_no_race(rabbitmq_cluster):
         hammer.join()
 
     assert instance.query("SELECT 1") == "1\n"
+
+
+def test_cancel_requeues_unhandled_messages_on_abort(rabbitmq_cluster):
+    # An aborted block must be requeued in full, including malformed messages reject_unhandled_messages
+    # put in failed_delivery_tags; the bug rejected those without requeue and dropped them. In 'stream'
+    # mode a malformed message is an error row, so it survives abort + redelivery only if requeued too.
+    table = "rabbitmq_reject_abort"
+    exchange = "reject_abort_exchange"
+    instance.query(
+        f"""
+        CREATE TABLE test.{table} (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{exchange}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_queue_base = '{exchange}',
+                     rabbitmq_handle_error_mode = 'stream',
+                     reject_unhandled_messages = 1,
+                     rabbitmq_flush_interval_ms = 5000,
+                     rabbitmq_max_block_size = 1000,
+                     rabbitmq_row_delimiter = '\\n';
+
+        CREATE TABLE test.{table}_dst (key UInt64, error Nullable(String))
+            ENGINE = MergeTree ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+            SELECT key, _error AS error FROM test.{table};
+        """
+    )
+    instance.wait_for_log_line("Started streaming to 1 attached views")
+
+    # Pre-load five good rows + one malformed while halted, then resume so a fresh cycle reads all six
+    # into one block and holds it open ~rabbitmq_flush_interval_ms (read done, nothing acked yet).
+    instance.query(f"SYSTEM STOP test.{table}")
+    publish(rabbitmq_cluster, exchange, 1, 5)
+    publish_raw(rabbitmq_cluster, exchange, "not a json")
+    instance.query(f"SYSTEM START test.{table}")
+
+    time.sleep(2)  # the block is open at the source: all six read, nothing acked yet
+    instance.query(f"SYSTEM CANCEL test.{table}")  # aborts the block -> nackMessages(requeue=true)
+
+    # CANCEL keeps consuming, so the requeued block is redelivered. All six must land (five good + the
+    # malformed error row); the bug dropped the malformed tag, so its row never reappears.
+    wait_dst_count(table, 6)
+    assert (
+        int(instance.query(f"SELECT count() FROM test.{table}_dst WHERE error IS NOT NULL")) == 1
+    ), "the malformed message must be requeued on abort, not dropped"
