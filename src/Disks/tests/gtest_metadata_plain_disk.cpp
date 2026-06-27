@@ -1,4 +1,3 @@
-
 #include <Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
