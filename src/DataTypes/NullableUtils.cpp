@@ -127,6 +127,14 @@ void applyParentNullMapToExtractedSubcolumn(
     const size_t length = column->size() - column_offset;
     chassert(parent_null_map_offset + length <= parent_null_map.size());
 
+    /// A non-nullable `LowCardinality(T)` read from disk has no NULL placeholder in its dictionary, so
+    /// promote it to `LowCardinality(Nullable(T))` in place. The extracted subcolumn's type is
+    /// `LowCardinality(Nullable(T))` (see `create(DataTypePtr)`), so this keeps the (type, column) pair
+    /// consistent even for ranges that contain no parent NULLs (handled before the early-out below).
+    if (auto * low_cardinality_to_promote = typeid_cast<ColumnLowCardinality *>(column.get());
+        low_cardinality_to_promote && !low_cardinality_to_promote->nestedIsNullable())
+        low_cardinality_to_promote->convertDictionaryToNullableInplace();
+
     /// When no row of the range is NULL in the parent, the subcolumn already holds the correct values and
     /// nothing needs to be marked NULL.
     if (memoryIsZero(parent_null_map.data(), parent_null_map_offset, parent_null_map_offset + length))
@@ -186,7 +194,14 @@ SerializationPtr NullableSubcolumnCreator::create(const SerializationPtr & prev_
         /// themselves: Nullable (possibly inside LowCardinality), Dynamic and Variant. For them return a
         /// serialization that also reads the outer null map and marks the corresponding rows as NULL in
         /// the subcolumn's own null representation.
-        if (canContainNull(*prev_type))
+        ///
+        /// A non-nullable `LowCardinality(T)` cannot represent NULL as-is, but its extracted subcolumn's
+        /// type is promoted to `LowCardinality(Nullable(T))` (see `create(DataTypePtr)`). Wrap the original
+        /// (non-nullable) serialization so the on-disk stream layout is unchanged; the wrapper reads the
+        /// `LowCardinality(T)` column and `applyParentNullMapToExtractedSubcolumn` promotes it to
+        /// `LowCardinality(Nullable(T))` before folding in the outer null map, keeping the read
+        /// (type, column) pair consistent with the in-memory one.
+        if (canContainNull(*prev_type) || prev_type->lowCardinality())
             return SerializationNullableWithParentNullMap::create(prev_serialization);
         return prev_serialization;
     }

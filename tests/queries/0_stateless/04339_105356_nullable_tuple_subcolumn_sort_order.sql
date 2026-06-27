@@ -76,3 +76,26 @@ SELECT count() > 0, uniqExact(_part) FROM t_105356_lc_nn;
 SELECT toTypeName(`c0.2`) FROM t_105356_lc_nn LIMIT 1;
 
 DROP TABLE t_105356_lc_nn;
+
+-- Read path: extracting the same non-nullable LowCardinality element directly from disk must produce a
+-- consistent `LowCardinality(Nullable(String))` column. The type creator promotes the element, but the read
+-- (`create(SerializationPtr)`) path was not promoted, so the column carried a non-nullable dictionary:
+-- `isNull(`c0.2`)` aborted with `ColumnUnique can't contain null values` and the value leaked the inner
+-- entry for outer-NULL rows. The read path now promotes the column too. Exercise both wide and compact parts.
+DROP TABLE IF EXISTS t_105356_lc_nn_read;
+
+CREATE TABLE t_105356_lc_nn_read (c0 Nullable(Tuple(String, LowCardinality(String))))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0;
+INSERT INTO t_105356_lc_nn_read SELECT if(number % 2 = 0, NULL, ('a', toLowCardinality('p'))) FROM numbers(4);
+SELECT toTypeName(`c0.2`), `c0.2`, isNull(`c0.2`), isNull(c0) FROM t_105356_lc_nn_read ORDER BY isNull(c0), `c0.2`;
+DROP TABLE t_105356_lc_nn_read;
+
+DROP TABLE IF EXISTS t_105356_lc_nn_read_compact;
+
+CREATE TABLE t_105356_lc_nn_read_compact (c0 Nullable(Tuple(String, LowCardinality(String))))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = '100G';
+INSERT INTO t_105356_lc_nn_read_compact SELECT if(number % 2 = 0, NULL, ('a', toLowCardinality('p'))) FROM numbers(4);
+SELECT toTypeName(`c0.2`), `c0.2`, isNull(`c0.2`), isNull(c0) FROM t_105356_lc_nn_read_compact ORDER BY isNull(c0), `c0.2`;
+DROP TABLE t_105356_lc_nn_read_compact;
