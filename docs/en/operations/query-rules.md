@@ -37,6 +37,12 @@ Every `{name:Type}` placeholder referenced by a rule's result template must also
 
 A rule template may itself be a `CREATE RULE` / `ALTER RULE` statement, but a `{name:Type}` placeholder inside such a nested rule template is not supported and is rejected at `CREATE RULE` / `ALTER RULE` time.
 
+A `{name:Type}` placeholder used as an alias (`expr AS {name:Type}`) is not supported and is rejected at `CREATE RULE` / `ALTER RULE` time.
+
+A rule template must not be an `INSERT` query carrying inline data (`INSERT ... VALUES ...` or `INSERT ... FORMAT ...`); such templates are rejected at `CREATE RULE` / `ALTER RULE` time. An `INSERT ... SELECT ...` template (without inline data) is allowed.
+
+A placeholder in the result template must be placed in a position compatible with the captured value — for example, a `String` or `Int` capture must not be substituted where an identifier (such as a table name) is expected. Result-side type compatibility for a placeholder name reused from the source template is validated at `CREATE RULE` / `ALTER RULE` time; the structural compatibility of a placeholder's position is not fully validated up front, so an incompatible placement may instead fail when the rule first matches a query.
+
 ## Syntax {#syntax}
 
 Query rewrite rules provide three types of queries:
@@ -129,6 +135,14 @@ The `query_rules` setting lists the names of the query rewrite rules that are ac
 Rules are matched against the query **after** its query parameters (`{name:Type}` of a prepared statement) have been substituted, so a value supplied through a query parameter is matched as the literal it became. In particular, a `REJECT` rule that blocks a specific literal cannot be bypassed by passing that literal through a query parameter.
 
 Matching is structural and performs no backtracking, and placeholders support only the limited type vocabulary listed above (`String`, `Int`, `Expression`, `ExpressionList`, `Subquery`).
+
+## Security considerations {#security-considerations}
+
+Query Rewrite Rules are experimental and off by default. Note the following when enabling them:
+
+- The `query_rules` setting can be changed by any user who is allowed to change session settings. A user can therefore activate any globally-defined rule by name (and distinguish an existing rule from a missing one). If a rule rewrites a query into one that references tables or embeds table-function credentials the user cannot otherwise see, activating that rule lets the user run the rewritten query. The rewritten query still executes with the privileges of the user who submitted the original query, so a rule cannot grant access the user does not already have — but if this rule-name exposure matters for your deployment, restrict `query_rules` for untrusted users with a settings constraint so they cannot change it from their settings profile value.
+- Rule definitions in `system.query_rules` are only visible to users holding a `CREATE RULE`, `ALTER RULE` or `DROP RULE` grant; secrets in a rule definition are masked the same way as in `system.named_collections`.
+- Rewrite rules are applied only on the initiator of a query. For distributed queries the `query_rules` setting is not propagated to shards, so a rule is never re-applied to a secondary query, and the client-supplied query kind cannot be used to bypass a rule.
 
 ## Access grants {#access-grants}
 
