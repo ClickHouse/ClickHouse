@@ -38,6 +38,10 @@ public:
     /// snapshot replica - first replica the coordinator got InitialAllRangesAnnouncement from
     std::optional<size_t> getSnapshotReplicaNum() const { return snapshot_replica_num; }
 
+    /// The fixed number of replicas the coordinator was sized for. Replica numbers in announcements
+    /// must stay below it, so a reused coordinator must keep being fed the same set of replicas.
+    size_t getReplicasCount() const { return replicas_count; }
+
     void setReadCompletedCallback(ReadCompletedCallback callback);
 
 private:

@@ -110,6 +110,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char parallel_replicas_force_local_replica_inactive[];
+    extern const char parallel_replicas_insert_select_drop_active_replica[];
 }
 
 namespace ClusterProxy
@@ -707,6 +708,23 @@ static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsF
         /// if its `active` znode is transiently missing. Force it active so liveness never filters it out.
         if (local_replica_index)
             is_active[*local_replica_index] = true;
+
+        /// Test-only: simulate liveness drifting between the two passes of an INSERT SELECT - drop one active
+        /// non-local replica from this (first) snapshot so the coordinator is sized smaller than the cluster's
+        /// current active set. The remote-pool pass must reuse this snapshot's pools; if it recomputed liveness
+        /// instead, it would see the dropped replica active again and assign it a replica number that is out of
+        /// range for the already-sized coordinator. ONCE, so only the first (coordinator-building) call is hit.
+        fiu_do_on(FailPoints::parallel_replicas_insert_select_drop_active_replica,
+        {
+            for (size_t i = 0; i < is_active.size(); ++i)
+            {
+                if (is_active[i] && (!local_replica_index || i != *local_replica_index))
+                {
+                    is_active[i] = false;
+                    break;
+                }
+            }
+        });
     }
 
     size_t available_replicas = shard.getAllNodeCount();
@@ -1154,8 +1172,9 @@ bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const 
 }
 
 /// find and remove ReadFromParallelRemoteReplicasStep in query plan,
-/// also returns parallel replicas coordinator stored in ReadFromParallelRemoteReplicasStep
-ParallelReplicasReadingCoordinatorPtr dropReadFromRemoteInPlan(QueryPlan & query_plan)
+/// also returns the parallel replicas coordinator, connection pools and local replica index
+/// stored in ReadFromParallelRemoteReplicasStep, so the remote-pool pass can reuse them.
+LocalPlanParallelReplicasInfo dropReadFromRemoteInPlan(QueryPlan & query_plan)
 {
     struct Frame
     {
@@ -1183,8 +1202,15 @@ ParallelReplicasReadingCoordinatorPtr dropReadFromRemoteInPlan(QueryPlan & query
                 {
                     if ((*it)->step.get() == step)
                     {
+                        /// Capture the coordinator together with the exact connection pools and local replica
+                        /// numbering it was built with, before the step (and its pools) are destroyed.
+                        LocalPlanParallelReplicasInfo info{
+                            .coordinator = read_from_remote->getCoordinator(),
+                            .connection_pools = read_from_remote->getPools(),
+                            .local_replica_index = read_from_remote->getExcludePoolIndex(),
+                        };
                         children.erase(it);
-                        return read_from_remote->getCoordinator();
+                        return info;
                     }
                 }
             }
@@ -1202,14 +1228,16 @@ ParallelReplicasReadingCoordinatorPtr dropReadFromRemoteInPlan(QueryPlan & query
         stack.pop_back();
     }
 
-    return nullptr;
+    return {};
 }
 
 std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     const ASTInsertQuery & query_ast,
     const ContextPtr & context,
     std::optional<QueryPipeline> local_pipeline,
-    std::optional<ParallelReplicasReadingCoordinatorPtr> coordinator)
+    std::optional<ParallelReplicasReadingCoordinatorPtr> coordinator,
+    std::vector<ConnectionPoolPtr> reused_connection_pools,
+    std::optional<size_t> reused_local_replica_index)
 {
     auto logger = getLogger("executeInsertSelectWithParallelReplicas");
     LOG_DEBUG(logger, "Executing query with parallel replicas: {}", query_ast.formatForLogging());
@@ -1218,33 +1246,40 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
 
     auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
-    auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
+
+    std::vector<ConnectionPoolPtr> connection_pools;
+    size_t max_replicas_to_use = 0;
     std::optional<size_t> local_replica_index;
 
     if (coordinator)
     {
         chassert(local_pipeline);
 
-        local_replica_index = findLocalReplicaIndexAndUpdatePools(connection_pools, max_replicas_to_use, cluster);
+        /// While building the local pipeline:
+        /// - the coordinator was created, sized for the active replicas of an earlier liveness snapshot;
+        /// - the coordinator got the announcement from the local replica and assigned it a replica number;
+        ///   (since the coordinator got the first announcement from the local replica, its snapshot is used
+        ///    for query execution).
+        /// Reuse the exact connection pools and replica numbering captured then, instead of recomputing the
+        /// active replica set here. A second liveness read could observe a different set (a registered replica
+        /// becoming active, or an active one becoming inactive in between): a larger set would assign a replica
+        /// number that is out of range for the already-sized coordinator, and a smaller one would silently drop
+        /// a replica without marking it unavailable on the coordinator - both desynchronize the coordinator.
+        connection_pools = std::move(reused_connection_pools);
+        local_replica_index = reused_local_replica_index;
+        max_replicas_to_use = connection_pools.size();
+
         chassert(local_replica_index.has_value());
-
-        /// while building local pipeline
-        /// - the coordinator is created
-        /// - the coordinator got announcement from local replica and replica number is assigned to it
-        /// (since the coordinator got first announcement from local replica, - its snapshot will be used for query execution)
-        /// so, here, we need to reuse already assigned number to local replica
-        auto snapshot_replica_num = (*coordinator)->getSnapshotReplicaNum();
-        chassert(snapshot_replica_num.has_value());
-
-        if (local_replica_index.value() != snapshot_replica_num.value())
-        {
-            std::swap(connection_pools[local_replica_index.value()], connection_pools[snapshot_replica_num.value()]);
-            local_replica_index = snapshot_replica_num;
-        }
+        chassert(max_replicas_to_use == (*coordinator)->getReplicasCount());
+        chassert(local_replica_index == (*coordinator)->getSnapshotReplicaNum());
 
         LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index.value());
     }
-    connection_pools.resize(max_replicas_to_use);
+    else
+    {
+        std::tie(connection_pools, max_replicas_to_use) = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
+        connection_pools.resize(max_replicas_to_use);
+    }
 
     String formatted_query;
     {
