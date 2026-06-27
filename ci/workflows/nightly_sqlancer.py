@@ -10,12 +10,13 @@ from ci.defs.defs import (
 )
 from ci.defs.job_configs import JobConfigs
 
-# SQLancer runs against a UBSan ClickHouse server (the long run is a good place
-# to surface undefined behaviour), so build the arm_ubsan binary in this
-# workflow to satisfy the job's `CH_ARM_UBSAN` artifact requirement.
-ubsan_build_job = Job.Config.get_job(
-    JobConfigs.build_jobs, f"Build ({BuildTypes.ARM_UBSAN})"
-).set_provides(ArtifactNames.CH_ARM_UBSAN, reset=True)
+# SQLancer runs against an ASan+UBSan ClickHouse server (the long run is a good
+# place to surface memory errors and undefined behaviour), so build the
+# arm_asan_ubsan binary in this workflow to satisfy the job's `CH_ARM_ASAN_UBSAN`
+# artifact requirement.
+asan_ubsan_build_job = Job.Config.get_job(
+    JobConfigs.build_jobs, f"Build ({BuildTypes.ARM_ASAN_UBSAN})"
+).set_provides(ArtifactNames.CH_ARM_ASAN_UBSAN, reset=True)
 
 # TODO: add alert on workflow failure
 
@@ -24,7 +25,7 @@ workflow = Workflow.Config(
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
     jobs=[
-        ubsan_build_job,
+        asan_ubsan_build_job,
         *JobConfigs.sqlancer_master_jobs,
     ],
     artifacts=[

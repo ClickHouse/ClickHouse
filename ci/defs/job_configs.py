@@ -1419,9 +1419,9 @@ class JobConfigs:
         timeout=3600 * 5 + 1800,
     ).parametrize(
         Job.ParamSet(
-            parameter="arm_ubsan",
+            parameter="arm_asan_ubsan",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.CH_ARM_UBSAN],
+            requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
         ),
     )
     sqltest_master_job = Job.Config(
