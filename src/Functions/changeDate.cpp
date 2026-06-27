@@ -1,3 +1,4 @@
+#include <limits>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 #include <Columns/ColumnDecimal.h>
@@ -232,10 +233,17 @@ public:
             Int64 deg = 1;
             for (Int64 j = 0; j < scale; ++j)
                 deg *= 10;
-            max_date = DecimalUtils::dateTimeFromComponents(
-                date_lut.makeDateTime(2299, 12, 31, 23, 59, 59),
-                static_cast<Int64>(deg - 1),
-                static_cast<UInt32>(scale));
+            DateTime64 max_date_val;
+            if (DecimalUtils::tryGetDateTimeFromComponents(
+                    date_lut.makeDateTime(2299, 12, 31, 23, 59, 59),
+                    static_cast<Int64>(deg - 1),
+                    static_cast<UInt32>(scale),
+                    max_date_val))
+                max_date = max_date_val;
+            else
+                /// At scale 9 the year-2299 boundary does not fit into Int64; clamp to the
+                /// maximum representable DateTime64 value (2262-04-11 23:47:16.854775807).
+                max_date = std::numeric_limits<Int64>::max();
             min_year = 1900;
             max_year = 2299;
         }
