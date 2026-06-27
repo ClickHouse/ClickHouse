@@ -3379,22 +3379,23 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
     }
 }
 
-/// Binary comparison predicates that are valid on the left of `SOME`/`ALL` for the
-/// array (non-subquery) right-hand side, but are not tagged `OperatorType::Comparison`
-/// in `operators_table` (the keyword forms have the default `OperatorType::None`). These
-/// are routed only through the `arrayExists`/`arrayAll` lambda form, never the
-/// subquery -> `IN` rewrite, which has no meaning for them.
+/// Comparison and string-search predicates that are valid on the left of `SOME`/`ALL` for
+/// the array (non-subquery) right-hand side, but are not tagged `OperatorType::Comparison`
+/// in `operators_table` (the keyword and string-search forms have the default
+/// `OperatorType::None`). These are routed only through the `arrayExists`/`arrayAll` lambda
+/// form, never the subquery -> `IN` rewrite, which has no meaning for them.
 ///
 /// The string-search predicates (`LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `REGEXP`) are
-/// deliberately excluded: their implementation (`MatchImpl`) does not support a constant
-/// haystack with a non-constant needle, so `'abc' LIKE SOME([...])` would throw
-/// `ILLEGAL_COLUMN`. Keep this in sync with the operator documentation for the array
-/// quantifier.
+/// included: `MatchImpl` supports a constant haystack with a non-constant needle, so
+/// `'abc' LIKE SOME(['a%', 'b%'])` rewrites to `arrayExists(_a -> 'abc' LIKE _a, ['a%', 'b%'])`
+/// and evaluates without throwing. Keep this in sync with the operator documentation for the
+/// array quantifier.
 static bool isArrayQuantifierPredicate(std::string_view function_name)
 {
     static const std::unordered_set<std::string_view> predicates
     {
-        "isDistinctFrom", "isNotDistinctFrom"
+        "isDistinctFrom", "isNotDistinctFrom",
+        "like", "ilike", "notLike", "notILike", "match"
     };
     return predicates.contains(function_name);
 }
@@ -3446,9 +3447,10 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
     const auto * prev_operator = layers.back()->previousOperator();
     const bool prev_is_comparison = prev_operator && prev_operator->type == OperatorType::Comparison;
-    /// `IS DISTINCT FROM` / `IS NOT DISTINCT FROM` (keyword forms) are comparison predicates
-    /// that are not tagged `OperatorType::Comparison`. They are valid on the left of the
-    /// array form of `SOME`/`ALL`, but not of the subquery form (lowered to `IN`/`NOT IN`).
+    /// The keyword comparison predicates `IS DISTINCT FROM` / `IS NOT DISTINCT FROM` and the
+    /// string-search predicates `LIKE` / `ILIKE` / `NOT LIKE` / `NOT ILIKE` / `REGEXP` are not
+    /// tagged `OperatorType::Comparison`. They are valid on the left of the array form of
+    /// `SOME`/`ALL`, but not of the subquery form (lowered to `IN`/`NOT IN`).
     const bool prev_is_array_predicate
         = prev_operator && !prev_is_comparison && isArrayQuantifierPredicate(prev_operator->function_name);
 
@@ -3467,7 +3469,8 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         /// `has`/`NOT has` for the `=`/`<>` special cases that have an optimized
         /// implementation, or to `arrayExists`/`arrayAll` lambdas otherwise. The array
         /// form also supports the keyword comparison predicates `IS DISTINCT FROM` and
-        /// `IS NOT DISTINCT FROM`, which only go through the lambda form.
+        /// `IS NOT DISTINCT FROM`, and the string-search predicates `LIKE`, `ILIKE`,
+        /// `NOT LIKE`, `NOT ILIKE`, and `REGEXP`, which only go through the lambda form.
         /// `ANY` is excluded from the array form because `any` is also an aggregate
         /// function, so `expr = any(x)` must keep its function-call meaning.
         const bool any_kw = any_parser.ignore(pos, expected);

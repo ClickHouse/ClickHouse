@@ -45,18 +45,25 @@ SELECT 1 IS NOT DISTINCT FROM SOME([1, 2]); -- not distinct from 1         -> 1
 SELECT 1 IS NOT DISTINCT FROM ALL([1, 2]);  -- distinct from 2             -> 0
 SELECT (1 IS DISTINCT FROM ALL([2, 3])) = arrayAll(_a -> 1 IS DISTINCT FROM _a, [2, 3]);
 
--- The string-search predicates (`LIKE`, `ILIKE`, `REGEXP`, ...) are intentionally not
--- routed through the array form: `MatchImpl` does not support a constant haystack with a
--- non-constant needle, so `arrayExists(x -> 'abc' LIKE x, ...)` would throw
--- `ILLEGAL_COLUMN`. Since `SOME` only acts as a quantifier after a comparison operator,
--- after `LIKE` it is left as an ordinary function name, and `SOME` is not a registered
--- function, so `'abc' LIKE SOME([...])` throws `UNKNOWN_FUNCTION` rather than becoming an
--- array quantifier. These predicates cannot be emulated with `arrayExists` / `arrayAll`
--- either (the lambda variable would land in `MatchImpl`'s non-constant pattern position,
--- throwing `ILLEGAL_COLUMN`); to match one string against several patterns, use an explicit
--- disjunction of constant patterns (`'abc' LIKE 'a%' OR 'abc' LIKE 'b%'`) or a multi-pattern
--- search function such as `multiMatchAny` (regular expressions) or `multiSearchAny` (substrings).
-SELECT 'abc' LIKE SOME(['a%', 'b%']); -- { serverError UNKNOWN_FUNCTION }
+-- The array form also accepts the string-search predicates `LIKE`, `ILIKE`, `NOT LIKE`,
+-- `NOT ILIKE`, and `REGEXP`, routed through the same `arrayExists` / `arrayAll` rewrite.
+-- `MatchImpl` supports a constant haystack with a non-constant needle, so the lambda
+-- variable can be the pattern (needle) argument without throwing `ILLEGAL_COLUMN`.
+SELECT 'abc' LIKE SOME(['a%', 'b%']);       -- exists: 'abc' LIKE 'a%'              -> 1
+SELECT 'abc' LIKE ALL(['a%', 'b%']);        -- not all: 'abc' NOT LIKE 'b%'         -> 0
+SELECT 'abc' ILIKE SOME(['A%']);            -- case-insensitive 'abc' LIKE 'A%'     -> 1
+SELECT 'abc' NOT LIKE SOME(['x%', 'a%']);   -- exists: 'abc' NOT LIKE 'x%'          -> 1
+SELECT 'abc' NOT LIKE ALL(['x%', 'y%']);    -- all: matches neither pattern         -> 1
+SELECT 'abc' NOT ILIKE SOME(['X%']);        -- exists: 'abc' NOT ILIKE 'X%'         -> 1
+SELECT 'abc' REGEXP SOME(['^a', 'z']);      -- exists: 'abc' matches '^a'           -> 1
+SELECT 'abc' REGEXP ALL(['^a', 'z']);       -- not all: 'abc' does not match 'z'    -> 0
+-- Equivalence to the explicit lambda form for the string-search predicates.
+SELECT ('abc' LIKE SOME(['a%', 'b%'])) = arrayExists(_a -> 'abc' LIKE _a, ['a%', 'b%']);
+SELECT ('abc' NOT LIKE ALL(['x%', 'y%'])) = arrayAll(_a -> 'abc' NOT LIKE _a, ['x%', 'y%']);
+SELECT ('abc' REGEXP SOME(['^a', 'z'])) = arrayExists(_a -> match('abc', _a), ['^a', 'z']);
+-- A `NULL` pattern folds to `0` (unknown) like the other higher-order forms above.
+SELECT 'abc' LIKE SOME(['a%', NULL]);       -- exists: 'abc' LIKE 'a%' (NULL -> 0)  -> 1
+SELECT 'abc' LIKE ALL(['a%', NULL]);        -- all: 'abc' LIKE NULL folds to 0      -> 0
 
 -- The lambda variable for the higher-order form must not collide with an
 -- identifier on the LHS, so the parser walks the LHS and suffixes `_a` until
