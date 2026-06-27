@@ -684,7 +684,7 @@ def test_async_backup_to_s3_cancel_reports_cancellation(cluster, broken_s3):
         # Make every S3 upload hang so the backup is reliably stuck inside an in-flight S3 request
         # (not between backup entries) when we cancel it. KILL then interrupts the upload, and the
         # retry loop must surface the cancellation instead of the resulting network error.
-        broken_s3.setup_slow_answers(timeout=120)
+        broken_s3.setup_slow_answers(timeout=30)
 
         node.query(
             f"BACKUP TABLE data TO {backup_destination} SETTINGS id='{backup_id}' ASYNC",
@@ -742,7 +742,7 @@ def test_async_restore_from_s3_cancel_reports_cancellation(cluster, broken_s3):
         node.query(f"BACKUP TABLE data TO {backup_destination}")
         node.query("DROP TABLE data SYNC;")
 
-        broken_s3.setup_slow_get_answers(timeout=120)
+        broken_s3.setup_slow_get_answers(timeout=30)
 
         restore_id = uuid.uuid4().hex
         node.query(
@@ -775,6 +775,44 @@ def test_async_restore_from_s3_cancel_reports_cancellation(cluster, broken_s3):
         error = node.query(f"SELECT error FROM system.backups WHERE id='{restore_id}'")
         assert "QUERY_WAS_CANCELLED" in error, error
         assert "S3_ERROR" not in error, error
+    finally:
+        broken_s3.reset()
+        node.query("DROP TABLE IF EXISTS data SYNC;")
+
+
+def test_backup_to_s3_timeout_reports_timeout(cluster, broken_s3):
+    # The S3 cancellation translation must preserve the real cancellation cause. Here every S3 upload
+    # keeps failing with a retryable error, so the BACKUP stays in the S3 retry loop until
+    # max_execution_time (CancelReason::TIMEOUT) cancels it. The S3 layer then sees a failed outcome
+    # while the query is killed and must report TIMEOUT_EXCEEDED, not a generic QUERY_WAS_CANCELLED.
+    # A synchronous BACKUP is used so the query stays tracked by the max_execution_time watchdog.
+    node = cluster.instances["node"]
+    node.query(
+        """
+    DROP TABLE IF EXISTS data SYNC;
+    CREATE TABLE data (key Int, value String) Engine=MergeTree() ORDER BY tuple();
+    INSERT INTO data SELECT number, toString(number) FROM numbers(1000);
+    """
+    )
+
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://resolver:8084/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
+
+    try:
+        broken_s3.setup_at_object_upload(action="connection_reset_by_peer", count=10000)
+        broken_s3.setup_at_part_upload(action="connection_reset_by_peer", count=10000)
+
+        error = node.query_and_get_error(
+            f"BACKUP TABLE data TO {backup_destination}",
+            settings={
+                "max_execution_time": 3,
+                "timeout_overflow_mode": "throw",
+                "s3_max_single_part_upload_size": 0,
+            },
+        )
+
+        assert "TIMEOUT_EXCEEDED" in error, error
+        assert "QUERY_WAS_CANCELLED" not in error, error
     finally:
         broken_s3.reset()
         node.query("DROP TABLE IF EXISTS data SYNC;")

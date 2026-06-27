@@ -32,6 +32,7 @@
 #include <IO/S3/AWSLogger.h>
 #include <IO/S3/Credentials.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
@@ -189,7 +190,25 @@ namespace
 /// outcome. Surface the cancellation so callers report it instead of a misleading network/S3 error.
 void throwIfQueryWasCanceled()
 {
-    if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+    if (!CurrentThread::isInitialized())
+        return;
+
+    auto & thread_status = CurrentThread::get();
+
+    /// Prefer the process-list element so the real cause is preserved: a timeout is reported as
+    /// TIMEOUT_EXCEEDED and an exception stored by cancelQuery (e.g. a coordination failure on another
+    /// host) is rethrown, instead of a generic QUERY_WAS_CANCELLED.
+    if (auto query_context = thread_status.tryGetQueryContext())
+    {
+        if (auto query_status = query_context->getProcessListElement())
+        {
+            query_status->throwIfKilled();
+            return;
+        }
+    }
+
+    /// No process-list element to consult; fall back to a generic cancellation if the query was killed.
+    if (thread_status.isQueryCanceled())
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }
 
