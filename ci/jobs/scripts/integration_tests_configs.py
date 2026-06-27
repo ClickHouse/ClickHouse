@@ -8,8 +8,13 @@ from ci.praktika.info import Info
 @dataclasses.dataclass
 class TC:
     prefix: str
-    is_sequential: bool
+    is_sequential: bool  # sequential in every integration job
     comment: str
+    # Sequential only under the flaky/targeted `--dist=each` schedule; parallel
+    # under the normal `--dist=loadfile` schedule. Set for modules that start one
+    # cluster per xdist worker under `--dist=each` and then contend on a shared
+    # resource (host memory, a fixed host port, or a global Docker-network lock).
+    dist_each_sequential: bool = False
 
 
 # Tests that are too slow to run under LLVM coverage instrumentation.
@@ -23,7 +28,13 @@ LLVM_COVERAGE_SKIP_PREFIXES = [
 ]
 
 TEST_CONFIGS = [
-    TC("test_dns_cache/", False, "uses fixed IPv6 addresses; Docker network startup is serialized via file lock"),
+    TC(
+        "test_dns_cache/",
+        False,
+        "fixed IPv6 addresses; concurrent --dist=each clusters serialize on the "
+        "global /tmp/docker_net.lock and blow the 10-min acquire budget",
+        dist_each_sequential=True,
+    ),
     TC("test_global_overcommit_tracker/", False, "memory overcommit test; isolated to its own ClickHouse instance"),
     TC(
         "test_profile_max_sessions_for_user/",
@@ -58,7 +69,53 @@ TEST_CONFIGS = [
         True,
         "pins azurite to fixed host port 10000 (Spark emulator mode); concurrent --dist=each workers collide on bind",
     ),
+    TC(
+        "test_storage_delta/test.py",
+        False,
+        "starts a Spark JVM + multi-node ClickHouse cluster per module fixture",
+        dist_each_sequential=True,
+    ),
+    TC(
+        "test_storage_delta/test_cdf.py",
+        False,
+        "starts a Spark JVM + multi-node ClickHouse cluster per module fixture",
+        dist_each_sequential=True,
+    ),
+    TC(
+        "test_storage_delta_disks/test.py",
+        False,
+        "starts a Spark JVM + multi-node ClickHouse cluster per module fixture",
+        dist_each_sequential=True,
+    ),
 ]
+
+
+def force_heavy_modules_sequential(
+    parallel_test_modules: list[str],
+    sequential_test_modules: list[str],
+) -> tuple[list[str], list[str]]:
+    """Move TEST_CONFIGS `dist_each_sequential` modules from the parallel to the
+    sequential bucket, preserving order.
+
+    Called only on the flaky/targeted path, whose parallel bucket runs with
+    `--dist=each` (every worker runs every parallel module at once). These
+    modules start one cluster per worker there and exhaust memory; the
+    sequential bucket runs `-n 1` (one cluster at a time, looped >=3x), which
+    keeps the flakiness signal without the concurrent OOM. Normal runs use
+    `--dist=loadfile` (one file -> one worker -> one cluster) and never call this.
+    """
+    prefixes = [tc.prefix for tc in TEST_CONFIGS if tc.dist_each_sequential]
+    forced = [
+        m
+        for m in parallel_test_modules
+        if any(m.startswith(p) for p in prefixes)
+    ]
+    if not forced:
+        return parallel_test_modules, sequential_test_modules
+    new_parallel = [m for m in parallel_test_modules if m not in forced]
+    new_sequential = sequential_test_modules + forced
+    return new_parallel, new_sequential
+
 
 IMAGES_ENV = {
     "clickhouse/dotnet-client": "DOCKER_DOTNET_CLIENT_TAG",
