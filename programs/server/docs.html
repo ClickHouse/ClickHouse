@@ -149,6 +149,28 @@
         .result.selected .type {
             color: #663D00;
         }
+        /* A small badge next to the name marks an entity that is just an alias of another, so it is
+           recognizable in the list without opening it. It is tinted with the type accent like the row. */
+        .result .name .alias-badge {
+            display: inline-block;
+            margin-left: 0.5em;
+            padding: 0 0.4em;
+            font-size: 7.5pt;
+            font-weight: normal;
+            line-height: 1.6;
+            vertical-align: middle;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--muted);
+            background: color-mix(in srgb, var(--type-accent, var(--muted)) 16%, var(--panel-bg));
+            border: 1px solid color-mix(in srgb, var(--type-accent, var(--muted)) 45%, var(--border));
+            border-radius: 4px;
+        }
+        .result.selected .name .alias-badge {
+            color: #663D00;
+            background: transparent;
+            border-color: #663D00;
+        }
 
         #doc {
             flex: 1;
@@ -820,6 +842,15 @@
         }
     }
 
+    /// An alias entity's whole documentation is the generated "Alias of `canonical`." string (see
+    /// `system.documentation`); the same form is already recognized by `linkifyReferences`. Return the
+    /// canonical name when a description is exactly that, so the result list can badge aliases without
+    /// opening them, and `null` otherwise.
+    function aliasTarget(description) {
+        const match = /^\s*Alias of `([^`]+)`\.?\s*$/.exec(description || '');
+        return match ? match[1] : null;
+    }
+
     function renderResults() {
         $results.innerHTML = '';
         current.forEach((row, i) => {
@@ -832,6 +863,16 @@
             const name = document.createElement('div');
             name.className = 'name';
             name.innerText = row.name;
+            /// Mark aliases with a badge so they are distinguishable in the list at a glance; the
+            /// canonical name goes in the tooltip.
+            const alias_of = aliasTarget(row.description);
+            if (alias_of !== null) {
+                const badge = document.createElement('span');
+                badge.className = 'alias-badge';
+                badge.innerText = 'alias';
+                badge.title = 'Alias of ' + alias_of;
+                name.appendChild(badge);
+            }
             const type = document.createElement('div');
             type.className = 'type';
             type.innerText = row.type;
