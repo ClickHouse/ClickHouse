@@ -2505,6 +2505,23 @@ function checkURL() {
 url_elem.addEventListener('input', checkURL);
 checkURL();
 
+/// The `/docs` page lives on the ClickHouse server addressed by `url_elem.value`, which may differ from
+/// the page's own origin when `/play` is opened locally (`file://`) or pointed at a remote server.
+/// Resolve the Documentation link against that configured server (like `getTerminalURL` does for the Web
+/// Terminal) instead of leaving it hardcoded to `/docs`, and keep it in sync as the URL input changes.
+{
+    const docs_icon = document.getElementById('docs-icon');
+    function updateDocsURL() {
+        try {
+            docs_icon.href = new URL('/docs', url_elem.value).href;
+        } catch (e) {
+            /// Leave the previous href in place while the configured URL is not parsable.
+        }
+    }
+    url_elem.addEventListener('input', updateDocsURL);
+    updateDocsURL();
+}
+
 async function auxiliaryQuery(server_address, user, password, query, url_params = '') {
     let url = server_address +
         (server_address.indexOf('?') >= 0 ? '&' : '?') +
