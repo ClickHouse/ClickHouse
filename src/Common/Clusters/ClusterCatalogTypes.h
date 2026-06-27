@@ -88,4 +88,4 @@ struct ClusterCatalogDefinition
     static ClusterCatalogDefinition deserialize(const String & data);
 };
 
-} // namespace DB
+}

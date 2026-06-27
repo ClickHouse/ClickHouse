@@ -27,6 +27,7 @@ public:
         ClusterMetadataStoragePtr storage_,
         String node_name_,
         String zookeeper_name_,
+        UInt32 max_log_entries_per_batch_,
         SnapshotReloader snapshot_reloader_,
         MutationApplier mutation_applier_);
     ~ClusterMetadataDDLWorker() override;
@@ -46,6 +47,7 @@ private:
     String node_name;
     SnapshotReloader snapshot_reloader;
     MutationApplier mutation_applier;
+    UInt32 max_log_entries_per_batch = 1;
 
     String replica_group_root;
     String log_root;
@@ -63,7 +65,6 @@ private:
     mutable std::mutex processing_mutex;
 
     void scheduleTasks(bool reinitialized) override;
-    bool initializeMainThread() override;
     void initializeReplication() override;
     void createReplicaDirs(const ZooKeeperPtr &, const NameSet &) override {}
     void markReplicasActive(bool reinitialized) override;
@@ -75,7 +76,7 @@ private:
     void registerReplica();
     bool reloadSnapshotAndAdvanceIfTooFarBehind(UInt32 log_ptr, UInt32 max_log_ptr, UInt32 logs_to_keep);
     void appendMutationOps(Coordination::Requests & ops, const ClusterMetadataMutation & mutation) const;
-    bool processEntry(UInt32 entry_number);
+    UInt32 processEntriesBatch(UInt32 first_entry, UInt32 last_entry);
     void updateReplicaDigest(const String & digest);
     bool canRemoveEntry(UInt32 entry_number) const;
 

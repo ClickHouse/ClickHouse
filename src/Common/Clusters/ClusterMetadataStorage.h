@@ -42,6 +42,7 @@ public:
     String calculateDigest(const Snapshot & snapshot) const;
     String readSnapshotDigest() const;
     void writeSnapshotDigest(const String & digest);
+    void appendWriteSnapshotDigestOps(Coordination::Requests & ops, const String & digest) const;
 
     void appendCreateEndpointOps(Coordination::Requests & ops, const String & name, const EndpointCatalogDefinition & definition) const;
     void appendUpsertEndpointOps(Coordination::Requests & ops, const String & name, const EndpointCatalogDefinition & definition) const;

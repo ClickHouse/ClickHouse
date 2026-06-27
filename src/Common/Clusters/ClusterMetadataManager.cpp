@@ -8,6 +8,7 @@
 #include <Core/Field.h>
 #include <Core/ServerUUID.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/StorageID.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTAlterClusterQuery.h>
 #include <Parsers/ASTAlterShardQuery.h>
@@ -261,10 +262,11 @@ void ClusterMetadataManager::initialize()
             storage,
             toString(ServerUUID::get()),
             config.keeper_name,
+            config.max_log_entries_per_batch,
             [this]
             {
                 const String digest = reloadSnapshot();
-                publishSnapshotToClusterFactory();
+                requestSnapshotMaterialization();
                 return digest;
             },
             [this](const ClusterMetadataMutation & mutation)
@@ -283,8 +285,11 @@ void ClusterMetadataManager::initialize()
                 config.encryption_key_hex,
                 config.encryption_algorithm,
                 config.imports,
-                [this] { publishSnapshotToClusterFactory(); });
+                [this] { requestSnapshotMaterialization(); });
         }
+
+        materialization_task = context->getSchedulePool().createTask(
+            StorageID::createEmpty(), "ClusterMetadataMaterializer", [this] { materializationTask(); });
     }
     else
     {
@@ -295,7 +300,8 @@ void ClusterMetadataManager::initialize()
 
     if (ddl_worker)
     {
-        publishSnapshotToClusterFactory();
+        materialization_task->activateAndSchedule();
+        requestSnapshotMaterialization();
         ddl_worker->startup();
         if (importer)
             importer->startup();
@@ -307,14 +313,19 @@ void ClusterMetadataManager::initialize()
 void ClusterMetadataManager::shutdown()
 {
     ClusterMetadataImporterPtr importer_to_shutdown;
+    BackgroundSchedulePool::TaskHolder materialization_task_to_stop;
     {
         std::lock_guard lock(mutex);
         importer_to_shutdown = std::move(importer);
+        materialization_task_to_stop = std::move(materialization_task);
+        materialization_requested = false;
     }
-    /// Stop the importer before taking the manager mutex for the rest of shutdown: the importer task
-    /// can call back into `publishSnapshotToClusterFactory`, which takes this mutex.
+    /// Stop background tasks before taking the manager mutex for the rest of shutdown: they can call
+    /// back into this manager and take the same mutex.
     if (importer_to_shutdown)
         importer_to_shutdown->shutdown();
+    if (materialization_task_to_stop)
+        materialization_task_to_stop->deactivate();
 
     std::lock_guard lock(mutex);
     if (ddl_worker)
@@ -325,6 +336,7 @@ void ClusterMetadataManager::shutdown()
     storage.reset();
     snapshot = {};
     snapshot_version = 0;
+    materialized_snapshot_version = 0;
     config = {};
     context = nullptr;
     initialized = false;
@@ -365,9 +377,12 @@ ClusterMetadataConfig ClusterMetadataManager::parseConfig(
         result.encryption_algorithm = config.getString(config_prefix + ".algorithm", "aes_128_ctr");
     }
     result.replica_group = config.getString(config_prefix + ".replica_group", String(DEFAULT_REPLICA_GROUP));
+    result.max_log_entries_per_batch = config.getUInt(config_prefix + ".max_log_entries_per_batch", result.max_log_entries_per_batch);
 
     if (result.root_path.empty())
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "`{}.path` cannot be empty", config_prefix);
+    if (result.max_log_entries_per_batch == 0)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "`{}.max_log_entries_per_batch` must be greater than 0", config_prefix);
 
     validateKeeperChildName(result.replica_group, config_prefix + ".replica_group");
 
@@ -535,7 +550,6 @@ String ClusterMetadataManager::applyMutation(const ClusterMetadataMutation & mut
         applyMutationUnlocked(mutation);
         digest = snapshot.digest;
     }
-    publishSnapshotToClusterFactory();
     return digest;
 }
 
@@ -609,7 +623,55 @@ void ClusterMetadataManager::materializeSnapshotClusters(
     }
 }
 
-void ClusterMetadataManager::publishSnapshotToClusterFactory() const
+void ClusterMetadataManager::requestSnapshotMaterialization()
+{
+    std::lock_guard lock(mutex);
+    if (!initialized)
+        return;
+
+    materialization_requested = true;
+    if (materialization_task)
+        materialization_task->schedule();
+}
+
+void ClusterMetadataManager::materializationTask()
+{
+    bool should_publish = false;
+    {
+        std::lock_guard lock(mutex);
+        if (!initialized)
+            return;
+
+        should_publish = materialization_requested || snapshot_version != materialized_snapshot_version;
+        materialization_requested = false;
+    }
+
+    UInt64 published_version = 0;
+    if (should_publish)
+    {
+        try
+        {
+            published_version = publishSnapshotToClusterFactory();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to materialize cluster metadata into ClusterFactory");
+            std::lock_guard lock(mutex);
+            if (initialized)
+                materialization_requested = true;
+        }
+    }
+
+    {
+        std::lock_guard lock(mutex);
+        if (published_version)
+            materialized_snapshot_version = published_version;
+        if (initialized && materialization_task)
+            materialization_task->scheduleAfter(MATERIALIZATION_INTERVAL_MS);
+    }
+}
+
+UInt64 ClusterMetadataManager::publishSnapshotToClusterFactory() const
 {
     ContextPtr local_context;
     ClusterMetadataStorage::Snapshot local_snapshot;
@@ -628,7 +690,7 @@ void ClusterMetadataManager::publishSnapshotToClusterFactory() const
     if (!local_context)
         local_context = Context::getGlobalContextInstance();
     if (!local_context)
-        return;
+        return 0;
 
     std::map<String, ClusterPtr> materialized;
     materializeSnapshotClusters(local_snapshot, local_context, materialized);
@@ -664,6 +726,7 @@ void ClusterMetadataManager::publishSnapshotToClusterFactory() const
         cluster->setDefinitionMetadata(ClusterDefinitionSource::SQLCatalog, version_snapshot);
 
     ClusterFactory::instance().replaceSQLCatalogClusters(materialized);
+    return version_snapshot;
 }
 
 ClusterPtr ClusterMetadataManager::materializeClusterFromSnapshot(

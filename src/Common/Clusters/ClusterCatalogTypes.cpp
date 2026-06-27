@@ -17,8 +17,6 @@ namespace ErrorCodes
 
 String EndpointCatalogDefinition::serialize() const
 {
-    /// Only normalized (authoritative) fields are persisted. Reverse indexes such as the
-    /// system-table `bound_shards` column are derived from shard definitions on demand.
     WriteBufferFromOwnString wb;
     writeVarUInt(EndpointCatalogDefinition::SERIALIZE_VERSION, wb);
     writeStringBinary(host, wb);

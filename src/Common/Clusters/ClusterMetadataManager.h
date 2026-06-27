@@ -7,6 +7,7 @@
 #include <Common/Clusters/ClusterMetadataStorage.h>
 #include <Common/SettingsChanges.h>
 #include <Common/logger_useful.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context_fwd.h>
 #include <boost/noncopyable.hpp>
@@ -39,6 +40,7 @@ struct ClusterMetadataConfig
     String encryption_algorithm = "aes_128_ctr";
     String replica_group;
     std::vector<String> imports;
+    UInt32 max_log_entries_per_batch = 64;
 
     /// Resolved Keeper root for the local metadata replication group.
     String local_root;
@@ -134,8 +136,12 @@ private:
     ClusterMetadataStoragePtr storage;
     ClusterMetadataDDLWorkerPtr ddl_worker;
     ClusterMetadataImporterPtr importer;
+    BackgroundSchedulePool::TaskHolder materialization_task;
+    bool materialization_requested = false;
+    UInt64 materialized_snapshot_version = 0;
 
     const LoggerPtr log = getLogger("ClusterMetadataManager");
+    static constexpr UInt64 MATERIALIZATION_INTERVAL_MS = 1000;
 
     bool isEnabled() const;
     [[noreturn]] void throwIfDisabled() const;
@@ -145,7 +151,9 @@ private:
     String applyMutation(const ClusterMetadataMutation & mutation);
     void applyMutationUnlocked(const ClusterMetadataMutation & mutation);
     void reloadSnapshotUnlocked();
-    void publishSnapshotToClusterFactory() const;
+    void requestSnapshotMaterialization();
+    void materializationTask();
+    UInt64 publishSnapshotToClusterFactory() const;
     ClusterPtr materializeClusterFromSnapshot(
         const String & cluster_name,
         const ClusterCatalogDefinition & record,

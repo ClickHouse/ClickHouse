@@ -161,6 +161,11 @@ void ClusterMetadataStorage::writeSnapshotDigest(const String & digest)
     createOrUpdateData(snapshotDigestPath(), digest);
 }
 
+void ClusterMetadataStorage::appendWriteSnapshotDigestOps(Coordination::Requests & ops, const String & digest) const
+{
+    ops.emplace_back(zkutil::makeSetRequest(snapshotDigestPath(), encodeData(digest), -1));
+}
+
 void ClusterMetadataStorage::appendCreateEndpointOps(
     Coordination::Requests & ops,
     const String & name,
