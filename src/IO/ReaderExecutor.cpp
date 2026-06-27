@@ -2888,25 +2888,33 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// `boundedPlanSpan`); misses are segment-bounded, so it adds at most a cell beyond the
     /// request. Runs for a single tier too, so its writer spans the whole touched cell (the
     /// in-flight pin attaches inside it) and its plan is cell-aligned like a multi-tier plan.
+    /// One residency probe per cache over the base request. KEEP the views: when the plan
+    /// does not expand to a cell boundary (`probe_range == plan_range`, the common aligned
+    /// case) the geometry pass below reuses them instead of probing a second time. Learn the
+    /// segment-aligned miss extent (from the populating tiers) meanwhile.
+    VectorWithMemoryTracking<CacheViewPtr> base_views;
     ByteRange probe_range = plan_range;
     {
         size_t probe_end = plan_range.end();
         for (auto & cache : caches)
         {
-            if (!cache->populatesOnMiss())
-                continue;
             size_t piece_file_start = plan_range.offset;
             for (const auto & pr : offset_map.map(plan_range))
             {
                 auto v = cache->planResidencyView(
                     pr.object, piece_file_start - pr.object_offset, ByteRange{piece_file_start, pr.size});
-                for (const auto & m : v->misses())
-                    probe_end = std::max(probe_end, m.range.end());
+                if (cache->populatesOnMiss())
+                    for (const auto & m : v->misses())
+                        probe_end = std::max(probe_end, m.range.end());
+                base_views.push_back(std::move(v));
                 piece_file_start += pr.size;
             }
         }
         probe_range = ByteRange{plan_range.offset, probe_end - plan_range.offset};
     }
+    /// A miss straddled the base-request edge, so the geometry pass must probe the expanded
+    /// range; the kept base-request views no longer cover it and are dropped.
+    const bool plan_expanded = probe_range.end() > plan_range.end();
 
     geom->plan_end = probe_range.end();
     geom->pinned_end = geom->plan_end;
@@ -2925,6 +2933,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
         = std::max(probe_range.end(), plan_range.offset + effectivePlanCeiling());
 
     IntervalSet upper_hits;
+    size_t base_view_idx = 0;
     for (auto & cache : caches)
     {
         auto pieces = offset_map.map(probe_range);
@@ -2934,7 +2943,12 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
             const size_t object_file_offset = piece_file_start - pr.object_offset;
             const ByteRange piece_range{piece_file_start, pr.size};
 
-            auto view = cache->planResidencyView(pr.object, object_file_offset, piece_range);
+            /// Reuse the kept base-request probe when the plan did not expand; otherwise the
+            /// base views no longer cover the expanded range, so re-probe over it.
+            auto view = plan_expanded
+                ? cache->planResidencyView(pr.object, object_file_offset, piece_range)
+                : std::move(base_views[base_view_idx]);
+            ++base_view_idx;
 
             GeometryEntry geom_entry;
             geom_entry.tier = cache->tier();

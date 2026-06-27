@@ -3324,15 +3324,15 @@ TEST(ReaderExecutor, CacheLookupSplitByObjectBoundary)
     auto chain = executor.readNextWindow();
     EXPECT_EQ(chain.range().size, 500u);
 
-    /// With plan-then-stream the window is probed for residency per object in THREE
-    /// passes: the cell-aligned expansion probe, the main residency probe, then -
-    /// because the data is cold - the per-object gap-fill `lookup`. The mock counts
-    /// each as an access, so the cache sees six per-object calls: [blob_A, blob_B]
-    /// three times. The point of the test is that EVERY pass splits at the object
-    /// boundary, each call carrying the right `StoredObject` and `object_file_offset`.
-    ASSERT_EQ(tracker->log.size(), 6u);
+    /// With plan-then-stream the window is probed for residency per object in TWO passes:
+    /// the residency probe (reused across the plan, not re-run, since this aligned plan does
+    /// not expand to a cell boundary), then - because the data is cold - the per-object
+    /// gap-fill `lookup`. The mock counts each as an access, so the cache sees four per-object
+    /// calls: [blob_A, blob_B] twice. The point of the test is that BOTH passes split at the
+    /// object boundary, each call carrying the right `StoredObject` and `object_file_offset`.
+    ASSERT_EQ(tracker->log.size(), 4u);
 
-    for (size_t pass = 0; pass < 3; ++pass)
+    for (size_t pass = 0; pass < 2; ++pass)
     {
         const auto & a = tracker->log[pass * 2];
         const auto & b = tracker->log[pass * 2 + 1];
