@@ -69,23 +69,32 @@ write_result() {
         done
     fi
 
-    # Build files array
+    # Build files array. Praktika uploads every path listed here to S3 as a
+    # downloadable artifact and links it in the job report (see
+    # `_ResultS3.upload_result_files_to_s3`). A 5h run produces a
+    # several-hundred-MB statement log (sqlancer logs every executed statement),
+    # so compress files larger than 10 MB; keep smaller ones (e.g. the
+    # sanitizer report on stderr) as plain text so they render inline.
     local files_json=""
-    for f in "$OUTPUT_PATH/clickhouse-server.log" "$OUTPUT_PATH/clickhouse-server.log.err"; do
-        if [ -f "$f" ]; then
-            if [ -n "$files_json" ]; then
-                files_json+=", "
-            fi
-            files_json+="\"$f\""
+    local candidate_files=(
+        "$OUTPUT_PATH/clickhouse-server.log"
+        "$OUTPUT_PATH/clickhouse-server.log.err"
+    )
+    candidate_files+=("${ATTACHED_FILES_ARRAY[@]+"${ATTACHED_FILES_ARRAY[@]}"}")
+    local attach size
+    for f in "${candidate_files[@]}"; do
+        [ -f "$f" ] || continue
+        size=$(stat -c%s "$f" 2>/dev/null || echo 0)
+        if [ "$size" -gt $((10 * 1024 * 1024)) ] && gzip -f "$f"; then
+            attach="$f.gz"
+        else
+            attach="$f"
         fi
-    done
-    for f in "${ATTACHED_FILES_ARRAY[@]+"${ATTACHED_FILES_ARRAY[@]}"}"; do
-        if [ -f "$f" ]; then
-            if [ -n "$files_json" ]; then
-                files_json+=", "
-            fi
-            files_json+="\"$f\""
+        [ -f "$attach" ] || continue
+        if [ -n "$files_json" ]; then
+            files_json+=", "
         fi
+        files_json+="\"$attach\""
     done
 
     local escaped_overall_info
