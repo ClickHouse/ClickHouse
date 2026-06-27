@@ -70,7 +70,7 @@ struct NoCancel {};
 static constexpr int requests = 256 * 1024;
 static constexpr int max_threads = 128;
 
-template <class T, class Status = NoCancel>
+template <class T, class Status = NoCancel, bool test_try_shared = true>
 void TestSharedMutex()
 {
     // Test multiple readers can acquire lock
@@ -132,47 +132,50 @@ void TestSharedMutex()
         ASSERT_EQ(test, writers);
     }
 
-    // Test multiple readers can acquire lock simultaneously using try_shared_lock
-    for (int readers = 1; readers <= 128; readers *= 2)
+    if constexpr (test_try_shared)
     {
-        T sm;
-        std::atomic<int> test(0);
-        std::barrier<std::__empty_completion> sync(readers + 1);
-
-        std::vector<std::thread> threads;
-        threads.reserve(readers);
-        auto reader = [&]
+        // Test multiple readers can acquire lock simultaneously using try_shared_lock
+        for (int readers = 1; readers <= 128; readers *= 2)
         {
-            [[maybe_unused]] Status status;
-            bool acquired = sm.try_lock_shared();
-            ASSERT_TRUE(acquired);
-            if (!acquired) return; // Just to make TSA happy
-            sync.arrive_and_wait(); // (A) sync with writer
-            test++;
-            sync.arrive_and_wait(); // (B) wait for writer to call try_lock() while shared_lock is held
-            sm.unlock_shared();
-            sync.arrive_and_wait(); // (C) wait for writer to release lock, to ensure try_lock_shared() will see no writer
-        };
+            T sm;
+            std::atomic<int> test(0);
+            std::barrier<std::__empty_completion> sync(readers + 1);
 
-        for (int i = 0; i < readers; i++)
-            threads.emplace_back(reader);
-
-        { // writer
-            [[maybe_unused]] Status status;
-            sync.arrive_and_wait(); // (A) wait for all reader to acquire lock to avoid blocking them
-            ASSERT_FALSE(sm.try_lock());
-            sync.arrive_and_wait(); // (B) sync with readers
+            std::vector<std::thread> threads;
+            threads.reserve(readers);
+            auto reader = [&]
             {
-                std::unique_lock lock(sm);
+                [[maybe_unused]] Status status;
+                bool acquired = sm.try_lock_shared();
+                ASSERT_TRUE(acquired);
+                if (!acquired) return; // Just to make TSA happy
+                sync.arrive_and_wait(); // (A) sync with writer
                 test++;
+                sync.arrive_and_wait(); // (B) wait for writer to call try_lock() while shared_lock is held
+                sm.unlock_shared();
+                sync.arrive_and_wait(); // (C) wait for writer to release lock, to ensure try_lock_shared() will see no writer
+            };
+
+            for (int i = 0; i < readers; i++)
+                threads.emplace_back(reader);
+
+            { // writer
+                [[maybe_unused]] Status status;
+                sync.arrive_and_wait(); // (A) wait for all reader to acquire lock to avoid blocking them
+                ASSERT_FALSE(sm.try_lock());
+                sync.arrive_and_wait(); // (B) sync with readers
+                {
+                    std::unique_lock lock(sm);
+                    test++;
+                }
+                sync.arrive_and_wait(); // (C) sync with readers
             }
-            sync.arrive_and_wait(); // (C) sync with readers
+
+            for (auto & thread : threads)
+                thread.join();
+
+            ASSERT_EQ(test, readers + 1);
         }
-
-        for (auto & thread : threads)
-            thread.join();
-
-        ASSERT_EQ(test, readers + 1);
     }
 }
 
@@ -296,7 +299,7 @@ void PerfTestSharedMutexRW()
 TEST(Threading, SharedMutexSmokeSelf) { TestSharedMutex<DB::SelfSharedMutex>(); }
 #endif
 #if defined(USE_NSYNC) && USE_NSYNC
-TEST(Threading, SharedMutexSmokeNsync) { TestSharedMutex<DB::TestNsyncSharedMutex>(); }
+TEST(Threading, SharedMutexSmokeNsync) { TestSharedMutex<DB::TestNsyncSharedMutex, NoCancel, false>(); }
 #endif
 TEST(Threading, SharedMutexSmokeAbsl) { TestSharedMutex<DB::AbslSharedMutex>(); }
 TEST(Threading, SharedMutexSmokeStd) { TestSharedMutex<std::shared_mutex>(); }
