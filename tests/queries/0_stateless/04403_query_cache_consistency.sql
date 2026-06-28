@@ -21,3 +21,19 @@ INSERT INTO t VALUES (4);
 SELECT count() FROM t SETTINGS use_query_cache = 1, query_cache_min_query_runs = 0, query_cache_min_query_duration = 0;
 
 DROP TABLE t;
+
+-- A metadata-only ALTER MODIFY ORDER BY changes FINAL results without rewriting parts: the sorting key
+-- is the deduplication key of the ReplacingMergeTree family. The consistency setting must still serve a
+-- fresh result. Two separate inserts (two parts) so FINAL deduplicates across them.
+DROP TABLE IF EXISTS t_final;
+CREATE TABLE t_final (k UInt64, v UInt64) ENGINE = ReplacingMergeTree PRIMARY KEY k ORDER BY (k, v);
+INSERT INTO t_final VALUES (1, 10);
+INSERT INTO t_final VALUES (1, 20);
+-- With ORDER BY (k, v) the rows are distinct: count is 2 (cached on the second run).
+SELECT count() FROM t_final FINAL SETTINGS use_query_cache = 1, query_cache_min_query_runs = 0, query_cache_min_query_duration = 0, query_cache_use_only_when_data_was_not_changed = 1;
+SELECT count() FROM t_final FINAL SETTINGS use_query_cache = 1, query_cache_min_query_runs = 0, query_cache_min_query_duration = 0, query_cache_use_only_when_data_was_not_changed = 1;
+ALTER TABLE t_final MODIFY ORDER BY k;
+-- Now FINAL deduplicates on k, so the fresh result is 1, not the stale cached 2.
+SELECT count() FROM t_final FINAL SETTINGS use_query_cache = 1, query_cache_min_query_runs = 0, query_cache_min_query_duration = 0, query_cache_use_only_when_data_was_not_changed = 1;
+
+DROP TABLE t_final;

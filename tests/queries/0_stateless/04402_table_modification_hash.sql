@@ -5,6 +5,7 @@ DROP TABLE IF EXISTS t_mt;
 DROP TABLE IF EXISTS t_mem;
 DROP TABLE IF EXISTS t_log;
 DROP TABLE IF EXISTS t_sample;
+DROP TABLE IF EXISTS t_order;
 DROP TABLE IF EXISTS t_url_glob;
 DROP TABLE IF EXISTS t_url_failover;
 DROP TABLE IF EXISTS hashes;
@@ -43,6 +44,19 @@ INSERT INTO hashes SELECT 'samp_a', modification_hash FROM system.tables WHERE d
 ALTER TABLE t_sample REMOVE SAMPLE BY;
 INSERT INTO hashes SELECT 'samp_b', modification_hash FROM system.tables WHERE database = currentDatabase() AND name = 't_sample';
 
+-- The sorting key is the deduplication key of the ReplacingMergeTree family, so a metadata-only
+-- ALTER MODIFY ORDER BY changes FINAL results without rewriting any parts, and the hash must change.
+-- Two separate inserts (two parts) so FINAL deduplicates across parts: with ORDER BY (k, v) the two
+-- rows are distinct (count 2), after MODIFY ORDER BY k they collapse on k (count 1).
+CREATE TABLE t_order (k UInt64, v UInt64) ENGINE = ReplacingMergeTree PRIMARY KEY k ORDER BY (k, v);
+INSERT INTO t_order VALUES (1, 10);
+INSERT INTO t_order VALUES (1, 20);
+INSERT INTO hashes SELECT 'ord_a', modification_hash FROM system.tables WHERE database = currentDatabase() AND name = 't_order';
+INSERT INTO hashes SELECT 'ord_final_a', count() FROM t_order FINAL;
+ALTER TABLE t_order MODIFY ORDER BY k;
+INSERT INTO hashes SELECT 'ord_b', modification_hash FROM system.tables WHERE database = currentDatabase() AND name = 't_order';
+INSERT INTO hashes SELECT 'ord_final_b', count() FROM t_order FINAL;
+
 SELECT 'mt not null', (SELECT v FROM hashes WHERE k = 'mt_a') IS NOT NULL;
 SELECT 'mt stable', (SELECT v FROM hashes WHERE k = 'mt_a') = (SELECT v FROM hashes WHERE k = 'mt_a2');
 SELECT 'mt changed on insert', (SELECT v FROM hashes WHERE k = 'mt_a') != (SELECT v FROM hashes WHERE k = 'mt_b');
@@ -50,6 +64,8 @@ SELECT 'mt changed on merge', (SELECT v FROM hashes WHERE k = 'mt_b') != (SELECT
 SELECT 'mem changed on insert', (SELECT v FROM hashes WHERE k = 'mem_a') != (SELECT v FROM hashes WHERE k = 'mem_b');
 SELECT 'log changed on insert', (SELECT v FROM hashes WHERE k = 'log_a') != (SELECT v FROM hashes WHERE k = 'log_b');
 SELECT 'sample key change', (SELECT v FROM hashes WHERE k = 'samp_a') != (SELECT v FROM hashes WHERE k = 'samp_b');
+SELECT 'order key change', (SELECT v FROM hashes WHERE k = 'ord_a') != (SELECT v FROM hashes WHERE k = 'ord_b');
+SELECT 'order final result changed', (SELECT v FROM hashes WHERE k = 'ord_final_a') != (SELECT v FROM hashes WHERE k = 'ord_final_b');
 
 -- URL tables expand glob (`{a,b}`) and `|`-failover patterns into several
 -- concrete URLs at read time, so a single probe of the literal pattern string
@@ -80,5 +96,6 @@ DROP TABLE t_mt;
 DROP TABLE t_mem;
 DROP TABLE t_log;
 DROP TABLE t_sample;
+DROP TABLE t_order;
 DROP TABLE t_url_glob;
 DROP TABLE t_url_failover;

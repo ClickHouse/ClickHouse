@@ -11059,13 +11059,23 @@ std::optional<UInt128> MergeTreeData::getModificationHash(const StorageSnapshotP
     /// ALIAS expression.
     hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
 
-    /// The sampling key changes which rows a `SAMPLE` query returns, but it is not part of the column
-    /// list, so `ALTER TABLE ... MODIFY/REMOVE SAMPLE BY` would otherwise leave the hash unchanged while
-    /// changing query-visible results. Fold its expression. (Secondary indices, projections, sorting and
-    /// primary keys, and table settings only affect performance or physical layout, not the result of a
-    /// given query over the same parts, so they are intentionally not folded.)
-    if (const auto sampling_key_ast = storage_snapshot->metadata->getSamplingKeyAST())
-        hash.update(sampling_key_ast->formatWithSecretsOneLine());
+    /// Key metadata is not part of the column list but can change query-visible results without
+    /// rewriting any parts, so fold each key's expression:
+    ///   - the sorting key is the deduplication/aggregation key of the ReplacingMergeTree /
+    ///     SummingMergeTree / CollapsingMergeTree / ... family, so `ALTER ... MODIFY ORDER BY` changes
+    ///     `FINAL` (and implicit-final) results;
+    ///   - the sampling key changes which rows a `SAMPLE` query returns;
+    ///   - the partition and primary keys are folded for completeness (at worst an unrelated metadata
+    ///     `ALTER` causes a harmless extra cache miss).
+    /// Secondary indices, projections and table settings only affect performance, not the result of a
+    /// query over the same parts, so they are intentionally not folded.
+    const auto & table_metadata = *storage_snapshot->metadata;
+    for (const auto & key_ast : {table_metadata.getPartitionKeyAST(), table_metadata.getSortingKeyAST(),
+                                 table_metadata.getPrimaryKeyAST(), table_metadata.getSamplingKeyAST()})
+    {
+        if (key_ast)
+            hash.update(key_ast->formatWithSecretsOneLine());
+    }
 
     /// Data version: the set of active data parts. Each part is uniquely identified within a table
     /// incarnation by its (partition_id, min_block, max_block, level, mutation), which changes on every
