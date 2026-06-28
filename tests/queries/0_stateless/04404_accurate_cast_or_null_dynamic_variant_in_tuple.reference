@@ -1,0 +1,40 @@
+-- { echo }
+
+-- Dynamic inside a Tuple, accurateCastOrNull to a non-Nullable element type.
+SELECT accurateCastOrNull(CAST(tuple(1), 'Tuple(Dynamic)'), 'Tuple(Float32)') AS r, toTypeName(r);
+(1)	Nullable(Tuple(Float32))
+-- A value that does not fit makes the whole Tuple NULL.
+SELECT accurateCastOrNull(CAST(tuple(256), 'Tuple(Dynamic)'), 'Tuple(UInt8)') AS r, toTypeName(r);
+\N	Nullable(Tuple(UInt8))
+-- accurateCastOrDefault goes through the same accurateOrNull path internally.
+SELECT accurateCastOrDefault(CAST(tuple(1), 'Tuple(Dynamic)'), 'Tuple(Float32)') AS r, toTypeName(r);
+(1)	Tuple(Float32)
+SELECT accurateCastOrDefault(CAST(tuple(256), 'Tuple(Dynamic)'), 'Tuple(UInt8)') AS r, toTypeName(r);
+(0)	Tuple(UInt8)
+-- Variant inside a Tuple, multiple variant types across rows (assembles the result row by row).
+SELECT accurateCastOrNull(tuple(v), 'Tuple(Float32)') AS r
+FROM (SELECT number, multiIf(number % 3 = 0, number, number % 3 = 1, 'str_' || toString(number), range(number)) AS v FROM numbers(6)) ORDER BY number;
+(0)
+\N
+\N
+(3)
+\N
+\N
+-- Dynamic inside a Tuple, multiple variant types across rows.
+SELECT accurateCastOrNull(tuple(d), 'Tuple(Float32)') AS r
+FROM (SELECT number, multiIf(number % 3 = 0, number, number % 3 = 1, 'str_' || toString(number), range(number))::Dynamic AS d FROM numbers(6)) ORDER BY number;
+(0)
+\N
+\N
+(3)
+\N
+\N
+-- Standalone Variant conversion still works (target type is already Nullable here).
+SELECT accurateCastOrNull(v, 'Float32') AS r
+FROM (SELECT number, multiIf(number % 3 = 0, number, number % 3 = 1, 'str_' || toString(number), range(number)) AS v FROM numbers(6)) ORDER BY number;
+0
+\N
+\N
+3
+\N
+\N
