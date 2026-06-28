@@ -291,8 +291,13 @@ private:
 
     void resolveUnion(const QueryTreeNodePtr & union_node, IdentifierResolveScope & scope);
 
-    /// Lambdas that are currently in resolve process
-    QueryTreeNodePtrWithHashSet lambdas_in_resolve_process;
+    /// Lambdas that are currently in resolve process.
+    /// Keyed by node identity (pointer), not structural tree hash: the guard only needs to
+    /// detect re-entry into the same (original, un-cloned) lambda node, and a recursive
+    /// reference resolves to the same alias node. Using the structural hash here made
+    /// resolveLambda recompute the lambda body's full getTreeHash on every find/emplace/erase,
+    /// which is O(body size) and dominates analysis time for queries with many large lambdas.
+    std::unordered_set<const IQueryTreeNode *> lambdas_in_resolve_process;
 
     /// CTEs that are currently in resolve process
     QueryTreeNodePtrWithHashSet ctes_in_resolve_process;
