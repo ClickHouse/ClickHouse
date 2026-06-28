@@ -197,7 +197,7 @@ public:
         }
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
         const auto & rhs_maps = this->data(rhs).merged_maps;
