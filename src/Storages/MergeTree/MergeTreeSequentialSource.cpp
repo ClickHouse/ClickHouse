@@ -192,7 +192,10 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     MergeTreeRangeReader range_reader(readers.main.get(), {}, nullptr, counters, true, readers.main->canReadIncompleteGranules());
     readers_chain = MergeTreeReadersChain{{std::move(range_reader)}, readers.patches};
 
-    updateRowsToRead(0);
+    /// Reading may start at a non-zero mark, so track the actual first mark
+    if (!mark_ranges.empty())
+        current_mark = mark_ranges.front().begin;
+    updateRowsToRead(current_mark);
 }
 
 void MergeTreeSequentialSource::updateRowsToRead(size_t mark_number)
