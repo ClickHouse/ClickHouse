@@ -119,7 +119,7 @@ ColumnsDescription ZooKeeperLogElement::getColumnsDescription()
 
 void ZooKeeperLogElement::appendToBlock(MutableColumns & columns) const
 {
-    assert(type != UNKNOWN);
+    chassert(type != UNKNOWN);
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());

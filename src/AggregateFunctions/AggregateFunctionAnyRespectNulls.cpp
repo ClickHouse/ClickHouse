@@ -125,7 +125,7 @@ public:
         throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionAnyRespectNulls::addBatchSinglePlaceNotNull called");
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & d = this->data(place);
         if (First && d.isSet())
@@ -215,6 +215,7 @@ AggregateFunctionPtr createAggregateFunctionAnyLastRespectNulls(
 
 }
 
+void registerAggregateFunctionsAnyRespectNulls(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsAnyRespectNulls(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties default_properties_for_respect_nulls

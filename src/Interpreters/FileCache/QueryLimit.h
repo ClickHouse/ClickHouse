@@ -5,6 +5,7 @@
 namespace DB
 {
 struct ReadSettings;
+struct FilesystemCacheSettings;
 class FileSegment;
 
 class FileCacheQueryLimit
@@ -17,7 +18,7 @@ public:
 
     QueryContextPtr getOrSetQueryContext(
         const std::string & query_id,
-        const ReadSettings & settings,
+        const FilesystemCacheSettings & settings,
         const CachePriorityGuard::WriteLock &);
 
     void removeQueryContext(const std::string & query_id, const CachePriorityGuard::WriteLock &);
@@ -67,8 +68,8 @@ public:
         ~QueryContextHolder();
 
         String query_id;
-        FileCache * cache;
-        FileCacheQueryLimit * query_limit;
+        FileCache * cache{};
+        FileCacheQueryLimit * query_limit{};
         QueryContextPtr context;
     };
     using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
