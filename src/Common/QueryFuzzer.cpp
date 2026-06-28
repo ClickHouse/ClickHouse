@@ -4720,6 +4720,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 }
                 break;
             case ASTAlterCommand::DROP_CONSTRAINT:
+            case ASTAlterCommand::MODIFY_CONSTRAINT:
             case ASTAlterCommand::COMMENT_COLUMN:
             case ASTAlterCommand::RENAME_COLUMN:
             case ASTAlterCommand::MATERIALIZE_COLUMN:
