@@ -21,6 +21,12 @@ For an original PR (merged to the default branch) we additionally scan the
 active release branches for its backport PRs (`backport/<release>/<pr_number>`)
 and list the versions those backports shipped in.
 
+When an original PR resolves issues -- taken from GitHub's "Development" links
+(`closingIssuesReferences`), i.e. the issues it closes -- the same version-info
+section is also posted as a comment on each such issue, so a reader of the issue
+sees which release the fix shipped in. The comment is idempotent (created once,
+edited only when the version info changes), keyed by the same section markers.
+
 The job is idempotent: it re-derives everything from GitHub + `version_history`
 on each run and only edits a PR when the section content actually changes. A
 missing version (the post-merge build has not finished yet, or CIDB is
@@ -112,6 +118,20 @@ def render_section(merged_into: Optional[str], backported_to: List[str]) -> str:
         versions = ", ".join(f"`{v}`" for v in backported_to)
         lines.append(f"- Backported to: {versions}")
     return "\n".join(lines)
+
+
+def render_issue_comment(pr_number: int, section_body: str) -> str:
+    """Render the bot-owned comment posted on an issue a PR resolved.
+
+    Wraps the same version-info section used in PR bodies in the section markers
+    so it can be found and updated idempotently, with a `Resolved by` item added
+    as the first entry of the list (right after the `### Version info` header).
+    """
+    header, _, rest = section_body.partition("\n")
+    inner = f"{header}\n- Resolved by: #{pr_number}"
+    if rest:
+        inner += f"\n{rest}"
+    return f"{SECTION_START}\n{inner}\n{SECTION_END}"
 
 
 def upsert_section(body: Optional[str], section_body: str) -> str:
@@ -314,6 +334,41 @@ def scan_backport_versions(
     )
 
 
+def comment_linked_issues(gh, repo, info, section_body: str, dry_run: bool) -> int:
+    """Post (or update) the version-info comment on every issue the PR resolves.
+
+    The issues come from the PR's GitHub "Development" links
+    (`closingIssuesReferences`), not from re-parsing the body. The comment is
+    idempotent via the section markers: created once, edited only when the
+    version info changes. A per-issue failure is logged and skipped so it is
+    reconciled on the next run rather than aborting the whole PR.
+    """
+    count = 0
+    for issue_number in info.closing_issue_numbers:
+        body = render_issue_comment(info.number, section_body)
+        try:
+            action = gh.upsert_issue_comment(
+                repo, issue_number, SECTION_START, body, dry_run
+            )
+        except Exception as ex:  # pylint: disable=broad-except
+            logging.error(
+                "Failed to comment version info on issue #%s (from PR #%s): %s",
+                issue_number,
+                info.number,
+                ex,
+            )
+            continue
+        if action:
+            count += 1
+            logging.info(
+                "%s version-info comment on issue #%s (resolved by PR #%s)",
+                action,
+                issue_number,
+                info.number,
+            )
+    return count
+
+
 def update_original_pr(
     gh,
     repo,
@@ -322,7 +377,8 @@ def update_original_pr(
     backported: List[str],
     dry_run: bool,
 ) -> bool:
-    """Set `Merged into` and `Backported to` on a merged original PR."""
+    """Set `Merged into` and `Backported to` on a merged original PR, and post
+    the same info as a comment on every issue the PR resolves."""
     if not info.merged:
         return False
     merged_into = version_history.version_for_commit(info.merge_commit_sha)
@@ -330,9 +386,13 @@ def update_original_pr(
     if not merged_into and not backported:
         # Nothing known yet -- the post-merge build has likely not finished.
         return False
-    return apply_section(
-        gh, repo, info, render_section(merged_into, backported), dry_run
-    )
+    section_body = render_section(merged_into, backported)
+    changed = apply_section(gh, repo, info, section_body, dry_run)
+    # Mirror the section onto the issues this PR resolved (its "Development"
+    # links). Only PRs that actually close an issue pay for this.
+    if info.closing_issue_numbers:
+        comment_linked_issues(gh, repo, info, section_body, dry_run)
+    return changed
 
 
 def parse_args() -> argparse.Namespace:
