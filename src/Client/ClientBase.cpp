@@ -1017,12 +1017,27 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
     /// (or a named connection) rather than passed on the command line. Mirror the configured
     /// values into `cmd_settings` so the corresponding settings ship with every query the client
     /// runs, matching the `--format`/`-f` CLI behavior.
-    if (getClientConfiguration().has("format") && !cmd_settings->isChanged("format"))
-        cmd_settings->set("format", getClientConfiguration().getString("format"));
-    if (getClientConfiguration().has("output-format") && !cmd_settings->isChanged("output_format"))
-        cmd_settings->set("output_format", getClientConfiguration().getString("output-format"));
-    if (getClientConfiguration().has("input-format") && !cmd_settings->isChanged("input_format"))
-        cmd_settings->set("input_format", getClientConfiguration().getString("input-format"));
+    /// The mirrored values must reach not only `cmd_settings` (which ships with each query) but also the
+    /// already-created `global_context` / `client_context`: this method runs from `processConfig`, after
+    /// `processOptions` has copied `cmd_settings` into those contexts, and the native client's INSERT
+    /// readers consult `client_context`'s `input_format` when parsing client-side data. Without applying
+    /// to the live contexts a config / named-connection `input-format=CSV` would be ignored, while the
+    /// equivalent `--input-format CSV` (which is on `cmd_settings` before the contexts are created) works.
+    auto mirror_format_setting = [&](const char * config_key, std::string_view setting_name)
+    {
+        if (getClientConfiguration().has(config_key) && !cmd_settings->isChanged(setting_name))
+        {
+            const String value = getClientConfiguration().getString(config_key);
+            cmd_settings->set(setting_name, value);
+            if (global_context)
+                global_context->setSetting(setting_name, value);
+            if (client_context)
+                client_context->setSetting(setting_name, value);
+        }
+    };
+    mirror_format_setting("format", "format");
+    mirror_format_setting("output-format", "output_format");
+    mirror_format_setting("input-format", "input_format");
 
     if (getClientConfiguration().has("output-format"))
     {
