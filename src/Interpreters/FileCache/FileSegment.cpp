@@ -605,14 +605,12 @@ bool FileSegment::reserve(
 
     size_to_reserve = size_to_reserve - already_reserved_size;
 
-    /// Reserve space ahead in coarser granules to reduce the rate of cache state lock
-    /// acquisitions on the hot reservation path: subsequent `reserve` calls for this segment
-    /// are then served by the `already_reserved_size >= size_to_reserve` short-circuit above
-    /// without taking the state lock. The extra reserved-but-not-yet-downloaded space is
-    /// bounded by the segment range and reclaimed on completion (see shrinkFileSegmentToDownloadedSize).
-    /// Not applied to unbound (Ephemeral/temporary) segments: they need exact accounting, and
-    /// reserving a whole granule for a tiny temporary file would waste cache quota and could fail
-    /// the reservation (and thus the write) on small temporary-data caches.
+    /// Reserve ahead in coarser granules to cut the rate of cache state lock acquisitions on the
+    /// hot path: later `reserve` calls for this segment hit the `already_reserved_size >=
+    /// size_to_reserve` short-circuit above without taking the lock. The surplus is bounded by the
+    /// segment range and reclaimed on completion (see shrinkFileSegmentToDownloadedSize).
+    /// Skipped for unbound (Ephemeral/temporary) segments: they need exact accounting, and reserving
+    /// a whole granule for a tiny temporary file would waste quota and could fail the write.
     if (!is_unbound)
     {
         const size_t granule = cache->getReserveGranularity();
@@ -758,13 +756,11 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     chassert(result_size <= range().size());
     chassert(result_size >= downloaded_size);
 
-    /// Return reserved-but-not-downloaded space (in particular the reserve-ahead surplus,
-    /// see `FileSegment::reserve`) to the cache. The segment is complete and no background
-    /// download will fill the rest, so only `downloaded_size` bytes are actually backed by
-    /// data on disk and the surplus must not stay charged against the cache quota. This is
-    /// done before the `result_size == range().size()` early return below: when
-    /// `reserve_granularity == boundary_alignment` a sub-granule read rounds up to the whole
-    /// range, and skipping the reclaim would keep a full granule charged for a tiny read.
+    /// Return the reserve-ahead surplus (reserved but not downloaded, see `FileSegment::reserve`)
+    /// to the cache: the segment is complete, nothing will fill the rest, so the surplus must not
+    /// stay charged against the quota. Done before the `result_size == range().size()` early return
+    /// below, since with `reserve_granularity == boundary_alignment` a tiny read rounds up to the
+    /// whole range and would otherwise keep a full granule charged.
     chassert(reserved_size >= downloaded_size);
     if (reserved_size > downloaded_size)
     {

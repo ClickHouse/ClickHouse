@@ -211,9 +211,9 @@ public:
     /// Try to reserve exactly `size` bytes (in addition to the getDownloadedSize() bytes already downloaded).
     /// Returns true if reservation was successful, false otherwise.
     ///
-    /// `reserve_hint`, if non-zero, bounds the `reserve_granularity` reserve-ahead: it is the number
-    /// of bytes left to read from the current download offset (e.g. up to read_until_position), so the
-    /// segment is never reserved ahead past what the read will actually consume.
+    /// `reserve_hint`, if non-zero, bounds the reserve-ahead to the bytes left to read from the
+    /// current download offset (e.g. up to read_until_position), so the segment is never reserved
+    /// ahead past what the read will consume.
     bool reserve(
         size_t size_to_reserve,
         size_t lock_wait_timeout_milliseconds,
