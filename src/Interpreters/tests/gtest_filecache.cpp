@@ -2217,6 +2217,9 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
 
         FileSegment::complete(FileSegmentPtr(seg), false, false);
         ASSERT_EQ(seg->state(), State::PARTIALLY_DOWNLOADED);
+        /// The holder is still alive, so the segment is not shrunk yet and keeps its full
+        /// reservation; the reserve-ahead surplus (8 reserved vs 3 downloaded) is reclaimed
+        /// once the holder below is destroyed and the last-holder completion shrinks it.
         ASSERT_EQ(seg->getReservedSize(), 8u);
         ASSERT_EQ(seg->getDownloadedSize(), 3u);
     }
@@ -2229,8 +2232,9 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
         ASSERT_EQ(seg->state(), State::DOWNLOADED);
     }
 
-    /// Both priority entries account for reserved size.
-    ASSERT_EQ(cache->getUsedCacheSize(), 16u);
+    /// seg1's surplus was reclaimed when its holder was released (3 reserved) and seg2 is
+    /// fully downloaded (8 reserved).
+    ASSERT_EQ(cache->getUsedCacheSize(), 11u);
     ASSERT_EQ(cache->getFileSegmentsNum(), 2u);
 
     /// Force the failed-eviction restore loop to run.
@@ -2240,7 +2244,7 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
             DB::FailPointInjection::disableFailPoint("file_cache_dynamic_resize_fail_to_evict");
         });
 
-        /// Trigger resize. The restore path must keep total queue size at 16.
+        /// Trigger resize. The restore path must keep the total queue size at 11.
         DB::FileCacheSettings new_settings = settings;
         new_settings[FileCacheSetting::max_size] = 4;
         DB::FileCacheSettings actual_settings = settings;
@@ -2251,7 +2255,7 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
         ASSERT_EQ(actual_settings[FileCacheSetting::max_size].value, 16u);
 
         /// Release-visible check for restored reserved-size accounting.
-        ASSERT_EQ(cache->getUsedCacheSize(), 16u);
+        ASSERT_EQ(cache->getUsedCacheSize(), 11u);
         ASSERT_EQ(cache->getFileSegmentsNum(), 2u);
 
         /// All segments must still be reachable from the priority queue.
