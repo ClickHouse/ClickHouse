@@ -292,12 +292,13 @@ private:
     void resolveUnion(const QueryTreeNodePtr & union_node, IdentifierResolveScope & scope);
 
     /// Lambdas that are currently in resolve process.
-    /// Keyed by node identity (pointer), not structural tree hash: the guard only needs to
-    /// detect re-entry into the same (original, un-cloned) lambda node, and a recursive
-    /// reference resolves to the same alias node. Using the structural hash here made
-    /// resolveLambda recompute the lambda body's full getTreeHash on every find/emplace/erase,
-    /// which is O(body size) and dominates analysis time for queries with many large lambdas.
-    std::unordered_set<const IQueryTreeNode *> lambdas_in_resolve_process;
+    /// Keyed by the structural tree hash: a recursive reference to a lambda resolves to a fresh
+    /// clone of the alias node (see tryResolveIdentifierFromAliases), so the guard must detect
+    /// re-entry by structure, not by pointer identity -- otherwise genuine recursion would not be
+    /// caught and would instead run until TOO_DEEP_RECURSION. To keep this cheap, resolveLambda
+    /// computes the hash once per call (a single QueryTreeNodePtrWithHash reused for the
+    /// contains/insert/erase) instead of recomputing the lambda body's full getTreeHash three times.
+    QueryTreeNodePtrWithHashSet lambdas_in_resolve_process;
 
     /// CTEs that are currently in resolve process
     QueryTreeNodePtrWithHashSet ctes_in_resolve_process;
