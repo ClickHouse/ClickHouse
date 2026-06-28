@@ -32,6 +32,11 @@ namespace ErrorCodes
 }
 
 using namespace std::literals;
+
+/// Defined in IQueryTreeNode.cpp: thread-local count of nodes visited by getTreeHash. Used as the
+/// work budget for tryOptimizeAndCompareChain (forward-declared here to avoid touching the header).
+size_t & getTreeHashWorkCounter();
+
 static constexpr std::array boolean_functions{
     "equals"sv,   "notEquals"sv,   "less"sv,   "greaterOrEquals"sv, "greater"sv,      "lessOrEquals"sv,    "in"sv,     "notIn"sv,
     "globalIn"sv, "globalNotIn"sv, "nullIn"sv, "notNullIn"sv,       "globalNullIn"sv, "globalNullNotIn"sv, "isNull"sv, "isNotNull"sv,
@@ -838,7 +843,19 @@ public:
 
     explicit LogicalExpressionOptimizerVisitor(ContextPtr context)
         : Base(std::move(context))
+        , and_compare_chain_hash_work_start(getTreeHashWorkCounter())
     {}
+
+    /// Work budget for tryOptimizeAndCompareChain, measured directly in nodes hashed by getTreeHash
+    /// (its dominant cost). We snapshot the global counter when the visitor starts and stop the
+    /// optimization once it has hashed more than `and_compare_chain_max_hash_work` nodes for this
+    /// query. On queries with very many / very large AND-comparison chains this caps a cost that
+    /// otherwise dominates analysis while folding nothing (e.g. a 16x16 SQL ray-trace: ~72s -> ~3s),
+    /// while normal queries hash only thousands of nodes and never approach the budget. Stopping
+    /// early is always safe -- it only forgoes an optimization, never changes results.
+    /// (A few million node-hashes is already ~seconds of analysis; could be exposed as a setting.)
+    static constexpr size_t and_compare_chain_max_hash_work = 5'000'000;
+    size_t and_compare_chain_hash_work_start = 0;
 
     void enterImpl(QueryTreeNodePtr & node)
     {
@@ -1106,6 +1123,11 @@ private:
         if (function_node.getFunctionName() != "and" || function_node.getResultType()->isNullable())
             return;
 
+        /// Stop once this query has spent its AND-compare-chain hashing budget (measured in nodes
+        /// hashed by getTreeHash since this visitor started).
+        if (getTreeHashWorkCounter() - and_compare_chain_hash_work_start > and_compare_chain_max_hash_work)
+            return;
+
         enum CompareType
         {
             less = 0,
@@ -1227,6 +1249,8 @@ private:
             {
                 for (const auto & left : it->second)
                 {
+                    if (getTreeHashWorkCounter() - and_compare_chain_hash_work_start > and_compare_chain_max_hash_work)
+                        return;
                     if (visited.contains(left.first))
                         continue;
                     visited.insert(left.first);
