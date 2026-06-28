@@ -194,23 +194,10 @@ DataLakeMetadataPtr PaimonMetadata::create(
     String table_cache_key_prefix;
     if (cache_ptr)
     {
-        Int64 schema0_time_millis = schema->time_millis;
-        try
-        {
-            auto schema0_info = table_client->getTableSchemaInfoById(0);
-            auto schema0_json = table_client->getTableSchemaJSON(schema0_info);
-            Paimon::getValueFromJSON(schema0_time_millis, schema0_json, "timeMillis");
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
-                throw;
-            LOG_WARNING(
-                log,
-                "schema-0 was not found for table path {}, fallback to latest schema timeMillis {} to build cache key prefix",
-                table_path,
-                schema0_time_millis);
-        }
+        auto schema0_info = table_client->getTableSchemaInfoById(0);
+        auto schema0_json = table_client->getTableSchemaJSON(schema0_info);
+        Int64 schema0_time_millis = 0;
+        Paimon::getValueFromJSON(schema0_time_millis, schema0_json, "timeMillis");
 
         const String table_name = configuration_ptr->getRawPath().path.empty()
             ? table_path
