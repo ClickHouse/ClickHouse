@@ -123,6 +123,7 @@ namespace ErrorCodes
     extern const int ASYNC_LOAD_CANCELED;
     extern const int KEEPER_EXCEPTION;
     extern const int SYNTAX_ERROR;
+    extern const int FAULT_INJECTED;
     }
 namespace FailPoints
 {
@@ -130,6 +131,7 @@ namespace FailPoints
     extern const char database_replicated_drop_before_removing_keeper_failed[];
     extern const char database_replicated_drop_after_removing_keeper_failed[];
     extern const char database_replicated_force_metadata_digest_check[];
+    extern const char database_replicated_throw_on_stop_replication[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -2189,13 +2191,37 @@ void DatabaseReplicated::stopReplication()
 void DatabaseReplicated::shutdown()
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::shutdown");
-    stopReplication();
+
+    /// DatabaseAtomic::shutdown() (below) is what releases this database's table references (the
+    /// UUID -> storage mappings and the tables). stopReplication() runs first and can throw before
+    /// we get there (e.g. a ZooKeeper timeout in the DDL worker's tryRemove). If we let that escape,
+    /// the cleanup is skipped and the storages survive until DatabaseCatalog is destroyed at process
+    /// exit, which aborts. So remember the first error, still run the cleanup, then rethrow it.
+    std::exception_ptr first_error;
+    try
+    {
+        fiu_do_on(FailPoints::database_replicated_throw_on_stop_replication,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while stopping replication of database {}", backQuoteIfNeed(getDatabaseName()));
+        });
+        stopReplication();
+    }
+    catch (...)
+    {
+        first_error = std::current_exception();
+        tryLogCurrentException(log, fmt::format("Failed to stop replication of database {}", backQuoteIfNeed(getDatabaseName())));
+    }
+
     {
         std::lock_guard lock{ddl_worker_mutex};
         ddl_worker_initialized = false;
         ddl_worker = nullptr;
     }
+
     DatabaseAtomic::shutdown();
+
+    if (first_error)
+        std::rethrow_exception(first_error);
 }
 
 void DatabaseReplicated::dropTable(ContextPtr local_context, const String & table_name, bool sync)
@@ -2214,8 +2240,11 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     auto table = tryGetTable(table_name, getContext());
     if (!table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} doesn't exist", table_name);
-    if (table->getName() == "MaterializedView" || table->getName() == "WindowView" || table->getName() == "SharedSet" || table->getName() == "SharedJoin")
+    if (table->getName() == "MaterializedView" || table->getName() == "WindowView" || table->getName() == "SharedSet" || table->getName() == "SharedJoin"
+        || table->getName() == "TimeSeries")
     {
+        /// Drop inner tables here while the metadata transaction is available, so the background
+        /// dropTableFinally task does not re-route the inner DROP through the replicated DDL log.
         /// Avoid recursive locking of metadata_mutex
         table->dropInnerTableIfAny(sync, local_context);
     }
