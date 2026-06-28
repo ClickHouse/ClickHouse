@@ -118,11 +118,21 @@ jobs:
             # must not justify a revert. Resolve the triggering event from the run id
             # embedded in the check's details_url.
             merge_failed_checks=""
+            skip_candidate=""
             while IFS=$'\t' read -r check_name details_url; do
               [ -z "$check_name" ] && continue
               run_id=$(echo "$details_url" | grep -oP '/actions/runs/\K[0-9]+' || true)
               if [ -n "$run_id" ]; then
-                run_event=$(gh api "repos/$GH_REPO/actions/runs/$run_id" --jq '.event' 2>/dev/null || true)
+                # Fail closed: this lookup is what proves a failed check is non-gating, so a
+                # failure to resolve the event (transient error, rate limit, permissions, or
+                # an empty/missing field) must NOT fall through and treat the check as
+                # gating — that could create a wrongful revert. When the event is unknown,
+                # skip the whole candidate and let the next scheduled run retry it.
+                if ! run_event=$(gh api "repos/$GH_REPO/actions/runs/$run_id" --jq '.event') || [ -z "$run_event" ]; then
+                  echo "  WARNING: could not resolve triggering event for check \"$check_name\" (run $run_id), skipping candidate."
+                  skip_candidate=1
+                  break
+                fi
                 if [ "$run_event" = "schedule" ] || [ "$run_event" = "workflow_dispatch" ]; then
                   echo "  Ignoring non-gating check \"$check_name\" (workflow triggered by $run_event, not by this PR)."
                   continue
@@ -130,6 +140,11 @@ jobs:
               fi
               merge_failed_checks="${merge_failed_checks:+$merge_failed_checks$'\n'}$check_name"
             done <<< "$merge_failed_json"
+
+            if [ -n "$skip_candidate" ]; then
+              echo ""
+              continue
+            fi
 
             # Check merge commit for failures (commit statuses). Same as above: a failed query
             # must not be mistaken for "no failures".
