@@ -8,11 +8,24 @@ from ci.defs.defs import (
     ArtifactNames,
     JobNames,
 )
+import copy as _copy
+
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_tested
 
 ALL_FUNCTIONAL_TESTS = [job.name for job in JobConfigs.functional_tests_jobs]
+
+# TEMP (validation only, revert before merge): run the SQLancer job on this PR
+# against the real CH_ARM_ASAN_UBSAN artifact inside clickhouse/sqlancer-test, to
+# prove the runtime/sanitizer/startup contract that the scheduled NightlySQLancer
+# workflow cannot exercise pre-merge. Deep-copied so NightlySQLancer's job is
+# untouched; allow_failure so a SQLancer finding does not block the PR.
+_SQLANCER_PR_VALIDATION_JOBS = [
+    _copy.deepcopy(j) for j in JobConfigs.sqlancer_master_jobs
+]
+for _j in _SQLANCER_PR_VALIDATION_JOBS:
+    _j.allow_failure = True
 
 FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES = [
     job.name
@@ -154,6 +167,10 @@ workflow = Workflow.Config(
         JobConfigs.sqlstorm_test_job.set_run_after(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
+        *[
+            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for job in _SQLANCER_PR_VALIDATION_JOBS
+        ],
         # Keeper stress (PR): 3 no-fault scenarios (prod-mix, read-multi, write-multi),
         # default backend only, 15 min each. Runs when src/Coordination or stress test files change.
         JobConfigs.keeper_stress_job
