@@ -1145,7 +1145,8 @@ public:
             time = time / seconds * seconds;
         }
 
-        Time res = values.date + time;
+        /// Use unsigned arithmetic to avoid signed overflow UB when `time` is near `INT64_MIN` (extreme `DateTime64`).
+        Time res = static_cast<Time>(static_cast<UInt64>(values.date) + static_cast<UInt64>(time));
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
         {
             if (unlikely(res < 0))
