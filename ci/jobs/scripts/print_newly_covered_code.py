@@ -287,23 +287,20 @@ if __name__ == "__main__":
 
     # Two stable union sets for computing the global coverage delta:
     #
-    #   _stable_base = Union(m1, m2, ..., mN)       — all master runs
-    #   _stable_pr   = Union(m1, m2, ..., mN-1, PR) — same runs but last replaced by PR
+    #   _stable_base = Union(m1, m2, ..., mN)        — all master runs
+    #   _stable_pr   = Union(m1, m2, ..., mN, PR)    — master runs plus PR
     #
-    # Delta = _stable_pr − _stable_base
-    #
-    # Lines covered by m1..mN-1 appear in BOTH unions and cancel out, so the
-    # delta reduces to: (lines PR covers that mN doesn't) − (lines mN covers
-    # that PR doesn't), filtered to lines not in m1..mN-1. This eliminates the
-    # -5k noise from the previous approach (Union(m1-mN) vs single PR run),
-    # because the shared context of m1..mN-1 cancels from both sides.
+    # Delta = _stable_pr − _stable_base ≥ 0 always (union is monotone).
+    # The delta shows only lines the PR adds that no master run covered.
+    # LBC (lines lost vs master) is intentionally omitted — with this
+    # definition it is always empty by construction.
     #
     # We avoid `lcov -a` which corrupts FNDA records on some lcov 2.1+ versions.
     _stable_base_line_cov: set[tuple[str, int]] = set()
     _stable_base_line_tot: set[tuple[str, int]] = set()
     _stable_base_fn_cov: set[tuple[str, str]] = set()
     _stable_base_fn_tot: set[tuple[str, str]] = set()
-    # PR side: starts with the primary baseline (m1); extras m2..mN-1 added in
+    # PR side: starts with the primary baseline (m1); ALL extras added in
     # the loop below; PR (curr_data) added after the loop.
     _stable_pr_line_cov: set[tuple[str, int]] = set()
     _stable_pr_line_tot: set[tuple[str, int]] = set()
@@ -413,10 +410,9 @@ if __name__ == "__main__":
         del _bx
         extra_baselines_used += 1
 
-    # Build stable_pr = Union(m1, m2..mN-1, PR) with remapping.
-    # The last extra (mN) is excluded — PR replaces it in the delta so that
-    # Delta = stable_pr − stable_base = (PR vs mN), filtered through m1..mN-1.
-    for _bx, _hunks in zip(_all_extra_data[:-1], _all_extra_hunks[:-1]):
+    # Build stable_pr = Union(m1, m2..mN, PR) with remapping.
+    # All master baselines are included so stable_pr ⊇ stable_base always.
+    for _bx, _hunks in zip(_all_extra_data, _all_extra_hunks):
         _accum_with_remap(_bx, _hunks,
                           _stable_pr_line_cov, _stable_pr_line_tot,
                           _stable_pr_fn_cov,   _stable_pr_fn_tot)
@@ -594,93 +590,6 @@ if __name__ == "__main__":
                 f"listed line numbers for the full context]"
             )
 
-    # --- Lost Baseline Coverage (LBC) for test-only PRs ---
-    # For PRs that change only tests/CI (no C/C++ source files), print_uncovered_code.py
-    # never runs (it needs a changed-files diff to scope to). We compute LBC here
-    # instead, globally across all files:
-    #
-    #   lost = covered(stable_master) \ covered(pr.info)
-    #
-    # Using the stable master baseline (union of N runs) means a line must have fired
-    # in at least one master run to be a candidate — pure flicker lines that never
-    # consistently appear in master are excluded. A line that shows up here was
-    # reliably covered in master but is now missed by the PR run, which indicates
-    # a test was weakened or removed.
-    lbc_lines: dict[str, list[int]] = defaultdict(list)
-    lbc_fns: dict[str, list[str]] = defaultdict(list)
-
-    # LBC uses _stable_base_line_cov (union of all master baselines, remapped
-    # to primary coordinates) as the reference. A line is lost only if it was
-    # covered in AT LEAST ONE of the N master runs AND the PR run misses it.
-    # This filters out lines that only flickered into m1 by chance: if a line
-    # is genuinely covered by master it will appear in _stable_base_line_cov.
-    for rel, b in base_data.items():
-        c = curr_data.get(rel)
-        if c is None:
-            continue
-        for ln, bcnt in b["lines"].items():
-            # Only consider lines that are covered in at least one master run.
-            if (rel, ln) not in _stable_base_line_cov:
-                continue
-            if _is_noise(rel, ln):
-                continue
-            ccnt = c["lines"].get(ln)
-            if ccnt is not None and ccnt == 0:
-                lbc_lines[rel].append(ln)
-        for fn, bcnt in b["fns"].items():
-            if (rel, fn) not in _stable_base_fn_cov:
-                continue
-            if c["fns"].get(fn, 0) == 0:
-                lbc_fns[rel].append(fn)
-
-    lbc_total_lines = sum(len(v) for v in lbc_lines.values())
-    lbc_total_fns = sum(len(v) for v in lbc_fns.values())
-
-    if lbc_total_lines > 0 or lbc_total_fns > 0:
-        lbc_bits: list[str] = []
-        if lbc_total_lines > 0:
-            lbc_bits.append(f"{lbc_total_lines} line(s)")
-        if lbc_total_fns > 0:
-            lbc_bits.append(f"{lbc_total_fns} function(s)")
-        lbc_summary = ", ".join(lbc_bits)
-        print(f"\n=== Lost Baseline Coverage: {lbc_summary} ===\n")
-
-        lbc_file_stats = sorted(
-            [
-                (rel, len(lbc_lines.get(rel, [])), len(lbc_fns.get(rel, [])))
-                for rel in set(lbc_lines) | set(lbc_fns)
-            ],
-            key=lambda x: (-x[1], -x[2], x[0]),
-        )
-        print(f"All {len(lbc_file_stats)} file(s) with lost coverage, ranked by line count:")
-        for rel, lc, fc in lbc_file_stats:
-            parts = []
-            if lc > 0:
-                parts.append(f"{lc} line(s)")
-            if fc > 0:
-                parts.append(f"{fc} function(s)")
-            print(f"  {rel}: {', '.join(parts)}")
-
-        # Snippet preview for top files.
-        printed_lbc = 0
-        print("\nLost coverage (with context):\n")
-        for rel, lc, _ in lbc_file_stats:
-            if lc == 0 or printed_lbc >= MAX_BLOCK_LINES:
-                break
-            print("=" * 80)
-            print(rel)
-            print("=" * 80)
-            for out_line in _format_block_preview(rel, lbc_lines[rel]):
-                print(out_line)
-                printed_lbc += 1
-                if printed_lbc >= MAX_BLOCK_LINES:
-                    break
-        summary += f" | lost baseline coverage: {lbc_summary}"
-        if comment_text:
-            comment_text += f" | lost: {lbc_summary}"
-    else:
-        print("\nNo lost baseline coverage found.")
-
     r = Result.create_from(
         name="Newly Covered Code",
         status=Result.Status.OK,
@@ -690,11 +599,7 @@ if __name__ == "__main__":
     r.ext["newly_covered_lines"] = total_lines
     r.ext["newly_covered_fns"] = total_fns
     r.ext["newly_covered_files"] = total_files
-    r.ext["lbc_lines"] = lbc_total_lines
-    r.ext["lbc_fns"] = lbc_total_fns
     # Stable-union coverage delta for the GitHub comment table.
-    # These replace the noisy single-run lcov --summary numbers with the
-    # noise-reduced Union(m1..m5,PR) vs Union(m1..m6) comparison.
     r.ext["stable_b_line_cov"] = b_lp
     r.ext["stable_c_line_cov"] = c_lp
     r.ext["stable_b_func_cov"] = b_fp

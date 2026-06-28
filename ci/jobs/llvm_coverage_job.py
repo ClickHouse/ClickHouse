@@ -625,7 +625,19 @@ if __name__ == "__main__":
             # the download never fired. The 2.5 GB concern is addressed by capping
             # TARGET_EXTRA_BASELINES at 5 — not by a complex gate.)
             if _global_stats_available:
-                _first_base = master_track_commits[0] if master_track_commits else base_commit_sha
+                # Use the actual SHA stored by generate_diff_coverage_report.sh
+                # alongside base_llvm_coverage.info as the skip anchor. This is
+                # the commit whose .info was really downloaded — it may differ
+                # from master_track_commits[0] when the first commit in the list
+                # had no .info and the script skipped to the next one. Using the
+                # wrong anchor causes the same commit to be downloaded again as
+                # extra #2, double-counting it in stable_base and producing a
+                # spurious negative delta.
+                _primary_sha_file = Path(TEMP_DIR) / "base_llvm_coverage.sha"
+                if _primary_sha_file.exists():
+                    _first_base = _primary_sha_file.read_text().strip()
+                else:
+                    _first_base = master_track_commits[0] if master_track_commits else base_commit_sha
                 _download_extra_baselines(master_track_commits, _first_base)
 
             # The stable union is now computed in Python inside
