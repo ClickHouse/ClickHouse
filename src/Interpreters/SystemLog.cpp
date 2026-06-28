@@ -843,10 +843,11 @@ void SystemLog<LogElement>::prepareTable()
             /// abort the flush, losing the current batch of log entries. Skip the marking in that case.
             ///
             /// A `table_readonly` table performs no modifications on disk at all, including TTL drop/delete
-            /// merges. So if the table has a TTL (e.g. the default `event_date + INTERVAL 30 DAY DELETE`
-            /// retention that most system logs use), marking it readonly would prevent its expired data
-            /// from ever being reclaimed. Keep such tables writable so background TTL still runs; only
-            /// tables without any TTL are frozen as readonly.
+            /// merges. So if a system log table is configured with a TTL (e.g. `event_date + INTERVAL 30 DAY
+            /// DELETE`), marking it readonly would prevent its expired data from ever being reclaimed. Keep
+            /// such tables writable so background TTL still runs. In the default open-source configuration
+            /// most system logs (including `query_log`) have no TTL, so their rotated tables are frozen as
+            /// readonly; only the few logs configured with a TTL stay writable.
             {
                 StorageID old_table_id(table_id.database_name, table_id.table_name + "_" + toString(suffix));
                 auto old_table = DatabaseCatalog::instance().tryGetTable(old_table_id, getContext());
