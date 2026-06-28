@@ -1798,7 +1798,8 @@ std::optional<UInt128> StorageDistributed::getModificationHash(const StorageSnap
     }
     catch (...)
     {
-        return {}; /// Could not reach a shard: assume the data may have changed.
+        /// Ok to ignore: we could not reach a shard, so we conservatively assume the data may have changed.
+        return {};
     }
 }
 

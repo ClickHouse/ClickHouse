@@ -1167,6 +1167,9 @@ std::optional<UInt128> StorageLog::getModificationHash(const StorageSnapshotPtr 
     /// Log engines are append-only (apart from TRUNCATE which resets the sizes), so the total number
     /// of rows and bytes on disk together with the structure version uniquely describe the data state.
     SipHash hash;
+    /// The table UUID distinguishes different incarnations of a table with the same name, since the row
+    /// and byte counts can repeat across DROP + CREATE.
+    hash.update(getStorageID().uuid);
     hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
     hash.update(total_rows.load(std::memory_order_relaxed));
     hash.update(total_bytes.load(std::memory_order_relaxed));

@@ -5,7 +5,8 @@ DROP TABLE IF EXISTS t;
 CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t VALUES (1), (2);
 
-SYSTEM DROP QUERY CACHE;
+-- The cache key includes the current database, so this test (running in its own database) does not
+-- need to clear the server-wide query cache (which would require a no-parallel tag).
 
 -- With the consistency setting, the result is always fresh: the cache is reused on the second run,
 -- but a new INSERT invalidates it and the third run recomputes the up-to-date result.
@@ -19,5 +20,4 @@ SELECT count() FROM t SETTINGS use_query_cache = 1, query_cache_min_query_runs =
 INSERT INTO t VALUES (4);
 SELECT count() FROM t SETTINGS use_query_cache = 1, query_cache_min_query_runs = 0, query_cache_min_query_duration = 0;
 
-SYSTEM DROP QUERY CACHE;
 DROP TABLE t;

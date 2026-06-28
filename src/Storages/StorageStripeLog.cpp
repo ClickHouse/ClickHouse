@@ -599,6 +599,9 @@ std::optional<UInt128> StorageStripeLog::getModificationHash(const StorageSnapsh
     /// Append-only apart from TRUNCATE, so the total rows and bytes plus the structure version describe
     /// the data state.
     SipHash hash;
+    /// The table UUID distinguishes different incarnations of a table with the same name, since the row
+    /// and byte counts can repeat across DROP + CREATE.
+    hash.update(getStorageID().uuid);
     hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
     hash.update(total_rows.load(std::memory_order_relaxed));
     hash.update(total_bytes.load(std::memory_order_relaxed));

@@ -207,7 +207,8 @@ std::optional<UInt128> StorageMemory::getModificationHash(const StorageSnapshotP
 {
     SipHash hash;
 
-    /// Structure version.
+    /// Table identity (distinguishes different incarnations of a table with the same name) and structure version.
+    hash.update(getStorageID().uuid);
     hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
 
     /// Every modification (insert, mutation, truncate) replaces the whole set of blocks with a freshly

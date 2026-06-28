@@ -514,7 +514,8 @@ std::optional<UInt128> StorageObjectStorage::getModificationHash(const StorageSn
     }
     catch (...)
     {
-        return {}; /// Could not list the objects: assume the data may have changed.
+        /// Ok to ignore: we could not list the objects, so we conservatively assume the data may have changed.
+        return {};
     }
 }
 

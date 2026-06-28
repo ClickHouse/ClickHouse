@@ -10970,15 +10970,20 @@ std::optional<UInt128> MergeTreeData::getModificationHash(const StorageSnapshotP
 {
     SipHash hash;
 
+    /// Table identity: the UUID distinguishes different incarnations of a table with the same name.
+    /// Block numbers restart from scratch after DROP + CREATE, so without this a recreated table could
+    /// produce the same hash for different data.
+    hash.update(getStorageID().uuid);
+
     /// Structure version: changes when columns, indices, projections, etc. change.
     /// This catches metadata-only ALTERs (e.g. ADD COLUMN with a DEFAULT) that change query results
     /// without creating a mutation.
     hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
 
-    /// Data version: the set of active data parts. Each part is uniquely identified by its
-    /// (partition_id, min_block, max_block, level, mutation), which changes on every insert, merge
-    /// (level/blocks change) and mutation (mutation version changes). For engines that rewrite data
-    /// on merges (Replacing, Collapsing, ...) this is exactly the "block ranges of data parts".
+    /// Data version: the set of active data parts. Each part is uniquely identified within a table
+    /// incarnation by its (partition_id, min_block, max_block, level, mutation), which changes on every
+    /// insert, merge (level/blocks change) and mutation (mutation version changes). For engines that
+    /// rewrite data on merges (Replacing, Collapsing, ...) this is exactly the "block ranges of data parts".
     auto add_part_info = [&](const MergeTreePartInfo & info)
     {
         hash.update(info.getPartitionId());
@@ -11001,6 +11006,13 @@ std::optional<UInt128> MergeTreeData::getModificationHash(const StorageSnapshotP
         for (const auto & part : getDataPartsVectorForInternalUsage())
             add_part_info(part->info);
     }
+
+    /// Active patch parts (created by lightweight updates/deletes) are applied during reads when
+    /// `apply_patch_parts` is enabled, so they change query-visible rows and must be part of the hash.
+    /// They live in a separate part kind, so the regular-parts query above does not see them.
+    hash.update("patch");
+    for (const auto & part : getPatchPartsVectorForInternalUsage())
+        add_part_info(part->info);
 
     return hash.get128();
 }

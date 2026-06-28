@@ -1550,7 +1550,8 @@ std::optional<UInt128> IStorageURLBase::getModificationHash(const StorageSnapsho
     }
     catch (...)
     {
-        return {}; /// Could not reach the server: assume the data may have changed.
+        /// Ok to ignore: we could not reach the server, so we conservatively assume the data may have changed.
+        return {};
     }
 
     /// If the server reports neither an ETag, nor a size, nor a modification time, we cannot tell
