@@ -1164,8 +1164,18 @@ std::optional<UInt64> StorageLog::totalBytes(ContextPtr) const
     return total_bytes;
 }
 
-std::optional<UInt128> StorageLog::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr) const
+std::optional<UInt128> StorageLog::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr local_context) const
 {
+    /// Sample under the read lock so the hash observes the same committed state a normal read would.
+    /// An in-progress INSERT/TRUNCATE holds `rwlock` exclusively and may have already changed the
+    /// files without yet publishing the new `data_version`/totals. Without this lock the hash could be
+    /// sampled pre-write while a read starting at the same moment blocks on `rwlock` and then sees
+    /// post-write data, letting `query_cache_use_only_when_data_was_not_changed` serve a stale result.
+    /// If a write currently holds the lock, fail closed (return nullopt) rather than serve a stale hash.
+    ReadLock lock{rwlock, getLockTimeout(local_context)};
+    if (!lock)
+        return {};
+
     SipHash hash;
     /// The table UUID distinguishes different incarnations of a table with the same name. The monotonic
     /// `data_version` (bumped on every insert and truncate) guarantees the hash changes whenever the data
