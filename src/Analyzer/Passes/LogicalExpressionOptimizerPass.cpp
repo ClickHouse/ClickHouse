@@ -857,6 +857,13 @@ public:
     static constexpr size_t and_compare_chain_max_hash_work = 5'000'000;
     size_t and_compare_chain_hash_work_start = 0;
 
+    /// True once this query has hashed more than `and_compare_chain_max_hash_work` nodes (across all
+    /// getTreeHash calls) since this visitor started. Used by tryOptimizeAndCompareChain to back off.
+    bool andCompareChainHashBudgetExceeded() const
+    {
+        return getTreeHashWorkCounter() - and_compare_chain_hash_work_start > and_compare_chain_max_hash_work;
+    }
+
     void enterImpl(QueryTreeNodePtr & node)
     {
         if (auto * join_node = node->as<JoinNode>())
@@ -1125,7 +1132,7 @@ private:
 
         /// Stop once this query has spent its AND-compare-chain hashing budget (measured in nodes
         /// hashed by getTreeHash since this visitor started).
-        if (getTreeHashWorkCounter() - and_compare_chain_hash_work_start > and_compare_chain_max_hash_work)
+        if (andCompareChainHashBudgetExceeded())
             return;
 
         enum CompareType
@@ -1152,6 +1159,14 @@ private:
 
         for (const auto & argument : arguments)
         {
+            /// Building these maps inserts every comparison operand into QueryTreeNodePtrWithHash
+            /// containers, and each insert computes a full getTreeHash. A single very large AND chain
+            /// could hash its whole operand set here before any later (DFS) budget check, so honor the
+            /// budget while collecting too -- aborting now only forgoes the optimization (nothing has
+            /// been appended to the AND yet), never changes results.
+            if (andCompareChainHashBudgetExceeded())
+                return;
+
             auto * argument_function = argument->as<FunctionNode>();
             const auto valid_functions = std::unordered_set<std::string>{
                 "less", "greater", "lessOrEquals", "greaterOrEquals", "equals"};
@@ -1239,7 +1254,12 @@ private:
         /// visit and desync from a singly-referenced copy (e.g. a GROUP BY key matched by formatted name).
         QueryTreeNodePtrWithHashSet existing_conjuncts;
         for (const auto & argument : function_node.getArguments().getNodes())
+        {
+            /// emplace computes getTreeHash for each conjunct; respect the budget here as well.
+            if (andCompareChainHashBudgetExceeded())
+                return;
             existing_conjuncts.emplace(argument);
+        }
 
         /// Step 2: populate from constants, to generate new comparing pair with constant in one side
         std::function<void(const ComparePairs &, QueryTreeNodePtr, const ConstantNode *, CompareType)> findPairs
@@ -1249,7 +1269,7 @@ private:
             {
                 for (const auto & left : it->second)
                 {
-                    if (getTreeHashWorkCounter() - and_compare_chain_hash_work_start > and_compare_chain_max_hash_work)
+                    if (andCompareChainHashBudgetExceeded())
                         return;
                     if (visited.contains(left.first))
                         continue;
