@@ -16,6 +16,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Common/Logger.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -113,7 +114,9 @@ ActionsDAG createActionsDAGForPreprocessor(
     const NamesAndTypesList & source_columns,
     const String & source_name,
     const DataTypePtr & source_type,
-    ASTPtr expression_ast)
+    ASTPtr expression_ast,
+    FixedStringPreprocessorValidation fixed_string_validation,
+    const String & index_name)
 {
     if (expression_ast == nullptr)
         return ActionsDAG();
@@ -150,20 +153,34 @@ ActionsDAG createActionsDAGForPreprocessor(
     if (output_fixed_string)
     {
         if (WhichDataType(nested_source_type).isString())
-            throw Exception(
-                ErrorCodes::INCORRECT_QUERY,
+        {
+            const String message = fmt::format(
                 "Text index preprocessor must not convert variable-length String values to FixedString({})",
                 output_fixed_string->getN());
+
+            if (fixed_string_validation == FixedStringPreprocessorValidation::Reject)
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "{}", message);
+
+            if (fixed_string_validation == FixedStringPreprocessorValidation::Warn)
+                LOG_WARNING(getLogger("MergeTreeIndexTextPreprocessor"), "Text index '{}' has unsafe preprocessor: {}", index_name, message);
+        }
 
         const auto * source_fixed_string = typeid_cast<const DataTypeFixedString *>(nested_source_type.get());
         if (source_fixed_string)
         {
             if (source_fixed_string->getN() > output_fixed_string->getN())
-                throw Exception(
-                    ErrorCodes::INCORRECT_QUERY,
+            {
+                const String message = fmt::format(
                     "Text index preprocessor must not narrow FixedString({}) to FixedString({})",
                     source_fixed_string->getN(),
                     output_fixed_string->getN());
+
+                if (fixed_string_validation == FixedStringPreprocessorValidation::Reject)
+                    throw Exception(ErrorCodes::INCORRECT_QUERY, "{}", message);
+
+                if (fixed_string_validation == FixedStringPreprocessorValidation::Warn)
+                    LOG_WARNING(getLogger("MergeTreeIndexTextPreprocessor"), "Text index '{}' has unsafe preprocessor: {}", index_name, message);
+            }
         }
     }
 
@@ -188,26 +205,35 @@ ActionsDAG createActionsDAGForPreprocessor(
 
 }
 
-MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(ASTPtr expression_ast, const IndexDescription & index_description)
+MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(
+    ASTPtr expression_ast,
+    const IndexDescription & index_description,
+    FixedStringPreprocessorValidation fixed_string_validation)
     : index_column_type(index_description.data_types.front())
     /// Use source index columns to execute index and preprocessor expressions.
     , original_actions(createActionsDAGForPreprocessor(
         index_description.expression->getRequiredColumnsWithTypes(),
         index_description.column_names.front(),
         index_column_type,
-        convertASTForIndexColumn(index_description, expression_ast, false)))
+        convertASTForIndexColumn(index_description, expression_ast, false),
+        fixed_string_validation,
+        index_description.name))
     /// Assume that index expression is already executed and use a placeholder column to execute preprocessor expression.
     , actions_for_index_column(createActionsDAGForPreprocessor(
         {{preprocessor_column_name, index_column_type}},
         preprocessor_column_name,
         index_column_type,
-        convertASTForIndexColumn(index_description, expression_ast, true)))
+        convertASTForIndexColumn(index_description, expression_ast, true),
+        FixedStringPreprocessorValidation::None,
+        index_description.name))
     /// Take constant string and execute preprocessor expression.
     , actions_for_constant(createActionsDAGForPreprocessor(
         {{preprocessor_column_name, std::make_shared<DataTypeString>()}},
         preprocessor_column_name,
         std::make_shared<DataTypeString>(),
-        convertASTForConstant(index_description, expression_ast)))
+        convertASTForConstant(index_description, expression_ast),
+        FixedStringPreprocessorValidation::None,
+        index_description.name))
 {
     if (expression_ast)
     {

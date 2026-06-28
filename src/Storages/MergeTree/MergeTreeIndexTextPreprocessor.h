@@ -9,10 +9,20 @@ namespace DB
 struct ColumnWithTypeAndName;
 struct IndexDescription;
 
+enum class FixedStringPreprocessorValidation : uint8_t
+{
+    None,
+    Warn,
+    Reject,
+};
+
 class MergeTreeIndexTextPreprocessor
 {
 public:
-    MergeTreeIndexTextPreprocessor(ASTPtr expression_ast, const IndexDescription & index_description);
+    MergeTreeIndexTextPreprocessor(
+        ASTPtr expression_ast,
+        const IndexDescription & index_description,
+        FixedStringPreprocessorValidation fixed_string_validation = FixedStringPreprocessorValidation::None);
 
     /// Processes n_rows rows of input column, starting at start_row.
     /// The transformation is only applied in the range [start_row, start_row + n_rows)
