@@ -813,6 +813,22 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 }
 
 
+/// Convert the internal `MarkRanges::SearchAlgorithm` to the EXPLAIN-facing
+/// `DB::SearchAlgorithm`, so that `IndexDescription.h` need not include `MarkRange.h`.
+static SearchAlgorithm toExplainSearchAlgorithm(MarkRanges::SearchAlgorithm search_algorithm)
+{
+    switch (search_algorithm)
+    {
+        case MarkRanges::SearchAlgorithm::Unknown:
+            return SearchAlgorithm::Unknown;
+        case MarkRanges::SearchAlgorithm::BinarySearch:
+            return SearchAlgorithm::BinarySearch;
+        case MarkRanges::SearchAlgorithm::GenericExclusionSearch:
+            return SearchAlgorithm::GenericExclusionSearch;
+    }
+}
+
+
 /// The minmax skip index reflects the physical rows of a part as they were written, so it goes
 /// stale when a pending or materialized change is not yet merged into the part:
 ///  - a lightweight or ordinary delete hides rows, but the minmax still advertises their values;
@@ -1248,7 +1264,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             .used_keys = std::move(description.used_keys),
             .num_parts_after = sum_parts_pk.load(std::memory_order_relaxed),
             .num_granules_after = sum_marks_pk.load(std::memory_order_relaxed),
-            .search_algorithm = pk_stat.search_algorithm.load(std::memory_order_relaxed)
+            .search_algorithm = toExplainSearchAlgorithm(pk_stat.search_algorithm.load(std::memory_order_relaxed))
         });
     }
 

@@ -1,0 +1,101 @@
+100	200
+-- { echo }
+explain indexes=1 select * from test_1m where value > 800_000*100;
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test_1m)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 100/100
+        Granules: 100/100
+      Skip
+        Name: value_idx
+        Description: minmax GRANULARITY 1
+        Condition: (value in [80000001, +Inf))
+        Parts: 20/100
+        Granules: 20/100
+      Ranges: 20
+-- { echoOff }
+
+-- { echo }
+explain indexes=1, compact=1 select * from test_1m where value > 800_000*100 settings distributed_index_analysis=1;
+ReadFromMergeTree (default.test_1m)
+Indexes:
+  PrimaryKey
+    Parts: 20/100
+    Granules: 20/100
+    Distributed:
+      Replicas: 2
+      Parts send: 100
+      Parts received: 20
+      Granules send: 100
+      Granules received: 20
+  Ranges: 20
+100	200
+-- { echo }
+explain indexes=1, compact=1 select * from test_merge where key > 800_000 settings distributed_index_analysis=1;
+ReadFromMerge
+Indexes:
+  PrimaryKey
+    Parts: 40/200
+    Granules: 40/200
+    Distributed:
+      Replicas: 4
+      Parts send: 200
+      Parts received: 40
+      Granules send: 200
+      Granules received: 40
+  Tables: 2
+  Ranges: 40
+explain indexes=1, compact=1, json=1 select * from test_merge where key > 800_000 settings distributed_index_analysis=1 format TSVRaw;
+[
+  {
+    "Plan": {
+      "Node Type": "ReadFromMerge",
+      "Node Id": "ReadFromMerge_0",
+      "Indexes": [
+        {
+          "Type": "PrimaryKey",
+          "Initial Parts": 200,
+          "Selected Parts": 40,
+          "Initial Granules": 200,
+          "Selected Granules": 40,
+          "Distributed": {
+            "Replicas": 4,
+            "Parts send": 200,
+            "Parts received": 40,
+            "Granules send": 200,
+            "Granules received": 40
+          }
+        }
+      ],
+      "Tables": 2
+    }
+  }
+]
+-- { echoOff }
+
+-- Merge table with PK + skip indexes: verify per-type aggregation
+-- (without distributed_index_analysis so local path produces both PK and Skip stats).
+-- { echo }
+explain indexes=1, compact=1 select * from test_merge where value > 800_000*100;
+ReadFromMerge
+Indexes:
+  PrimaryKey
+    Parts: 200/200
+    Granules: 200/200
+  Skip
+    Parts: 40/200
+    Granules: 40/200
+  Tables: 2
+  Ranges: 40
+-- { echo }
+explain indexes=1, compact=1 select * from test_1m where key > 800_000 union all select * from test_1m_copy where key > 900_000;
+Union
+Indexes:
+  PrimaryKey
+    Parts: 30/200
+    Granules: 30/200
+  Tables: 2
+  Ranges: 30
