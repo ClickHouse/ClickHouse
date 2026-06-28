@@ -1276,7 +1276,7 @@ This setting exists only for compatibility reasons. In ClickHouse, the time zone
 Enabling this setting gives the wrong impression that different values within a column can have different timezones.
 Therefore, please do not enable this setting.
 )", 0) \
-    DECLARE(Bool, use_legacy_to_time, true, R"(
+    DECLARE(Bool, use_legacy_to_time, false, R"(
 When enabled, allows to use legacy toTime function, which converts a date with time to a certain fixed date, while preserving the time.
 Otherwise, uses a new toTime function, that converts different type of data into the Time type.
 The old legacy function is also unconditionally accessible as toTimeWithFixedDate.

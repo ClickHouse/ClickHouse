@@ -18,7 +18,7 @@ CREATE TABLE tab
     a Float64 STATISTICS(tdigest),
     b Int64 STATISTICS(tdigest)
 ) Engine = MergeTree() ORDER BY tuple()
-SETTINGS auto_statistics_types = '';
+SETTINGS auto_statistics_types = '', default_compression_codec = 'LZ4'; -- prewhere reordering falls back to column sizes; pin codec (randomized server-side)
 
 INSERT INTO tab select number, -number FROM system.numbers LIMIT 10000;
 SELECT 'After insert';

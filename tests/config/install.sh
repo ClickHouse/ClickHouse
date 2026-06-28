@@ -143,6 +143,25 @@ value=$((RANDOM % 2))
 echo "Async logging: $value"
 sed "s|<async>[01]</async>|<async>$value</async>|" $SRC_PATH/config.d/logger_trace.xml >$DEST_SERVER_PATH/config.d/logger_trace.xml
 
+# Randomize the default compression codec (used for columns without an explicit CODEC)
+# across LZ4, ZSTD(1) and ZSTD(3) to exercise all of them across CI runs. It is set through
+# the `default_compression_codec` MergeTree setting in the <merge_tree> config section, NOT
+# the top-level <compression> codec selector: clickhouse-client/local read <compression> as
+# a connection-level boolean (ConnectionParameters), so a codec selector there makes them
+# fail with "Cannot convert to boolean" (e.g. the system-table scraping step). It applies to
+# .sql and .sh tests alike; a test that needs a specific codec pins it with
+# `SETTINGS default_compression_codec = '...'`, which overrides this server default.
+default_compression_codec_options=("LZ4" "ZSTD(1)" "ZSTD(3)")
+default_compression_codec="${default_compression_codec_options[$((RANDOM % ${#default_compression_codec_options[@]}))]}"
+echo "Default compression codec: $default_compression_codec"
+{
+    echo "<clickhouse>"
+    echo "    <merge_tree>"
+    echo "        <default_compression_codec>${default_compression_codec}</default_compression_codec>"
+    echo "    </merge_tree>"
+    echo "</clickhouse>"
+} > $DEST_SERVER_PATH/config.d/default_compression_codec.xml
+
 # Randomize the per-step overcommit eviction budget so the multi-step retry path
 # in `OvercommitFileCachePriority::collectCandidatesForEviction` gets exercised
 # across runs. Picked from values spanning single-step and many-step regimes.

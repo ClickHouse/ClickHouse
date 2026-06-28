@@ -13,7 +13,7 @@ CREATE TABLE tab
     INDEX idx_a a TYPE minmax,
     INDEX idx_b b TYPE set(3)
 )
-ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns=0;
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns=0, default_compression_codec='LZ4'; -- pin codec: the default is randomized server-side and changes index sizes
 
 SELECT 'Regular merge';
 
