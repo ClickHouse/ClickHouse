@@ -337,13 +337,18 @@ std::map<String, String> BackupImpl::getEngineSettings() const
 {
     std::lock_guard lock{mutex};
 
+    /// Both a BACKUP and a RESTORE can involve more than one engine with different endpoint settings, which
+    /// a flat map cannot represent: an incremental BACKUP writes through `writer` but also reads from the
+    /// base backup, and a RESTORE reads from the base backup (incremental restores) and/or the lightweight
+    /// snapshot reader in addition to the top-level backup. Report the engine settings only when a single
+    /// engine is involved; otherwise omit them.
+    if (base_backup_info || lightweight_snapshot_reader)
+        return {};
+
     if (writer)
         return writer->getSerializedSettings();
 
-    /// A RESTORE can read from more than one reader with different endpoint settings (the base backup for
-    /// incremental restores and the lightweight snapshot reader), which a flat map cannot represent. Report
-    /// the reader's settings only when the top-level backup is the only reader; otherwise omit them.
-    if (reader && !base_backup_info && !lightweight_snapshot_reader)
+    if (reader)
         return reader->getSerializedSettings();
 
     return {};
