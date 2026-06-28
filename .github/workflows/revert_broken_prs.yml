@@ -85,18 +85,63 @@ jobs:
             # Check merge commit for failures (check-runs). A failed API/jq query must not
             # look like "no failures" — that would let a broken merge be silently skipped —
             # so on error we log and skip only this candidate (it is retried on the next run).
-            if ! merge_failed_checks=$(gh api "repos/$GH_REPO/commits/$sha/check-runs?per_page=100" \
-              --paginate --jq '
-              .check_runs[] |
-              select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "cancelled" or .conclusion == "action_required" or .conclusion == "startup_failure" or .conclusion == "stale") |
+            #
+            # Reduce to the latest run per check name first. Re-runs are common: a required
+            # check can fail once and pass on re-run, and scheduled/concurrency-driven
+            # workflows leave stray `cancelled` runs attached to whatever commit happened to
+            # be master HEAD at the time. Classifying every run would misread those as a
+            # broken merge. `cancelled` and `stale` are therefore NOT treated as failures:
+            # `cancelled` is almost always a superseded/concurrency-cancelled run, and
+            # `stale` means GitHub never recorded a conclusion — neither proves the PR broke
+            # master. We emit "name<TAB>details_url" so the next step can resolve the
+            # triggering workflow event.
+            if ! merge_failed_json=$(gh api "repos/$GH_REPO/commits/$sha/check-runs?per_page=100" --paginate \
+              | jq -rs '
+              [.[].check_runs[]] |
+              group_by(.name) | map(max_by(.started_at // "")) | .[] |
+              select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "action_required" or .conclusion == "startup_failure") |
               select((.name | startswith("Performance Comparison")) | not) |
               select((.name | startswith("libFuzzer")) | not) |
               select((.name | startswith("Nightly")) | not) |
               select((.name | startswith("ClickBench")) | not) |
               select(.name != "Config Workflow" and .name != "Finish Workflow" and .name != "Mergeable Check" and .name != "MasterCI" and .name != "SQLTest" and .name != "VectorSearchStress" and .name != "ClickHouse Keeper Jepsen") |
-              .name
+              "\(.name)\t\(.details_url // "")"
             '); then
               echo "  WARNING: could not query check-runs for merge commit $sha, skipping candidate."
+              echo ""
+              continue
+            fi
+
+            # Drop non-gating workflows: a check whose workflow run was triggered by
+            # `schedule` or `workflow_dispatch` never gated this PR (it runs on master on a
+            # timer, e.g. PRVersionInfo, or is this very revert-broken job), so its state
+            # must not justify a revert. Resolve the triggering event from the run id
+            # embedded in the check's details_url.
+            merge_failed_checks=""
+            skip_candidate=""
+            while IFS=$'\t' read -r check_name details_url; do
+              [ -z "$check_name" ] && continue
+              run_id=$(echo "$details_url" | grep -oP '/actions/runs/\K[0-9]+' || true)
+              if [ -n "$run_id" ]; then
+                # Fail closed: this lookup is what proves a failed check is non-gating, so a
+                # failure to resolve the event (transient error, rate limit, permissions, or
+                # an empty/missing field) must NOT fall through and treat the check as
+                # gating — that could create a wrongful revert. When the event is unknown,
+                # skip the whole candidate and let the next scheduled run retry it.
+                if ! run_event=$(gh api "repos/$GH_REPO/actions/runs/$run_id" --jq '.event') || [ -z "$run_event" ]; then
+                  echo "  WARNING: could not resolve triggering event for check \"$check_name\" (run $run_id), skipping candidate."
+                  skip_candidate=1
+                  break
+                fi
+                if [ "$run_event" = "schedule" ] || [ "$run_event" = "workflow_dispatch" ]; then
+                  echo "  Ignoring non-gating check \"$check_name\" (workflow triggered by $run_event, not by this PR)."
+                  continue
+                fi
+              fi
+              merge_failed_checks="${merge_failed_checks:+$merge_failed_checks$'\n'}$check_name"
+            done <<< "$merge_failed_json"
+
+            if [ -n "$skip_candidate" ]; then
               echo ""
               continue
             fi
@@ -150,21 +195,20 @@ jobs:
             # Check PR head for failed check-runs. A failed query must not look like a clean
             # head (which would be misread as "master failure is flaky" and skip the revert);
             # surface it and skip this candidate.
-            if ! pr_failed_checks=$(gh api "repos/$GH_REPO/commits/$pr_head_sha/check-runs?per_page=100" \
-              --paginate --jq '
-              .check_runs[] |
+            if ! pr_failed_checks=$(gh api "repos/$GH_REPO/commits/$pr_head_sha/check-runs?per_page=100" --paginate \
+              | jq -rs '
+              [.[].check_runs[]] |
+              group_by(.name) | map(max_by(.started_at // "")) | .[] |
               select((.name | startswith("Performance Comparison")) | not) |
               select((.name | startswith("libFuzzer")) | not) |
               select((.name | startswith("Nightly")) | not) |
               select((.name | startswith("ClickBench")) | not) |
               select(.name != "CH Inc sync" and .name != "Mergeable Check" and .name != "MasterCI" and .name != "SQLTest" and .name != "VectorSearchStress" and .name != "ClickHouse Keeper Jepsen") |
-              select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "cancelled" or .conclusion == "action_required" or .conclusion == "startup_failure" or .conclusion == "stale" or .status != "completed") |
+              select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "action_required" or .conclusion == "startup_failure" or .status != "completed") |
               (if .conclusion == "failure" then .name + " (failed)"
                elif .conclusion == "timed_out" then .name + " (timed_out)"
-               elif .conclusion == "cancelled" then .name + " (cancelled)"
                elif .conclusion == "action_required" then .name + " (action_required)"
                elif .conclusion == "startup_failure" then .name + " (startup_failure)"
-               elif .conclusion == "stale" then .name + " (stale)"
                elif .status != "completed" then .name + " (incomplete)"
                else empty end)
             '); then
