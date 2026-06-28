@@ -673,11 +673,7 @@ struct ToTime64TransformSigned
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
         }
 
-        /// For Saturate / Ignore overflow modes the value still has to be clamped to the representable
-        /// Time64 range. Otherwise two casts can produce Time64 values that render identically as e.g.
-        /// '999:59:59.000' but compare as different, because the underlying decimal stores the raw input.
-        const auto clamped = std::max<Int64>(std::min<Int64>(static_cast<Int64>(from), MAX_TIME_TIMESTAMP), -static_cast<Int64>(MAX_TIME_TIMESTAMP));
-        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(clamped, 0, scale_multiplier);
+        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(from, 0, scale_multiplier);
     }
 };
 
@@ -698,14 +694,10 @@ struct ToTime64TransformFloat
         {
             if (from < MIN_DATETIME64_TIMESTAMP || from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
-        }
+        } // need to reconsider this
 
-        /// Time64 has a much narrower representable range than DateTime64; clamping to the DateTime64
-        /// bounds would let casts pass values up to ~MAX_DATETIME64_TIMESTAMP through to the underlying
-        /// decimal, producing Time64 values that display correctly but compare as different from the
-        /// saturated maximum.
-        from = std::max(from, static_cast<FromType>(-static_cast<Int64>(MAX_TIME_TIMESTAMP)));
-        from = std::min(from, static_cast<FromType>(MAX_TIME_TIMESTAMP));
+        from = std::max(from, static_cast<FromType>(MIN_DATETIME64_TIMESTAMP));
+        from = std::min(from, static_cast<FromType>(MAX_DATETIME64_TIMESTAMP));
         return convertToDecimal<FromDataType, DataTypeTime64>(from, scale);
     }
 };
@@ -2595,11 +2587,9 @@ struct ConvertImpl
             auto res_col = IColumn::mutate(ColumnInt64::create(calc_num_rows));
             auto & res_data = assert_cast<ColumnInt64 &>(*res_col).getData();
 
-            /// interval_conversions[i] holds the factor between kind i and kind i-1,
-            /// so every boundary crossing between kinds i-1 and i uses interval_conversions[i]
             if (from_position < to_position)
             {
-                for (int i = from_position + 1; i <= to_position; ++i)
+                for (int i = from_position; i < to_position; ++i)
                     conversion_factor *= interval_conversions[i];
                 for (size_t row = 0; row < calc_num_rows; ++row)
                     res_data[row] = arguments[0].column->getInt(row) / conversion_factor;
