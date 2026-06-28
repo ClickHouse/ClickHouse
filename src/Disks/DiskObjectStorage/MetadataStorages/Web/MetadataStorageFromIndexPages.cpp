@@ -565,7 +565,9 @@ bool MetadataStorageFromIndexPages::tryListDirectory(
                 auto index_page = readIndexPage(listing_url);
                 rejectOriginChangingRedirect(listing_url, index_page.final_url);
                 const auto final_listing_prefix_url = getListingPrefixURLForMatching(index_page.final_url);
-                const auto final_path_prefix = stripLeadingSlash(getPathPrefixForMatching(final_listing_prefix_url));
+                const auto final_path_prefix = WebIndexPage::getPathPrefixRelativeToBase(
+                    Poco::URI(final_listing_prefix_url, false),
+                    Poco::URI(url_options[i].base_url, false));
                 auto entries = extractURLs(
                     index_page.body,
                     index_page.final_url,

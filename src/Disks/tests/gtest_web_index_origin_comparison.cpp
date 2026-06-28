@@ -92,6 +92,17 @@ TEST(WebIndexOriginComparison, BuildsRelativePathAcrossDefaultPortVariants)
 }
 
 
+TEST(WebIndexOriginComparison, BuildsRelativePathPrefixFromNonRootBase)
+{
+    Poco::URI base("http://example.com/prefix/");
+    Poco::URI listing_prefix("http://example.com/prefix/data/2025/");
+
+    ASSERT_EQ(
+        DB::WebIndexPage::getPathPrefixRelativeToBase(listing_prefix, base),
+        "data/2025/");
+}
+
+
 TEST(WebIndexOriginComparison, RejectsPercentEncodedParentDirectoryInListingPrefix)
 {
     Poco::URI listing("http://example.com/data/2025/", false);

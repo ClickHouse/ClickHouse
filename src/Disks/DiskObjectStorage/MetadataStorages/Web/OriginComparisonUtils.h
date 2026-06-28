@@ -143,4 +143,9 @@ inline String getRelativePathWithQueryAndFragment(const Poco::URI & candidate, c
     return relative;
 }
 
+inline String getPathPrefixRelativeToBase(const Poco::URI & prefix, const Poco::URI & base)
+{
+    return getRelativePathWithQueryAndFragment(prefix, base);
+}
+
 }
