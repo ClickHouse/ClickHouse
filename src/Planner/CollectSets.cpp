@@ -107,18 +107,20 @@ std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const Que
         for (const auto & column : columns_to_select)
             key_names.push_back(column.name);
 
-        auto set = storage->tryGetLookupSet(key_names, planner_context.getQueryContext());
-        if (!set)
-            return std::nullopt;
-
         /// The regular `IN table` path builds a plan for the right table that performs a `SELECT`
         /// access check on the columns it reads (`checkAccessRights`). The lookup fast path builds
         /// the `Set` directly from storage and never plans that read, so it must enforce the same
-        /// check here on the lookup key columns; otherwise a user without `SELECT` on the right
-        /// table could probe its keys through `IN table`.
+        /// check here on the lookup key columns. Do it *before* `tryGetLookupSet`, which reads the
+        /// table and may populate the shared lookup cache: otherwise a user without `SELECT` on the
+        /// right table could probe its keys through `IN table` or force a read/cache build of a
+        /// table they cannot access.
         auto storage_id = table_node->getStorageID();
         if (storage_id.hasDatabase())
             query_context->checkAccess(AccessType::SELECT, storage_id, key_names);
+
+        auto set = storage->tryGetLookupSet(key_names, planner_context.getQueryContext());
+        if (!set)
+            return std::nullopt;
 
         return LookupSetFromStorage{std::move(set), std::move(storage_id)};
     }
@@ -193,17 +195,18 @@ std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const Que
     if (key_names.empty())
         return std::nullopt;
 
-    auto set = storage->tryGetLookupSet(key_names, planner_context.getQueryContext());
-    if (!set)
-        return std::nullopt;
-
     /// Same `SELECT` access check as for the direct `IN table` case above: the trivial
     /// `IN (SELECT key FROM table)` subquery would be access-checked by the regular plan, but the
     /// lookup fast path replaces it with a ready set built from storage, so check access on the
-    /// lookup key columns here too.
+    /// lookup key columns here too — *before* `tryGetLookupSet` reads the table and may populate
+    /// the shared lookup cache, so an unauthorized user cannot force that read/cache build.
     auto storage_id = inner_table_node->getStorageID();
     if (storage_id.hasDatabase())
         query_context->checkAccess(AccessType::SELECT, storage_id, key_names);
+
+    auto set = storage->tryGetLookupSet(key_names, planner_context.getQueryContext());
+    if (!set)
+        return std::nullopt;
 
     return LookupSetFromStorage{std::move(set), std::move(storage_id)};
 }
