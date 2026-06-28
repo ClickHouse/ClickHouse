@@ -6,11 +6,12 @@ import time
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from ci.jobs.scripts.bugfix_validation import BUGFIX_BUILD_TYPES, find_master_builds
+from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
 from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.integration_tests_configs import (
     IMAGES_ENV,
     LLVM_COVERAGE_SKIP_PREFIXES,
+    force_heavy_modules_sequential,
     get_optimal_test_batch,
 )
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
@@ -390,7 +391,7 @@ def merge_profraw_files(llvm_profdata_cmd: str, job_params: list):
         print(f"  Deleted {deleted_count} profraw files", flush=True)
         return final_file
     else:
-        print(f"ERROR: Failed to create final coverage file", flush=True)
+        print("ERROR: Failed to create final coverage file", flush=True)
         if result.stderr:
             print(result.stderr, flush=True)
         return None
@@ -666,7 +667,6 @@ tar -czf ./ci/tmp/logs.tar.gz \
         if "/" in to:
             batch_num, total_batches = map(int, to.split("/"))
         elif any(build in to for build in ("amd_", "arm_")):
-            build_type = to
             if "amd_llvm_coverage" in to:
                 is_llvm_coverage = True
         elif to == "old analyzer":
@@ -789,7 +789,10 @@ tar -czf ./ci/tmp/logs.tar.gz \
         )
 
     if is_bugfix_validation:
-        bt_paths = {bt: f"{temp_path}/clickhouse_{bt}" for bt in BUGFIX_BUILD_TYPES}
+        # Download the master-HEAD binaries matching this job's runner arch:
+        # the aarch64 job runs on an ARM runner and must use the ARM builds.
+        build_types = bugfix_build_types(info.job_name)
+        bt_paths = {bt: f"{temp_path}/clickhouse_{bt}" for bt in build_types}
         # In local runs, only reuse existing binaries; probing master commits in S3
         # depends on `master_commits` workflow data populated by CI workflow hooks
         # and is not available locally.
@@ -801,7 +804,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             )
             build_urls = None
         else:
-            build_urls = find_master_builds()
+            build_urls = find_master_builds(build_types)
             assert build_urls, "Could not find master builds in S3"
         if build_urls:
             for bt, url in build_urls.items():
@@ -812,7 +815,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                         f"wget -nv -O {bt_path} {url}", verbose=True, strict=True
                     )
                     Shell.run(f"chmod +x {bt_path}", verbose=True)
-        clickhouse_path = f"{temp_path}/clickhouse_{BUGFIX_BUILD_TYPES[0]}"
+        clickhouse_path = f"{temp_path}/clickhouse_{build_types[0]}"
 
     if is_bugfix_validation or is_flaky_check:
         assert (
@@ -860,6 +863,19 @@ tar -czf ./ci/tmp/logs.tar.gz \
             no_strict=is_targeted_check or is_flaky_check,  # targeted check might want to run test that was removed on a merge-commit; flaky check might pick up a changed test filtered out by SKIP_LIST in the private fork
         )
     )
+
+    if is_flaky_check or is_targeted_check:
+        # The flaky/targeted parallel bucket runs `--dist=each`: every worker runs
+        # every parallel module at once. TEST_CONFIGS `dist_each_sequential` modules
+        # would start one cluster per worker and OOM small runners, so move them to
+        # the looped sequential phase. Normal `--dist=loadfile` runs do not call this.
+        before = list(parallel_test_modules)
+        parallel_test_modules, sequential_test_modules = force_heavy_modules_sequential(
+            parallel_test_modules, sequential_test_modules
+        )
+        moved = [m for m in before if m not in parallel_test_modules]
+        if moved:
+            print(f"Forced heavy modules to the sequential phase (avoid concurrent --dist=each clusters): {moved}")
 
     if is_sequential:
         parallel_test_modules = []
@@ -935,7 +951,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         ),
     }
     if is_llvm_coverage:
-        test_env["LLVM_PROFILE_FILE"] = f"it-%4m.profraw"
+        test_env["LLVM_PROFILE_FILE"] = "it-%4m.profraw"
         print(
             f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
         )
@@ -1098,11 +1114,12 @@ tar -czf ./ci/tmp/logs.tar.gz \
     # Run additional build types for bugfix validation.
     # Exit early on first failure to avoid duplicate test names and workspace pollution.
     if is_bugfix_validation:
+        build_types = bugfix_build_types(info.job_name)
         for r in test_results:
-            r.set_label(BUGFIX_BUILD_TYPES[0])
+            r.set_label(build_types[0])
 
         if all(r.is_ok() for r in test_results):
-            for bugfix_bt in BUGFIX_BUILD_TYPES[1:]:
+            for bugfix_bt in build_types[1:]:
                 print(f"\n=== Bugfix validation with {bugfix_bt} ===")
                 bt_clickhouse_path = f"{temp_path}/clickhouse_{bugfix_bt}"
                 test_env["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = bt_clickhouse_path
@@ -1328,6 +1345,18 @@ tar -czf ./ci/tmp/logs.tar.gz \
             R.set_success()
             has_error = False
 
+    # Capture whether this run saw any infrastructure problems BEFORE the
+    # clearing block below resets `has_error`. If the answer is yes, the
+    # bugfix-validation inversion path further down must be skipped: we have
+    # no reliable signal about whether the bug reproduces on this arch, and
+    # running the inversion would let an infra `FAIL` be flipped to `OK`
+    # (counted as validation) or rewrite an `ERROR`-only outcome as
+    # `SKIPPED` via the no-`has_failure` branch. See bot review on
+    # ClickHouse/ClickHouse#103541 (2026-05-15).
+    had_infra_or_error = has_error or any(
+        r.has_label(Result.Label.INFRA) for r in test_results
+    )
+
     # If all non-OK results are infrastructure errors, do not treat as a real failure
     if has_error:
         non_ok = [r for r in test_results if not r.is_ok()]
@@ -1345,14 +1374,30 @@ tar -czf ./ci/tmp/logs.tar.gz \
         assert (
             is_llvm_coverage is False
         ), "Bugfix validation with LLVM coverage is not supported"
-        if has_error:
-            # An infrastructure/harness error (e.g. session-timeout) is not
-            # bug reproduction. Keep `has_error` dominant over inversion so a
-            # non-reproduction failure cannot be flipped to `OK` and promoted
-            # to job success.
+        if had_infra_or_error:
+            # Infrastructure errors or session-level failures were observed
+            # during this run. Skip the inversion path so the per-arch job
+            # cannot be silently counted as a validation. The post-hook in
+            # `new_tests_check.py` uses strict `is_success` (`OK` / `XFAIL`
+            # only); leaving the result in a non-success state is enough to
+            # prevent this arch from contributing a false validation.
+            #
+            # If, after all the upstream handling, the result is still in a
+            # success-equivalent state (e.g. every surviving child is `OK`
+            # because all infra failures were already relabeled to `SKIPPED`
+            # by `_mark_infrastructure_errors`), force `ERROR` here so the
+            # post-hook cannot accidentally treat this arch as validated.
             print(
-                "Bugfix validation: has_error is set, skipping status inversion"
+                "Bugfix validation: infrastructure error or session-level "
+                "failure detected - skipping status inversion to avoid "
+                "leaking an infra outcome into validation success."
             )
+            if R.is_success():
+                R.set_error().set_info(
+                    "Bugfix validation aborted: infrastructure error during "
+                    "the run - no reliable signal about whether the bug "
+                    "reproduces on this arch"
+                )
         else:
             has_failure = False
             for r in R.results:
@@ -1370,13 +1415,37 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 elif r.status == Result.Status.OK:
                     r.status = Result.Status.FAIL
             if not has_failure:
-                print("Failed to reproduce the bug")
-                R.set_failed()
-                R.set_info("Failed to reproduce the bug")
+                # See the matching comment in `ci/jobs/functional_tests.py`. The
+                # bug did not reproduce on this arch, so report SKIPPED instead
+                # of FAIL: `Result.is_ok` includes SKIPPED so the job exits 0,
+                # while `is_success` (used by the post-hook) excludes SKIPPED so
+                # the per-arch job does not count as a validation. Contract:
+                # at least one per-arch job must end up `OK`/`XFAIL` for the
+                # post-hook to consider the bug validated.
+                print("Bug does not reproduce on this arch - bugfix validation N/A")
+                R.set_status(Result.Status.SKIPPED)
+                R.set_info("Bug does not reproduce on this arch - bugfix validation N/A")
             else:
                 R.set_success()
 
     force_ok_exit = False
+    if is_bugfix_validation:
+        # Per-arch bugfix-validation jobs are advisory: their pass/fail status
+        # records "did the bug reproduce on this arch?", not whether the PR
+        # should be blocked. Setting `do_not_block_pipeline_on_failure=True`
+        # marks the job as non-blocking so downstream jobs are not dropped
+        # when this job reports FAIL. The process itself still exits with
+        # the natural status (`Result.complete_job` calls `sys.exit(1)` on
+        # non-OK results); the non-blocking flag is metadata for the
+        # pipeline scheduler. The PR-merge-blocking decision lives in the
+        # `new_tests_check.py` workflow post-hook, which OR's the per-arch
+        # bugfix-validation job statuses.
+        print(
+            "NOTE: Bugfix validation job - marking as non-blocking; "
+            "failure here will not block downstream pipeline jobs "
+            "(process exit code still reflects the actual job status)"
+        )
+        force_ok_exit = True
     if is_llvm_coverage and llvm_profdata_cmd:
         print("Collecting and merging LLVM coverage files...")
 

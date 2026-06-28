@@ -235,8 +235,6 @@ private:
         struct WatchState
         {
             std::atomic_bool should_reread_znodes {true};
-            std::atomic_bool root_watch_active {false};
-            std::atomic_bool children_watch_active {false};
         };
 
         CoordinationZnode root_znode;
