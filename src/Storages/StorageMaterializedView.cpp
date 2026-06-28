@@ -25,6 +25,7 @@
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/QueryConstructionSettings.h>
 
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
@@ -32,6 +33,7 @@
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/VirtualColumnUtils.h>
 
+#include <Core/Defines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -167,6 +169,24 @@ StorageMaterializedView::StorageMaterializedView(
         if (max_materialized_views_count_for_table && select_table_dependent_views.size() >= max_materialized_views_count_for_table)
             throw Exception(ErrorCodes::TOO_MANY_MATERIALIZED_VIEWS,
                             "Too many materialized views, maximum: {}", max_materialized_views_count_for_table.value);
+    }
+
+    /// A materialized view created as `… AS SELECT … SETTINGS limit = 1` (or `filter` / `order` / `sort` /
+    /// `offset` / `page`) keeps its query-construction settings in the stored definition (so `SHOW CREATE`
+    /// shows them). Unlike a regular view — whose inner query is materialized at read time in the
+    /// `StorageView` constructor — a non-`POPULATE` materialized view runs its stored inner query directly
+    /// from `InsertDependenciesBuilder` when source rows arrive, bypassing `executeQuery`. Materialize the
+    /// construction settings here so the inserted rows are shaped. Refreshable views run their query
+    /// through `executeQuery` on refresh (which performs the wrapping), so they are skipped here. The
+    /// `SETTINGS` clause lives on the stored union, so wrap that and re-derive the inner query the insert
+    /// path consumes. The expressions were validated at creation, so the default parser limits suffice.
+    if (!query.refresh_strategy && select.select_query && hasConstructionSettings(*select.select_query))
+    {
+        select.select_query = select.select_query->clone();
+        wrapNestedConstructionSettings(
+            select.select_query,
+            /*max_query_size=*/ 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        select.inner_query = select.select_query->as<ASTSelectWithUnionQuery &>().list_of_selects->children.at(0)->clone();
     }
 
     storage_metadata.setSelectQuery(select);

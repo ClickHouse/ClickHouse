@@ -1,0 +1,14 @@
+-- `filter` in the MV definition filters the rows pushed to the target (only x >= 7)
+7
+8
+9
+-- the construction setting is preserved verbatim in SHOW CREATE
+CREATE MATERIALIZED VIEW default.mv_filter TO default.t_dst_filter
+(
+    `x` UInt64
+)
+AS SELECT x
+FROM default.t_src_filter
+SETTINGS filter = 'x >= 7'
+-- `limit` in the MV definition caps the rows materialized from a single inserted block (3 of 10)
+3
