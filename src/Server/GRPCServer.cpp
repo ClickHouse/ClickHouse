@@ -20,6 +20,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/Session.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ConcatReadBuffer.h>
@@ -981,6 +982,14 @@ namespace
         ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert]);
         ast = parseQuery(parser, begin, end, "", settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
+        /// Apply the query text's own `SETTINGS` clause to `query_context` now — before resolving the
+        /// formats below and before `executeQuery`. `settings` is a live reference to the context's
+        /// settings, so the format resolution then sees the final values, and the `input()` table
+        /// function (whose reader is initialized during planning, inside `executeQuery`, before any
+        /// post-execution step) also reads the final `input_format` / `format` / `default_format`.
+        /// `applySettingsFromQuery` is idempotent, so `executeQuery` re-applying the clause is harmless.
+        InterpreterSetQuery::applySettingsFromQuery(ast, query_context);
+
         /// Choose input format. The explicit `input_format` / `format` settings (e.g. supplied via
         /// `QueryInfo.settings`) win over the `INSERT`'s `FORMAT` clause, matching the server query
         /// path (`InterpreterSetQuery::applySettingsFromQuery` -> `setInsertFormat`).
@@ -1071,25 +1080,6 @@ namespace
         }
         String query(begin, query_end);
         io = ::DB::executeQuery(query, query_context).second;
-
-        /// `executeQuery` has now applied the query text's own `SETTINGS` clause to `query_context`, so
-        /// re-resolve the formats from the final settings: an in-query `SETTINGS input_format = ...` /
-        /// `output_format = ...` / `format = ...` must win over the `FORMAT` clause and the
-        /// `QueryInfo.settings` values resolved before execution (matching the server query path). The
-        /// gRPC input / output readers are created later (`initializePipeline` / `generateOutput`), so
-        /// honoring the post-`SETTINGS` values here takes effect for both directions.
-        const auto & resolved_settings = query_context->getSettingsRef();
-        if (insert_query)
-        {
-            if (const String & input_format_setting = resolved_settings[Setting::input_format]; !input_format_setting.empty())
-                input_format = input_format_setting;
-            else if (const String & format_setting = resolved_settings[Setting::format]; !format_setting.empty())
-                input_format = format_setting;
-        }
-        if (const String & output_format_setting = resolved_settings[Setting::output_format]; !output_format_setting.empty())
-            output_format = output_format_setting;
-        else if (const String & format_setting = resolved_settings[Setting::format]; !format_setting.empty())
-            output_format = format_setting;
     }
 
     void Call::processInput()

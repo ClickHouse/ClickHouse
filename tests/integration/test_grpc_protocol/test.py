@@ -359,6 +359,37 @@ def test_database_setting():
     query("DROP DATABASE grpc_db2")
 
 
+def test_input_function_format_settings():
+    # The input() table function initializes its reader during planning (inside executeQuery), before any
+    # post-execution step, so an in-query SETTINGS input_format must be applied before executeQuery. Here
+    # the INSERT has no FORMAT clause (would default to Values), and input_format = 'CSV' must win.
+    query("DROP TABLE IF EXISTS t_inp")
+    query("CREATE TABLE t_inp (a UInt8) ENGINE = Memory")
+    query(
+        "INSERT INTO t_inp SELECT * FROM input('a UInt8') SETTINGS input_format = 'CSV'",
+        input_data="1\n2\n3\n",
+    )
+    assert query("SELECT a FROM t_inp ORDER BY a") == "1\n2\n3\n"
+    query("DROP TABLE t_inp")
+
+
+def test_default_format_setting():
+    # `default_format` is the output fallback when there is no output_format/format setting, no FORMAT
+    # clause and no gRPC output_format field. It must be re-resolved from the final settings, so pass an
+    # empty gRPC output_format here.
+    query("DROP TABLE IF EXISTS t_df")
+    query("CREATE TABLE t_df (a UInt8) ENGINE = Memory")
+    query("INSERT INTO t_df VALUES (1),(2),(3)")
+    assert (
+        query(
+            "SELECT a FROM t_df ORDER BY a SETTINGS default_format = 'JSONEachRow'",
+            output_format="",
+        )
+        == '{"a":1}\n{"a":2}\n{"a":3}\n'
+    )
+    query("DROP TABLE t_df")
+
+
 def test_totals_and_extremes():
     query("CREATE TABLE t (x UInt8, y UInt8) ENGINE = Memory")
     query("INSERT INTO t VALUES (1, 2), (2, 4), (3, 2), (3, 3), (3, 4)")
