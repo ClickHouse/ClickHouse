@@ -37,6 +37,25 @@ ThreadPoolCallbackRunnerUnsafe<void> TaskTracker::syncRunner()
     };
 }
 
+void TaskTracker::scheduleFinalTask(std::shared_ptr<std::packaged_task<void()>> final_task_)
+{
+    /// The future of `final_task_` is already stored in `futures` and will be waited on by
+    /// waitAll(). If the scheduler throws (e.g. CANNOT_SCHEDULE_TASK injected by the thread
+    /// fuzzer, or a genuinely exhausted pool), the packaged task would be destroyed without
+    /// being run, leaving that future with a broken promise. waitAll() would then throw a
+    /// std::future_error (a std::logic_error), which aborts the server in debug/sanitizer
+    /// builds instead of surfacing the real scheduling error. Run the task inline in that
+    /// case so its future always carries a proper result or the actual exception.
+    try
+    {
+        scheduler([pt = final_task_]() mutable { (*pt)(); }, Priority{});
+    }
+    catch (...)
+    {
+        (*final_task_)();
+    }
+}
+
 void TaskTracker::waitAll()
 {
     /// Exceptions are propagated
@@ -139,17 +158,7 @@ void TaskTracker::add(Callback && func)
                 has_finished.notify_one();
             }
             if (maybe_final_task)
-            {
-                try
-                {
-                    scheduler([pt = std::move(maybe_final_task)]() mutable { (*pt)(); }, Priority{});
-                }
-                catch (...)
-                {
-                    /// SCOPE_EXIT is noexcept; let the final task's future report broken_promise.
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
-                }
-            }
+                scheduleFinalTask(std::move(maybe_final_task));
         });
 
         my_func();
@@ -183,9 +192,7 @@ void TaskTracker::addFinal(Callback && func)
         }
     }
     if (run_final_task_now)
-    {
-        scheduler([p = std::move(pt)]() mutable { (*p)(); }, Priority{});
-    }
+        scheduleFinalTask(std::move(pt));
 }
 
 void TaskTracker::waitTilInflightShrink()

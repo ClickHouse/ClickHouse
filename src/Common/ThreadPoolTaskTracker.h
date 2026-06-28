@@ -50,6 +50,10 @@ private:
 
     void collectFinishedFutures(bool propagate_exceptions) TSA_REQUIRES(mutex);
 
+    /// Schedules the final task; if the scheduler throws, runs it inline so its future is
+    /// never left with a broken promise (see the definition for details).
+    void scheduleFinalTask(std::shared_ptr<std::packaged_task<void()>> final_task_);
+
     const bool is_async;
     ThreadPoolCallbackRunnerUnsafe<void> scheduler;
     const size_t max_tasks_inflight;

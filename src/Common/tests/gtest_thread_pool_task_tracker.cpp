@@ -201,3 +201,92 @@ TEST(TaskTrackerAddFinal, SyncRunnerPriorFailureDoesNotDeadlock)
     EXPECT_THROW(tracker.waitAll(), std::runtime_error);
     tracker.safeWaitAll();
 }
+
+namespace
+{
+
+/// A scheduler that runs every callback synchronously and inline (so all task futures get a
+/// proper result), except that it throws on the Nth schedule call. Used to model the thread
+/// fuzzer's CANNOT_SCHEDULE_TASK fault hitting the scheduling of the final task.
+ThreadPoolCallbackRunnerUnsafe<void> throwingOnNthSchedule(std::shared_ptr<std::atomic<size_t>> calls, size_t throw_on_call)
+{
+    return [calls, throw_on_call](std::function<void()> && callback, int64_t) mutable -> std::future<void>
+    {
+        if (calls->fetch_add(1) + 1 == throw_on_call)
+            throw std::runtime_error("scheduler refused the task");
+
+        auto package = std::packaged_task<void()>(std::move(callback));
+        package();
+        return package.get_future();
+    };
+}
+
+}
+
+/// Regression test for the broken_promise abort (std::future_error code 1001) seen in stress
+/// tests: when scheduling the final task (e.g. the async S3 completeMultipartUpload) failed
+/// with CANNOT_SCHEDULE_TASK, the final packaged task was dropped without running, leaving its
+/// already-stored future with a broken promise. waitAll() then threw std::future_error (a
+/// std::logic_error), aborting the server in debug/sanitizer builds. The scheduling failure
+/// must not turn into a broken promise; the final task must still run and its future stay valid.
+TEST(TaskTrackerAddFinal, FinalTaskScheduleFailureDoesNotBreakPromise)
+{
+    auto calls = std::make_shared<std::atomic<size_t>>(0);
+    /// 3 add() calls schedule successfully, the 4th schedule (the final task) throws.
+    TaskTracker tracker(throwingOnNthSchedule(calls, /*throw_on_call=*/4), /*max_tasks_inflight=*/0, makeTestLogger());
+    ASSERT_TRUE(tracker.isAsync());
+
+    std::atomic<size_t> ran{0};
+    std::atomic<bool> final_ran{false};
+
+    for (size_t i = 0; i < 3; ++i)
+        tracker.add([&] { ran.fetch_add(1); });
+
+    tracker.addFinal([&] { final_ran = true; });
+
+    /// Must not throw std::future_error (broken_promise). Inline-running the final task means
+    /// its future carries a normal (success) result here.
+    EXPECT_NO_THROW(tracker.waitAll());
+    EXPECT_EQ(ran.load(), 3u);
+    EXPECT_TRUE(final_ran.load());
+
+    tracker.safeWaitAll();
+}
+
+/// Same as above but for the addFinal() "run final task now" branch: all prior tasks have
+/// already finished by the time addFinal is called, so the final task is scheduled directly
+/// from addFinal(). A scheduling failure there must likewise run the task inline rather than
+/// leave a broken promise.
+TEST(TaskTrackerAddFinal, FinalTaskScheduleFailureInAddFinalRunsInline)
+{
+    auto calls = std::make_shared<std::atomic<size_t>>(0);
+    /// The single add() schedules successfully (call 1), the final task schedule (call 2) throws.
+    TaskTracker tracker(throwingOnNthSchedule(calls, /*throw_on_call=*/2), /*max_tasks_inflight=*/0, makeTestLogger());
+
+    std::atomic<bool> final_ran{false};
+
+    tracker.add([] { /* ok */ });
+    /// The synchronous inline scheduler has already run the prior task, so addFinal() takes
+    /// the run_final_task_now branch.
+    tracker.addFinal([&] { final_ran = true; });
+
+    EXPECT_NO_THROW(tracker.waitAll());
+    EXPECT_TRUE(final_ran.load());
+
+    tracker.safeWaitAll();
+}
+
+/// When scheduling the final task fails and it is run inline, an exception thrown by the final
+/// callback itself must still be propagated through its future (not swallowed, not turned into
+/// a broken_promise).
+TEST(TaskTrackerAddFinal, FinalTaskScheduleFailurePropagatesFinalException)
+{
+    auto calls = std::make_shared<std::atomic<size_t>>(0);
+    TaskTracker tracker(throwingOnNthSchedule(calls, /*throw_on_call=*/2), /*max_tasks_inflight=*/0, makeTestLogger());
+
+    tracker.add([] { /* ok */ });
+    tracker.addFinal([] { throw std::runtime_error("final boom"); });
+
+    EXPECT_THROW(tracker.waitAll(), std::runtime_error);
+    tracker.safeWaitAll();
+}
