@@ -5190,6 +5190,97 @@ def test_snapshot_initialized_once_per_query(started_cluster):
         query_id=f"snapshot_init_cluster_sum_{TABLE_NAME}",
     )
 
+
+def test_schema_evolution_add_column_legacy(started_cluster):
+    """Test that the legacy DeltaLake metadata parser (without DeltaKernel) supports
+    schema evolution when new columns are added. Old data files that lack the new column
+    should return NULLs for missing columns.
+    Regression test for https://github.com/ClickHouse/ClickHouse/issues/100438
+    """
+    node = started_cluster.instances["node_with_disabled_delta_kernel"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    table_name = randomize_table_name("test_schema_evolution_legacy")
+    path = f"/{table_name}"
+
+    delta_function = f"""
+    deltaLake(
+        'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}',
+        '{minio_access_key}',
+        '{minio_secret_key}',
+        SETTINGS allow_experimental_delta_kernel_rs=0)
+    """
+
+    # Step 1: Create initial table with two columns.
+    # Note: Spark writes all columns as nullable in Delta Lake JSON metadata
+    # regardless of the Spark nullable flag, so the legacy parser returns Nullable types.
+    initial_schema = StructType(
+        [
+            StructField("id", IntegerType(), nullable=True),
+            StructField("name", StringType(), nullable=True),
+        ]
+    )
+    initial_data = [(1, "Alice"), (2, "Bob")]
+    df = spark.createDataFrame(data=initial_data, schema=initial_schema)
+    df.write.format("delta").mode("overwrite").save(path)
+    upload_directory(minio_client, bucket, path, "")
+
+    # Verify initial schema and data.
+    assert node.query(f"DESCRIBE TABLE {delta_function} FORMAT TSV") == TSV(
+        [["id", "Nullable(Int32)"], ["name", "Nullable(String)"]]
+    )
+    assert (
+        node.query(f"SELECT id, name FROM {delta_function} ORDER BY id")
+        == "1\tAlice\n2\tBob\n"
+    )
+
+    # Step 2: Add a new column and append data with the evolved schema.
+    evolved_schema = StructType(
+        [
+            StructField("id", IntegerType(), nullable=True),
+            StructField("name", StringType(), nullable=True),
+            StructField("age", IntegerType(), nullable=True),
+        ]
+    )
+    evolved_data = [(3, "Charlie", 30), (4, "Diana", 25)]
+    df2 = spark.createDataFrame(data=evolved_data, schema=evolved_schema)
+    df2.write.option("mergeSchema", "true").mode("append").format("delta").save(path)
+    upload_directory(minio_client, bucket, path, "")
+
+    # Verify evolved schema includes the new column.
+    assert node.query(f"DESCRIBE TABLE {delta_function} FORMAT TSV") == TSV(
+        [["id", "Nullable(Int32)"], ["name", "Nullable(String)"], ["age", "Nullable(Int32)"]]
+    )
+
+    # Old rows should have NULL for the new column, new rows should have the value.
+    result = node.query(
+        f"SELECT id, name, age FROM {delta_function} ORDER BY id"
+    )
+    expected = "1\tAlice\t\\N\n2\tBob\t\\N\n3\tCharlie\t30\n4\tDiana\t25\n"
+    assert result == expected
+
+    # Step 3: Keep appending with the evolved schema until Delta Lake writes a checkpoint.
+    for i in range(5, 14):
+        checkpoint_data = [(i, f"User {i}", 20 + i)]
+        checkpoint_df = spark.createDataFrame(data=checkpoint_data, schema=evolved_schema)
+        checkpoint_df.write.option("mergeSchema", "true").mode("append").format("delta").save(path)
+    upload_directory(minio_client, bucket, path, "")
+
+    files = [
+        obj.object_name
+        for obj in minio_client.list_objects(bucket, table_name, recursive=True)
+    ]
+    assert any(file.endswith("_last_checkpoint") for file in files), f"Files: {files}"
+
+    assert int(node.query(f"SELECT count() FROM {delta_function}")) == 13
+    result = node.query(
+        f"SELECT id, age FROM {delta_function} WHERE id IN (1, 2, 3, 4, 13) ORDER BY id"
+    )
+    expected = "1\t\\N\n2\t\\N\n3\t30\n4\t25\n13\t33\n"
+    assert result == expected
+
+
 @pytest.mark.parametrize("allow_experimental_analyzer", [0, 1])
 def test_insert_select_from_cluster_with_partition_pruning(started_cluster, allow_experimental_analyzer):
     node = started_cluster.instances["node1"]

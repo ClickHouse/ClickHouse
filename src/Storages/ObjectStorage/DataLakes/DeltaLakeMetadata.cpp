@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <set>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -12,6 +13,7 @@
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatSettings.h>
 
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
@@ -59,7 +61,6 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -197,7 +198,12 @@ struct DeltaLakeMetadataImpl
         }
         else
         {
-            const auto keys = listFiles(*object_storage, table_path, deltalake_metadata_directory, metadata_file_suffix);
+            auto keys = listFiles(*object_storage, table_path, deltalake_metadata_directory, metadata_file_suffix);
+            /// Delta log file names are zero-padded version numbers (e.g. 00000000000000000001.json),
+            /// so lexicographic order is version order. The listing order is not guaranteed
+            /// (e.g. local object storage lists in directory iteration order), while entries
+            /// must be replayed in version order for the latest `metaData` entry to win.
+            std::sort(keys.begin(), keys.end());
             for (const String & key : keys)
                 processMetadataFile(key, current_schema, current_partition_columns, result_files);
         }
@@ -235,11 +241,11 @@ struct DeltaLakeMetadataImpl
      * "
      */
 
-    /// Read metadata file and fill `file_schema`, `file_parition_columns`, `result`.
+    /// Read metadata file and fill `file_schema`, `file_partition_columns`, `result`.
     /// `result` is a list of data files.
     /// `file_schema` is a common schema for all files.
-    /// Schema evolution is not supported, so we check that all files have the same schema.
-    /// `file_partiion_columns` is information about partition columns of data files.
+    /// Schema evolution is supported: when a new schema is encountered, it replaces the previous one.
+    /// `file_partition_columns` is information about partition columns of data files.
     void processMetadataFile(
         const String & metadata_file_path,
         NamesAndTypesList & file_schema,
@@ -302,10 +308,8 @@ struct DeltaLakeMetadataImpl
                 }
                 else if (file_schema != current_schema)
                 {
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                                    "Reading from files with different schema is not possible "
-                                    "({} is different from {})",
-                                    file_schema.toString(), current_schema.toString());
+                    LOG_INFO(log, "Schema evolved: {} -> {}", file_schema.toString(), current_schema.toString());
+                    file_schema = current_schema;
                 }
             }
 
@@ -529,6 +533,51 @@ struct DeltaLakeMetadataImpl
         auto partition_values_column_raw = res_block.getByName("add.partitionValues").column;
         const auto & partition_values_column = assert_cast<const ColumnMap &>(*partition_values_column_raw);
 
+        /// Decode partition values for a single add-row using the current file_schema.
+        auto decode_partition_values = [&](size_t row_idx)
+        {
+            String path;
+            Poco::URI::decode(String(path_column.getDataAt(row_idx)), path);
+            if (path.empty())
+                return;
+
+            auto full_path = resolvePathInsideTable(table_path, path);
+            if (file_partition_columns.contains(full_path))
+                return;
+
+            Field map;
+            partition_values_column.get(row_idx, map);
+            auto partition_values_map = map.safeGet<Map>();
+            if (partition_values_map.empty())
+                return;
+
+            auto filename = fs::path(path).filename().string();
+            auto & current_partition_columns = file_partition_columns[full_path];
+            for (const auto & map_value : partition_values_map)
+            {
+                const auto tuple = map_value.safeGet<Tuple>();
+                const auto partition_name = tuple[0].safeGet<String>();
+                auto name_and_type = file_schema.tryGetByName(partition_name);
+                if (!name_and_type)
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "No such column in schema: {} (schema: {})",
+                        partition_name, file_schema.toString());
+                }
+                const auto value = tuple[1].safeGet<String>();
+                auto field = DB::DeltaLakeMetadata::getFieldValue(value, name_and_type->type);
+                current_partition_columns.emplace_back(std::move(name_and_type.value()), std::move(field));
+
+                LOG_TEST(log, "Partition {} value is {} (for {})", partition_name, value, filename);
+            }
+        };
+
+        /// Process schema and add entries in a single pass so that each row's
+        /// partition values are decoded against the schema active at that row's position.
+        /// Checkpoint row order is not guaranteed, so add rows that arrive before any
+        /// metaData row are buffered and their partition values decoded after schema is known.
+        std::vector<size_t> deferred_partition_rows;
         for (size_t i = 0; i < path_column.size(); ++i)
         {
             const auto metadata = String(schema_column.getDataAt(i));
@@ -543,61 +592,45 @@ struct DeltaLakeMetadataImpl
                 {
                     file_schema = current_schema;
                     LOG_TEST(log, "Processed schema from checkpoint: {}", file_schema.toString());
+
+                    /// Schema is now available — decode any buffered add rows.
+                    for (auto deferred_idx : deferred_partition_rows)
+                        decode_partition_values(deferred_idx);
+                    deferred_partition_rows.clear();
                 }
                 else if (file_schema != current_schema)
                 {
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                                    "Reading from files with different schema is not possible "
-                                    "({} is different from {})",
-                                    file_schema.toString(), current_schema.toString());
+                    LOG_INFO(log, "Schema evolved in checkpoint: {} -> {}", file_schema.toString(), current_schema.toString());
+                    file_schema = current_schema;
                 }
             }
-        }
 
-        for (size_t i = 0; i < path_column.size(); ++i)
-        {
             String path;
             Poco::URI::decode(String(path_column.getDataAt(i)), path);
             if (path.empty())
                 continue;
 
-            auto filename = fs::path(path).filename().string();
+            /// Always register the file path immediately.
             auto full_path = resolvePathInsideTable(table_path, path);
-            auto it = file_partition_columns.find(full_path);
-            if (it == file_partition_columns.end())
-            {
-                Field map;
-                partition_values_column.get(i, map);
-                auto partition_values_map = map.safeGet<Map>();
-                if (!partition_values_map.empty())
-                {
-                    auto & current_partition_columns = file_partition_columns[full_path];
-                    for (const auto & map_value : partition_values_map)
-                    {
-                        const auto tuple = map_value.safeGet<Tuple>();
-                        const auto partition_name = tuple[0].safeGet<String>();
-                        auto name_and_type = file_schema.tryGetByName(partition_name);
-                        if (!name_and_type)
-                        {
-                            throw Exception(
-                                ErrorCodes::LOGICAL_ERROR,
-                                "No such column in schema: {} (schema: {})",
-                                partition_name, file_schema.toString());
-                        }
-                        const auto value = tuple[1].safeGet<String>();
-                        auto field = DB::DeltaLakeMetadata::getFieldValue(value, name_and_type->type);
-                        current_partition_columns.emplace_back(std::move(name_and_type.value()), std::move(field));
-
-                        LOG_TEST(log, "Partition {} value is {} (for {})", partition_name, value, filename);
-                    }
-                }
-            }
-
             LOG_TEST(log, "Adding {}", path);
             const auto [_, inserted] = result.insert(full_path);
             if (!inserted)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "File already exists {}", path);
+
+            /// Decode partition values if schema is available, otherwise defer.
+            if (file_schema.empty())
+                deferred_partition_rows.push_back(i);
+            else
+                decode_partition_values(i);
         }
+
+        /// If there are still deferred rows (no metaData row was ever seen),
+        /// this is an invalid checkpoint.
+        if (!deferred_partition_rows.empty())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Checkpoint has {} add rows but no metaData row; partition column decoding is impossible",
+                deferred_partition_rows.size());
 
         return version;
     }
@@ -774,6 +807,13 @@ Field DeltaLakeMetadata::getFieldValue(const String & value, DataTypePtr data_ty
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported DeltaLake type for {}", check_type->getColumnType());
+}
+
+void DeltaLakeMetadata::modifyFormatSettings(FormatSettings & format_settings, const Context &) const
+{
+    /// There can be missing columns because of ALTER ADD/DROP COLUMN.
+    /// So to support reading from such tables it is enough to turn on this setting.
+    format_settings.parquet.allow_missing_columns = true;
 }
 
 ObjectIterator DeltaLakeMetadata::iterate(
