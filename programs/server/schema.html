@@ -2035,9 +2035,19 @@ window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') clearHighlight();
 });
 
-/// Auto-load when served from a ClickHouse server (same origin); when opened from disk
-/// we wait for the user to fill in the connection and press Load.
-if (!openedLocally) {
+/// Auto-load only when the target is this page's own origin. We must NOT auto-load a
+/// cross-origin `?url=...` taken from the query string: the page may carry credentials
+/// filled in by the browser's password manager for the trusted page origin, and
+/// `chQuery` would forward them as `user`/`password` to the attacker-chosen server
+/// (which controls CORS). Cross-origin targets require an explicit `Load` click.
+function isSameOriginTarget(value) {
+    try {
+        return new URL(value, window.location.href).origin === window.location.origin;
+    } catch (e) {
+        return false;
+    }
+}
+if (!openedLocally && isSameOriginTarget($('url').value)) {
     loadAll();
 }
 </script>
