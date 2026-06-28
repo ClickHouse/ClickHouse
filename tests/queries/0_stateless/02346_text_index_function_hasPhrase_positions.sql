@@ -3,6 +3,7 @@
 SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET use_query_condition_cache = 0;
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS tab;
 

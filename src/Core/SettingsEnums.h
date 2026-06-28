@@ -594,6 +594,13 @@ enum class S3UriStyle : uint8_t
 
 DECLARE_SETTING_ENUM(S3UriStyle)
 
+enum class ExplainQueryPlanDefault : uint8_t
+{
+    LEGACY,
+    PRETTY,
+};
+DECLARE_SETTING_ENUM(ExplainQueryPlanDefault)
+
 enum class FileLikeEngineDefaultPartitionStrategy : uint8_t
 {
     WILDCARD,

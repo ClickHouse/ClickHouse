@@ -5,6 +5,7 @@
 -- half-open prefix range [x, x_incremented) it used for patterns with a perfect prefix.
 
 SET enable_analyzer = 1;
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_like_pk;
 
