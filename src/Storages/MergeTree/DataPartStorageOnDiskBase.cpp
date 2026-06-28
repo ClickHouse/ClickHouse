@@ -1,3 +1,4 @@
+#include <map>
 #include <string_view>
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Backups/BackupEntryWrappedWith.h>
@@ -902,6 +903,17 @@ void DataPartStorageOnDiskBase::remove(
     auto disk = volume->getDisk();
     fs::path to = fs::path(root_path) / part_dir_without_slash;
 
+    const std::string projection_suffix = ".proj";
+
+    struct ProjectionToRemove
+    {
+        IDataPartStorage::ProjectionStorageFormat format;
+        String source;                      /// proj dir before the rename
+        String destination;                 /// proj dir after the rename
+        MutableDataPartStoragePtr storage;  /// handle at the destination (used to read its checksums)
+    };
+    std::map<String, ProjectionToRemove> all_projections;
+
     if (!has_delete_prefix)
     {
         auto parent_path = getParentDirectory();
@@ -964,9 +976,46 @@ void DataPartStorageOnDiskBase::remove(
         if (!can_remove_description)
             can_remove_description.emplace(can_remove_callback());
 
+        auto strip_trailing_slash = [](String path)
+        {
+            if (!path.empty() && path.back() == '/')
+                path.pop_back();
+            return path;
+        };
+        auto update_projection_info = [&](const String & proj_name)
+        {
+            if (all_projections.contains(proj_name))
+                return;
+            auto projection_storage = getProjection(proj_name);
+            if (!projection_storage->exists())
+                return;
+
+            auto format = projection_storage->getProjectionStorageFormat();
+            auto destination = (format == ProjectionStorageFormat::FLAT)
+                ? create(volume, root_path, part_dir_without_slash.string() + "." + proj_name, /*initialize=*/ true, projection_storage_format)
+                : create(volume, to, proj_name, /*initialize=*/ true, projection_storage_format);
+
+            all_projections.emplace(
+                proj_name,
+                ProjectionToRemove{
+                    format,
+                    strip_trailing_slash(projection_storage->getRelativePath()),
+                    strip_trailing_slash(destination->getRelativePath()),
+                    destination});
+        };
+        for (const auto & projection : projections)
+            update_projection_info(projection.name + projection_suffix);
+        for (const auto & [name, _] : checksums.files)
+            if (endsWith(name, projection_suffix))
+                update_projection_info(name);
+
         try
         {
             disk->moveDirectory(from, to);
+
+            for (const auto & [_, projection] : all_projections)
+                if (projection.format == ProjectionStorageFormat::FLAT)
+                    disk->moveDirectory(projection.source, projection.destination);
             /// NOTE: we intentionally don't update part_dir here because it would cause a data race
             /// with concurrent readers (e.g. system.parts table queries calling getFullPath()).
             /// The part is being removed anyway, so the path doesn't need to be updated.
@@ -997,10 +1046,9 @@ void DataPartStorageOnDiskBase::remove(
 
     // Record existing projection directories so we don't remove them twice
     std::unordered_set<String> projection_directories;
-    std::string proj_suffix = ".proj";
     for (const auto & projection : projections)
     {
-        std::string proj_dir_name = projection.name + proj_suffix;
+        std::string proj_dir_name = projection.name + projection_suffix;
         projection_directories.emplace(proj_dir_name);
 
         NameSet files_not_to_remove_for_projection;
@@ -1018,7 +1066,8 @@ void DataPartStorageOnDiskBase::remove(
             std::move(files_not_to_remove_for_projection),
         };
 
-        clearDirectory(fs::path(to) / proj_dir_name, proj_description, projection.checksums, is_temp, log);
+        if (auto it = all_projections.find(proj_dir_name); it != all_projections.end())
+            clearDirectory(it->second.destination, proj_description, projection.checksums, is_temp, log);
     }
 
     /// It is possible that we are removing the part which have a written but not loaded projection.
@@ -1027,10 +1076,14 @@ void DataPartStorageOnDiskBase::remove(
     /// See test 01701_clear_projection_and_part.
     for (const auto & [name, _] : checksums.files)
     {
-        if (endsWith(name, proj_suffix) && !projection_directories.contains(name))
+        if (endsWith(name, projection_suffix) && !projection_directories.contains(name))
         {
+            auto it = all_projections.find(name);
+            if (it == all_projections.end())
+                continue;
+
             static constexpr auto checksums_name = "checksums.txt";
-            auto projection_storage = create(volume, to, name, /*initialize=*/ true, projection_storage_format);
+            const auto & projection_storage = it->second.storage;
 
             /// If we have a directory with suffix '.proj' it is likely a projection.
             /// Try to load checksums for it (to avoid recursive removing fallback).
@@ -1042,7 +1095,7 @@ void DataPartStorageOnDiskBase::remove(
                     auto in = projection_storage->readFile(checksums_name, {}, {});
                     tmp_checksums.read(*in);
 
-                    clearDirectory(fs::path(to) / name, *can_remove_description, tmp_checksums, is_temp, log);
+                    clearDirectory(it->second.destination, *can_remove_description, tmp_checksums, is_temp, log);
                 }
                 catch (...)
                 {
