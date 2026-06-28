@@ -945,17 +945,24 @@ bool Reader::columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_
     /// pages are dictionary-encoded. Without encoding stats we can't tell, so we don't risk it.
     if (!column_meta.meta_data.__isset.encoding_stats)
         return false;
+    /// Require positive proof, not just the absence of a contradiction: there must be at least one
+    /// non-empty data page and every non-empty data page must use a dictionary encoding. A present
+    /// but incomplete list (empty, or describing only the dictionary page and no data pages) does
+    /// not prove anything - the column chunk could still contain plain data pages whose values are
+    /// not in the dictionary, and pruning from such an incomplete value set would silently drop
+    /// matching rows. Empty data pages (count == 0) carry no values, so their encoding is irrelevant.
+    bool has_dictionary_data_page = false;
     for (const parq::PageEncodingStats & s : column_meta.meta_data.encoding_stats)
     {
-        bool dictionary_encoded =
-            (s.page_type != parq::PageType::DATA_PAGE && s.page_type != parq::PageType::DATA_PAGE_V2) ||
-            s.encoding == parq::Encoding::PLAIN_DICTIONARY ||
-            s.encoding == parq::Encoding::RLE_DICTIONARY ||
-            s.count == 0;
-        if (!dictionary_encoded)
+        if (s.page_type != parq::PageType::DATA_PAGE && s.page_type != parq::PageType::DATA_PAGE_V2)
+            continue;
+        if (s.count <= 0)
+            continue;
+        if (s.encoding != parq::Encoding::PLAIN_DICTIONARY && s.encoding != parq::Encoding::RLE_DICTIONARY)
             return false;
+        has_dictionary_data_page = true;
     }
-    return true;
+    return has_dictionary_data_page;
 }
 
 std::optional<std::unordered_set<UInt64>> Reader::hashDictionaryValues(ColumnChunk & column, const PrimitiveColumnInfo & column_info) const
