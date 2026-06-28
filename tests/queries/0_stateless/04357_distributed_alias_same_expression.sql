@@ -201,11 +201,13 @@ DROP TABLE dist_longlit;
 DROP TABLE loc_longlit;
 
 -- Adversarial: user text that looks like a planner table qualifier `__tableN.` must not perturb the collapse
--- reconstruction. The reconstruction matches shard columns to expected columns by blanking the `__tableN` qualifier
--- numbering on both sides, so any look-alike text (a column literally named `__table9`, the string constants
--- `'__table9'` / `'__table1.'`, an over-long `__table999...` run, a backquoted column or lambda argument that
--- contains `__table1.`) is produced identically on both sides and cancels out. Each case rides along a duplicate-ALIAS
--- collapse nested in a subquery, the case that triggers the renumbering between the shard and initiator trees.
+-- reconstruction. The reconstruction matches shard columns to expected columns after erasing the numbering of only
+-- the GENUINE `__tableN.` qualifiers, those whose tail is a real column name collected from the query tree. Any
+-- look-alike text (a column literally named `__table9`, the string constants `'__table9'` / `'__table1.'`, an
+-- over-long `__table999...` run, a backquoted column or lambda argument that contains `__table1.`) is not a genuine
+-- qualifier, so it is left untouched and two distinct such values never collapse onto one another. Each case rides
+-- along a duplicate-ALIAS collapse nested in a subquery, the case that triggers the renumbering between the shard and
+-- initiator trees.
 DROP TABLE IF EXISTS loc_adv;
 DROP TABLE IF EXISTS dist_adv;
 
@@ -246,9 +248,8 @@ SELECT a1, a2, c FROM
     FROM dist_adv GROUP BY a1, a2
 ) ORDER BY a1;
 
--- A string constant `'__table1.'` that mimics a complete qualifier (digits + trailing dot). It is the same text on
--- the shard and the initiator, so blanking its number on both sides cancels out; it does not collide with the real
--- `__table1` alias the way an asymmetric remap would, and the collapsed pair reconciles instead of failing with
+-- A string constant `'__table1.'` that mimics a complete qualifier (digits + trailing dot). It is a quoted span, not a
+-- genuine qualifier, so its number is left intact and the collapsed pair reconciles instead of failing with
 -- NUMBER_OF_COLUMNS_DOESNT_MATCH.
 SELECT a1, a2, v FROM
 (
@@ -256,8 +257,20 @@ SELECT a1, a2, v FROM
     FROM dist_adv GROUP BY a1, a2
 ) ORDER BY a1;
 
--- A backquoted column identifier `__table1.k` that looks like a qualifier with a trailing dot. It is user text, the
--- same on both sides, so it cancels out just like the string constant above.
+-- Two distinct string constants `'__table1.'` and `'__table2.'` that each mimic a complete qualifier, computed over a
+-- shard-side expression (`toString(x)`) so both land in the shard projection next to the collapsed (a1, a2) pair.
+-- Their digits must NOT be erased: they are user text, not genuine qualifiers (a genuine qualifier's tail is a real
+-- column name), so the two columns stay distinct and the collapse reconciles. Erasing them would make both canonicalize
+-- to the same name, drop one as a duplicate, and fail with NUMBER_OF_COLUMNS_DOESNT_MATCH.
+SELECT a1, a2, v1, v2 FROM
+(
+    SELECT a1, a2, concat('__table1.', toString(x)) AS v1, concat('__table2.', toString(x)) AS v2
+    FROM dist_adv GROUP BY a1, a2, v1, v2
+) ORDER BY a1;
+
+-- A backquoted column identifier `__table1.k` that looks like a qualifier with a trailing dot. It is the rendered
+-- name of a real column (`backQuoteIfNeed` quotes the dot), so it is matched as a whole tail and not mistaken for a
+-- `__table1.` qualifier followed by a column `k`.
 SELECT a1, a2, m FROM
 (
     SELECT a1, a2, `__table1.k` AS m
@@ -265,9 +278,9 @@ SELECT a1, a2, m FROM
 ) ORDER BY a1;
 
 -- Lambda argument names leak into the action name unquoted. `__table1.` (digits + trailing dot) and `__table1.y`
--- (which also carries a column-name tail, the same shape as a real qualifier) are both produced identically on the
--- shard and the initiator, so blanking the qualifier numbering on both sides cancels them out and the collapsed
--- (lam0, lam1) / (lamy0, lamy1) pairs reconcile instead of failing with NUMBER_OF_COLUMNS_DOESNT_MATCH.
+-- (which also carries a tail) look like qualifiers, but their tails (empty / `y`) are not real column names, so they
+-- are not treated as genuine qualifiers and their numbering is left intact. The collapsed (lam0, lam1) / (lamy0, lamy1)
+-- pairs reconcile instead of failing with NUMBER_OF_COLUMNS_DOESNT_MATCH.
 SELECT lam0, lam1 FROM
 (
     SELECT lam0, lam1 FROM dist_adv GROUP BY lam0, lam1
