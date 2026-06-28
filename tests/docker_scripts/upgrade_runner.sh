@@ -329,8 +329,10 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       value) and an exact-literal allow-list can never be complete. Instead these are matched by error CLASS in
 #       the secondary pipe: a CANNOT_PARSE_TEXT raised on a background-mutation executor
 #       (MutatePlainMergeTreeTask / MutateFromLogEntryTask / MergeTreeBackgroundExecutor), regardless of the value
-#       or type. User-initiated parse errors keep the `} <Error> TCPHandler:` / `} <Error> executeQuery:` prefix
-#       and are excluded by those separate filters, so genuine query-time parse errors still surface.
+#       or type. This filter does not broaden the existing query-error suppression: user-initiated parse errors
+#       carry the `} <Error> TCPHandler:` / `} <Error> executeQuery:` prefix and are already dropped by the
+#       fixed-string entries above, so this class filter only adds the background-executor CANNOT_PARSE_TEXT
+#       lines, which lack that prefix.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 # `Unknown tokenizer: 'unicode_word'` appears because the `unicode_word` tokenizer was renamed to `asciiCJK`
