@@ -1054,6 +1054,12 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     const ContextPtr & context)
 {
     context->getRemoteHostFilter().checkURL(Poco::URI(uri));
+    /// Enforce <http_forbid_headers> before any network access. This is the single funnel for
+    /// schema inference (StorageURL ctor, StorageURLCluster, TableFunctionURL analysis), so the
+    /// check here also covers the DESCRIBE / INSERT..SELECT / format-detection paths that never
+    /// reach the StorageURL ctor body. checkAndNormalizeHeaders mutates, so validate a copy.
+    HTTPHeaderEntries headers_to_check(headers);
+    context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_to_check);
 
     Poco::Net::HTTPBasicCredentials credentials;
 
