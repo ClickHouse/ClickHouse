@@ -43,6 +43,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
             {"skip_unavailable_shards_mode", "unavailable_or_table_missing", "unavailable_or_table_missing", "New setting to control which exceptions from a remote shard are ignored when `skip_unavailable_shards` is enabled. The default matches the historical behavior: a shard whose table is missing is treated as unavailable."},
+            {"explain_query_plan_default", "legacy", "pretty", "From 26.7, `EXPLAIN PLAN` defaults to `actions=1, compact=1, pretty=1`. Set this to `legacy` to restore the pre-26.7 output."},
+            {"format_geojson_validate_geometry", true, true, "New setting that controls whether the GeoJSON format enforces RFC 7946 geometry validity (minimum points per line and ring, ring closure, non-empty multi-geometries) when reading and writing"},
+            {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},
+            {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",

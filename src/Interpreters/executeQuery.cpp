@@ -2253,7 +2253,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
         });
     }
 
-    if (!flags.internal && ast)
+    const bool is_shared_catalog_internal = context->getClientInfo().is_shared_catalog_internal;
+    if (!flags.internal && !is_shared_catalog_internal && ast)
     {
         Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
         if (ast_fuzzer_runs_value > 0)
@@ -2568,7 +2569,8 @@ void executeQuery(
         if (implicit_tcl_executor->transactionRunning())
             implicit_tcl_executor->commit(context);
 
-        if (!flags.internal && ast)
+        const bool is_shared_catalog_internal = context->getClientInfo().is_shared_catalog_internal;
+        if (!flags.internal && !is_shared_catalog_internal && ast)
         {
             Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
             if (ast_fuzzer_runs_value > 0)
