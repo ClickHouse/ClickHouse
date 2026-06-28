@@ -18,7 +18,7 @@ from ci.praktika.utils import MetaClasses, Shell, Utils
 
 current_directory = Utils.cwd()
 build_dir = f"{current_directory}/ci/tmp/fast_build"
-temp_dir = f"{current_directory}/ci/tmp/"
+temp_dir = Path(current_directory) / "ci" / "tmp"
 build_dir_normalized = str(repo_path / "ci" / "tmp" / "fast_build")
 
 
@@ -167,7 +167,7 @@ def main():
     clickhouse_bin_path = Path(f"{build_dir}/programs/clickhouse")
 
     for path in [
-        Path(temp_dir) / "clickhouse",
+        temp_dir / "clickhouse",
         clickhouse_bin_path,
         Path(current_directory) / "clickhouse",
     ]:
@@ -371,6 +371,13 @@ def main():
             clickhouse_bin_path,
             *CH.prepare_logs(info=info, all=True),
         ]
+        # clickhouse-test runs with cwd=temp_dir, so the full server stacktrace
+        # dumps it writes on a timeout / hung check land here. Attach them so
+        # the report links the full dumps (stdout keeps only a trimmed preview).
+        for stacktrace_log in ("sql_stacktraces.log", "c_stacktraces.log"):
+            path = temp_dir / stacktrace_log
+            if path.exists():
+                attach_files.append(path)
 
     CH.terminate(force=True)
 
