@@ -1,4 +1,6 @@
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Disks/WriteMode.h>
@@ -15,136 +17,157 @@ using namespace DB;
 class MetadataPlainDiskTest : public testing::Test
 {
 public:
-    void SetUp() override
+    std::shared_ptr<IMetadataStorage> getMetadataStorage(const std::string & key_prefix, size_t object_metadata_cache_size = 0)
     {
-        test_dir = "./test_metadata_plain_disk_" + std::to_string(reinterpret_cast<uintptr_t>(this));
-        fs::remove_all(test_dir);
-    }
+        if (!active_metadatas.contains(key_prefix))
+            createStorage(key_prefix, object_metadata_cache_size);
 
+        return active_metadatas.at(key_prefix);
+    }
+    std::shared_ptr<IObjectStorage> getObjectStorage(const std::string & key_prefix)
+    {
+        if (!active_object_storages.contains(key_prefix))
+            createStorage(key_prefix, /*object_metadata_cache_size=*/0);
+
+        return active_object_storages.at(key_prefix);
+    }
     void TearDown() override
     {
-        fs::remove_all(test_dir);
-    }
+        for (const auto & [_, metadata] : active_metadatas)
+            metadata->shutdown();
 
-    /// Create a MetadataStorageFromPlainObjectStorage backed by LocalObjectStorage.
-    /// key_prefix simulates the S3 common key prefix (e.g. "data").
-    std::pair<std::shared_ptr<IMetadataStorage>, std::shared_ptr<IObjectStorage>>
-    createWithPrefix(const std::string & key_prefix) const
+        for (const auto & [_, object_storage] : active_object_storages)
+        {
+            object_storage->shutdown();
+            fs::remove_all(object_storage->getCommonKeyPrefix());
+        }
+    }
+private:
+    void createStorage(const std::string & key_prefix, size_t object_metadata_cache_size)
     {
-        std::string full_prefix = key_prefix.empty()
-            ? test_dir
-            : (fs::path(test_dir) / key_prefix).string();
-        LocalObjectStorageSettings settings("test", full_prefix, /*read_only_=*/false);
+        fs::remove_all("./" + key_prefix);
+        LocalObjectStorageSettings settings("test", "./" + key_prefix, /*read_only_=*/false);
         auto object_storage = std::make_shared<LocalObjectStorage>(std::move(settings));
-        auto metadata_storage = std::make_shared<MetadataStorageFromPlainObjectStorage>(
-            object_storage, /*storage_path_prefix_=*/"", /*object_metadata_cache_size=*/0);
-        return {metadata_storage, object_storage};
+        auto metadata_storage = std::make_shared<MetadataStorageFromPlainObjectStorage>(object_storage, /*storage_path_prefix_=*/"", object_metadata_cache_size);
+        active_metadatas.emplace(key_prefix, metadata_storage);
+        active_object_storages.emplace(key_prefix, object_storage);
     }
 
-    /// Write a file using getKeyForPath to construct the correct full key.
-    void writeFile(const std::shared_ptr<IObjectStorage> & storage, const std::string & relative_path, const std::string & content)
-    {
-        auto key = ObjectStorageKey::createAsRelative(storage->getCommonKeyPrefix(), relative_path);
-        StoredObject object(key.serialize());
-        auto buf = storage->writeObject(object, WriteMode::Rewrite);
-        buf->write(content.data(), content.size());
-        buf->preFinalize();
-        buf->finalize();
-    }
-
-    bool fileExists(const std::shared_ptr<IObjectStorage> & storage, const std::string & relative_path)
-    {
-        auto key = ObjectStorageKey::createAsRelative(storage->getCommonKeyPrefix(), relative_path);
-        return fs::exists(key.serialize());
-    }
-
-    std::string test_dir;
+    std::unordered_map<std::string, std::shared_ptr<IMetadataStorage>> active_metadatas;
+    std::unordered_map<std::string, std::shared_ptr<IObjectStorage>> active_object_storages;
 };
 
-/// Verify that removeDirectory correctly removes objects when a non-empty
-/// common key prefix is configured. This is a regression test for the bug where
-/// removeDirectory used iterator paths directly without prepending the key prefix.
-TEST_F(MetadataPlainDiskTest, RemoveDirectoryWithKeyPrefix)
+static void writeFile(
+    const std::shared_ptr<IMetadataStorage> & metadata,
+    const std::shared_ptr<IObjectStorage> & object_storage,
+    const std::string & path,
+    const std::string & data)
 {
-    auto [metadata, object_storage] = createWithPrefix("data");
-
-    // Create files under "part_id/" directory (flat, no subdirectories)
-    writeFile(object_storage, "part_id/file1.txt", "content1");
-    writeFile(object_storage, "part_id/file2.bin", "content2");
-    writeFile(object_storage, "part_id/file3.dat", "content3");
-
-    ASSERT_TRUE(fileExists(object_storage, "part_id/file1.txt"));
-    ASSERT_TRUE(fileExists(object_storage, "part_id/file2.bin"));
-    ASSERT_TRUE(fileExists(object_storage, "part_id/file3.dat"));
-
     auto tx = metadata->createTransaction();
-    tx->removeDirectory("part_id");
-
-    EXPECT_FALSE(fileExists(object_storage, "part_id/file1.txt"));
-    EXPECT_FALSE(fileExists(object_storage, "part_id/file2.bin"));
-    EXPECT_FALSE(fileExists(object_storage, "part_id/file3.dat"));
+    StoredObject object(tx->generateObjectKeyForPath(path).serialize());
+    auto buffer = object_storage->writeObject(object, WriteMode::Rewrite);
+    buffer->write(data.data(), data.size());
+    buffer->preFinalize();
+    buffer->finalize();
 }
 
-/// Verify that removeRecursive correctly removes objects with a non-empty key prefix.
-TEST_F(MetadataPlainDiskTest, RemoveRecursiveWithKeyPrefix)
+static std::vector<std::string> listAllBlobs(const std::shared_ptr<IObjectStorage> & object_storage)
 {
-    auto [metadata, object_storage] = createWithPrefix("data");
+    std::vector<std::string> result;
 
-    // Create files under "uuid-12345/" directory
-    writeFile(object_storage, "uuid-12345/checksums.txt", "abc");
-    writeFile(object_storage, "uuid-12345/columns.txt", "def");
-    writeFile(object_storage, "uuid-12345/data.bin", "ghi");
+    const auto & prefix = object_storage->getCommonKeyPrefix();
+    if (!fs::exists(prefix))
+        return result;
 
-    ASSERT_TRUE(fileExists(object_storage, "uuid-12345/checksums.txt"));
-    ASSERT_TRUE(fileExists(object_storage, "uuid-12345/columns.txt"));
-    ASSERT_TRUE(fileExists(object_storage, "uuid-12345/data.bin"));
+    for (const auto & entry : fs::recursive_directory_iterator(prefix))
+        if (entry.is_regular_file())
+            result.push_back(entry.path().string());
 
-    auto tx = metadata->createTransaction();
-    tx->removeRecursive("uuid-12345", {});
-
-    EXPECT_FALSE(fileExists(object_storage, "uuid-12345/checksums.txt"));
-    EXPECT_FALSE(fileExists(object_storage, "uuid-12345/columns.txt"));
-    EXPECT_FALSE(fileExists(object_storage, "uuid-12345/data.bin"));
+    std::sort(result.begin(), result.end());
+    return result;
 }
 
-/// Verify that unlinkFile also works correctly with a non-empty key prefix.
-TEST_F(MetadataPlainDiskTest, UnlinkFileWithKeyPrefix)
+TEST_F(MetadataPlainDiskTest, RemoveDirectory)
 {
-    auto [metadata, object_storage] = createWithPrefix("data");
+    auto metadata = getMetadataStorage("RemoveDirectory");
+    auto object_storage = getObjectStorage("RemoveDirectory");
 
-    writeFile(object_storage, "some/path/file.txt", "hello");
-    ASSERT_TRUE(fileExists(object_storage, "some/path/file.txt"));
+    writeFile(metadata, object_storage, "part_id/file1.txt", "content1");
+    writeFile(metadata, object_storage, "part_id/file2.bin", "content2");
+    writeFile(metadata, object_storage, "part_id/file3.dat", "content3");
+    ASSERT_EQ(listAllBlobs(object_storage).size(), 3u);
+    ASSERT_TRUE(metadata->existsFile("part_id/file1.txt"));
 
-    auto tx = metadata->createTransaction();
-    tx->unlinkFile("some/path/file.txt", /*if_exists=*/false, /*should_remove_objects=*/true);
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeDirectory("part_id");
+    }
 
-    EXPECT_FALSE(fileExists(object_storage, "some/path/file.txt"));
+    EXPECT_FALSE(metadata->existsFile("part_id/file1.txt"));
+    EXPECT_FALSE(metadata->existsFile("part_id/file2.bin"));
+    EXPECT_FALSE(metadata->existsFile("part_id/file3.dat"));
+    EXPECT_TRUE(listAllBlobs(object_storage).empty());
 }
 
-/// Verify that removeDirectory is a no-op when the directory doesn't exist
-/// (no crash, no exception).
+TEST_F(MetadataPlainDiskTest, RemoveRecursive)
+{
+    auto metadata = getMetadataStorage("RemoveRecursive");
+    auto object_storage = getObjectStorage("RemoveRecursive");
+
+    writeFile(metadata, object_storage, "uuid-12345/checksums.txt", "abc");
+    writeFile(metadata, object_storage, "uuid-12345/columns.txt", "def");
+    writeFile(metadata, object_storage, "uuid-12345/data.bin", "ghi");
+    ASSERT_EQ(listAllBlobs(object_storage).size(), 3u);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("uuid-12345", {});
+    }
+
+    EXPECT_FALSE(metadata->existsFile("uuid-12345/checksums.txt"));
+    EXPECT_FALSE(metadata->existsFile("uuid-12345/columns.txt"));
+    EXPECT_FALSE(metadata->existsFile("uuid-12345/data.bin"));
+    EXPECT_TRUE(listAllBlobs(object_storage).empty());
+}
+
+TEST_F(MetadataPlainDiskTest, UnlinkFile)
+{
+    auto metadata = getMetadataStorage("UnlinkFile");
+    auto object_storage = getObjectStorage("UnlinkFile");
+    
+    writeFile(metadata, object_storage, "some/path/file.txt", "hello");
+    ASSERT_TRUE(metadata->existsFile("some/path/file.txt"));
+    
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("some/path/file.txt", /*if_exists=*/false, /*should_remove_objects=*/true);
+    }
+    
+    EXPECT_FALSE(metadata->existsFile("some/path/file.txt"));
+    EXPECT_TRUE(listAllBlobs(object_storage).empty());
+}
+
 TEST_F(MetadataPlainDiskTest, RemoveDirectoryNonExistent)
 {
-    auto [metadata, object_storage] = createWithPrefix("data");
-
+    auto metadata = getMetadataStorage("RemoveDirectoryNonExistent");
     auto tx = metadata->createTransaction();
     EXPECT_NO_THROW(tx->removeDirectory("nonexistent_dir"));
 }
 
-/// Verify behavior with an empty key prefix (should still work correctly).
-TEST_F(MetadataPlainDiskTest, RemoveDirectoryWithEmptyPrefix)
+TEST_F(MetadataPlainDiskTest, RemoveDirectoryInvalidatesObjectMetadataCache)
 {
-    auto [metadata, object_storage] = createWithPrefix("");
+    auto metadata = getMetadataStorage("RemoveDirectoryInvalidatesObjectMetadataCache", /*object_metadata_cache_size=*/1024 * 1024);
+    auto object_storage = getObjectStorage("RemoveDirectoryInvalidatesObjectMetadataCache");
+    
+    writeFile(metadata, object_storage, "part_id/file.txt", "12345");
+    ASSERT_EQ(metadata->getFileSize("part_id/file.txt"), 5u);
 
-    writeFile(object_storage, "part/file1.txt", "a");
-    writeFile(object_storage, "part/file2.txt", "b");
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeDirectory("part_id");
+    }
 
-    ASSERT_TRUE(fileExists(object_storage, "part/file1.txt"));
-    ASSERT_TRUE(fileExists(object_storage, "part/file2.txt"));
-
-    auto tx = metadata->createTransaction();
-    tx->removeDirectory("part");
-
-    EXPECT_FALSE(fileExists(object_storage, "part/file1.txt"));
-    EXPECT_FALSE(fileExists(object_storage, "part/file2.txt"));
+    EXPECT_FALSE(metadata->getFileSizeIfExists("part_id/file.txt").has_value());
+    EXPECT_FALSE(metadata->existsFile("part_id/file.txt"));
+    EXPECT_TRUE(listAllBlobs(object_storage).empty());
 }
