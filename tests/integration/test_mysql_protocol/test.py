@@ -270,7 +270,7 @@ def test_mysql_client_secure(started_cluster):
     )
 
     assert node_secure.contains_in_log(
-        f"<Error> MySQLHandler: DB::Exception: SSL connection required."
+        "<Error> MySQLHandler: DB::Exception: SSL connection required."
     ) 
 
 

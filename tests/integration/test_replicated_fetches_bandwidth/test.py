@@ -2,7 +2,6 @@
 import random
 import statistics
 import string
-import subprocess
 import time
 
 import pytest
