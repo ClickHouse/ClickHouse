@@ -204,8 +204,8 @@ DROP TABLE loc_longlit;
 -- reconstruction. The reconstruction matches shard columns to expected columns after erasing the numbering of only
 -- the GENUINE `__tableN.` qualifiers, those whose tail is a real column name collected from the query tree. Any
 -- look-alike text (a column literally named `__table9`, the string constants `'__table9'` / `'__table1.'`, an
--- over-long `__table999...` run, a backquoted column or lambda argument that contains `__table1.`) is not a genuine
--- qualifier, so it is left untouched and two distinct such values never collapse onto one another. Each case rides
+-- over-long `__table999...` run, a backquoted column named `__table1.k`, or a lambda argument named `__table1.y`) is
+-- not a genuine qualifier, so it is left untouched and two distinct such values never collapse onto one another. Each case rides
 -- along a duplicate-ALIAS collapse nested in a subquery, the case that triggers the renumbering between the shard and
 -- initiator trees.
 DROP TABLE IF EXISTS loc_adv;
@@ -219,10 +219,9 @@ CREATE TABLE loc_adv
     `__table1.k` UInt8,
     a1 String ALIAS toString(x),
     a2 String ALIAS toString(x),
-    -- ALIAS columns whose expression is a lambda. The lambda argument name is user text emitted into the action name
-    -- unquoted (`__table1.` and `__table1.y` below), so it is indistinguishable in shape from a real table qualifier.
-    lam0 Array(String) ALIAS arrayMap(`__table1.` -> toString(x), [0]),
-    lam1 Array(String) ALIAS arrayMap(`__table1.` -> toString(x), [0]),
+    -- ALIAS columns whose expression is a lambda. The lambda argument name `__table1.y` is user text emitted into the
+    -- action name unquoted, so it is indistinguishable in shape from a real table qualifier (`__tableN.<tail>`), yet its
+    -- tail `y` is not a real column name, so the qualifier blanking must leave it untouched.
     lamy0 Array(String) ALIAS arrayMap(`__table1.y` -> toString(x), [0]),
     lamy1 Array(String) ALIAS arrayMap(`__table1.y` -> toString(x), [0])
 )
@@ -277,15 +276,9 @@ SELECT a1, a2, m FROM
     FROM dist_adv GROUP BY a1, a2, `__table1.k`
 ) ORDER BY a1;
 
--- Lambda argument names leak into the action name unquoted. `__table1.` (digits + trailing dot) and `__table1.y`
--- (which also carries a tail) look like qualifiers, but their tails (empty / `y`) are not real column names, so they
--- are not treated as genuine qualifiers and their numbering is left intact. The collapsed (lam0, lam1) / (lamy0, lamy1)
--- pairs reconcile instead of failing with NUMBER_OF_COLUMNS_DOESNT_MATCH.
-SELECT lam0, lam1 FROM
-(
-    SELECT lam0, lam1 FROM dist_adv GROUP BY lam0, lam1
-) ORDER BY lam0;
-
+-- A lambda argument name leaks into the action name unquoted. `__table1.y` looks like a qualifier (digits + dot +
+-- tail), but its tail `y` is not a real column name, so it is not treated as a genuine qualifier and its numbering is
+-- left intact. The collapsed (lamy0, lamy1) pair reconciles instead of failing with NUMBER_OF_COLUMNS_DOESNT_MATCH.
 SELECT lamy0, lamy1 FROM
 (
     SELECT lamy0, lamy1 FROM dist_adv GROUP BY lamy0, lamy1
