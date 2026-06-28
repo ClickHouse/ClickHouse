@@ -199,3 +199,45 @@ SELECT length(a1) AS l, length(a2) AS m, count() AS c FROM dist_longlit GROUP BY
 
 DROP TABLE dist_longlit;
 DROP TABLE loc_longlit;
+
+-- Adversarial: text that looks like a planner table qualifier but is not one must not perturb the collapse
+-- reconstruction. The reconstruction realigns the shard/initiator `__tableN` numbering by scanning inlined
+-- action-name text, so a column literally named `__table9`, a string constant `'__table9'`, and an over-long
+-- `__table999...` digit run must NOT be treated as table indices (the qualifier `__table<digits>.` always has a
+-- trailing dot, and an over-long index must not overflow the parse). All of these ride along a duplicate-ALIAS
+-- collapse nested in a subquery, the case that actually triggers the realignment.
+DROP TABLE IF EXISTS loc_adv;
+DROP TABLE IF EXISTS dist_adv;
+
+CREATE TABLE loc_adv
+(
+    dt DateTime,
+    x UInt8,
+    `__table9` UInt8,
+    a1 String ALIAS toString(x),
+    a2 String ALIAS toString(x)
+)
+ENGINE = MergeTree ORDER BY dt;
+CREATE TABLE dist_adv AS loc_adv
+ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), loc_adv, rand());
+INSERT INTO loc_adv (dt, x, `__table9`) VALUES ('2024-01-01 00:00:00', 7, 5);
+
+-- A string constant `'__table9'` and an arithmetic over a column named `__table9` next to the collapsed (a1, a2)
+-- pair. Neither `__table9` token is a real qualifier (the constant has no trailing dot; the column qualifier is
+-- `__tableK.__table9`, where the `9` is the column name, not a table index).
+SELECT a1, a2, w, n FROM
+(
+    SELECT a1, a2, concat('__table9', a1) AS w, `__table9` + 1 AS n
+    FROM dist_adv GROUP BY a1, a2, `__table9`
+) ORDER BY a1;
+
+-- A string constant that mimics a qualifier with an over-long digit run (would overflow UInt64 if parsed as a
+-- table index). It must be skipped, not parsed, and the collapsed pair must still reconcile.
+SELECT a1, a2, c FROM
+(
+    SELECT a1, a2, concat('__table99999999999999999999999999999.col', a1) AS c
+    FROM dist_adv GROUP BY a1, a2
+) ORDER BY a1;
+
+DROP TABLE dist_adv;
+DROP TABLE loc_adv;

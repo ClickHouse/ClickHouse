@@ -11,7 +11,6 @@
 #include <Core/Block.h>
 #include <Planner/PlannerActionsVisitor.h>
 
-#include <cctype>
 #include <optional>
 #include <set>
 #include <string>
@@ -19,6 +18,7 @@
 #include <vector>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -889,8 +889,54 @@ private:
     std::unordered_map<String, String> & translation;
 };
 
+/// A planner-generated table qualifier matched in a column action name: the `__tableN.` token starting at
+/// `begin`, with the numeric index N already parsed into `id`. `end` is the offset just past the digits (the `.`),
+/// so the `__table` prefix spans `[begin, begin + 7)` and the digits span `[begin + 7, end)`.
+struct TableQualifier
+{
+    size_t begin;
+    size_t end;
+    UInt64 id;
+};
+
+/// Try to match a real analyzer-generated table qualifier `__tableN.` whose `__table` prefix starts at `at`.
+///
+/// The qualifier format is fixed by `buildColumnIdentifier` (Planner/PlannerContext.cpp), which renders a column
+/// identifier as `backQuoteIfNeed(table_alias) + "." + backQuoteIfNeed(column_name)`, where the alias is the
+/// `__tableN` assigned by `createUniqueAliasesIfNecessary`. `__tableN` is a valid identifier so it is never
+/// backquoted, and it is always followed by the `.` column separator. Requiring all of:
+///   - a non-word character (or string start) immediately before `__table`, so we do not match a suffix of a
+///     longer identifier such as `my__table1.`;
+///   - at least one digit after `__table`;
+///   - a `.` immediately after the digits;
+///   - the digit run fitting in UInt64 (`tryParse`, which checks overflow and never throws);
+/// restricts matching to genuine qualifiers and skips user-visible text such as a column literally named
+/// `__table9`, a string constant `'__table9'` inside `concat('__table9', ...)`, or an over-long `__table9...9`
+/// literal that would otherwise overflow the parse.
+std::optional<TableQualifier> matchTableQualifier(const String & name, size_t at)
+{
+    static constexpr std::string_view prefix = "__table";
+    if (name.compare(at, prefix.size(), prefix) != 0)
+        return {};
+    if (at > 0 && isWordCharASCII(name[at - 1]))
+        return {};
+
+    size_t digit_begin = at + prefix.size();
+    size_t digit_end = digit_begin;
+    while (digit_end < name.size() && isNumericASCII(name[digit_end]))
+        ++digit_end;
+    if (digit_end == digit_begin || digit_end >= name.size() || name[digit_end] != '.')
+        return {};
+
+    UInt64 id = 0;
+    if (!tryParse<UInt64>(id, name.data() + digit_begin, digit_end - digit_begin))
+        return {};
+
+    return TableQualifier{at, digit_end, id};
+}
+
 /// Collect the distinct `__tableN` indices that appear in a column action name. Action names embed the
-/// disambiguating table alias, e.g. `__table1.x` or `toString(__table1.x)`. Indices are stored numerically so a
+/// disambiguating table qualifier, e.g. `__table1.x` or `toString(__table1.x)`. Indices are stored numerically so a
 /// later ascending zip pairs them in table-declaration (DFS pre-order) order rather than lexicographically.
 void collectTableIds(const String & name, std::set<UInt64> & ids)
 {
@@ -898,20 +944,20 @@ void collectTableIds(const String & name, std::set<UInt64> & ids)
     size_t pos = 0;
     while ((pos = name.find(prefix, pos)) != String::npos)
     {
-        size_t digit_begin = pos + prefix.size();
-        size_t digit_end = digit_begin;
-        while (digit_end < name.size() && isdigit(static_cast<unsigned char>(name[digit_end])))
-            ++digit_end;
-        if (digit_end > digit_begin)
-            ids.emplace(parse<UInt64>(name.substr(digit_begin, digit_end - digit_begin)));
-        pos = (digit_end > digit_begin) ? digit_end : digit_begin;
+        if (auto qualifier = matchTableQualifier(name, pos))
+        {
+            ids.emplace(qualifier->id);
+            pos = qualifier->end;
+        }
+        else
+            pos += prefix.size();
     }
 }
 
 /// Rewrite the `__tableN` indices in a column action name according to `id_map` (initiator index -> shard index).
-/// Only full tokens are rewritten: the digit run after `__table` must end exactly at `from_id` (so `__table1` is
-/// not matched inside `__table12`), and the matched index must be present in `id_map`. All rewrites use the
-/// pre-rewrite indices, so a remap is never applied twice (e.g. 1->2 and 2->1 swap correctly).
+/// Only real `__tableN.` qualifiers are rewritten (see `matchTableQualifier`), and only when the matched
+/// index is present in `id_map`. All rewrites use the pre-rewrite indices, so a remap is never applied twice (e.g.
+/// 1->2 and 2->1 swap correctly).
 String remapTableIds(const String & name, const std::unordered_map<UInt64, UInt64> & id_map)
 {
     static constexpr std::string_view prefix = "__table";
@@ -927,23 +973,19 @@ String remapTableIds(const String & name, const std::unordered_map<UInt64, UInt6
             break;
         }
         result.append(name, pos, found - pos);
-        size_t digit_begin = found + prefix.size();
-        size_t digit_end = digit_begin;
-        while (digit_end < name.size() && isdigit(static_cast<unsigned char>(name[digit_end])))
-            ++digit_end;
 
-        if (digit_end > digit_begin)
+        if (auto qualifier = matchTableQualifier(name, found))
         {
-            UInt64 from_id = parse<UInt64>(name.substr(digit_begin, digit_end - digit_begin));
-            auto it = id_map.find(from_id);
+            auto it = id_map.find(qualifier->id);
             result.append(prefix);
-            result.append(it != id_map.end() ? toString(it->second) : toString(from_id));
+            result.append(it != id_map.end() ? toString(it->second) : toString(qualifier->id));
+            pos = qualifier->end; /// Resume at the `.`; the column part is copied verbatim on the next iteration.
         }
         else
         {
-            result.append(prefix); /// `__table` not followed by a number; copy the literal prefix.
+            result.append(prefix); /// Not a real qualifier; copy the literal `__table` prefix and continue past it.
+            pos = found + prefix.size();
         }
-        pos = digit_end;
     }
     return result;
 }
