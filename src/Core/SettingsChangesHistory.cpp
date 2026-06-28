@@ -49,6 +49,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"vector_query_plan_cache_max_size_in_bytes", 0, DEFAULT_VECTOR_QUERY_PLAN_CACHE_MAX_SIZE, "Introduced vector query plan cache. The maximum amount of memory (in bytes) the current user may allocate in the vector query plan cache. 0 means unlimited."},
             {"vector_query_plan_cache_max_entries", 0, DEFAULT_VECTOR_QUERY_PLAN_CACHE_MAX_ENTRIES, "Introduced vector query plan cache. The maximum number of query results the current user may store in the vector query plan cache. 0 means unlimited."},
             {"vector_query_plan_cache_ttl", 60, 60, "Introduced vector query plan cache. After this time in seconds entries in the vector query plan cache become stale."},
+            {"format_geojson_validate_geometry", true, true, "New setting that controls whether the GeoJSON format enforces RFC 7946 geometry validity (minimum points per line and ring, ring closure, non-empty multi-geometries) when reading and writing"},
+            {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},
+            {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",

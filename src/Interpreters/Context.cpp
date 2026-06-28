@@ -2332,10 +2332,10 @@ ClassifierPtr Context::getWorkloadClassifier() const
     return classifier;
 }
 
-void Context::releaseWorkloadResources() const
+void Context::releaseQuerySlot() const
 {
     if (auto elem = getProcessListElementSafe())
-        elem->releaseWorkloadResources();
+        elem->releaseQuerySlot();
 }
 
 String Context::getMergeWorkload() const
