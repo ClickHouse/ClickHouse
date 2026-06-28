@@ -138,8 +138,11 @@ def test_select_clamps_settings():
         "node2\treadonly\t1\n"
     )
 
+    # Value below node1's MIN constraint (11111111) so the shard clamps it to MIN;
+    # must still leave the initiator enough headroom to run the system.settings
+    # query itself (~1-2 MiB peak).
     assert (
-        distributed.query(query, settings={"max_memory_usage": 1})
+        distributed.query(query, settings={"max_memory_usage": 10000000})
         == "node1\tmax_memory_usage\t11111111\n"
         "node1\treadonly\t0\n"
         "node2\tmax_memory_usage\t0\n"
