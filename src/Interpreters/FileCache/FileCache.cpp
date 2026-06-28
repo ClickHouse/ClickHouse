@@ -1408,10 +1408,6 @@ bool FileCache::doEviction(
                 CurrentMetrics::get(CurrentMetrics::FilesystemCacheDownloadQueueElements));
         };
 
-        /// Concurrent reservers resume from the shared reserve cursor to avoid all re-scanning
-        /// the head and colliding on the same candidates. A lone reserver starts from the head
-        /// and resets the cursor for the next contended round. The background keeper has its
-        /// own cursor and is unaffected by this reset.
         const bool resume_reserve_cursor = cache_reserve_active_threads.load(std::memory_order_relaxed) > 1;
         const auto eviction_cursor = resume_reserve_cursor
             ? IFileCachePriority::EvictionCursor::Reserve

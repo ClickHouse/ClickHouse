@@ -317,8 +317,7 @@ public:
 
     virtual PriorityDumpPtr dump(const CachePriorityGuard::ReadLock &) = 0;
 
-    /// Which cursor a candidate-collection pass resumes from. The reserve path and the
-    /// background keeper each get their own cursor so neither perturbs the other's progress.
+    /// Which cursor a candidate-collection pass resumes from.
     enum class EvictionCursor
     {
         FromHead,   /// Start from the queue head; do not persist a position.

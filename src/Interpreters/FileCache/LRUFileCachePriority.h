@@ -177,9 +177,7 @@ private:
     LoggerPtr log;
     StatePtr state;
     /// Where the last collectCandidatesForEviction stopped, so a pass resumes instead of
-    /// rescanning from the head (skipping likely non-evictable entries). One per eviction
-    /// driver (see EvictionCursor) so the reserve path and the background keeper, which run
-    /// concurrently, do not clobber each other's progress.
+    /// rescanning from the head
     LRUQueue::iterator reserve_eviction_pos TSA_GUARDED_BY(eviction_pos_mutex);
     LRUQueue::iterator background_eviction_pos TSA_GUARDED_BY(eviction_pos_mutex);
     mutable std::mutex eviction_pos_mutex;
