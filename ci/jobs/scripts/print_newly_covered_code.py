@@ -397,15 +397,14 @@ if __name__ == "__main__":
            _stable_pr_fn_cov,   _stable_pr_fn_tot,
            _stable_pr_br_cov,   _stable_pr_br_tot)
 
-    # Load all extra baselines, accumulate into stable_base with remapping.
-    # Hunks are stored alongside data so stable_pr can reuse them.
+    # Stream each extra baseline: parse, accumulate into both stable sets, discard.
+    # Since stable_pr = Union(m1..mN, PR), every extra goes into both stable_base
+    # and stable_pr with the same remapping. There is no need to retain parsed dicts
+    # across iterations — doing so would hold ~530 MB × N_extras in memory at once.
     extra_baselines_used = 0
 
     primary_sha_path = f"{temp_dir}/base_llvm_coverage.sha"
     primary_sha = open(primary_sha_path).read().strip() if os.path.exists(primary_sha_path) else ""
-
-    _all_extra_data: list[dict] = []
-    _all_extra_hunks: list[dict] = []   # per-extra file_hunks in primary coords
 
     for extra_path in EXTRA_BASELINE_PATHS:
         if not (os.path.exists(extra_path) and os.path.getsize(extra_path) > 0):
@@ -438,24 +437,19 @@ if __name__ == "__main__":
         _bx = _parse_info(extra_path)
         print(f"  {len(_bx)} files in {os.path.basename(extra_path)}")
 
-        # Accumulate into stable_base with remapping so all baselines share
-        # m1's coordinate system.
+        # Accumulate into both stable sets immediately, then drop the parsed dict.
+        # stable_pr = Union(m1..mN, PR) so every extra feeds both sides identically.
         _accum_with_remap(_bx, file_hunks,
                           _stable_base_line_cov, _stable_base_line_tot,
                           _stable_base_fn_cov,   _stable_base_fn_tot,
                           _stable_base_br_cov,   _stable_base_br_tot)
-        _all_extra_data.append(_bx)
-        _all_extra_hunks.append(file_hunks)
-        del _bx
-        extra_baselines_used += 1
-
-    # Build stable_pr = Union(m1, m2..mN, PR) with remapping.
-    # All master baselines are included so stable_pr ⊇ stable_base always.
-    for _bx, _hunks in zip(_all_extra_data, _all_extra_hunks):
-        _accum_with_remap(_bx, _hunks,
+        _accum_with_remap(_bx, file_hunks,
                           _stable_pr_line_cov, _stable_pr_line_tot,
                           _stable_pr_fn_cov,   _stable_pr_fn_tot,
                           _stable_pr_br_cov,   _stable_pr_br_tot)
+        del _bx
+        extra_baselines_used += 1
+
     # PR side: no remapping needed (same source/binary epoch as m1).
     _accum(curr_data,
            _stable_pr_line_cov, _stable_pr_line_tot,
