@@ -598,6 +598,13 @@ std::optional<UInt64> StorageStripeLog::totalBytes(ContextPtr) const
 
 std::optional<UInt128> StorageStripeLog::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr local_context) const
 {
+    /// The hash relies on the table UUID to distinguish incarnations of a same-named table together with
+    /// the monotonic `data_version`. Without a UUID (e.g. a table in an `Ordinary` database) DROP + CREATE
+    /// restarts `data_version` from the same value, so a recreated table holding different data could
+    /// produce the same hash. There is no per-incarnation identity to fold in, so fail closed.
+    if (!getStorageID().hasUUID())
+        return {};
+
     /// Sample under the read lock so the hash observes the same committed state a normal read would.
     /// An in-progress INSERT/TRUNCATE/restore holds `rwlock` exclusively and may have already changed
     /// the files without yet publishing the new `data_version`/totals. Without this lock the hash could

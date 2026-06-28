@@ -50,6 +50,18 @@ CREATE TABLE t_url_failover (x UInt64) ENGINE = URL('http://localhost:1/a.csv|ht
 SELECT 'url glob null', modification_hash IS NULL FROM system.tables WHERE database = currentDatabase() AND name = 't_url_glob';
 SELECT 'url failover null', modification_hash IS NULL FROM system.tables WHERE database = currentDatabase() AND name = 't_url_failover';
 
+-- Version-only engines (Memory/Log/StripeLog) rely on the table UUID to distinguish incarnations
+-- of a same-named table together with a monotonic data_version. In an Ordinary database the UUID is
+-- Nil, so DROP + CREATE restarts data_version from the same value and a recreated table holding
+-- different data could collide. They fail closed there: modification_hash is NULL.
+SET allow_deprecated_database_ordinary = 1;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Ordinary;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mem_ord (x UInt64) ENGINE = Memory;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_mem_ord VALUES (1);
+SELECT 'ordinary memory null', modification_hash IS NULL FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 't_mem_ord';
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+
 -- System tables cannot tell whether their data changed: modification_hash is NULL.
 SELECT 'system table null', modification_hash IS NULL FROM system.tables WHERE database = 'system' AND name = 'one';
 

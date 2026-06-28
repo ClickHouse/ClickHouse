@@ -219,6 +219,13 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
 
 std::optional<UInt128> StorageMemory::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr /*context*/) const
 {
+    /// The hash relies on the table UUID to distinguish incarnations of a same-named table together with
+    /// a monotonic `data_version`. Without a UUID (e.g. a table in an `Ordinary` database) DROP + CREATE
+    /// restarts `data_version` from the same value, so a recreated table holding different data could
+    /// produce the same hash. There is no per-incarnation identity to fold in, so fail closed.
+    if (!getStorageID().hasUUID())
+        return {};
+
     SipHash hash;
 
     /// Table identity (distinguishes different incarnations of a table with the same name) and structure version.

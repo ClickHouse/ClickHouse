@@ -6,4 +6,5 @@ mem changed on insert	1
 log changed on insert	1
 url glob null	1
 url failover null	1
+ordinary memory null	1
 system table null	1
