@@ -619,13 +619,22 @@ bool FileSegment::reserve(
         if (granule > size_to_reserve)
         {
             chassert(range().size() >= reserved_size);
+
+            /// What the current write needs; the caps below must never reserve less.
+            const size_t required_size = size_to_reserve;
+
+            /// Bump up to a full granule, bounded by the remaining segment space.
             size_to_reserve = std::min(granule, range().size() - reserved_size);
 
-            /// Don't reserve ahead past what the read will consume: `already_reserved_size +
-            /// size_to_reserve` is the space reserved beyond the download offset, capped at the hint.
-            /// The hint is always >= the needed reservation, so this never drops below it.
+            /// Don't reserve ahead past what the read will still consume. `reserve_hint` can be
+            /// below `already_reserved_size` once a previous call reserved a granule ahead, so
+            /// clamp the subtraction to avoid underflow.
             if (reserve_hint && already_reserved_size + size_to_reserve > reserve_hint)
-                size_to_reserve = reserve_hint - already_reserved_size;
+                size_to_reserve = reserve_hint > already_reserved_size ? reserve_hint - already_reserved_size : 0;
+
+            /// Reserve-ahead only ever reserves more, never less than required; otherwise a zero
+            /// would reach incrementSize and trip chassert(size).
+            size_to_reserve = std::max(size_to_reserve, required_size);
         }
     }
 
