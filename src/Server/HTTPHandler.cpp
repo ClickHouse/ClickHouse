@@ -27,6 +27,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
+#include <Common/maskSensitiveQueryParameters.h>
 #include <Common/SettingsChanges.h>
 #include <Common/StringUtils.h>
 #include <Common/scope_guard_safe.h>
@@ -194,7 +195,7 @@ void HTTPHandler::processQuery(
 {
     using namespace Poco::Net;
 
-    LOG_TRACE(log, "Request URI: {}", request.getURI());
+    LOG_TRACE(log, "Request URI: {}", maskSensitiveQueryParametersInURI(request.getURI()));
 
     if (!authenticateUser(request, params, response))
         return; // '401 Unauthorized' response with 'Negotiate' has been sent at this point.
@@ -763,7 +764,8 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             context->getSettingsRef(),
             context->getOpenTelemetrySpanLog());
         thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
-        thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
+        thread_trace_context->root_span.addAttribute(
+            "clickhouse.uri", [&] { return maskSensitiveQueryParametersInURI(request.getURI()); });
         thread_trace_context->root_span.addAttribute("http.referer", request.get("Referer", ""));
         thread_trace_context->root_span.addAttribute("http.user.agent", request.get("User-Agent", ""));
         thread_trace_context->root_span.addAttribute("http.method", request.getMethod());

@@ -83,6 +83,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         .condition = index.condition.get(),
         .part = *data_part,
         .index = *index.index,
+        .readable_ranges = nullptr,
     };
 
     deserialization_state = std::make_unique<MergeTreeIndexDeserializationState>(std::move(state));
