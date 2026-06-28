@@ -5,7 +5,6 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
-#include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
@@ -189,22 +188,6 @@ StorageView::StorageView(
 
     NormalizeSelectWithUnionQueryVisitor::Data data{SetOperationMode::Unspecified};
     NormalizeSelectWithUnionQueryVisitor{data}.visit(description.inner_query);
-
-    /// A view created as `… AS SELECT … SETTINGS limit = 1` (or `filter` / `order` / `sort` / `offset` /
-    /// `page`) keeps its query-construction settings verbatim in the stored definition (so `SHOW CREATE`
-    /// shows them). They are not applied by the interpreter, however — directly executed queries get them
-    /// materialized (by wrapping as a derived table) in `executeQuery`, but a stored view's inner query
-    /// bypasses that path. Materialize them here, on the in-memory inner query that every read path uses,
-    /// so the view returns the shaped result. Clone first so the stored `CREATE` AST keeps the original
-    /// `SETTINGS`. The construction-setting expressions are validated at creation, so the default parser
-    /// limits suffice for re-parsing them here (no query context is available in the constructor).
-    if (hasConstructionSettings(*description.inner_query))
-    {
-        description.inner_query = description.inner_query->clone();
-        wrapNestedConstructionSettings(
-            description.inner_query,
-            /*max_query_size=*/ 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-    }
 
     is_parameterized_view = is_parameterized_view_ || query.isParameterizedView();
     storage_metadata.setSelectQuery(description);

@@ -1,36 +1,31 @@
--- A view created `AS SELECT ... SETTINGS <construction setting>` keeps the setting verbatim in its
--- stored definition (so `SHOW CREATE` shows it) and applies it on read: the construction settings are
--- materialized on the view's inner query, the same way they are for a directly executed query. This
--- covers the stored-view lifecycle gap — the inner query bypasses `executeQuery`'s wrapping, so it is
--- materialized in the `StorageView` constructor instead.
+-- Query-construction settings (`select` / `filter` / `order` / `sort` / `limit` / `offset` / `page`)
+-- shape a result by wrapping the query as a derived table during direct execution. They are NOT supported
+-- in a stored view definition: a view's columns are inferred before any wrapping (so `select` would change
+-- the result schema versus the stored metadata), the per-`UNION`-arm pass is not applied, and a refreshable
+-- materialized view refreshes through `InterpreterInsertQuery` rather than `executeQuery`. They are
+-- rejected at CREATE time; specify them on the query that reads the view instead.
 
 DROP TABLE IF EXISTS t_src;
-DROP VIEW IF EXISTS v_limit;
-DROP VIEW IF EXISTS v_filter;
-DROP VIEW IF EXISTS v_order;
+DROP TABLE IF EXISTS t_dst;
+DROP VIEW IF EXISTS v_ok;
 
 CREATE TABLE t_src (x UInt64) ENGINE = MergeTree ORDER BY x AS SELECT number FROM numbers(10);
+CREATE TABLE t_dst (x UInt64) ENGINE = MergeTree ORDER BY x;
 
-SELECT '-- `limit` in the view definition caps the view result (3 rows)';
-CREATE VIEW v_limit AS SELECT x FROM t_src ORDER BY x SETTINGS limit = 3;
-SELECT count() FROM v_limit;
+SELECT '-- construction settings in a VIEW definition are rejected';
+CREATE VIEW v_bad AS SELECT x FROM t_src ORDER BY x SETTINGS limit = 3; -- { serverError NOT_IMPLEMENTED }
+CREATE VIEW v_bad AS SELECT x FROM t_src SETTINGS filter = 'x >= 7'; -- { serverError NOT_IMPLEMENTED }
+CREATE VIEW v_bad AS SELECT x FROM t_src SETTINGS sort = '-x', limit = 2; -- { serverError NOT_IMPLEMENTED }
+CREATE VIEW v_bad AS SELECT x FROM t_src SETTINGS select = 'x'; -- { serverError NOT_IMPLEMENTED }
 
-SELECT '-- the construction setting is preserved verbatim in SHOW CREATE';
-SHOW CREATE VIEW v_limit FORMAT TSVRaw;
+SELECT '-- construction settings in a MATERIALIZED VIEW definition are rejected';
+CREATE MATERIALIZED VIEW mv_bad TO t_dst AS SELECT x FROM t_src SETTINGS limit = 1; -- { serverError NOT_IMPLEMENTED }
 
-SELECT '-- `filter` in the view definition filters the view result (x >= 7)';
-CREATE VIEW v_filter AS SELECT x FROM t_src SETTINGS filter = 'x >= 7';
-SELECT count() FROM v_filter;
-SELECT x FROM v_filter ORDER BY x;
+SELECT '-- a plain view works; the reader applies construction settings to its own SELECT';
+CREATE VIEW v_ok AS SELECT x FROM t_src;
+SELECT x FROM v_ok ORDER BY x SETTINGS limit = 3;
+SELECT x FROM v_ok ORDER BY x SETTINGS filter = 'x >= 7';
 
-SELECT '-- `sort` + `limit` in the view definition select the top rows (the two largest)';
-CREATE VIEW v_order AS SELECT x FROM t_src SETTINGS sort = '-x', limit = 2;
-SELECT x FROM v_order ORDER BY x;
-
-SELECT '-- the construction setting also applies through the analyzer view inlining';
-SELECT count() FROM v_limit SETTINGS allow_experimental_analyzer = 1, analyzer_inline_views = 1;
-
-DROP VIEW v_order;
-DROP VIEW v_filter;
-DROP VIEW v_limit;
+DROP VIEW v_ok;
+DROP TABLE t_dst;
 DROP TABLE t_src;
