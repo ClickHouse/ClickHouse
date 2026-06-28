@@ -27,6 +27,7 @@ namespace Poco::Net
 namespace ProfileEvents
 {
     extern const Event CannotRemoveEphemeralNode;
+    extern const Event ZooKeeperWatchTriggeredOther;
 }
 
 namespace CurrentMetrics
@@ -486,7 +487,11 @@ public:
     /// Wait for the node to disappear or return immediately if it doesn't exist.
     /// If condition is specified, it is used to return early (when condition returns false)
     /// The function returns true if waited and false if waiting was interrupted by condition.
-    bool waitForDisappear(const std::string & path, const WaitCondition & condition = {});
+    /// triggered_event identifies the subsystem owning the watch for profile-event accounting.
+    bool waitForDisappear(
+        const std::string & path,
+        const WaitCondition & condition = {},
+        ProfileEvents::Event triggered_event = ProfileEvents::ZooKeeperWatchTriggeredOther);
 
     /// Checks if a the ephemeral node exists. These nodes are removed automatically by ZK when the session ends
     /// If the node exists and its value is equal to fast_delete_if_equal_value it will remove it
@@ -708,6 +713,16 @@ private:
         return MultiReadResponses<TResponse, try_multi>{std::move(future_responses)};
     }
 
+    /// Wait for a future with progress-based timeout using session_timeout_ms.
+    /// On each iteration, waits up to session_timeout_ms for the future. If it
+    /// becomes ready, returns true. Otherwise, checks if the server made progress
+    /// (any received data via `getLastReceivedTimestamp`). If yes, waits another full
+    /// session_timeout_ms. If no progress for a full session_timeout_ms — gives up.
+    /// Worst-case latency: session_timeout_ms after no progress before returning false.
+    /// Defense-in-depth: only fires if the receive thread is stuck.
+    template <typename T>
+    bool waitForFutureWithProgress(std::future<T> & future) const;
+
     std::unique_ptr<Coordination::IKeeper> impl;
     mutable std::unique_ptr<Coordination::IKeeper> optimal_impl;
 
@@ -727,7 +742,7 @@ private:
 
     AtomicStopwatch session_uptime;
 
-    int32_t session_node_version;
+    int32_t session_node_version{};
 
     std::unique_ptr<DB::BackgroundSchedulePoolTaskHolder> reconnect_task;
 };

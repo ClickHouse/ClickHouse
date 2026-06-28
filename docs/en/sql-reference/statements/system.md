@@ -101,9 +101,17 @@ Clears the mark cache.
 
 Clears the iceberg metadata cache.
 
+## SYSTEM CLEAR|DROP AVRO SCHEMA CACHE {#drop-avro-schema-cache}
+
+Clears the per-URL Confluent Schema Registry caches used by the `AvroConfluent` format. This drops both the schema-fetch cache (id → schema) and the schema-registration cache (subject + schema → id), so subsequent reads and writes fall back to the registry server. Useful when a schema was deleted or rewritten on the registry side, or to verify the registry's idempotency in tests.
+
 ## SYSTEM DROP PARQUET METADATA CACHE {#drop-parquet-metadata-cache}
 
 Clears the parquet metadata cache.
+
+## SYSTEM CLEAR|DROP POINT IN POLYGON CACHE {#drop-point-in-polygon-cache}
+
+Clears the cache of preprocessed constant polygons used by the function [`pointInPolygon`](../functions/geo/coordinates.md#pointinpolygon). The configured size limit (the `point_in_polygon_cache_size` server setting) is left unchanged, so the cache keeps accepting entries afterwards. To disable the cache instead, set `point_in_polygon_cache_size` to `0`.
 
 ## SYSTEM CLEAR|DROP TEXT INDEX CACHES {#drop-text-index-caches}
 
@@ -240,7 +248,7 @@ There are three different kind of handlers to add to functions:
 
 **Syntax**
 ```sql
-SYSTEM INSTRUMENT ADD FUNCTION HANDLER [PARAMETERS]
+SYSTEM INSTRUMENT ADD FUNCTION HANDLER [ARGUMENTS]
 ```
 
 where `FUNCTION` is any function or substring of a function such as `QueryMetricLog::startQuery`, and the handler one of the following
@@ -286,7 +294,7 @@ Removes either a single instrumentation point with:
 SYSTEM INSTRUMENT REMOVE ID
 ```
 
-all of them using the `ALL` parameter:
+all of them using the `ALL` keyword:
 
 ```sql
 SYSTEM INSTRUMENT REMOVE ALL
@@ -437,7 +445,7 @@ Returns `Ok.` even if table does not exist. Returns error when database does not
 SYSTEM START MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
 ```
 
-### SYSTEM SYSTEM UNFREEZE {#query_language-system-unfreeze}
+### SYSTEM UNFREEZE {#query_language-system-unfreeze}
 
 Clears a frozen backup with the specified name from all the disks. See more about unfreezing separate parts in [ALTER TABLE table_name UNFREEZE WITH NAME ](/sql-reference/statements/alter/partition#unfreeze-partition)
 

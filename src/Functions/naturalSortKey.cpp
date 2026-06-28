@@ -12,7 +12,7 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TOO_LARGE_STRING_SIZE;
 }
 
-class FunctionNaturalSortKey : public IFunction
+class FunctionNaturalSortKey final : public IFunction
 {
 public:
     static constexpr auto name = "naturalSortKey";

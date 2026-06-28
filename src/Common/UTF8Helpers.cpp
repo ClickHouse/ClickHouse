@@ -244,7 +244,7 @@ size_t convertCodePointToUTF8(int code_point, char * out_bytes, size_t out_lengt
         code_point,
         reinterpret_cast<uint8_t *>(out_bytes),
         static_cast<int>(out_length));
-    assert(res >= 0);
+    chassert(res >= 0);
     return res;
 }
 

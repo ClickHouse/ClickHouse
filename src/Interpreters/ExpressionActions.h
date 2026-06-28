@@ -125,11 +125,11 @@ public:
 
     JSONBuilder::ItemPtr toTree() const;
 
-    static NameAndTypePair getSmallestColumn(const NamesAndTypesList & columns);
-
-    /// Check if column is always zero. True if it's definite, false if we can't say for sure.
-    /// Call it only after subqueries for sets were executed.
-    bool checkColumnIsAlwaysFalse(const String & column_name) const;
+    /// Find the column with the smallest estimated in-memory size.
+    /// When skip_subcolumns=true (default), meta-subcolumns like .size0/.keys
+    /// are skipped — correct for storage column lists but not for subquery
+    /// projections where all entries are valid query-level outputs.
+    static NameAndTypePair getSmallestColumn(const NamesAndTypesList & columns, bool skip_subcolumns = true);
 
     ExpressionActionsPtr clone() const;
 

@@ -4,7 +4,6 @@
 #include <Core/Types.h>
 #include <boost/core/noncopyable.hpp>
 #include <Poco/Logger.h>
-#include <cassert>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>

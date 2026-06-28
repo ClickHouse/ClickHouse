@@ -8,7 +8,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers, start_s3_mock
-from helpers.utility import SafeThread, generate_values, replace_config
+from helpers.utility import generate_values, replace_config
 from helpers.blobs import wait_blobs_count_synchronization
 from helpers.wait_for_helpers import (
     wait_for_delete_empty_parts,
@@ -326,7 +326,7 @@ def test_alter_table_columns(cluster, node_name):
         )
         deleted_in_log = set(
             node.query(
-                f"SELECT remote_path FROM system.blob_storage_log WHERE error == '' AND event_type == 'Delete'"
+                "SELECT remote_path FROM system.blob_storage_log WHERE error == '' AND event_type == 'Delete'"
             )
             .strip()
             .split()
@@ -336,7 +336,7 @@ def test_alter_table_columns(cluster, node_name):
         assert all(obj in deleted_in_log for obj in deleted_objects), (
             deleted_objects,
             node.query(
-                f"SELECT * FROM system.blob_storage_log FORMAT PrettyCompactMonoBlock"
+                "SELECT * FROM system.blob_storage_log FORMAT PrettyCompactMonoBlock"
             ),
         )
 
@@ -767,7 +767,7 @@ def test_lazy_seek_optimization_for_async_read(cluster, node_name):
 def test_cache_with_full_disk_space(cluster, node_name):
     node = cluster.instances[node_name]
     # Create a dummy file of 2M size to fill the disk space of cache disk
-    out = node.exec_in_container(
+    node.exec_in_container(
         [
             "/usr/bin/dd",
             "if=/dev/zero",
@@ -784,7 +784,7 @@ def test_cache_with_full_disk_space(cluster, node_name):
     node.query(
         "INSERT INTO s3_test SELECT number, toString(number) FROM numbers(100000000)"
     )
-    out = node.exec_in_container(
+    node.exec_in_container(
         [
             "/usr/bin/clickhouse",
             "benchmark",

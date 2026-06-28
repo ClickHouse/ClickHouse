@@ -84,18 +84,12 @@ CreatingSets (Create sets before main query execution)
 Output: a, b
 
 CreatingSets (Create sets before main query execution)
-├──ReadFromMergeTree (default.t1)
-│     Read type: Default
-│     Parts: 1 | Granules: 1
-│     Output: a, b
-│     Prewhere filter
-│     Prewhere filter column:  b IN subquery1 AND a IN subquery2
-└──CreatingSet (Create set for subquery)
-   │  Set: subquery1
-   └──ReadFromMergeTree (default.t2)
-         Read type: Default
-         Parts: 1 | Granules: 1
-         Output: y
+└──ReadFromMergeTree (default.t1)
+      Read type: Default
+      Parts: 1 | Granules: 1
+      Output: a, b
+      Prewhere filter
+      Prewhere filter column:  b IN subquery1 AND a IN subquery2
 --- IN with Set engine ---
 Output: a, b
 

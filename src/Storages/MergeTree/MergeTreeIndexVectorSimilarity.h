@@ -170,6 +170,7 @@ class MergeTreeIndexVectorSimilarity : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexVectorSimilarity(
+        StorageMetadataPtr metadata_snapshot_,
         const IndexDescription & index_,
         UInt64 dimensions_,
         unum::usearch::metric_kind_t metric_kind_,

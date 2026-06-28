@@ -449,7 +449,7 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
             uint64_t read_checksum{0};
             readIntBinary(read_checksum, *read_buf);
 
-            uint8_t version;
+            uint8_t version = 0;
             readIntBinary(version, *read_buf);
 
             auto buffer_size = content_size - sizeof read_checksum - sizeof version;

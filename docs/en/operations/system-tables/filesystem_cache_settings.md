@@ -25,11 +25,14 @@ Contains information about all filesystem cache settings
 - `background_download_threads` ([UInt64](/sql-reference/data-types/int-uint)) — Number of background download threads. Value 0 disables background download
 - `background_download_queue_size_limit` ([UInt64](/sql-reference/data-types/int-uint)) — Size of background download queue. Value 0 disables background download
 - `background_download_max_file_segment_size` ([UInt64](/sql-reference/data-types/int-uint)) — Maximum size which can be downloaded in background download
-- `load_metadata_threads` ([UInt64](/sql-reference/data-types/int-uint)) — Number of threads to load cache metadata at server startup. Value 0 disables asynchronous loading of metadata
+- `load_metadata_threads` ([UInt64](/sql-reference/data-types/int-uint)) — Maximum number of threads used to load cache metadata at server startup
 - `load_metadata_asynchronously` ([UInt8](/sql-reference/data-types/int-uint)) — Enables asynchronous loading of metadata on server startup
 - `keep_free_space_size_ratio` ([Float64](/sql-reference/data-types/float)) — A ratio of free space which cache would try to uphold in the background
 - `keep_free_space_elements_ratio` ([Float64](/sql-reference/data-types/float)) — A ratio of free elements which cache would try to uphold in the background
 - `keep_free_space_remove_batch` ([UInt64](/sql-reference/data-types/int-uint)) — A remove batch size of cache elements made by background thread which upholds free space/elements ratio
+- `invalidated_entries_cleanup_interval_ms` ([UInt64](/sql-reference/data-types/int-uint)) — Idle interval in milliseconds of the background task which purges invalidated (lazily-removed) priority queue entries
+- `invalidated_entries_cleanup_threshold` ([UInt64](/sql-reference/data-types/int-uint)) — Number of accumulated invalidated priority queue entries which triggers their background removal
+- `invalidated_entries_cleanup_remove_batch` ([UInt64](/sql-reference/data-types/int-uint)) — Maximum number of invalidated priority queue entries removed under a single write lock per background iteration
 - `enable_filesystem_query_cache_limit` ([UInt8](/sql-reference/data-types/int-uint)) — Enable limiting maximum size of cache which can be written within a query
 - `cache_hits_threshold` ([UInt64](/sql-reference/data-types/int-uint)) — Deprecated setting
 - `enable_bypass_cache_with_threshold` ([UInt8](/sql-reference/data-types/int-uint)) — Undocumented. Not recommended for use

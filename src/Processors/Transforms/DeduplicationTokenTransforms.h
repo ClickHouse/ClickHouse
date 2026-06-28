@@ -9,7 +9,7 @@
 namespace DB
 {
 
-class RestoreChunkInfosTransform : public ISimpleTransform
+class RestoreChunkInfosTransform final : public ISimpleTransform
 {
 public:
     RestoreChunkInfosTransform(Chunk::ChunkInfoCollection chunk_infos_, SharedHeader header_);
@@ -26,7 +26,7 @@ private:
 class InsertDependenciesBuilder;
 using InsertDependenciesBuilderConstPtr = std::shared_ptr<const InsertDependenciesBuilder>;
 
-class AddDeduplicationInfoTransform : public ISimpleTransform
+class AddDeduplicationInfoTransform final : public ISimpleTransform
 {
     InsertDependenciesBuilderConstPtr insert_dependencies;
     StorageIDMaybeEmpty root_view_id;
@@ -49,7 +49,7 @@ public:
 };
 
 
-class RedefineDeduplicationInfoWithDataHashTransform : public ISimpleTransform
+class RedefineDeduplicationInfoWithDataHashTransform final : public ISimpleTransform
 {
 public:
     explicit RedefineDeduplicationInfoWithDataHashTransform(SharedHeader header_);
@@ -63,7 +63,7 @@ public:
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
-class SelectPartitionTransform : public ISimpleTransform
+class SelectPartitionTransform final : public ISimpleTransform
 {
     std::string partition_id;
     StorageMetadataPtr metadata_snapshot;
@@ -78,7 +78,7 @@ public:
 };
 
 
-class UpdateDeduplicationInfoWithViewIDTransform : public ISimpleTransform
+class UpdateDeduplicationInfoWithViewIDTransform final : public ISimpleTransform
 {
 public:
     UpdateDeduplicationInfoWithViewIDTransform(StorageIDMaybeEmpty view_id_, SharedHeader header_);

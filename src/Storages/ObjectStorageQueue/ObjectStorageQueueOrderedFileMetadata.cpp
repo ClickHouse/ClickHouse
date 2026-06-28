@@ -253,7 +253,7 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
 
     LOG_TEST(log, "Releasing bucket {}", bucket_info->bucket);
 
-    Coordination::Error code;
+    Coordination::Error code = {};
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     zk_retry.retryLoop([&]
     {
@@ -508,7 +508,7 @@ bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFilesByPartition(
     const std::string & zookeeper_name_)
 {
     Strings partitions;
-    Coordination::Error code;
+    Coordination::Error code = {};
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log_);
     zk_retry.retryLoop([&]
     {
@@ -585,7 +585,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
     const auto bucket_lock_path = bucket_path / "lock";
     const auto processor_info = getProcessorInfo(generateProcessingID());
 
-    Coordination::Error code;
+    Coordination::Error code = {};
     zk_retry.resetFailures();
     zk_retry.retryLoop([&]
     {
@@ -632,7 +632,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     processor_info = getProcessorInfo(generateProcessingID());
 
     const size_t max_num_tries = 100;
-    Coordination::Error code;
+    Coordination::Error code = {};
     std::string failed_path;
     for (size_t i = 0; i < max_num_tries; ++i)
     {

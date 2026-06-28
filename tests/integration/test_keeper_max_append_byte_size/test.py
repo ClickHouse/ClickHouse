@@ -68,7 +68,7 @@ def create_sequential_nodes_worker(args):
         while time.time() < end_time:
             # Use ZooKeeper's sequential node feature
             try:
-                created_path = zk.create(f"{base_path}/node_", "", sequence=True)
+                zk.create(f"{base_path}/node_", "", sequence=True)
                 counter += 1
             except Exception as e:
                 logging.warning(f"Connection {connection_id} failed to create sequential node: {e}")

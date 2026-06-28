@@ -75,26 +75,33 @@ $CLICKHOUSE_CLIENT -m -q """
     SELECT count() == 0 FROM system.query_metric_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${query_prefix}_fast'
 """
 
-# A query that runs longer than `query_metric_log_interval` must always emit a final row
-# from `QueryMetricLog::finishQuery`. Both that final row and the `QueryFinish` entry in
-# `system.query_log` derive `event_time_microseconds` from the same `system_clock::now()`
-# capture in `executeQuery.cpp` (see `time_now` / `query_end_time` flowing into both
-# `addStatusInfoToQueryLogElement` and `logQueryMetricLogFinish`), so the two values must
-# be byte-equal. If the final row is missing, `max(event_time_microseconds)` in
-# `query_metric_log` falls back to the previous periodic boundary - at least one full
-# interval (1000 ms) earlier - and equality fails. This is a tighter and more semantic
-# check than counting rows, and it does not depend on how many periodic ticks survived
-# under load.
+# A long-running query must emit a final `system.query_metric_log` row from
+# `QueryMetricLog::finishQuery`. On the TCP path exercised by this test,
+# `BlockIO::onFinish` captures `finish_time` once and passes it through the
+# finish callback to `logQueryFinishImpl`, which uses the same timestamp for
+# both `system.query_log` `QueryFinish` and `logQueryMetricLogFinish`. A
+# later periodic `system.query_metric_log` row may also exist because a
+# periodic `collectMetric` can sample a live `ProcessList` entry before
+# `finishQuery` marks the query finished. The correct invariant is therefore
+# existence of a metric row at the exact `QueryFinish` timestamp, not
+# `max(event_time_microseconds) = QueryFinish`.
 $CLICKHOUSE_CLIENT -m -q """
     SELECT '--Check that there is a final event when queries finish';
-    SELECT
-        (SELECT max(event_time_microseconds)
-         FROM system.query_metric_log
-         WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${query_prefix}_1000')
-        =
-        (SELECT event_time_microseconds
-         FROM system.query_log
-         WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND query_id = '${query_prefix}_1000' AND type = 'QueryFinish'
-         ORDER BY event_time_microseconds DESC
-         LIMIT 1)
+    WITH
+    (
+        SELECT event_time_microseconds
+        FROM system.query_log
+        WHERE event_date >= yesterday()
+          AND event_time >= now() - 600
+          AND current_database = currentDatabase()
+          AND query_id = '${query_prefix}_1000'
+          AND type = 'QueryFinish'
+        ORDER BY event_time_microseconds DESC
+        LIMIT 1
+    ) AS finish_time
+    SELECT countIf(event_time_microseconds = finish_time) > 0
+    FROM system.query_metric_log
+    WHERE event_date >= yesterday()
+      AND event_time >= now() - 600
+      AND query_id = '${query_prefix}_1000'
 """

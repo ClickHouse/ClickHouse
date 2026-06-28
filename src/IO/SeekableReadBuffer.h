@@ -3,10 +3,11 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WithFileSize.h>
 
+#include <Common/VectorWithMemoryTracking.h>
+
 #include <functional>
 #include <memory>
 #include <optional>
-#include <vector>
 
 namespace DB
 {
@@ -107,7 +108,7 @@ public:
     /// any memory copy.
     ///
     /// Thread safety: same rules as readBigAt — multiple concurrent calls are allowed.
-    virtual std::vector<CachedRegion> readBigAtRetainCells(size_t n, size_t offset) const;
+    virtual VectorWithMemoryTracking<CachedRegion> readBigAtRetainCells(size_t n, size_t offset) const;
 
     /// Whether readBigAtRetainCells is available. Only true when an in-memory page cache is in use.
     virtual bool supportsReadAtRetainCells() const { return false; }

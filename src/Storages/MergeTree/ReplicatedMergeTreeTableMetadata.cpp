@@ -1,12 +1,15 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/IndicesDescription.h>
 #include <DataTypes/IDataType.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <IO/Operators.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Common/SipHash.h>
 #include <IO/WriteBufferFromString.h>
@@ -30,11 +33,25 @@ namespace ErrorCodes
     extern const int METADATA_MISMATCH;
 }
 
+/// User-written parentheses around individual key elements (e.g. `PRIMARY KEY (col)`) are
+/// syntactically meaningless in stored metadata. Strip them so the canonical form matches
+/// what `KeyDescription::parse` produces when reading metadata back from ZooKeeper.
+static void stripArtificialParens(IAST & ast)
+{
+    ast.setParenthesized(false);
+    if (auto * list = ast.as<ASTExpressionList>())
+        for (auto & child : list->children)
+            if (child)
+                child->setParenthesized(false);
+}
+
 static String formattedAST(const ASTPtr & ast)
 {
     if (!ast)
         return "";
-    return ast->formatWithSecretsOneLine();
+    auto cloned = ast->clone();
+    stripArtificialParens(*cloned);
+    return cloned->formatWithSecretsOneLine();
 }
 
 static String formattedASTNormalized(const ASTPtr & ast)
@@ -43,6 +60,7 @@ static String formattedASTNormalized(const ASTPtr & ast)
         return "";
     auto ast_normalized = ast->clone();
     FunctionNameNormalizer::visit(ast_normalized.get());
+    stripArtificialParens(*ast_normalized);
     return ast_normalized->formatWithSecretsOneLine();
 }
 
@@ -50,7 +68,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 {
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
-        auto minmax_idx_column_names = MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey());
+        auto minmax_idx_column_names = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
         date_column = minmax_idx_column_names[data.minmax_idx_date_column_pos];
     }
 
@@ -372,17 +390,17 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(
             handleTableMetadataMismatch(table_name_for_error_message, "graphite params", from_zk.graphite_params_hash, "", graphite_params_hash);
     }
 
-    /// NOTE: You can make a less strict check of match expressions so that tables do not break from small changes
-    ///    in formatAST code.
     String parsed_zk_primary_key = formattedAST(KeyDescription::parse(from_zk.primary_key, columns, virtuals, context, true).getOriginalExpressionList());
-    if (primary_key != parsed_zk_primary_key)
+    String parsed_local_primary_key = formattedAST(KeyDescription::parse(primary_key, columns, virtuals, context, true).getOriginalExpressionList());
+    if (parsed_local_primary_key != parsed_zk_primary_key)
         handleTableMetadataMismatch(table_name_for_error_message, "primary key", from_zk.primary_key, parsed_zk_primary_key, primary_key);
 
     if (data_format_version != from_zk.data_format_version)
         handleTableMetadataMismatch(table_name_for_error_message, "data format version", DB::toString(from_zk.data_format_version.toUnderType()), "", DB::toString(data_format_version.toUnderType()));
 
     String parsed_zk_partition_key = formattedAST(KeyDescription::parse(from_zk.partition_key, columns, virtuals, context, false).expression_list_ast);
-    if (partition_key != parsed_zk_partition_key)
+    String parsed_local_partition_key = formattedAST(KeyDescription::parse(partition_key, columns, virtuals, context, false).expression_list_ast);
+    if (parsed_local_partition_key != parsed_zk_partition_key)
         handleTableMetadataMismatch(table_name_for_error_message, "partition key expression", from_zk.partition_key, parsed_zk_partition_key, partition_key);
 }
 
@@ -650,6 +668,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     /// duplicates if an explicit index already exists.
     for (const auto & column : new_metadata.columns)
         new_metadata.addImplicitIndicesForColumn(column, context);
+    new_metadata.addImplicitIndicesForVirtualColumns(context);
 
     if (!ttl_table_changed && new_metadata.table_ttl.definition_ast != nullptr)
         new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(

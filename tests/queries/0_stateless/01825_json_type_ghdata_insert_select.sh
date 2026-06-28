@@ -6,6 +6,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Pin date_time_input_format to 'basic' so JSON path inference matches the
+# pre-existing reference (best_effort would infer DateTime64 from ISO date strings).
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --date_time_input_format=basic"
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ghdata_2"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ghdata_2_string"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ghdata_2_from_string"

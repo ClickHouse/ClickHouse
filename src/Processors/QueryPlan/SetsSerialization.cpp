@@ -140,7 +140,7 @@ QueryPlanAndSets QueryPlan::deserializeSets(
     const SerializationFlags & flags,
     const ContextPtr & context)
 {
-    UInt64 num_sets;
+    UInt64 num_sets = 0;
     readVarUInt(num_sets, in);
 
     QueryPlanAndSets res;
@@ -159,7 +159,7 @@ QueryPlanAndSets QueryPlan::deserializeSets(
         if (columns.empty())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} is serialized twice", hash.low64, hash.high64);
 
-        UInt8 kind;
+        UInt8 kind = 0;
         readVarUInt(kind, in);
         if (kind == UInt8(SetSerializationKind::StorageSet))
         {
@@ -169,8 +169,8 @@ QueryPlanAndSets QueryPlan::deserializeSets(
         }
         else if (kind == UInt8(SetSerializationKind::TupleValues))
         {
-            UInt64 num_columns;
-            UInt64 num_rows;
+            UInt64 num_columns = 0;
+            UInt64 num_rows = 0;
             readVarUInt(num_columns, in);
             readVarUInt(num_rows, in);
 
