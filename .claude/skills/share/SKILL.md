@@ -21,8 +21,11 @@ https://github.com/ClickHouse/alexeyprompts
    python3 <skill-dir>/share.py [session]
    ```
 
-   - **No argument** → shares the **current** session (identified by
-     `$CLAUDE_CODE_SESSION_ID`).
+   - **No argument** → shares the **current** session (identified strictly by
+     `$CLAUDE_CODE_SESSION_ID`). If that variable is unset or its transcript
+     cannot be found, the script errors out and asks for an explicit argument
+     rather than guessing — it never falls back to "the newest transcript", so
+     it cannot publish an unrelated session by mistake.
    - **`[session]`** → shares another session, given as one of:
      - a path to a `.jsonl` transcript,
      - a session id (uuid), or

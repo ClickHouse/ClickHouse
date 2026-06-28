@@ -69,22 +69,23 @@ def resolve_session(arg):
                     return n
         die("could not resolve a session from %r" % arg)
 
-    # No argument: the current session, identified by its id.
+    # No argument: the current session, identified strictly by its id. There is
+    # deliberately no "newest transcript" fallback here. This skill performs an
+    # external, irreversible upload of a private transcript, so when the current
+    # session cannot be resolved we fail closed rather than risk publishing an
+    # unrelated session that merely happens to be the most recently modified
+    # (e.g. when run from a different checkout or a non-Claude shell).
     sid = os.environ.get("CLAUDE_CODE_SESSION_ID")
-    if sid:
-        matches = glob.glob(str(PROJECTS / "*" / (sid + ".jsonl")))
-        if matches:
-            return Path(matches[0])
-
-    # Fallbacks: newest session in the current project's directory, then newest
-    # session anywhere.
-    n = newest_in_dir(PROJECTS / encode(os.getcwd()))
-    if n:
-        return n
-    n = newest(glob.glob(str(PROJECTS / "*" / "*.jsonl")))
-    if n:
-        return n
-    die("no session transcript found under " + str(PROJECTS))
+    if not sid:
+        die("CLAUDE_CODE_SESSION_ID is not set, so the current session cannot be "
+            "identified. Pass an explicit transcript path, session id, or project "
+            "to choose what to share.")
+    matches = glob.glob(str(PROJECTS / "*" / (sid + ".jsonl")))
+    if not matches:
+        die("no transcript found for the current session id %s under %s. Pass an "
+            "explicit transcript path, session id, or project to choose what to "
+            "share." % (sid, PROJECTS))
+    return Path(matches[0])
 
 
 def find_pastila():
