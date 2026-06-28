@@ -7,6 +7,7 @@
 #include <Common/formatReadable.h>
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/thread_local_rng.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/FailPoint.h>
@@ -28,6 +29,29 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTRenameQuery.h>
+#include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
+#include <Parsers/ASTCreateWasmFunctionQuery.h>
+#include <Parsers/ASTDropFunctionQuery.h>
+#include <Parsers/ASTCreateWorkloadQuery.h>
+#include <Parsers/ASTDropWorkloadQuery.h>
+#include <Parsers/ASTCreateResourceQuery.h>
+#include <Parsers/ASTDropResourceQuery.h>
+#include <Parsers/ASTCreateNamedCollectionQuery.h>
+#include <Parsers/ASTAlterNamedCollectionQuery.h>
+#include <Parsers/ASTDropNamedCollectionQuery.h>
+#include <Parsers/Access/ASTCreateUserQuery.h>
+#include <Parsers/Access/ASTCreateQuotaQuery.h>
+#include <Parsers/Access/ASTCreateRoleQuery.h>
+#include <Parsers/Access/ASTCreateRowPolicyQuery.h>
+#include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
+#include <Parsers/Access/ASTDropAccessEntityQuery.h>
+#include <Parsers/Access/ASTGrantQuery.h>
+#include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTTransactionControl.h>
@@ -45,10 +69,15 @@
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
 
+#include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledQuota.h>
+#include <Access/ReplicatedAccessStorage.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -207,6 +236,8 @@ namespace Setting
     extern const SettingsUInt64Auto insert_quorum;
     extern const SettingsBool insert_quorum_parallel;
     extern const SettingsBool ignore_format_null_for_explain;
+    extern const SettingsBool allow_experimental_automatic_fill_on_cluster_mode;
+    extern const SettingsString cluster_for_automatic_fill_mode;
 }
 
 namespace ServerSetting
@@ -1427,6 +1458,263 @@ static BlockIO executeQueryImpl(
                     "Cannot execute query because current transaction failed. Expecting ROLLBACK statement");
         }
 
+        /// Interpret the query's `SETTINGS` clause as early as possible, before any logic that depends
+        /// on settings (in particular the automatic `ON CLUSTER` fill decision below) and before the
+        /// corresponding interpreter runs. Otherwise the logic here would read only the profile/session
+        /// values, so a feature like the automatic `ON CLUSTER` fill could not be enabled or disabled
+        /// per query via `SETTINGS allow_experimental_automatic_fill_on_cluster_mode = ...`.
+        if (out_ast)
+            InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
+
+        if (settings[Setting::allow_experimental_automatic_fill_on_cluster_mode]
+            && !settings[Setting::cluster_for_automatic_fill_mode].toString().empty()
+            && context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+        {
+            if (auto * query_with_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(out_ast.get());
+                query_with_on_cluster && query_with_on_cluster->cluster.empty())
+            {
+                /// Skip auto-fill when the target is a `Replicated` database: such databases
+                /// already coordinate DDL replication at the database level, so adding
+                /// `ON CLUSTER` would be redundant and would conflict with their machinery.
+                auto is_replicated_database = [&](String database_name)
+                {
+                    if (database_name.empty())
+                        database_name = context->getCurrentDatabase();
+                    auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+                    return database && database->getEngineName() == "Replicated";
+                };
+
+                /// `DROP`/`TRUNCATE`/`ALTER`/`OPTIMIZE` of a table with an omitted database may target a
+                /// session-local temporary (external) table: the interpreters resolve the unqualified name
+                /// via `tryResolveStorageID(..., ResolveExternal)`/`ResolveAll` even without the explicit
+                /// `TEMPORARY` keyword (the parser does not set `isTemporary` for, say, `ALTER TABLE t`).
+                /// Such a statement must operate on the session table and stay local, so treat it as
+                /// temporary when the name resolves to a temporary table.
+                auto resolves_to_temporary = [&](const StorageID & table_id)
+                {
+                    return table_id.database_name.empty()
+                        && static_cast<bool>(context->tryResolveStorageID(table_id, Context::ResolveExternal));
+                };
+
+                bool target_is_replicated_database = false;
+
+                /// Temporary tables and views are session-local objects that cannot be created or
+                /// dropped `ON CLUSTER`: `InterpreterCreateQuery` and the corresponding DROP path
+                /// reject a non-empty cluster for them with `Temporary objects (tables/views) cannot
+                /// be created ON CLUSTER`. Filling the cluster here would turn an ordinary local
+                /// query into one that throws, so skip auto-fill for temporary objects.
+                bool target_is_temporary = false;
+
+                /// User-defined functions, workloads and resources, access entities and named collections
+                /// accept `ON CLUSTER` only when their storage is *not* replicated. With replicated storage
+                /// the corresponding interpreters reject a non-empty cluster (these objects then replicate on
+                /// their own), so filling the cluster would turn an ordinary local query into one that throws
+                /// unless the matching `ignore_on_cluster_for_replicated_*` setting strips it back. With the
+                /// default, non-replicated storage `ON CLUSTER` is valid and distributes the statement, so it
+                /// is eligible for auto-fill. Decide per storage instead of skipping these families outright,
+                /// using the same storage predicates as `removeOnClusterClauseIfNeeded`.
+                bool target_forbids_on_cluster = false;
+
+                if (out_ast->as<ASTCreateSQLFunctionQuery>() || out_ast->as<ASTCreateWasmFunctionQuery>()
+                    || out_ast->as<ASTDropFunctionQuery>())
+                    target_forbids_on_cluster = context->getUserDefinedSQLObjectsStorage().isReplicated();
+                else if (out_ast->as<ASTCreateWorkloadQuery>() || out_ast->as<ASTDropWorkloadQuery>()
+                    || out_ast->as<ASTCreateResourceQuery>() || out_ast->as<ASTDropResourceQuery>())
+                    target_forbids_on_cluster = context->getWorkloadEntityStoragePtr()->isReplicated();
+                else if (out_ast->as<ASTCreateUserQuery>() || out_ast->as<ASTCreateQuotaQuery>()
+                    || out_ast->as<ASTCreateRoleQuery>() || out_ast->as<ASTCreateRowPolicyQuery>()
+                    || out_ast->as<ASTCreateSettingsProfileQuery>() || out_ast->as<ASTDropAccessEntityQuery>()
+                    || out_ast->as<ASTGrantQuery>())
+                    target_forbids_on_cluster
+                        = context->getAccessControl().containsStorage(ReplicatedAccessStorage::STORAGE_TYPE);
+                else if (out_ast->as<ASTCreateNamedCollectionQuery>() || out_ast->as<ASTAlterNamedCollectionQuery>()
+                    || out_ast->as<ASTDropNamedCollectionQuery>())
+                    target_forbids_on_cluster = NamedCollectionFactory::instance().usesReplicatedStorage();
+
+                /// Some statements inherit `ASTQueryWithOnCluster` but cannot carry a meaningful
+                /// `ON CLUSTER` clause, so filling the cluster would turn an ordinary local query
+                /// into one the distributed DDL worker rejects:
+                ///  - `ASTSystemQuery`: several `SYSTEM` subcommands (e.g. `SYSTEM REFRESH VIEW`) are
+                ///    parsed without `ON CLUSTER` support even though the AST carries the field, so a
+                ///    rewritten query fails to re-parse on the DDL worker. Skip `SYSTEM` queries entirely.
+                ///  - `BACKUP`/`RESTORE TEMPORARY TABLE`: temporary tables are session-local and cannot
+                ///    be backed up or restored `ON CLUSTER`.
+                if (out_ast->as<ASTSystemQuery>())
+                    target_forbids_on_cluster = true;
+
+                if (const auto * backup_query = out_ast->as<ASTBackupQuery>())
+                {
+                    for (const auto & element : backup_query->elements)
+                    {
+                        if (element.type == ASTBackupQuery::TEMPORARY_TABLE)
+                        {
+                            target_forbids_on_cluster = true;
+                            break;
+                        }
+                    }
+                }
+
+                /// Some `ALTER` commands (e.g. `ATTACH PARTITION`, `FETCH PARTITION`) are rejected by the
+                /// distributed DDL worker: `executeDDLQueryOnCluster` throws `Unsupported type of ALTER query`
+                /// for them. Filling the cluster for such an `ALTER` would turn a valid local query into an
+                /// exception, so skip auto-fill when any of its commands is unsupported `ON CLUSTER`.
+                if (const auto * alter_query = out_ast->as<ASTAlterQuery>(); alter_query && alter_query->command_list)
+                {
+                    for (const auto & command : alter_query->command_list->children)
+                    {
+                        if (!isSupportedAlterTypeForOnClusterDDLQuery(command->as<ASTAlterCommand &>().type))
+                        {
+                            target_forbids_on_cluster = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (const auto * drop_query = out_ast->as<ASTDropQuery>())
+                {
+                    target_is_temporary = drop_query->isTemporary();
+
+                    /// A multi-table `DROP TABLE a.t1, b.t2` keeps its targets in `database_and_tables`
+                    /// while `getDatabase` stays empty, so inspect every listed table and classify each
+                    /// one: targets in a `Replicated` database or temporary tables must stay local, while
+                    /// ordinary tables should be distributed `ON CLUSTER`.
+                    if (drop_query->database_and_tables)
+                    {
+                        const auto & list = drop_query->database_and_tables->as<ASTExpressionList &>();
+                        bool has_replicated_target = false;
+                        bool has_temporary_target = false;
+                        bool has_on_cluster_target = false;
+                        for (const auto & child : list.children)
+                        {
+                            const auto * identifier = child->as<ASTTableIdentifier>();
+                            if (!identifier)
+                                continue;
+                            if (is_replicated_database(identifier->getDatabaseName()))
+                                has_replicated_target = true;
+                            else if (resolves_to_temporary(StorageID(*identifier)))
+                                has_temporary_target = true;
+                            else
+                                has_on_cluster_target = true;
+                        }
+
+                        /// A single `DROP` carries one `cluster` value for the whole statement, but
+                        /// `InterpreterDropQuery::getRewrittenASTsOfSingleTable` later splits it into
+                        /// independent single-table drops. When the statement mixes targets that must
+                        /// stay local (a `Replicated` database or a temporary table) with ordinary
+                        /// targets that should be distributed, no single value is correct: filling the
+                        /// cluster would push the local-only targets through distributed DDL, while
+                        /// leaving it empty would run the ordinary targets only on the initiator. Reject
+                        /// such statements so the user issues separate drops per group.
+                        if ((has_replicated_target || has_temporary_target) && has_on_cluster_target)
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Cannot automatically fill ON CLUSTER for a multi-table DROP that mixes "
+                                "targets in Replicated databases or temporary tables with ordinary tables. "
+                                "Issue a separate statement for each group, or specify ON CLUSTER explicitly.");
+
+                        target_is_replicated_database = has_replicated_target;
+                        target_is_temporary = target_is_temporary || has_temporary_target;
+                    }
+                    else if (drop_query->table)
+                    {
+                        target_is_replicated_database = is_replicated_database(drop_query->getDatabase());
+                        if (!target_is_temporary && resolves_to_temporary(StorageID(*drop_query)))
+                            target_is_temporary = true;
+                    }
+                    /// A database-level statement (`DROP DATABASE` / `TRUNCATE DATABASE`) has no `table`,
+                    /// so `StorageID(*drop_query)` would throw `Both table name and UUID are empty`.
+                    /// It is also not a table-level operation that a `Replicated` database coordinates on
+                    /// its own: `DatabaseReplicated::shouldReplicateQuery` returns `false` for `DROP DATABASE`,
+                    /// so dropping a `Replicated` database without `ON CLUSTER` would only affect the local
+                    /// replica. Leave the flags unset so auto-fill adds `ON CLUSTER` and the database is
+                    /// dropped on every node of the configured cluster.
+                }
+                else if (const auto * query_with_table = dynamic_cast<const ASTQueryWithTableAndOutput *>(out_ast.get()))
+                {
+                    target_is_temporary = query_with_table->isTemporary();
+
+                    /// `ALTER TABLE t ...` and `OPTIMIZE TABLE t` with an omitted database may target a
+                    /// session-local temporary (external) table: the interpreters resolve the unqualified
+                    /// name to the session table later (`Context::ResolveAll`), and the parser does not set
+                    /// `isTemporary` for them even against a temporary table. Filling the cluster would route
+                    /// the operation through distributed DDL and leave the session table untouched, so treat
+                    /// it as temporary when the name resolves to a temporary table, mirroring the `DROP`
+                    /// handling above. A database-level statement carries no table, so skip the check there:
+                    /// constructing a `StorageID` from it would throw because the table name is empty.
+                    ///
+                    /// `CREATE` is excluded: a persistent `CREATE TABLE t`/`CREATE VIEW t` creates a new
+                    /// object in the current database and does not target a session temporary table just
+                    /// because one named `t` already shadows it (a temporary and a persistent table of the
+                    /// same name can coexist). `InterpreterCreateQuery` treats a non-`TEMPORARY` create as
+                    /// persistent and fills the current database, so it is an eligible statement that should
+                    /// be distributed `ON CLUSTER`. A `CREATE TEMPORARY TABLE` is already captured above by
+                    /// `isTemporary()`. The remaining `ASTQueryWithTableAndOutput` statements that reach this
+                    /// branch (`ALTER`, `OPTIMIZE`, `UPDATE`, `DELETE`, `CREATE`/`DROP INDEX`) operate on an
+                    /// existing table by name, so the resolution heuristic is correct for them.
+                    if (!target_is_temporary && !out_ast->as<ASTCreateQuery>() && !query_with_table->getTable().empty()
+                        && resolves_to_temporary(StorageID(*query_with_table)))
+                        target_is_temporary = true;
+
+                    /// A database-level `ALTER` (`ALTER DATABASE ... MODIFY COMMENT/SETTING`) is not
+                    /// coordinated by the `Replicated` database engine: `InterpreterAlterQuery::executeToDatabase`
+                    /// applies it directly on the initiator only. Like `DROP DATABASE`, it therefore needs
+                    /// `ON CLUSTER` to reach every node, so do not treat a `Replicated` target database as a
+                    /// reason to skip auto-fill. Table-level statements stay local, since the engine replicates
+                    /// them on its own.
+                    const auto * alter_query = out_ast->as<ASTAlterQuery>();
+                    bool is_database_level_alter
+                        = alter_query && alter_query->alter_object == ASTAlterQuery::AlterObjectType::DATABASE;
+                    if (!is_database_level_alter)
+                        target_is_replicated_database = is_replicated_database(query_with_table->getDatabase());
+                }
+                else if (const auto * rename_query = out_ast->as<ASTRenameQuery>())
+                {
+                    /// `RENAME DATABASE` is a database-level operation that the `Replicated` engine does not
+                    /// coordinate (`InterpreterRenameQuery::executeToDatabase` renames the local catalog entry
+                    /// directly), so like `DROP DATABASE` it must be distributed `ON CLUSTER`. Only `RENAME
+                    /// TABLE`/`DICTIONARY` whose source or destination lives in a `Replicated` database must
+                    /// stay local, because the engine replicates those on its own.
+                    if (!rename_query->database)
+                    {
+                        bool has_replicated_target = false;
+                        bool has_on_cluster_target = false;
+                        for (const auto & element : rename_query->getElements())
+                        {
+                            if (is_replicated_database(element.from.getDatabase())
+                                || is_replicated_database(element.to.getDatabase()))
+                                has_replicated_target = true;
+                            else
+                                has_on_cluster_target = true;
+                        }
+
+                        /// A multi-element `RENAME a.o TO a.o2, repl.r TO repl.r2` carries one `cluster` value
+                        /// for the whole statement, but `InterpreterRenameQuery` processes the descriptions in
+                        /// order. Mixing an element that must stay local (a `Replicated`-database source or
+                        /// destination) with an ordinary element that should be distributed cannot be expressed
+                        /// by a single `cluster`: leaving it empty applies the ordinary rename only on the
+                        /// initiator and then throws on the unsupported multi-table `Replicated` rename, which
+                        /// can leave the ordinary table renamed locally. Mirror the multi-table `DROP` guard and
+                        /// reject such statements so the user issues a separate `RENAME` per group.
+                        if (has_replicated_target && has_on_cluster_target)
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Cannot automatically fill ON CLUSTER for a RENAME that mixes targets in "
+                                "Replicated databases with ordinary tables. Issue a separate statement for each "
+                                "group, or specify ON CLUSTER explicitly.");
+
+                        target_is_replicated_database = has_replicated_target;
+                    }
+                }
+
+                if (!target_is_replicated_database && !target_is_temporary && !target_forbids_on_cluster)
+                {
+                    query_with_on_cluster->cluster = settings[Setting::cluster_for_automatic_fill_mode].toString();
+                    query_for_logging = out_ast->formatForLogging(log_queries_cut_to_length);
+                    normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+                }
+            }
+        }
+
         /// There is an option of probabilistic logging of queries.
         /// If it is used - do the random sampling and "collapse" the settings.
         /// It allows to consistently log queries with all the subqueries in distributed query processing
@@ -1443,9 +1731,8 @@ static BlockIO executeQueryImpl(
 
         if (out_ast)
         {
-            /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
-            /// to allow settings to take effect.
-            InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
+            /// Query-level `SETTINGS` were already applied above (before the automatic `ON CLUSTER`
+            /// fill decision), so they are in effect here and for the corresponding interpreter.
             validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
 
             if (settings[Setting::enforce_strict_identifier_format])

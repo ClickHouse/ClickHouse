@@ -1,0 +1,6 @@
+Test 1: query-level SETTINGS enable auto-fill while the profile setting is off
+Test 1 verification: CREATE TABLE contains ON CLUSTER
+1
+Test 2: query-level SETTINGS disable auto-fill while the profile setting is on
+Test 2 verification: CREATE TABLE does NOT contain ON CLUSTER
+1

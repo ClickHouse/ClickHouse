@@ -1,0 +1,177 @@
+-- Tags: no-parallel, no-replicated-database
+-- no-replicated-database: auto-fill skips Replicated databases by design, so the
+-- ON CLUSTER assertions only hold under non-replicated database engines.
+
+SET distributed_ddl_output_mode='none';
+SET allow_experimental_automatic_fill_on_cluster_mode = false;
+SET cluster_for_automatic_fill_mode = 'test_shard_localhost';
+
+SELECT 'Test 1: CREATE TABLE without automatic mode';
+CREATE TABLE test_no_auto (id UInt32, value String) ENGINE = MergeTree() ORDER BY id;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT 'Test 1 verification: Should NOT contain ON CLUSTER';
+SELECT count() = 0 FROM system.query_log WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND query LIKE '%CREATE TABLE test_no_auto%' 
+  AND query LIKE '%ON CLUSTER%';
+
+DROP TABLE test_no_auto;
+
+SET allow_experimental_automatic_fill_on_cluster_mode = true;
+SET cluster_for_automatic_fill_mode = 'test_shard_localhost';
+
+SELECT 'Test 2: CREATE TABLE with automatic mode';
+CREATE TABLE test_auto_fill_cluster (id UInt32, value String) ENGINE = MergeTree() ORDER BY id;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT 'Test 2 verification: Should contain ON CLUSTER';
+SELECT count() > 0 FROM system.query_log WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND query LIKE '%CREATE TABLE test_auto_fill_cluster%' 
+  AND query LIKE '%ON CLUSTER%';
+
+SELECT 'Test 3: ALTER TABLE with automatic mode executed successfully';
+ALTER TABLE test_auto_fill_cluster ADD COLUMN new_column UInt64 DEFAULT 0;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT 'Test 3 verification: ALTER TABLE contains ON CLUSTER';
+SELECT count() > 0 FROM system.query_log WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND query LIKE '%ALTER TABLE test_auto_fill_cluster%'
+  AND query LIKE '%ON CLUSTER%';
+
+SELECT 'Test 4: DROP TABLE with automatic mode executed successfully';
+DROP TABLE test_auto_fill_cluster;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT 'Test 4 verification: DROP TABLE contains ON CLUSTER';
+SELECT count() > 0 FROM system.query_log WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND query LIKE '%DROP TABLE test_auto_fill_cluster%'
+  AND query LIKE '%ON CLUSTER%';
+
+SELECT 'Test 5: CREATE/DROP TEMPORARY TABLE is not rewritten ON CLUSTER';
+-- Temporary objects cannot be created/dropped ON CLUSTER, so auto-fill must skip them.
+-- Both statements must succeed locally instead of throwing.
+CREATE TEMPORARY TABLE test_auto_fill_temp (id UInt32) ENGINE = Memory;
+DROP TEMPORARY TABLE test_auto_fill_temp;
+
+SELECT 'Test 6: CREATE/DROP FUNCTION with non-replicated storage is rewritten ON CLUSTER';
+-- User-defined functions reject ON CLUSTER only when their storage is replicated (they then replicate
+-- on their own). With the default, non-replicated storage ON CLUSTER is valid and distributes the
+-- statement, so auto-fill fills it. The function must still be created, usable and dropped.
+DROP FUNCTION IF EXISTS test_auto_fill_function;
+CREATE FUNCTION test_auto_fill_function AS (x) -> x + 1;
+SELECT test_auto_fill_function(1);
+DROP FUNCTION test_auto_fill_function;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT 'Test 6 verification: CREATE FUNCTION contains ON CLUSTER';
+SELECT count() > 0 FROM system.query_log WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND query LIKE 'CREATE FUNCTION test_auto_fill_function%'
+  AND query LIKE '%ON CLUSTER%';
+
+SELECT 'Test 7: SYSTEM query is not rewritten ON CLUSTER';
+-- Several SYSTEM subcommands (e.g. SYSTEM REFRESH VIEW) inherit ASTQueryWithOnCluster but are
+-- parsed without ON CLUSTER support, so a rewritten query would be rejected by the distributed DDL
+-- worker. Auto-fill must skip SYSTEM queries entirely; verify the rewrite did not happen.
+SYSTEM DROP MARK CACHE;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT 'Test 7 verification: SYSTEM query does NOT contain ON CLUSTER';
+-- A prefix match on `SYSTEM DROP MARK CACHE` keeps this verification SELECT (which starts with
+-- SELECT) from matching itself via the `ON CLUSTER` literal below.
+SELECT count() = 0 FROM system.query_log WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND query LIKE 'SYSTEM DROP MARK CACHE%'
+  AND query LIKE '%ON CLUSTER%';
+
+SELECT 'Test 8: implicit DROP/TRUNCATE TABLE of a temporary table stays local';
+-- `DROP TABLE t` and `TRUNCATE TABLE t` with an omitted database resolve to a session-local
+-- temporary table even without the explicit `TEMPORARY` keyword. Auto-fill must not inject
+-- ON CLUSTER for them, otherwise the statement would be routed through distributed DDL and the
+-- session table would be left untouched. Verify the operations actually affect the session table.
+CREATE TEMPORARY TABLE test_auto_fill_implicit_temp (id UInt32) ENGINE = Memory;
+INSERT INTO test_auto_fill_implicit_temp VALUES (1), (2);
+TRUNCATE TABLE test_auto_fill_implicit_temp;
+SELECT 'Test 8 verification: TRUNCATE emptied the session table', count() = 0 FROM test_auto_fill_implicit_temp;
+DROP TABLE test_auto_fill_implicit_temp;
+-- The table was actually dropped from the session, so re-creating it must succeed.
+CREATE TEMPORARY TABLE test_auto_fill_implicit_temp (id UInt32) ENGINE = Memory;
+SELECT 'Test 8 verification: DROP removed the session table', 1;
+DROP TEMPORARY TABLE test_auto_fill_implicit_temp;
+
+SELECT 'Test 9: ALTER TABLE ATTACH PARTITION is not rewritten ON CLUSTER';
+-- ATTACH PARTITION (and FETCH PARTITION) are rejected by the distributed DDL worker with
+-- `Unsupported type of ALTER query`. Auto-fill must skip such ALTERs, otherwise a valid local
+-- statement would turn into an exception. Verify the partition round-trips through the session table.
+CREATE TABLE test_auto_fill_attach (id UInt32) ENGINE = MergeTree ORDER BY id PARTITION BY id;
+INSERT INTO test_auto_fill_attach VALUES (1);
+ALTER TABLE test_auto_fill_attach DETACH PARTITION 1;
+ALTER TABLE test_auto_fill_attach ATTACH PARTITION 1;
+SELECT 'Test 9 verification: ATTACH PARTITION restored the data', count() FROM test_auto_fill_attach;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT 'Test 9 verification: ATTACH PARTITION does NOT contain ON CLUSTER';
+-- `DETACH PARTITION` is supported ON CLUSTER and may be rewritten, so match `ATTACH PARTITION`
+-- specifically (the double-T literal is not a substring of `DETACH PARTITION`).
+SELECT count() = 0 FROM system.query_log WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND query LIKE 'ALTER TABLE test_auto_fill_attach%ATTACH PARTITION%'
+  AND query LIKE '%ON CLUSTER%';
+DROP TABLE test_auto_fill_attach;
+
+SELECT 'Test 10: ALTER/OPTIMIZE of an implicit temporary table stays local';
+-- `ALTER TABLE t` and `OPTIMIZE TABLE t` with an omitted database resolve to a session-local
+-- temporary table even without the `TEMPORARY` keyword (the parser does not set isTemporary for
+-- them). Auto-fill must not inject ON CLUSTER, otherwise the operation would be routed through
+-- distributed DDL and the session table would be left untouched. Verify the operations actually
+-- affect the session table.
+CREATE TEMPORARY TABLE test_auto_fill_alter_temp (id UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO test_auto_fill_alter_temp VALUES (1), (2);
+ALTER TABLE test_auto_fill_alter_temp ADD COLUMN new_column UInt64 DEFAULT 7;
+SELECT 'Test 10 verification: ALTER added the column to the session table', sum(new_column) = 14 FROM test_auto_fill_alter_temp;
+OPTIMIZE TABLE test_auto_fill_alter_temp FINAL;
+SELECT 'Test 10 verification: OPTIMIZE kept the session data', count() = 2 FROM test_auto_fill_alter_temp;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT 'Test 10 verification: ALTER of the temporary table does NOT contain ON CLUSTER';
+SELECT count() = 0 FROM system.query_log WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND query LIKE 'ALTER TABLE test_auto_fill_alter_temp%'
+  AND query LIKE '%ON CLUSTER%';
+DROP TEMPORARY TABLE test_auto_fill_alter_temp;
+
+SELECT 'Test 11: persistent CREATE shadowed by a temporary table is rewritten ON CLUSTER';
+-- A persistent `CREATE TABLE t` / `CREATE VIEW t` creates a new object in the current database and is
+-- an eligible distributed statement; it does not target a session temporary table just because one
+-- named `t` already shadows it (a temporary and a persistent object of the same name can coexist).
+-- `InterpreterCreateQuery` treats a non-`TEMPORARY` create as persistent, so auto-fill must still
+-- inject ON CLUSTER for it. Unlike `ALTER`/`OPTIMIZE`/`DROP` of an implicit temporary table (Tests 8
+-- and 10), `CREATE` is excluded from the name-resolution heuristic, otherwise a shadowing temporary
+-- table would wrongly keep the persistent create on the initiator only. `CREATE TEMPORARY TABLE`
+-- itself stays local and is covered by Test 5.
+CREATE TEMPORARY TABLE test_auto_fill_shadow (id UInt32) ENGINE = Memory;
+CREATE TABLE test_auto_fill_shadow (id UInt32, value String) ENGINE = MergeTree() ORDER BY id;
+CREATE TEMPORARY TABLE test_auto_fill_shadow_view (x UInt32) ENGINE = Memory;
+CREATE VIEW test_auto_fill_shadow_view AS SELECT 1;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT 'Test 11 verification: persistent CREATE TABLE contains ON CLUSTER';
+-- Prefix-anchored on `CREATE TABLE test_auto_fill_shadow ` so the verification SELECT (which starts
+-- with SELECT) and the `CREATE TEMPORARY TABLE` shadow do not match.
+SELECT count() > 0 FROM system.query_log WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND query LIKE 'CREATE TABLE test_auto_fill_shadow %ON CLUSTER%';
+SELECT 'Test 11 verification: persistent CREATE VIEW contains ON CLUSTER';
+SELECT count() > 0 FROM system.query_log WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND query LIKE 'CREATE VIEW test_auto_fill_shadow_view %ON CLUSTER%';
+SELECT 'Test 11 verification: both persistent objects exist in the current database', count() = 2 FROM system.tables
+  WHERE database = currentDatabase() AND name IN ('test_auto_fill_shadow', 'test_auto_fill_shadow_view');
+DROP TEMPORARY TABLE test_auto_fill_shadow;
+DROP TEMPORARY TABLE test_auto_fill_shadow_view;
+DROP TABLE test_auto_fill_shadow;
+DROP VIEW test_auto_fill_shadow_view;

@@ -1,0 +1,25 @@
+Test 1: CREATE TABLE in Replicated DB with auto-fill succeeds
+Test 1 verification: CREATE TABLE does NOT contain ON CLUSTER
+1
+Test 2: ALTER TABLE in Replicated DB with auto-fill succeeds
+Test 2 verification: ALTER TABLE does NOT contain ON CLUSTER
+1
+Test 3: RENAME TABLE in Replicated DB with auto-fill succeeds
+Test 3 verification: RENAME TABLE does NOT contain ON CLUSTER
+1
+Test 4: DROP TABLE in Replicated DB with auto-fill succeeds
+Test 4 verification: DROP TABLE does NOT contain ON CLUSTER
+1
+Test 5: multi-table DROP mixing a Replicated-DB table with an ordinary table is rejected
+Test 6: DROP DATABASE of a Replicated database IS rewritten ON CLUSTER
+Test 6 verification: DROP DATABASE contains ON CLUSTER
+1
+Test 7: ALTER DATABASE of a Replicated database IS rewritten ON CLUSTER
+Test 7 verification: ALTER DATABASE contains ON CLUSTER
+1
+Test 8: RENAME DATABASE of a Replicated database IS rewritten ON CLUSTER
+Test 8 verification: RENAME DATABASE contains ON CLUSTER
+1
+Test 9: multi-element RENAME mixing a Replicated-DB table with an ordinary table is rejected
+Test 9 verification: the rejected RENAME did not rename the ordinary table locally
+1
