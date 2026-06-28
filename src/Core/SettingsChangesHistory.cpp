@@ -44,6 +44,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
             {"optimize_or_like_chain", false, true, "Enable by default: optimize OR chains of LIKE/ILIKE/match into multiSearchAny (substring patterns), multiMatchAny (when Hyperscan/Vectorscan is permitted), or combined match (otherwise)."},
             {"optimize_or_like_chain_min_patterns", 0, 5, "New setting controlling the minimum number of LIKE/ILIKE/match branches (sharing the same LHS expression) required for optimize_or_like_chain to rewrite a chain. Shorter chains are kept as-is to avoid regressing queries where the fixed setup cost of multiSearchAny / Hyperscan outweighs short-circuit OR evaluation."},
+            {"format_geojson_validate_geometry", true, true, "New setting that controls whether the GeoJSON format enforces RFC 7946 geometry validity (minimum points per line and ring, ring closure, non-empty multi-geometries) when reading and writing"},
+            {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},
+            {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
