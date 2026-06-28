@@ -540,7 +540,7 @@ namespace
     )", 0) \
     \
     DECLARE(Double, cache_size_to_ram_max_ratio, 0.5, R"(Set cache size to RAM max ratio. Allows lowering the cache size on low-memory systems.)", 0) \
-    DECLARE(String, uncompressed_cache_policy, DEFAULT_UNCOMPRESSED_CACHE_POLICY, R"(Uncompressed cache policy name.)", 0) \
+    DECLARE(String, uncompressed_cache_policy, DEFAULT_UNCOMPRESSED_CACHE_POLICY, R"(Uncompressed cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.)", 0) \
     DECLARE(UInt64, uncompressed_cache_size, DEFAULT_UNCOMPRESSED_CACHE_MAX_SIZE, R"(
     Maximum size (in bytes) for uncompressed data used by table engines from the MergeTree family.
 
@@ -555,7 +555,7 @@ namespace
     :::
     )", 0) \
     DECLARE(Double, uncompressed_cache_size_ratio, DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the uncompressed cache relative to the cache's total size.)", 0) \
-    DECLARE(String, mark_cache_policy, DEFAULT_MARK_CACHE_POLICY, R"(Mark cache policy name.)", 0) \
+    DECLARE(String, mark_cache_policy, DEFAULT_MARK_CACHE_POLICY, R"(Mark cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.)", 0) \
     DECLARE(UInt64, mark_cache_size, DEFAULT_MARK_CACHE_MAX_SIZE, R"(
     Maximum size of cache for marks (index of [`MergeTree`](/engines/table-engines/mergetree-family) family of tables).
 
@@ -565,26 +565,26 @@ namespace
     )", 0) \
     DECLARE(Double, mark_cache_size_ratio, DEFAULT_MARK_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the mark cache relative to the cache's total size.)", 0) \
     DECLARE(Double, mark_cache_prewarm_ratio, 0.95, R"(The ratio of total size of mark cache to fill during prewarm.)", 0) \
-    DECLARE(String, unique_key_index_cache_policy, "SLRU", R"(UNIQUE KEY index cache policy name (SLRU or LRU).)", 0) \
+    DECLARE(String, unique_key_index_cache_policy, "SLRU", R"(UNIQUE KEY index cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.)", 0) \
     DECLARE(UInt64, unique_key_index_cache_size_bytes, 1_GiB, R"(Maximum size (bytes) of the in-process cache for UNIQUE KEY index (SST) blocks. Set to 0 to disable the cache.)", 0) \
     DECLARE(Double, unique_key_index_cache_size_ratio, 0.5, R"(The size of the protected queue (in case of SLRU policy) in the UNIQUE KEY index cache relative to the cache's total size.)", 0) \
-    DECLARE(String, unique_key_bitmap_cache_policy, "SLRU", R"(UNIQUE KEY delete-bitmap cache policy name (SLRU or LRU).)", 0) \
+    DECLARE(String, unique_key_bitmap_cache_policy, "SLRU", R"(UNIQUE KEY delete-bitmap cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.)", 0) \
     DECLARE(UInt64, unique_key_bitmap_cache_size_bytes, 1_GiB, R"(Maximum size in bytes of the in-process cache for UNIQUE KEY per-part delete bitmaps. Set to 0 to disable the cache.)", 0) \
     DECLARE(Double, unique_key_bitmap_cache_size_ratio, 0.5, R"(The size of the protected queue (in case of SLRU policy) in the UNIQUE KEY delete-bitmap cache relative to the cache's total size.)", 0) \
-    DECLARE(String, primary_index_cache_policy, DEFAULT_PRIMARY_INDEX_CACHE_POLICY, R"(Primary index cache policy name.)", 0) \
+    DECLARE(String, primary_index_cache_policy, DEFAULT_PRIMARY_INDEX_CACHE_POLICY, R"(Primary index cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.)", 0) \
     DECLARE(UInt64, primary_index_cache_size, DEFAULT_PRIMARY_INDEX_CACHE_MAX_SIZE, R"(Maximum size of cache for primary index (index of MergeTree family of tables).)", 0) \
     DECLARE(Double, primary_index_cache_size_ratio, DEFAULT_PRIMARY_INDEX_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the primary index cache relative to the cache's total size.)", 0) \
     DECLARE(Double, primary_index_cache_prewarm_ratio, 0.95, R"(The ratio of total size of mark cache to fill during prewarm.)", 0) \
-    DECLARE(String, iceberg_metadata_files_cache_policy, DEFAULT_ICEBERG_METADATA_CACHE_POLICY, "Iceberg metadata cache policy name.", 0) \
+    DECLARE(String, iceberg_metadata_files_cache_policy, DEFAULT_ICEBERG_METADATA_CACHE_POLICY, "Iceberg metadata cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
     DECLARE(UInt64, iceberg_metadata_files_cache_size, DEFAULT_ICEBERG_METADATA_CACHE_MAX_SIZE, "Maximum size of iceberg metadata cache in bytes. Zero means disabled.", 0) \
     DECLARE(UInt64, iceberg_metadata_files_cache_max_entries, DEFAULT_ICEBERG_METADATA_CACHE_MAX_ENTRIES, "Maximum size of iceberg metadata files cache in entries. Zero means disabled.", 0) \
     DECLARE(Double, iceberg_metadata_files_cache_size_ratio, DEFAULT_ICEBERG_METADATA_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the iceberg metadata cache relative to the cache's total size.", 0) \
-    DECLARE(String, parquet_metadata_cache_policy, DEFAULT_PARQUET_METADATA_CACHE_POLICY, "Parquet metadata cache policy name.", 0) \
+    DECLARE(String, parquet_metadata_cache_policy, DEFAULT_PARQUET_METADATA_CACHE_POLICY, "Parquet metadata cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
     DECLARE(UInt64, parquet_metadata_cache_size, DEFAULT_PARQUET_METADATA_CACHE_MAX_SIZE, "Maximum size of parquet metadata cache in bytes. Zero means disabled.", 0) \
     DECLARE(UInt64, parquet_metadata_cache_max_entries, DEFAULT_PARQUET_METADATA_CACHE_MAX_ENTRIES, "Maximum size of parquet metadata files cache in entries. Zero means disabled.", 0) \
     DECLARE(Double, parquet_metadata_cache_size_ratio, DEFAULT_PARQUET_METADATA_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the parquet metadata cache relative to the cache's total size.", 0) \
     DECLARE(String, allowed_disks_for_table_engines, "", "List of disks allowed for use with Iceberg", 0) \
-    DECLARE(String, vector_similarity_index_cache_policy, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_POLICY, "Vector similarity index cache policy name.", 0) \
+    DECLARE(String, vector_similarity_index_cache_policy, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_POLICY, "Vector similarity index cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
     DECLARE(UInt64, vector_similarity_index_cache_size, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_SIZE, R"(Size of cache for vector similarity indexes. Zero means disabled.
 
     :::note
@@ -592,7 +592,7 @@ namespace
     :::)", 0) \
     DECLARE(UInt64, vector_similarity_index_cache_max_entries, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_ENTRIES, "Size of cache for vector similarity index in entries. Zero means disabled.", 0) \
     DECLARE(Double, vector_similarity_index_cache_size_ratio, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the vector similarity index cache relative to the cache's total size.", 0) \
-    DECLARE(String, text_index_tokens_cache_policy, DEFAULT_TEXT_INDEX_TOKENS_CACHE_POLICY, "Text index tokens cache policy name.", 0) \
+    DECLARE(String, text_index_tokens_cache_policy, DEFAULT_TEXT_INDEX_TOKENS_CACHE_POLICY, "Text index tokens cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
     DECLARE(UInt64, text_index_tokens_cache_size, DEFAULT_TEXT_INDEX_TOKENS_CACHE_MAX_SIZE, R"(Size of cache for text index tokens. Zero means disabled.
 
     :::note
@@ -600,7 +600,7 @@ namespace
     :::)", 0) \
     DECLARE(UInt64, text_index_tokens_cache_max_entries, DEFAULT_TEXT_INDEX_TOKENS_CACHE_MAX_ENTRIES, "Size of cache for text index tokens in entries. Zero means disabled.", 0) \
     DECLARE(Double, text_index_tokens_cache_size_ratio, DEFAULT_TEXT_INDEX_TOKENS_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the text index tokens cache relative to the cache's total size.", 0) \
-    DECLARE(String, text_index_header_cache_policy, DEFAULT_TEXT_INDEX_HEADER_CACHE_POLICY, "Text index header cache policy name.", 0) \
+    DECLARE(String, text_index_header_cache_policy, DEFAULT_TEXT_INDEX_HEADER_CACHE_POLICY, "Text index header cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
     DECLARE(UInt64, text_index_header_cache_size, DEFAULT_TEXT_INDEX_HEADER_CACHE_MAX_SIZE, R"(Size of cache for text index headers. Zero means disabled.
 
     :::note
@@ -608,7 +608,7 @@ namespace
     :::)", 0) \
     DECLARE(UInt64, text_index_header_cache_max_entries, DEFAULT_TEXT_INDEX_HEADER_CACHE_MAX_ENTRIES, "Size of cache for text index header in entries. Zero means disabled.", 0) \
     DECLARE(Double, text_index_header_cache_size_ratio, DEFAULT_TEXT_INDEX_HEADER_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the text index header cache relative to the cache's total size.", 0) \
-    DECLARE(String, text_index_postings_cache_policy, DEFAULT_TEXT_INDEX_POSTINGS_CACHE_POLICY, "Text index posting list cache policy name.", 0) \
+    DECLARE(String, text_index_postings_cache_policy, DEFAULT_TEXT_INDEX_POSTINGS_CACHE_POLICY, "Text index posting list cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
     DECLARE(UInt64, text_index_postings_cache_size, DEFAULT_TEXT_INDEX_POSTINGS_CACHE_MAX_SIZE, R"(Size of cache for text index posting lists. Zero means disabled.
 
     :::note
@@ -616,7 +616,7 @@ namespace
     :::)", 0) \
     DECLARE(UInt64, text_index_postings_cache_max_entries, DEFAULT_TEXT_INDEX_POSTINGS_CACHE_MAX_ENTRIES, "Size of cache for text index posting list in entries. Zero means disabled.", 0) \
     DECLARE(Double, text_index_postings_cache_size_ratio, DEFAULT_TEXT_INDEX_POSTINGS_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the text index posting list cache relative to the cache's total size.", 0) \
-    DECLARE(String, index_uncompressed_cache_policy, DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY, R"(Secondary index uncompressed cache policy name.)", 0) \
+    DECLARE(String, index_uncompressed_cache_policy, DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY, R"(Secondary index uncompressed cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.)", 0) \
     DECLARE(UInt64, index_uncompressed_cache_size, DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE, R"(
     Maximum size of cache for uncompressed blocks of `MergeTree` indices.
 
@@ -627,7 +627,7 @@ namespace
     :::
     )", 0) \
     DECLARE(Double, index_uncompressed_cache_size_ratio, DEFAULT_INDEX_UNCOMPRESSED_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the secondary index uncompressed cache relative to the cache's total size.)", 0) \
-    DECLARE(String, index_mark_cache_policy, DEFAULT_INDEX_MARK_CACHE_POLICY, R"(Secondary index mark cache policy name.)", 0) \
+    DECLARE(String, index_mark_cache_policy, DEFAULT_INDEX_MARK_CACHE_POLICY, R"(Secondary index mark cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.)", 0) \
     DECLARE(UInt64, index_mark_cache_size, DEFAULT_INDEX_MARK_CACHE_MAX_SIZE, R"(
     Maximum size of cache for index marks.
 
@@ -641,7 +641,7 @@ namespace
     DECLARE(Double, index_mark_cache_size_ratio, DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the secondary index mark cache relative to the cache's total size.)", 0) \
     DECLARE(Double, index_mark_cache_prewarm_ratio, 0.95, R"(The ratio of total size of index mark cache to fill during prewarm.)", 0) \
     DECLARE(UInt64, page_cache_history_window_ms, 1000, "Delay before freed memory can be used by userspace page cache.", 0) \
-    DECLARE(String, page_cache_policy, DEFAULT_PAGE_CACHE_POLICY, "Userspace page cache policy name.", 0) \
+    DECLARE(String, page_cache_policy, DEFAULT_PAGE_CACHE_POLICY, "Userspace page cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
     DECLARE(Double, page_cache_size_ratio, DEFAULT_PAGE_CACHE_SIZE_RATIO, "The size of the protected queue in the userspace page cache relative to the cache's total size.", 0) \
     DECLARE(UInt64, page_cache_min_size, DEFAULT_PAGE_CACHE_MIN_SIZE, "Minimum size of the userspace page cache.", 0) \
     DECLARE(UInt64, page_cache_max_size, DEFAULT_PAGE_CACHE_MAX_SIZE, "Maximum size of the userspace page cache. Set to 0 to disable the cache. If greater than page_cache_min_size, the cache size will be continuously adjusted within this range, to use most of the available memory while keeping the total memory usage below the limit (max_server_memory_usage[_to_ram_ratio]).", 0) \
@@ -673,7 +673,7 @@ namespace
     This setting can be modified at runtime and will take effect immediately.
     :::
     )", 0) \
-    DECLARE(String, query_condition_cache_policy, DEFAULT_QUERY_CONDITION_CACHE_POLICY, "Query condition cache policy name.", 0) \
+    DECLARE(String, query_condition_cache_policy, DEFAULT_QUERY_CONDITION_CACHE_POLICY, "Query condition cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
     DECLARE(UInt64, query_condition_cache_size, DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE, R"(
     Maximum size of the query condition cache.
     :::note

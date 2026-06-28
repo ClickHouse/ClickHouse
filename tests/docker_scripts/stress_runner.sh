@@ -77,18 +77,21 @@ clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"
 stop_server
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
 
-# Randomize cache policies.
+# Randomize the mark and uncompressed cache policy (cache_policy.xml) across LRU, SLRU and SIEVE
+# to exercise all eviction policies. SIEVE is only implemented for the CacheBase-backed caches,
+# so it is not applied to the filesystem cache (storage_conf, backed by FileCachePolicy).
 cache_policy=""
-if [ $((RANDOM % 2)) -eq 1 ]; then
-    cache_policy="SLRU"
-else
-    cache_policy="LRU"
-fi
+case $((RANDOM % 3)) in
+    0) cache_policy="SLRU" ;;
+    1) cache_policy="SIEVE" ;;
+    *) cache_policy="LRU" ;;
+esac
 
-echo "Using cache policy: $cache_policy"
+echo "Using mark/uncompressed cache policy: $cache_policy"
 
-if [ "$cache_policy" = "SLRU" ]; then
-    sed -i.tmp "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" /etc/clickhouse-server/config.d/storage_conf*.xml
+# The mark and uncompressed caches default to SLRU (in cache_policy.xml).
+if [ "$cache_policy" != "SLRU" ]; then
+    sed -i.tmp -e "s|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>$cache_policy</mark_cache_policy>|" -e "s|<uncompressed_cache_policy>SLRU</uncompressed_cache_policy>|<uncompressed_cache_policy>$cache_policy</uncompressed_cache_policy>|" /etc/clickhouse-server/config.d/cache_policy.xml
 fi
 
 start_server || { echo "Failed to start server"; exit 1; }
@@ -270,8 +273,9 @@ rm -f /etc/clickhouse-server/config.d/transactions.xml
 
 sed -i.tmp "s|<level>trace</level>|<level>test</level>|" /etc/clickhouse-server/config.d/logger_trace.xml
 
-if [ "$cache_policy" = "SLRU" ]; then
-    sed -i.tmp "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" /etc/clickhouse-server/config.d/storage_conf*.xml
+# The mark and uncompressed caches default to SLRU (in cache_policy.xml).
+if [ "$cache_policy" != "SLRU" ]; then
+    sed -i.tmp -e "s|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>$cache_policy</mark_cache_policy>|" -e "s|<uncompressed_cache_policy>SLRU</uncompressed_cache_policy>|<uncompressed_cache_policy>$cache_policy</uncompressed_cache_policy>|" /etc/clickhouse-server/config.d/cache_policy.xml
 fi
 
 # Randomize async_load_databases

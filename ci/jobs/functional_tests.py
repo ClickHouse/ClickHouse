@@ -593,6 +593,16 @@ def main():
             else:
                 print("skip log export config for local run")
 
+        # Randomize the mark and uncompressed cache policy (cache_policy.xml) across LRU, SLRU
+        # and SIEVE to exercise all eviction policies. SIEVE is only implemented for the
+        # CacheBase-backed caches, so it is not applied to the filesystem cache (storage_conf,
+        # backed by FileCachePolicy). During bugfix validation the install configs are used with
+        # downloaded master-side binaries that do not have the SIEVE branch in CacheBase, so SIEVE
+        # is excluded there to avoid a server start-up failure.
+        cache_policies = ["LRU", "SLRU"] if is_bugfix_validation else ["LRU", "SLRU", "SIEVE"]
+        cache_policy = random.choice(cache_policies)
+        print(f"Using mark/uncompressed cache policy: {cache_policy}")
+
         commands = [
             "rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/* /etc/clickhouse-server1/* /etc/clickhouse-server2/*",
             # google *.proto files
@@ -612,6 +622,14 @@ def main():
             f"sed -i 's|>/test/chroot|>{temp_dir}/chroot|' /etc/clickhouse-server**/config.d/*.xml",
             CH.set_random_timezone,
         ]
+
+        # The mark and uncompressed caches default to SLRU (in cache_policy.xml).
+        if cache_policy != "SLRU":
+            commands.append(
+                f"sed -i -e 's|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>{cache_policy}</mark_cache_policy>|' "
+                f"-e 's|<uncompressed_cache_policy>SLRU</uncompressed_cache_policy>|<uncompressed_cache_policy>{cache_policy}</uncompressed_cache_policy>|' "
+                f"/etc/clickhouse-server/config.d/cache_policy.xml"
+            )
 
         if is_flaky_check:
             commands.append(CH.enable_thread_fuzzer_config)

@@ -4,6 +4,7 @@
 #include <Common/ICachePolicy.h>
 #include <Common/LRUCachePolicy.h>
 #include <Common/SLRUCachePolicy.h>
+#include <Common/SIEVECachePolicy.h>
 #include <Common/CurrentMetrics.h>
 
 #include <base/UUID.h>
@@ -43,6 +44,7 @@ public:
 
     static constexpr auto NO_MAX_COUNT = 0uz;
     static constexpr auto DEFAULT_SIZE_RATIO = 0.5l;
+    static constexpr auto DEFAULT_CACHE_POLICY = "SLRU";
 
     /// Use this ctor if you only care about the cache size but not internals like the cache policy.
     explicit CacheBase(
@@ -51,11 +53,11 @@ public:
         size_t max_size_in_bytes,
         size_t max_count = NO_MAX_COUNT,
         double size_ratio = DEFAULT_SIZE_RATIO)
-        : CacheBase("SLRU", size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, size_ratio)
+        : CacheBase(DEFAULT_CACHE_POLICY, size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, size_ratio)
     {
     }
 
-    /// Use this ctor if the user should be able to configure the cache policy and cache sizes via settings. Supports only general-purpose policies LRU and SLRU.
+    /// Use this ctor if the user should be able to configure the cache policy and cache sizes via settings. Supports only general-purpose policies LRU, SLRU and SIEVE.
     explicit CacheBase(
         std::string_view cache_policy_name,
         CurrentMetrics::Metric size_in_bytes_metric,
@@ -71,8 +73,7 @@ public:
 
         if (cache_policy_name.empty())
         {
-            static constexpr auto default_cache_policy = "SLRU";
-            cache_policy_name = default_cache_policy;
+            cache_policy_name = DEFAULT_CACHE_POLICY;
         }
 
         if (cache_policy_name == "LRU")
@@ -84,6 +85,11 @@ public:
         {
             using SLRUPolicy = SLRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
             cache_policy = std::make_unique<SLRUPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, size_ratio, on_remove_entry_function);
+        }
+        else if (cache_policy_name == "SIEVE")
+        {
+            using SIEVEPolicy = SIEVECachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
+            cache_policy = std::make_unique<SIEVEPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, on_remove_entry_function);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown cache policy name: {}", cache_policy_name);
@@ -304,6 +310,14 @@ public:
     {
         std::lock_guard lock(mutex);
         cache_policy->setQuotaForUser(user_id, max_size_in_bytes, max_entries);
+    }
+
+    /// For unit tests.
+    /// Do not use it anywhere else as this is not thread-safe.
+    const CachePolicy & getCachePolicy()
+    {
+        std::lock_guard lock(mutex);
+        return *cache_policy;
     }
 
     virtual ~CacheBase() = default;
