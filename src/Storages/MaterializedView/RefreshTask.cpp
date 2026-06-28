@@ -226,8 +226,6 @@ OwnedRefreshTask RefreshTask::create(
 
     task->watch_callback = std::make_shared<Coordination::WatchCallback>([w = task->coordination.watches, task_waker = task->scheduling_task->getWatchCallback()](const Coordination::WatchResponse & response)
     {
-        w->root_watch_active.store(false);
-        w->children_watch_active.store(false);
         w->should_reread_znodes.store(true);
         (*task_waker)(response);
     });
@@ -678,6 +676,11 @@ void RefreshTask::doScheduling(bool is_shutdown)
 {
     auto component_guard = Coordination::setCurrentComponent("RefreshTask::doScheduling");
     std::unique_lock lock(mutex);
+
+    /// shutdown() runs doScheduling(is_shutdown=true) without holding the mutex, so a parallel
+    /// shutdown() can null `view` before we enter. Bail before dereferencing it below.
+    if (!view)
+        return;
 
     /// The way this function generally works is:
     ///  * Look at state in zookeeper and in memory and at current time.
@@ -1168,9 +1171,17 @@ void RefreshTask::notifyDependentsIfNeeded(std::unique_lock<std::mutex> & lock)
     auto info = getInfoForDependentViewsLocked(lock);
     if (info != coordination.notified_dependents)
     {
+        /// Our callers (readZnodesIfNeeded, updateCoordinationState) release the mutex before
+        /// reaching here, so a parallel shutdown() may have nulled `view`. Bail in that case
+        /// (shutdown() does its own final notifyDependents()), and snapshot the accessors before
+        /// unlocking so they can't turn into a null deref while we are unlocked.
+        if (!view)
+            return;
         coordination.notified_dependents = info;
+        ContextPtr context = view->getContext();
+        StorageID view_storage_id = view->getStorageID();
         lock.unlock();
-        view->getContext()->getRefreshSet().notifyDependents(view->getStorageID());
+        context->getRefreshSet().notifyDependents(view_storage_id);
         lock.lock();
     }
 }
@@ -1377,20 +1388,13 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
     if (!zookeeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Keeper server doesn't support multi-reads. Refreshable materialized views won't work.");
 
-    /// Set watches. (This is a lot of code, is there a better way?)
+    /// Do separate requests just to add watches.
     Coordination::WatchCallbackPtrOrEventPtr labelled_watch{
         watch_callback, ProfileEvents::ZooKeeperWatchTriggeredMaterializedViewRefresh};
-    if (!coordination.watches->root_watch_active.load())
-    {
-        coordination.watches->root_watch_active.store(true);
-        zookeeper->existsWatch(coordination.path, nullptr, labelled_watch);
-    }
-    if (!coordination.watches->children_watch_active.load())
-    {
-        coordination.watches->children_watch_active.store(true);
-        zookeeper->getChildrenWatch(coordination.path, nullptr, labelled_watch);
-    }
+    zookeeper->existsWatch(coordination.path, nullptr, labelled_watch);
+    zookeeper->getChildrenWatch(coordination.path, nullptr, labelled_watch);
 
+    /// Do an atomic multi-read.
     Strings paths {coordination.path, coordination.path + "/running", coordination.path + "/paused"};
     auto responses = zookeeper->tryGet(paths.begin(), paths.end());
 
