@@ -194,6 +194,25 @@ def test_url_wildcard_engine_checks_headers_before_reading():
     assert stats == {}
 
 
+def test_url_engine_persists_inferred_format_with_compression_argument():
+    table_name = "url_engine_auto_format_with_compression"
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+    try:
+        node1.query(
+            f"CREATE TABLE {table_name} (x UInt64) "
+            "ENGINE = URL('http://resolver:8087/data/2025/part1.tsv', 'auto', 'none')"
+        )
+
+        result = node1.query(f"SELECT sum(x) FROM {table_name}")
+        assert result.strip() == "3"
+
+        create_query = node1.query(f"SHOW CREATE TABLE {table_name}")
+        assert "'auto', 'none'" not in create_query
+        assert "'TSV', 'none'" in create_query
+    finally:
+        node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+
 def test_url_wildcard_time_virtual_column_is_null_without_last_modified():
     # The mock index server never sends a `Last-Modified` header, so the modification time is
     # unknown and `_time` must be reported as NULL rather than the default epoch `1970-01-01`.

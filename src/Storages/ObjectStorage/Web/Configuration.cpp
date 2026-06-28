@@ -215,11 +215,11 @@ void StorageWebConfiguration::addStructureAndFormatToArgsIfNeeded(
         if (with_structure)
             args.push_back(structure_literal);
     }
-    else if (count == 3 && with_structure)
+    else if (count >= 3)
     {
         if (checkAndGetLiteralArgument<String>(args[1], "format") == "auto")
             args[1] = format_literal;
-        if (checkAndGetLiteralArgument<String>(args[2], "structure") == "auto")
+        if (with_structure && checkAndGetLiteralArgument<String>(args[2], "structure") == "auto")
             args[2] = structure_literal;
     }
 
