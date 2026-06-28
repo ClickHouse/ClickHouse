@@ -3582,13 +3582,22 @@ async function restoreFromHistory(state, token) {
     /// even if the editor query was changed without rerunning.
     resultEl.queryText = result.query ?? state.query;
 
-    /// Restore query parameter inputs and their values.
+    /// Restore query parameter inputs and their values. Replace the FULL snapshot rather than
+    /// overlaying `state.params`: when the previous and restored tabs share a placeholder name,
+    /// `updateQueryParams` keeps the existing input (the detected param list is unchanged), so a
+    /// value from the previous tab would leak into a param the restored tab leaves unset. Reset
+    /// every detected param explicitly (absent -> ''), then capture the snapshot into the active
+    /// tab so its stored params match what is shown and will run.
     await updateQueryParams();
     if (token !== request_num) return;
-    if (state.params)
+    const restored_params = {};
+    for (const param of currentQueryParams)
     {
-        setParamValues(state.params);
+        restored_params[param.name] = state.params?.[param.name] ?? '';
     }
+    setParamValues(restored_params);
+    const active_tab_for_params = getActiveTab();
+    if (active_tab_for_params) active_tab_for_params.params = restored_params;
 
     if (!result.data) return;
 
@@ -4087,6 +4096,12 @@ window.onpopstate = function(event) {
     const tab = resolveTabForState(event.state);
     activeTabId = tab.id;
     tab.query = event.state.query;
+    /// This history entry is now the tab's URL-synced query, so it is also the query the saved
+    /// tab is "in sync" with: keep `lastSavedQuery` aligned with it. Otherwise a later edit and
+    /// reload (while the URL still holds this entry) would be misread by startup reconciliation
+    /// as a fresh external URL and overwrite the edit (`lastSavedQuery` would still point at the
+    /// newer entry that `writeHistoryEntry` last recorded, not at this one).
+    tab.lastSavedQuery = event.state.query;
     if (event.state.params) tab.params = event.state.params;
     /// Adopt the entry's result snapshot (its own producing query/params), or clear it.
     /// This avoids leaving a stale snapshot attached to a different query.
