@@ -150,9 +150,11 @@ configure "${configure_opts[@]}"
 # Check that all new/changed setting were added in settings changes history.
 # Some settings can be different for builds with sanitizers, so we check
 # settings changes only for non-sanitizer builds.
-# The automatic value of 'max_threads' and similar settings resolves to an environment-dependent
-# number rendered as auto(N) (older releases rendered it as the quoted 'auto(N)'); exclude such
-# values from the comparison so this rendering difference is not reported as a setting change.
+# The automatic value of 'max_threads' and similar settings is rendered as auto(N); older releases
+# rendered it as the quoted 'auto(N)' (with the quotes baked into the value). Suppress only this pure
+# rendering difference - a row where the old value is exactly the new value wrapped in single quotes -
+# so it is not reported as a setting change. A genuine change of an auto-valued setting's default is
+# still caught and must have a settings changes history entry.
 IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
 if [ "${IS_SANITIZED}" -eq "0" ]
 then
@@ -172,7 +174,7 @@ then
   FROM new_settings
   LEFT JOIN old_settings ON new_settings.name = old_settings.name
   WHERE (old_value IS NULL OR new_value != old_value)
-      AND (new_value NOT LIKE '%auto(%')
+      AND NOT (old_value IS NOT NULL AND new_value LIKE 'auto(%' AND old_value = concat('''', new_value, ''''))
       AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
@@ -192,7 +194,7 @@ then
   FROM new_merge_tree_settings
   LEFT JOIN old_merge_tree_settings ON new_merge_tree_settings.name = old_merge_tree_settings.name
   WHERE (old_value IS NULL OR new_value != old_value)
-      AND (new_value NOT LIKE '%auto(%')
+      AND NOT (old_value IS NOT NULL AND new_value LIKE 'auto(%' AND old_value = concat('''', new_value, ''''))
       AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
