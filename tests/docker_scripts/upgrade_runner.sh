@@ -323,13 +323,14 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       Let's just ignore all errors from queries ("} <Error> TCPHandler: Code:", "} <Error> executeQuery: Code:")
 # FIXME https://github.com/ClickHouse/ClickHouse/issues/39197 ("Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'")
 # FIXME https://github.com/ClickHouse/ClickHouse/issues/39174 - bad mutation does not indicate backward incompatibility:
-#       stress tests may leave behind intentionally-broken mutations that retry after upgrade.
-#       `CANNOT_PARSE_TEXT` errors come from:
-#       - 00834_kill_mutation{,_replicated_zookeeper}: `DELETE WHERE toUInt32(s) = 1` on String data ('a', 'b')
-#       - 01414_mutations_and_errors_zookeeper: `MODIFY COLUMN value UInt64` on String data ('Hello')
-#       - 04338_on_fly_mutation_read_overwritten_lc_source: `MODIFY COLUMN v UInt64` on String data ('x')
-#       `MutateFromLogEntryTask` is also excluded for the same reason, but only catches the first log line;
-#       the wrapping `MergeTreeBackgroundExecutor` line also needs to be excluded.
+#       stress tests may leave behind intentionally-broken mutations that retry after the upgrade restart and log
+#       a CANNOT_PARSE_TEXT error. The Stress test runs the fuzzer (randomized queries) before this stage, so the
+#       failing string literal and target type are arbitrary (e.g. 'a', 'b', 'Hello', 'x', or any fuzzer-generated
+#       value) and an exact-literal allow-list can never be complete. Instead these are matched by error CLASS in
+#       the secondary pipe: a CANNOT_PARSE_TEXT raised on a background-mutation executor
+#       (MutatePlainMergeTreeTask / MutateFromLogEntryTask / MergeTreeBackgroundExecutor), regardless of the value
+#       or type. User-initiated parse errors keep the `} <Error> TCPHandler:` / `} <Error> executeQuery:` prefix
+#       and are excluded by those separate filters, so genuine query-time parse errors still surface.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 # `Unknown tokenizer: 'unicode_word'` appears because the `unicode_word` tokenizer was renamed to `asciiCJK`
@@ -426,16 +427,6 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "found in queue and some source parts for it was lost" \
            -e "is lost forever." \
            -e "Unknown index: idx." \
-           -e "Cannot parse string 'Hello' as UInt64" \
-           -e "Cannot parse string 'x' as UInt64" \
-           -e "Cannot parse string 'Hello' as UInt32" \
-           -e "Cannot parse string \'Hello\' as UInt32" \
-           -e "Cannot parse string \\'Hello\\' as UInt32" \
-           -e "Cannot parse string \'a\' as UInt32" \
-           -e "Cannot parse string \'b\' as UInt32" \
-           -e "Cannot parse string 'a' as UInt32" \
-           -e "Cannot parse string 'b' as UInt32" \
-           -e "Cannot parse string 'x' as UInt64" \
            -e "} <Error> TCPHandler: Code:" \
            -e "} <Error> executeQuery: Code:" \
            -e "Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'" \
@@ -482,6 +473,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
     | grep -av -e "SystemLog.*Failed to flush system log system\.metric_log.*DEADLOCK_AVOIDED" \
+    | grep -avE -e "(MutatePlainMergeTreeTask|MutateFromLogEntryTask|MergeTreeBackgroundExecutor).*Cannot parse string .* as .*CANNOT_PARSE_TEXT" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
