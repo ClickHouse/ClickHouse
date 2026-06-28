@@ -152,15 +152,17 @@ protected:
     static thread_local ThreadFramePointers thread_frame_pointers;
     static const ThreadFramePointersBase dummy_frame_pointers;
 
-    // used to remove the sensitive information from exceptions if query_masking_rules is configured
+    // Used to remove the sensitive information from exceptions if `query_masking_rules` is configured.
+    // Both constructors run `SensitiveDataMasker::wipeSensitiveData` on `msg_` when a masker is registered.
+    // There is intentionally no constructor that skips the masker - every code path that builds a
+    // `MessageMasked` (initial `Exception` construction or `addMessage` extension) must mask consistently,
+    // otherwise `query_masking_rules` cannot cover the appended portion (see issue #106441).
     struct MessageMasked
     {
         std::string msg;
         std::string format_string;
         explicit MessageMasked(const std::string & msg_, std::string format_string_);
         explicit MessageMasked(std::string && msg_, std::string format_string_);
-        explicit MessageMasked(const std::string & msg_) : msg(msg_) {}
-        explicit MessageMasked(std::string && msg_) : msg(msg_) {}
     };
 
     Exception(const MessageMasked & msg_masked, int code, bool remote_);
@@ -206,9 +208,13 @@ public:
         addMessage(fmt::format(format, std::forward<Args>(args)...));
     }
 
-    void addMessage(const std::string& message)
+    void addMessage(const std::string & message)
     {
-        addMessage(MessageMasked(message));
+        // Use the 2-argument `MessageMasked` constructor so the masker is invoked on the appended
+        // portion. Without this `query_masking_rules` cannot cover content added via `addMessage`,
+        // e.g. the `(in file/uri ...)` suffix in `IInputFormat::generate` for jdbc/odbc table functions
+        // can leak connection strings (issue #106441).
+        addMessage(MessageMasked(message, ""));
     }
 
     void addMessage(const MessageMasked & msg_masked);
