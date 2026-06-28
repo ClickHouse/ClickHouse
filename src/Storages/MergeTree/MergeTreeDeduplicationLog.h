@@ -201,6 +201,10 @@ private:
     /// Execute both previous methods if needed
     void rotateAndDropIfNeeded();
 
+    /// Open a writer for the most recent log file, if not already open.
+    /// The write mode (append or rewrite) is chosen depending on `disk_supports_writing_with_append`.
+    void initCurrentWriter();
+
     /// Load single log from disk. In case of corruption throws exceptions
     size_t loadSingleLog(const std::string & path);
 };
