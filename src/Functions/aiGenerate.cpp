@@ -31,6 +31,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
+            {"collection", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
             {"prompt", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String)"},
         };
         FunctionArgumentDescriptors optional_args{
@@ -44,9 +45,9 @@ public:
 
 private:
     static constexpr float default_temp = 0.7f;
-    static constexpr size_t prompt_arg_index = 0;
-    static constexpr size_t system_prompt_arg_idx = 1;
-    static constexpr size_t temp_arg_idx = 2;
+    static constexpr size_t prompt_arg_index = 1;
+    static constexpr size_t system_prompt_arg_idx = 2;
+    static constexpr size_t temp_arg_idx = 3;
 
     String functionName() const override { return name; }
 
@@ -84,18 +85,19 @@ The function sends the prompt to the configured AI provider and returns the gene
 An optional system prompt can be provided to guide the model's behavior (e.g. tone, format, role).
 If no system prompt is given, the default system prompt is: `)" + String(default_system_prompt) + R"(`
 
-Provider credentials and configuration are taken from the named collection specified by the `ai_function_credentials` setting.
+The first argument is a named collection that specifies the provider, model, endpoint, and optionally an API key.
 )",
-        .syntax = "aiGenerate(prompt[, system_prompt[, temperature]])",
+        .syntax = "aiGenerate(collection, prompt[, system_prompt[, temperature]])",
         .arguments
-        = {{"prompt", "The user prompt or question to send to the model.", {"String"}},
+        = {{"collection", "Name of a named collection containing provider credentials and configuration.", {"String"}},
+           {"prompt", "The user prompt or question to send to the model.", {"String"}},
            {"system_prompt", "Optional constant system-level instruction that guides the model's behavior (e.g. persona, output format), sent along with each prompt.", {"String"}},
            {"temperature", "Sampling temperature controlling randomness. Default: `0.7`.", {"Float64"}}},
         .returned_value = {"The generated text response, or the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples
-        = {{"Simple question", "SELECT aiGenerate('What is 2 + 2? Reply with just the number.') SETTINGS ai_function_credentials = 'my_ai_credentials'", "4"},
-           {"With system prompt", "SELECT aiGenerate('Explain ClickHouse', 'You are a database expert. Be concise.') SETTINGS ai_function_credentials = 'my_ai_credentials'", ""},
-           {"Summarize column values", "SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5", ""}},
+        = {{"Simple question", "SELECT aiGenerate('ai_credentials', 'What is 2 + 2? Reply with just the number.')", "4"},
+           {"With system prompt", "SELECT aiGenerate('ai_credentials', 'Explain ClickHouse', 'You are a database expert. Be concise.')", ""},
+           {"Summarize column values", "SELECT article_title, aiGenerate('ai_credentials', concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5", ""}},
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::AI});
 
