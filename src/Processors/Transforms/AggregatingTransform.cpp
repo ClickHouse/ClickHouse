@@ -1,3 +1,4 @@
+#include <Columns/ColumnDecimal.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
 #include <Common/CurrentThread.h>
@@ -13,6 +14,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadPool.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
@@ -465,6 +467,7 @@ public:
             inputs.emplace_back(out.getHeader(), this);
             connect(out, inputs.back());
             inputs.back().setNeeded();
+            source->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
         }
 
         return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
@@ -844,6 +847,20 @@ AggregatingTransform::AggregatingTransform(
 
 AggregatingTransform::~AggregatingTransform() = default;
 
+void AggregatingTransform::finishConsume()
+{
+    if (is_consume_finished)
+        return;
+
+    is_consume_finished = true;
+
+    auto generating_group = AggregatingStep::AggregatingStage::Grouping == static_cast<AggregatingStep::AggregatingStage>(getQueryPlanStepGroup()) ?
+        static_cast<size_t>(AggregatingStep::AggregatingStage::Merging) :
+        static_cast<size_t>(AggregatingStep::AggregatingStage::AggregatingSharded);
+
+    setQueryPlanStepGroup(generating_group);
+}
+
 IProcessor::Status AggregatingTransform::prepare()
 {
     /// There are one or two input ports.
@@ -898,7 +915,7 @@ IProcessor::Status AggregatingTransform::prepare()
         }
 
         /// Finish data processing and create another pipe.
-        is_consume_finished = true;
+        finishConsume();
         return Status::Ready;
     }
 
@@ -945,6 +962,9 @@ IProcessor::PipelineUpdate AggregatingTransform::updatePipeline()
     inputs.emplace_back(out.getHeader(), this);
     connect(out, inputs.back());
     is_pipeline_created = true;
+    for (auto & proc : processors)
+        proc->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
+
     return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
 }
 
@@ -969,12 +989,12 @@ void AggregatingTransform::consume(Chunk chunk)
     {
         materializeChunk(chunk);
         if (!params->aggregator.mergeOnBlock(chunk.detachColumns(), num_rows, false, variants, no_more_keys, is_cancelled))
-            is_consume_finished = true;
+            finishConsume();
     }
     else
     {
         if (!params->aggregator.executeOnBlock(chunk.detachColumns(), 0, num_rows, variants, key_columns, aggregate_columns, no_more_keys))
-            is_consume_finished = true;
+            finishConsume();
     }
 }
 

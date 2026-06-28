@@ -52,6 +52,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterExplainQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
@@ -1772,10 +1773,23 @@ static BlockIO executeQueryImpl(
                     quota = context->getQuota();
                     if (quota)
                     {
-                        /// Each governing quota is accounted appropriately: NORMALIZED_QUERY_HASH
-                        /// quotas track against per-hash intervals, the rest against shared session
-                        /// intervals. A user may be governed by several quotas of different key types.
-                        if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+                        /// EXPLAIN ANALYZE executes the inner SELECT only when it is an executable
+                        /// analyze (inner SELECT, non-distributed), in which case it must be charged
+                        /// against the select-query quota just like a normal SELECT. Rejected forms such
+                        /// as EXPLAIN ANALYZE INSERT, EXPLAIN ANALYZE SYSTEM, or distributed EXPLAIN
+                        /// ANALYZE never run an inner SELECT and stay counted as generic queries only, so
+                        /// reuse the same predicate that gates execution instead of the AST kind alone.
+                        const auto * explain_interpreter = dynamic_cast<const InterpreterExplainQuery *>(interpreter.get());
+                        const bool is_executable_analyze = explain_interpreter && explain_interpreter->isExecutableAnalyze();
+                        const bool charge_as_select = query_plan
+                            || out_ast->as<ASTSelectQuery>()
+                            || out_ast->as<ASTSelectWithUnionQuery>()
+                            || is_executable_analyze;
+
+                        /// `usedForQuery` dispatches per quota: for `NORMALIZED_QUERY_HASH` keyed
+                        /// quotas it charges the per-hash intervals, otherwise the shared session
+                        /// intervals. So a single set of calls covers all key types.
+                        if (charge_as_select)
                             quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_SELECTS, 1);
                         else if (out_ast->as<ASTInsertQuery>())
                             quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);

@@ -1,6 +1,9 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Processors/Executors/ExecutionThreadContext.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/StepWallClock.h>
 #include <QueryPipeline/ReadProgressCallback.h>
+#include <base/defines.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
@@ -91,10 +94,26 @@ bool ExecutionThreadContext::executeTask()
     }
     std::optional<Stopwatch> execution_time_watch;
 
+    const size_t group = node->processor()->getQueryPlanStepGroup();
+
+    StepWallClock * clock = nullptr;
+    if (step_to_wall_clock_registry)
+    {
+        /// Some processors are pipeline "plumbing" (resize, converting, output format, etc.)
+        /// and are not attributed to any query plan step, so there is no clock for them.
+        if (const auto * step = node->processor()->getQueryPlanStep())
+        {
+            clock = step_to_wall_clock_registry->find(step, group);
+            chassert(clock);
+            if (clock)
+                clock->onEnter();
+        }
+    }
+
 #ifndef NDEBUG
     execution_time_watch.emplace();
 #else
-    if (profile_processors)
+    if (profile_processors || step_to_wall_clock_registry)
         execution_time_watch.emplace();
 #endif
 
@@ -108,13 +127,21 @@ bool ExecutionThreadContext::executeTask()
         node->exception = std::current_exception();
     }
 
-    if (profile_processors)
+    if (profile_processors || step_to_wall_clock_registry)
     {
         UInt64 elapsed_ns = execution_time_watch->elapsedNanoseconds();
         node->processor()->elapsed_ns += elapsed_ns;
+        /// Once processor can be in two groups. See AggregatingTransform as an example
+        node->processor()->addElapsedNs(group, elapsed_ns);
         if (trace_processors)
             span->addAttribute("execution_time_ms", elapsed_ns / 1000U);
     }
+
+    if (clock)
+    {
+        clock->onLeave();
+    }
+
 #ifndef NDEBUG
     execution_time_ns += execution_time_watch->elapsed();
     if (trace_processors)
