@@ -1139,23 +1139,29 @@ namespace
 /// and a `..` component escapes it. Because the on-disk query result cache scans `path`, writes entries under it,
 /// and `removeRecursive`s cache-shaped subdirectories (broken/expired/evicted entries and `SYSTEM DROP QUERY
 /// CACHE`), a misconfigured `path` could otherwise read, write and recursively delete data outside the configured
-/// cache directory. Fail closed: accept only a non-empty relative path that, once normalized, stays within the
-/// disk root (i.e. has no `..` component); reject absolute paths and parent-traversal. An unsafe path disables the
-/// on-disk cache entirely (see the constructor) rather than risking destructive operations outside the cache root.
+/// cache directory. Fail closed: accept only a non-empty relative path with no `..` component at all; reject
+/// absolute paths and any parent-traversal. An unsafe path disables the on-disk cache entirely (see the
+/// constructor) rather than risking destructive operations outside the cache root.
 bool isQueryResultCacheDiskPathSafe(const fs::path & path)
 {
     if (path.empty() || path.is_absolute())
         return false;
 
-    const fs::path normalized = path.lexically_normal();
-    if (normalized.empty() || normalized == "." || normalized == "..")
-        return false;
-
-    /// A normalized relative path escapes its root if and only if it still contains a `..` component
-    /// (e.g. `../data` or `a/../../b` -> `../b`); an in-root `..` such as `a/../b` normalizes to `b`.
-    for (const auto & component : normalized)
+    /// Reject any `..` component in the *original* configured path, before normalization. Lexical
+    /// normalization is unsound in the presence of symlinks: `link/../query_result_cache` lexically
+    /// normalizes to `query_result_cache` and would pass a normalized-only check, but on disk
+    /// `root/link/../query_result_cache` is resolved relative to the *target* of `link` (if `link` is a
+    /// symlink), escaping the disk root. Given the destructive cleanup paths (`removeRecursive`), reject every
+    /// `..` component outright instead of reasoning about whether it cancels lexically.
+    for (const auto & component : path)
         if (component == "..")
             return false;
+
+    /// Reject a path that, once normalized, points at the disk root itself (e.g. `.` or `./.`): the cache needs
+    /// a real subdirectory to own and clean up, not the disk root.
+    const fs::path normalized = path.lexically_normal();
+    if (normalized.empty() || normalized == ".")
+        return false;
 
     return true;
 }

@@ -457,3 +457,16 @@ def test_unsafe_disk_path_disables_cache_and_preserves_data(start_cluster):
         "../protected_qrc_rel",
     )
     _assert_unsafe_path_disables_disk_cache("/var/lib/protected_qrc_rel")
+
+    # An *in-root* `..` (`qrc_link/../escaped_qrc`) lexically normalizes to `escaped_qrc` and would pass a
+    # normalized-only safety check, but on disk `/var/lib/clickhouse/qrc_link/../escaped_qrc` is resolved by the
+    # kernel relative to the *target* of `qrc_link` if it is a symlink, escaping the disk root. The path must be
+    # rejected because it contains a `..` component at all, regardless of whether `qrc_link` is a symlink.
+    node_bad_path.replace_in_config(
+        "/etc/clickhouse-server/config.d/unsafe_query_cache_path.xml",
+        "../protected_qrc_rel",
+        "qrc_link/../escaped_qrc",
+    )
+    # `escaped_qrc` is where the path lexically normalizes (and where a normalized-only check would wrongly enable
+    # the cache); assert no disk entry is created there and the cache is reported disabled.
+    _assert_unsafe_path_disables_disk_cache("/var/lib/clickhouse/escaped_qrc")
