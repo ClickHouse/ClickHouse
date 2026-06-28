@@ -34,6 +34,16 @@ DROP TABLE qbit_to_array_test;
 SELECT 'Non-constant (materialized) QBit column';
 SELECT materialize([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]::QBit(Float32, 12))::Array(Float32);
 
+SELECT 'Nullable QBit source: non-NULL rows reconstruct correctly';
+DROP TABLE IF EXISTS qbit_nullable_to_array_test;
+CREATE TABLE qbit_nullable_to_array_test (id UInt32, vec Nullable(QBit(Float32, 4))) ENGINE = Memory;
+INSERT INTO qbit_nullable_to_array_test VALUES (1, [1, 2, 3, 4]), (2, [4, 3, 2, 1]);
+SELECT id, CAST(vec AS Array(Float32)) FROM qbit_nullable_to_array_test ORDER BY id;
+DROP TABLE qbit_nullable_to_array_test;
+
+SELECT 'Nullable QBit source: a NULL value cannot be cast to a non-Nullable Array';
+SELECT CAST(materialize(CAST(NULL AS Nullable(QBit(Float32, 4)))) AS Array(Float32)); -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+
 SELECT 'BFloat16 reconstruction matches a direct BFloat16 conversion';
 SELECT [0.1, 0.2, 0.3]::QBit(BFloat16, 3)::Array(BFloat16) = [0.1, 0.2, 0.3]::Array(BFloat16);
 

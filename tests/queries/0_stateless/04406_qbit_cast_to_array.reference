@@ -18,6 +18,10 @@ From a table with multiple rows
 3	[0,0,0,0]
 Non-constant (materialized) QBit column
 [1,2,3,4,5,6,7,8,9,10,11,12]
+Nullable QBit source: non-NULL rows reconstruct correctly
+1	[1,2,3,4]
+2	[4,3,2,1]
+Nullable QBit source: a NULL value cannot be cast to a non-Nullable Array
 BFloat16 reconstruction matches a direct BFloat16 conversion
 1
 accurateCast

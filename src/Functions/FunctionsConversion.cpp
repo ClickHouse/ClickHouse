@@ -1228,7 +1228,7 @@ FunctionCast::WrapperType FunctionCast::createArrayToQBitWrapper(const DataTypeA
 }
 
 template <typename FloatType>
-ColumnPtr FunctionCast::convertQBitToArray(ColumnsWithTypeAndName & arguments, size_t dimension)
+ColumnPtr FunctionCast::convertQBitToArray(ColumnsWithTypeAndName & arguments, const ColumnNullable * nullable_source, size_t dimension)
 {
     using Word = std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>;
 
@@ -1247,6 +1247,13 @@ ColumnPtr FunctionCast::convertQBitToArray(ColumnsWithTypeAndName & arguments, s
     const size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(dimension);
     const size_t padded_dimension = bytes_per_fixedstring * 8;
 
+    /// Use the null map to skip the (expensive) bit untranspose for NULL rows: a NULL row's
+    /// reconstructed value is never observed — the cast either rejects it
+    /// (CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN) or masks it via wrapInNullable — so untransposing it
+    /// would be wasted work. For a wide QBit a block of NULLs would dominate time. This mirrors the
+    /// Array -> QBit path, which inserts default values for NULL rows instead of transposing them.
+    const NullMap * null_map = nullable_source ? &nullable_source->getNullMapData() : nullptr;
+
     auto data_column = ColumnVector<FloatType>::create();
     auto & result_data = data_column->getData();
     result_data.reserve(rows * dimension);
@@ -1260,6 +1267,16 @@ ColumnPtr FunctionCast::convertQBitToArray(ColumnsWithTypeAndName & arguments, s
 
     for (size_t row = 0; row < rows; ++row)
     {
+        /// For NULL rows, emit a default (all-zero) array without untransposing — the value is masked
+        /// or rejected anyway. The all-zero array matches what untransposing a default (zero) QBit row
+        /// would produce, so behaviour is unchanged for any row that is ultimately observed.
+        if (null_map && (*null_map)[row])
+        {
+            result_data.resize_fill(result_data.size() + dimension, FloatType{0});
+            offsets.push_back(result_data.size());
+            continue;
+        }
+
         /// The float value 0 has an all-zero bit pattern for BFloat16/Float32/Float64, matching the zero Word the kernel ORs into.
         std::memset(reconstructed.data(), 0, reconstructed.size() * sizeof(FloatType));
 
@@ -1293,11 +1310,12 @@ FunctionCast::WrapperType FunctionCast::createQBitToArrayWrapper(const DataTypeQ
             dimension](
                ColumnsWithTypeAndName & arguments,
                const DataTypePtr & /* result_type */,
-               const ColumnNullable * /* nullable_source */,
+               const ColumnNullable * nullable_source,
                size_t /* input_rows_count */) -> ColumnPtr
     {
         /// Reconstruct the original vector into an Array of the QBit's native element type.
-        ColumnPtr native_array = convertQBitToArray<T>(arguments, dimension);
+        /// Pass nullable_source so NULL rows are skipped instead of being untransposed and then masked.
+        ColumnPtr native_array = convertQBitToArray<T>(arguments, nullable_source, dimension);
         const auto & col_array = assert_cast<const ColumnArray &>(*native_array);
 
         /// Convert the array elements to the requested nested type (e.g. Float32 -> Float64). Identity if they already match.
