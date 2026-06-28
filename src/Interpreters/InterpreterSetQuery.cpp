@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExplainQuery.h>
@@ -27,7 +28,9 @@ namespace Setting
 
 BlockIO InterpreterSetQuery::execute()
 {
-    const auto & ast = query_ptr->as<ASTSetQuery &>();
+    auto & ast = query_ptr->as<ASTSetQuery &>();
+    /// Resolve query parameters used as setting values, e.g. `SET max_threads = {threads:UInt64}`.
+    replaceQueryParametersInSettingsChanges(ast.changes, getContext()->getQueryParameters());
     getContext()->checkSettingsConstraints(ast.changes, SettingSource::QUERY);
     auto session_context = getContext()->getSessionContext();
     session_context->applySettingsChanges(ast.changes);
@@ -39,7 +42,9 @@ BlockIO InterpreterSetQuery::execute()
 
 void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constraints)
 {
-    const auto & ast = query_ptr->as<ASTSetQuery &>();
+    auto & ast = query_ptr->as<ASTSetQuery &>();
+    /// Resolve query parameters used as setting values, e.g. `SELECT ... SETTINGS max_threads = {threads:UInt64}`.
+    replaceQueryParametersInSettingsChanges(ast.changes, getContext()->getQueryParameters());
     if (!ignore_setting_constraints)
         getContext()->checkSettingsConstraints(ast.changes, SettingSource::QUERY);
     getContext()->applySettingsChanges(ast.changes);

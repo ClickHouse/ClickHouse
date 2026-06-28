@@ -362,9 +362,24 @@ hello
 The built-in Web UI (`play.html`) automatically detects `{name:Type}` parameter placeholders in the query and displays labeled input fields for each parameter. The parameter values are included in the HTTP request and also persisted in the page URL for bookmarking and sharing.
 </details>
 
+<details>
+<summary>Example with the SETTINGS clause and SET queries</summary>
+
+Query parameters can also be used as setting values, both in the `SETTINGS` clause of a query and in standalone `SET` queries:
+
+```sql
+SET param_threads = 4;
+
+SELECT * FROM numbers(10) SETTINGS max_threads = {threads:UInt64};
+
+SET max_threads = {threads:UInt64};
+```
+</details>
+
 :::note
 Query parameters are not general text substitutions which can be used in arbitrary places in arbitrary SQL queries.
-They are primarily designed to work in `SELECT` statements in place of identifiers or literals.
+They are primarily designed to work in `SELECT` statements in place of identifiers or literals, and as setting values
+in the `SETTINGS` clause and in `SET` queries.
 :::
 
 ## Functions {#functions}
