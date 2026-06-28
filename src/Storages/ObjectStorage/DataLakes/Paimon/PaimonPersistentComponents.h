@@ -10,8 +10,6 @@
 namespace DB
 {
 
-using namespace Paimon;
-
 
 /// Persistent components for Paimon table.
 /// All fields must be either thread-safe or immutable.

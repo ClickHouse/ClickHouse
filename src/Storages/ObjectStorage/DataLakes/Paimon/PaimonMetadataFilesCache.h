@@ -27,8 +27,6 @@ extern const Metric PaimonMetadataFilesCacheFiles;
 namespace DB
 {
 
-using namespace Paimon;
-
 using ManifestListConstPtr = std::shared_ptr<const std::vector<PaimonManifestFileMeta>>;
 using ManifestConstPtr = std::shared_ptr<const PaimonManifest>;
 
