@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstddef>
 #include "config.h"
 
 #if USE_YTSAURUS
@@ -10,6 +9,8 @@
 #include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
 #include <Storages/YTsaurus/YTsaurusSettings.h>
 #include <QueryPipeline/Pipe.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <cstddef>
 #include <optional>
 #include <memory>
 
@@ -19,10 +20,11 @@ namespace DB
 struct YTsaurusTableSourceOptions
 {
     YTsaurusSettings settings;
-    std::optional<Block> lookup_input_block = std::nullopt;
+    std::optional<VectorWithMemoryTracking<Block>> lookup_input_blocks = std::nullopt;
     std::optional<String> select_rows_columns = std::nullopt;
     YTsaurusTableLockPtr table_lock = nullptr;
     bool check_types_allow_nullable = false;
+    ThrottlerPtr lookup_throttler = nullptr;
 };
 
 class YTsaurusTableSourceStaticTable final : public ISource
@@ -48,27 +50,64 @@ private:
     ReadBufferPtr read_buffer;
 };
 
-class YTsaurusTableSourceDynamicTable final : public ISource
+class YTsaurusTableSourceDynamicTableSelect final : public ISource
 {
 public:
-    YTsaurusTableSourceDynamicTable(
-        YTsaurusClientPtr client_, const String & cypress_path, const YTsaurusTableSourceOptions & source_options_, const SharedHeader & sample_block_, const UInt64 & max_block_size_);
-    ~YTsaurusTableSourceDynamicTable() override = default;
+    YTsaurusTableSourceDynamicTableSelect(
+        YTsaurusClientPtr client_,
+        const String & cypress_path,
+        const SharedHeader & sample_block_,
+        const UInt64 & max_block_size_,
+        bool format_skip_unknown_columns_,
+        std::optional<String> select_rows_columns_,
+        YTsaurusTableLockPtr table_lock_);
+        ~YTsaurusTableSourceDynamicTableSelect() override = default;
 
-    String getName() const override { return "YTsaurusTableSourceDynamicTable"; }
+    String getName() const override { return "YTsaurusTableSourceDynamicTableSelect"; }
 
 private:
-    Chunk generate() override { return json_row_format->read(); }
+    Chunk generate() override;
 
     YTsaurusClientPtr client;
+    const String cypress_path;
     const SharedHeader sample_block;
     UInt64 max_block_size;
     FormatSettings format_settings;
-    bool use_lookups;
+    std::optional<String> select_rows_columns;
     YTsaurusTableLockPtr table_lock;
     ReadBufferPtr read_buffer;
     std::unique_ptr<JSONEachRowRowInputFormat> json_row_format;
+};
 
+class YTsaurusTableSourceDynamicTableLookup final : public ISource
+{
+public:
+    YTsaurusTableSourceDynamicTableLookup(
+        YTsaurusClientPtr client_,
+        const String & cypress_path,
+        const SharedHeader & sample_block_,
+        const UInt64 & max_block_size_,
+        bool format_skip_unknown_columns_,
+        Block lookup_input_block_,
+        ThrottlerPtr lookup_throttler_,
+        YTsaurusTableLockPtr table_lock_);
+    ~YTsaurusTableSourceDynamicTableLookup() override = default;
+
+    String getName() const override { return "YTsaurusTableSourceDynamicTableLookup"; }
+
+private:
+    Chunk generate() override;
+
+    YTsaurusClientPtr client;
+    const String cypress_path;
+    const SharedHeader sample_block;
+    UInt64 max_block_size;
+    FormatSettings format_settings;
+    Block lookup_input_block;
+    ThrottlerPtr lookup_throttler;
+    YTsaurusTableLockPtr table_lock;
+    ReadBufferPtr read_buffer;
+    std::unique_ptr<JSONEachRowRowInputFormat> json_row_format;
 };
 
 struct YTsaurusSourceFactory

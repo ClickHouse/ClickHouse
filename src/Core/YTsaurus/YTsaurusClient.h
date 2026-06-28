@@ -20,6 +20,7 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <atomic>
 #include <memory>
 #include <unordered_map>
 #include <utility>
@@ -64,7 +65,7 @@ public:
 
     ReadBufferPtr readTable(const String & cypress_path, const std::pair<size_t, size_t> & rows_range);
 
-    ReadBufferPtr lookupRows(const String & cypress_path, const Block & lookup_block_input);
+    ReadBufferPtr lookupRows(const String & cypress_path, const Block & lookup_block_input, ThrottlerPtr lookup_throttler = nullptr);
 
     ReadBufferPtr selectRows(const String & cypress_path, const String& column_names_str);
 
@@ -110,7 +111,10 @@ private:
 
     const ConnectionInfo connection_info;
     LoggerPtr log;
-    size_t recently_used_url_index = 0;
+    /// `CacheDictionary` can call `loadIds` / `loadKeys` concurrently on the same `YTsarususDictionarySource`,
+    /// so a single `YTsaurusClient` can be used by several threads at once. This index is only a round-robin hint
+    /// for proxy selection, but it must still be accessed atomically to avoid a data race.
+    std::atomic<size_t> recently_used_url_index = 0;
     constexpr static String LOCKS_STORAGE_CYPRESS_PATH = "//sys/locks";
 };
 
