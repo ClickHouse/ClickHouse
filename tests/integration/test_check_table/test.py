@@ -6,7 +6,7 @@ import time
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.corrupt_part_data_on_disk import corrupt_part_data_on_disk
-from helpers.test_tools import assert_eq_with_retry, assert_logs_contain_with_retry
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
