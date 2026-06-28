@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemProjections.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -61,7 +60,7 @@ VirtualColumnsDescription StorageSystemProjections::createVirtuals()
     return desc;
 }
 
-class ProjectionsSource final : public ISource
+class ProjectionsSource : public ISource
 {
 public:
     ProjectionsSource(
@@ -124,7 +123,7 @@ protected:
                 const auto table = tables_it->table();
                 if (!table)
                     continue;
-                const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+                StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
                 if (!metadata_snapshot)
                     continue;
                 const auto & projections = metadata_snapshot->getProjections();
@@ -302,6 +301,3 @@ void ReadFromSystemProjections::initializePipeline(QueryPipelineBuilder & pipeli
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemProjections) }
