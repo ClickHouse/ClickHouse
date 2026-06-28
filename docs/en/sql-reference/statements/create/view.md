@@ -155,10 +155,12 @@ Setting `materialized_views_ignore_errors=true` on the `INSERT` query only chang
 
 If you specify `POPULATE`, the existing source table data is inserted into the view when creating it. Otherwise, the view contains only the data inserted into the source table after the view is created.
 
-`POPULATE` is **atomic** by default (setting `materialized_views_populate_atomically = 1`): the view is subscribed to new inserts of the source table and a snapshot of the existing data is taken together, under a brief exclusive lock on the source table, so that every row inserted concurrently with the population is delivered to the view **exactly once** — neither missed nor duplicated. The (possibly long-running) population then reads the pinned snapshot without holding any lock.
+For a plain `CREATE MATERIALIZED VIEW`, `POPULATE` is **atomic** by default (setting `materialized_views_populate_atomically = 1`): the view is subscribed to new inserts of the source table and a snapshot of the existing data is taken together, under a brief exclusive lock on the source table, so that every row inserted concurrently with the population is delivered to the view **exactly once** — neither missed nor duplicated. The (possibly long-running) population then reads the pinned snapshot without holding any lock.
 
 :::note
 Atomicity requires the source table to support reading a pinned point-in-time snapshot — the `MergeTree` family and `Memory`. For any other source (a view, `Distributed`, `Merge`, `Buffer`, the `Log` family, or a table not in an `Atomic` database), the population falls back to the legacy, non-atomic behavior (recorded in the server log): the existing data is read with a separate, uncoordinated snapshot, so rows inserted during the population can be missed or duplicated. In that case create the view and run a separate `INSERT ... SELECT` if you need exact data. Setting `materialized_views_populate_atomically = 0` forces this legacy behavior for all sources.
+
+Atomic population applies to plain `CREATE MATERIALIZED VIEW` only. `CREATE OR REPLACE` / `REPLACE MATERIALIZED VIEW ... POPULATE` always use the legacy, non-atomic population.
 
 `POPULATE` is not supported with `Replicated` databases (use `database_replicated_allow_heavy_create` to override) and is not supported in ClickHouse Cloud.
 :::

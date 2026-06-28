@@ -50,7 +50,20 @@ SELECT 'log_populate_fallback', count() FROM mv;
 DROP TABLE mv;
 DROP TABLE src_log;
 
--- 5) Disabling the setting uses the legacy non-atomic population for any source.
+-- 5) CREATE OR REPLACE ... POPULATE backfills the (replaced) view. It uses the legacy non-atomic
+-- population (the atomic cut is only wired into the plain CREATE flow), so this only checks the
+-- backfill result, not concurrency.
+DROP TABLE IF EXISTS src;
+DROP TABLE IF EXISTS mv;
+CREATE TABLE src (id UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO src SELECT number FROM numbers(6);
+CREATE MATERIALIZED VIEW mv ENGINE = MergeTree ORDER BY id AS SELECT id FROM src;
+CREATE OR REPLACE MATERIALIZED VIEW mv ENGINE = MergeTree ORDER BY id POPULATE AS SELECT id FROM src;
+SELECT 'create_or_replace_populate', count() FROM mv;
+DROP TABLE mv;
+DROP TABLE src;
+
+-- 6) Disabling the setting uses the legacy non-atomic population for any source.
 DROP TABLE IF EXISTS src;
 DROP TABLE IF EXISTS mv;
 CREATE TABLE src (id UInt64) ENGINE = MergeTree ORDER BY id;
