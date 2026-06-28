@@ -10,8 +10,11 @@ SELECT 'Operator-style cast';
 SELECT [10, 20, 30]::QBit(Float64, 3)::Array(Float64);
 
 SELECT 'Round-trip Array -> QBit -> Array is lossless for Float32/Float64';
-SELECT [0.1, 0.2, 0.3, 0.4, 0.5]::QBit(Float64, 5)::Array(Float64);
-SELECT [0.1, 0.2, 0.3, 0.4, 0.5]::QBit(Float32, 5)::Array(Float32);
+-- Compare against the source array rather than printing the reconstructed values: the exact
+-- decimal representation of a parsed float literal can differ by one ULP across platforms
+-- (e.g. 0.3 prints as 0.30000000000000004 on some), but the round trip is always bit-exact.
+SELECT [0.1, 0.2, 0.3, 0.4, 0.5]::QBit(Float64, 5)::Array(Float64) = [0.1, 0.2, 0.3, 0.4, 0.5]::Array(Float64);
+SELECT [0.1, 0.2, 0.3, 0.4, 0.5]::QBit(Float32, 5)::Array(Float32) = [0.1, 0.2, 0.3, 0.4, 0.5]::Array(Float32);
 
 SELECT 'Element type conversion during cast (QBit(Float32) -> Array(Float64))';
 SELECT [1, 2, 3]::QBit(Float32, 3)::Array(Float64);

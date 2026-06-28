@@ -5,8 +5,8 @@ Basic QBit -> Array, same element type
 Operator-style cast
 [10,20,30]
 Round-trip Array -> QBit -> Array is lossless for Float32/Float64
-[0.1,0.2,0.3,0.4,0.5]
-[0.1,0.2,0.3,0.4,0.5]
+1
+1
 Element type conversion during cast (QBit(Float32) -> Array(Float64))
 [1,2,3]
 Dimension not a multiple of 8 (no trailing padding elements)
