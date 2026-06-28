@@ -1,0 +1,22 @@
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 3)
+   ExpressionList (children 1)
+    Identifier number
+   TablesInSelectQuery (children 1)
+    TablesInSelectQueryElement (children 1)
+     TableExpression (children 1)
+      Function numbers (children 1)
+       ExpressionList (children 1)
+        Literal UInt64_10
+   Literal UInt64_1
+SELECT number
+FROM numbers(10)
+LIMIT 3 SHUFFLE
+Expression (Project names)
+  Limit (preliminary LIMIT)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+        ReadFromSystemNumbers
+7
+0
