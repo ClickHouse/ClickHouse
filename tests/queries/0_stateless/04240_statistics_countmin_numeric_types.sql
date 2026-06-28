@@ -2,6 +2,7 @@
 -- no-fasttest: 'countmin' sketches need a 3rd party library
 -- no-random-detach: prewhere ordering relies on materialized statistics; a forced DETACH/ATTACH can reset the cached statistics estimator and change the plan shape.
 
+SET explain_query_plan_default = 'legacy';
 SET allow_statistics = 1;
 SET use_statistics = 1;
 SET materialize_statistics_on_insert = 1;
