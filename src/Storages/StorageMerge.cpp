@@ -1858,7 +1858,7 @@ std::optional<UInt64> StorageMerge::totalRowsOrBytes(F && func) const
     return first_table ? std::nullopt : std::make_optional(total_rows_or_bytes);
 }
 
-std::optional<UInt128> StorageMerge::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const
+std::optional<UInt128> StorageMerge::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
 {
     std::vector<UInt128> table_hashes;
 
@@ -1868,9 +1868,9 @@ std::optional<UInt128> StorageMerge::getModificationHash(const StorageSnapshotPt
         if (!table)
             return false;
 
-        auto metadata = table->getInMemoryMetadataPtr(context, false);
-        auto snapshot = table->getStorageSnapshotWithoutData(metadata, context);
-        auto table_hash = table->getModificationHash(snapshot, context);
+        auto metadata = table->getInMemoryMetadataPtr(query_context, false);
+        auto snapshot = table->getStorageSnapshotWithoutData(metadata, query_context);
+        auto table_hash = table->getModificationHash(snapshot, query_context);
         if (!table_hash)
             return true; /// This source cannot tell whether it changed - assume the worst for the whole Merge.
 
@@ -1893,7 +1893,7 @@ std::optional<UInt128> StorageMerge::getModificationHash(const StorageSnapshotPt
     std::sort(table_hashes.begin(), table_hashes.end());
 
     SipHash hash;
-    hash.update(storage_snapshot->metadata->getColumns().toString());
+    hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
     hash.update(table_hashes.size());
     for (const auto & table_hash : table_hashes)
         hash.update(table_hash);

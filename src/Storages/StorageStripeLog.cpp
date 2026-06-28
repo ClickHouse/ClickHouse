@@ -599,7 +599,7 @@ std::optional<UInt128> StorageStripeLog::getModificationHash(const StorageSnapsh
     /// Append-only apart from TRUNCATE, so the total rows and bytes plus the structure version describe
     /// the data state.
     SipHash hash;
-    hash.update(storage_snapshot->metadata->getColumns().toString());
+    hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
     hash.update(total_rows.load(std::memory_order_relaxed));
     hash.update(total_bytes.load(std::memory_order_relaxed));
     return hash.get128();

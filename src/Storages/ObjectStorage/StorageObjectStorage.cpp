@@ -494,7 +494,7 @@ std::optional<UInt128> StorageObjectStorage::getModificationHash(const StorageSn
         file_iterator->setEmitProfileEvents(false);
 
         SipHash hash;
-        hash.update(storage_snapshot->metadata->getColumns().toString());
+        hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
 
         while (auto object_info = file_iterator->next(0))
         {

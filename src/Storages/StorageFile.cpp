@@ -2407,7 +2407,7 @@ std::optional<UInt128> StorageFile::getModificationHash(const StorageSnapshotPtr
         return {};
 
     SipHash hash;
-    hash.update(storage_snapshot->metadata->getColumns().toString());
+    hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
 
     std::shared_lock lock(rwlock);
     for (const auto & path : paths)

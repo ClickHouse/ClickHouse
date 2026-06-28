@@ -1758,7 +1758,7 @@ static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
     return result; /// nullopt if the table was not found on the shard.
 }
 
-std::optional<UInt128> StorageDistributed::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const
+std::optional<UInt128> StorageDistributed::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
 {
     /// Heavy path: ask every shard for the modification hash of the underlying table and combine the
     /// answers. Only used when explicitly requested.
@@ -1778,7 +1778,7 @@ std::optional<UInt128> StorageDistributed::getModificationHash(const StorageSnap
         std::vector<UInt128> shard_hashes;
         for (const auto & shard_info : cluster->getShardsInfo())
         {
-            auto shard_hash = getModificationHashOfRemoteTableInShard(*cluster, shard_info, remote_table_id, context);
+            auto shard_hash = getModificationHashOfRemoteTableInShard(*cluster, shard_info, remote_table_id, query_context);
             if (!shard_hash)
                 return {}; /// A shard cannot tell whether it changed - assume the worst for the whole table.
             shard_hashes.push_back(*shard_hash);
@@ -1788,7 +1788,7 @@ std::optional<UInt128> StorageDistributed::getModificationHash(const StorageSnap
         std::sort(shard_hashes.begin(), shard_hashes.end());
 
         SipHash hash;
-        hash.update(storage_snapshot->metadata->getColumns().toString());
+        hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
         hash.update(remote_database);
         hash.update(remote_table);
         hash.update(shard_hashes.size());

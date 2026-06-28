@@ -1167,7 +1167,7 @@ std::optional<UInt128> StorageLog::getModificationHash(const StorageSnapshotPtr 
     /// Log engines are append-only (apart from TRUNCATE which resets the sizes), so the total number
     /// of rows and bytes on disk together with the structure version uniquely describe the data state.
     SipHash hash;
-    hash.update(storage_snapshot->metadata->getColumns().toString());
+    hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
     hash.update(total_rows.load(std::memory_order_relaxed));
     hash.update(total_bytes.load(std::memory_order_relaxed));
     return hash.get128();

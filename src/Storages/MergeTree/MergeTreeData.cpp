@@ -10973,7 +10973,7 @@ std::optional<UInt128> MergeTreeData::getModificationHash(const StorageSnapshotP
     /// Structure version: changes when columns, indices, projections, etc. change.
     /// This catches metadata-only ALTERs (e.g. ADD COLUMN with a DEFAULT) that change query results
     /// without creating a mutation.
-    hash.update(storage_snapshot->metadata->getColumns().toString());
+    hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
 
     /// Data version: the set of active data parts. Each part is uniquely identified by its
     /// (partition_id, min_block, max_block, level, mutation), which changes on every insert, merge
@@ -10981,7 +10981,7 @@ std::optional<UInt128> MergeTreeData::getModificationHash(const StorageSnapshotP
     /// on merges (Replacing, Collapsing, ...) this is exactly the "block ranges of data parts".
     auto add_part_info = [&](const MergeTreePartInfo & info)
     {
-        hash.update(info.partition_id);
+        hash.update(info.getPartitionId());
         hash.update(info.min_block);
         hash.update(info.max_block);
         hash.update(info.level);

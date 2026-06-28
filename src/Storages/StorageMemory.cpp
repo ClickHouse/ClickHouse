@@ -208,7 +208,7 @@ std::optional<UInt128> StorageMemory::getModificationHash(const StorageSnapshotP
     SipHash hash;
 
     /// Structure version.
-    hash.update(storage_snapshot->metadata->getColumns().toString());
+    hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
 
     /// Every modification (insert, mutation, truncate) replaces the whole set of blocks with a freshly
     /// allocated vector, so its identity is a reliable version marker. The row count is mixed in to make

@@ -1559,7 +1559,7 @@ std::optional<UInt128> IStorageURLBase::getModificationHash(const StorageSnapsho
         return {};
 
     SipHash hash;
-    hash.update(storage_snapshot->metadata->getColumns().toString());
+    hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
     hash.update(uri);
     hash.update(file_info.etag);
     hash.update(file_info.file_size.value_or(0));
