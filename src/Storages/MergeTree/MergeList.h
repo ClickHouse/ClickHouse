@@ -133,12 +133,20 @@ struct MergeListElement : boost::noncopyable
     std::atomic<Float64> * parent_progress{nullptr};
 
     ThreadGroupPtr thread_group;
+
+    /// Whether this element owns `thread_group` and is therefore responsible for the
+    /// background-memory-tracker cleanup in the destructor. Projection sub-merge elements
+    /// borrow the parent merge entry's `thread_group`, so only the top-level entry must run
+    /// `adjustOnBackgroundTaskEnd`; otherwise the shared tracker would be subtracted once per
+    /// projection and again for the parent, undercounting `background_memory_tracker`.
+    bool owns_thread_group = true;
+
     CurrentMetrics::Increment num_parts_metric_increment;
 
     MergeListElement(
         const StorageID & table_id_,
         FutureMergedMutatedPartPtr future_part,
-        const ContextPtr & context);
+        ThreadGroupPtr thread_group_);
 
     MergeInfo getInfo() const;
 

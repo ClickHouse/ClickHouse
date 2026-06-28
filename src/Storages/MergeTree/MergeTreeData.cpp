@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeString.h>
+#include <Common/ThreadStatus.h>
 #include <Disks/DiskType.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Storages/ColumnsDescription.h>
@@ -6,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/threadPoolCallbackRunner.h>
 
 #include <Access/AccessControl.h>
@@ -8236,11 +8238,12 @@ void MergeTreeData::optimizeDryRun(
     MergeTreeDataMergerMutator merger_mutator(*this);
     auto task_context = Context::createCopy(local_context);
     task_context->makeQueryContextForMerge(*getSettings());
+    auto thread_group = ThreadGroup::createForBackgroundOps(task_context);
 
     auto merge_list_entry = getContext()->getMergeList().insert(
         getStorageID(),
         future_part,
-        task_context);
+        thread_group);
 
     auto merge_task = merger_mutator.mergePartsToTemporaryPart(
         future_part,
@@ -10195,21 +10198,25 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
     MovePartsOutcome result{MovePartsOutcome::PartsMoved};
     for (const auto & moving_part : moving_tagger->parts_to_move)
     {
-        Stopwatch stopwatch;
         MergeTreePartsMover::TemporaryClonedPart cloned_part;
-        ProfileEventsScope profile_events_scope;
+
+        auto thread_group = ThreadGroup::createForScope();
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
         auto write_part_log = [&](const ExecutionStatus & execution_status)
         {
+            auto counters_snapshot = thread_group->getProfileCountersSnapshot();
             writePartLog(
                 PartLogElement::Type::MOVE_PART,
                 execution_status,
-                stopwatch.elapsed(),
+                thread_group->getGroupElapsedNs(),
                 moving_part.part->name,
                 cloned_part.part,
                 {moving_part.part},
                 nullptr,
-                profile_events_scope.getSnapshot(), {}, {});
+                counters_snapshot,
+                {},
+                {});
         };
 
         // Register in global moves list (StorageSystemMoves)

@@ -4,6 +4,7 @@
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -36,6 +37,13 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
 
         prev_thread = current_thread;
         prev_thread_group = CurrentThread::getGroup();
+
+        /// The thread may have a query_id which the group being attached cannot reestablish:
+        /// either assigned directly without any group (e.g. `BgSchPool::<uuid>` set by
+        /// BackgroundSchedulePool), or kept alive by an outer switcher in the same way.
+        /// Detaching clears the thread's query_id, so remember it to preserve it manually.
+        prev_query_id = std::string(CurrentThread::getQueryId());
+
         if (prev_thread_group)
         {
             if (prev_thread_group == thread_group)
@@ -65,6 +73,14 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
         {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after attachToGroup");
         });
+
+        /// If the new group cannot provide a query_id (e.g. a scope group created on a thread
+        /// without any group: its query context is not owned by anyone and is already expired,
+        /// so attaching did not set any query_id), keep the thread's previous one.
+        if (!prev_query_id.empty() && CurrentThread::getQueryId().empty())
+            prev_thread->setQueryId(std::string(prev_query_id));
+
+        LOG_TEST(getLogger("ThreadGroupSwitcher"), "Attach thread to thread group with master_thread_id {}", thread_group->master_thread_id);
     }
     catch (...)
     {
@@ -112,6 +128,10 @@ ThreadGroupSwitcher::~ThreadGroupSwitcher()
             LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
             CurrentThread::attachToGroup(prev_thread_group);
         }
+
+        /// Restore the query_id if reattaching could not reestablish it (see the constructor).
+        if (!prev_query_id.empty() && CurrentThread::getQueryId().empty())
+            prev_thread->setQueryId(std::move(prev_query_id));
     }
     catch (...)
     {

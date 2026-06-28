@@ -26,6 +26,7 @@ for max_threads in 1 7; do
 
         QUERY_ID="03652_query_id_$RANDOM"
         SETTINGS="--query_id=$QUERY_ID "
+        SETTINGS="$SETTINGS --use_async_executor_for_materialized_views=0 "
         SETTINGS="$SETTINGS --max_threads=$max_threads "
         SETTINGS="$SETTINGS --max_insert_threads=$max_insert_threads "
 

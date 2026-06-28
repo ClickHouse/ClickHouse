@@ -55,11 +55,11 @@
 #include <fmt/core.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/MemoryTracker.h>
-#include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
 
 
@@ -2339,8 +2339,8 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
         waitForOutdatedPartsToBeLoaded();
         auto merge_blocker = stopMergesAndWait();
 
-        Stopwatch watch;
-        ProfileEventsScope profile_events_scope;
+        auto thread_group = ThreadGroup::createForScope();
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
         auto txn = query_context->getCurrentTransaction();
         if (txn)
@@ -2368,7 +2368,8 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
             auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
             renameAndCommitEmptyParts(new_data_parts, transaction);
 
-            PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
+            auto counters_snapshot = thread_group->getProfileCountersSnapshot();
+            PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, thread_group->getGroupElapsedNs(), counters_snapshot));
 
             LOG_INFO(log, "Truncated table with {} parts by replacing them with new empty {} parts. With txn {}",
                      parts.size(), future_parts.size(),
@@ -2400,8 +2401,8 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
             }
         }
 
-        Stopwatch watch;
-        ProfileEventsScope profile_events_scope;
+        auto thread_group = ThreadGroup::createForScope();
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
@@ -2440,7 +2441,8 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
                 auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
                 renameAndCommitEmptyParts(new_data_parts, transaction);
 
-                PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
+                auto counters_snapshot = thread_group->getProfileCountersSnapshot();
+                PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, thread_group->getGroupElapsedNs(), counters_snapshot));
 
                 const auto * op = detach ? "Detached" : "Dropped";
                 LOG_INFO(log, "{} {} part by replacing it with new empty {} part. With txn {}",
@@ -2496,8 +2498,8 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
             }
         }
 
-        Stopwatch watch;
-        ProfileEventsScope profile_events_scope;
+        auto thread_group = ThreadGroup::createForScope();
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
@@ -2560,7 +2562,8 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
             auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
             renameAndCommitEmptyParts(new_data_parts, transaction);
 
-            PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
+            auto counters_snapshot = thread_group->getProfileCountersSnapshot();
+            PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, thread_group->getGroupElapsedNs(), counters_snapshot));
 
             const auto * op = detach ? "Detached" : "Dropped";
             LOG_INFO(log, "{} partition with {} parts by replacing them with new empty {} parts. With txn {}",
@@ -2682,8 +2685,8 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr(local_context, false);
     auto my_metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
 
-    Stopwatch watch;
-    ProfileEventsScope profile_events_scope;
+    auto thread_group = ThreadGroup::createForScope();
+    ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot);
     DataPartsVector src_parts;
@@ -2854,11 +2857,13 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         }
 
         /// Note: same elapsed time and profile events for all parts is used
-        PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
+        auto counters_snapshot = thread_group->getProfileCountersSnapshot();
+        PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, thread_group->getGroupElapsedNs(), counters_snapshot));
     }
     catch (...)
     {
-        PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed()), ExecutionStatus::fromCurrentException("", true));
+        auto counters_snapshot = thread_group->getProfileCountersSnapshot();
+        PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, thread_group->getGroupElapsedNs(), counters_snapshot), ExecutionStatus::fromCurrentException("", true));
         throw;
     }
 }
@@ -2910,8 +2915,9 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
     auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr(local_context, false);
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
-    Stopwatch watch;
-    ProfileEventsScope profile_events_scope;
+
+    auto thread_group = ThreadGroup::createForScope();
+    ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
     MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this, metadata_snapshot, dest_metadata_snapshot);
     String partition_id = getPartitionIDFromQuery(partition, local_context);
@@ -3022,11 +3028,13 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         clearOldPartsFromFilesystem();
 
         /// Note: same elapsed time and profile events for all parts is used
-        PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
+        auto counters_snapshot = thread_group->getProfileCountersSnapshot();
+        PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, thread_group->getGroupElapsedNs(), counters_snapshot));
     }
     catch (...)
     {
-        PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed()), ExecutionStatus::fromCurrentException("", true));
+        auto counters_snapshot = thread_group->getProfileCountersSnapshot();
+        PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, thread_group->getGroupElapsedNs(), counters_snapshot), ExecutionStatus::fromCurrentException("", true));
         throw;
     }
 }

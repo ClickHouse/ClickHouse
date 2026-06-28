@@ -2003,7 +2003,7 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
         if (projection->type == ProjectionDescription::Type::Aggregate)
             projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
 
-        auto child_merge_list_element = std::make_unique<MergeListElement>((*global_ctx->merge_entry)->table_id, projection_future_part, global_ctx->context);
+        auto child_merge_list_element = std::make_unique<MergeListElement>((*global_ctx->merge_entry)->table_id, projection_future_part, (*global_ctx->merge_entry)->thread_group);
         if (!global_ctx->projection)
             child_merge_list_element->parent_progress = &(*global_ctx->merge_entry)->ptr()->current_projection_progress;
 

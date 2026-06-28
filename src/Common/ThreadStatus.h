@@ -74,9 +74,11 @@ public:
     ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
     explicit ThreadGroup(ThreadGroupPtr parent);
     ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent);
+    ~ThreadGroup();
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
+    ThreadGroupPtr parent;
 
     /// Set up at creation, no race when reading
     const ContextWeakPtr query_context;
@@ -89,6 +91,13 @@ public:
     MemorySpillScheduler::Ptr memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
+
+    /// When true, the destructor runs `background_memory_tracker.adjustOnBackgroundTaskEnd(&memory_tracker)`.
+    /// Set for the ownerless background groups that parent their tracker directly to
+    /// `background_memory_tracker` and have no external cleanup owner (scope / materialized-view /
+    /// system-log flush groups). The merge/mutate path instead owns this cleanup via
+    /// `MergeListElement` (see `MergeListElement::owns_thread_group`), so its groups keep this false.
+    bool adjust_background_memory_tracker_on_destroy = false;
 
     struct SharedData
     {
@@ -125,14 +134,33 @@ public:
 
     /// NOTE: The caller should call background_memory_tracker.adjustOnBackgroundTaskEnd() at the end (see existing callers),
     /// and make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
-    static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
+    /// That method either creates new main thread group for the task, or creates a new thread group linked to current thread group if it exists.
+    static ThreadGroupPtr createForBackgroundOps(ContextMutablePtr task_context);
 
-    static ThreadGroupPtr createForMaterializedView(ContextPtr context);
-    static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent);
+    /// That method either creates a new thread group linked to current thread group which has to exist
+    static ThreadGroupPtr createForScope();
+
+    /// Creates a new thread group for materialized view execution: linked to the current thread
+    /// group if it exists, otherwise created from the given query context. The context matters for
+    /// background-initiated inserts (e.g. S3Queue streaming, Buffer flush): it carries the insert's
+    /// query_id, which has to reach `system.part_log` rows written under this group.
+    static ThreadGroupPtr createForMaterializedView(ContextPtr query_context);
+
+    /// That method creates a new thread group linked to flush_query_thread_group which has to exist, and is used for flushing async insert query
+    /// Current threads are not linked to the flush_query_thread_group, that is why createForBackgroundOps is not used here
+    static ThreadGroupPtr createForFlushAsyncInsertQuery(ContextPtr query_context, ThreadGroupPtr flush_query_thread_group);
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
     UInt64 getGroupElapsedMs() const;
+    UInt64 getGroupElapsedNs() const;
+
+    /// Snapshot of the group's profile counters for logging (e.g. `system.part_log`).
+    /// If the current thread is attached to this group (or to its descendant), its pending
+    /// rusage/taskstats deltas (`RealTimeMicroseconds`, `OSCPUVirtualTimeMicroseconds`, ...) are
+    /// flushed first - otherwise they reach the group's counters only when the thread detaches,
+    /// and a snapshot taken while the thread is still attached would undercount them.
+    std::shared_ptr<ProfileEvents::Counters::Snapshot> getProfileCountersSnapshot() const;
 
     void linkThread(UInt64 thread_id);
     void unlinkThread();
@@ -146,16 +174,31 @@ private:
     /// Set of all thread ids which has been attached to the group
     std::unordered_set<UInt64> thread_ids TSA_GUARDED_BY(mutex);
 
-    /// Count of simultaneously working threads
+    /// Count of simultaneously working threads, including threads attached to descendant groups
+    /// (their presence propagates up the parent chain so that elapsed-time accounting covers them).
     size_t active_thread_count TSA_GUARDED_BY(mutex) = 0;
 
-    /// Peak threads count in the group
+    /// Count of simultaneously working threads directly attached to this group, excluding threads of
+    /// descendant scope groups. Drives `peak_threads_usage`, which must not be inflated by nested
+    /// scopes (e.g. the async materialized-view executor running under an `INSERT`).
+    size_t directly_attached_thread_count TSA_GUARDED_BY(mutex) = 0;
+
+    /// Peak threads count in the group. Counts only threads directly attached to this group, not
+    /// threads of descendant scope groups: the latter must not inflate the parent query's
+    /// `peak_threads_usage` (e.g. the async materialized-view executor running under an `INSERT`).
     size_t peak_threads_usage TSA_GUARDED_BY(mutex) = 0;
 
     Stopwatch effective_group_stopwatch TSA_GUARDED_BY(mutex) = Stopwatch(STOPWATCH_DEFAULT_CLOCK, 0, /* is running */ false);
-    UInt64 elapsed_group_ms TSA_GUARDED_BY(mutex) = 0;
+    UInt64 elapsed_group_ns TSA_GUARDED_BY(mutex) = 0;
 
-    static ThreadGroupPtr create(ContextPtr context, Int32 os_threads_nice_value);
+    /// Shared implementation of linkThread/unlinkThread. `directly_attached` is true only for the
+    /// group the thread directly attaches to; the recursive parent-chain calls pass false so a
+    /// nested scope's threads still contribute to the parent's elapsed-time accounting
+    /// (`active_thread_count`) but do not inflate the parent query's `peak_threads_usage`.
+    void linkThreadImpl(UInt64 thread_id, bool directly_attached);
+    void unlinkThreadImpl(bool directly_attached);
+
+    static ThreadGroupPtr create(ContextPtr query_context);
 };
 
 /** Encapsulates all per-thread info (ProfileEvents, MemoryTracker, query_id, query context, etc.).

@@ -1,5 +1,7 @@
 #include <Interpreters/SystemLog.h>
 #include <Common/Exception.h>
+#include <Common/ThreadStatus.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Daemon/BaseDaemon.h>
 
@@ -663,6 +665,17 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 
     try
     {
+        // we need query context to do inserts to target table with MV containing subqueries or joins
+        auto insert_context = Context::createCopy(context);
+        insert_context->makeQueryContext();
+        addSettingsForQuery(insert_context, IAST::QueryKind::Insert);
+
+        auto thread_group = ThreadGroup::createForBackgroundOps(insert_context);
+        /// Unlike merge/mutate background tasks, the system-log flush group has no `MergeListElement`
+        /// owner, so it has to subtract its own residual from `background_memory_tracker` on destruction.
+        thread_group->adjust_background_memory_tracker_on_destroy = true;
+        ThreadGroupSwitcher thread_group_switcher(thread_group, ThreadName::SYSTEM_LOG_FLUSH, true);
+
         LOG_TRACE(log, "Flushing system log, {} entries to flush up to offset {}",
             to_flush.size(), to_flush_end);
 
@@ -713,11 +726,6 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         insert->columns = std::move(columns_ast);
 
         ASTPtr query_ptr = std::move(insert);
-
-        // we need query context to do inserts to target table with MV containing subqueries or joins
-        auto insert_context = Context::createCopy(context);
-        insert_context->makeQueryContext();
-        addSettingsForQuery(insert_context, IAST::QueryKind::Insert);
 
         InterpreterInsertQuery interpreter(
             query_ptr,

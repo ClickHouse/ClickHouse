@@ -1,5 +1,6 @@
 #include <memory>
 #include <mutex>
+#include <Common/CurrentThreadHelpers.h>
 #include <Common/OSThreadNiceValue.h>
 #include <Common/Jemalloc.h>
 #include <Common/ThreadStatus.h>
@@ -28,6 +29,7 @@
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 #include <Common/setThreadName.h>
+#include <base/defines.h>
 
 #if defined(OS_LINUX)
 #   include <sys/time.h>
@@ -69,7 +71,6 @@ namespace Setting
     extern const SettingsBool jemalloc_enable_profiler;
     extern const SettingsBool jemalloc_collect_profile_samples_in_trace_log;
     extern const SettingsInt32 os_threads_nice_value_query;
-    extern const SettingsInt32 os_threads_nice_value_materialized_view;
 }
 
 namespace ServerSetting
@@ -122,23 +123,26 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_
     };
 }
 
-// c-tor for method createForMaterializedView
-ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
-    : master_thread_id(parent->master_thread_id)
+// c-tor for method createForScope
+ThreadGroup::ThreadGroup(ThreadGroupPtr parent_)
+    : master_thread_id(CurrentThread::get().thread_id)
+    , parent(parent_)
     , query_context(parent->query_context)
     , global_context(parent->global_context)
     , fatal_error_callback(parent->fatal_error_callback)
     , os_threads_nice_value(parent->os_threads_nice_value)
     , memory_spill_scheduler(parent->memory_spill_scheduler)
-    , performance_counters(VariableContext::Process, &parent->performance_counters)
-    , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
+    , performance_counters(VariableContext::Scope, &parent->performance_counters)
+    , memory_tracker(&parent->memory_tracker, VariableContext::Scope, /*log_peak_memory_usage_in_destructor*/ false)
     , shared_data(parent->getSharedData())
 {
+    chassert(effective_group_stopwatch.elapsed() == 0);
 }
 
-// c-tor for method createForFlushAsyncInsertQueue
-ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent)
+// c-tor for method createForFlushAsyncInsertQuery
+ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_)
     : master_thread_id(CurrentThread::get().thread_id)
+    , parent(parent_)
     , query_context(query_context_)
     , global_context(query_context_->getGlobalContext())
     , fatal_error_callback(parent->fatal_error_callback)
@@ -147,6 +151,8 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent)
     , performance_counters(VariableContext::Process, &parent->performance_counters)
     , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
 {
+    chassert(effective_group_stopwatch.elapsed() == 0);
+
     shared_data.query_is_canceled_predicate = [this] () -> bool {
         if (auto context_locked = query_context.lock())
         {
@@ -154,6 +160,18 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent)
         }
         return false;
     };
+}
+
+ThreadGroup::~ThreadGroup()
+{
+    /// Ownerless background groups that parent their tracker to `background_memory_tracker` must
+    /// subtract their retained allocations from it when the work ends; otherwise residual memory
+    /// stays charged to `background_memory_tracker` / `MergesMutationsMemoryTracking` and skews
+    /// background-memory admission. The merge/mutate path does this via `MergeListElement`, the
+    /// rest (scope / materialized-view / system-log flush) relies on this single cleanup point,
+    /// which runs exactly once when the last reference to the group is dropped.
+    if (adjust_background_memory_tracker_on_destroy)
+        background_memory_tracker.adjustOnBackgroundTaskEnd(&memory_tracker);
 }
 
 std::vector<UInt64> ThreadGroup::getInvolvedThreadIds() const
@@ -174,14 +192,56 @@ size_t ThreadGroup::getPeakThreadsUsage() const
     return peak_threads_usage;
 }
 
-UInt64 ThreadGroup::getGroupElapsedMs() const
+UInt64 ThreadGroup::getGroupElapsedNs() const
 {
     std::lock_guard lock(mutex);
-    return elapsed_group_ms;
+    return elapsed_group_ns + effective_group_stopwatch.elapsedNanoseconds();
+}
+
+UInt64 ThreadGroup::getGroupElapsedMs() const
+{
+    return getGroupElapsedNs() / 1000000UL;
+}
+
+std::shared_ptr<ProfileEvents::Counters::Snapshot> ThreadGroup::getProfileCountersSnapshot() const
+{
+    /// If the current thread is attached to this group or to one of its descendants, flush its
+    /// pending rusage/taskstats and perf-event deltas: thread counters propagate through the whole
+    /// parent chain, so the flush reaches this group's counters before the snapshot is taken below.
+    /// updateProfileEvents reads the perf events without disabling them (unlike the detach-time
+    /// finalizeProfileEvents), so PerfCPUCycles/PerfInstructions/... are not missing from a snapshot
+    /// taken while the thread is still attached.
+    if (current_thread)
+    {
+        for (const auto * group = current_thread->getThreadGroup().get(); group; group = group->parent.get())
+        {
+            if (group == this)
+            {
+                current_thread->updatePerformanceCounters();
+                current_thread_counters.updateProfileEvents(current_thread->performance_counters);
+                break;
+            }
+        }
+    }
+
+    return std::make_shared<ProfileEvents::Counters::Snapshot>(performance_counters.getPartiallyAtomicSnapshot());
 }
 
 void ThreadGroup::linkThread(UInt64 thread_id)
 {
+    linkThreadImpl(thread_id, /*directly_attached=*/ true);
+}
+
+void ThreadGroup::linkThreadImpl(UInt64 thread_id, bool directly_attached)
+{
+    /// Propagate the attach up the parent chain so that the parent's elapsed-time accounting and
+    /// profile-event roll-up cover work done in this (descendant) scope. The parent must not count
+    /// this thread towards its own peak though: `peak_threads_usage` of a query is the peak number
+    /// of threads of the query itself, not of nested scopes such as the async materialized-view
+    /// executor (which is created via `createForMaterializedView` as a child of the `INSERT` group).
+    if (parent)
+        parent->linkThreadImpl(thread_id, /*directly_attached=*/ false);
+
     std::lock_guard lock(mutex);
     thread_ids.insert(thread_id);
 
@@ -189,66 +249,147 @@ void ThreadGroup::linkThread(UInt64 thread_id)
         effective_group_stopwatch.restart();
 
     ++active_thread_count;
-    peak_threads_usage = std::max(peak_threads_usage, active_thread_count);
+
+    /// `peak_threads_usage` is computed from `directly_attached_thread_count`, not from
+    /// `active_thread_count`. The latter is shared between direct and propagated descendant attaches,
+    /// so a direct attach updating the peak from it would still observe the descendant scopes'
+    /// threads already accumulated in it, inflating the parent query's peak.
+    if (directly_attached)
+    {
+        ++directly_attached_thread_count;
+        peak_threads_usage = std::max(peak_threads_usage, directly_attached_thread_count);
+    }
 }
 
 void ThreadGroup::unlinkThread()
 {
+    unlinkThreadImpl(/*directly_attached=*/ true);
+}
+
+void ThreadGroup::unlinkThreadImpl(bool directly_attached)
+{
+    if (parent)
+        parent->unlinkThreadImpl(/*directly_attached=*/ false);
+
     std::lock_guard lock(mutex);
     chassert(active_thread_count > 0);
     --active_thread_count;
 
+    if (directly_attached)
+    {
+        chassert(directly_attached_thread_count > 0);
+        --directly_attached_thread_count;
+    }
+
     if (active_thread_count == 0)
-        elapsed_group_ms += effective_group_stopwatch.elapsedMilliseconds();
+    {
+        elapsed_group_ns += effective_group_stopwatch.elapsedNanoseconds();
+        // Reset not stop the stopwatch, to avoid double time at getGroupElapsedNs when there are no thread attached
+        effective_group_stopwatch.reset();
+    }
 }
 
 ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::function<void()> fatal_error_callback_)
 {
+    LOG_TEST(getLogger("ThreadGroup"), "Creating new thread group for a query, no current thread group to inherit, master_thread_id: {}", CurrentThread::get().thread_id);
     const Int32 os_threads_nice_value = query_context_->getSettingsRef()[Setting::os_threads_nice_value_query];
     auto group = std::make_shared<ThreadGroup>(query_context_, os_threads_nice_value, std::move(fatal_error_callback_));
     group->memory_tracker.setDescription("Query");
     return group;
 }
 
-ThreadGroupPtr ThreadGroup::create(ContextPtr context, Int32 os_threads_nice_value)
+ThreadGroupPtr ThreadGroup::create(ContextPtr query_context)
 {
-    auto group = std::make_shared<ThreadGroup>(context, os_threads_nice_value);
+    chassert(query_context);
+    const auto & settings = query_context->getSettingsRef();
+    const auto & server_settings = query_context->getServerSettings();
+
+    auto group = std::make_shared<ThreadGroup>(query_context, server_settings[ServerSetting::os_threads_nice_value_merge_mutate]);
 
     /// However settings from storage context have to be applied
-    const Settings & settings = context->getSettingsRef();
-    configureMemoryTrackerFromSettings(context->hasTraceCollector(), group->memory_tracker, settings);
+    configureMemoryTrackerFromSettings(query_context->hasTraceCollector(), group->memory_tracker, settings);
     return group;
 }
 
-ThreadGroupPtr ThreadGroup::createForMergeMutate(ContextPtr storage_context)
-{
-    const Int32 os_threads_nice_value = storage_context->getServerSettings()[ServerSetting::os_threads_nice_value_merge_mutate];
-    auto group = create(storage_context, os_threads_nice_value);
-    group->memory_tracker.setDescription("Background process (mutate/merge)");
-    group->memory_tracker.setParent(&background_memory_tracker);
-    return group;
-}
-
-ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
+ThreadGroupPtr ThreadGroup::createForBackgroundOps(ContextMutablePtr task_context)
 {
     ThreadGroupPtr res_group;
     if (auto current_group = CurrentThread::getGroup())
     {
+        LOG_TEST(getLogger("ThreadGroup"), "Creating new thread group for background operations, inheriting from current thread group with master_thread_id {}", current_group->master_thread_id);
+        /// Combine two contexts: inherit client_info and query_id from the current query,
+        /// but keep workload/resource classification from task_context.
+        if (auto current_context = current_group->query_context.lock())
+        {
+            task_context->setClientInfo(current_context->getClientInfo());
+            task_context->setCurrentQueryId(current_context->getCurrentQueryId());
+        }
+        res_group = std::make_shared<ThreadGroup>(task_context, current_group);
+    }
+    else
+    {
+        LOG_TEST(getLogger("ThreadGroup"), "Creating new thread group for background operations, no current thread group to inherit, master_thread_id: {}", CurrentThread::get().thread_id);
+        res_group = create(task_context);
+    }
+    res_group->memory_tracker.setDescription("Background process (mutate/merge)");
+    res_group->memory_tracker.setParent(&background_memory_tracker);
+    return res_group;
+}
+
+ThreadGroupPtr ThreadGroup::createForScope()
+{
+    ThreadGroupPtr res_group;
+    if (auto current_group = CurrentThread::getGroup())
+    {
+        LOG_TEST(getLogger("ThreadGroup"), "Creating new thread group for scope, inheriting from current thread group with master_thread_id {}", current_group->master_thread_id);
         res_group = std::make_shared<ThreadGroup>(current_group);
     }
     else
     {
-        const Int32 os_threads_nice_value = context->getSettingsRef()[Setting::os_threads_nice_value_materialized_view];
-        res_group = create(context, os_threads_nice_value);
+        LOG_TEST(getLogger("ThreadGroup"), "Creating new thread group for scope, no current thread group to inherit, master_thread_id: {}", CurrentThread::get().thread_id);
+        auto query_context = Context::createCopy(Context::getGlobalContextInstance());
+        query_context->makeQueryContext();
+        /// NOTE: the group stores only a weak pointer, so this freshly created query context
+        /// expires as soon as this function returns: threads attached to the group will not get
+        /// any query context (`ThreadStatus::applyQuerySettings` is skipped for them).
+        res_group = create(query_context);
+        res_group->memory_tracker.setParent(&background_memory_tracker);
+        /// No external owner cleans this group up, so it must adjust `background_memory_tracker` itself.
+        res_group->adjust_background_memory_tracker_on_destroy = true;
     }
-    res_group->memory_tracker.setDescription("MaterializeView");
+    res_group->memory_tracker.setDescription("ThreadGroupScope");
     return res_group;
 }
 
-ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent)
+ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr query_context)
 {
-    auto res_group = std::make_shared<ThreadGroup>(context, parent);
-    res_group->memory_tracker.setDescription("FlushAsyncInsertQueue");
+    ThreadGroupPtr res_group;
+    if (auto current_group = CurrentThread::getGroup())
+    {
+        LOG_TEST(getLogger("ThreadGroup"), "Creating new thread group for materialized view, inheriting from current thread group with master_thread_id {}", current_group->master_thread_id);
+        res_group = std::make_shared<ThreadGroup>(current_group);
+    }
+    else
+    {
+        LOG_TEST(getLogger("ThreadGroup"), "Creating new thread group for materialized view, no current thread group to inherit, master_thread_id: {}", CurrentThread::get().thread_id);
+        /// The given context is the insert's query context: unlike a copy of the global context,
+        /// it carries the insert's query_id (e.g. `BgSchPool::<uuid>` of an S3Queue streaming
+        /// task), which has to reach the threads attached to this group and the
+        /// `system.part_log` rows they produce.
+        res_group = create(query_context);
+        res_group->memory_tracker.setParent(&background_memory_tracker);
+        /// No external owner cleans this group up, so it must adjust `background_memory_tracker` itself.
+        res_group->adjust_background_memory_tracker_on_destroy = true;
+    }
+    res_group->memory_tracker.setDescription("MaterializedView");
+    return res_group;
+}
+
+ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQuery(ContextPtr query_context, ThreadGroupPtr flush_query_thread_group)
+{
+    LOG_TEST(getLogger("ThreadGroup"), "Creating new thread group for flushing async insert query, inheriting from flush query thread group with master_thread_id {}", flush_query_thread_group->master_thread_id);
+    auto res_group = std::make_shared<ThreadGroup>(query_context, flush_query_thread_group);
+    res_group->memory_tracker.setDescription("FlushAsyncInsertQuery");
     return res_group;
 }
 
