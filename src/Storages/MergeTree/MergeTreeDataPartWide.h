@@ -31,6 +31,7 @@ public:
     bool isStoredOnRemoteDiskWithZeroCopySupport() const override;
 
     std::optional<String> getFileNameForColumn(const NameAndTypePair & column) const override;
+    CompressionCodecPtr getColumnCompressionCodec(const NameAndTypePair & column) const override;
 
     ~MergeTreeDataPartWide() override;
 

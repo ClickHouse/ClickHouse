@@ -1739,6 +1739,19 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
     return result;
 }
 
+CompressionCodecPtr IMergeTreeDataPart::getColumnCompressionCodec(const NameAndTypePair & column) const
+{
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    const auto & storage_columns = metadata_snapshot->getColumns();
+    if (const auto column_description = storage_columns.tryGetColumnOrSubcolumnDescription(GetColumnsOptions::AllPhysical, column.name))
+    {
+        if (column_description->codec)
+            return CompressionCodecFactory::instance().get(column_description->codec, column_description->type, default_codec);
+    }
+
+    return default_codec;
+}
+
 void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
 {
     auto metadata_snaphost = getMetadataSnapshot();

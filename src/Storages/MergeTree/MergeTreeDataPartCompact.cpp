@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Compression/getCompressionCodecForFile.h>
 #include <DataTypes/NestedUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompactSingleBuffer.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
@@ -232,6 +233,38 @@ bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) co
 std::optional<time_t> MergeTreeDataPartCompact::getColumnModificationTime(const String & /* column_name */) const
 {
     return getDataPartStorage().getFileLastModified(DATA_FILE_NAME_WITH_EXTENSION).epochTime();
+}
+
+CompressionCodecPtr MergeTreeDataPartCompact::getColumnCompressionCodec(const NameAndTypePair & column) const
+{
+    auto column_position = getColumnPosition(column.getNameInStorage());
+    if (!column_position || getMarksCount() == 0 || !getDataPartStorage().existsFile(DATA_FILE_NAME_WITH_EXTENSION))
+        return IMergeTreeDataPart::getColumnCompressionCodec(column);
+
+    size_t mark_position = *column_position;
+    if (index_granularity_info.mark_type.with_substreams)
+    {
+        if (columns_substreams.empty())
+            return IMergeTreeDataPart::getColumnCompressionCodec(column);
+
+        mark_position = columns_substreams.getFirstSubstreamPosition(*column_position);
+    }
+
+    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
+    MergeTreeMarksLoader loader(
+        info_for_read,
+        /*mark_cache_=*/ nullptr,
+        index_granularity_info.getMarksFilePath(DATA_FILE_NAME),
+        index_granularity->getMarksCount(),
+        index_granularity_info,
+        /*save_marks_in_cache_=*/ false,
+        getReadSettings(),
+        /*load_marks_threadpool_=*/ nullptr,
+        index_granularity_info.mark_type.with_substreams ? columns_substreams.getTotalSubstreams() : columns.size());
+
+    auto marks_getter = loader.loadMarks();
+    auto mark = marks_getter->getMark(0, mark_position);
+    return getCompressionCodecForFile(getDataPartStorage(), DATA_FILE_NAME_WITH_EXTENSION, mark.offset_in_compressed_file);
 }
 
 void MergeTreeDataPartCompact::doCheckConsistency(bool require_part_metadata) const
