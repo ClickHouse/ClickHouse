@@ -2016,7 +2016,18 @@ std::vector<QueryResultCache::Cache::KeyMapped> QueryResultCache::dumpMemoryCach
 
 std::vector<QueryResultCache::DiskCache::KeyMapped> QueryResultCache::dumpDiskCache() const
 {
-    return disk_cache.dump();
+    /// `disk_cache` entries own their on-disk directory through a `removeRecursive` deleter (see `writeDisk`).
+    /// Returning those owning pointers would let `system.query_cache` keep a removed entry alive past a
+    /// concurrent `writeDisk`, which does `disk_cache.remove(key)` and then rewrites the *same* `entry_path`:
+    /// once the dump is destroyed, the stale deleter would `removeRecursive` the freshly rewritten files while
+    /// `disk_cache` still advertises the entry. Take the cache mutex (as every other on-disk operation does)
+    /// and return non-owning value snapshots - a plain copy of `DiskEntry`, which holds only `bytes_on_disk`
+    /// and uses the default deleter - so a system-table dump can never delete a cache entry's files.
+    std::lock_guard lock(mutex);
+    std::vector<DiskCache::KeyMapped> snapshot;
+    for (const auto & [key, disk_entry] : disk_cache.dump())
+        snapshot.push_back({key, std::make_shared<DiskEntry>(*disk_entry)});
+    return snapshot;
 }
 
 QueryResultCacheType QueryResultCache::parseQueryResultCacheType(const String & type) const
