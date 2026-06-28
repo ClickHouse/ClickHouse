@@ -3,7 +3,6 @@
 #include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnArray.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -18,12 +17,6 @@
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
-}
 
 ColumnsDescription StorageSystemHandlers::getColumnsDescription()
 {
@@ -56,8 +49,6 @@ void StorageSystemHandlers::fillData(MutableColumns & res_columns, ContextPtr co
     if (!handlers)
         return;
 
-    const auto & settings = context->getSettingsRef();
-
     for (const auto & [name, handler] : *handlers)
     {
         size_t col = 0;
@@ -89,14 +80,20 @@ void StorageSystemHandlers::fillData(MutableColumns & res_columns, ContextPtr co
         /// The stored statement keeps secrets in clear text (it must be re-executable). Re-parse it and
         /// re-format it with secret hiding driven by the user's privileges and settings, so a user without
         /// the secret-display grant sees masked credentials - exactly as in SHOW CREATE TABLE.
+        ///
+        /// Parse with unlimited depth and backtracks (`0` disables the limit) rather than the reader's
+        /// session `max_parser_depth` / `max_parser_backtracks`: the stored statement is the server's own
+        /// canonical, already-validated output, so a handler created under raised session limits must remain
+        /// readable in `system.handlers` regardless of the reading session's limits. `parseQuery` still
+        /// guards against stack overflow via `checkStackSize`.
         ParserCreateHandlerQuery parser(handler->create_statement.data() + handler->create_statement.size());
         auto ast = parseQuery(
             parser,
             handler->create_statement,
             "in handler " + name,
             0,
-            settings[Setting::max_parser_depth],
-            settings[Setting::max_parser_backtracks]);
+            0,
+            0);
         const auto & create_query = ast->as<const ASTCreateHandlerQuery &>();
 
         res_columns[col++]->insert(format({context, *create_query.query}));

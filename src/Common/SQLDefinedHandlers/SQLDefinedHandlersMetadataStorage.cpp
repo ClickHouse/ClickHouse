@@ -29,8 +29,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
 }
 
 namespace ErrorCodes
@@ -416,10 +414,16 @@ SQLDefinedHandlerPtr SQLDefinedHandlersMetadataStorage::readHandler(const std::s
 {
     const auto path = getFileName(handler_name);
     auto statement = storage->read(path);
-    const auto & settings = getContext()->getSettingsRef();
 
+    /// The stored statement is the server's own canonical `CREATE HANDLER` text, already parsed and
+    /// validated when the handler was created. Re-parse it with unlimited depth and backtracks (`0`
+    /// disables the limit) rather than the reader's session/default `max_parser_depth` /
+    /// `max_parser_backtracks`: a handler created in a session with raised limits must stay reloadable on
+    /// restart, background reload, `ALTER HANDLER`, or `system.handlers`, where the reader would otherwise
+    /// impose a stricter limit and reject the server's own valid output. `parseQuery` still guards against
+    /// stack overflow via `checkStackSize`.
     ParserCreateHandlerQuery parser(statement.data() + statement.size());
-    auto ast = parseQuery(parser, statement, "in handler " + path, 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    auto ast = parseQuery(parser, statement, "in handler " + path, 0, 0, 0);
     const auto & create_query = ast->as<const ASTCreateHandlerQuery &>();
     return makeSQLDefinedHandler(create_query);
 }
@@ -468,10 +472,11 @@ SQLDefinedHandlerPtr SQLDefinedHandlersMetadataStorage::buildUpdatedHandler(cons
 
 SQLDefinedHandlerPtr SQLDefinedHandlersMetadataStorage::buildUpdatedHandler(const String & base_create_statement, const ASTCreateHandlerQuery & alter_query) const
 {
-    const auto & settings = getContext()->getSettingsRef();
-
+    /// `base_create_statement` is the stored canonical statement (already validated at creation); re-parse
+    /// it with unlimited depth and backtracks for the same reason as `readHandler`, so an `ALTER HANDLER`
+    /// of a handler created under raised parser limits is not rejected when merging the change.
     ParserCreateHandlerQuery parser(base_create_statement.data() + base_create_statement.size());
-    auto ast = parseQuery(parser, base_create_statement, "in handler " + alter_query.handler_name, 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    auto ast = parseQuery(parser, base_create_statement, "in handler " + alter_query.handler_name, 0, 0, 0);
     auto & create_query = ast->as<ASTCreateHandlerQuery &>();
 
     mergeAlterIntoCreateHandler(create_query, alter_query);
