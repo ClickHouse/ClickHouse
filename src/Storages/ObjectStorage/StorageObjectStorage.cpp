@@ -504,6 +504,12 @@ std::optional<UInt128> StorageObjectStorage::getModificationHash(const StorageSn
             if (!metadata)
                 return {}; /// Cannot obtain metadata for an object: assume the data may have changed.
 
+            /// Require a strong provider version (ETag). Size and modification time are weak validators
+            /// (e.g. HDFS does not expose an ETag, and a same-size rewrite within the same second would be
+            /// missed), so fail closed rather than risk a stale result.
+            if (metadata->etag.empty() || metadata->etag.starts_with("W/"))
+                return {};
+
             hash.update(object_info->getPath());
             hash.update(metadata->etag);
             hash.update(metadata->size_bytes);

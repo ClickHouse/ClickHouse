@@ -197,11 +197,15 @@ StorageMemory::~StorageMemory() = default;
 StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
 {
     auto snapshot_data = std::make_unique<SnapshotData>();
-    snapshot_data->blocks = data.get();
-    /// Not guaranteed to match `blocks`, but that's ok. It would probably be better to move
-    /// rows and bytes counters into the MultiVersion-ed struct, then everything would be consistent.
-    snapshot_data->rows_approx = total_size_rows.load(std::memory_order_relaxed);
-    snapshot_data->data_version = data_version.load(std::memory_order_relaxed);
+    /// Capture the blocks and the version together under the same mutex that writers (MemorySink::onFinish)
+    /// hold around `data.set()` + `++data_version`, so the snapshot always sees a consistent pair: a lookup
+    /// can never observe the new blocks with the old version (or vice versa).
+    {
+        std::lock_guard lock(mutex);
+        snapshot_data->blocks = data.get();
+        snapshot_data->rows_approx = total_size_rows.load(std::memory_order_relaxed);
+        snapshot_data->data_version = data_version.load(std::memory_order_relaxed);
+    }
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
 }
 
