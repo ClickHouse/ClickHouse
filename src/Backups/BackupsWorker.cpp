@@ -935,7 +935,7 @@ struct BackupsWorker::RestoreStarter
         restore_coordination = backups_worker.makeRestoreCoordination(on_cluster, restore_settings, restore_context);
         restore_coordination->startup();
 
-        backups_worker.doRestore(restore_query, restore_id, backup_info, restore_settings, restore_coordination, restore_context, query_context,
+        backups_worker.doRestore(restore_query, restore_id, backup_info, restore_settings, restore_coordination, restore_context,
                                  on_cluster, cluster);
 
         if (!is_internal_restore)
@@ -1055,7 +1055,6 @@ void BackupsWorker::doRestore(
     RestoreSettings restore_settings,
     std::shared_ptr<IRestoreCoordination> restore_coordination,
     ContextMutablePtr context,
-    const ContextPtr & query_context,
     bool on_cluster,
     const ClusterPtr & cluster)
 {
@@ -1083,7 +1082,7 @@ void BackupsWorker::doRestore(
             String addr_database = address->default_database.empty() ? current_database : address->default_database;
             for (auto & element : restore_elements)
                 element.setCurrentDatabase(addr_database);
-            RestorerFromBackup dummy_restorer{restore_elements, restore_settings, nullptr, backup, context, query_context, getThreadPool(ThreadPoolId::RESTORE), {}};
+            RestorerFromBackup dummy_restorer{restore_elements, restore_settings, nullptr, backup, context, getThreadPool(ThreadPoolId::RESTORE), {}};
             dummy_restorer.run(RestorerFromBackup::CHECK_ACCESS_ONLY);
         }
     }
@@ -1115,7 +1114,7 @@ void BackupsWorker::doRestore(
 
         /// Restore from the backup.
         RestorerFromBackup restorer{restore_query->elements, restore_settings, restore_coordination,
-                                    backup, context, query_context, getThreadPool(ThreadPoolId::RESTORE), after_task_callback};
+                                    backup, context, getThreadPool(ThreadPoolId::RESTORE), after_task_callback};
         restorer.run(RestorerFromBackup::RESTORE);
     }
 }
