@@ -866,6 +866,15 @@ IProcessor::Status AggregatingTransform::prepare()
         return Status::PortFull;
     }
 
+    /// Streaming GROUP BY (`group_by_each_block_no_merge`): flush the results produced for
+    /// already consumed blocks before consuming more input or finishing.
+    if (!block_results.empty())
+    {
+        output.push(std::move(block_results.front()));
+        block_results.pop_front();
+        return Status::PortFull;
+    }
+
     /// Finish data processing, prepare to generating.
     if (is_consume_finished && !is_generate_initialized.test())
     {
@@ -934,6 +943,40 @@ void AggregatingTransform::work()
     {
         consume(std::move(current_chunk));
         read_current_chunk = false;
+
+        if (params->params.group_by_each_block_no_merge)
+        {
+            /// Streaming GROUP BY: aggregate, finalize and flush the result for every block separately,
+            /// without merging across blocks. The result is intentionally not fully merged (see the setting docs).
+            /// The flag is only set for queries that actually have grouping keys (`Aggregator::Params` disables it
+            /// otherwise), so aggregation without keys never reaches this per-block flush path.
+            /// Honor `params->final`: when this transform is the first stage of a two-level (e.g. distributed)
+            /// aggregation, it must produce intermediate states instead of finalized values, otherwise the
+            /// merging stage would receive plain columns where it expects aggregate function states.
+            for (auto & agg_chunk : params->aggregator.convertToChunks(variants, params->final))
+            {
+                if (agg_chunk.chunk.getNumRows() > 0)
+                    block_results.emplace_back(convertToChunk(std::move(agg_chunk)));
+            }
+
+            /// Start a fresh aggregation state for the next block.
+            /// In the non-final case `convertToChunks` transferred ownership of the aggregate states to the
+            /// produced columns and reset `variants.aggregator`, so they must not be destroyed here. In the
+            /// final case the states have already been read out and have to be destroyed to avoid leaking
+            /// non-trivial state.
+            if (variants.aggregator && !params->aggregator.all_aggregates_has_trivial_destructor)
+                params->aggregator.destroyAllAggregateStates(variants);
+            variants.invalidate();
+            variants.aggregates_pools = { std::make_shared<Arena>() };
+            variants.aggregates_pool = variants.aggregates_pools.at(0).get();
+
+            /// Each block is aggregated independently, so the `max_rows_to_group_by` limit must apply per block too.
+            /// `checkLimits` latches `no_more_keys` to `true` once a block crosses the limit (with
+            /// `group_by_overflow_mode = 'any'`); without resetting it the fresh state of the next block would reject
+            /// all new keys and send the rest of the stream to the overflow row instead of producing independent
+            /// per-block partial results.
+            no_more_keys = false;
+        }
     }
 }
 
@@ -985,6 +1028,8 @@ void AggregatingTransform::initGenerate()
 
     /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.
+    /// `group_by_each_block_no_merge` is disabled for aggregation without keys (see `Aggregator::Params`), so it does not
+    /// affect this path: the single empty-aggregation row is still produced for an empty input.
     if (variants.empty() && params->params.keys_size == 0 && !params->params.empty_result_for_aggregation_by_empty_set)
     {
         if (params->params.only_merge)
@@ -1031,7 +1076,12 @@ void AggregatingTransform::initGenerate()
     };
     if (!aggregator_has_temporary_data())
     {
-        if (!skip_merging)
+        if (params->params.group_by_each_block_no_merge)
+        {
+            /// In the streaming mode every block has already been finalized and flushed in `work`,
+            /// so there is nothing left to merge or convert here.
+        }
+        else if (!skip_merging)
         {
             auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));

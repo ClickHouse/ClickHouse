@@ -10,6 +10,8 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 
+#include <deque>
+
 
 namespace DB
 {
@@ -151,6 +153,10 @@ private:
     bool should_produce_results_in_order_of_bucket_number = true;
     /// If we aggregate partitioned data merging is not needed.
     bool skip_merging = false;
+
+    /// Results produced per input block in the streaming `group_by_each_block_no_merge` mode,
+    /// waiting to be pushed to the output port.
+    std::deque<Chunk> block_results;
 
     /// TODO: calculate time only for aggregation.
     Stopwatch watch;
