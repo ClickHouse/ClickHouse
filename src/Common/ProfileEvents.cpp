@@ -622,8 +622,6 @@ Number of times data after merge is not byte-identical to the data on another re
 The server successfully detected this situation and will download merged part from the replica to force the byte-identical result.
 )", ValueType::Number) \
     M(DataAfterMutationDiffersFromReplica, "Number of times data after mutation is not byte-identical to the data on other replicas. In addition to the reasons described in 'DataAfterMergeDiffersFromReplica', it is also possible due to non-deterministic mutation.", ValueType::Number) \
-    M(PolygonsAddedToPool, "A polygon has been added to the cache (pool) for the 'pointInPolygon' function.", ValueType::Number) \
-    M(PolygonsInPoolAllocatedBytes, "The number of bytes for polygons added to the cache (pool) for the 'pointInPolygon' function.", ValueType::Bytes) \
     \
     M(NaiveBayesClassifierModelsLoaded, "Number of Naive Bayes Classifier models loaded.", ValueType::Number) \
     M(NaiveBayesClassifierModelsAllocatedBytes, "Number of bytes allocated for Naive Bayes Classifier models.", ValueType::Bytes) \
@@ -891,6 +889,7 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheUnusedHoldFileSegments, "Filesystem cache file segments count, which were hold, but not used (because of seek or LIMIT n, etc)", ValueType::Number) \
     M(FilesystemCacheFreeSpaceKeepingThreadRun, "Number of times background thread executed free space keeping job", ValueType::Number) \
     M(FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds, "Time for which background thread executed free space keeping job", ValueType::Milliseconds) \
+    M(FilesystemCacheFreeSpaceKeepingThreadErrors, "Number of exceptions caught by the background free space keeping job (collection, removal or finalization)", ValueType::Number) \
     M(FilesystemCacheFailedEvictionCandidates, "Number of file segments which unexpectedly failed to be evicted during dynamic filesystem cache eviction", ValueType::Number) \
     \
     M(RemoteFSSeeks, "Total number of seeks for async buffer", ValueType::Number) \
