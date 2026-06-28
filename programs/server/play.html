@@ -5240,7 +5240,17 @@ async function reconcileStartup() {
     } else if (url_tab_name) {
         /// No saved tabs but the URL named a tab: adopt the name for the bootstrap tab.
         const t = getActiveTab();
-        if (t) t.title = url_tab_name;
+        if (t) {
+            t.title = url_tab_name;
+            /// Seed lastSavedQuery (= the query the URL is authoritative for) so a later reload of
+            /// this same shared link is recognized as a stale reload — the URL hash equals this
+            /// tab's own last-synced query — rather than a fresh external query. Without it, editing
+            /// this bootstrap tab and reloading the same URL would discard the edit: the named-tab
+            /// branch above would see `undefined !== url_query` and overwrite the saved query. The
+            /// loaded-tab paths get this seeding for free via syncHistory()/postAll(); this branch
+            /// leaves `activated` false and runs neither, so seed it explicitly here.
+            if (has_url_query) t.lastSavedQuery = url_query;
+        }
         renderTabBar();
     } else {
         renderTabBar();
