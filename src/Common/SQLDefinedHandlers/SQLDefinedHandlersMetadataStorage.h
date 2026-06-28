@@ -47,6 +47,11 @@ public:
     bool waitUpdate();
     bool isReplicated() const;
 
+    /// Mark the snapshot last read by `getAll()` as successfully loaded, so the background update check
+    /// stops requesting a retry for it. Must be called only after the returned handlers have been fully
+    /// applied; a no-op for non-replicated storage.
+    void commitReload() const;
+
 private:
     class IStorage;
     class LocalStorage;

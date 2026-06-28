@@ -58,6 +58,9 @@ bool SQLDefinedHandlersFactory::loadIfNot(std::lock_guard<std::mutex> & lock)
 
     loaded_handlers = metadata_storage->getAll();
     rebuildSnapshot(lock);
+    /// The snapshot is fully applied: mark its version loaded so the background watch does not immediately
+    /// treat it as pending (a no-op for non-replicated storage).
+    metadata_storage->commitReload();
 
     if (metadata_storage->isReplicated())
     {
@@ -279,6 +282,7 @@ void SQLDefinedHandlersFactory::removeReplicated(const ASTDropHandlerQuery & que
     /// stopped serving it; this reload brings in everything else another replica may have changed.
     loaded_handlers = metadata_storage->getAll();
     rebuildSnapshot(lock);
+    metadata_storage->commitReload();
 
     /// Log only when a znode was actually removed, so `DROP HANDLER IF EXISTS` on an absent handler stays
     /// a silent no-op while a real deletion of a replicated HTTP endpoint leaves a server-side record.
@@ -370,6 +374,9 @@ void SQLDefinedHandlersFactory::reloadFromSQL()
 
     loaded_handlers = metadata_storage->getAll();
     rebuildSnapshot(lock);
+    /// Advance the loaded version only now that the new snapshot has been fully read, parsed and applied,
+    /// so a reload that throws above does not skip the failed version on the next `waitUpdate`.
+    metadata_storage->commitReload();
 }
 
 void SQLDefinedHandlersFactory::updateFunc()

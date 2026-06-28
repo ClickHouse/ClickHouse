@@ -70,6 +70,12 @@ public:
     virtual bool removeIfExists(const std::string & path) = 0;
     virtual bool isReplicated() const = 0;
     virtual bool waitUpdate(size_t /* timeout */) { return false; }
+    /// Promote the version observed when the update watch was last armed (in `list`) to the
+    /// "successfully loaded" version that `waitUpdate` compares against. The caller invokes this only
+    /// after it has fully read, parsed and applied the corresponding snapshot, so a reload that throws
+    /// midway leaves the loaded version behind and `waitUpdate` keeps signalling a retry instead of the
+    /// replica silently serving a stale set until some unrelated mutation bumps the root version again.
+    virtual void commitReload() const {}
 };
 
 
@@ -188,12 +194,18 @@ private:
     /// synchronization (Poco::Event's own operations are thread-safe). The same event is reused as the
     /// data-watch on the root node across reloads.
     mutable Coordination::EventPtr wait_event;
-    /// Version of the root node's data. It is bumped on every create/drop/alter (see `bumpVersionRequest`),
-    /// so a single data-watch on the root notifies replicas of all kinds of changes - in particular
-    /// ALTER, which only changes a child's data and would not be observed by a children-list watch.
-    /// Atomic because `list` (background reload and foreground DDL refresh) writes it while `waitUpdate`
-    /// reads it from the background task thread.
+    /// Version of the root node's data that has been successfully loaded into the in-memory snapshot. It
+    /// is bumped on every create/drop/alter (see `bumpVersionRequest`), so a single data-watch on the
+    /// root notifies replicas of all kinds of changes - in particular ALTER, which only changes a child's
+    /// data and would not be observed by a children-list watch. `waitUpdate` compares it against Keeper's
+    /// current root version to decide whether a reload is due. It is advanced only by `commitReload`,
+    /// after the snapshot read at `armed_version` has been fully parsed and applied, so a reload that
+    /// throws midway does not lose the retry. Atomic because `commitReload` (background reload and
+    /// foreground DDL refresh) writes it while `waitUpdate` reads it from the background task thread.
     mutable std::atomic<Int32> root_version = 0;
+    /// Root version observed when the update watch was last armed in `list`. Promoted to `root_version`
+    /// by `commitReload` once the corresponding snapshot has been successfully loaded.
+    mutable std::atomic<Int32> armed_version = 0;
 
 public:
     ZooKeeperStorage(ContextPtr context_, const std::string & path_)
@@ -239,13 +251,22 @@ public:
     std::vector<std::string> list() const override
     {
         auto component_guard = Coordination::setCurrentComponent("SQLDefinedHandlersMetadataStorage::list");
-        /// Set a data-watch on the root node and remember its version. Every modification bumps the
-        /// root version (see `bumpVersionRequest`), so this watch fires for create, drop and alter alike.
+        /// Set a data-watch on the root node and remember its version as the armed version. Every
+        /// modification bumps the root version (see `bumpVersionRequest`), so this watch fires for create,
+        /// drop and alter alike. The armed version is promoted to `root_version` only by `commitReload`,
+        /// after the caller has fully read and parsed this snapshot, so a reload that throws after `list`
+        /// (e.g. a transient Keeper read error or one handler that fails to parse) does not advance the
+        /// loaded version and `waitUpdate` keeps requesting a retry.
         Coordination::Stat stat;
         getClient()->get(root_path, &stat, wait_event);
-        root_version = stat.version;
+        armed_version = stat.version;
 
         return getClient()->getChildren(root_path);
+    }
+
+    void commitReload() const override
+    {
+        root_version = armed_version.load();
     }
 
     std::vector<std::string> list(Int32 & version) const override
@@ -507,6 +528,11 @@ bool SQLDefinedHandlersMetadataStorage::store(const std::string & handler_name, 
 bool SQLDefinedHandlersMetadataStorage::isReplicated() const
 {
     return storage->isReplicated();
+}
+
+void SQLDefinedHandlersMetadataStorage::commitReload() const
+{
+    storage->commitReload();
 }
 
 void SQLDefinedHandlersMetadataStorage::shutdown()
