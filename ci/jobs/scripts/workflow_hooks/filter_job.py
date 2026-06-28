@@ -311,17 +311,20 @@ def should_skip_job(job_name):
     ):
         return True, "Skipped, not labeled with 'pr-performance'"
 
-    # --- Coverage sub-job skipping based on changed test type ---
+    # --- Coverage sub-job skipping based on changed test type (PR only) ---
     # When only one class of tests changed and the binary is unchanged, skip
     # the coverage sub-jobs for the other test types. The llvm_coverage_job
-    # (final merge) handles the missing profdata by unioning the partial PR
-    # .info with the master baseline so gained/lost coverage is still correct.
+    # (final merge) supplements the missing profdata from master.
+    # Only applies to PRs: master coverage runs must always publish a complete
+    # llvm_coverage.info. If master skipped IT/unit, the published baseline
+    # would be partial, and later PRs comparing against it would see a huge
+    # artificial "newly covered" spike from all the lines missing in the baseline.
     # Only skip when the binary is provably unchanged; any source/cmake change
     # keeps all coverage jobs active.
     _is_coverage_ft  = "amd_llvm_coverage" in job_name and JobNames.STATELESS in job_name
     _is_coverage_it  = "amd_llvm_coverage" in job_name and JobNames.INTEGRATION in job_name
     _is_coverage_ut  = "amd_llvm_coverage" in job_name and JobNames.UNITTEST in job_name
-    if _is_coverage_ft or _is_coverage_it or _is_coverage_ut:
+    if (_is_coverage_ft or _is_coverage_it or _is_coverage_ut) and _info_cache.pr_number > 0:
         cf = _info_cache.get_changed_files() or []
         _sl, _it, _ut, _bin_unch = _classify_changed_tests(cf)
         if _bin_unch and (_sl or _it or _ut):
