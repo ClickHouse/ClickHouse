@@ -221,6 +221,7 @@ public:
         bool find_exact_ranges;
         bool is_parallel_reading_from_replicas;
         bool has_projections;
+        bool use_primary_key = true;
         ReadFromMergeTree::AnalysisResult & result;
     };
 
