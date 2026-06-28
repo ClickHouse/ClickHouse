@@ -51,6 +51,18 @@ bash .claude/skills/good-prs/report.sh $ARGUMENTS
 The script fetches PR lists with `gh pr list`, classifies each PR's checks with
 `gh pr checks`, and looks up state + approvals with `gh pr view`, all parallelized with
 `xargs -P 12`. For groeneai-sized author sets (~200 open PRs) it takes roughly a minute.
+Every `gh` call is pinned to `--repo ClickHouse/ClickHouse`, so the report is correct
+regardless of the directory the skill is run from.
+
+## Testing
+
+`test.sh` runs `report.sh` against a stubbed `gh` (no network) and checks the
+`bucket`→label classification, the "only `CH Inc sync` is non-green" criterion, empty
+input, `--repo` pinning, and the fail-loud-on-real-error behaviour:
+
+```bash
+bash .claude/skills/good-prs/test.sh
+```
 
 ## Presentation
 
@@ -68,4 +80,11 @@ The script fetches PR lists with `gh pr list`, classifies each PR's checks with
 - The aggregate gates excluded from the "everything else is green" test are `PR`,
   `Mergeable Check`, and `A Sync (only for tests)`. If ClickHouse CI renames or adds an
   aggregate gate, update the `select(...)` filter in `report.sh`.
+- Checks are classified by `gh pr checks`' own `bucket` field (`pass` / `fail` /
+  `pending` / `skipping` / `cancel`), not by raw state strings, so unusual states such as
+  `QUEUED`, `TIMED_OUT`, `CANCELLED`, or `STARTUP_FAILURE` are handled without a PR being
+  silently dropped.
+- The script fails loudly: if a `gh` call cannot read a PR's data (an API, rate-limit, or
+  permission error, as opposed to a legitimately check-less PR), it aborts with the
+  original `gh` diagnostic rather than silently omitting that PR from the report.
 - The script needs `gh` authenticated and `jq` available.
