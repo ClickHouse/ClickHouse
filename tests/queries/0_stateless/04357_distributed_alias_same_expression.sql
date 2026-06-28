@@ -214,13 +214,14 @@ CREATE TABLE loc_adv
     dt DateTime,
     x UInt8,
     `__table9` UInt8,
+    `__table1.k` UInt8,
     a1 String ALIAS toString(x),
     a2 String ALIAS toString(x)
 )
 ENGINE = MergeTree ORDER BY dt;
 CREATE TABLE dist_adv AS loc_adv
 ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), loc_adv, rand());
-INSERT INTO loc_adv (dt, x, `__table9`) VALUES ('2024-01-01 00:00:00', 7, 5);
+INSERT INTO loc_adv (dt, x, `__table9`, `__table1.k`) VALUES ('2024-01-01 00:00:00', 7, 5, 3);
 
 -- A string constant `'__table9'` and an arithmetic over a column named `__table9` next to the collapsed (a1, a2)
 -- pair. Neither `__table9` token is a real qualifier (the constant has no trailing dot; the column qualifier is
@@ -237,6 +238,25 @@ SELECT a1, a2, c FROM
 (
     SELECT a1, a2, concat('__table99999999999999999999999999999.col', a1) AS c
     FROM dist_adv GROUP BY a1, a2
+) ORDER BY a1;
+
+-- A string constant `'__table1.'` that mimics a complete qualifier (digits + trailing dot). It must be skipped,
+-- not read as table index 1: otherwise its id collides with the shard's renumbered real `__table1` alias, the
+-- initiator/shard index sets differ in size, the realignment is disabled, and the collapsed pair fails to reconcile
+-- with NUMBER_OF_COLUMNS_DOESNT_MATCH. The trailing dot alone cannot distinguish it; the quote must.
+SELECT a1, a2, v FROM
+(
+    SELECT a1, a2, concat('__table1.', a1) AS v
+    FROM dist_adv GROUP BY a1, a2
+) ORDER BY a1;
+
+-- A backquoted column identifier `__table1.k` that looks like a qualifier with a trailing dot once backquotes are
+-- ignored. Inside the backquoted span it is a column name, not a qualifier, and must be skipped just like the
+-- string constant above.
+SELECT a1, a2, m FROM
+(
+    SELECT a1, a2, `__table1.k` AS m
+    FROM dist_adv GROUP BY a1, a2, `__table1.k`
 ) ORDER BY a1;
 
 DROP TABLE dist_adv;

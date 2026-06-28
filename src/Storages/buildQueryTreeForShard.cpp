@@ -900,6 +900,9 @@ struct TableQualifier
 };
 
 /// Try to match a real analyzer-generated table qualifier `__tableN.` whose `__table` prefix starts at `at`.
+/// This validates the qualifier SHAPE only; the callers (`collectTableIds` / `remapTableIds`) are responsible for
+/// not invoking it inside a quoted/backquoted span, where `__tableN.`-looking text is user data rather than a
+/// qualifier.
 ///
 /// The qualifier format is fixed by `buildColumnIdentifier` (Planner/PlannerContext.cpp), which renders a column
 /// identifier as `backQuoteIfNeed(table_alias) + "." + backQuoteIfNeed(column_name)`, where the alias is the
@@ -908,11 +911,10 @@ struct TableQualifier
 ///   - a non-word character (or string start) immediately before `__table`, so we do not match a suffix of a
 ///     longer identifier such as `my__table1.`;
 ///   - at least one digit after `__table`;
-///   - a `.` immediately after the digits;
+///   - a `.` immediately after the digits, so a bare column named `__table9` (rendered `__tableK.__table9`, no
+///     trailing dot) is not taken for a qualifier;
 ///   - the digit run fitting in UInt64 (`tryParse`, which checks overflow and never throws);
-/// restricts matching to genuine qualifiers and skips user-visible text such as a column literally named
-/// `__table9`, a string constant `'__table9'` inside `concat('__table9', ...)`, or an over-long `__table9...9`
-/// literal that would otherwise overflow the parse.
+/// restricts matching to genuine qualifiers in unquoted text.
 std::optional<TableQualifier> matchTableQualifier(const String & name, size_t at)
 {
     static constexpr std::string_view prefix = "__table";
@@ -935,29 +937,61 @@ std::optional<TableQualifier> matchTableQualifier(const String & name, size_t at
     return TableQualifier{at, digit_end, id};
 }
 
+/// The quote characters that open a span of arbitrary user text in a column action name: `'` opens a string
+/// constant (`FieldVisitorToString` -> `formatQuoted`) and `` ` `` opens a backquoted identifier (`backQuoteIfNeed`).
+/// `__tableN.`-looking text inside such a span is user data, not a planner qualifier, and must be skipped.
+bool isActionNameQuote(char c)
+{
+    return c == '\'' || c == '`';
+}
+
+/// `name[at]` opens a quoted span (see `isActionNameQuote`). Return the offset just past the closing quote, or
+/// `name.size()` if the span is unterminated. A backslash escapes the next character (including the quote itself and
+/// another backslash), matching `writeAnyEscapedString` (the escaping used by both string constants and identifiers),
+/// so the span ends at the first unescaped matching quote.
+size_t skipQuotedSpan(const String & name, size_t at)
+{
+    const char quote = name[at];
+    size_t pos = at + 1;
+    while (pos < name.size())
+    {
+        if (name[pos] == '\\')
+            pos += 2; /// Skip the backslash and the character it escapes.
+        else if (name[pos] == quote)
+            return pos + 1;
+        else
+            ++pos;
+    }
+    return name.size();
+}
+
 /// Collect the distinct `__tableN` indices that appear in a column action name. Action names embed the
-/// disambiguating table qualifier, e.g. `__table1.x` or `toString(__table1.x)`. Indices are stored numerically so a
-/// later ascending zip pairs them in table-declaration (DFS pre-order) order rather than lexicographically.
+/// disambiguating table qualifier, e.g. `__table1.x` or `toString(__table1.x)`. Quoted/backquoted spans are skipped
+/// so a string constant `'__table1.'` or a backquoted identifier is never read as a qualifier. Indices are stored
+/// numerically so a later ascending zip pairs them in table-declaration (DFS pre-order) order rather than
+/// lexicographically.
 void collectTableIds(const String & name, std::set<UInt64> & ids)
 {
-    static constexpr std::string_view prefix = "__table";
     size_t pos = 0;
-    while ((pos = name.find(prefix, pos)) != String::npos)
+    while (pos < name.size())
     {
-        if (auto qualifier = matchTableQualifier(name, pos))
+        if (isActionNameQuote(name[pos]))
+            pos = skipQuotedSpan(name, pos);
+        else if (auto qualifier = matchTableQualifier(name, pos))
         {
             ids.emplace(qualifier->id);
             pos = qualifier->end;
         }
         else
-            pos += prefix.size();
+            ++pos;
     }
 }
 
 /// Rewrite the `__tableN` indices in a column action name according to `id_map` (initiator index -> shard index).
-/// Only real `__tableN.` qualifiers are rewritten (see `matchTableQualifier`), and only when the matched
-/// index is present in `id_map`. All rewrites use the pre-rewrite indices, so a remap is never applied twice (e.g.
-/// 1->2 and 2->1 swap correctly).
+/// Only real `__tableN.` qualifiers in unquoted text are rewritten (see `matchTableQualifier`), and only when the
+/// matched index is present in `id_map`. Quoted/backquoted spans are copied verbatim, so a string constant
+/// `'__table1.'` is never rewritten. All rewrites use the pre-rewrite indices, so a remap is never applied twice
+/// (e.g. 1->2 and 2->1 swap correctly).
 String remapTableIds(const String & name, const std::unordered_map<UInt64, UInt64> & id_map)
 {
     static constexpr std::string_view prefix = "__table";
@@ -966,25 +1000,23 @@ String remapTableIds(const String & name, const std::unordered_map<UInt64, UInt6
     size_t pos = 0;
     while (pos < name.size())
     {
-        size_t found = name.find(prefix, pos);
-        if (found == String::npos)
+        if (isActionNameQuote(name[pos]))
         {
-            result.append(name, pos, String::npos);
-            break;
+            size_t span_end = skipQuotedSpan(name, pos);
+            result.append(name, pos, span_end - pos); /// Copy the quoted span verbatim.
+            pos = span_end;
         }
-        result.append(name, pos, found - pos);
-
-        if (auto qualifier = matchTableQualifier(name, found))
+        else if (auto qualifier = matchTableQualifier(name, pos))
         {
             auto it = id_map.find(qualifier->id);
             result.append(prefix);
             result.append(it != id_map.end() ? toString(it->second) : toString(qualifier->id));
-            pos = qualifier->end; /// Resume at the `.`; the column part is copied verbatim on the next iteration.
+            pos = qualifier->end; /// Resume at the `.`; the column part is copied verbatim on later iterations.
         }
         else
         {
-            result.append(prefix); /// Not a real qualifier; copy the literal `__table` prefix and continue past it.
-            pos = found + prefix.size();
+            result.push_back(name[pos]);
+            ++pos;
         }
     }
     return result;
