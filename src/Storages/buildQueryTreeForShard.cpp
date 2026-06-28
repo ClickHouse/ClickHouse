@@ -11,7 +11,9 @@
 #include <Core/Block.h>
 #include <Planner/PlannerActionsVisitor.h>
 
+#include <cctype>
 #include <optional>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -21,6 +23,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <IO/ReadHelpers.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
@@ -886,6 +889,65 @@ private:
     std::unordered_map<String, String> & translation;
 };
 
+/// Collect the distinct `__tableN` indices that appear in a column action name. Action names embed the
+/// disambiguating table alias, e.g. `__table1.x` or `toString(__table1.x)`. Indices are stored numerically so a
+/// later ascending zip pairs them in table-declaration (DFS pre-order) order rather than lexicographically.
+void collectTableIds(const String & name, std::set<UInt64> & ids)
+{
+    static constexpr std::string_view prefix = "__table";
+    size_t pos = 0;
+    while ((pos = name.find(prefix, pos)) != String::npos)
+    {
+        size_t digit_begin = pos + prefix.size();
+        size_t digit_end = digit_begin;
+        while (digit_end < name.size() && isdigit(static_cast<unsigned char>(name[digit_end])))
+            ++digit_end;
+        if (digit_end > digit_begin)
+            ids.emplace(parse<UInt64>(name.substr(digit_begin, digit_end - digit_begin)));
+        pos = (digit_end > digit_begin) ? digit_end : digit_begin;
+    }
+}
+
+/// Rewrite the `__tableN` indices in a column action name according to `id_map` (initiator index -> shard index).
+/// Only full tokens are rewritten: the digit run after `__table` must end exactly at `from_id` (so `__table1` is
+/// not matched inside `__table12`), and the matched index must be present in `id_map`. All rewrites use the
+/// pre-rewrite indices, so a remap is never applied twice (e.g. 1->2 and 2->1 swap correctly).
+String remapTableIds(const String & name, const std::unordered_map<UInt64, UInt64> & id_map)
+{
+    static constexpr std::string_view prefix = "__table";
+    String result;
+    result.reserve(name.size());
+    size_t pos = 0;
+    while (pos < name.size())
+    {
+        size_t found = name.find(prefix, pos);
+        if (found == String::npos)
+        {
+            result.append(name, pos, String::npos);
+            break;
+        }
+        result.append(name, pos, found - pos);
+        size_t digit_begin = found + prefix.size();
+        size_t digit_end = digit_begin;
+        while (digit_end < name.size() && isdigit(static_cast<unsigned char>(name[digit_end])))
+            ++digit_end;
+
+        if (digit_end > digit_begin)
+        {
+            UInt64 from_id = parse<UInt64>(name.substr(digit_begin, digit_end - digit_begin));
+            auto it = id_map.find(from_id);
+            result.append(prefix);
+            result.append(it != id_map.end() ? toString(it->second) : toString(from_id));
+        }
+        else
+        {
+            result.append(prefix); /// `__table` not followed by a number; copy the literal prefix.
+        }
+        pos = digit_end;
+    }
+    return result;
+}
+
 }
 
 std::optional<ActionsDAG> buildShardCollapseFanOut(
@@ -913,6 +975,32 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
     for (size_t i = 0; i < shard_header.columns(); ++i)
         shard_name_to_index.emplace(shard_header.getByPosition(i).name, i);
 
+    /// The shard query tree is renumbered independently from the initiator's: `buildQueryTreeForShard` runs
+    /// `createUniqueAliasesIfNecessary`, which restarts the `__tableN` aliases at 1. When this distributed read is
+    /// nested inside a subquery, the same source column is therefore named `__table1.x` on the shard but
+    /// `__tableK.x` (K > 1) in the initiator's tree (the one visited above and the one `expected_header` comes from).
+    /// Matching by raw name then fails even though the columns correspond. Realign the two numberings by zipping the
+    /// distinct table indices of each side in ascending order (both trees number tables in the same DFS pre-order, so
+    /// the i-th initiator table is the i-th shard table). We only do this when the two sides expose the same number of
+    /// table indices; otherwise we keep the original names and let the bijection guard below reject any mismatch.
+    std::unordered_map<UInt64, UInt64> initiator_to_shard_table_id;
+    {
+        std::set<UInt64> shard_ids;
+        for (size_t i = 0; i < shard_header.columns(); ++i)
+            collectTableIds(shard_header.getByPosition(i).name, shard_ids);
+
+        std::set<UInt64> initiator_ids;
+        for (const auto & [identifier_name, inlined_name] : identifier_to_inlined_name)
+            collectTableIds(inlined_name, initiator_ids);
+
+        if (!shard_ids.empty() && shard_ids.size() == initiator_ids.size() && shard_ids != initiator_ids)
+        {
+            auto shard_it = shard_ids.begin();
+            for (auto initiator_it = initiator_ids.begin(); initiator_it != initiator_ids.end(); ++initiator_it, ++shard_it)
+                initiator_to_shard_table_id.emplace(*initiator_it, *shard_it);
+        }
+    }
+
     std::vector<size_t> shard_index_for_expected(expected_header.columns());
     std::vector<bool> shard_column_used(shard_header.columns(), false);
     bool collapse_detected = false;
@@ -925,12 +1013,18 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
         if (auto it = identifier_to_inlined_name.find(expected_name); it != identifier_to_inlined_name.end())
             inlined_name = it->second;
 
+        /// Translate the initiator-side table indices to the shard-side ones before looking the column up.
+        if (!initiator_to_shard_table_id.empty())
+            inlined_name = remapTableIds(inlined_name, initiator_to_shard_table_id);
+
         auto shard_it = shard_name_to_index.find(inlined_name);
         if (shard_it == shard_name_to_index.end())
             return {}; /// Cannot explain this column; let the caller fall back to its default reconciliation.
 
         shard_index_for_expected[i] = shard_it->second;
         shard_column_used[shard_it->second] = true;
+        /// `inlined_name` is the shard column name we matched (post table-id realignment); a difference from the
+        /// initiator-side `expected_name` is the signature of an inlined/deduplicated ALIAS column.
         if (inlined_name != expected_name)
             collapse_detected = true;
     }

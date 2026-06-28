@@ -63,6 +63,16 @@ SELECT a1, a2, b FROM dist_same_expr ORDER BY dt DESC LIMIT 1;
 SELECT a1, a2 FROM dist_same_expr GROUP BY a1, a2 ORDER BY a1;
 SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2 ORDER BY a1;
 
+-- The collapse may happen inside a subquery that feeds an outer query. The subquery's distributed read is
+-- renumbered independently from the initiator's query tree, so reconciling the collapsed shard header by column
+-- name has to account for the differing `__tableN` table aliases.
+SELECT count() FROM (SELECT a1, a2 FROM dist_same_expr GROUP BY a1, a2);
+SELECT count() AS groups, sum(c) AS total FROM (SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2);
+SELECT a1 FROM (SELECT a1, a2 FROM dist_same_expr GROUP BY a1, a2) WHERE a1 = '7';
+SELECT count() FROM (SELECT a1, a2 FROM (SELECT a1, a2 FROM dist_same_expr GROUP BY a1, a2));
+-- A non-collapsed ALIAS column inside the subquery must keep flowing alongside the collapsed pair.
+SELECT a1, a2, b FROM (SELECT a1, a2, b FROM dist_same_expr GROUP BY a1, a2, b) ORDER BY a1;
+
 -- HAVING referencing a duplicate ALIAS column.
 SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2 HAVING a1 != '' ORDER BY a1;
 
