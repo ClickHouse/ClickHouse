@@ -50,7 +50,7 @@ bool RestoreCoordinationLocal::acquireReplicatedSQLObjects(const String &, UserD
     return true;
 }
 
-bool RestoreCoordinationLocal::acquireReplicatedWorkloadEntities(const String &, WorkloadEntityType)
+bool RestoreCoordinationLocal::acquireReplicatedWorkloadEntities(const String &)
 {
     return true;
 }

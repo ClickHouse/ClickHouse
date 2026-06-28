@@ -1059,10 +1059,10 @@ void WorkloadEntityStorageBase::backup(
 void WorkloadEntityStorageBase::restore(
     RestorerFromBackup & restorer,
     const String & data_path_in_backup,
-    WorkloadEntityType entity_type)
+    WorkloadEntityType /*entity_type*/)
 {
     if (isReplicated()
-        && !restorer.getRestoreCoordination()->acquireReplicatedWorkloadEntities(getReplicationID(), entity_type))
+        && !restorer.getRestoreCoordination()->acquireReplicatedWorkloadEntities(getReplicationID()))
         return; /// Other replica is already restoring the workload entities.
 
     auto backup = restorer.getBackup();
@@ -1093,37 +1093,44 @@ void WorkloadEntityStorageBase::restore(
             parsed_entities.push_back(std::move(name_and_ast));
     }
 
-    bool should_add_restore_task = false;
-    {
-        std::lock_guard lock{mutex};
-        for (auto & [name, ast] : parsed_entities)
-            entities_to_restore.emplace(name, ast);
-        if (!restore_task_added)
-        {
-            restore_task_added = true;
-            should_add_restore_task = true;
-        }
-    }
-
     /// WORKLOADs and RESOURCEs are backed up (and restored) via two separate system tables (system.workloads and
     /// system.resources), so their restore tasks are scheduled independently. We accumulate the parsed entities of
     /// both types and create them all together in a single task, in an order that keeps every reference valid
-    /// (resources first, then workloads parent-first). Adding the task only once is enough: by the time data restore
-    /// tasks run, restore() has already been called for both tables.
+    /// (resources first, then workloads parent-first). Concurrent restores are allowed
+    /// (backups.allow_concurrent_restores), so the accumulator and the "task added" guard are keyed by the unique
+    /// restore UUID instead of being kept as shared storage state; otherwise two concurrent restores would mix
+    /// their entities or drop one another's task. Adding the task only once per restore operation is enough: by the
+    /// time data restore tasks run, restore() has already been called for both tables of that operation.
+    const UUID restore_id = restorer.getRestoreSettings().restore_uuid.value();
+    bool should_add_restore_task = false;
+    {
+        std::lock_guard lock{mutex};
+        auto & accumulated = entities_to_restore[restore_id];
+        for (auto & [name, ast] : parsed_entities)
+            accumulated.emplace(name, ast);
+        if (restore_tasks_added.emplace(restore_id).second)
+            should_add_restore_task = true;
+    }
+
     if (should_add_restore_task)
     {
         auto restore_context = restorer.getContext();
-        restorer.addDataRestoreTask([this, restore_context] { restoreEntitiesAccumulatedFromBackup(restore_context); });
+        restorer.addDataRestoreTask(
+            [this, restore_context, restore_id] { restoreEntitiesAccumulatedFromBackup(restore_context, restore_id); });
     }
 }
 
-void WorkloadEntityStorageBase::restoreEntitiesAccumulatedFromBackup(const ContextMutablePtr & context)
+void WorkloadEntityStorageBase::restoreEntitiesAccumulatedFromBackup(const ContextMutablePtr & context, const UUID & restore_id)
 {
     std::unordered_map<String, ASTPtr> to_restore;
     {
         std::lock_guard lock{mutex};
-        to_restore.swap(entities_to_restore);
-        restore_task_added = false;
+        if (auto it = entities_to_restore.find(restore_id); it != entities_to_restore.end())
+        {
+            to_restore.swap(it->second);
+            entities_to_restore.erase(it);
+        }
+        restore_tasks_added.erase(restore_id);
     }
 
     if (to_restore.empty())

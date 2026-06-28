@@ -5,6 +5,8 @@
 #include <mutex>
 #include <unordered_set>
 
+#include <base/UUID.h>
+
 #include <Common/Logger_fwd.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Interpreters/Context_fwd.h>
@@ -115,7 +117,7 @@ private:
         std::optional<Event> change = {});
 
     /// Creates all workload entities accumulated from a backup (see restore()) in a proper order, in a single data restore task.
-    void restoreEntitiesAccumulatedFromBackup(const ContextMutablePtr & context);
+    void restoreEntitiesAccumulatedFromBackup(const ContextMutablePtr & context, const UUID & restore_id);
 
     struct Handlers
     {
@@ -131,8 +133,9 @@ private:
     std::unordered_map<String, ASTPtr> other_entities; /// Entities that are stored in the next storage (a copy to be accessed under own mutex)
 
     // Workload entities collected from a backup before being restored together in a single data restore task (see restore()).
-    std::unordered_map<String, ASTPtr> entities_to_restore;
-    bool restore_task_added = false;
+    // Keyed by the restore operation's UUID so concurrent restores do not share or overwrite each other's accumulated entities.
+    std::unordered_map<UUID, std::unordered_map<String, ASTPtr>> entities_to_restore;
+    std::unordered_set<UUID> restore_tasks_added;
 
     // Validation
     std::unordered_map<String, std::unordered_set<String>> references; /// Keep track of references between entities. Key is target. Value is set of sources

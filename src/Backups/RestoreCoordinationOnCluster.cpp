@@ -283,7 +283,7 @@ bool RestoreCoordinationOnCluster::acquireReplicatedSQLObjects(const String & lo
     return result;
 }
 
-bool RestoreCoordinationOnCluster::acquireReplicatedWorkloadEntities(const String & loader_zk_path, WorkloadEntityType entity_type)
+bool RestoreCoordinationOnCluster::acquireReplicatedWorkloadEntities(const String & loader_zk_path)
 {
     auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::acquireReplicatedWorkloadEntities");
     bool result = false;
@@ -293,23 +293,16 @@ bool RestoreCoordinationOnCluster::acquireReplicatedWorkloadEntities(const Strin
         {
             with_retries.renewZooKeeper(zk);
 
+            /// Acquire ownership once per workload storage (keyed by replication id), not per entity type.
+            /// The winning replica must restore BOTH system.workloads and system.resources together, so that a
+            /// workload referencing a resource (SETTINGS ... FOR <resource>) can be created after that resource
+            /// exists. Acquiring separately per entity type could let different replicas win the two types and
+            /// break such references.
             String path = zookeeper_path + "/repl_workload_entities_acquired/" + escapeForFileName(loader_zk_path);
-            zk->createIfNotExists(path, "");
 
-            path += "/";
-            switch (entity_type)
-            {
-                case WorkloadEntityType::Workload:
-                    path += "workloads";
-                    break;
-                case WorkloadEntityType::Resource:
-                    path += "resources";
-                    break;
-                case WorkloadEntityType::MAX:
-                    break;
-            }
-
-            auto code = zk->tryCreate(path, "", zkutil::CreateMode::Persistent);
+            /// Record current_host_index as the node value so that a host which creates the node but loses the
+            /// Keeper response can still recognize itself as the owner on retry (sees ZNODEEXISTS, reads the value).
+            auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
             if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
                 throw zkutil::KeeperException::fromPath(code, path);
 
@@ -319,7 +312,7 @@ bool RestoreCoordinationOnCluster::acquireReplicatedWorkloadEntities(const Strin
                 return;
             }
 
-            /// We need to check who created that node
+            /// The node already exists - this replica owns the restore only if it is the one that created the node.
             result = zk->get(path) == toString(current_host_index);
         });
     return result;
