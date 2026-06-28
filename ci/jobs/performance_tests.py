@@ -1361,7 +1361,13 @@ def main():
 
         def insert_raw_query_metrics_data():
             cidb = CIDBCluster()
-            assert cidb.is_ready()
+            # Metrics insertion is a reporting side-effect, not the perf
+            # verdict. A transient LogCluster (play.clickhouse.com) timeout
+            # must not fail the whole job - skip and warn, like
+            # insert_report_aggregates() and prepare_historical_data() do.
+            if not cidb.is_ready():
+                print("WARNING: CIDB not ready - skipping raw query metrics insert")
+                return True
 
             if not build_raw_query_metrics_tsv():
                 print("WARNING: Failed to prepare raw query metrics TSV")
@@ -1423,7 +1429,12 @@ def main():
 
         def insert_historical_data():
             cidb = CIDBCluster()
-            assert cidb.is_ready()
+            # Reporting side-effect, not the perf verdict - a transient
+            # LogCluster timeout must not fail the job (see
+            # insert_raw_query_metrics_data / insert_report_aggregates).
+            if not cidb.is_ready():
+                print("WARNING: CIDB not ready - skipping historical data insert")
+                return True
 
             now = datetime.now()
             date = now.date().isoformat()
