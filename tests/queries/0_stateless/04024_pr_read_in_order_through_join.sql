@@ -3,6 +3,7 @@
 -- (due to differences in plan construction), leading to "Replica decided to read in Default
 -- mode, not in WithOrder" LOGICAL_ERROR.
 -- https://github.com/ClickHouse/ClickHouse/issues/94076
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS events;
 DROP TABLE IF EXISTS payloads;

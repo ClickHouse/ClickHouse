@@ -1,3 +1,4 @@
+SET explain_query_plan_default = 'legacy';
 SET optimize_read_in_order = 1, query_plan_read_in_order = 1, enable_analyzer = 1, read_in_order_max_primary_key_ratio = 1.0;
 
 drop table if exists tab;
