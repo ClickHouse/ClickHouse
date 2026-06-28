@@ -197,15 +197,14 @@ StorageMemory::~StorageMemory() = default;
 StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
 {
     auto snapshot_data = std::make_unique<SnapshotData>();
-    /// Capture the blocks and the version together under the same mutex that writers (MemorySink::onFinish)
-    /// hold around `data.set()` + `++data_version`, so the snapshot always sees a consistent pair: a lookup
-    /// can never observe the new blocks with the old version (or vice versa).
-    {
-        std::lock_guard lock(mutex);
-        snapshot_data->blocks = data.get();
-        snapshot_data->rows_approx = total_size_rows.load(std::memory_order_relaxed);
-        snapshot_data->data_version = data_version.load(std::memory_order_relaxed);
-    }
+    snapshot_data->blocks = data.get();
+    snapshot_data->rows_approx = total_size_rows.load(std::memory_order_relaxed);
+    /// `data_version` is sampled separately from `data` (we cannot hold `mutex` here: it would deadlock
+    /// with the mutation read path, which calls getStorageSnapshot). A concurrent insert can briefly leave
+    /// the pair skewed, but that only ever produces a conservative cache miss, never a stale result: the
+    /// write-finalization recheck and the read-time recheck both recompute the hash and bail out on any
+    /// mismatch.
+    snapshot_data->data_version = data_version.load(std::memory_order_relaxed);
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
 }
 
