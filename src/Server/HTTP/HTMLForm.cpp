@@ -24,12 +24,14 @@ namespace Setting
     extern const SettingsUInt64 http_max_fields;
     extern const SettingsUInt64 http_max_field_name_size;
     extern const SettingsUInt64 http_max_field_value_size;
+    extern const SettingsUInt64 http_max_multipart_form_data_size;
     extern const SettingsUInt64 http_max_request_header_size;
 }
 
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int LIMIT_EXCEEDED;
 }
 
 namespace
@@ -55,6 +57,13 @@ HTMLForm::HTMLForm(const Settings & settings)
     , max_request_header_size(settings[Setting::http_max_request_header_size])
     , encoding(ENCODING_URL)
 {
+    setMaxMultipartFormDataSize(settings[Setting::http_max_multipart_form_data_size]);
+}
+
+
+void HTMLForm::setMaxMultipartFormDataSize(size_t limit)
+{
+    max_multipart_form_data_size = limit;
 }
 
 
@@ -194,7 +203,7 @@ void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
     chassert(!boundary.empty());
 
     size_t fields = 0;
-    MultipartReadBuffer in(in_, boundary);
+    MultipartReadBuffer in(in_, boundary, max_multipart_form_data_size, max_request_header_size);
 
     if (!in.skipToNextBoundary())
         throw Poco::Net::HTMLFormException("No boundary line found");
@@ -216,6 +225,11 @@ void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
             Poco::Net::MessageHeader::splitParameters(header.get("Content-Disposition"), unused, params);
         }
 
+        /// The header phase of this part is over; the content of the part (and the boundary line
+        /// that terminates it, which is read while the content is still being consumed) is bounded
+        /// by the content size limit rather than by the structural HTTP limit.
+        in.setReadingContent(true);
+
         if (params.has("filename"))
             handler.handlePart(header, in);
         else
@@ -234,6 +248,8 @@ void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
             add(name, value);
         }
 
+        in.setReadingContent(false);
+
         ++fields;
 
         /// If we already encountered EOF for the buffer |in|, it's possible that the next symbol is a start of boundary line.
@@ -250,8 +266,18 @@ void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
 }
 
 
-HTMLForm::MultipartReadBuffer::MultipartReadBuffer(ReadBuffer & in_, const std::string & boundary_)
-    : ReadBuffer(nullptr, 0), in(in_), boundary("--" + boundary_)
+HTMLForm::MultipartReadBuffer::MultipartReadBuffer(
+    ReadBuffer & in_, const std::string & boundary_, size_t max_content_size, size_t max_syntax_line_size_)
+    : ReadBuffer(nullptr, 0)
+    , in(in_)
+    , boundary("--" + boundary_)
+    /// A buffered content line carries the configured content limit plus some structural slack:
+    /// the leading CRLF that terminates the previous content line of the same part, and the
+    /// boundary terminator that ends the part's content (which is read while the content is still
+    /// being consumed). Adding the boundary length here ensures that a content limit smaller than
+    /// the boundary does not reject that terminator. 0 disables the limit.
+    , max_content_line_size(max_content_size ? max_content_size + boundary.size() + 4 : 0)
+    , max_syntax_line_size(max_syntax_line_size_)
 {
     /// For consistency with |nextImpl()|
     position() = in.position();
@@ -287,6 +313,31 @@ std::string HTMLForm::MultipartReadBuffer::readLine(bool append_crlf)
     std::string line;
     char ch = 0;  // silence "uninitialized" warning from gcc-*
 
+    /// A line is buffered in memory in full, so its size must be bounded; over-limit input is
+    /// rejected as soon as the line outgrows the limit instead of being accumulated until the next
+    /// CRLF (which an attacker can omit). Part content is bounded by the content size limit, while
+    /// boundary lines and part headers are bounded by the (typically larger) structural HTTP
+    /// limit, so that a small content limit does not reject a valid request whose boundary or
+    /// header line is longer than the limit.
+    auto check_line_size = [this, &line]
+    {
+        if (reading_content)
+        {
+            if (max_content_line_size && line.size() > max_content_line_size)
+                throw Exception(ErrorCodes::LIMIT_EXCEEDED,
+                                "Too long line in a multipart/form-data part: it exceeds the maximum size "
+                                "of multipart/form-data content. This limit can be tuned by the "
+                                "'http_max_multipart_form_data_size' setting");
+        }
+        else
+        {
+            if (max_syntax_line_size && line.size() > max_syntax_line_size)
+                throw Exception(ErrorCodes::LIMIT_EXCEEDED,
+                                "Too long boundary or header line in a multipart/form-data message. "
+                                "This limit can be tuned by the 'http_max_request_header_size' setting");
+        }
+    };
+
     /// If we don't append CRLF, it means that we may have to prepend CRLF from previous content line, which wasn't the boundary.
     if (in.read(ch))
         line += ch;
@@ -298,7 +349,10 @@ std::string HTMLForm::MultipartReadBuffer::readLine(bool append_crlf)
     while (!in.eof())
     {
         while (in.read(ch) && ch != '\r')
+        {
             line += ch;
+            check_line_size();
+        }
 
         if (in.eof()) break;
 
@@ -312,6 +366,7 @@ std::string HTMLForm::MultipartReadBuffer::readLine(bool append_crlf)
         }
 
         line += ch;
+        check_line_size();
     }
 
     return line;

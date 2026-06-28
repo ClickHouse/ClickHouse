@@ -7,7 +7,9 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Compression/CompressedReadBuffer.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -178,6 +180,11 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
             LimitReadBuffer::Settings{
                 .read_no_more = settings[Setting::http_max_multipart_form_data_size],
                 .expect_eof = true,
+                /// Reject over-limit input rather than truncating it silently at the cap. This
+                /// matters in particular for the native-compressed (`_decompress`) path: a stream
+                /// whose compressed bytes end exactly on the limit boundary with more compressed
+                /// blocks appended must fail instead of loading a truncated external table.
+                .throw_if_exceeded = true,
                 .excetion_hint = "the maximum size of multipart/form-data. This limit can be tuned by 'http_max_multipart_form_data_size' setting",
             });
     else
@@ -191,6 +198,34 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     /// Get parameters
     name = content.get("name", "_data");
     format = params.get(name + "_format", "TabSeparated");
+
+    /// Check if data should be decompressed (native compressed format).
+    /// The flag is parsed as a boolean defaulting to false, consistently with the other HTTP
+    /// boolean parameters such as `compress` and `decompress`. An explicit `<name>_decompress=0`
+    /// therefore leaves plain external data uncompressed instead of wrapping it in a
+    /// `CompressedReadBuffer`, which would make an otherwise valid plain upload fail.
+    if (params.has(name + "_decompress") && parse<bool>(params.get(name + "_decompress")))
+    {
+        auto compressed_buffer = std::make_unique<CompressedReadBuffer>(
+            std::move(read_buffer),
+            /* allow_different_codecs_ = */ false,
+            /* external_data_ = */ true);
+
+        /// Optionally disable checksum verification. Also a boolean defaulting to false, so that
+        /// `<name>_disable_checksum=0` keeps checksum verification enabled.
+        if (params.has(name + "_disable_checksum") && parse<bool>(params.get(name + "_disable_checksum")))
+            compressed_buffer->disableChecksumming();
+
+        /// Apply size limit to the decompressed data to prevent decompression-bomb attacks.
+        /// The limit is enforced cumulatively inside CompressedReadBuffer, before each block is
+        /// allocated, so an oversized block is rejected up front and appended blocks cannot
+        /// silently truncate the stream at the limit boundary (which an outer LimitReadBuffer
+        /// reporting EOF at the cap would allow).
+        if (settings[Setting::http_max_multipart_form_data_size])
+            compressed_buffer->setDecompressedSizeLimit(settings[Setting::http_max_multipart_form_data_size]);
+
+        read_buffer = std::move(compressed_buffer);
+    }
 
     if (params.has(name + "_structure"))
         parseStructureFromStructureField(params.get(name + "_structure"));

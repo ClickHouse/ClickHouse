@@ -73,6 +73,20 @@ public:
     /// Note that read() does not clear the form before reading the new values.
     void read(ReadBuffer & in);
 
+    /// Set the limit on the size of the content of a multipart/form-data part.
+    /// The parser reads part content line by line to detect boundary lines, so content with no
+    /// CRLF would otherwise be accumulated in memory in full, regardless of any limit imposed on
+    /// the part size by the reader of the part (in particular, while such a reader only probes
+    /// whether more data follows after its limit was reached). The multipart parser therefore
+    /// bounds a buffered content line by this limit. Boundary and header lines, which are part of
+    /// the request syntax rather than of the uploaded content, are bounded by the (larger)
+    /// `http_max_request_header_size` instead, so that a small content limit does not reject a
+    /// valid request whose boundary or `Content-Disposition` line is longer than the limit.
+    /// The constructor initializes the limit from the settings it is given (typically the server
+    /// defaults); this method allows to override it once the authenticated user's settings are
+    /// known. Zero disables the limit.
+    void setMaxMultipartFormDataSize(size_t limit);
+
     static const std::string ENCODING_URL; /// "application/x-www-form-urlencoded"
     static const std::string ENCODING_MULTIPART; /// "multipart/form-data"
     static const int UNKNOWN_CONTENT_LENGTH;
@@ -95,6 +109,9 @@ private:
 
     const size_t max_fields_number, max_field_name_size, max_field_value_size, max_request_header_size;
 
+    /// See setMaxMultipartFormDataSize. The configured limit on a part's content; 0 disables it.
+    size_t max_multipart_form_data_size = 0;
+
     std::string encoding;
     std::string boundary;
     PartVec parts;
@@ -110,16 +127,26 @@ public:
 class HTMLForm::MultipartReadBuffer : public ReadBuffer
 {
 public:
-    MultipartReadBuffer(ReadBuffer & in, const std::string & boundary);
+    MultipartReadBuffer(ReadBuffer & in, const std::string & boundary, size_t max_content_size, size_t max_syntax_line_size);
 
     /// Returns false if last boundary found.
     bool skipToNextBoundary();
 
     bool isActualEOF() const { return found_last_boundary; }
 
+    /// While a part's content is being consumed, a buffered line is bounded by the content size
+    /// limit; while boundary lines and part headers are being scanned, by the structural HTTP
+    /// limit. readMultipart toggles this around the consumption of each part's content.
+    void setReadingContent(bool value) { reading_content = value; }
+
 private:
     PeekableReadBuffer in;
     const std::string boundary;
+    /// Maximum size of a buffered content line, 0 means no limit (see HTMLForm::setMaxMultipartFormDataSize).
+    const size_t max_content_line_size;
+    /// Maximum size of a buffered boundary or header line, 0 means no limit.
+    const size_t max_syntax_line_size;
+    bool reading_content = false;
     bool boundary_hit = true;
     bool found_last_boundary = false;
 
