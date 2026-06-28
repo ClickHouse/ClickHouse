@@ -43,4 +43,19 @@ disp "${BASE_URL}/${DB}/hits.Native?compression=gzip"
 echo "-- compression alias 'zstd' is canonicalized to '.zst'"
 disp "${BASE_URL}/${DB}/hits.Native?compression=zstd"
 
+echo "-- a compression alias in the path itself ('.zstd') is canonicalized to '.zst', not duplicated"
+disp "${BASE_URL}/${DB}/hits.Native.zstd"
+
+echo "-- path compression alias '.gzip' is canonicalized to '.gz'"
+disp "${BASE_URL}/${DB}/hits.Native.gzip"
+
+echo "-- path compression alias '.lzma' is canonicalized to '.xz'"
+disp "${BASE_URL}/${DB}/hits.Native.lzma"
+
+echo "-- path compression alias '.bzip2' is canonicalized to '.bz2'"
+disp "${BASE_URL}/${DB}/hits.Native.bzip2"
+
+echo "-- path alias '.zstd' plus a matching compression=zstd query param still does not duplicate"
+disp "${BASE_URL}/${DB}/hits.Native.zstd?compression=zstd"
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${DB}.hits"

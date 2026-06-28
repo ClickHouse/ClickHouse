@@ -171,6 +171,7 @@ HTTPPathInfo parseHTTPPath(const String & path, bool allow_database, bool allow_
             String table_part = raw;
             String format_part;
             String compression_part;
+            String disposition_filename = raw;
 
             auto last_dot = table_part.rfind('.');
             if (last_dot != String::npos)
@@ -180,6 +181,12 @@ HTTPPathInfo parseHTTPPath(const String & path, bool allow_database, bool allow_
                 if (!maybe_compression_name.empty())
                 {
                     compression_part = maybe_compression_name;
+                    /// Canonicalize the compression extension in the disposition filename so an accepted
+                    /// alias (`.zstd` / `.gzip` / `.lzma` / `.bzip2`) is not duplicated when `HTTPHandler`
+                    /// appends the canonical suffix (`.zst` / `.gz` / `.xz` / `.bz2`). For example
+                    /// `/db/hits.Native.zstd` yields the filename `hits.Native.zst`, not `hits.Native.zstd.zst`.
+                    if (maybe_compression_name != maybe_extension)
+                        disposition_filename = raw.substr(0, last_dot + 1) + maybe_compression_name;
                     table_part = table_part.substr(0, last_dot);
                     last_dot = table_part.rfind('.');
                     if (last_dot != String::npos)
@@ -216,7 +223,7 @@ HTTPPathInfo parseHTTPPath(const String & path, bool allow_database, bool allow_
             result.table = table_part;
             result.format = format_part;
             result.compression = compression_part;
-            result.filename_for_disposition = raw;
+            result.filename_for_disposition = disposition_filename;
         }
     }
 
