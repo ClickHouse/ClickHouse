@@ -18,6 +18,10 @@ DATA_FILE_USER_PATH="${WORKING_DIR}/ipv6_bloom_filter.gz.parquet"
 
 cp ${DATA_FILE} ${DATA_FILE_USER_PATH}
 
+# This test isolates bloom-filter pruning and asserts exact rows_read, so disable the dictionary-based
+# row group filter (which the test harness randomizes) to keep the counts stable.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --input_format_parquet_dictionary_filter_push_down=0"
+
 echo "bloom filter is off, row groups should be read"
 echo "expect rows_read = select count()"
 ${CLICKHOUSE_CLIENT} --query="select ipv6 from file('${DATA_FILE_USER_PATH}', Parquet, 'ipv6 IPv6') where ipv6 = '7afe:b9d4:e754:4e78:8783:37f5:b2ea:9995' Format JSON SETTINGS input_format_parquet_bloom_filter_push_down=false, input_format_parquet_filter_push_down=false;" | jq 'del(.meta,.statistics.elapsed)'

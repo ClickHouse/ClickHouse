@@ -18,6 +18,10 @@ DATA_FILE_USER_PATH="${WORKING_DIR}/integers_1to5_no_3_bf_minmax.parquet"
 
 cp ${DATA_FILE} ${DATA_FILE_USER_PATH}
 
+# This test isolates bloom-filter / min-max pruning and asserts exact rows_read, so disable the
+# dictionary-based row group filter (which the test harness randomizes) to keep the counts stable.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --input_format_parquet_dictionary_filter_push_down=0"
+
 # Prior to this PR, bloom filter and minmax were evaluated separately.
 # This was sub-optimal for conditions like `x = 3 or x > 5` where data is [1, 2, 4, 5].
 # Bloom filter is not able to handle greater than operations. Therefore, it can't evaluate x > 5. Even though it can tell

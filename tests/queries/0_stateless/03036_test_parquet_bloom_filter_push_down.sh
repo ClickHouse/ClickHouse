@@ -18,7 +18,9 @@ DATA_FILE_USER_PATH="${WORKING_DIR}/multi_column_bf.gz.parquet"
 
 cp ${DATA_FILE} ${DATA_FILE_USER_PATH}
 
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --input_format_parquet_filter_push_down=false --input_format_parquet_page_filter_push_down=false --optimize_move_to_prewhere=false --input_format_parquet_enable_row_group_prefetch=false"
+# This test isolates bloom-filter / min-max pruning and asserts exact rows_read, so disable the
+# dictionary-based row group filter (which the test harness randomizes) to keep the counts stable.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --input_format_parquet_filter_push_down=false --input_format_parquet_page_filter_push_down=false --optimize_move_to_prewhere=false --input_format_parquet_enable_row_group_prefetch=false --input_format_parquet_dictionary_filter_push_down=0"
 
 ${CLICKHOUSE_CLIENT} --query="select count(*) from file('${DATA_FILE_USER_PATH}', Parquet) SETTINGS use_cache_for_count_from_files=false;"
 
