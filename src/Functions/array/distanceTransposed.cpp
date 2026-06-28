@@ -141,12 +141,17 @@ struct DotProductTransposed
     static constexpr auto name = "dotProductTransposed";
 #if USE_SIMSIMD
     static constexpr simsimd_metric_kind_t metric_kind = simsimd_metric_dot_k;
+    /// Largest term the SimSIMD i8 kernel adds per element (max |a * b| = 128 * 128, both equal to -128). Used to
+    /// bound the dimension before that kernel's int32 accumulator overflows; beyond it we use the scalar path.
+    static constexpr UInt64 max_int8_simd_term = 128 * 128;
 #endif
 
     template <typename T>
     static void distance(const T * __restrict x, const T * __restrict y, std::size_t array_size, Float64 * result)
     {
-        if constexpr (std::is_same_v<T, BFloat16>)
+        if constexpr (std::is_same_v<T, Int8>)
+            distanceScalar<Int8, Float64>(x, y, array_size, result);
+        else if constexpr (std::is_same_v<T, BFloat16>)
             distanceScalar<BFloat16, Float32>(x, y, array_size, result);
         else if constexpr (std::is_same_v<T, Float32>)
             distanceScalar<Float32, Float32>(x, y, array_size, result);

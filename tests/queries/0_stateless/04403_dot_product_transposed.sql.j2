@@ -30,6 +30,15 @@ WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, round(dotProductTransposed
 DROP TABLE qbit;
 DROP TABLE qbit_2;
 
+SELECT 'Int8 QBit';
+CREATE TABLE qbit_i8 (id UInt32, vec QBit(Int8, 8)) ENGINE = Memory;
+INSERT INTO qbit_i8 VALUES (1, [0, 1, 2, 3, 4, 5, 6, 7]);
+INSERT INTO qbit_i8 VALUES (2, [1, 2, 3, 4, 5, 6, 7, 8]);
+INSERT INTO qbit_i8 VALUES (3, [-8, -7, -6, -5, -4, -3, -2, -1]);
+WITH [0, 1, 2, 3, 4, 5, 6, 7] AS reference_vec SELECT id, round(dotProductTransposed(vec, reference_vec, 8), 2) AS dist FROM qbit_i8 ORDER BY id;
+WITH [0, 1, 2, 3, 4, 5, 6, 7] AS reference_vec SELECT id, round(dotProductTransposed(vec, reference_vec, 4), 2) AS dist FROM qbit_i8 ORDER BY id;
+DROP TABLE qbit_i8;
+
 SELECT 'Check the scalarProductTransposed alias';
 SELECT round(scalarProductTransposed([1.0, 2.0, 3.0]::QBit(Float32, 3), [1, 1, 1]::Array(Float32), 32), 2);
 
@@ -43,3 +52,13 @@ SELECT
 FROM numbers(3);
 
 {% endfor -%}
+
+-- Large dimensions must not overflow the SimSIMD i8 int32 accumulator (we fall back to the Float64 scalar
+-- path). Worst case per element |(-128) * (-128)| = 16384; 16384 * 131072 = INT32_MAX + 1, so the i8 kernel
+-- would overflow. dot((-128)s, (-128)s) over 131072 elements = 16384 * 131072 = 2147483648.
+SELECT '========== large dimension (no int32 overflow) ==========';
+CREATE TABLE qbit_dot_i8 (vec QBit(Int8, 131072)) ENGINE = Memory;
+INSERT INTO qbit_dot_i8 SELECT CAST(arrayMap(x -> toInt8(-128), range(131072)) AS QBit(Int8, 131072));
+WITH arrayMap(x -> toInt8(-128), range(131072)) AS reference_vec
+SELECT round(dotProductTransposed(vec, reference_vec, 8), 3) AS dist FROM qbit_dot_i8;
+DROP TABLE qbit_dot_i8;

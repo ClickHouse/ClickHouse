@@ -2515,7 +2515,7 @@ SELECT dotProductTransposed(vec, array(1, 2), 16) FROM qbit;
 │                                        2 │
 └──────────────────────────────────────────┘
             )"}};
-    FunctionDocumentation::IntroducedIn introduced_in_dot_product_transposed = {26, 6};
+    FunctionDocumentation::IntroducedIn introduced_in_dot_product_transposed = {26, 7};
     FunctionDocumentation::Category category_dot_product_transposed = FunctionDocumentation::Category::Distance;
     FunctionDocumentation documentation_dot_product_transposed
         = {description_dot_product_transposed,
