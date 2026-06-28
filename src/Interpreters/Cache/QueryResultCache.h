@@ -12,6 +12,7 @@
 #include <Core/Types.h>
 #include <base/UUID.h>
 
+#include <functional>
 #include <optional>
 
 namespace DB
@@ -230,6 +231,12 @@ public:
     };
     void buffer(Chunk && chunk, ChunkType chunk_type);
 
+    /// Optional check evaluated at finalizeWrite() time (after the query pipeline has finished reading the
+    /// source tables). If it returns false, the entry is not stored. Used by
+    /// `query_cache_use_only_when_data_was_not_changed` to drop the entry if a referenced table changed
+    /// during execution, so the cached result always matches the data state encoded in its key.
+    void setConsistencyValidator(std::function<bool()> validator) { consistency_validator = std::move(validator); }
+
     void finalizeWrite();
 private:
     using Cache = QueryResultCache::Cache;
@@ -246,6 +253,7 @@ private:
     Cache::MappedPtr query_result TSA_GUARDED_BY(mutex) = std::make_shared<QueryResultCache::Entry>();
     std::atomic<bool> skip_insert = false;
     std::atomic<bool> was_finalized = false;
+    std::function<bool()> consistency_validator;
     LoggerPtr logger = getLogger("QueryResultCache");
 
     QueryResultCacheWriter(

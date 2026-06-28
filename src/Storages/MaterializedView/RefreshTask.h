@@ -341,6 +341,10 @@ private:
     /// nothing changed. nullopt if no refresh has rebuilt the view yet on this replica, or if the
     /// source tables cannot report their modification state.
     std::optional<UInt128> last_refresh_source_hash;
+    /// Bumped by alterRefreshParams. A refresh captures it at the start and, on completion, only stores
+    /// its source hash if the value is unchanged - otherwise an ALTER MODIFY REFRESH raced with the
+    /// in-flight refresh (which may have been built from the old query/flag) and the hash must stay cleared.
+    UInt64 refresh_params_version = 0;
 
     RefreshSet::Handle set_handle;
 

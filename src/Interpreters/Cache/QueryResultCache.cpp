@@ -248,17 +248,27 @@ std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, 
     if (finder_data.cannot_verify)
         return {};
 
-    const String & current_database = context->getCurrentDatabase();
-
     std::vector<UInt128> table_hashes;
-    for (auto table_id : finder_data.table_ids)
+    for (const auto & table_id : finder_data.table_ids)
     {
-        if (table_id.database_name.empty())
-            table_id.database_name = current_database;
+        /// Resolve through the context so that an unqualified name picks the same table the query will
+        /// actually read - in particular a temporary or external table that shadows a permanent one, not
+        /// just `current_database.<name>`.
+        StorageID resolved_id = StorageID::createEmpty();
+        try
+        {
+            resolved_id = context->resolveStorageID(table_id);
+        }
+        catch (...)
+        {
+            /// Ok to ignore: could not resolve a referenced table (e.g. a CTE), so we cannot verify
+            /// consistency and conservatively bail out.
+            return {};
+        }
 
-        auto storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
+        auto storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
         if (!storage)
-            return {}; /// Could not resolve a referenced table (e.g. a CTE) - cannot verify consistency.
+            return {};
 
         auto metadata = storage->getInMemoryMetadataPtr(context, false);
         auto snapshot = storage->getStorageSnapshotWithoutData(metadata, context);
@@ -266,11 +276,12 @@ std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, 
         if (!table_hash)
             return {}; /// A referenced table cannot tell whether it changed.
 
-        /// Fold the table identity into the hash so that two tables with identical contents do not
-        /// cancel out when combined.
+        /// Fold the resolved table identity (including the UUID, which distinguishes a temporary table or
+        /// a re-created table from a same-named permanent one) so that distinct tables do not cancel out.
         SipHash per_table;
-        per_table.update(table_id.database_name);
-        per_table.update(table_id.table_name);
+        per_table.update(resolved_id.database_name);
+        per_table.update(resolved_id.table_name);
+        per_table.update(resolved_id.uuid);
         per_table.update(*table_hash);
         table_hashes.push_back(per_table.get128());
     }
@@ -759,6 +770,15 @@ void QueryResultCacheWriter::finalizeWrite()
     std::lock_guard lock(mutex);
 
     /// Check some reasons why the entry must not be cached:
+
+    /// For `query_cache_use_only_when_data_was_not_changed`: now that the pipeline has finished reading the
+    /// source tables, verify they are still in the state encoded in the cache key. If a referenced table
+    /// changed during execution, the result does not match the key and must not be stored.
+    if (consistency_validator && !consistency_validator())
+    {
+        LOG_TRACE(logger, "Skipped insert because a referenced table changed during execution, query: {}", doubleQuoteString(key.query_string));
+        return;
+    }
 
     if (auto query_runtime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - query_start_time); query_runtime < min_query_runtime)
     {

@@ -2689,15 +2689,6 @@ void Planner::buildPlanForQueryNode()
     /// skip the context flag check in checkCanWriteQueryResultCache while still respecting safety checks.
     bool skip_context_check = should_cache && !can_use_query_result_cache;
 
-    /// Guard against a race between the read probe and execution (which snapshots the tables later):
-    /// recompute the referenced-tables hash and only store the entry if the tables are still unchanged.
-    if (should_cache && settings[Setting::query_cache_use_only_when_data_was_not_changed])
-    {
-        auto write_time_hash = computeQueryReferencedTablesModificationHash(ast, query_context);
-        if (!write_time_hash.has_value() || write_time_hash != referenced_tables_modification_hash)
-            should_cache = false;
-    }
-
     if (should_cache && checkCanWriteQueryResultCache(ast, query_context, skip_context_check))
     {
         auto created_at = std::chrono::system_clock::now();
@@ -2728,6 +2719,16 @@ void Planner::buildPlanForQueryNode()
                                 settings[Setting::max_block_size],
                                 settings[Setting::query_cache_max_size_in_bytes],
                                 settings[Setting::query_cache_max_entries]));
+
+            /// Drop the entry at finalization if a referenced table changed during execution (see the
+            /// executeQuery-level cache for details).
+            if (settings[Setting::query_cache_use_only_when_data_was_not_changed])
+                query_result_cache_writer->setConsistencyValidator(
+                    [ast, query_context, expected = referenced_tables_modification_hash]()
+                    {
+                        auto current = computeQueryReferencedTablesModificationHash(ast, query_context);
+                        return current.has_value() && current == expected;
+                    });
 
             auto stream_into_query_result_cache_step = std::make_unique<StreamInQueryResultCacheStep>(query_plan.getRootNode()->step->getOutputHeader(), query_result_cache_writer);
             query_plan.addStep(std::move(stream_into_query_result_cache_step));

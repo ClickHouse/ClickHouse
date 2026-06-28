@@ -404,6 +404,7 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
         /// params (including toggling IF CHANGED, or changing the query via separate ALTER) it may no longer
         /// correspond to the target's current contents, so forget it and let the next refresh recompute.
         last_refresh_source_hash.reset();
+        ++refresh_params_version;
         std::vector<StorageID> deps = parseRefreshDependencies(
             new_strategy, view ? view->getStorageID().database_name : String{});
 
@@ -968,6 +969,7 @@ void RefreshTask::executeRefresh()
     bool out_of_schedule = execution.out_of_schedule;
     bool if_changed = refresh_if_changed;
     std::optional<UInt128> previous_source_hash = last_refresh_source_hash;
+    UInt64 params_version_at_start = refresh_params_version;
 
     lock.unlock();
     bool unchanged = false;
@@ -1015,8 +1017,11 @@ void RefreshTask::executeRefresh()
             znode.last_success_end_time += std::chrono::nanoseconds(1);
         znode.last_success_dependencies = std::move(execution.dependencies);
 
-        /// Remember the source state this refresh was built from, for the next IF CHANGED check.
-        last_refresh_source_hash = source_hash;
+        /// Remember the source state this refresh was built from, for the next IF CHANGED check - but only
+        /// if no ALTER MODIFY REFRESH raced with this refresh. If the params changed while we were running,
+        /// this target may have been built from the old query/flag, so leave the hash cleared by the ALTER.
+        if (refresh_params_version == params_version_at_start)
+            last_refresh_source_hash = source_hash;
     }
     execution.znode = znode;
 
