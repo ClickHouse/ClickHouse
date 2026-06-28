@@ -66,6 +66,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -115,6 +116,23 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
         if (const auto * select = child->as<ASTSelectQuery>(); select && hasJoin(*select))
             return true;
     }
+    return false;
+}
+
+bool hasLimitShuffle(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+
+    if (const auto * select = ast->as<ASTSelectQuery>(); select && select->limit_shuffle)
+        return true;
+
+    for (const auto & child : ast->children)
+    {
+        if (hasLimitShuffle(child))
+            return true;
+    }
+
     return false;
 }
 
@@ -346,6 +364,9 @@ void StorageView::readImpl(
     }
     else
     {
+        if (hasLimitShuffle(current_inner_query))
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for LIMIT SHUFFLE in stored view queries requires the query analyzer");
+
         auto view_context = getViewContext(context, storage_snapshot, this);
         InterpreterSelectWithUnionQuery interpreter(current_inner_query, view_context, options, column_names);
         interpreter.addStorageLimits(*query_info.storage_limits);
@@ -439,6 +460,9 @@ void StorageView::replaceQueryParametersIfParameterizedView(ASTPtr & outer_query
 
 void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name, bool parameterized_view)
 {
+    if (hasLimitShuffle(view_query))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for LIMIT SHUFFLE in stored view queries requires the query analyzer");
+
     ASTTableExpression * table_expression = getFirstTableExpression(outer_query);
 
     if (!table_expression->database_and_table_name)

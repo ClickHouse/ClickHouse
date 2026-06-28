@@ -50,7 +50,30 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
+}
+
+namespace
+{
+
+bool hasLimitShuffle(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+
+    if (const auto * select = ast->as<ASTSelectQuery>(); select && select->limit_shuffle)
+        return true;
+
+    for (const auto & child : ast->children)
+    {
+        if (hasLimitShuffle(child))
+            return true;
+    }
+
+    return false;
+}
+
 }
 
 InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
@@ -63,6 +86,9 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     const ASTPtr & query_ptr_, ContextMutablePtr context_, const SelectQueryOptions & options_, const Names & required_result_column_names)
     : IInterpreterUnionOrSelectQuery(query_ptr_, context_, options_)
 {
+    if (hasLimitShuffle(query_ptr))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for LIMIT SHUFFLE requires the query analyzer. Set `enable_analyzer = 1`");
+
     ASTSelectWithUnionQuery * ast = query_ptr->as<ASTSelectWithUnionQuery>();
     bool require_full_header = ast->hasNonDefaultUnionMode();
 

@@ -63,10 +63,33 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
 {
+    bool hasLimitShuffle(const ASTPtr & ast)
+    {
+        if (!ast)
+            return false;
+
+        if (const auto * select = ast->as<ASTSelectQuery>(); select && select->limit_shuffle)
+            return true;
+
+        for (const auto & child : ast->children)
+        {
+            if (hasLimitShuffle(child))
+                return true;
+        }
+
+        return false;
+    }
+
+    void checkLimitShuffleWithAnalyzer(const ASTExplainQuery & explain, const ContextPtr & context)
+    {
+        if (!context->getSettingsRef()[Setting::allow_experimental_analyzer] && hasLimitShuffle(explain.getExplainedQuery()))
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for LIMIT SHUFFLE requires the query analyzer");
+    }
     /// Walk the AST and expand parameterized view "table function" calls into their inlined,
     /// parameter-substituted subqueries, so `EXPLAIN SYNTAX` shows the resolved query.
     ///
@@ -634,6 +657,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     explain_query_context->setSetting("use_query_condition_cache", false);
     InterpreterSetQuery::applySettingsFromQuery(query, explain_query_context);
     query_context = std::move(explain_query_context);
+
+    if (ast.getKind() != ASTExplainQuery::ParsedAST)
+        checkLimitShuffleWithAnalyzer(ast, query_context);
 
     switch (ast.getKind())
     {
