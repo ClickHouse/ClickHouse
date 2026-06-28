@@ -141,6 +141,8 @@ void BufferedShardingTransform::generateOutputChunks()
 
     const size_t num_rows = columns.front()->size();
 
+    const auto & chunk_infos = pending_input_chunk.getChunkInfos();
+
     /// Fast path: when every row goes to the same output, forward the whole chunk without the
     /// O(rows * columns) split that would otherwise copy every (possibly large) aggregate-state
     /// column. This is the common case for the residue divert — the hot set is empty, or a chunk
@@ -153,7 +155,11 @@ void BufferedShardingTransform::generateOutputChunks()
             auto output_it = outputs.begin();
             std::advance(output_it, only_output);
             if (!output_it->isFinished())
-                output_queues[only_output].push_back(Chunk(std::move(columns), num_rows));
+            {
+                Chunk chunk(std::move(columns), num_rows);
+                chunk.setChunkInfos(chunk_infos.clone());
+                output_queues[only_output].push_back(std::move(chunk));
+            }
             return;
         }
     }
@@ -180,7 +186,9 @@ void BufferedShardingTransform::generateOutputChunks()
         if (out_rows == 0)
             continue;
 
-        output_queues[out].push_back(Chunk(std::move(output_columns[out]), out_rows));
+        Chunk chunk(std::move(output_columns[out]), out_rows);
+        chunk.setChunkInfos(chunk_infos.clone());
+        output_queues[out].push_back(std::move(chunk));
     }
 }
 
