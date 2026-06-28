@@ -82,6 +82,9 @@ public:
                                     /// Depends on max_replica_delay_for_distributed_queries setting
         UInt32 delay = 0; /// Helps choosing the "least stale" option when all replicas are stale.
         bool is_readonly = false;   /// Table is in read-only mode, INSERT can ignore such replicas.
+        bool table_is_missing = false; /// The connection was established, but the requested table is absent on the peer.
+                                       /// Distinguishes a missing table from a connection failure when the shard ends up
+                                       /// with no usable connections, which `skip_unavailable_shards_mode` needs to honor.
     };
 
     struct PoolState;

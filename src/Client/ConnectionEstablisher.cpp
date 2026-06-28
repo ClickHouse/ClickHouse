@@ -81,6 +81,10 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
             LOG_WARNING(LogToStr(fail_message, log), "There is no table {}.{} on server: {}",
                         backQuote(table_to_check->database), backQuote(table_to_check->table), result.entry->getDescription());
             ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
+            /// The replica is left unusable so failover prefers a replica that does have the table.
+            /// Record the reason so that, when the whole shard ends up with no usable connections,
+            /// `skip_unavailable_shards_mode` can tell a missing table apart from a connection failure.
+            result.table_is_missing = true;
             return;
         }
 

@@ -8,6 +8,7 @@
 #include <Common/Fiber.h>
 #include <Client/ConnectionEstablisher.h>
 #include <Client/ConnectionPoolWithFailover.h>
+#include <Core/SettingsEnums.h>
 #include <unordered_map>
 #include <memory>
 
@@ -163,6 +164,11 @@ private:
 
     const size_t max_parallel_replicas = 1;
     const bool skip_unavailable_shards = false;
+    /// Controls which exceptions are silently skipped when `skip_unavailable_shards` is enabled.
+    SkipUnavailableShardsMode skip_unavailable_shards_mode = SkipUnavailableShardsMode::UNAVAILABLE_OR_TABLE_MISSING;
+    /// Set when at least one replica was reachable but did not have the requested table. Lets the
+    /// `unavailable` mode fail on a missing table instead of silently skipping the shard.
+    bool table_is_missing = false;
 };
 
 }
