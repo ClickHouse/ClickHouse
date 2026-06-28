@@ -1929,7 +1929,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     return std::make_shared<MergeTreeIndexText>(std::move(metadata_snapshot), index, index_params, std::move(tokenizer), std::move(posting_list_codec));
 }
 
-void textIndexValidator(const IndexDescription & index, bool /*attach*/, const MergeTreeSettings & settings)
+void textIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings)
 {
     auto options = convertArgumentsToOptionsMap(index.arguments);
 
@@ -1990,7 +1990,10 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     /// For very strict validation of the expression we fully parse it here.
     /// However it will be parsed again for index construction, generally immediately after this call.
     /// This is a bit redundant but that doesn't impact performance anyhow because the expression is intended to be simple enough.
-    MergeTreeIndexTextPreprocessor preprocessor(preprocessor_ast, index);
+    MergeTreeIndexTextPreprocessor preprocessor(
+        preprocessor_ast,
+        index,
+        attach ? FixedStringPreprocessorValidation::Warn : FixedStringPreprocessorValidation::Reject);
 }
 
 }
