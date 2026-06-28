@@ -164,6 +164,12 @@ static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & dat
 /// rewrite the whole part in that case (the resulting part gets a `columns_substreams.txt`, so later
 /// mutations can take the partial path again). The file is also discarded when found corrupted, which
 /// lands here too.
+///
+/// The guard is `hasDynamicStructure`, not the broader `hasDynamicSubcolumns`: only a data-dependent
+/// dynamic structure (`Dynamic`, `JSON`) makes state-less enumeration incomplete. A plain `Map` (and a
+/// plain `Variant`) reports `hasDynamicSubcolumns` too, but its serialization enumerates all physical
+/// streams without a column/state, so forcing a full rewrite for it would be needless (it would turn a
+/// cheap single-column mutation of an old part into a rewrite of all the `Map` data).
 static bool hasDynamicColumnsWithoutRecordedSubstreams(const MergeTreeData::DataPartPtr & data_part)
 {
     if (!isWidePart(data_part))
@@ -172,7 +178,7 @@ static bool hasDynamicColumnsWithoutRecordedSubstreams(const MergeTreeData::Data
     const auto & columns_substreams = data_part->getColumnsSubstreams();
     for (const auto & column : data_part->getColumns())
     {
-        if (column.type->hasDynamicSubcolumns() && !columns_substreams.tryGetColumnSubstreams(column.name))
+        if (column.type->hasDynamicStructure() && !columns_substreams.tryGetColumnSubstreams(column.name))
             return true;
     }
 
@@ -1027,9 +1033,12 @@ static std::unordered_map<String, size_t> getStreamCounts(
         /// mishandled during mutation (e.g. a `variant_discr` stream that is neither rewritten nor
         /// hardlinked into the new part, leaving it broken). Use the substreams recorded in
         /// columns_substreams.txt, which are the ground truth of what exists in the part, for such columns.
+        /// The check is `hasDynamicStructure` (only `Dynamic`/`JSON` make state-less enumeration
+        /// incomplete), not the broader `hasDynamicSubcolumns` which also matches a plain `Map`/`Variant`
+        /// whose streams are fully enumerable without a state.
         auto column = data_part->tryGetColumn(column_name);
         const std::vector<String> * recorded_substreams = nullptr;
-        if (column && column->type->hasDynamicSubcolumns())
+        if (column && column->type->hasDynamicStructure())
             recorded_substreams = columns_substreams.tryGetColumnSubstreams(column_name);
 
         if (recorded_substreams)
