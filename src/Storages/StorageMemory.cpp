@@ -126,7 +126,7 @@ public:
 
         std::lock_guard lock(storage.mutex);
 
-        auto new_data = std::make_unique<Blocks>(*(storage.data.get()));
+        auto new_data = std::make_unique<Blocks>(storage.data.get()->blocks);
         UInt64 new_total_rows = storage.total_size_rows.load(std::memory_order_relaxed) + inserted_rows;
         UInt64 new_total_bytes = storage.total_size_bytes.load(std::memory_order_relaxed) + inserted_bytes;
         const auto & memory_settings = storage.getMemorySettingsRef();
@@ -152,8 +152,7 @@ public:
         // append new data to modified storage table and commit
         new_data->insert(new_data->end(), new_blocks.begin(), new_blocks.end());
 
-        storage.data.set(std::move(new_data));
-        ++storage.data_version;
+        storage.setDataBlocks(std::move(*new_data));
         storage.total_size_rows.store(new_total_rows, std::memory_order_relaxed);
         storage.total_size_bytes.store(new_total_bytes, std::memory_order_relaxed);
     }
@@ -172,7 +171,7 @@ StorageMemory::StorageMemory(
     const String & comment,
     const MemorySettings & memory_settings_)
     : StorageWithCommonVirtualColumns(table_id_)
-    , data(std::make_unique<const Blocks>())
+    , data(std::make_unique<const VersionedBlocks>())
     , memory_settings(std::make_unique<MemorySettings>(memory_settings_))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -194,17 +193,27 @@ VirtualColumnsDescription StorageMemory::createVirtuals()
 
 StorageMemory::~StorageMemory() = default;
 
+void StorageMemory::setDataBlocks(Blocks new_blocks)
+{
+    auto new_data = std::make_unique<VersionedBlocks>();
+    /// The new version is one above whatever is currently published. Writers are serialized (see the
+    /// declaration), so reading the current version here and publishing version+1 is race-free.
+    new_data->version = data.get()->version + 1;
+    new_data->blocks = std::move(new_blocks);
+    data.set(std::move(new_data));
+}
+
 StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
 {
     auto snapshot_data = std::make_unique<SnapshotData>();
-    snapshot_data->blocks = data.get();
+    /// Read the blocks and their version together from a single atomic `data.get()`, so the pair is always
+    /// consistent. We deliberately do NOT lock `mutex` here: the Memory mutation read path calls
+    /// getStorageSnapshot while holding it, so locking would deadlock (see PR history). The aliasing
+    /// shared_ptr keeps the versioned payload alive while exposing just its `blocks` to readers.
+    auto versioned = data.get();
+    snapshot_data->blocks = std::shared_ptr<const Blocks>(versioned, &versioned->blocks);
     snapshot_data->rows_approx = total_size_rows.load(std::memory_order_relaxed);
-    /// `data_version` is sampled separately from `data` (we cannot hold `mutex` here: it would deadlock
-    /// with the mutation read path, which calls getStorageSnapshot). A concurrent insert can briefly leave
-    /// the pair skewed, but that only ever produces a conservative cache miss, never a stale result: the
-    /// write-finalization recheck and the read-time recheck both recompute the hash and bail out on any
-    /// mismatch.
-    snapshot_data->data_version = data_version.load(std::memory_order_relaxed);
+    snapshot_data->data_version = versioned->version;
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
 }
 
@@ -216,10 +225,11 @@ std::optional<UInt128> StorageMemory::getModificationHash(const StorageSnapshotP
     hash.update(getStorageID().uuid);
     hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
 
-    /// Every modification (insert, mutation, truncate) bumps `data_version`, which is captured by the
-    /// snapshot. This is a true monotonic version, so different data always produces a different hash
-    /// (unlike the row count or the address of the `Blocks` vector, which can repeat after TRUNCATE or
-    /// allocator reuse). The version resets to 0 on restart, which only causes a harmless cache miss.
+    /// Every modification (insert, mutation, truncate, drop, restore) publishes a new `data` version,
+    /// captured atomically together with the blocks by the snapshot (see getStorageSnapshot). This is a
+    /// true monotonic version, so different data always produces a different hash (unlike the row count or
+    /// the address of the `Blocks` vector, which can repeat after TRUNCATE or allocator reuse). The version
+    /// resets to 0 on restart, which only causes a harmless cache miss.
     if (const auto * snapshot_data = dynamic_cast<const SnapshotData *>(storage_snapshot->data.get()))
         hash.update(snapshot_data->data_version);
 
@@ -249,8 +259,7 @@ SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMet
 
 void StorageMemory::drop()
 {
-    data.set(std::make_unique<Blocks>());
-    ++data_version;
+    setDataBlocks({});
     total_size_bytes.store(0, std::memory_order_relaxed);
     total_size_rows.store(0, std::memory_order_relaxed);
 }
@@ -367,7 +376,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     else
     {
         /// just some of the column affected, we need update it with new column
-        const auto & old_data = *(data.get());
+        const auto & old_data = data.get()->blocks;
         /// Partial-column mutations preserve the input block count *and* per-block row counts.
         /// Both shape checks are required before suppressing a late cancellation flag, because
         /// `PullingPipelineExecutor::pull(Block)` can return `true` with an empty block on
@@ -421,16 +430,14 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     }
     total_size_bytes.store(bytes, std::memory_order_relaxed);
     total_size_rows.store(rows, std::memory_order_relaxed);
-    data.set(std::move(new_data));
-    ++data_version;
+    setDataBlocks(std::move(*new_data));
 }
 
 
 void StorageMemory::truncate(
     const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
-    data.set(std::make_unique<Blocks>());
-    ++data_version;
+    setDataBlocks({});
     total_size_bytes.store(0, std::memory_order_relaxed);
     total_size_rows.store(0, std::memory_order_relaxed);
 }
@@ -456,7 +463,7 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
         {
             std::lock_guard lock(mutex);
 
-            auto new_data = std::make_unique<Blocks>(*(data.get()));
+            auto new_data = std::make_unique<Blocks>(data.get()->blocks);
             UInt64 new_total_rows = total_size_rows.load(std::memory_order_relaxed);
             UInt64 new_total_bytes = total_size_bytes.load(std::memory_order_relaxed);
             while (!new_data->empty()
@@ -478,8 +485,7 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
                 new_data->erase(new_data->begin());
             }
 
-            data.set(std::move(new_data));
-            ++data_version;
+            setDataBlocks(std::move(*new_data));
             total_size_rows.store(new_total_rows, std::memory_order_relaxed);
             total_size_bytes.store(new_total_bytes, std::memory_order_relaxed);
         }
@@ -622,10 +628,14 @@ void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector
     const auto & read_settings = backup_entries_collector.getReadSettings();
 
     const auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    /// Expose just the blocks of the current versioned payload, keeping the payload alive via the
+    /// aliasing shared_ptr so the backup reads a consistent snapshot.
+    auto versioned = data.get();
+    auto blocks_for_backup = std::shared_ptr<const Blocks>(versioned, &versioned->blocks);
     backup_entries_collector.addBackupEntries(std::make_shared<MemoryBackup>(
         backup_entries_collector.getContext(),
         metadata_snapshot,
-        data.get(),
+        blocks_for_backup,
         data_path_in_backup,
         tmp_data,
         read_settings)->getBackupEntries());
@@ -716,13 +726,11 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
     }
 
     /// Append old blocks with the new ones.
-    auto old_blocks = data.get();
-    Blocks old_and_new_blocks = *old_blocks;
+    Blocks old_and_new_blocks = data.get()->blocks;
     old_and_new_blocks.insert(old_and_new_blocks.end(), std::make_move_iterator(new_blocks.begin()), std::make_move_iterator(new_blocks.end()));
 
     /// Finish restoring.
-    data.set(std::make_unique<Blocks>(std::move(old_and_new_blocks)));
-    ++data_version;
+    setDataBlocks(std::move(old_and_new_blocks));
     total_size_bytes += new_bytes;
     total_size_rows += new_rows;
 }

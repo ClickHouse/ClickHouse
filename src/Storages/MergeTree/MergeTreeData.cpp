@@ -11063,13 +11063,23 @@ std::optional<UInt128> MergeTreeData::getModificationHash(const StorageSnapshotP
     /// incarnation by its (partition_id, min_block, max_block, level, mutation), which changes on every
     /// insert, merge (level/blocks change) and mutation (mutation version changes). For engines that
     /// rewrite data on merges (Replacing, Collapsing, ...) this is exactly the "block ranges of data parts".
-    auto add_part_info = [&](const MergeTreePartInfo & info)
+    auto add_part = [&](const IMergeTreeDataPart & part)
     {
+        const auto & info = part.info;
         hash.update(info.getPartitionId());
         hash.update(info.min_block);
         hash.update(info.max_block);
         hash.update(info.level);
         hash.update(info.mutation);
+
+        /// Fold the part's content checksum. The part-info tuple alone can repeat for different contents
+        /// within a single table incarnation: e.g. `DETACH PART '201901_2_2_0'` then `ATTACH PART
+        /// '201901_2_2_0' FROM '<dir>'` (or `FETCH PART`) brings back the same (partition_id, min_block,
+        /// max_block, level, mutation) with different data. The total checksum is computed in memory from
+        /// the part's file checksums (no I/O), so different contents yield a different hash.
+        const auto checksum = part.checksums.getTotalChecksumUInt128();
+        hash.update(checksum.low64);
+        hash.update(checksum.high64);
     };
 
     const auto * snapshot_data = dynamic_cast<const SnapshotData *>(storage_snapshot->data.get());
@@ -11097,12 +11107,12 @@ std::optional<UInt128> MergeTreeData::getModificationHash(const StorageSnapshotP
     if (snapshot_data && snapshot_data->parts)
     {
         for (const auto & part : *snapshot_data->parts)
-            add_part_info(part.data_part->info);
+            add_part(*part.data_part);
     }
     else
     {
         for (const auto & part : getDataPartsVectorForInternalUsage())
-            add_part_info(part->info);
+            add_part(*part);
     }
 
     /// Active patch parts (created by lightweight updates/deletes) are applied during reads when
@@ -11110,7 +11120,7 @@ std::optional<UInt128> MergeTreeData::getModificationHash(const StorageSnapshotP
     /// They live in a separate part kind, so the regular-parts query above does not see them.
     hash.update("patch");
     for (const auto & part : getPatchPartsVectorForInternalUsage())
-        add_part_info(part->info);
+        add_part(*part);
 
     return hash.get128();
 }

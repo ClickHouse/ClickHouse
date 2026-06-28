@@ -1159,14 +1159,28 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                 /// `executor` must be destroyed before `pipeline`!
             }
 
-            /// Recompute the source hash now that the refresh query has finished reading the source, so the
-            /// value we remember for the next IF CHANGED comparison matches the data the new table was
-            /// actually built from (not the state sampled before the read started).
+            /// Recompute the source hash now that the refresh query has finished reading the source, and only
+            /// remember it for the next IF CHANGED comparison if it is unchanged across the whole read.
+            ///
+            /// `out_source_hash` currently holds the pre-read value (sampled above, before the INSERT SELECT).
+            /// If a source insert commits after the read finished but before this recompute, the new table was
+            /// built from the old source state while the hash would already reflect the new one; storing that
+            /// would make the next scheduled IF CHANGED refresh wrongly skip, leaving the view stale. So we
+            /// keep the hash only when the pre-read and post-read values are both present and equal (the source
+            /// was stable across the read); otherwise we clear it, forcing the next refresh to run.
             if (if_changed)
             {
+                const std::optional<UInt128> pre_read_source_hash = out_source_hash;
+                std::optional<UInt128> post_read_source_hash;
                 auto view_metadata = view->getInMemoryMetadataPtr(refresh_context, false);
                 if (auto select_ast = view_metadata->select.select_query)
-                    out_source_hash = computeQueryReferencedTablesModificationHash(select_ast, refresh_context);
+                    post_read_source_hash = computeQueryReferencedTablesModificationHash(select_ast, refresh_context);
+
+                if (pre_read_source_hash.has_value() && post_read_source_hash.has_value()
+                    && *pre_read_source_hash == *post_read_source_hash)
+                    out_source_hash = post_read_source_hash;
+                else
+                    out_source_hash = std::nullopt;
             }
 
             logQueryFinish(*query_log_elem, refresh_context, refresh_query, std::move(pipeline), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, /*internal=*/internal);
