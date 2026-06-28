@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemQuotasUsage.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemQuotaUsage.h>
 #include <Interpreters/Context.h>
 #include <Access/AccessControl.h>
@@ -25,6 +24,3 @@ void StorageSystemQuotasUsage::fillData(MutableColumns & res_columns, ContextPtr
     StorageSystemQuotaUsage::fillDataImpl(res_columns, context, /* add_column_is_current = */ true, all_quotas_usage);
 }
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemQuotasUsage) }

@@ -391,20 +391,20 @@ def test_concurrent_queries(started_cluster):
     )
 
     def node_select(_):
-        for i in range(5):
+        for i in range(20):
             node1.query("SELECT * FROM test.test_table", user="default")
 
     def node_insert(_):
-        for i in range(5):
+        for i in range(20):
             node1.query(
-                "INSERT INTO test.test_table SELECT number, number FROM numbers(100)",
+                "INSERT INTO test.test_table SELECT number, number FROM numbers(1000)",
                 user="default",
             )
 
     def node_insert_select(_):
-        for i in range(5):
+        for i in range(20):
             node1.query(
-                "INSERT INTO test.test_table SELECT number, number FROM numbers(100)",
+                "INSERT INTO test.test_table SELECT number, number FROM numbers(1000)",
                 user="default",
             )
             node1.query(

@@ -1077,8 +1077,6 @@ FunctionCast::WrapperType FunctionCast::createQBitWrapper(const DataTypePtr & fr
     {
         switch (to_type.getElementSize())
         {
-            case 8:
-                return createArrayToQBitWrapper<Int8>(*from_array_type, to_type);
             case 16:
                 return createArrayToQBitWrapper<BFloat16>(*from_array_type, to_type);
             case 32:
@@ -1104,11 +1102,7 @@ template <typename FloatType>
 ColumnPtr FunctionCast::convertArrayToQBit(
     ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t n, size_t size)
 {
-    /// Note: the 8-bit word is `uint8_t` (not ClickHouse's `UInt8`, which is `char8_t` and does not satisfy `std::countr_zero`).
-    using Word = std::conditional_t<
-        sizeof(FloatType) == 1,
-        uint8_t,
-        std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>>;
+    using Word = std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>;
 
     ColumnPtr src_col = arguments.front().column;
     const auto * col_array = checkAndGetColumn<ColumnArray>(src_col.get());
@@ -1208,17 +1202,8 @@ FunctionCast::WrapperType FunctionCast::createArrayToQBitWrapper(const DataTypeA
     const size_t dimension = to_qbit_type.getDimension();
     const size_t element_size = to_qbit_type.getElementSize();
 
-    /// accurateOrNull conversions from a Dynamic/Variant nested source always return a Nullable
-    /// column (per-variant overflow-as-NULL), while QBit elements are non-nullable. Use a Nullable
-    /// nested target so the conversion assembles a consistent column; removeNullable() below strips it.
-    const DataTypePtr nested_target_type
-        = (cast_type == CastType::accurateOrNull && (isDynamic(from_nested_type) || isVariant(from_nested_type)))
-        ? makeNullable(to_nested_type)
-        : to_nested_type;
-
-    return [nested_function = prepareUnpackDictionaries(from_nested_type, nested_target_type),
+    return [nested_function = prepareUnpackDictionaries(from_nested_type, to_nested_type),
             from_nested_type,
-            nested_target_type,
             to_nested_type,
             to_array_type = std::make_shared<DataTypeArray>(to_nested_type),
             dimension,
@@ -1234,46 +1219,16 @@ FunctionCast::WrapperType FunctionCast::createArrayToQBitWrapper(const DataTypeA
         /// has a different size (total elements vs. number of rows), and the original
         /// nullable_source column may have a different type than the converted column.
         ColumnsWithTypeAndName nested_columns{{col_array.getDataPtr(), from_nested_type, ""}};
-        auto converted_nested = nested_function(nested_columns, nested_target_type, nullptr, nested_columns.front().column->size());
-
-        /// QBit elements are non-nullable, so a NULL element (a per-element accurateOrNull conversion
-        /// failure or a source NULL) cannot be represented and must make the whole QBit row NULL,
-        /// mirroring createTupleWrapper's non-Nullable-target branch. Aggregate the inner element null
-        /// map to a per-row null map before stripping it; wrapInNullable in prepareRemoveNullable then
-        /// merges this with the source null map.
-        ColumnPtr row_null_map_column;
-        if (const auto * nullable_nested = checkAndGetColumn<ColumnNullable>(converted_nested.get()))
-        {
-            const auto & element_null_map = nullable_nested->getNullMapData();
-            const auto & offsets = col_array.getOffsets();
-            const size_t rows = offsets.size();
-            auto row_null_map = ColumnUInt8::create(rows, UInt8(0));
-            auto & row_null_map_data = row_null_map->getData();
-            size_t prev_offset = 0;
-            for (size_t row = 0; row < rows; ++row)
-            {
-                const size_t off = offsets[row];
-                UInt8 any_null = 0;
-                for (size_t i = prev_offset; i < off; ++i)
-                    any_null |= element_null_map[i];
-                row_null_map_data[row] = any_null;
-                prev_offset = off;
-            }
-            row_null_map_column = std::move(row_null_map);
-        }
-
-        /// We need raw ColumnVector data for bit transposition; strip the inner nullable.
+        auto converted_nested = nested_function(nested_columns, to_nested_type, nullptr, nested_columns.front().column->size());
+        /// When cast_type is accurateOrNull, the inner element conversion may wrap the result in ColumnNullable. Strip it because
+        /// we need raw ColumnVector data for bit transposition. The outer-level nullable semantics are handled by prepareRemoveNullable.
         converted_nested = removeNullable(converted_nested);
         auto converted_array = ColumnArray::create(converted_nested, col_array.getOffsetsPtr());
         ColumnsWithTypeAndName converted_arguments{{std::move(converted_array), std::make_shared<DataTypeArray>(to_nested_type), ""}};
 
         /// Pass nullable_source so that convertArrayToQBit can use the null map
         /// to skip NULL rows (whose nested arrays may have default/empty values).
-        auto qbit_column = convertArrayToQBit<T>(converted_arguments, result_type, nullable_source, dimension, element_size);
-
-        if (row_null_map_column)
-            return ColumnNullable::create(qbit_column, row_null_map_column);
-        return qbit_column;
+        return convertArrayToQBit<T>(converted_arguments, result_type, nullable_source, dimension, element_size);
     };
 }
 
