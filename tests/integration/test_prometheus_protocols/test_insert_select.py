@@ -194,9 +194,169 @@ def test_select_full_time_series_array():
     ])
 
 
-def test_select_metric_family_still_not_implemented():
-    """The metrics-side branches haven't been wired up yet; this should error clearly."""
-    insert_three_series()
+def insert_two_metric_families():
+    """Helper for the metrics tests: two series in two metric families, each carrying metadata."""
+    node.query(
+        "INSERT INTO prometheus (metric_name, tags, time_series, metric_family, type, unit, help) VALUES"
+        " ('http_requests_total', {'job': 'api'},  [(toDateTime64(1000, 3), 1.0)], 'http_requests', 'counter', 'requests', 'Total HTTP requests'),"
+        " ('memory_bytes',         {'host': 'h1'}, [(toDateTime64(2000, 3), 5.0)], 'memory_bytes',  'gauge',   'bytes',    'Memory usage')"
+    )
 
-    with pytest.raises(Exception, match="metric_family"):
-        node.query("SELECT metric_family FROM prometheus")
+
+def test_select_only_metrics_metadata():
+    """metrics-only branch: reads the metrics table, exposing inner `metric_family_name` as `metric_family`.
+    One row per metric family, independent of how many time series belong to it."""
+    insert_two_metric_families()
+
+    assert node.query(
+        "SELECT metric_family, type, unit, help FROM prometheus ORDER BY metric_family"
+    ) == TSV([
+        ["http_requests", "counter", "requests", "Total HTTP requests"],
+        ["memory_bytes",  "gauge",   "bytes",    "Memory usage"],
+    ])
+
+    # A single metrics column also works.
+    assert node.query(
+        "SELECT type FROM prometheus ORDER BY type"
+    ) == TSV([["counter"], ["gauge"]])
+
+
+def test_select_tags_and_metrics_metadata():
+    """tags + metrics branch: each time series is joined to its metric family's metadata via the
+    family computed from its metric name. Several series in one family share the same metadata row."""
+    node.query(
+        "INSERT INTO prometheus (metric_name, tags, time_series, metric_family, type, unit, help) VALUES"
+        " ('http_requests_total', {'job': 'api'}, [(toDateTime64(1000, 3), 1.0)], 'http_requests', 'counter', 'requests', 'Total HTTP requests')"
+    )
+    # A second series in the same family ('_total' stripped to 'http_requests'), inserted without metadata.
+    node.query(
+        "INSERT INTO prometheus (metric_name, tags, time_series) VALUES"
+        " ('http_requests_total', {'job': 'web'}, [(toDateTime64(2000, 3), 2.0)])"
+    )
+
+    assert node.query(
+        "SELECT metric_name, tags, metric_family, type, unit, help FROM prometheus ORDER BY tags"
+    ) == TSV([
+        ["http_requests_total", "{'job':'api'}", "http_requests", "counter", "requests", "Total HTTP requests"],
+        ["http_requests_total", "{'job':'web'}", "http_requests", "counter", "requests", "Total HTTP requests"],
+    ])
+
+
+def test_select_tags_and_metrics_missing_metadata():
+    """The FULL join keeps time series whose metric family has no metadata row; their metadata
+    columns come back empty (the row is not dropped)."""
+    node.query(
+        "INSERT INTO prometheus (metric_name, tags, time_series) VALUES"
+        " ('cpu_usage', {'host': 'h1'}, [(toDateTime64(1000, 3), 0.5)])"
+    )
+
+    assert node.query(
+        "SELECT metric_name, type, unit, help FROM prometheus"
+    ) == TSV([["cpu_usage", "", "", ""]])
+
+
+def test_select_tags_and_metrics_family_without_series():
+    """The FULL join also keeps metric families that have metadata but no stored time series; their
+    metric_name and tags come back empty."""
+    # A normal series together with its family's metadata.
+    node.query(
+        "INSERT INTO prometheus (metric_name, tags, time_series, metric_family, type, unit, help) VALUES"
+        " ('http_requests_total', {'job': 'api'}, [(toDateTime64(1000, 3), 1.0)], 'http_requests', 'counter', 'requests', 'Total HTTP requests')"
+    )
+    # Metadata for a family with no time series at all: only metrics columns are inserted, so nothing
+    # is written to the tags table.
+    node.query(
+        "INSERT INTO prometheus (metric_family, type, unit, help) VALUES"
+        " ('memory_bytes', 'gauge', 'bytes', 'Memory usage')"
+    )
+
+    assert node.query(
+        "SELECT metric_name, tags, metric_family, type, unit, help FROM prometheus ORDER BY metric_family"
+    ) == TSV([
+        ["http_requests_total", "{'job':'api'}", "http_requests", "counter", "requests", "Total HTTP requests"],
+        ["",                    "{}",            "memory_bytes",  "gauge",   "bytes",    "Memory usage"],
+    ])
+
+
+def test_select_metrics_metadata_deduplicated():
+    """The metrics metadata is deduplicated per family: the metrics table may hold several not-yet-merged
+    rows for one family (its engine isn't guaranteed to deduplicate on read), so each family appears once."""
+    # Two metadata rows for the same family (only `help` differs).
+    node.query(
+        "INSERT INTO prometheus (metric_family, type, unit, help) VALUES"
+        " ('http_requests', 'counter', 'requests', 'First help')"
+    )
+    node.query(
+        "INSERT INTO prometheus (metric_family, type, unit, help) VALUES"
+        " ('http_requests', 'counter', 'requests', 'Second help')"
+    )
+
+    # One row, not two (the family is collapsed by aggregation).
+    assert node.query(
+        "SELECT metric_family, type, unit FROM prometheus"
+    ) == TSV([["http_requests", "counter", "requests"]])
+
+
+def test_select_tags_and_metrics_deduplicated():
+    """A metric family duplicated in the metrics table must not multiply its matching time series:
+    the metadata is deduplicated before the FULL JOIN."""
+    node.query(
+        "INSERT INTO prometheus (metric_family, type, unit, help) VALUES"
+        " ('http_requests', 'counter', 'requests', 'First help')"
+    )
+    node.query(
+        "INSERT INTO prometheus (metric_family, type, unit, help) VALUES"
+        " ('http_requests', 'counter', 'requests', 'Second help')"
+    )
+    node.query(
+        "INSERT INTO prometheus (metric_name, tags, time_series) VALUES"
+        " ('http_requests_total', {'job': 'api'}, [(toDateTime64(1000, 3), 1.0)])"
+    )
+
+    # One row for the single series, not two.
+    assert node.query(
+        "SELECT metric_name, tags, metric_family, type, unit FROM prometheus"
+    ) == TSV([["http_requests_total", "{'job':'api'}", "http_requests", "counter", "requests"]])
+
+
+def test_select_time_series_and_metrics():
+    """`time_series` together with metrics metadata, without selecting any tags column: the "tags" table
+    is still read internally to bridge samples (by id) and metrics (by metric family)."""
+    node.query(
+        "INSERT INTO prometheus (metric_name, tags, time_series, metric_family, type, unit, help) VALUES"
+        " ('http_requests_total', {'job': 'api'}, [(toDateTime64(1000, 3), 1.0), (toDateTime64(2000, 3), 2.0)], 'http_requests', 'counter', 'requests', 'Total HTTP requests')"
+    )
+
+    assert node.query(
+        "SELECT length(time_series) AS n, type, unit FROM prometheus"
+    ) == TSV([["2", "counter", "requests"]])
+
+
+def test_select_tags_samples_and_metrics():
+    """All three target tables at once. A time series that has samples is emitted with its family's
+    metadata (matched) or with empty metadata (its family has none); a metric family with no time series
+    is emitted with empty metric_name/tags and an empty time_series."""
+    # Series with samples whose family has metadata.
+    node.query(
+        "INSERT INTO prometheus (metric_name, tags, time_series, metric_family, type, unit, help) VALUES"
+        " ('http_requests_total', {'job': 'api'}, [(toDateTime64(1000, 3), 1.0)], 'http_requests', 'counter', 'requests', 'Total HTTP requests')"
+    )
+    # Series with samples whose family has no metadata.
+    node.query(
+        "INSERT INTO prometheus (metric_name, tags, time_series) VALUES"
+        " ('cpu_usage', {'host': 'h1'}, [(toDateTime64(2000, 3), 0.5)])"
+    )
+    # Metadata for a family that has no time series.
+    node.query(
+        "INSERT INTO prometheus (metric_family, type, unit, help) VALUES"
+        " ('memory_bytes', 'gauge', 'bytes', 'Memory usage')"
+    )
+
+    assert node.query(
+        "SELECT metric_name, tags, length(time_series) AS n, metric_family, type"
+        " FROM prometheus ORDER BY metric_name, metric_family"
+    ) == TSV([
+        ["",                    "{}",            "0", "memory_bytes",  "gauge"],
+        ["cpu_usage",           "{'host':'h1'}", "1", "",              ""],
+        ["http_requests_total", "{'job':'api'}", "1", "http_requests", "counter"],
+    ])
