@@ -81,6 +81,9 @@ SELECT 'url failover null', modification_hash IS NULL FROM system.tables WHERE d
 -- Nil, so DROP + CREATE restarts data_version from the same value and a recreated table holding
 -- different data could collide. They fail closed there: modification_hash is NULL.
 SET allow_deprecated_database_ordinary = 1;
+-- Creating an Ordinary database emits a one-time server warning that the client forwards to stderr;
+-- silence it so the flaky check (which fails on any stderr) stays green, as 01053 does.
+SET send_logs_level = 'fatal';
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Ordinary;
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mem_ord (x UInt64) ENGINE = Memory;
