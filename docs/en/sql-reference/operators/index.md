@@ -194,12 +194,14 @@ In addition to the subquery form described above, the right-hand side of `SOME` 
 |--------|--------------|
 | `expr = SOME(arr)` | `has(arr, expr)` |
 | `expr <> ALL(arr)` | `NOT has(arr, expr)` |
-| `expr OP SOME(arr)` (any other comparison operator) | `arrayExists(x -> expr OP x, arr)` |
-| `expr OP ALL(arr)` (any other comparison operator) | `arrayAll(x -> expr OP x, arr)` |
+| `expr OP SOME(arr)` (any other supported operator) | `arrayExists(x -> expr OP x, arr)` |
+| `expr OP ALL(arr)` (any other supported operator) | `arrayAll(x -> expr OP x, arr)` |
 
 `SOME` is the existential quantifier (the SQL synonym for `ANY`). `=` and `<>` are special-cased to `has` / `NOT has` because they have an optimized implementation; the general form falls back to the higher-order `arrayExists` / `arrayAll` functions.
 
-The array form is recognised only for the comparison operators `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, and `>=`. Other operators that accept an array on the right — for example `LIKE`, `ILIKE`, `NOT LIKE`, `REGEXP`, and `IN` — are **not** rewritten to the array quantifier and keep their ordinary meaning. For instance, `'abc' LIKE SOME(['a%', 'b%'])` is not the array quantifier syntax; use `arrayExists` / `arrayAll` directly for those cases.
+The array form is recognised for the comparison operators `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=`, the keyword comparison predicates `IS DISTINCT FROM` and `IS NOT DISTINCT FROM`, and the string-search predicates `LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, and `REGEXP`. The keyword comparison predicates and the string-search predicates are recognised only for the array form, not for the subquery form (which is lowered to `IN`/`NOT IN`). Operators that have no array-quantifier meaning — for example `IN` itself — are **not** rewritten and keep their ordinary meaning.
+
+The string-search predicates work because `MatchImpl` (the implementation behind `LIKE` / `ILIKE` / `REGEXP`) supports a constant haystack with a non-constant needle. For example, `'abc' LIKE SOME(['a%', 'b%'])` is rewritten to `arrayExists(x -> 'abc' LIKE x, ['a%', 'b%'])`, and `'abc' NOT LIKE ALL(['x%', 'y%'])` to `arrayAll(x -> 'abc' NOT LIKE x, ['x%', 'y%'])`. This matches one string against several patterns; for matching with a single combined pass you can still use a multi-pattern search function such as `multiMatchAny` (regular expressions) or `multiSearchAny` (substrings).
 
 :::note `ANY` is not supported for the array form
 Only `SOME` and `ALL` accept an array right-hand side. `ANY` is excluded because `any` is also an aggregate function, so an expression of the shape `expr = any(x)` keeps its function-call meaning. Use `SOME` for the array quantifier.
@@ -207,15 +209,16 @@ Only `SOME` and `ALL` accept an array right-hand side. `ANY` is excluded because
 
 ```sql title="Query"
 SELECT
-    3 = SOME([1, 2, 3, 4]) AS in_array,
-    5 < SOME([1, 2, 6])    AS less_than_some,
-    5 > ALL([1, 2, 3])     AS greater_than_all;
+    3 = SOME([1, 2, 3, 4])         AS in_array,
+    5 < SOME([1, 2, 6])            AS less_than_some,
+    5 > ALL([1, 2, 3])             AS greater_than_all,
+    'abc' LIKE SOME(['a%', 'z%'])  AS like_some;
 ```
 
 ```text title="Response"
-┌─in_array─┬─less_than_some─┬─greater_than_all─┐
-│        1 │              1 │                1 │
-└──────────┴────────────────┴──────────────────┘
+┌─in_array─┬─less_than_some─┬─greater_than_all─┬─like_some─┐
+│        1 │              1 │                1 │         1 │
+└──────────┴────────────────┴──────────────────┴───────────┘
 ```
 
 :::note `NULL` handling differs from the subquery form
