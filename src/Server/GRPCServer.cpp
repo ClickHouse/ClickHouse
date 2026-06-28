@@ -952,9 +952,19 @@ namespace
             CurrentThread::attachInternalTextLogsQueue(logs_queue, client_logs_level);
         }
 
-        /// Set the current database if specified.
+        /// Set the current database if specified. Mirror it into the `database` setting too — with the
+        /// same constraint check used by `USE` and the HTTP path — so it survives `executeQuery`'s
+        /// re-application of the `database` setting after the query `SETTINGS` are resolved. Without this,
+        /// an inherited profile / `QueryInfo.settings` `database` value would switch the query back to a
+        /// different database before analysis, making unqualified names resolve in the wrong one.
         if (!query_info.database().empty())
+        {
+            SettingsChanges database_change;
+            database_change.setSetting("database", query_info.database());
+            query_context->checkSettingsConstraints(database_change, SettingSource::QUERY);
+            query_context->applySettingsChanges(database_change);
             query_context->setCurrentDatabase(query_info.database());
+        }
 
         /// Apply transport compression for this call.
         if (auto transport_compression = TransportCompression::fromQueryInfo(query_info))
@@ -1061,6 +1071,25 @@ namespace
         }
         String query(begin, query_end);
         io = ::DB::executeQuery(query, query_context).second;
+
+        /// `executeQuery` has now applied the query text's own `SETTINGS` clause to `query_context`, so
+        /// re-resolve the formats from the final settings: an in-query `SETTINGS input_format = ...` /
+        /// `output_format = ...` / `format = ...` must win over the `FORMAT` clause and the
+        /// `QueryInfo.settings` values resolved before execution (matching the server query path). The
+        /// gRPC input / output readers are created later (`initializePipeline` / `generateOutput`), so
+        /// honoring the post-`SETTINGS` values here takes effect for both directions.
+        const auto & resolved_settings = query_context->getSettingsRef();
+        if (insert_query)
+        {
+            if (const String & input_format_setting = resolved_settings[Setting::input_format]; !input_format_setting.empty())
+                input_format = input_format_setting;
+            else if (const String & format_setting = resolved_settings[Setting::format]; !format_setting.empty())
+                input_format = format_setting;
+        }
+        if (const String & output_format_setting = resolved_settings[Setting::output_format]; !output_format_setting.empty())
+            output_format = output_format_setting;
+        else if (const String & format_setting = resolved_settings[Setting::format]; !format_setting.empty())
+            output_format = format_setting;
     }
 
     void Call::processInput()

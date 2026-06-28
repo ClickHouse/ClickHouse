@@ -66,6 +66,7 @@ def query_common(
     password="",
     query_id="123",
     session_id="",
+    database="",
     stream_output=False,
     channel=None,
 ):
@@ -93,6 +94,7 @@ def query_common(
             password=password,
             query_id=query_id,
             session_id=session_id,
+            database=database,
             next_query_info=bool(input_data),
         )
 
@@ -314,6 +316,47 @@ def test_format_settings():
     )
     assert query("SELECT a, b FROM t_in ORDER BY a") == "1\t2\n3\t4\n"
     query("DROP TABLE t_in")
+    # An in-query `SETTINGS` clause must take effect too: it is applied by `executeQuery` after the
+    # `QueryInfo.settings`, so the formats are re-resolved from the final settings (otherwise the
+    # pre-`SETTINGS` snapshot would win and the in-query setting would be ignored on gRPC).
+    assert (
+        query(
+            "SELECT a FROM t ORDER BY a FORMAT TabSeparated SETTINGS output_format = 'JSONEachRow'"
+        )
+        == '{"a":1}\n{"a":2}\n{"a":3}\n'
+    )
+    query("DROP TABLE IF EXISTS t_in2")
+    query("CREATE TABLE t_in2 (a UInt8, b UInt8) ENGINE = Memory")
+    query(
+        "INSERT INTO t_in2 FORMAT TabSeparated SETTINGS input_format = 'CSV'",
+        input_data="5,6\n7,8\n",
+    )
+    assert query("SELECT a, b FROM t_in2 ORDER BY a") == "5\t6\n7\t8\n"
+    query("DROP TABLE t_in2")
+    query("DROP TABLE t")
+
+
+def test_database_setting():
+    # An explicit `QueryInfo.database` must win over a `database` value arriving via `QueryInfo.settings`
+    # (or a user profile): gRPC mirrors it into the `database` setting so `executeQuery`'s
+    # post-`SETTINGS` re-application of `database` does not switch the query back to the inherited one.
+    query("DROP DATABASE IF EXISTS grpc_db1")
+    query("DROP DATABASE IF EXISTS grpc_db2")
+    query("CREATE DATABASE grpc_db1")
+    query("CREATE DATABASE grpc_db2")
+    query("CREATE TABLE grpc_db1.t (x String) ENGINE = Memory")
+    query("CREATE TABLE grpc_db2.t (x String) ENGINE = Memory")
+    query("INSERT INTO grpc_db1.t VALUES ('from_db1')")
+    query("INSERT INTO grpc_db2.t VALUES ('from_db2')")
+    # The explicit database field selects grpc_db2 even though the settings say grpc_db1.
+    assert (
+        query("SELECT x FROM t", database="grpc_db2", settings={"database": "grpc_db1"})
+        == "from_db2\n"
+    )
+    # And it works on its own.
+    assert query("SELECT x FROM t", database="grpc_db1") == "from_db1\n"
+    query("DROP DATABASE grpc_db1")
+    query("DROP DATABASE grpc_db2")
 
 
 def test_totals_and_extremes():
