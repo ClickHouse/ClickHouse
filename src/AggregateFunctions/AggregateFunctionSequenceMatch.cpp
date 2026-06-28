@@ -37,7 +37,6 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 namespace
@@ -115,15 +114,8 @@ struct AggregateFunctionSequenceMatchData final
     {
         readBinary(sorted, buf);
 
-        size_t size = 0;
+        size_t size;
         readBinary(size, buf);
-
-        /// Guard against allocation bombs (mirrors windowFunnel): a crafted state
-        /// can declare a huge size and make reserve allocate gigabytes before any
-        /// event is read.
-        if (size > 100'000'000)
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                "Too large size ({}) of the state of sequenceMatch/sequenceCount", size);
 
         /// If we lose these flags, functionality is broken
         /// If we serialize/deserialize these flags, we have compatibility issues
@@ -138,7 +130,7 @@ struct AggregateFunctionSequenceMatchData final
             Timestamp timestamp;
             readBinary(timestamp, buf);
 
-            UInt64 events = 0;
+            UInt64 events;
             readBinary(events, buf);
 
             events_list.emplace_back(timestamp, Events{events});
@@ -177,7 +169,7 @@ public:
         this->data(place).add(timestamp, events);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
@@ -213,7 +205,7 @@ private:
     struct PatternAction final
     {
         PatternActionType type;
-        std::uint64_t extra{};
+        std::uint64_t extra;
 
         PatternAction() = default;
         explicit PatternAction(const PatternActionType type_, const std::uint64_t extra_ = 0) : type{type_}, extra{extra_} {}
@@ -259,7 +251,7 @@ private:
             {
                 if (match("t"))
                 {
-                    PatternActionType type = {};
+                    PatternActionType type;
 
                     if (match("<="))
                         type = PatternActionType::TimeLessOrEqual;
@@ -668,7 +660,7 @@ private:
 
 protected:
     /// `True` if the parsed pattern contains time assertions (?t...), `false` otherwise.
-    bool pattern_has_time{};
+    bool pattern_has_time;
     /// sequenceMatch conditions met at least once in the pattern
     std::bitset<max_events> conditions_in_pattern;
 
@@ -860,7 +852,6 @@ AggregateFunctionPtr createAggregateFunctionSequenceBase(
 
 }
 
-void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("sequenceMatch", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatch, AggregateFunctionSequenceMatchData>, {}});
