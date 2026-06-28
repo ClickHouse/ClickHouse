@@ -1,5 +1,4 @@
 #include "config.h"
-#include <Common/CurrentThread.h>
 
 #if USE_DELTA_KERNEL_RS
 
@@ -13,7 +12,9 @@
 #include <Core/Settings.h>
 
 #include <Columns/IColumn.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
@@ -39,6 +40,7 @@
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int DELTA_KERNEL_ERROR;
 }
 
 namespace DB::Setting
@@ -54,6 +56,11 @@ namespace ProfileEvents
     extern const Event DeltaLakePartitionPrunedFiles;
     extern const Event DeltaLakeSnapshotInitializations;
     extern const Event DeltaLakeScannedFiles;
+}
+
+namespace DB::FailPoints
+{
+    extern const char delta_kernel_force_stale_token_error[];
 }
 
 namespace DeltaLake
@@ -99,6 +106,7 @@ public:
         UpdateStatsFunc update_stats_func_,
         LoggerPtr log_)
         : kernel_snapshot_state(kernel_snapshot_state_)
+        , captured_credentials_fingerprint(helper_->getCredentialsFingerprint())
         , helper(helper_)
         , read_schema(read_schema_)
         , expression_schema(table_schema_)
@@ -198,65 +206,142 @@ public:
             "scan_metadata_iter_init");
     }
 
+    /// One-shot retry on stale-credentials errors. Safe only when no files have been
+    /// enqueued yet — replaying would emit duplicates to the consumer.
+    bool tryRefreshAndRetryScanState(const DB::Exception & e)
+    {
+        if (e.code() != DB::ErrorCodes::DELTA_KERNEL_ERROR)
+            return false;
+        const auto & msg = e.message();
+        const bool stale_credentials_error =
+            msg.find("ExpiredToken") != std::string::npos
+            || msg.find("InvalidToken") != std::string::npos
+            || msg.find("TokenRefreshRequired") != std::string::npos;
+        if (!stale_credentials_error)
+            return false;
+
+        {
+            std::lock_guard lock(next_mutex);
+            if (total_data_files > 0)
+            {
+                LOG_INFO(
+                    log,
+                    "Cannot safely retry DeltaLake scan iteration after stale-credentials error: "
+                    "{} data file(s) already enqueued for the consumer. Propagating exception.",
+                    total_data_files);
+                return false;
+            }
+        }
+
+        /// Two paths can yield fresh credentials:
+        ///   1. Catalog-vended providers (Glue / Unity / REST) — `refreshCredentials`
+        ///      explicitly swaps the underlying S3 client.
+        ///   2. Rotating S3 providers (assume-role, web-identity, IMDS) — the C++ SDK
+        ///      auto-refreshes its cached session on `getCredentials` when the cached
+        ///      session expiry has passed. In that case the fingerprint changes versus
+        ///      what we captured at engine-build time, without any callback firing.
+        const bool refreshed_via_callback = helper->refreshCredentials();
+        const DB::UInt128 post_fingerprint = helper->getCredentialsFingerprint();
+        const bool fingerprint_drifted = post_fingerprint != captured_credentials_fingerprint;
+
+        if (!refreshed_via_callback && !fingerprint_drifted)
+        {
+            LOG_INFO(
+                log,
+                "Delta kernel reported stale credentials during scan iteration, but neither "
+                "a catalog refresh callback nor SDK-side credential rotation produced fresh "
+                "credentials. Propagating exception.");
+            return false;
+        }
+
+        LOG_INFO(
+            log,
+            "Delta kernel reported stale credentials during scan iteration; rebuilding "
+            "scan state (refreshed via callback: {}, fingerprint drifted: {}). Original error: {}",
+            refreshed_via_callback, fingerprint_drifted, msg);
+
+        kernel_snapshot_state = std::make_shared<KernelSnapshotState>(
+            *helper,
+            std::optional<size_t>(kernel_snapshot_state->snapshot_version));
+        captured_credentials_fingerprint = post_fingerprint;
+        scan = KernelScan();
+        scan_data_iterator = KernelScanDataIterator();
+        return true;
+    }
+
     void scanDataFunc()
     {
+        bool retried = false;
         try
         {
-            initScanState();
-
-            LOG_TEST(log, "Starting iterator loop (predicate exception: {})", bool(engine_predicate_exception));
-
-            while (!shutdown.load())
+            while (true)
             {
-                bool have_scan_data_res = KernelUtils::unwrapResult(
-                    ffi::scan_metadata_next(scan_data_iterator.get(), this, visitData),
-                    "scan_metadata_next");
-
-                if (have_scan_data_res)
+                try
                 {
-                    std::unique_lock lock(next_mutex);
-                    LOG_TEST(
-                        log, "List batch size is {}/{}, shutdown: {}",
-                        data_files.size(),
-                        list_batch_size ? DB::toString(list_batch_size) : "Unlimitted",
-                        shutdown.load());
+                    initScanState();
 
-                    if (!shutdown.load() && list_batch_size && data_files.size() >= list_batch_size)
-                    {
-                        schedule_next_batch_cv.wait(
-                            lock,
-                            [&]() { return (data_files.size() < list_batch_size) || shutdown.load(); });
-                    }
-                }
-                else
-                {
-                    {
-                        std::lock_guard lock(next_mutex);
-                        iterator_finished = true;
-                        LOG_TEST(log, "Set finished");
-                    }
-                    data_files_cv.notify_all();
+                    LOG_TEST(log, "Starting iterator loop (predicate exception: {})", bool(engine_predicate_exception));
 
-                    LOG_TRACE(
-                        log, "All data files at version {} were listed "
-                        "(scan exception: {}, total data files: {}, total rows: {}, total bytes: {})",
-                        kernel_snapshot_state->snapshot_version,
-                        bool(scan_exception),
-                        total_data_files,
-                        total_rows ? DB::toString(*total_rows) : "Unknown",
-                        total_bytes);
-
-                    if (update_stats_func
-                        && !scan_exception
-                        && (!filter.has_value() || !enable_engine_predicate))
+                    while (!shutdown.load())
                     {
-                        update_stats_func(SnapshotStats{
-                            .total_bytes = total_bytes,
-                            /// total_rows is an optional statistic, but total_bytes is obligatory.
-                            .total_rows = total_rows
-                        });
+                        bool have_scan_data_res = KernelUtils::unwrapResult(
+                            ffi::scan_metadata_next(scan_data_iterator.get(), this, visitData),
+                            "scan_metadata_next");
+
+                        if (have_scan_data_res)
+                        {
+                            std::unique_lock lock(next_mutex);
+                            LOG_TEST(
+                                log, "List batch size is {}/{}, shutdown: {}",
+                                data_files.size(),
+                                list_batch_size ? DB::toString(list_batch_size) : "Unlimitted",
+                                shutdown.load());
+
+                            if (!shutdown.load() && list_batch_size && data_files.size() >= list_batch_size)
+                            {
+                                schedule_next_batch_cv.wait(
+                                    lock,
+                                    [&]() { return (data_files.size() < list_batch_size) || shutdown.load(); });
+                            }
+                        }
+                        else
+                        {
+                            {
+                                std::lock_guard lock(next_mutex);
+                                iterator_finished = true;
+                                LOG_TEST(log, "Set finished");
+                            }
+                            data_files_cv.notify_all();
+
+                            LOG_TRACE(
+                                log, "All data files at version {} were listed "
+                                "(scan exception: {}, total data files: {}, total rows: {}, total bytes: {})",
+                                kernel_snapshot_state->snapshot_version,
+                                bool(scan_exception),
+                                total_data_files,
+                                total_rows ? DB::toString(*total_rows) : "Unknown",
+                                total_bytes);
+
+                            if (update_stats_func
+                                && !scan_exception
+                                && (!filter.has_value() || !enable_engine_predicate))
+                            {
+                                update_stats_func(SnapshotStats{
+                                    .total_bytes = total_bytes,
+                                    /// total_rows is an optional statistic, but total_bytes is obligatory.
+                                    .total_rows = total_rows
+                                });
+                            }
+                            return;
+                        }
                     }
                     return;
+                }
+                catch (const DB::Exception & e)
+                {
+                    if (retried || !tryRefreshAndRetryScanState(e))
+                        throw;
+                    retried = true;
                 }
             }
         }
@@ -517,6 +602,12 @@ private:
     using KernelScanDataIterator = KernelPointerWrapper<ffi::SharedScanMetadataIterator, ffi::free_scan_metadata_iter>;
 
     std::shared_ptr<KernelSnapshotState> kernel_snapshot_state;
+    /// Fingerprint of the credentials embedded in `kernel_snapshot_state` at build time.
+    /// Used by the retry path to detect SDK-side auto-refresh of rotating S3 providers
+    /// (assume-role, web-identity, IMDS) — those have no `credentials_refresh_callback`,
+    /// but `helper->getCredentialsFingerprint()` re-reads from the live S3 client and
+    /// reflects any refresh the SDK performed transparently between attempts.
+    DB::UInt128 captured_credentials_fingerprint;
     KernelScan scan;
     KernelScanDataIterator scan_data_iterator;
     std::optional<PartitionPruner> pruner;
@@ -588,13 +679,27 @@ size_t TableSnapshot::getVersionUnlocked() const
 
 TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStats() const
 {
-    if (!snapshot_stats.has_value())
+    if (snapshot_stats.has_value())
+        return snapshot_stats.value();
+
+    const auto pre_fingerprint = kernel_state_credentials_fingerprint;
+    try
     {
         snapshot_stats = getSnapshotStatsImpl();
-        LOG_TEST(
-            log, "Updated statistics for snapshot version {}",
-            getVersionUnlocked());
     }
+    catch (const DB::Exception & e)
+    {
+        if (!tryRefreshAfterStaleTokenError(e, pre_fingerprint, "stats scan"))
+            throw;
+        /// Invalidate the cached engine so `initOrUpdateSnapshot` rebuilds with the
+        /// freshened credentials, then re-run the stats scan against the new engine.
+        kernel_snapshot_state.reset();
+        initOrUpdateSnapshot();
+        snapshot_stats = getSnapshotStatsImpl();
+    }
+    LOG_TEST(
+        log, "Updated statistics for snapshot version {}",
+        getVersionUnlocked());
     return snapshot_stats.value();
 }
 
@@ -701,16 +806,64 @@ std::optional<size_t> TableSnapshot::getTotalBytes() const
     return getSnapshotStats().total_bytes;
 }
 
+bool TableSnapshot::tryRefreshAfterStaleTokenError(
+    const DB::Exception & e,
+    DB::UInt128 pre_fingerprint,
+    const char * context_for_log) const
+{
+    if (e.code() != DB::ErrorCodes::DELTA_KERNEL_ERROR)
+        return false;
+    const auto & msg = e.message();
+    const bool stale_credentials_error =
+        msg.find("ExpiredToken") != std::string::npos
+        || msg.find("InvalidToken") != std::string::npos
+        || msg.find("TokenRefreshRequired") != std::string::npos;
+    if (!stale_credentials_error)
+        return false;
+
+    const bool refreshed_via_callback = helper->refreshCredentials();
+    const auto post_fingerprint = helper->getCredentialsFingerprint();
+    const bool fingerprint_drifted = post_fingerprint != pre_fingerprint;
+    if (!refreshed_via_callback && !fingerprint_drifted)
+        return false;
+
+    LOG_INFO(
+        log,
+        "Delta kernel reported stale credentials during {}; rebuilding "
+        "(refreshed via callback: {}, fingerprint drifted: {}). Original error: {}",
+        context_for_log, refreshed_via_callback, fingerprint_drifted, msg);
+    return true;
+}
+
 void TableSnapshot::initOrUpdateSnapshot() const
 {
-    if (kernel_snapshot_state)
+    /// Rebuild when credentials rotate so the engine never outlives its embedded STS token.
+    const auto current_credentials_fingerprint = helper->getCredentialsFingerprint();
+    if (kernel_snapshot_state && current_credentials_fingerprint == kernel_state_credentials_fingerprint)
         return;
+
+    /// Pin rebuilds to the already-resolved version so cached latest snapshots don't drift.
+    const std::optional<size_t> version_to_build = kernel_snapshot_state
+        ? std::optional<size_t>(kernel_snapshot_state->snapshot_version)
+        : snapshot_version_to_read;
 
     ProfileEvents::increment(ProfileEvents::DeltaLakeSnapshotInitializations);
 
-    LOG_TEST(log, "Initializing snapshot");
+    LOG_TEST(
+        log, "{}",
+        kernel_snapshot_state ? "Rebuilding kernel snapshot state (credentials rotated)" : "Initializing snapshot");
 
-    kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper, snapshot_version_to_read);
+    try
+    {
+        kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper, version_to_build);
+    }
+    catch (const DB::Exception & e)
+    {
+        if (!tryRefreshAfterStaleTokenError(e, current_credentials_fingerprint, "snapshot init"))
+            throw;
+        kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper, version_to_build);
+    }
+    kernel_state_credentials_fingerprint = helper->getCredentialsFingerprint();
 
     LOG_TRACE(
         log, "Initialized snapshot. Snapshot version: {}",
@@ -725,6 +878,13 @@ std::shared_ptr<TableSnapshot::KernelSnapshotState> TableSnapshot::getKernelSnap
 
 TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & helper_, std::optional<size_t> snapshot_version_)
 {
+    fiu_do_on(DB::FailPoints::delta_kernel_force_stale_token_error,
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::DELTA_KERNEL_ERROR,
+            "ExpiredToken: forced by delta_kernel_force_stale_token_error failpoint");
+    });
+
     auto * engine_builder = helper_.createBuilder();
     engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
     if (snapshot_version_.has_value())
