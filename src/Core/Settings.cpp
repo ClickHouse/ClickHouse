@@ -2738,6 +2738,9 @@ The maximum size of the set in the right-hand side of the IN operator to use tab
     DECLARE(Bool, analyze_index_with_space_filling_curves, true, R"(
 If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
 )", 0) \
+    DECLARE(Bool, analyze_index_with_tuple_lexicographic_comparison, true, R"(
+If the query has a lexicographic tuple comparison on key columns, e.g. `(k1, k2) < (c1, c2)`, use it for primary key and minmax index analysis to prune granules. The tuple comparison `(k1, k2) < (c1, c2)` is equivalent to `k1 < c1 OR (k1 = c1 AND k2 < c2)`.
+)", 0) \
     DECLARE(Bool, allow_key_condition_coalesce_rewrite, true, R"(
 Allow the MergeTree primary key and skip indexes to prune granules for `WHERE`/`PREWHERE` predicates that involve `coalesce` or `ifNull`. Without this setting, such predicates are opaque to index analysis and do not prune, so granules that cannot match are still read. This affects only which granules are read; query results are unchanged, because rows are still filtered by the original predicate.
 

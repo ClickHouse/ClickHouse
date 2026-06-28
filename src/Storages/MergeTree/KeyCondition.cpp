@@ -59,6 +59,7 @@ namespace Setting
 {
     extern const SettingsBool allow_key_condition_coalesce_rewrite;
     extern const SettingsBool analyze_index_with_space_filling_curves;
+    extern const SettingsBool analyze_index_with_tuple_lexicographic_comparison;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsTimezone session_timezone;
 }
@@ -1398,7 +1399,11 @@ KeyCondition::KeyCondition(
         return;
     }
 
-    auto info = BuildInfo {.key_expr = key_expr_, .key_subexpr_names = getAllSubexpressionNames(*key_expr_)};
+    auto info = BuildInfo {
+        .key_expr = key_expr_,
+        .key_subexpr_names = getAllSubexpressionNames(*key_expr_),
+        .analyze_tuple_lexicographic = context->getSettingsRef()[Setting::analyze_index_with_tuple_lexicographic_comparison],
+    };
 
     if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
         getAllSpaceFillingCurves(info);
@@ -3471,6 +3476,171 @@ static bool tryRewriteFloatLiteralForIntKeyComparison(
     UNREACHABLE();
 }
 
+/// Convert one constant tuple element `value` (of type `from_type`) to the key column type
+/// `key_type_not_null` for a lexicographic tuple comparison. Returns the converted field only if the
+/// conversion is exact (it round-trips back to the original value); otherwise returns nullopt so that
+/// the caller truncates the prefix. Exactness keeps the comparison sound (no silent precision loss
+/// that could drop matching granules).
+static std::optional<Field> convertTupleLexicographicConstant(
+    const DataTypePtr & key_type_not_null, const DataTypePtr & from_type, const Field & value)
+{
+    if (key_type_not_null->equals(*from_type))
+        return value;
+
+    /// Native integers and DateTime/DateTime64 are compared accurately across these types without a cast.
+    const bool cast_not_needed =
+        (isNativeInteger(key_type_not_null) || isDateTimeOrDateTime64(key_type_not_null))
+        && (isNativeInteger(from_type) || isDateTimeOrDateTime64(from_type));
+    if (cast_not_needed)
+        return value;
+
+    Field converted = tryConvertFieldToType(value, *key_type_not_null, from_type.get());
+    if (converted.isNull())
+        return std::nullopt;
+
+    Field back = tryConvertFieldToType(converted, *from_type, key_type_not_null.get());
+    if (back.isNull() || !Range::equals(back, value))
+        return std::nullopt;
+
+    return converted;
+}
+
+bool KeyCondition::tryPrepareTupleLexicographicComparison(
+    const RPNBuilderFunctionTreeNode & func,
+    const String & func_name,
+    size_t key_arg_pos,
+    const Field & const_value,
+    const DataTypePtr & const_type,
+    const BuildInfo & info,
+    RPNElement & out)
+{
+    if (!info.analyze_tuple_lexicographic)
+        return false;
+
+    /// Only lexicographic inequality operators. Equality / IN are handled by the set-index path.
+    const bool is_less = (func_name == "less" || func_name == "lessOrEquals");
+    const bool is_greater = (func_name == "greater" || func_name == "greaterOrEquals");
+    if (!is_less && !is_greater)
+        return false;
+
+    /// The key side must be a `tuple(...)` function node with at least two arguments. A single column of
+    /// Tuple type (e.g. `a < tuple(...)`) is intentionally not handled here; it keeps going through the
+    /// regular single-column path.
+    const auto key_arg = func.getArgumentAt(key_arg_pos);
+    if (!key_arg.isFunction())
+        return false;
+    const auto key_tuple = key_arg.toFunctionNode();
+    if (key_tuple.getFunctionName() != "tuple" || key_tuple.getArgumentsSize() < 2)
+        return false;
+    const size_t tuple_size = key_tuple.getArgumentsSize();
+
+    /// The constant side must be a tuple of the same size.
+    if (const_value.getType() != Field::Types::Tuple)
+        return false;
+    const Tuple & const_tuple = const_value.safeGet<Tuple>();
+    if (const_tuple.size() != tuple_size)
+        return false;
+
+    const auto * const_tuple_type = typeid_cast<const DataTypeTuple *>(const_type.get());
+    if (!const_tuple_type || const_tuple_type->getElements().size() != tuple_size)
+        return false;
+    const auto & const_elem_types = const_tuple_type->getElements();
+
+    /// Normalize the operator so that the key tuple is always on the left.
+    bool greater = is_greater;
+    bool strict = (func_name == "less" || func_name == "greater");
+    if (key_arg_pos == 1) /// `(const...) <op> (key...)` => flip the operator direction.
+        greater = !greater;
+
+    /// Map each tuple element to a key column (with an optional monotonic functions chain) and convert
+    /// the corresponding constant. Stop at the first element that cannot be handled and keep the prefix.
+    std::vector<size_t> mapped_key_columns;
+    std::vector<MonotonicFunctionsChain> mapped_chains;
+    Tuple mapped_constant;
+    mapped_key_columns.reserve(tuple_size);
+    mapped_chains.reserve(tuple_size);
+    mapped_constant.reserve(tuple_size);
+    bool relaxed_atom = false;
+
+    for (size_t i = 0; i < tuple_size; ++i)
+    {
+        const Field & value = const_tuple[i];
+        /// A NULL or NaN constant element makes the comparison SQL-unknown from this element on; stop.
+        if (value.isNull() || value.isNaN())
+            break;
+
+        size_t key_column_num = std::numeric_limits<size_t>::max();
+        std::optional<size_t> argument_num_of_space_filling_curve;
+        DataTypePtr key_expr_type;
+        MonotonicFunctionsChain chain;
+        if (!isKeyPossiblyWrappedByMonotonicFunctions(
+                key_tuple.getArgumentAt(i), info, key_column_num, argument_num_of_space_filling_curve, key_expr_type, chain, single_point)
+            || argument_num_of_space_filling_curve.has_value()
+            || key_column_num == std::numeric_limits<size_t>::max())
+            break;
+
+        /// Determine the key column type without nullability / low cardinality wrappers.
+        DataTypePtr key_type = recursiveRemoveLowCardinality(key_expr_type);
+        DataTypePtr key_type_not_null = key_type;
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(key_type.get()))
+            key_type_not_null = nullable->getNestedType();
+
+        DataTypePtr from_type = recursiveRemoveLowCardinality(const_elem_types[i]);
+
+        std::optional<Field> converted = convertTupleLexicographicConstant(key_type_not_null, from_type, value);
+        if (!converted)
+            break;
+
+        mapped_key_columns.push_back(key_column_num);
+        mapped_chains.push_back(std::move(chain));
+        mapped_constant.push_back(std::move(*converted));
+        /// A monotonic (possibly non-injective) function chain may widen ranges, so the negation result
+        /// (`can_be_false`) is no longer reliable. Mark the atom relaxed to stay sound.
+        if (!mapped_chains.back().empty())
+            relaxed_atom = true;
+    }
+
+    const size_t mapped_size = mapped_key_columns.size();
+    if (mapped_size == 0)
+        return false; /// Nothing usable; let the caller produce FUNCTION_UNKNOWN.
+
+    /// If we kept only a prefix, relax the strict operator to its non-strict variant, which is a sound
+    /// superset: `(k1..kn) < (c1..cn)` implies `(k1..km) <= (c1..cm)` for any prefix m < n.
+    if (mapped_size < tuple_size)
+    {
+        strict = false;
+        relaxed_atom = true;
+    }
+
+    /// A single mapped element degenerates to a plain range condition, reusing the well-tested
+    /// FUNCTION_IN_RANGE evaluation (no new lexicographic evaluation logic needed).
+    if (mapped_size == 1)
+    {
+        out.function = RPNElement::FUNCTION_IN_RANGE;
+        out.key_columns = {mapped_key_columns[0]};
+        out.monotonic_functions_chain = std::move(mapped_chains[0]);
+        if (greater)
+            out.range = Range::createLeftBounded(mapped_constant[0], !strict);
+        else
+            out.range = Range::createRightBounded(mapped_constant[0], !strict);
+        out.relaxed = relaxed_atom;
+        if (relaxed_atom)
+            relaxed = true;
+        return true;
+    }
+
+    out.function = RPNElement::FUNCTION_TUPLE_LEXICOGRAPHIC;
+    out.key_columns = std::move(mapped_key_columns);
+    out.tuple_lexicographic_constant = std::move(mapped_constant);
+    out.tuple_lexicographic_chains = std::move(mapped_chains);
+    out.tuple_lexicographic_greater = greater;
+    out.tuple_lexicographic_strict = strict;
+    out.relaxed = relaxed_atom;
+    if (relaxed_atom)
+        relaxed = true;
+    return true;
+}
+
 bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out)
 {
     const auto * node_dag = node.getDAGNode();
@@ -3668,6 +3838,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 /// For other comparison operators, skip building the atom
                 return false;
             }
+
+            /// Try to handle a lexicographic tuple comparison like `(a, b) < (1, 5)` before the
+            /// single-column monotonic analysis below, which cannot handle a tuple of key columns.
+            if (tryPrepareTupleLexicographicComparison(func, func_name, key_arg_pos, const_value, const_type, info, out))
+                return true;
 
             bool condition_is_relaxed = false;
             bool constant_chain_is_positive = true;
@@ -4109,6 +4284,7 @@ KeyCondition::Description KeyCondition::getDescription() const
             case RPNElement::FUNCTION_NOT_IN_SET:
             case RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
             case RPNElement::FUNCTION_POINT_IN_POLYGON:
+            case RPNElement::FUNCTION_TUPLE_LEXICOGRAPHIC:
             {
                 auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::Leaf, .element = &element, .negate = false});
                 auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::Leaf, .element = &element, .negate = true});
@@ -5153,6 +5329,101 @@ Ranges KeyCondition::extractBounds() const
     return std::move(bounds.ranges);
 }
 
+namespace
+{
+
+enum class TupleLexCornerCmp
+{
+    Less,
+    Equal,
+    Greater,
+    Indeterminate,
+};
+
+/// A real SQL NULL (as opposed to the ±infinity bounds, which are also stored as a Null-typed Field).
+bool isRealNull(const Field & f)
+{
+    return f.isNull() && !f.isNegativeInfinity() && !f.isPositiveInfinity();
+}
+
+/// Lexicographically compare a corner of the box `ranges` against the constant tuple `c`.
+/// If `use_lower` is true, use the lower corner (each range's left bound); otherwise the upper corner
+/// (each range's right bound). An open bound at an otherwise-tying coordinate means the real corner is
+/// strictly beyond the constant there. Returns Indeterminate if a real NULL is encountered, because the
+/// SQL comparison is then unknown and we must not prune.
+TupleLexCornerCmp compareTupleCorner(const std::vector<Range> & ranges, const Tuple & c, bool use_lower)
+{
+    for (size_t i = 0; i < ranges.size(); ++i)
+    {
+        const Range & r = ranges[i];
+        const Field & bound = use_lower ? static_cast<const Field &>(r.left) : static_cast<const Field &>(r.right);
+        const bool included = use_lower ? r.left_included : r.right_included;
+        const Field & ci = c[i];
+
+        if (isRealNull(bound) || isRealNull(ci))
+            return TupleLexCornerCmp::Indeterminate;
+
+        if (Range::less(bound, ci))
+            return TupleLexCornerCmp::Less;
+        if (Range::less(ci, bound))
+            return TupleLexCornerCmp::Greater;
+
+        /// Equal as field values.
+        if (!included)
+            return use_lower ? TupleLexCornerCmp::Greater : TupleLexCornerCmp::Less;
+        /// Closed and equal: this coordinate ties; continue with the next one.
+    }
+    return TupleLexCornerCmp::Equal;
+}
+
+/// Decide whether a lexicographic comparison `(box) <op> c` can be true / false for a single box, given
+/// the box's per-element ranges. `greater`/`strict` encode the normalized operator (see the
+/// `tuple_lexicographic_*` fields of RPNElement). Shared by the dense and sparse `checkInHyperrectangle`
+/// overloads; the caller builds `elem_ranges` and relaxes `can_be_false` when the atom (or a truncated
+/// prefix) is relaxed.
+BoolMask evaluateTupleLexicographic(const std::vector<Range> & elem_ranges, const Tuple & c, bool greater, bool strict)
+{
+    const TupleLexCornerCmp lower = compareTupleCorner(elem_ranges, c, /*use_lower*/ true);
+    const TupleLexCornerCmp upper = compareTupleCorner(elem_ranges, c, /*use_lower*/ false);
+
+    if (lower == TupleLexCornerCmp::Indeterminate || upper == TupleLexCornerCmp::Indeterminate)
+        return BoolMask(true, true);
+
+    bool can_be_true = false;
+    bool can_be_false = false;
+    if (!greater)
+    {
+        /// less / lessOrEquals
+        if (strict)
+        {
+            can_be_true = (lower == TupleLexCornerCmp::Less);
+            can_be_false = (upper != TupleLexCornerCmp::Less);
+        }
+        else
+        {
+            can_be_true = (lower != TupleLexCornerCmp::Greater);
+            can_be_false = (upper == TupleLexCornerCmp::Greater);
+        }
+    }
+    else
+    {
+        /// greater / greaterOrEquals
+        if (strict)
+        {
+            can_be_true = (upper == TupleLexCornerCmp::Greater);
+            can_be_false = (lower != TupleLexCornerCmp::Greater);
+        }
+        else
+        {
+            can_be_true = (upper != TupleLexCornerCmp::Less);
+            can_be_false = (lower == TupleLexCornerCmp::Less);
+        }
+    }
+    return BoolMask(can_be_true, can_be_false);
+}
+
+}
+
 BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
@@ -5445,6 +5716,63 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// Because the polygon may have a hole so the "can_be_false" should always be true.
             bool intersects = boost::geometry::intersects(index_box, element.polygon->ring);
             rpn_stack.emplace_back(intersects, true);
+        }
+        else if (element.function == RPNElement::FUNCTION_TUPLE_LEXICOGRAPHIC)
+        {
+            /** Lexicographic tuple comparison `(k1, ..., km) <op> (c1, ..., cm)`.
+              *
+              * Each granule range decomposes (via forAnyHyperrectangle) into axis-aligned boxes. For a
+              * single box B, the lexicographically smallest point is its lower corner (per-coordinate
+              * left bounds) and the largest is its upper corner. Hence, for the involved key columns:
+              *   - there exists a point in B that is lexicographically less than c  <=>  lower_corner <op c;
+              *   - there exists a point in B that is lexicographically greater than c <=> upper_corner >op c.
+              * This makes the per-box decision exact (up to open-bound and NULL handling), and the union
+              * over boxes is taken by forAnyHyperrectangle.
+              */
+            const auto & lex_columns = element.key_columns;
+            const auto & chains = element.tuple_lexicographic_chains;
+            const Tuple & c = element.tuple_lexicographic_constant;
+
+            /// Build the per-element ranges, applying each element's monotonic functions chain.
+            std::vector<Range> elem_ranges;
+            elem_ranges.reserve(lex_columns.size());
+            bool indeterminate = false;
+            for (size_t i = 0; i < lex_columns.size(); ++i)
+            {
+                const size_t kc = lex_columns[i];
+                if (kc >= hyperrectangle.size())
+                {
+                    indeterminate = true;
+                    break;
+                }
+
+                Range range = hyperrectangle[kc];
+                if (i < chains.size() && !chains[i].empty())
+                {
+                    std::optional<Range> new_range
+                        = applyMonotonicFunctionsChainToRange(range, chains[i], data_types[kc], single_point);
+                    if (!new_range)
+                    {
+                        indeterminate = true;
+                        break;
+                    }
+                    range = std::move(*new_range);
+                }
+                elem_ranges.push_back(std::move(range));
+            }
+
+            if (indeterminate)
+            {
+                rpn_stack.emplace_back(true, true);
+            }
+            else
+            {
+                rpn_stack.emplace_back(evaluateTupleLexicographic(
+                    elem_ranges, c, element.tuple_lexicographic_greater, element.tuple_lexicographic_strict));
+
+                if (element.relaxed)
+                    rpn_stack.back().can_be_false = true;
+            }
         }
         else if (
             element.function == RPNElement::FUNCTION_IS_NULL
@@ -5936,6 +6264,60 @@ BoolMask KeyCondition::checkInHyperrectangle(
             bool intersects = boost::geometry::intersects(index_box, element.polygon->ring);
             rpn_stack.emplace_back(intersects, true);
         }
+        else if (element.function == RPNElement::FUNCTION_TUPLE_LEXICOGRAPHIC)
+        {
+            /// Lexicographic tuple comparison on sparse key columns; see the dense overload for the
+            /// corner-comparison reasoning. A tuple key column may be absent from the sparse index
+            /// (`key_col_to_sparse_pos == -1`); then only the present leading prefix is usable, so we
+            /// truncate the comparison there and relax it to a sound non-strict superset.
+            const auto & lex_columns = element.key_columns;
+            const auto & chains = element.tuple_lexicographic_chains;
+            const Tuple & c = element.tuple_lexicographic_constant;
+
+            std::vector<Range> elem_ranges;
+            elem_ranges.reserve(lex_columns.size());
+            bool indeterminate = false;
+            bool prefix_truncated = false;
+            for (size_t i = 0; i < lex_columns.size(); ++i)
+            {
+                auto [is_key_col_present, sparse_pos] = get_sparse_info(lex_columns[i]);
+                if (!is_key_col_present)
+                {
+                    /// Key column missing from the sparse index: only the leading prefix is usable.
+                    prefix_truncated = true;
+                    break;
+                }
+
+                Range range = sparse_hyperrectangle[sparse_pos];
+                if (i < chains.size() && !chains[i].empty())
+                {
+                    std::optional<Range> new_range
+                        = applyMonotonicFunctionsChainToRange(range, chains[i], sparse_data_types[sparse_pos], single_point);
+                    if (!new_range)
+                    {
+                        indeterminate = true;
+                        break;
+                    }
+                    range = std::move(*new_range);
+                }
+                elem_ranges.push_back(std::move(range));
+            }
+
+            if (indeterminate || elem_ranges.empty())
+            {
+                rpn_stack.emplace_back(true, true);
+            }
+            else
+            {
+                /// A truncated prefix relaxes a strict comparison to its non-strict (superset) variant.
+                const bool strict = element.tuple_lexicographic_strict && !prefix_truncated;
+                rpn_stack.emplace_back(evaluateTupleLexicographic(
+                    elem_ranges, c, element.tuple_lexicographic_greater, strict));
+
+                if (element.relaxed || prefix_truncated)
+                    rpn_stack.back().can_be_false = true;
+            }
+        }
         else if (element.function == RPNElement::FUNCTION_IS_NULL
               || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
         {
@@ -6300,6 +6682,25 @@ String KeyCondition::RPNElement::toString(const std::vector<String> & key_names)
             buf << ")";
             return buf.str();
         }
+        case FUNCTION_TUPLE_LEXICOGRAPHIC:
+        {
+            buf << "((";
+            for (size_t i = 0; i < key_columns.size(); ++i)
+            {
+                if (i > 0)
+                    buf << ", ";
+                print_functions_chain_start(tuple_lexicographic_chains.at(i));
+                print_column_name(key_columns[i]);
+                print_functions_chain_end(tuple_lexicographic_chains.at(i));
+            }
+            buf << ")";
+            buf << (tuple_lexicographic_greater
+                ? (tuple_lexicographic_strict ? " > " : " >= ")
+                : (tuple_lexicographic_strict ? " < " : " <= "));
+            buf << applyVisitor(FieldVisitorToString(), Field(tuple_lexicographic_constant));
+            buf << ")";
+            return buf.str();
+        }
         case ALWAYS_FALSE:
             return "false";
         case ALWAYS_TRUE:
@@ -6343,6 +6744,7 @@ bool KeyCondition::unknownOrAlwaysTrue(bool unknown_any) const
             case RPNElement::FUNCTION_NOT_IN_SET:
             case RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
             case RPNElement::FUNCTION_POINT_IN_POLYGON:
+            case RPNElement::FUNCTION_TUPLE_LEXICOGRAPHIC:
             case RPNElement::FUNCTION_IS_NULL:
             case RPNElement::FUNCTION_IS_NOT_NULL:
             case RPNElement::ALWAYS_FALSE:
@@ -6401,6 +6803,7 @@ bool KeyCondition::alwaysFalse() const
             case RPNElement::FUNCTION_NOT_IN_SET:
             case RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
             case RPNElement::FUNCTION_POINT_IN_POLYGON:
+            case RPNElement::FUNCTION_TUPLE_LEXICOGRAPHIC:
             case RPNElement::FUNCTION_IS_NULL:
             case RPNElement::FUNCTION_IS_NOT_NULL:
             case RPNElement::FUNCTION_UNKNOWN:
@@ -6488,6 +6891,7 @@ std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> KeyCondition::topLevelC
             case RPNElement::FUNCTION_IS_NOT_NULL:
             case RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
             case RPNElement::FUNCTION_POINT_IN_POLYGON:
+            case RPNElement::FUNCTION_TUPLE_LEXICOGRAPHIC:
             case RPNElement::FUNCTION_UNKNOWN:
             case RPNElement::ALWAYS_FALSE:
             case RPNElement::ALWAYS_TRUE:

@@ -747,6 +747,8 @@ static void buildORCSearchArgumentImpl(
         case KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
         /// There is no optimization with pointInPolygon for ORC.
         case KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON:
+        /// There is no optimization with lexicographic tuple comparison for ORC.
+        case KeyCondition::RPNElement::FUNCTION_TUPLE_LEXICOGRAPHIC:
         case KeyCondition::RPNElement::FUNCTION_UNKNOWN:
         {
             builder.literal(orc::TruthValue::YES_NO_NULL);

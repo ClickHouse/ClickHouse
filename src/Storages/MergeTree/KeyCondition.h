@@ -296,6 +296,10 @@ public:
             /// Special for pointInPolygon to utilize minmax indices.
             /// For example: pointInPolygon((x, y), [(0, 0), (0, 2), (2, 2), (2, 0)])
             FUNCTION_POINT_IN_POLYGON,
+            /// Special for lexicographic tuple comparison, e.g. (a, b) < (1, 5).
+            /// Compares the tuple of key columns against a constant tuple lexicographically.
+            /// See `tuple_lexicographic_*` fields below.
+            FUNCTION_TUPLE_LEXICOGRAPHIC,
             /// Can take any value.
             FUNCTION_UNKNOWN,
             /// Operators of the logical expression.
@@ -360,6 +364,20 @@ public:
         /// Applicable only for some FUNCTION_* types and only if key_columns.size() == 1.
         MonotonicFunctionsChain monotonic_functions_chain;
 
+        /// For FUNCTION_TUPLE_LEXICOGRAPHIC.
+        /// Represents a lexicographic comparison `(key_columns...) <op> tuple_lexicographic_constant`.
+        /// The operator is normalized so that the key tuple is always on the left: `tuple_lexicographic_greater`
+        /// is false for the `less`/`lessOrEquals` family and true for `greater`/`greaterOrEquals`;
+        /// `tuple_lexicographic_strict` is true for the strict `<`/`>` and false for `<=`/`>=`.
+        /// `key_columns` holds the mapped key column numbers in tuple order (possibly a prefix of the
+        /// original tuple). `tuple_lexicographic_constant` holds the constant tuple elements converted to
+        /// the corresponding key column types. `tuple_lexicographic_chains` is parallel to `key_columns`
+        /// and holds the per-element monotonic functions chain (empty for a direct key column).
+        Tuple tuple_lexicographic_constant;
+        bool tuple_lexicographic_greater = false;
+        bool tuple_lexicographic_strict = false;
+        std::vector<MonotonicFunctionsChain> tuple_lexicographic_chains;
+
         std::optional<BloomFilterData> bloom_filter_data;
     };
 
@@ -414,6 +432,8 @@ private:
         const ExpressionActionsPtr key_expr;
         /// All intermediate columns are used to calculate key_expr.
         const NameSet key_subexpr_names;
+        /// Whether to analyze lexicographic tuple comparisons like `(a, b) < (1, 5)`.
+        bool analyze_tuple_lexicographic = false;
     };
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out);
@@ -502,6 +522,20 @@ private:
         RPNElement & out);
     bool tryPrepareSetIndexForHas(
         const RPNBuilderFunctionTreeNode & func,
+        const BuildInfo & info,
+        RPNElement & out);
+
+    /// If the node is `op(tuple(keys...), const_tuple)` where `op` is a lexicographic comparison
+    /// (less/greater/lessOrEquals/greaterOrEquals), build a FUNCTION_TUPLE_LEXICOGRAPHIC atom (or a
+    /// degenerate FUNCTION_IN_RANGE for a single mapped element) and return true, filling `out`.
+    /// `func_name` is the original (not yet flipped) comparison name and `key_arg_pos` is the position
+    /// of the tuple-of-keys argument (1 means the constant is on the left, so the operator is flipped).
+    bool tryPrepareTupleLexicographicComparison(
+        const RPNBuilderFunctionTreeNode & func,
+        const String & func_name,
+        size_t key_arg_pos,
+        const Field & const_value,
+        const DataTypePtr & const_type,
         const BuildInfo & info,
         RPNElement & out);
 
