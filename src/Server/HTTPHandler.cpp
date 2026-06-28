@@ -1531,6 +1531,13 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
     ///   <url_prefix>/api</url_prefix>
     /// A request `GET /api/db/hits.csv` is then processed as if the path were `/db/hits.csv`.
     auto url_prefix = config.getString(config_prefix + ".url_prefix", "");
+    /// Normalize the prefix once (strip a trailing slash) before it is used for BOTH the routing filter
+    /// below and path stripping in the handler. `addFiltersFromConfig` already installs a `url_prefix`
+    /// filter that tolerates a trailing slash (it matches `/api/v1?query=...` for `<url_prefix>/api/v1/`),
+    /// so without normalizing, the extra raw-prefix `hasUrlPrefixWithSegmentBoundary` filter below would
+    /// reject that same request — a regression for configured prefixes written with a trailing slash.
+    while (url_prefix.size() > 1 && url_prefix.ends_with('/'))
+        url_prefix.pop_back();
 
     HTTPHandlerConnectionConfig connection_config(config, config_prefix);
     HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
