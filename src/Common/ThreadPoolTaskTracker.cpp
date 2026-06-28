@@ -39,19 +39,17 @@ ThreadPoolCallbackRunnerUnsafe<void> TaskTracker::syncRunner()
 
 void TaskTracker::scheduleFinalTask(std::shared_ptr<std::packaged_task<void()>> final_task_)
 {
-    /// The future of `final_task_` is already stored in `futures` and will be waited on by
-    /// waitAll(). If the scheduler throws (e.g. CANNOT_SCHEDULE_TASK injected by the thread
-    /// fuzzer, or a genuinely exhausted pool), the packaged task would be destroyed without
-    /// being run, leaving that future with a broken promise. waitAll() would then throw a
-    /// std::future_error (a std::logic_error), which aborts the server in debug/sanitizer
-    /// builds instead of surfacing the real scheduling error. Run the task inline in that
-    /// case so its future always carries a proper result or the actual exception.
+    /// `final_task_`'s future is already in `futures` and will be waited on by waitAll().
     try
     {
         scheduler([pt = final_task_]() mutable { (*pt)(); }, Priority{});
     }
     catch (...)
     {
+        /// Ok: scheduling can throw (e.g. CANNOT_SCHEDULE_TASK from thread-fuzzer fault injection).
+        /// Run the task inline so its future is always fulfilled; otherwise the packaged_task is
+        /// destroyed unrun, leaving a broken promise that makes waitAll() throw std::future_error
+        /// (a logic_error) and abort in debug/sanitizer builds, masking the real scheduling error.
         (*final_task_)();
     }
 }
