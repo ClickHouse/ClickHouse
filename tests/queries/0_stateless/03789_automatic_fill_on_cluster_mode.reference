@@ -30,3 +30,9 @@ Test 10 verification: ALTER added the column to the session table	1
 Test 10 verification: OPTIMIZE kept the session data	1
 Test 10 verification: ALTER of the temporary table does NOT contain ON CLUSTER
 1
+Test 11: persistent CREATE shadowed by a temporary table is rewritten ON CLUSTER
+Test 11 verification: persistent CREATE TABLE contains ON CLUSTER
+1
+Test 11 verification: persistent CREATE VIEW contains ON CLUSTER
+1
+Test 11 verification: both persistent objects exist in the current database	2

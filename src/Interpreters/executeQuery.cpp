@@ -1641,7 +1641,17 @@ static BlockIO executeQueryImpl(
                     /// it as temporary when the name resolves to a temporary table, mirroring the `DROP`
                     /// handling above. A database-level statement carries no table, so skip the check there:
                     /// constructing a `StorageID` from it would throw because the table name is empty.
-                    if (!target_is_temporary && !query_with_table->getTable().empty()
+                    ///
+                    /// `CREATE` is excluded: a persistent `CREATE TABLE t`/`CREATE VIEW t` creates a new
+                    /// object in the current database and does not target a session temporary table just
+                    /// because one named `t` already shadows it (a temporary and a persistent table of the
+                    /// same name can coexist). `InterpreterCreateQuery` treats a non-`TEMPORARY` create as
+                    /// persistent and fills the current database, so it is an eligible statement that should
+                    /// be distributed `ON CLUSTER`. A `CREATE TEMPORARY TABLE` is already captured above by
+                    /// `isTemporary()`. The remaining `ASTQueryWithTableAndOutput` statements that reach this
+                    /// branch (`ALTER`, `OPTIMIZE`, `UPDATE`, `DELETE`, `CREATE`/`DROP INDEX`) operate on an
+                    /// existing table by name, so the resolution heuristic is correct for them.
+                    if (!target_is_temporary && !out_ast->as<ASTCreateQuery>() && !query_with_table->getTable().empty()
                         && resolves_to_temporary(StorageID(*query_with_table)))
                         target_is_temporary = true;
 

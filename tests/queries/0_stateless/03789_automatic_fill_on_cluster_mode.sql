@@ -143,3 +143,35 @@ SELECT count() = 0 FROM system.query_log WHERE current_database = currentDatabas
   AND query LIKE 'ALTER TABLE test_auto_fill_alter_temp%'
   AND query LIKE '%ON CLUSTER%';
 DROP TEMPORARY TABLE test_auto_fill_alter_temp;
+
+SELECT 'Test 11: persistent CREATE shadowed by a temporary table is rewritten ON CLUSTER';
+-- A persistent `CREATE TABLE t` / `CREATE VIEW t` creates a new object in the current database and is
+-- an eligible distributed statement; it does not target a session temporary table just because one
+-- named `t` already shadows it (a temporary and a persistent object of the same name can coexist).
+-- `InterpreterCreateQuery` treats a non-`TEMPORARY` create as persistent, so auto-fill must still
+-- inject ON CLUSTER for it. Unlike `ALTER`/`OPTIMIZE`/`DROP` of an implicit temporary table (Tests 8
+-- and 10), `CREATE` is excluded from the name-resolution heuristic, otherwise a shadowing temporary
+-- table would wrongly keep the persistent create on the initiator only. `CREATE TEMPORARY TABLE`
+-- itself stays local and is covered by Test 5.
+CREATE TEMPORARY TABLE test_auto_fill_shadow (id UInt32) ENGINE = Memory;
+CREATE TABLE test_auto_fill_shadow (id UInt32, value String) ENGINE = MergeTree() ORDER BY id;
+CREATE TEMPORARY TABLE test_auto_fill_shadow_view (x UInt32) ENGINE = Memory;
+CREATE VIEW test_auto_fill_shadow_view AS SELECT 1;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT 'Test 11 verification: persistent CREATE TABLE contains ON CLUSTER';
+-- Prefix-anchored on `CREATE TABLE test_auto_fill_shadow ` so the verification SELECT (which starts
+-- with SELECT) and the `CREATE TEMPORARY TABLE` shadow do not match.
+SELECT count() > 0 FROM system.query_log WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND query LIKE 'CREATE TABLE test_auto_fill_shadow %ON CLUSTER%';
+SELECT 'Test 11 verification: persistent CREATE VIEW contains ON CLUSTER';
+SELECT count() > 0 FROM system.query_log WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND query LIKE 'CREATE VIEW test_auto_fill_shadow_view %ON CLUSTER%';
+SELECT 'Test 11 verification: both persistent objects exist in the current database', count() = 2 FROM system.tables
+  WHERE database = currentDatabase() AND name IN ('test_auto_fill_shadow', 'test_auto_fill_shadow_view');
+DROP TEMPORARY TABLE test_auto_fill_shadow;
+DROP TEMPORARY TABLE test_auto_fill_shadow_view;
+DROP TABLE test_auto_fill_shadow;
+DROP VIEW test_auto_fill_shadow_view;
