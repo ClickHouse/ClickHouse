@@ -1690,6 +1690,8 @@ void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
             removers_scheduled = true;
         }
 
+        main_priority->resetEvictionPos(IFileCachePriority::EvictionCursor::Background);
+
         while (!shutdown)
         {
             /// On the first iteration `eviction_info` is the one collected above; afterwards it is
