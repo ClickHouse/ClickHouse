@@ -50,9 +50,15 @@ private:
 
     void collectFinishedFutures(bool propagate_exceptions) TSA_REQUIRES(mutex);
 
-    /// Schedules the final task; if the scheduler throws, runs it inline so its future is
-    /// never left with a broken promise (see the definition for details).
-    void scheduleFinalTask(std::shared_ptr<std::packaged_task<void()>> final_task_);
+    /// Holds the final callback and an explicit promise (whose future is stored in `futures`).
+    /// If the task is dropped without running -- the scheduler throws before enqueue, or the
+    /// thread pool drains the queued job during shutdown -- its destructor satisfies the promise
+    /// with CANNOT_SCHEDULE_TASK. Defined in the .cpp.
+    struct FinalTaskState;
+
+    /// Schedules the final task. On scheduler failure the state's promise is satisfied with
+    /// CANNOT_SCHEDULE_TASK instead of being left with a broken promise (see the definition).
+    void scheduleFinalTask(std::shared_ptr<FinalTaskState> state);
 
     const bool is_async;
     ThreadPoolCallbackRunnerUnsafe<void> scheduler;
@@ -73,9 +79,9 @@ private:
     size_t tasks_added TSA_GUARDED_BY(mutex) = 0;
     size_t tasks_finished TSA_GUARDED_BY(mutex) = 0;
 
-    /// A packaged task for the callback added by addFinal. A non-null value means
+    /// State for the callback added by addFinal. A non-null value means
     /// the callback has been added, but not yet scheduled.
-    std::shared_ptr<std::packaged_task<void()>> final_task TSA_GUARDED_BY(mutex);
+    std::shared_ptr<FinalTaskState> final_task TSA_GUARDED_BY(mutex);
 
     bool final_task_added = false;
 };
