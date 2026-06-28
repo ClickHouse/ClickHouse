@@ -101,6 +101,9 @@ static struct InitFiu
     REGULAR(file_cache_slru_downgrade_fail_before_finalize) \
     REGULAR(file_cache_modify_size_limits_fail) \
     REGULAR(check_table_query_delay_for_part) \
+    REGULAR(database_catalog_throw_on_table_shutdown) \
+    REGULAR(database_catalog_throw_on_table_prepare_shutdown) \
+    REGULAR(database_replicated_throw_on_stop_replication) \
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \
     REGULAR(taskstats_counters_reset_throw) \
@@ -212,7 +215,9 @@ static struct InitFiu
     PAUSEABLE(transaction_after_commit_pause) \
     REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
     REGULAR(tcp_handler_fail_connection_setup) \
-    REGULAR(distributed_plan_status_check_reenqueue_fault)
+    REGULAR(distributed_plan_status_check_reenqueue_fault) \
+    ONCE(zk_send_thread_request_window_throw) \
+    ONCE(zk_send_thread_operations_insert_throw)
 
 namespace FailPoints
 {
