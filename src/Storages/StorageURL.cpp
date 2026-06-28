@@ -1535,6 +1535,20 @@ std::optional<UInt128> IStorageURLBase::getModificationHash(const StorageSnapsho
 {
     const auto & settings = context->getSettingsRef();
 
+    /// The read path (`ReadFromURL::createIterator`) expands glob patterns
+    /// (`{a,b}`) and `|`-separated failover options into several concrete URLs
+    /// and reads those, while a failover table (`StorageURLWithFailover`) keeps
+    /// an empty `uri` and reads from `uri_options`. This probe only covers the
+    /// single, unexpanded `uri`. Probing the literal pattern string could miss
+    /// changes in the query-visible data: a server may return a stable strong
+    /// `ETag` for the literal `/{a,b}.csv` resource while `/a.csv` or `/b.csv`
+    /// change. We do not probe the exact URL set the read path uses, so we
+    /// cannot guarantee change detection here. Fail closed (return nullopt) so
+    /// the consistent query cache and `REFRESH ... IF CHANGED` never reuse stale
+    /// results for such tables.
+    if (uri.empty() || urlWithGlobs(uri))
+        return {};
+
     Poco::URI request_uri(uri);
     Poco::Net::HTTPBasicCredentials credentials;
     StorageURLSource::setCredentials(credentials, request_uri);

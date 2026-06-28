@@ -4,6 +4,8 @@
 DROP TABLE IF EXISTS t_mt;
 DROP TABLE IF EXISTS t_mem;
 DROP TABLE IF EXISTS t_log;
+DROP TABLE IF EXISTS t_url_glob;
+DROP TABLE IF EXISTS t_url_failover;
 DROP TABLE IF EXISTS hashes;
 
 CREATE TABLE hashes (k String, v Nullable(UInt128)) ENGINE = Memory;
@@ -39,6 +41,15 @@ SELECT 'mt changed on merge', (SELECT v FROM hashes WHERE k = 'mt_b') != (SELECT
 SELECT 'mem changed on insert', (SELECT v FROM hashes WHERE k = 'mem_a') != (SELECT v FROM hashes WHERE k = 'mem_b');
 SELECT 'log changed on insert', (SELECT v FROM hashes WHERE k = 'log_a') != (SELECT v FROM hashes WHERE k = 'log_b');
 
+-- URL tables expand glob (`{a,b}`) and `|`-failover patterns into several
+-- concrete URLs at read time, so a single probe of the literal pattern string
+-- cannot guarantee change detection: modification_hash is NULL (fail closed).
+-- No server is contacted - the guard returns before any HTTP request.
+CREATE TABLE t_url_glob (x UInt64) ENGINE = URL('http://localhost:1/{a,b}.csv', CSV);
+CREATE TABLE t_url_failover (x UInt64) ENGINE = URL('http://localhost:1/a.csv|http://localhost:1/b.csv', CSV);
+SELECT 'url glob null', modification_hash IS NULL FROM system.tables WHERE database = currentDatabase() AND name = 't_url_glob';
+SELECT 'url failover null', modification_hash IS NULL FROM system.tables WHERE database = currentDatabase() AND name = 't_url_failover';
+
 -- System tables cannot tell whether their data changed: modification_hash is NULL.
 SELECT 'system table null', modification_hash IS NULL FROM system.tables WHERE database = 'system' AND name = 'one';
 
@@ -46,3 +57,5 @@ DROP TABLE hashes;
 DROP TABLE t_mt;
 DROP TABLE t_mem;
 DROP TABLE t_log;
+DROP TABLE t_url_glob;
+DROP TABLE t_url_failover;
