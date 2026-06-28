@@ -265,8 +265,10 @@ namespace MergeTreeSetting
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_COLUMN;
     extern const int INDEX_NOT_USED;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int TOO_MANY_PARTITIONS;
     extern const int NO_SUCH_DATA_PART;
     extern const int SUPPORT_IS_DISABLED;
@@ -543,7 +545,8 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             actions_settings,
             reader_settings,
             index_build_context,
-            lazy_materializing_rows);
+            lazy_materializing_rows,
+            &storage_snapshot->metadata->getColumns());
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
         pipes.emplace_back(std::move(source));
@@ -653,7 +656,8 @@ Pipe ReadFromMergeTree::readFromPool(
             actions_settings,
             reader_settings,
             index_build_context,
-            lazy_materializing_rows);
+            lazy_materializing_rows,
+            &storage_snapshot->metadata->getColumns());
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
 
@@ -782,7 +786,8 @@ Pipe ReadFromMergeTree::readInOrder(
             actions_settings,
             reader_settings,
             index_build_context,
-            lazy_materializing_rows);
+            lazy_materializing_rows,
+            &storage_snapshot->metadata->getColumns());
 
         processor->addPartLevelToChunk(isQueryWithFinal());
 
@@ -2484,9 +2489,17 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         result.column_names_to_read.push_back(ExpressionActions::getSmallestColumn(available_real_columns).name);
     }
 
-    /// Streaming queries do index analysis in MergeTreeCommitOrderSequentialSource.
+    /// Streaming queries do index analysis in MergeTreeCommitOrderSequentialSource
+    /// and return here, bypassing the UNIQUE KEY snapshot/pin + delete-bitmap
+    /// filter below. Fail closed rather than serve logically-deleted rows.
+    /// TODO(unique-key): wire the delete-bitmap filter into the streaming source.
     if (query_info_.isStream())
+    {
+        if (metadata_snapshot->hasUniqueKey())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Streaming reads (FROM ... STREAM) are not supported on tables with UNIQUE KEY.");
         return std::make_shared<AnalysisResult>(std::move(result));
+    }
 
     // Build and check if primary key is used when necessary
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
@@ -2592,6 +2605,19 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     if (!allow_query_condition_cache_)
         reader_settings.use_query_condition_cache = false;
 
+    /// The query-condition cache is server-shared and CSN-oblivious (keyed on
+    /// part+condition+mark, no CSN). For a UNIQUE KEY read it can cache marks as
+    /// non-matching after a delete-bitmap + WHERE drop their rows, then let a
+    /// reader pinned at an OLDER snapshot skip a mark whose rows are live at its
+    /// CSN -> missing rows. Disable it for UK reads. The consult/skip side is the
+    /// filterPartsByQueryConditionCache call below (guarded here); the write side
+    /// is gated where the member reader_settings is finalized in initializePipeline.
+    /// This local reader_settings only drives index analysis, but keep it consistent.
+    /// TODO(unique-key): re-enable with a CSN/snapshot-aware query-condition cache.
+    const bool table_has_unique_key = metadata_snapshot->hasUniqueKey();
+    if (table_has_unique_key)
+        reader_settings.use_query_condition_cache = false;
+
     MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
     {
         .metadata_snapshot = metadata_snapshot,
@@ -2620,7 +2646,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     }
     else
     {
-        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, mutations_snapshot, context_, log);
+        if (!table_has_unique_key) /// consult/skip side of the query-condition cache; disabled for UK reads (see above).
+            MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, mutations_snapshot, context_, log);
 
         auto get_indexes_size = [&]() -> size_t
         {
@@ -3005,7 +3032,9 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
 void ReadFromMergeTree::replaceVectorColumnWithDistanceColumn(const String & vector_column)
 {
     if (isVectorColumnReplaced())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector column unexpectedly already replaced.");
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "The `_distance` column is an internal virtual column of vector search and cannot be referenced directly in queries. "
+            "Use the distance function (e.g. `L2Distance`, `cosineDistance`) in ORDER BY instead");
     std::erase(all_column_names, vector_column);
     all_column_names.emplace_back("_distance");
     output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
@@ -3707,6 +3736,15 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// If we have neither a WHERE nor a PREWHERE condition, the query condition cache doesn't save anything --> disable it.
     bool has_where_or_prewhere = query_info.prewhere_info || query_info.filter_actions_dag;
     if (!allow_query_condition_cache || !has_where_or_prewhere)
+        reader_settings.use_query_condition_cache = false;
+
+    /// Disable the query-condition cache (write side: this `reader_settings` flows to
+    /// MergeTreeSelectProcessor) for UNIQUE KEY reads — the cache is CSN-oblivious and
+    /// server-shared, so caching marks as non-matching after a delete-bitmap drop can
+    /// make an older-snapshot reader skip a mark whose rows are live at its CSN. The
+    /// consult/skip side is gated separately in selectRangesToReadImpl.
+    /// TODO(unique-key): re-enable with a CSN/snapshot-aware query-condition cache.
+    if (storage_snapshot->metadata->hasUniqueKey())
         reader_settings.use_query_condition_cache = false;
 
     /// Initializing parallel replicas coordinator with empty ranges to read in case of
