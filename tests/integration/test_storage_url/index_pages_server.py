@@ -47,6 +47,8 @@ DATA_PARTS = {
     "/data/headers/2025/part2.tsv": "8\n",
     "/data/mixed_headers/part1.tsv": "1\n",
     "/data/mixed_headers/part2.tsv": "2\n",
+    "/data/page_cache_shard0/part.tsv": "101\n",
+    "/data/page_cache_shard1/part.tsv": "202\n",
     "/data/no_content_length_get/subdir/part1.tsv": "29\n",
     "/data/unknown_size/subdir/part1.tsv": "31\n",
     "/data/redirect_target/part1.tsv": "19\n",
@@ -174,6 +176,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             if path.startswith("/data/mixed_headers/"):
                 self.send_header("ETag", f"mixed-{path.rsplit('/', 1)[-1]}")
                 self.send_header("X-Probe-Method", "HEAD")
+            if path.startswith("/data/page_cache_shard"):
+                self.send_header("ETag", "same-etag")
             self.end_headers()
             return
         if path in (
@@ -205,6 +209,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             "/data/headers/",
             "/data/headers/2025/",
             "/data/mixed_headers/",
+            "/data/page_cache_shard0/",
+            "/data/page_cache_shard1/",
             "/data/no_content_length_get/",
             "/data/no_content_length_get/subdir/",
             "/data/unknown_size/",
@@ -296,6 +302,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/data/mixed_headers/":
             body = "<a href=\"part1.tsv\">part1.tsv</a>\n<a href=\"part2.tsv\">part2.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path in ("/data/page_cache_shard0/", "/data/page_cache_shard1/"):
+            body = "<a href=\"part.tsv\">part.tsv</a>\n"
             self._send_html(body)
             return
         if path == "/data/no_content_length_get/":
@@ -538,6 +548,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.send_header("ETag", f"mixed-{path.rsplit('/', 1)[-1]}")
                 self.send_header("X-Source-File", path.rsplit("/", 1)[-1])
                 self.send_header("X-Probe-Method", "GET")
+            if path.startswith("/data/page_cache_shard"):
+                self.send_header("ETag", "same-etag")
             self.end_headers()
             self.wfile.write(data)
             return

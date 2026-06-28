@@ -472,6 +472,19 @@ def test_url_wildcard_headers_are_not_read_from_page_cache():
     assert stats["GET /data/mixed_headers/part2.tsv"] == 2
 
 
+def test_url_wildcard_page_cache_uses_web_source_identity():
+    result = node1.query(
+        with_url_wildcard_setting(
+            "SELECT sum(x) FROM url('"
+            "http://resolver:8087/data/page_cache_shard0/part*.tsv,"
+            "http://resolver:8087/data/page_cache_shard1/part*.tsv', "
+            "'TSV', 'x UInt64') "
+            "SETTINGS use_page_cache_for_object_storage=1"
+        )
+    )
+    assert result.strip() == "303"
+
+
 def test_url_wildcard_limits_directory_traversal():
     error = node1.query_and_get_error(
         with_url_wildcard_setting(

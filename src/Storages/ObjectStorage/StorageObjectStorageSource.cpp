@@ -10,6 +10,7 @@
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatParserSharedResources.h>
@@ -50,6 +51,7 @@
 #include <boost/operators.hpp>
 #include <Common/FailPoint.h>
 #include <Poco/String.h>
+#include <Common/assert_cast.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/parseGlobs.h>
@@ -91,6 +93,15 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int CANNOT_COMPILE_REGEXP;
+    extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_UNPACK_ARCHIVE;
+    extern const int LOGICAL_ERROR;
+    extern const int FILE_DOESNT_EXIST;
+}
+
 namespace
 {
     Map objectAttributesToMap(const ObjectAttributes & attributes)
@@ -126,6 +137,31 @@ namespace
             return path;
         return path.substr(0, position);
     }
+
+    String getPageCachePathForObjectStorage(const RelativePathWithMetadata & object_info, const ObjectStoragePtr & object_storage)
+    {
+        if (object_storage->getType() != ObjectStorageType::Web)
+            return "s3:" + object_info.getPath();
+
+        if (!object_info.read_source_index)
+            return "web:" + object_info.getPath();
+
+        const auto & web_object_storage = assert_cast<const WebObjectStorage &>(*object_storage);
+        const auto & url_shards = web_object_storage.getURLShards();
+        if (*object_info.read_source_index >= url_shards.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid URL shard index: {}", *object_info.read_source_index);
+
+        SipHash hash;
+        for (const auto & url : url_shards[*object_info.read_source_index])
+        {
+            hash.update(url.base_url);
+            hash.update('\0');
+            hash.update(url.query_fragment);
+            hash.update('\0');
+        }
+
+        return fmt::format("web:{}:{}", toString(hash.get128()), object_info.getPath());
+    }
 }
 
 namespace Setting
@@ -140,15 +176,6 @@ namespace Setting
     extern const SettingsBool table_engine_read_through_distributed_cache;
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
-}
-
-namespace ErrorCodes
-{
-    extern const int CANNOT_COMPILE_REGEXP;
-    extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_UNPACK_ARCHIVE;
-    extern const int LOGICAL_ERROR;
-    extern const int FILE_DOESNT_EXIST;
 }
 
 static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
@@ -1359,7 +1386,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (use_page_cache)
     {
         pipeline.needMemoryCache(
-            "s3:" + object_info.getPath(),
+            getPageCachePathForObjectStorage(object_info, object_storage),
             "etag:" + object_info.metadata->etag,
             modified_read_settings.page_cache_settings);
     }
