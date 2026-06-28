@@ -80,6 +80,15 @@ FROM (SELECT materialize(toDecimal64('999999999.123456789', 9)::Time64(9)::Dynam
 SELECT DISTINCT d, dynamicType(d)
 FROM (SELECT materialize(toDecimal64('123456789012.34567', 5)::Dynamic(max_types=0)) AS d FROM remote('127.0.0.{1,2}', system.one));
 
+-- A typed DateTime64 leaf inside a JSON constant must reach every shard as the exact instant. JSON is
+-- serialized as text, so writing a typed DateTime64 path as local date-time text is ambiguous at a DST
+-- overlap (two distinct UTC instants share one local value, e.g. 2023-10-29 02:30:00 in Europe/Berlin):
+-- the shard reparses the text and picks the earlier instant. The literal below holds the later instant
+-- (1698543000000000000 ns), which the exact path serializes as bare integer ticks so the typed path
+-- parses it back losslessly; the buggy text path returned 1698539400000000000 instead.
+SELECT DISTINCT toUnixTimestamp64Nano(json.a)
+FROM (SELECT materialize('{"a":1698543000000000000}'::JSON(a DateTime64(9, 'Europe/Berlin'))) AS json FROM remote('127.0.0.{1,2}', system.one));
+
 DROP TABLE ts_data_94612;
 
 -- An OR chain of >= 3 equalities is rewritten to IN, whose RHS set is a constant with casts
