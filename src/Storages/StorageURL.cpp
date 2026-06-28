@@ -102,6 +102,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT;
 }
 
 static constexpr auto bad_arguments_error_message = "Storage URL requires 1-4 arguments: "
@@ -1776,6 +1777,22 @@ size_t StorageURL::evalArgsAndCollectHeadersAndBody(
                     if (format_value.getType() != Field::Types::Which::String)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected string as format argument of body()");
                     body_entry.format = format_value.safeGet<String>();
+
+                    /// Validate the output format of body() eagerly, while parsing the arguments, so that
+                    /// an invalid format fails before any HTTP request is created. Otherwise the format is
+                    /// first checked inside the request callback (see `Body::makeCallback`), which runs only
+                    /// after `ReadWriteBufferFromHTTP` has already sent the `POST` to the remote server, so an
+                    /// invalid local argument would produce remote side effects. An empty format means the
+                    /// default (`JSONLines`), which is applied in `Body::makeCallback`, so skip it here.
+                    if (!body_entry.format.empty())
+                    {
+                        FormatFactory::instance().checkFormatName(body_entry.format);
+                        if (!FormatFactory::instance().isOutputFormat(body_entry.format))
+                            throw Exception(
+                                ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT,
+                                "Format '{}' specified in the body() argument of the url table function is not suitable for output",
+                                body_entry.format);
+                    }
                 }
             }
             else

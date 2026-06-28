@@ -238,3 +238,19 @@ def test_post_count_with_explicit_structure_is_one(started_cluster):
         "SELECT * FROM url('http://localhost:8002/', JSONEachRow, 'v UInt8', body('x'))"
     )
     assert get_request_count() == 1
+
+
+def test_invalid_body_format_sends_no_request(started_cluster):
+    # An invalid `body(...)` output format is a purely local argument error, so it must be
+    # rejected while parsing the arguments, before any HTTP request is created. Otherwise the
+    # format would only be checked inside the request callback, after the POST has already been
+    # sent. Assert that the query fails and that the endpoint received zero requests.
+    for analyzer in (1, 0):
+        reset_request_count()
+        error = server.query_and_get_error(
+            "SELECT * FROM url('http://localhost:8002/', JSONEachRow, 'v UInt8', "
+            "body((SELECT 1), 'NoSuchFormat')) "
+            f"SETTINGS enable_analyzer = {analyzer}"
+        )
+        assert "UNKNOWN_FORMAT" in error
+        assert get_request_count() == 0
