@@ -20,6 +20,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 template <ObjectStorageType type>
 ColumnsDescription StorageSystemObjectStorageQueueMetadata<type>::getColumnsDescription()
 {
@@ -119,11 +124,22 @@ void StorageSystemObjectStorageQueueMetadata<type>::fillData(
                 zk_retries.resetFailures();
                 zk_retries.retryLoop([&] { responses = metadata->getZooKeeper()->tryGet(batch); });
 
+                if (responses.size() != batch.size())
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Got {} responses for {} requested paths",
+                        responses.size(), batch.size());
+
                 for (size_t i = 0; i < batch.size(); ++i)
                 {
-                    /// A node may have been removed between listing and reading it.
+                    /// `ZNONODE` is benign: a node may have been removed between
+                    /// listing and reading it, so leave the entry unset. Any other
+                    /// error means the Keeper read actually failed and must not be
+                    /// silently dropped, or the metadata would look incomplete.
                     if (responses[i].error == Coordination::Error::ZOK)
                         data[offset + i] = responses[i].data;
+                    else if (responses[i].error != Coordination::Error::ZNONODE)
+                        throw zkutil::KeeperException::fromPath(responses[i].error, batch[i]);
                 }
             }
             return data;
