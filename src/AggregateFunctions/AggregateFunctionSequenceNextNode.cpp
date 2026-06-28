@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <base/sort.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -166,7 +167,7 @@ struct SequenceNextNodeGeneralData
     {
         if (!sorted)
         {
-            std::stable_sort(std::begin(value), std::end(value), Comparator{});
+            ::stableSort(std::begin(value), std::end(value), Comparator{});
             sorted = true;
         }
     }
@@ -253,7 +254,7 @@ public:
         data(place).value.push_back(node, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if (data(rhs).value.empty())
             return;
@@ -273,7 +274,7 @@ public:
         using Comparator = typename SequenceNextNodeGeneralData<Node>::Comparator;
 
         if (!data(place).sorted && !data(rhs).sorted)
-            std::stable_sort(std::begin(a), std::end(a), Comparator{});
+            ::stableSort(std::begin(a), std::end(a), Comparator{});
         else
         {
             const auto begin = std::begin(a);
@@ -281,10 +282,10 @@ public:
             const auto end = std::end(a);
 
             if (!data(place).sorted)
-                std::stable_sort(begin, middle, Comparator{});
+                ::stableSort(begin, middle, Comparator{});
 
             if (!data(rhs).sorted)
-                std::stable_sort(middle, end, Comparator{});
+                ::stableSort(middle, end, Comparator{});
 
             std::inplace_merge(begin, middle, end, Comparator{});
         }
