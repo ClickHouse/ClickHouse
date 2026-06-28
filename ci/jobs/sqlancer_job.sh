@@ -170,7 +170,7 @@ cd /sqlancer/sqlancer-main
 # combination with the `SEMR`/`SEMRMulti` oracles (which toggle session settings
 # themselves), and those oracles are part of the curated list and already
 # provide setting-differential coverage.
-TIMEOUT="${SQLANCER_TIMEOUT_SECONDS:-600}"
+TIMEOUT="${SQLANCER_TIMEOUT_SECONDS:-18000}"
 NUM_THREADS=10
 ORACLES=$(grep -E '^ALL_ORACLES=' /sqlancer/sqlancer-main/.claude/run-sqlancer.sh | head -1 | cut -d'"' -f2)
 if [ -z "$ORACLES" ]; then
