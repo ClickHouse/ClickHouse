@@ -19,7 +19,12 @@ nodes = [
 ] + [
     cluster.add_instance(
         "node2",
-        main_configs=["configs/clusters.xml"],
+        # node2 runs the new build; pin compatible_double_hashes so its inserts still write the
+        # legacy per-part hash and deduplicate against the old (24.3) replicas of this shared
+        # ReplicatedMergeTree. With the default new_unified_hash the new node would write only the
+        # unified hash, fail to cross-deduplicate with the old replicas, and the table would end up
+        # with a second copy of the data (mixed-version migration uses compatible_double_hashes).
+        main_configs=["configs/clusters.xml", "configs/dedup_compatible.xml"],
         with_zookeeper=True,
         use_old_analyzer=False,
     )
