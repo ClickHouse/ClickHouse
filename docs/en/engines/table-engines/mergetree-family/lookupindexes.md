@@ -59,7 +59,10 @@ ALTER TABLE dim DROP LOOKUP INDEX idx_set;
 
 `table_set` is intended for membership checks.
 
-Example:
+The direct `IN table` form builds the right-hand set from the table's columns, so the
+table must contain only the lookup key columns (otherwise the number of columns would not
+match the left-hand tuple, and the columns would not match the index either). Use a
+key-only dimension table for it:
 
 ```sql
 CREATE TABLE fact
@@ -70,12 +73,23 @@ CREATE TABLE fact
 ENGINE = MergeTree
 ORDER BY (id, subid);
 
+CREATE TABLE dim_keys
+(
+    id UInt64,
+    subid UInt64,
+    LOOKUP INDEX idx_set (id, subid) TYPE table_set
+)
+ENGINE = MergeTree
+ORDER BY (id, subid);
+
 SELECT id, subid
 FROM fact
-WHERE (id, subid) IN dim;
+WHERE (id, subid) IN dim_keys;
 ```
 
-`table_set` can also be used for trivial key-only subqueries such as:
+When the dimension table also stores non-key columns (such as `dim` above, which has a
+`value` column), project just the key columns with a trivial subquery so they match the
+index:
 
 ```sql
 SELECT id, subid
