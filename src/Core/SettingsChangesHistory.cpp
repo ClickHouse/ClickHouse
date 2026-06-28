@@ -42,7 +42,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.7",
         {
             {"materialized_views_populate_atomically", false, true, "New setting that makes `CREATE MATERIALIZED VIEW ... POPULATE` atomic: existing data is snapshotted and the view is subscribed to new inserts together, under a brief exclusive lock on the source, so rows inserted during population are neither missed nor duplicated. Set to `false` for the legacy non-atomic behavior."},
+            {"use_legacy_to_time", true, false, "Use the new `toTime` function (converting values to the `Time` data type) by default instead of the legacy `toTime` (which is still available as `toTimeWithFixedDate`)."},
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
+            {"explain_query_plan_default", "legacy", "pretty", "From 26.7, `EXPLAIN PLAN` defaults to `actions=1, compact=1, pretty=1`. Set this to `legacy` to restore the pre-26.7 output."},
             {"format_geojson_validate_geometry", true, true, "New setting that controls whether the GeoJSON format enforces RFC 7946 geometry validity (minimum points per line and ring, ring closure, non-empty multi-geometries) when reading and writing"},
             {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},
             {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
