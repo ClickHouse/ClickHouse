@@ -122,6 +122,21 @@ def _classify_changed_tests(changed_files):
         for f in changed_files
     )
     binary_unchanged = bool(changed_files) and all(_non_binary(f) for f in changed_files)
+
+    # Do not classify as single-type if any changed path is inside a test-type
+    # directory but is NOT a runnable test definition (e.g. tests/integration/helpers/,
+    # tests/integration/runner, or tests/integration/conftest.py). Such paths are
+    # binary-safe but affect test behaviour across types — skipping integration
+    # coverage because helpers/ changed alongside one stateless test is wrong.
+    def _is_integration_infra(p):
+        p = p.removeprefix(".").removeprefix("/")
+        return p.startswith("tests/integration/") and not p.startswith("tests/integration/test_")
+
+    if integration or any(_is_integration_infra(f) for f in changed_files):
+        # Treat any integration-directory change (helper, runner, conftest, …) as
+        # an integration change so integration coverage is never skipped.
+        integration = integration or any(_is_integration_infra(f) for f in changed_files)
+
     return stateless, integration, unit, binary_unchanged
 
 

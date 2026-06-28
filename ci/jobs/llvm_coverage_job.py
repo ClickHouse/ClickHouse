@@ -338,11 +338,43 @@ if __name__ == "__main__":
 
     results = []
 
-    # Before merging profdata, supplement any test types that were skipped in
-    # this PR run (e.g. IT/unit jobs skipped for a stateless-only PR). Download
-    # their profdata from the most recent compatible master run so the merged
-    # llvm_coverage.info reflects all test types, not just the ones that ran.
+    # Classify changed paths BEFORE touching profdata so the supplement decision
+    # is based on what the PR actually changed, not on which artifacts arrived.
+    # We use the stored changed_files from store_data.py (available as a pre-hook
+    # key) rather than changes.diff, which is only written after the merge step.
+    _early_changed_paths: set[str] = set()
     if not is_master_branch:
+        _info_obj = Info()
+        _stored = _info_obj.get_kv_data("changed_files") or []
+        _early_changed_paths = set(_stored)
+
+    _NON_BINARY_TOP_LEVEL_FILES_EARLY = frozenset({
+        "README.md", "LICENSE", "CHANGELOG.md", "CONTRIBUTING.md",
+        "NOTICE", "AUTHORS", "CODE_OF_CONDUCT.md", "SECURITY.md",
+        ".gitignore", ".gitattributes", ".editorconfig",
+        ".dockerignore", ".clang-format", ".clang-tidy",
+    })
+
+    def _is_non_binary_path_early(p: str) -> bool:
+        return (
+            p.startswith("tests/")
+            or p.startswith("ci/") or p.startswith(".github/")
+            or p.startswith("docs/")
+            or (p.startswith("src/") and "/tests/" in p)
+            or ("/" not in p and p in _NON_BINARY_TOP_LEVEL_FILES_EARLY)
+        )
+
+    # True only when every changed path provably cannot affect the binary.
+    # An empty path set (failed lookup) is treated as binary-changing to be safe.
+    _early_binary_unchanged = bool(_early_changed_paths) and all(
+        _is_non_binary_path_early(p) for p in _early_changed_paths
+    )
+
+    # Supplement missing profdata only when the binary is provably unchanged.
+    # For a code-changing PR, missing profdata means a CI failure, not an
+    # intentional skip — merging master profdata with a different PR binary
+    # produces silently corrupted coverage. Skip supplementing in that case.
+    if not is_master_branch and _early_binary_unchanged:
         _supplement_missing_profdata(master_track_commits)
 
     gen_report_res = Result.from_commands_run(
@@ -614,17 +646,15 @@ if __name__ == "__main__":
             _curr_info = f"{TEMP_DIR}/llvm_coverage.info"
             _global_stats_available = Path(_base_info).exists() and Path(_curr_info).exists()
 
-            # Download extra master baselines for cross-validation and for building
-            # the stable master baseline. We download them here, unconditionally
-            # whenever we have a primary baseline — both the newly-covered and the
-            # LBC analyses benefit from them regardless of what the PR changed.
-            # (The original design gated this on _binary_unchanged, but that gate
-            # was broken for test-only PRs: generate_diff_coverage_report.sh exits
-            # early without writing changes.diff when no C/C++ files changed, so
-            # _changed_paths is empty, _binary_unchanged evaluates to False, and
-            # the download never fired. The 2.5 GB concern is addressed by capping
-            # TARGET_EXTRA_BASELINES at 5 — not by a complex gate.)
-            if _global_stats_available:
+            # Download extra master baselines only when a consumer will actually
+            # use them. The two consumers are:
+            #   1. print_newly_covered_code.py — runs when _tests_changed and
+            #      _binary_unchanged (stable union cross-validation)
+            #   2. print_uncovered_code.py diff report — runs when _diff_ran
+            #      (C/C++ source changed, stable union used for the delta)
+            # Docs-only, helper-only, or CI-only PRs where neither consumer fires
+            # should not pay the ~2.5 GB download cost.
+            if _global_stats_available and (_diff_ran or (_tests_changed and _binary_unchanged)):
                 # Use the actual SHA stored by generate_diff_coverage_report.sh
                 # alongside base_llvm_coverage.info as the skip anchor. This is
                 # the commit whose .info was really downloaded — it may differ
