@@ -43,6 +43,7 @@ namespace ProfileEvents
     extern const Event RefreshableViewSyncReplicaSuccess;
     extern const Event RefreshableViewSyncReplicaRetry;
     extern const Event RefreshableViewLockTableRetry;
+    extern const Event ZooKeeperWatchTriggeredMaterializedViewRefresh;
 }
 
 namespace DB
@@ -79,6 +80,28 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int ABORTED;
     extern const int TABLE_UUID_MISMATCH;
+}
+
+namespace
+{
+
+/// Build the dependency StorageIDs, resolving unqualified names against the view's database.
+/// An empty database would later throw from StorageID::getFullTableName() during scheduling.
+std::vector<StorageID> parseRefreshDependencies(const ASTRefreshStrategy & strategy, const String & default_database)
+{
+    std::vector<StorageID> deps;
+    if (!strategy.dependencies)
+        return deps;
+    for (auto && dependency : strategy.dependencies->children)
+    {
+        StorageID id = dependency->as<const ASTTableIdentifier &>();
+        if (id.database_name.empty() && !default_database.empty())
+            id.database_name = default_database;
+        deps.push_back(std::move(id));
+    }
+    return deps;
+}
+
 }
 
 RefreshTask::RefreshTask(
@@ -192,10 +215,7 @@ OwnedRefreshTask RefreshTask::create(
     bool empty,
     bool is_restore_from_backup)
 {
-    std::vector<StorageID> deps;
-    if (strategy.dependencies)
-        for (auto && dependency : strategy.dependencies->children)
-            deps.emplace_back(dependency->as<const ASTTableIdentifier &>());
+    std::vector<StorageID> deps = parseRefreshDependencies(strategy, view->getStorageID().database_name);
 
     auto task = std::make_shared<RefreshTask>(view, context, strategy, std::move(deps), attach, coordinated, empty, is_restore_from_backup);
 
@@ -206,8 +226,6 @@ OwnedRefreshTask RefreshTask::create(
 
     task->watch_callback = std::make_shared<Coordination::WatchCallback>([w = task->coordination.watches, task_waker = task->scheduling_task->getWatchCallback()](const Coordination::WatchResponse & response)
     {
-        w->root_watch_active.store(false);
-        w->children_watch_active.store(false);
         w->should_reread_znodes.store(true);
         (*task_waker)(response);
     });
@@ -379,10 +397,8 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
         std::lock_guard guard(mutex);
 
         refresh_schedule = RefreshSchedule(new_strategy);
-        std::vector<StorageID> deps;
-        if (new_strategy.dependencies)
-            for (auto && dependency : new_strategy.dependencies->children)
-                deps.emplace_back(dependency->as<const ASTTableIdentifier &>());
+        std::vector<StorageID> deps = parseRefreshDependencies(
+            new_strategy, view ? view->getStorageID().database_name : String{});
 
         /// Update dependency graph.
         if (set_handle)
@@ -660,6 +676,11 @@ void RefreshTask::doScheduling(bool is_shutdown)
 {
     auto component_guard = Coordination::setCurrentComponent("RefreshTask::doScheduling");
     std::unique_lock lock(mutex);
+
+    /// shutdown() runs doScheduling(is_shutdown=true) without holding the mutex, so a parallel
+    /// shutdown() can null `view` before we enter. Bail before dereferencing it below.
+    if (!view)
+        return;
 
     /// The way this function generally works is:
     ///  * Look at state in zookeeper and in memory and at current time.
@@ -1150,9 +1171,17 @@ void RefreshTask::notifyDependentsIfNeeded(std::unique_lock<std::mutex> & lock)
     auto info = getInfoForDependentViewsLocked(lock);
     if (info != coordination.notified_dependents)
     {
+        /// Our callers (readZnodesIfNeeded, updateCoordinationState) release the mutex before
+        /// reaching here, so a parallel shutdown() may have nulled `view`. Bail in that case
+        /// (shutdown() does its own final notifyDependents()), and snapshot the accessors before
+        /// unlocking so they can't turn into a null deref while we are unlocked.
+        if (!view)
+            return;
         coordination.notified_dependents = info;
+        ContextPtr context = view->getContext();
+        StorageID view_storage_id = view->getStorageID();
         lock.unlock();
-        view->getContext()->getRefreshSet().notifyDependents(view->getStorageID());
+        context->getRefreshSet().notifyDependents(view_storage_id);
         lock.lock();
     }
 }
@@ -1359,18 +1388,13 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
     if (!zookeeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Keeper server doesn't support multi-reads. Refreshable materialized views won't work.");
 
-    /// Set watches. (This is a lot of code, is there a better way?)
-    if (!coordination.watches->root_watch_active.load())
-    {
-        coordination.watches->root_watch_active.store(true);
-        zookeeper->existsWatch(coordination.path, nullptr, watch_callback);
-    }
-    if (!coordination.watches->children_watch_active.load())
-    {
-        coordination.watches->children_watch_active.store(true);
-        zookeeper->getChildrenWatch(coordination.path, nullptr, watch_callback);
-    }
+    /// Do separate requests just to add watches.
+    Coordination::WatchCallbackPtrOrEventPtr labelled_watch{
+        watch_callback, ProfileEvents::ZooKeeperWatchTriggeredMaterializedViewRefresh};
+    zookeeper->existsWatch(coordination.path, nullptr, labelled_watch);
+    zookeeper->getChildrenWatch(coordination.path, nullptr, labelled_watch);
 
+    /// Do an atomic multi-read.
     Strings paths {coordination.path, coordination.path + "/running", coordination.path + "/paused"};
     auto responses = zookeeper->tryGet(paths.begin(), paths.end());
 
