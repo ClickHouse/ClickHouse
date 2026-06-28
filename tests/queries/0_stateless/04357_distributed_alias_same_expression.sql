@@ -200,12 +200,12 @@ SELECT length(a1) AS l, length(a2) AS m, count() AS c FROM dist_longlit GROUP BY
 DROP TABLE dist_longlit;
 DROP TABLE loc_longlit;
 
--- Adversarial: text that looks like a planner table qualifier but is not one must not perturb the collapse
--- reconstruction. The reconstruction realigns the shard/initiator `__tableN` numbering by scanning inlined
--- action-name text, so a column literally named `__table9`, a string constant `'__table9'`, and an over-long
--- `__table999...` digit run must NOT be treated as table indices (the qualifier `__table<digits>.` always has a
--- trailing dot, and an over-long index must not overflow the parse). All of these ride along a duplicate-ALIAS
--- collapse nested in a subquery, the case that actually triggers the realignment.
+-- Adversarial: user text that looks like a planner table qualifier `__tableN.` must not perturb the collapse
+-- reconstruction. The reconstruction matches shard columns to expected columns by blanking the `__tableN` qualifier
+-- numbering on both sides, so any look-alike text (a column literally named `__table9`, the string constants
+-- `'__table9'` / `'__table1.'`, an over-long `__table999...` run, a backquoted column or lambda argument that
+-- contains `__table1.`) is produced identically on both sides and cancels out. Each case rides along a duplicate-ALIAS
+-- collapse nested in a subquery, the case that triggers the renumbering between the shard and initiator trees.
 DROP TABLE IF EXISTS loc_adv;
 DROP TABLE IF EXISTS dist_adv;
 
@@ -216,7 +216,13 @@ CREATE TABLE loc_adv
     `__table9` UInt8,
     `__table1.k` UInt8,
     a1 String ALIAS toString(x),
-    a2 String ALIAS toString(x)
+    a2 String ALIAS toString(x),
+    -- ALIAS columns whose expression is a lambda. The lambda argument name is user text emitted into the action name
+    -- unquoted (`__table1.` and `__table1.y` below), so it is indistinguishable in shape from a real table qualifier.
+    lam0 Array(String) ALIAS arrayMap(`__table1.` -> toString(x), [0]),
+    lam1 Array(String) ALIAS arrayMap(`__table1.` -> toString(x), [0]),
+    lamy0 Array(String) ALIAS arrayMap(`__table1.y` -> toString(x), [0]),
+    lamy1 Array(String) ALIAS arrayMap(`__table1.y` -> toString(x), [0])
 )
 ENGINE = MergeTree ORDER BY dt;
 CREATE TABLE dist_adv AS loc_adv
@@ -224,40 +230,53 @@ ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), loc
 INSERT INTO loc_adv (dt, x, `__table9`, `__table1.k`) VALUES ('2024-01-01 00:00:00', 7, 5, 3);
 
 -- A string constant `'__table9'` and an arithmetic over a column named `__table9` next to the collapsed (a1, a2)
--- pair. Neither `__table9` token is a real qualifier (the constant has no trailing dot; the column qualifier is
--- `__tableK.__table9`, where the `9` is the column name, not a table index).
+-- pair. Neither `__table9` token is a real qualifier (no trailing dot), so neither side's name is altered by the
+-- qualifier blanking and the collapsed pair still reconciles.
 SELECT a1, a2, w, n FROM
 (
     SELECT a1, a2, concat('__table9', a1) AS w, `__table9` + 1 AS n
     FROM dist_adv GROUP BY a1, a2, `__table9`
 ) ORDER BY a1;
 
--- A string constant that mimics a qualifier with an over-long digit run (would overflow UInt64 if parsed as a
--- table index). It must be skipped, not parsed, and the collapsed pair must still reconcile.
+-- A string constant with an over-long digit run. The digits are never parsed into an integer, so an over-long run
+-- cannot overflow, and the collapsed pair still reconciles.
 SELECT a1, a2, c FROM
 (
     SELECT a1, a2, concat('__table99999999999999999999999999999.col', a1) AS c
     FROM dist_adv GROUP BY a1, a2
 ) ORDER BY a1;
 
--- A string constant `'__table1.'` that mimics a complete qualifier (digits + trailing dot). It must be skipped,
--- not read as table index 1: otherwise its id collides with the shard's renumbered real `__table1` alias, the
--- initiator/shard index sets differ in size, the realignment is disabled, and the collapsed pair fails to reconcile
--- with NUMBER_OF_COLUMNS_DOESNT_MATCH. The trailing dot alone cannot distinguish it; the quote must.
+-- A string constant `'__table1.'` that mimics a complete qualifier (digits + trailing dot). It is the same text on
+-- the shard and the initiator, so blanking its number on both sides cancels out; it does not collide with the real
+-- `__table1` alias the way an asymmetric remap would, and the collapsed pair reconciles instead of failing with
+-- NUMBER_OF_COLUMNS_DOESNT_MATCH.
 SELECT a1, a2, v FROM
 (
     SELECT a1, a2, concat('__table1.', a1) AS v
     FROM dist_adv GROUP BY a1, a2
 ) ORDER BY a1;
 
--- A backquoted column identifier `__table1.k` that looks like a qualifier with a trailing dot once backquotes are
--- ignored. Inside the backquoted span it is a column name, not a qualifier, and must be skipped just like the
--- string constant above.
+-- A backquoted column identifier `__table1.k` that looks like a qualifier with a trailing dot. It is user text, the
+-- same on both sides, so it cancels out just like the string constant above.
 SELECT a1, a2, m FROM
 (
     SELECT a1, a2, `__table1.k` AS m
     FROM dist_adv GROUP BY a1, a2, `__table1.k`
 ) ORDER BY a1;
+
+-- Lambda argument names leak into the action name unquoted. `__table1.` (digits + trailing dot) and `__table1.y`
+-- (which also carries a column-name tail, the same shape as a real qualifier) are both produced identically on the
+-- shard and the initiator, so blanking the qualifier numbering on both sides cancels them out and the collapsed
+-- (lam0, lam1) / (lamy0, lamy1) pairs reconcile instead of failing with NUMBER_OF_COLUMNS_DOESNT_MATCH.
+SELECT lam0, lam1 FROM
+(
+    SELECT lam0, lam1 FROM dist_adv GROUP BY lam0, lam1
+) ORDER BY lam0;
+
+SELECT lamy0, lamy1 FROM
+(
+    SELECT lamy0, lamy1 FROM dist_adv GROUP BY lamy0, lamy1
+) ORDER BY lamy0;
 
 DROP TABLE dist_adv;
 DROP TABLE loc_adv;

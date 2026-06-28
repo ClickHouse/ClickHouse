@@ -12,7 +12,6 @@
 #include <Planner/PlannerActionsVisitor.h>
 
 #include <optional>
-#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -23,7 +22,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-#include <IO/ReadHelpers.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
@@ -889,110 +887,29 @@ private:
     std::unordered_map<String, String> & translation;
 };
 
-/// A planner-generated table qualifier matched in a column action name: the `__tableN.` token starting at
-/// `begin`, with the numeric index N already parsed into `id`. `end` is the offset just past the digits (the `.`),
-/// so the `__table` prefix spans `[begin, begin + 7)` and the digits span `[begin + 7, end)`.
-struct TableQualifier
-{
-    size_t begin;
-    size_t end;
-    UInt64 id;
-};
-
-/// Try to match a real analyzer-generated table qualifier `__tableN.` whose `__table` prefix starts at `at`.
-/// This validates the qualifier SHAPE only; the callers (`collectTableIds` / `remapTableIds`) are responsible for
-/// not invoking it inside a quoted/backquoted span, where `__tableN.`-looking text is user data rather than a
-/// qualifier.
+/// Blank the numeric index of every analyzer-generated table qualifier `__table<digits>.` in a column action name,
+/// rewriting `__table<digits>.` to `__table.`. Returns the canonicalized name.
 ///
-/// The qualifier format is fixed by `buildColumnIdentifier` (Planner/PlannerContext.cpp), which renders a column
-/// identifier as `backQuoteIfNeed(table_alias) + "." + backQuoteIfNeed(column_name)`, where the alias is the
-/// `__tableN` assigned by `createUniqueAliasesIfNecessary`. `__tableN` is a valid identifier so it is never
-/// backquoted, and it is always followed by the `.` column separator. Requiring all of:
-///   - a non-word character (or string start) immediately before `__table`, so we do not match a suffix of a
-///     longer identifier such as `my__table1.`;
-///   - at least one digit after `__table`;
-///   - a `.` immediately after the digits, so a bare column named `__table9` (rendered `__tableK.__table9`, no
-///     trailing dot) is not taken for a qualifier;
-///   - the digit run fitting in UInt64 (`tryParse`, which checks overflow and never throws);
-/// restricts matching to genuine qualifiers in unquoted text.
-std::optional<TableQualifier> matchTableQualifier(const String & name, size_t at)
-{
-    static constexpr std::string_view prefix = "__table";
-    if (name.compare(at, prefix.size(), prefix) != 0)
-        return {};
-    if (at > 0 && isWordCharASCII(name[at - 1]))
-        return {};
-
-    size_t digit_begin = at + prefix.size();
-    size_t digit_end = digit_begin;
-    while (digit_end < name.size() && isNumericASCII(name[digit_end]))
-        ++digit_end;
-    if (digit_end == digit_begin || digit_end >= name.size() || name[digit_end] != '.')
-        return {};
-
-    UInt64 id = 0;
-    if (!tryParse<UInt64>(id, name.data() + digit_begin, digit_end - digit_begin))
-        return {};
-
-    return TableQualifier{at, digit_end, id};
-}
-
-/// The quote characters that open a span of arbitrary user text in a column action name: `'` opens a string
-/// constant (`FieldVisitorToString` -> `formatQuoted`) and `` ` `` opens a backquoted identifier (`backQuoteIfNeed`).
-/// `__tableN.`-looking text inside such a span is user data, not a planner qualifier, and must be skipped.
-bool isActionNameQuote(char c)
-{
-    return c == '\'' || c == '`';
-}
-
-/// `name[at]` opens a quoted span (see `isActionNameQuote`). Return the offset just past the closing quote, or
-/// `name.size()` if the span is unterminated. A backslash escapes the next character (including the quote itself and
-/// another backslash), matching `writeAnyEscapedString` (the escaping used by both string constants and identifiers),
-/// so the span ends at the first unescaped matching quote.
-size_t skipQuotedSpan(const String & name, size_t at)
-{
-    const char quote = name[at];
-    size_t pos = at + 1;
-    while (pos < name.size())
-    {
-        if (name[pos] == '\\')
-            pos += 2; /// Skip the backslash and the character it escapes.
-        else if (name[pos] == quote)
-            return pos + 1;
-        else
-            ++pos;
-    }
-    return name.size();
-}
-
-/// Collect the distinct `__tableN` indices that appear in a column action name. Action names embed the
-/// disambiguating table qualifier, e.g. `__table1.x` or `toString(__table1.x)`. Quoted/backquoted spans are skipped
-/// so a string constant `'__table1.'` or a backquoted identifier is never read as a qualifier. Indices are stored
-/// numerically so a later ascending zip pairs them in table-declaration (DFS pre-order) order rather than
-/// lexicographically.
-void collectTableIds(const String & name, std::set<UInt64> & ids)
-{
-    size_t pos = 0;
-    while (pos < name.size())
-    {
-        if (isActionNameQuote(name[pos]))
-            pos = skipQuotedSpan(name, pos);
-        else if (auto qualifier = matchTableQualifier(name, pos))
-        {
-            ids.emplace(qualifier->id);
-            pos = qualifier->end;
-        }
-        else
-            ++pos;
-    }
-}
-
-/// Rewrite the `__tableN` indices in a column action name according to `id_map` (initiator index -> shard index).
-/// Only real `__tableN.` qualifiers in unquoted text are rewritten (see `matchTableQualifier`), and only when the
-/// matched index is present in `id_map`. Quoted/backquoted spans are copied verbatim, so a string constant
-/// `'__table1.'` is never rewritten. All rewrites use the pre-rewrite indices, so a remap is never applied twice
-/// (e.g. 1->2 and 2->1 swap correctly).
-String remapTableIds(const String & name, const std::unordered_map<UInt64, UInt64> & id_map)
+/// Why this is the right operation. The shard query tree is renumbered independently from the initiator's:
+/// `buildQueryTreeForShard` runs `createUniqueAliasesIfNecessary`, which restarts the `__tableN` aliases at 1. When
+/// a distributed read is nested inside a subquery, the same source column is therefore named `__table1.x` on the
+/// shard but `__tableK.x` (K > 1) in the initiator's tree, even though the columns correspond. The ONLY systematic
+/// difference between the shard column name and the initiator's expected name is this qualifier numbering: every
+/// other part of the action name (function names, the column-name tails, string constants, lambda argument names) is
+/// produced identically on both sides. So erasing just the qualifier number on both sides makes corresponding
+/// columns compare equal, while leaving every non-qualifier difference intact.
+///
+/// We deliberately do NOT try to decide whether a given `__table<digits>.` is a "real" qualifier or user text that
+/// happens to look like one (a string constant `'__table1.'`, a column literally named `__table9`, or a lambda
+/// argument named `__table1.` / `__table1.x`). Such look-alike text is identical on both sides, so blanking it on
+/// both sides is harmless: it cancels out under the equality comparison. This is why the transform is applied
+/// symmetrically to the shard names and the initiator names rather than trying to remap one side onto the other.
+///
+/// The shape we blank is `__table` + at least one digit + `.`, with a non-word character (or string start) before
+/// `__table` so we never touch a suffix of a longer identifier such as `my__table1.`. A bare column named `__table9`
+/// has no trailing dot (it renders as `__tableK.__table9`) and is left untouched, as is the digit-less `__table.`.
+/// The digit run is never parsed into an integer, so an over-long run cannot overflow.
+String canonicalizeTableQualifiers(const String & name)
 {
     static constexpr std::string_view prefix = "__table";
     String result;
@@ -1000,24 +917,24 @@ String remapTableIds(const String & name, const std::unordered_map<UInt64, UInt6
     size_t pos = 0;
     while (pos < name.size())
     {
-        if (isActionNameQuote(name[pos]))
+        bool boundary = pos == 0 || !isWordCharASCII(name[pos - 1]);
+        if (boundary && name.compare(pos, prefix.size(), prefix) == 0)
         {
-            size_t span_end = skipQuotedSpan(name, pos);
-            result.append(name, pos, span_end - pos); /// Copy the quoted span verbatim.
-            pos = span_end;
+            size_t digit_begin = pos + prefix.size();
+            size_t digit_end = digit_begin;
+            while (digit_end < name.size() && isNumericASCII(name[digit_end]))
+                ++digit_end;
+            if (digit_end > digit_begin && digit_end < name.size() && name[digit_end] == '.')
+            {
+                /// Genuine qualifier shape `__table<digits>.`: copy `__table` and the `.`, dropping the digits.
+                result.append(prefix);
+                result.push_back('.');
+                pos = digit_end + 1;
+                continue;
+            }
         }
-        else if (auto qualifier = matchTableQualifier(name, pos))
-        {
-            auto it = id_map.find(qualifier->id);
-            result.append(prefix);
-            result.append(it != id_map.end() ? toString(it->second) : toString(qualifier->id));
-            pos = qualifier->end; /// Resume at the `.`; the column part is copied verbatim on later iterations.
-        }
-        else
-        {
-            result.push_back(name[pos]);
-            ++pos;
-        }
+        result.push_back(name[pos]);
+        ++pos;
     }
     return result;
 }
@@ -1044,36 +961,18 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
         visitor.visit(query_tree_for_visit);
     }
 
-    std::unordered_map<String, size_t> shard_name_to_index;
-    shard_name_to_index.reserve(shard_header.columns());
+    /// Index the shard columns by their canonicalized name (qualifier numbering blanked, see
+    /// `canonicalizeTableQualifiers`). The shard query tree is renumbered independently from the initiator's:
+    /// `buildQueryTreeForShard` runs `createUniqueAliasesIfNecessary`, which restarts the `__tableN` aliases at 1, so
+    /// when this distributed read is nested inside a subquery the same source column is named `__table1.x` on the
+    /// shard but `__tableK.x` (K > 1) in the initiator's tree. Blanking the qualifier number on both sides removes
+    /// exactly that difference, so corresponding columns match while every other difference is preserved. If two
+    /// shard columns share a canonical name we keep the first; the "every shard column used" guard below then rejects
+    /// the ambiguous case and we fall back safely.
+    std::unordered_map<String, size_t> shard_canonical_to_index;
+    shard_canonical_to_index.reserve(shard_header.columns());
     for (size_t i = 0; i < shard_header.columns(); ++i)
-        shard_name_to_index.emplace(shard_header.getByPosition(i).name, i);
-
-    /// The shard query tree is renumbered independently from the initiator's: `buildQueryTreeForShard` runs
-    /// `createUniqueAliasesIfNecessary`, which restarts the `__tableN` aliases at 1. When this distributed read is
-    /// nested inside a subquery, the same source column is therefore named `__table1.x` on the shard but
-    /// `__tableK.x` (K > 1) in the initiator's tree (the one visited above and the one `expected_header` comes from).
-    /// Matching by raw name then fails even though the columns correspond. Realign the two numberings by zipping the
-    /// distinct table indices of each side in ascending order (both trees number tables in the same DFS pre-order, so
-    /// the i-th initiator table is the i-th shard table). We only do this when the two sides expose the same number of
-    /// table indices; otherwise we keep the original names and let the bijection guard below reject any mismatch.
-    std::unordered_map<UInt64, UInt64> initiator_to_shard_table_id;
-    {
-        std::set<UInt64> shard_ids;
-        for (size_t i = 0; i < shard_header.columns(); ++i)
-            collectTableIds(shard_header.getByPosition(i).name, shard_ids);
-
-        std::set<UInt64> initiator_ids;
-        for (const auto & [identifier_name, inlined_name] : identifier_to_inlined_name)
-            collectTableIds(inlined_name, initiator_ids);
-
-        if (!shard_ids.empty() && shard_ids.size() == initiator_ids.size() && shard_ids != initiator_ids)
-        {
-            auto shard_it = shard_ids.begin();
-            for (auto initiator_it = initiator_ids.begin(); initiator_it != initiator_ids.end(); ++initiator_it, ++shard_it)
-                initiator_to_shard_table_id.emplace(*initiator_it, *shard_it);
-        }
-    }
+        shard_canonical_to_index.emplace(canonicalizeTableQualifiers(shard_header.getByPosition(i).name), i);
 
     std::vector<size_t> shard_index_for_expected(expected_header.columns());
     std::vector<bool> shard_column_used(shard_header.columns(), false);
@@ -1087,19 +986,17 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
         if (auto it = identifier_to_inlined_name.find(expected_name); it != identifier_to_inlined_name.end())
             inlined_name = it->second;
 
-        /// Translate the initiator-side table indices to the shard-side ones before looking the column up.
-        if (!initiator_to_shard_table_id.empty())
-            inlined_name = remapTableIds(inlined_name, initiator_to_shard_table_id);
-
-        auto shard_it = shard_name_to_index.find(inlined_name);
-        if (shard_it == shard_name_to_index.end())
+        /// Match by canonical name so the independent shard/initiator qualifier numbering does not matter.
+        auto shard_it = shard_canonical_to_index.find(canonicalizeTableQualifiers(inlined_name));
+        if (shard_it == shard_canonical_to_index.end())
             return {}; /// Cannot explain this column; let the caller fall back to its default reconciliation.
 
         shard_index_for_expected[i] = shard_it->second;
         shard_column_used[shard_it->second] = true;
-        /// `inlined_name` is the shard column name we matched (post table-id realignment); a difference from the
-        /// initiator-side `expected_name` is the signature of an inlined/deduplicated ALIAS column.
-        if (inlined_name != expected_name)
+        /// The matched shard column carries a name different from the initiator-side `expected_name` (whether by the
+        /// ALIAS inlining or only by the qualifier renumbering); that is the signature of an inlined/deduplicated
+        /// ALIAS column the shard collapsed.
+        if (shard_header.getByPosition(shard_it->second).name != expected_name)
             collapse_detected = true;
     }
 
