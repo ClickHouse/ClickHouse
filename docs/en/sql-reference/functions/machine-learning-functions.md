@@ -20,159 +20,333 @@ The [stochasticLogisticRegression](/sql-reference/aggregate-functions/reference/
 
 ## naiveBayesClassifier {#naivebayesclassifier}
 
-Classifies input text using a Naive Bayes classifier with n-grams and Laplace smoothing.
+`naiveBayesClassifier` classifies text with a [Naive Bayes](https://en.wikipedia.org/wiki/Naive_Bayes_classifier) model that lives in a dictionary with the `NAIVE_BAYES` layout. The dictionary is backed by a table of pre-aggregated, per-class **n-gram counts**; it compiles that table into a model once, at load time, and then classifies any input text — returning the predicted class id, and, with the companion functions, class probabilities.
 
-The model is stored as a dictionary with the `NAIVE_BAYES` layout, backed by a ClickHouse table containing n-gram counts.
+It is suited to fast, lightweight text classification such as sentiment analysis, topic or spam labelling, and language or script detection.
+
+### How it works {#how-it-works}
+
+**Training (at load time).** Each source row is a `(n-gram, class, count)` observation. When the dictionary loads, the rows are compiled once into the model. Duplicate `(n-gram, class)` rows are summed, and rows with `count = 0` are ignored.
+
+**Classifying (at query time).** To classify a string, the model splits it into n-grams according to `mode` and `n` (see [Tokenization modes](#tokenization-modes)), then scores each class by combining the class prior with how often the input's n-grams were seen in that class. The `alpha` smoothing factor keeps an n-gram that was never seen in a class from ruling that class out. The class with the highest score is the prediction; the probability functions turn the scores into probabilities that sum to `1.0`.
+
+For example, in the [quickstart](#quickstart) below `'good great love'` is classified as `0` because each of those words was seen far more often in class `0`'s counts than in class `1`'s, so class `0` scores much higher.
+
+The algorithm follows [Jurafsky & Martin, Chapter 4](https://web.stanford.edu/~jurafsky/slp3/4.pdf).
+
+### Functions {#functions}
+
+Three functions take the same two arguments and the same dictionary, differing only in what they return.
 
 **Syntax**
 
 ```sql
 naiveBayesClassifier(dictionary_name, input_text)
+naiveBayesClassifierWithProb(dictionary_name, input_text)
+naiveBayesClassifierWithAllProbs(dictionary_name, input_text)
 ```
-
-This is equivalent to calling `dictGet` for the dictionary's class attribute — the attribute named by the `class_attribute` layout setting, which is `class_id` in the examples below:
-```sql
-dictGet(dictionary_name, 'class_id', input_text)
-```
-If the class attribute is declared under a different name, use that name in the `dictGet` call.
 
 **Arguments**
 
-- `dictionary_name` — Name of a dictionary with `NAIVE_BAYES` layout. Must be a constant. [String](../data-types/string.md)
-- `input_text` — Text to classify. [String](../data-types/string.md)
-  Input is processed exactly as provided (case/punctuation preserved). An empty string is accepted and
-  classified from the priors and boundary n-grams, identically to `dictGet`.
+- `dictionary_name` — Name of a dictionary with the `NAIVE_BAYES` layout. Must be a constant. [String](../data-types/string.md).
+- `input_text` — The text to classify. [String](../data-types/string.md). It is split according to the dictionary's `mode` (raw bytes, Unicode code points, or whitespace-delimited words); case and punctuation are preserved. An empty string is accepted and classified from the priors alone.
 
-**Returned Value**
-- Predicted class ID as an unsigned integer. [UInt32](../data-types/int-uint.md)
-  Class IDs correspond to categories defined in the training data.
+**Returned values**
 
-**Related functions**
+- [`naiveBayesClassifier`](/sql-reference/functions/machine-learning-functions#naivebayesclassifier) — the predicted class id. [UInt32](../data-types/int-uint.md).
+- [`naiveBayesClassifierWithProb`](/sql-reference/functions/machine-learning-functions#naivebayesclassifierwithprob) — the predicted class and its probability, as `Tuple(class_id UInt32, probability Float64)`.
+- [`naiveBayesClassifierWithAllProbs`](/sql-reference/functions/machine-learning-functions#naivebayesclassifierwithallprobs) — every class with its probability, ordered from most to least probable (ties broken by ascending class id), as `Array(Tuple(class_id UInt32, probability Float64))`.
 
-Two companion functions share the same arguments and dictionary but return probabilities:
+Probabilities sum to `1.0`.
 
-- `naiveBayesClassifierWithProb(dictionary_name, input_text)` — returns a `Tuple(class_id UInt32, probability Float64)` for the predicted (most probable) class.
-- `naiveBayesClassifierWithAllProbs(dictionary_name, input_text)` — returns an `Array(Tuple(class_id UInt32, probability Float64))` of every class with its probability, ordered from most to least probable.
+**Relationship to `dictGet`**
 
-Probabilities are normalized with a numerically stable softmax and sum to `1.0` across classes.
-
----
-
-### Setup {#setup}
-
-**Step 1: Create a source table** with n-gram counts:
+`naiveBayesClassifier` is exactly equivalent to calling [`dictGet`](/sql-reference/functions/ext-dict-functions#dictget) for the dictionary's class attribute (the attribute named by `class_attribute`, here `class_id`):
 
 ```sql
-CREATE TABLE sentiment_ngrams
-(
-    class_id UInt32,
-    ngram String,
-    count UInt64
-) ENGINE = MergeTree ORDER BY (class_id, ngram);
+naiveBayesClassifier(dictionary_name, input_text) = dictGet(dictionary_name, 'class_id', input_text)
 ```
 
-**Step 2: Populate** with training data (n-gram counts per class):
+[`dictHas`](/sql-reference/functions/ext-dict-functions#dicthas) always returns `1`, because every input is classifiable.
+
+### Quickstart {#quickstart}
+
+A complete, runnable token-mode example. The `sentiment` dictionary built here is reused throughout this page.
+
+**1. Create a source table** of per-class n-gram counts:
+
+```sql
+CREATE TABLE sentiment_ngrams (class_id UInt32, ngram String, count UInt64)
+ENGINE = MergeTree ORDER BY (class_id, ngram);
+```
+
+**2. Insert training data** — here single words (unigrams) with how often each occurs in the positive (`0`) and negative (`1`) class:
 
 ```sql
 INSERT INTO sentiment_ngrams VALUES
-    (0, 'good', 10), (0, 'great', 8), (0, 'excellent', 6),
-    (1, 'bad', 10), (1, 'terrible', 8), (1, 'awful', 6);
+    (0,'good',10),(0,'great',8),(0,'excellent',6),(0,'love',7),(0,'happy',5),
+    (0,'amazing',4),(0,'wonderful',3),(0,'best',3),(0,'fantastic',2),(0,'nice',4),
+    (1,'bad',10),(1,'terrible',8),(1,'awful',6),(1,'hate',7),(1,'worst',5),
+    (1,'horrible',4),(1,'poor',3),(1,'disappointing',3),(1,'ugly',2),(1,'sad',4);
 ```
 
-**Step 3: Create a dictionary** with the `NAIVE_BAYES` layout:
+**3. Create the dictionary** with the `NAIVE_BAYES` layout:
 
 ```sql
-CREATE DICTIONARY sentiment_model
-(
-    ngram String,
-    class_id UInt32 DEFAULT 0,
-    count UInt64 DEFAULT 0
-)
+CREATE DICTIONARY sentiment (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
 PRIMARY KEY ngram
 SOURCE(CLICKHOUSE(TABLE 'sentiment_ngrams'))
 LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' alpha 1.0))
 LIFETIME(0);
 ```
 
-**Step 4: Classify:**
+**4. Classify** — `naiveBayesClassifier` returns the class id:
 
 ```sql
-SELECT naiveBayesClassifier('sentiment_model', 'this is great');
+SELECT naiveBayesClassifier('sentiment', 'this is great');
 ```
+
 ```response
-┌─naiveBayesClassifier('sentiment_model', 'this is great')─┐
-│ 0                                                        │
-└──────────────────────────────────────────────────────────┘
+0
 ```
-
-Or equivalently using `dictGet`:
-```sql
-SELECT dictGet('sentiment_model', 'class_id', 'this is great');
-```
-
-Text dominated by the negative class is classified as `1`:
 
 ```sql
-SELECT naiveBayesClassifier('sentiment_model', 'this is terrible');
+SELECT naiveBayesClassifier('sentiment', 'this is terrible');
 ```
+
 ```response
-┌─naiveBayesClassifier('sentiment_model', 'this is terrible')─┐
-│ 1                                                           │
-└─────────────────────────────────────────────────────────────┘
+1
 ```
 
----
+The same result via `dictGet`:
 
-### Layout Parameters {#layout-parameters}
+```sql
+SELECT dictGet('sentiment', 'class_id', 'this is great');
+```
 
-| Parameter        | Description | Example | Default |
-| ---------------- | ----------- | ------- | ------- |
-| **class_attribute** | Name of the attribute that holds the class label; the other attribute is the count. | `'class_id'` | *Required* |
-| **n**            | N-gram size. `1` = unigrams, `2` = bigrams, `3` = trigrams. | `2` | *Required* |
-| **mode**         | Tokenization method: `byte` (raw bytes), `codepoint` (Unicode characters), or `token` (whitespace-delimited words). | `token` | *Required* |
-| **alpha**        | Laplace smoothing factor for unseen n-grams. | `0.5` | `1.0` |
-| **priors_mode**  | How class prior probabilities are determined: `uniform`, `proportional`, or `explicit`. See below. | `uniform` | `proportional` |
-| **priors**       | Explicit class priors, required when `priors_mode` is `explicit`. Must sum to `1.0`. | `'0=0.6,1=0.4'` | — |
-| **store_source** | Retain the source n-gram rows so `SELECT * FROM dictionary` works. Doubles memory. | `1` | `0` |
-| **start_token**  | Optional boundary token prepended `(n-1)` times to the query input. Independent of `end_token`: set one, both, or neither; an empty value means that side is not padded (same as omitting it). The two may be equal. For `byte`/`codepoint` mode give a number (decimal or `0x` hex); for `token` mode a literal token. | `'0x01'` / `'0x10FFFE'` / `'<s>'` | — (no padding) |
-| **end_token**    | Optional boundary token appended `(n-1)` times to the query input. Independent of `start_token`; same per-mode format. | `'0xFF'` / `'0x10FFFF'` / `'</s>'` | — (no padding) |
+```response
+0
+```
 
-**Prior modes:**
-- `proportional` (default) — each class's prior is proportional to its total n-gram count in the training data, i.e. classes seen more often are more likely a priori. Use this when the training class frequencies reflect the real-world frequencies you expect at query time.
-- `uniform` — equal probability across all classes. Use this when classes are balanced, or when the training frequencies are not representative of query-time frequencies (so that the prediction depends only on the text).
-- `explicit` — probabilities given via the `priors` parameter, e.g. `priors '0=0.6,1=0.4'` (one entry per class, summing to `1.0`).
+Get the probability of the prediction, or of every class (rounded here for readability):
 
----
+```sql
+SELECT (r.1, round(r.2, 4)) FROM (SELECT naiveBayesClassifierWithProb('sentiment', 'good great love') AS r);
+```
 
-### Implementation Details {#implementation-details}
+```response
+(0,0.9987)
+```
 
-**Algorithm**
-Uses Naive Bayes classification with [Laplace smoothing](https://en.wikipedia.org/wiki/Additive_smoothing) based on n-gram probabilities per [Jurafsky & Martin, Chapter 4](https://web.stanford.edu/~jurafsky/slp3/4.pdf).
+```sql
+SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('sentiment', 'good great love'));
+```
 
-**Tokenization modes:**
-- `byte`: Each byte is one token.
-- `codepoint`: Each Unicode scalar value is one token.
-- `token`: Whitespace-delimited words.
+```response
+[(0,0.9987),(1,0.0013)]
+```
 
-**Padding (boundary tokens):**
-By default the input is tokenized as-is, with no padding. Setting `start_token` and/or `end_token` gives the leading and/or trailing n-grams positional context: the classifier pads that side of the input with `(n - 1)` copies of the token before extracting n-grams (this has no effect for `n = 1`). The two sides are independent — set one for one-sided padding, both, or neither — and an empty value is treated the same as omitting it (no padding on that side). Padding helps only if the training n-grams were produced with the *same* boundary tokens — the dictionary consumes pre-aggregated n-grams and cannot add them itself, so the convention is shared between your training pipeline and the layout. Choose rare values that will not collide with real data, for example `0x01`/`0xFF` (byte), `U+10FFFE`/`U+10FFFF` (codepoint), or `<s>`/`</s>` (token). Raw bytes cannot pass through the dictionary configuration, so `byte` and `codepoint` tokens are given as numbers (decimal or `0x` hex) and resolved to the corresponding byte / UTF-8 code point, while `token` mode takes the literal token string.
+### Dictionary structure {#dictionary-structure}
 
-**Dictionary structure:**
-The `PRIMARY KEY` must be a single `String` column holding the n-gram — it is the value passed in at query time (the text to classify), not a stored lookup key. Alongside the key, declare exactly two unsigned-integer attributes: the class label and the occurrence count. The `class_attribute` layout parameter names which attribute is the class label; the other is the count, so the two attributes may be declared in either order.
+A `NAIVE_BAYES` dictionary has a fixed shape:
 
-**Updating models:**
-Since the model is a dictionary backed by a table, you can update the training data and reload:
+- The `PRIMARY KEY` is a single `String` column — the n-gram. At query time this "key" is the text you pass in to classify, not a stored lookup key.
+- Alongside it, declare **exactly two unsigned-integer attributes**: the class label and the occurrence count.
+- The `class_attribute` layout parameter names which attribute is the class label; the other is automatically the count. The two attributes can be declared in either order.
+
+The source table holds **pre-aggregated** counts: one row per `(n-gram, class)` with how many times that n-gram was observed in that class. Producing those counts (tokenizing your corpus and grouping) is done by your training pipeline; the dictionary only consumes them.
+
+**Updating the model.** Because the model is a dictionary backed by a table, retrain by updating the table and reloading:
+
 ```sql
 INSERT INTO sentiment_ngrams VALUES (0, 'awesome', 5);
-SYSTEM RELOAD DICTIONARY sentiment_model;
+SYSTEM RELOAD DICTIONARY sentiment;
 ```
 
-**Dictionary semantics:**
-This is a *computational* dictionary, so its lookup interface behaves accordingly:
-- `dictGet(dict, '<class_attribute>', text)` classifies `text`, where `<class_attribute>` is the configured class attribute name (`class_id` in the examples above). The key is an input to classify, not a stored key, and the other attribute is not queryable.
-- `dictHas` always returns `1` — any text is classifiable.
+### Layout parameters {#layout-parameters}
 
----
+| Parameter | Description | Example | Default |
+| --- | --- | --- | --- |
+| `class_attribute` | Name of the attribute that holds the class label; the other attribute is the count. | `'class_id'` | *Required* |
+| `n` | N-gram size: `1` = unigrams, `2` = bigrams, `3` = trigrams, … (1–1024). | `2` | *Required* |
+| `mode` | Tokenization method: `byte`, `codepoint`, or `token`. See [Tokenization modes](#tokenization-modes). | `'token'` | *Required* |
+| `alpha` | Laplace smoothing factor for unseen n-grams (must be finite and `> 0`). | `0.5` | `1.0` |
+| `priors_mode` | How class priors are determined: `uniform`, `proportional`, or `explicit`. See [Prior modes](#prior-modes). | `'uniform'` | `'proportional'` |
+| `priors` | Explicit per-class priors; required only when `priors_mode` is `explicit`. Must sum to `1.0`. | `'0=0.6,1=0.4'` | — |
+| `store_source` | Retain the source rows so `SELECT * FROM dictionary` works. Roughly doubles memory. | `1` | `0` |
+| `start_token` | Boundary token prepended `(n-1)` times to the input. See [Boundary tokens](#boundary-tokens-padding). | `'0x01'` / `'<s>'` | — (no padding) |
+| `end_token` | Boundary token appended `(n-1)` times to the input. | `'0xFF'` / `'</s>'` | — (no padding) |
+
+### Tokenization modes {#tokenization-modes}
+
+`mode` decides what a "token" is, and therefore what the n-grams look like. The source n-grams must have been produced with the **same** `mode` and `n`.
+
+- `byte` — each token is a single byte; no UTF-8 assumption. With `n = 2`, `'abc'` yields the byte bigrams `'ab'`, `'bc'`. *Good for* language or encoding detection on arbitrary byte sequences, and any data where sub-character signal matters. Usually paired with `n >= 2`.
+- `codepoint` — each token is one Unicode code point (the input must be valid UTF-8). With `n = 1`, `'café'` yields the code points `'c'`, `'a'`, `'f'`, `'é'`. *Good for* script and language detection, and short or CJK text where whitespace word boundaries are unreliable.
+- `token` — each token is a whitespace-delimited word (runs of whitespace collapse to one separator). With `n = 2`, `'a b c'` yields the word bigrams `'a b'`, `'b c'`. *Good for* word-level classification on space-separated languages — sentiment, topic, spam, language of a sentence. This is the most common choice.
+
+### Prior modes {#prior-modes}
+
+The prior is the model's belief about each class *before* it looks at the text. `priors_mode` chooses how it is set.
+
+- `proportional` (default) — each class's prior is proportional to its total n-gram count in the training data, so classes seen more often are more likely a priori. **Choose it** when the training class frequencies match the frequencies you expect at query time. **Nothing to supply** — it is derived from the source counts.
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'proportional'))
+  ```
+
+- `uniform` — every class is equally likely a priori. **Choose it** when the classes are balanced, or when training frequencies are not representative of query time, so the prediction depends only on the text. **Nothing to supply.**
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'uniform'))
+  ```
+
+  (With the balanced `sentiment` data both classes have the same total count, so `proportional` and `uniform` coincide there; they differ only when classes have different totals.)
+
+- `explicit` — you provide the priors with `priors '0=0.6,1=0.4'`: one `class=probability` entry per class, each in `(0, 1]`, together summing to `1.0`. **Choose it** when you know the real base rates and they differ from training — e.g. only 1% of production traffic is spam even though the training set was balanced. **Compute them** from the expected real-world share of each class.
+
+  ```sql
+  CREATE DICTIONARY sentiment_explicit (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+  PRIMARY KEY ngram
+  SOURCE(CLICKHOUSE(TABLE 'sentiment_ngrams'))
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors '0=0.9,1=0.1'))
+  LIFETIME(0);
+  ```
+
+  A strong prior visibly pulls a weak prediction. With the default priors, the single word `'bad'` is class `1` with high confidence; a `0.9` prior on class `0` drags it down to a near tie:
+
+  ```sql
+  SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('sentiment', 'bad'));          -- default
+  SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('sentiment_explicit', 'bad')); -- explicit
+  ```
+
+  ```response
+  [(1,0.9167),(0,0.0833)]
+  [(1,0.55),(0,0.45)]
+  ```
+
+### Boundary tokens (padding) {#boundary-tokens-padding}
+
+Padding is off by default; most models do not need it. It only matters for `n > 1`.
+
+**Why it helps.** With `n > 1`, n-grams in the middle of the text get full left and right context, but the first and last tokens do not. Adding boundary tokens creates n-grams that mark "start of text" and "end of text", turning position-sensitive signals into features the model can learn — for example a word that is distinctive when it *begins* a message, or a character typical at a word's *end*.
+
+**What you must do:**
+
+1. **Decide per side.** `start_token` and `end_token` are independent — set one, both, or neither. An empty value means that side is not padded.
+2. **Choose rare values** that will not collide with real data, e.g. `0x01` / `0xFF` for `byte`, `U+10FFFE` / `U+10FFFF` for `codepoint`, or `<s>` / `</s>` for `token`.
+3. **Produce the training n-grams with the same padding.** The dictionary consumes pre-aggregated n-grams and cannot add padding itself, so the convention is shared between your training pipeline and the layout.
+
+The token format depends on the mode: for `byte` and `codepoint` give a **number** (decimal or `0x` hex, resolved to the byte / UTF-8 code point); for `token` give the **literal** token string.
+
+Padding can change the prediction. The training rows below place `x` at the start of class `0` and at the end of class `0`, but `xy` only in class `1`. Without padding, the input `'xy'` matches class `1`; with `0x01`/`0xFF` padding it becomes `<start>xy<end>`, whose boundary bigrams now point to class `0`:
+
+```sql
+CREATE TABLE pad_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO pad_src VALUES (0, '\x01x', 9), (1, 'xy', 9), (0, 'y\xFF', 9);
+
+CREATE DICTIONARY pad_nopad (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'pad_src'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'byte')) LIFETIME(0);
+
+CREATE DICTIONARY pad_padded (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'pad_src'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'byte' start_token '0x01' end_token '0xFF')) LIFETIME(0);
+
+SELECT naiveBayesClassifier('pad_nopad', 'xy'), naiveBayesClassifier('pad_padded', 'xy');
+```
+
+```response
+1	0
+```
+
+(The decimal forms `start_token '1' end_token '255'` are equivalent to `'0x01'`/`'0xFF'`.)
+
+### More examples {#more-examples}
+
+**Byte mode** — byte bigrams (`n = 2`, `mode 'byte'`):
+
+```sql
+CREATE TABLE charset_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO charset_src VALUES (0,'ab',5),(0,'bc',5),(0,'cd',5),(1,'xy',5),(1,'yz',5),(1,'zw',5);
+
+CREATE DICTIONARY charset (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'charset_src'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'byte')) LIFETIME(0);
+
+SELECT naiveBayesClassifier('charset', 'abcd'), naiveBayesClassifier('charset', 'xyzw');
+```
+
+```response
+0	1
+```
+
+**Code-point mode** — per-character script detection (`n = 1`, `mode 'codepoint'`; class `0` = Latin, `1` = Cyrillic):
+
+```sql
+CREATE TABLE script_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO script_src VALUES (0,'a',5),(0,'b',5),(0,'c',5),(0,'d',5),(1,'а',5),(1,'б',5),(1,'в',5),(1,'г',5);
+
+CREATE DICTIONARY script (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'script_src'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'codepoint')) LIFETIME(0);
+
+SELECT naiveBayesClassifier('script', 'abcd'), naiveBayesClassifier('script', 'абвг');
+```
+
+```response
+0	1
+```
+
+**Read the training data back** with `store_source`:
+
+```sql
+CREATE TABLE stored_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO stored_src VALUES (0,'alpha',3),(0,'beta',2),(1,'gamma',4);
+
+CREATE DICTIONARY stored (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'stored_src'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' store_source 1)) LIFETIME(0);
+
+SELECT ngram, class_id, count FROM stored ORDER BY ngram;
+```
+
+```response
+alpha	0	3
+beta	0	2
+gamma	1	4
+```
+
+**Classify a whole column** — the functions work directly over a table:
+
+```sql
+CREATE TABLE reviews (text String) ENGINE = Memory;
+INSERT INTO reviews VALUES ('good great love'),('bad terrible hate'),('excellent wonderful'),('awful worst');
+
+SELECT text, naiveBayesClassifier('sentiment', text) AS class FROM reviews ORDER BY text;
+```
+
+```response
+awful worst	1
+bad terrible hate	1
+excellent wonderful	0
+good great love	0
+```
+
+**Empty input** is classified from the priors alone (with the balanced `sentiment` data, that is an even split):
+
+```sql
+SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('sentiment', ''));
+```
+
+```response
+[(0,0.5),(1,0.5)]
+```
+
+### Notes {#notes}
+
+- **Computational dictionary semantics.** This is a *computational* dictionary: `dictGet(dict, '<class_attribute>', text)` classifies `text` (the key is an input to classify, not a stored key), the count attribute is not queryable, and `dictHas` always returns `1`.
+- **Source validation at load.** Every source n-gram must match the configured `n` and `mode` (in `codepoint` mode it must also be valid UTF-8); a mismatch fails the load. A source whose every count is zero, or that is empty, also fails to load.
 
 <!-- 
 The inner content of the tags below are replaced at doc framework build time with 
