@@ -200,7 +200,7 @@ void throwIfQueryWasCanceled()
     /// host) is rethrown, instead of a generic QUERY_WAS_CANCELLED.
     if (auto query_context = thread_status.tryGetQueryContext())
     {
-        if (auto query_status = query_context->getProcessListElement())
+        if (auto query_status = query_context->getProcessListElementSafe())
         {
             query_status->throwIfKilled();
             return;
