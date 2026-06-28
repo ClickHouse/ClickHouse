@@ -2228,6 +2228,19 @@ static BlockIO executeQueryImpl(
             wrapNestedConstructionSettings(out_ast,
                 max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
+            /// The construction settings above (`select` / `filter` / `order` / `sort`, top-level, per-arm,
+            /// and nested) are parsed into ASTs only here — after the single `ReplaceQueryParameterVisitor`
+            /// pass that runs on the parsed query text. Their snippets may themselves reference query
+            /// parameters (e.g. HTTP `&filter=number<{n:UInt64}&param_n=3`, or an in-query
+            /// `SETTINGS filter = 'number < {n:UInt64}'`), so substitute parameters once more on the
+            /// now-wrapped AST. The first pass is gated on the query *text* containing `{`, of which the
+            /// snippets are not part, so this second pass is required even when the base query has none.
+            if (const auto & query_parameters = context->getQueryParameters(); !query_parameters.empty())
+            {
+                ReplaceQueryParameterVisitor visitor(query_parameters);
+                visitor.visit(out_ast);
+            }
+
             validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
 
             if (settings[Setting::enforce_strict_identifier_format])
