@@ -68,11 +68,17 @@ done
 cat "$WORK"/*.meta | cut -f1 | sort -un > "$WORK/all_nums.txt"
 
 # ---- classify checks + approvals for every PR (parallel) -------------------
-xargs -P 12 -n 1 "$WORK/classify.sh" < "$WORK/all_nums.txt" > "$WORK/checks.tsv" 2>/dev/null
+# `-r` (--no-run-if-empty) is required: without it GNU xargs runs the helper
+# once even on empty input, and the helper would read an unset "$1" and emit a
+# bogus row. With `-r` the helper is skipped, and the redirect below still
+# creates an empty output file, so the report renders clean empty sections when
+# nobody has a qualifying PR (empty all_nums.txt) or none of them match the
+# "only CH Inc sync is non-green" criterion (empty match_nums.txt).
+xargs -r -P 12 -n 1 "$WORK/classify.sh" < "$WORK/all_nums.txt" > "$WORK/checks.tsv" 2>/dev/null
 # Only PRs that match the criterion need an approval/state lookup
 awk -F'\t' '$3==0 && ($2=="SUCCESS"||$2=="FAILURE"||$2=="PENDING"||$2=="IN_PROGRESS"||$2=="ABSENT"){print $1}' \
   "$WORK/checks.tsv" | sort -un > "$WORK/match_nums.txt"
-xargs -P 12 -n 1 "$WORK/approval.sh" < "$WORK/match_nums.txt" > "$WORK/appr.tsv" 2>/dev/null
+xargs -r -P 12 -n 1 "$WORK/approval.sh" < "$WORK/match_nums.txt" > "$WORK/appr.tsv" 2>/dev/null
 
 # ---- render one markdown section -------------------------------------------
 # args: <meta-file> <show-author-col:0|1> <exclude-authors-csv>
