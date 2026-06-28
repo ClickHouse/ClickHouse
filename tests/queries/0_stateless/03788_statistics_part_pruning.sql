@@ -1,4 +1,5 @@
 -- This test validates Statistics-based part pruning functionality.
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS test_stats_pruning;
 
