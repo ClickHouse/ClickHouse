@@ -623,6 +623,10 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
     WhichDataType which(type_index);
     bool ok = which.isNativeInt() || which.isNativeUInt() || which.isDecimal() || which.isFloat() || which.isDateOrDate32() || which.isDateTime() || which.isDateTime64()
         || which.isTime() || which.isTime64() || which.isStringOrFixedString();
+    /// Wide integers (Int128, Int256, UInt128, UInt256) are accepted as sources for `DateTime64` / `Time64`
+    /// targets so that `date_time_overflow_behavior` is honored uniformly across integer widths.
+    if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>)
+        ok = ok || which.isInt() || which.isUInt();
     if (!ok)
     {
         if (cast_type == CastType::accurateOrNull)
@@ -677,7 +681,18 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
                 }
             }
 
-            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale);
+#define DISPATCH_OVERFLOW_MODE(OVERFLOW_MODE) \
+    case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
+        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::execute( \
+            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale); \
+        break;
+            switch (settings.date_time_overflow_behavior)
+            {
+                DISPATCH_OVERFLOW_MODE(Throw)
+                DISPATCH_OVERFLOW_MODE(Ignore)
+                DISPATCH_OVERFLOW_MODE(Saturate)
+            }
+#undef DISPATCH_OVERFLOW_MODE
 
             return true;
         });

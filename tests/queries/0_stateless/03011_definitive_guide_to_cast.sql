@@ -89,10 +89,11 @@ SELECT CAST(-1 AS DateTime('Europe/Amsterdam'));
 
 SELECT CAST(1e20 AS DateTime64(6, 'Europe/Amsterdam'));
 
--- A special case is DateTime64(9) - the maximum resolution, where is does not cover the usual range,
--- and in this case, it throws an exception on overflow (I don't mind if we change this behavior in the future):
+-- A special case is DateTime64(9) - the maximum resolution, where it does not cover the usual range
+-- (the calendar maximum 2299-12-31 does not fit in the 64-bit storage at nanosecond resolution).
+-- Out-of-range values are saturated to the maximum representable value instead of overflowing:
 
- SELECT CAST(1e20 AS DateTime64(9, 'Europe/Amsterdam')); -- { serverError DECIMAL_OVERFLOW }
+ SELECT CAST(1e20 AS DateTime64(9, 'Europe/Amsterdam'));
 
 -- If a number is converted to a Date data type, the value is interpreted as the number of days since the Unix epoch,
 -- but if the number is larger than the range of the data type, it is interpreted as a unix timestamp
