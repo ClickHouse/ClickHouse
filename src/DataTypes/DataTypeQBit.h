@@ -12,7 +12,7 @@ namespace DB
 class DataTypeQBit final : public IDataType
 {
 private:
-    /* Type of the elements in the vector: BFloat16, Float32, Float64 */
+    /* Type of the elements in the vector: Int8, BFloat16, Float32, Float64 */
     const DataTypePtr element_type;
     /* Number of elements in the vector */
     const size_t dimension;
@@ -37,7 +37,7 @@ public:
     bool isComparableForEquality() const override { return true; }
 
     const DataTypePtr & getElementType() const { return element_type; }
-    /// Size of the vector element in bits: 16, 32, 64
+    /// Size of the vector element in bits: 8, 16, 32, 64
     size_t getElementSize() const { return 8 * element_type->getSizeOfValueInMemory(); }
     size_t getDimension() const { return dimension; }
     size_t getSizeOfValueInMemory() const override { return (getElementSize() / 8) * dimension; }

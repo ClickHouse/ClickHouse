@@ -519,7 +519,19 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 if (value.getType() != Field::Types::String)
                     return false;
 
-                auto [prefix, is_perfect] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
+                auto [prefix, is_perfect, is_exact] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
+
+                /// A pattern without wildcards is equivalent to an equality, so use an exact point range.
+                /// This must come before the empty-prefix bailout below: the empty pattern is wildcard-free
+                /// and equivalent to `value = ''`, so it needs the exact empty-string point range too.
+                if (is_exact)
+                {
+                    out.function = RPNElement::FUNCTION_IN_RANGE;
+                    out.range = Range(prefix);
+                    return true;
+                }
+
+                /// A non-exact pattern with an empty prefix (e.g. '%' or '_foo') gives no usable bound.
                 if (prefix.empty())
                     return false;
 
@@ -543,7 +555,19 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 if (value.getType() != Field::Types::String)
                     return false;
 
-                auto [prefix, is_perfect] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
+                auto [prefix, is_perfect, is_exact] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
+
+                /// A pattern without wildcards is equivalent to an inequality, so exclude an exact point range.
+                /// This must come before the empty-prefix bailout below: the empty pattern is wildcard-free
+                /// and equivalent to `value != ''`, so it needs the exact empty-string point exclusion too.
+                if (is_exact)
+                {
+                    out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
+                    out.range = Range(prefix);
+                    return true;
+                }
+
+                /// A non-exact pattern with an empty prefix (e.g. '%' or '_foo') gives no usable bound.
                 if (prefix.empty())
                     return false;
 

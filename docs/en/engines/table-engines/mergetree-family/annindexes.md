@@ -634,7 +634,7 @@ column_name QBit(element_type, dimension)
 ```
 
 Where:
-* `element_type` – the type of each vector element. Supported types are `BFloat16`, `Float32`, and `Float64`
+* `element_type` – the type of each vector element. Supported types are `Int8`, `BFloat16`, `Float32`, and `Float64`
 * `dimension` – the number of elements in each vector
 
 #### Creating a `QBit` Table and Adding Data {#qbit-create}
