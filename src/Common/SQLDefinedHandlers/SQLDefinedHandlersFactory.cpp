@@ -254,6 +254,7 @@ void SQLDefinedHandlersFactory::removeFromSQL(const ASTDropHandlerQuery & query)
     metadata_storage->remove(query.handler_name);
     loaded_handlers.erase(query.handler_name);
     rebuildSnapshot(lock);
+    LOG_INFO(log, "Dropped handler `{}`", query.handler_name);
 }
 
 void SQLDefinedHandlersFactory::removeReplicated(const ASTDropHandlerQuery & query, std::lock_guard<std::mutex> & lock)
@@ -278,6 +279,11 @@ void SQLDefinedHandlersFactory::removeReplicated(const ASTDropHandlerQuery & que
     /// stopped serving it; this reload brings in everything else another replica may have changed.
     loaded_handlers = metadata_storage->getAll();
     rebuildSnapshot(lock);
+
+    /// Log only when a znode was actually removed, so `DROP HANDLER IF EXISTS` on an absent handler stays
+    /// a silent no-op while a real deletion of a replicated HTTP endpoint leaves a server-side record.
+    if (removed)
+        LOG_INFO(log, "Dropped handler `{}`", query.handler_name);
 
     if (!removed && !query.if_exists)
         throw Exception(ErrorCodes::HANDLER_DOESNT_EXIST, "Cannot drop handler `{}`, because it doesn't exist", query.handler_name);
