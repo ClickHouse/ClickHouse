@@ -46,6 +46,7 @@ public:
     {
         std::shared_ptr<const Blocks> blocks;
         size_t rows_approx = 0;
+        UInt64 data_version = 0;
     };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
@@ -152,6 +153,11 @@ private:
 
     std::atomic<size_t> total_size_bytes = 0;
     std::atomic<size_t> total_size_rows = 0;
+
+    /// Monotonically increasing version, bumped on every modification of `data` (insert, mutation,
+    /// truncate, restore). Used by getModificationHash so that two different data sets never produce the
+    /// same hash even if they happen to have the same size or reuse the same `Blocks` address.
+    std::atomic<UInt64> data_version = 0;
 
     std::unique_ptr<MemorySettings> memory_settings;
 

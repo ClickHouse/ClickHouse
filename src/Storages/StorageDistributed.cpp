@@ -1778,6 +1778,12 @@ std::optional<UInt128> StorageDistributed::getModificationHash(const StorageSnap
         std::vector<UInt128> shard_hashes;
         for (const auto & shard_info : cluster->getShardsInfo())
         {
+            /// We probe a single replica per shard (`GET_ONE`). With more than one replica, a different
+            /// query may read from another replica, which - during replication lag - can hold different
+            /// data than the one we probed. We cannot guarantee consistency in that case, so fail closed.
+            if (shard_info.getAllNodeCount() > 1)
+                return {};
+
             auto shard_hash = getModificationHashOfRemoteTableInShard(*cluster, shard_info, remote_table_id, query_context);
             if (!shard_hash)
                 return {}; /// A shard cannot tell whether it changed - assume the worst for the whole table.

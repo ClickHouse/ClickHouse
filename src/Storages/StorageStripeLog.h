@@ -126,6 +126,11 @@ private:
     std::atomic<UInt64> total_rows = 0;
     std::atomic<UInt64> total_bytes = 0;
 
+    /// Monotonically increasing version, bumped on every data change (insert, truncate, restore). Used by
+    /// getModificationHash so that TRUNCATE followed by reinserting different rows with the same row/byte
+    /// counts still produces a different hash.
+    std::atomic<UInt64> data_version = 0;
+
     const size_t max_compress_block_size;
 
     mutable std::shared_timed_mutex rwlock;

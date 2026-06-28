@@ -276,6 +276,7 @@ public:
         storage.saveFileSizes(lock);
 
         storage.updateTotalRows(lock);
+        ++storage.data_version;
 
         done = true;
 
@@ -493,6 +494,7 @@ void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
     num_indices_saved = 0;
     total_rows = 0;
     total_bytes = 0;
+    ++data_version;
     getContext()->clearMMappedFileCache();
 }
 
@@ -596,13 +598,14 @@ std::optional<UInt64> StorageStripeLog::totalBytes(ContextPtr) const
 
 std::optional<UInt128> StorageStripeLog::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr) const
 {
-    /// Append-only apart from TRUNCATE, so the total rows and bytes plus the structure version describe
-    /// the data state.
     SipHash hash;
-    /// The table UUID distinguishes different incarnations of a table with the same name, since the row
-    /// and byte counts can repeat across DROP + CREATE.
+    /// The table UUID distinguishes different incarnations of a table with the same name. The monotonic
+    /// `data_version` (bumped on every insert, truncate and restore) guarantees the hash changes whenever
+    /// the data changes, even for TRUNCATE followed by reinserting different rows with the same row/byte
+    /// counts. The version resets to 0 on restart, which only causes a harmless cache miss.
     hash.update(getStorageID().uuid);
     hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+    hash.update(data_version.load(std::memory_order_relaxed));
     hash.update(total_rows.load(std::memory_order_relaxed));
     hash.update(total_bytes.load(std::memory_order_relaxed));
     return hash.get128();
@@ -741,6 +744,7 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
         saveIndices(lock);
         saveFileSizes(lock);
         updateTotalRows(lock);
+        ++data_version;
     }
     catch (...)
     {

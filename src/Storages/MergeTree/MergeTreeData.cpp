@@ -11072,10 +11072,29 @@ std::optional<UInt128> MergeTreeData::getModificationHash(const StorageSnapshotP
         hash.update(info.mutation);
     };
 
+    const auto * snapshot_data = dynamic_cast<const SnapshotData *>(storage_snapshot->data.get());
+
+    /// On-the-fly mutations (unmaterialized ALTER UPDATE/DELETE applied during reads when
+    /// `apply_mutations_on_fly` is set) change query-visible rows without changing the active parts that
+    /// are hashed below. We cannot represent them cheaply here, so fail closed (return nullopt) while any
+    /// such mutation is pending. Once it materializes into parts, the part info (mutation version) reflects
+    /// it and the hash works again.
+    if (snapshot_data && snapshot_data->mutations_snapshot)
+    {
+        const auto & mutations = *snapshot_data->mutations_snapshot;
+        if (mutations.hasDataMutations() || mutations.hasAlterMutations() || mutations.hasMetadataMutations())
+            return {};
+    }
+    else
+    {
+        const auto counters = getMutationCounters();
+        if (counters.num_data > 0 || counters.num_alter > 0 || counters.num_metadata > 0)
+            return {};
+    }
+
     /// Prefer the parts captured by the snapshot, so the result describes exactly the data that the
     /// snapshot refers to. Fall back to the current set of active parts for snapshots taken without data.
-    if (const auto * snapshot_data = dynamic_cast<const SnapshotData *>(storage_snapshot->data.get());
-        snapshot_data && snapshot_data->parts)
+    if (snapshot_data && snapshot_data->parts)
     {
         for (const auto & part : *snapshot_data->parts)
             add_part_info(part.data_part->info);

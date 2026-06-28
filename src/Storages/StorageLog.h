@@ -163,6 +163,11 @@ private:
     std::atomic<UInt64> total_rows = 0;
     std::atomic<UInt64> total_bytes = 0;
 
+    /// Monotonically increasing version, bumped on every data change (insert, truncate). Used by
+    /// getModificationHash so that TRUNCATE followed by reinserting different rows with the same
+    /// row/byte counts still produces a different hash.
+    std::atomic<UInt64> data_version = 0;
+
     struct DataValidationTasks : public IStorage::DataValidationTasksBase
     {
         DataValidationTasks(FileChecker::DataValidationTasksPtr file_checker_tasks_, ReadLock && lock_)

@@ -153,6 +153,7 @@ public:
         new_data->insert(new_data->end(), new_blocks.begin(), new_blocks.end());
 
         storage.data.set(std::move(new_data));
+        ++storage.data_version;
         storage.total_size_rows.store(new_total_rows, std::memory_order_relaxed);
         storage.total_size_bytes.store(new_total_bytes, std::memory_order_relaxed);
     }
@@ -200,6 +201,7 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     /// Not guaranteed to match `blocks`, but that's ok. It would probably be better to move
     /// rows and bytes counters into the MultiVersion-ed struct, then everything would be consistent.
     snapshot_data->rows_approx = total_size_rows.load(std::memory_order_relaxed);
+    snapshot_data->data_version = data_version.load(std::memory_order_relaxed);
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
 }
 
@@ -211,14 +213,12 @@ std::optional<UInt128> StorageMemory::getModificationHash(const StorageSnapshotP
     hash.update(getStorageID().uuid);
     hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
 
-    /// Every modification (insert, mutation, truncate) replaces the whole set of blocks with a freshly
-    /// allocated vector, so its identity is a reliable version marker. The row count is mixed in to make
-    /// an accidental reuse of the same address harmless.
+    /// Every modification (insert, mutation, truncate) bumps `data_version`, which is captured by the
+    /// snapshot. This is a true monotonic version, so different data always produces a different hash
+    /// (unlike the row count or the address of the `Blocks` vector, which can repeat after TRUNCATE or
+    /// allocator reuse). The version resets to 0 on restart, which only causes a harmless cache miss.
     if (const auto * snapshot_data = dynamic_cast<const SnapshotData *>(storage_snapshot->data.get()))
-    {
-        hash.update(reinterpret_cast<uintptr_t>(snapshot_data->blocks.get()));
-        hash.update(snapshot_data->rows_approx);
-    }
+        hash.update(snapshot_data->data_version);
 
     return hash.get128();
 }
@@ -247,6 +247,7 @@ SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMet
 void StorageMemory::drop()
 {
     data.set(std::make_unique<Blocks>());
+    ++data_version;
     total_size_bytes.store(0, std::memory_order_relaxed);
     total_size_rows.store(0, std::memory_order_relaxed);
 }
@@ -418,6 +419,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     total_size_bytes.store(bytes, std::memory_order_relaxed);
     total_size_rows.store(rows, std::memory_order_relaxed);
     data.set(std::move(new_data));
+    ++data_version;
 }
 
 
@@ -425,6 +427,7 @@ void StorageMemory::truncate(
     const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
     data.set(std::make_unique<Blocks>());
+    ++data_version;
     total_size_bytes.store(0, std::memory_order_relaxed);
     total_size_rows.store(0, std::memory_order_relaxed);
 }
@@ -473,6 +476,7 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
             }
 
             data.set(std::move(new_data));
+            ++data_version;
             total_size_rows.store(new_total_rows, std::memory_order_relaxed);
             total_size_bytes.store(new_total_bytes, std::memory_order_relaxed);
         }
@@ -715,6 +719,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
 
     /// Finish restoring.
     data.set(std::make_unique<Blocks>(std::move(old_and_new_blocks)));
+    ++data_version;
     total_size_bytes += new_bytes;
     total_size_rows += new_rows;
 }

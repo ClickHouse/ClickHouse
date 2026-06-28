@@ -45,11 +45,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"format_geojson_validate_geometry", true, true, "New setting that controls whether the GeoJSON format enforces RFC 7946 geometry validity (minimum points per line and ring, ring closure, non-empty multi-geometries) when reading and writing"},
             {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},
             {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
+            {"query_cache_use_only_when_data_was_not_changed", false, false, "New setting to restrict query cache entries to cases when none of the referenced tables were changed since the entry was cached."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
         {
-            {"query_cache_use_only_when_data_was_not_changed", false, false, "New setting to restrict query cache entries to cases when none of the referenced tables were changed since the entry was cached."},
             {"output_format_image_width", 1024, 1024, "New setting controlling the width of the output image for image output formats such as PNG."},
             {"output_format_image_height", 1024, 1024, "New setting controlling the height of the output image for image output formats such as PNG."},
             {"output_format_image_terminal_mode", "", "", "New setting controlling whether image output formats such as PNG are rendered directly to the terminal using an inline image protocol."},
