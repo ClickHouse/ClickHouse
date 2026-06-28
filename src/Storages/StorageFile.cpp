@@ -1219,13 +1219,15 @@ std::optional<NameSet> StorageFile::supportedPrewhereColumns() const
 {
     /// Currently don't support prewhere for virtual columns, columns with default expressions,
     /// and columns taken from file path (hive partitioning).
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    return metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName StorageFile::getColumnSizes() const
 {
     /// Reporting some fake sizes to enable prewhere optimization.
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getFakeColumnSizes();
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    return metadata_snapshot->getFakeColumnSizes();
 }
 
 bool StorageFile::prefersLargeBlocks() const
@@ -1898,6 +1900,7 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
+    bool canUpdatePrewhereInfoMultipleTimes() const override { return false; }
 
     ReadFromFile(
         const Names & column_names_,
