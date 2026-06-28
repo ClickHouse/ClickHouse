@@ -6401,6 +6401,8 @@ Possible values:
 - Positive integer — exact number of rows.
 - Negative integer — return the last N rows.
 - A real number in the open range `(0, 1)` — return that fraction of the result.
+
+This setting shapes result-producing `SELECT` / `UNION` queries. For a write query (`INSERT … SELECT`, `CREATE … AS SELECT`) it takes effect only when the source `SELECT` carries it in its own `SETTINGS` clause; a value inherited from a profile or session, or set on the `INSERT` / `CREATE` statement itself, does not propagate into the source `SELECT` — the same non-propagation rule that applies to any other setting.
 )", 0) \
     DECLARE(Double, offset, 0, R"(
 Sets the number of rows to skip before starting to return rows from the query. It adjusts the offset set by the [OFFSET](/sql-reference/statements/select/offset) clause. The value is passed through to `OFFSET` and accepts everything that `OFFSET` accepts, including negative values and fractions in `(0, 1)`.
@@ -6437,6 +6439,8 @@ Result:
 │ 109 │
 └─────┘
 ```
+
+This setting shapes result-producing `SELECT` / `UNION` queries. For a write query (`INSERT … SELECT`, `CREATE … AS SELECT`) it takes effect only when the source `SELECT` carries it in its own `SETTINGS` clause; a value inherited from a profile or session, or set on the `INSERT` / `CREATE` statement itself, does not propagate into the source `SELECT` — the same non-propagation rule that applies to any other setting.
 )", 0) \
     \
     DECLARE(Double, page, 0, R"(
