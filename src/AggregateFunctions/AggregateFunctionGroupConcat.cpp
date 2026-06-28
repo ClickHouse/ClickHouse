@@ -110,7 +110,7 @@ void GroupConcatImpl<has_limit>::add(
 }
 
 template <bool has_limit>
-void GroupConcatImpl<has_limit>::merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const
+void GroupConcatImpl<has_limit>::mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const
 {
     auto & cur_data = this->data(place);
     auto & rhs_data = this->data(rhs);
@@ -232,7 +232,7 @@ bool GroupConcatImpl<has_limit>::allocatesMemoryInArena() const { return true; }
 
 // Implementation of add, merge, serialize, deserialize, insertResultInto, etc. remains unchanged.
 
-AggregateFunctionPtr createAggregateFunctionGroupConcat(
+static AggregateFunctionPtr createAggregateFunctionGroupConcat(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertUnary(name, argument_types);
@@ -273,6 +273,7 @@ AggregateFunctionPtr createAggregateFunctionGroupConcat(
     return std::make_shared<GroupConcatImpl</* has_limit= */ false>>(argument_types[0], parameters, limit, delimiter);
 }
 
+void registerAggregateFunctionGroupConcat(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupConcat(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };

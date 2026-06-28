@@ -50,7 +50,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
-    extern const int TABLE_IS_READ_ONLY;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int QUERY_IS_PROHIBITED;
@@ -76,7 +76,7 @@ BlockIO InterpreterDeleteQuery::execute()
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
-        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
+        throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
 
     if (getContext()->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
         && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
@@ -91,6 +91,10 @@ BlockIO InterpreterDeleteQuery::execute()
     }
 
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+    /// For DataLake tables with lazy initialization (e.g. from DatabaseDataLake / REST catalog),
+    /// metadata is not loaded until the first access.  Initialize it now so that
+    /// supportsDelete() and subsequent mutation checks see valid metadata.
+    table->updateExternalDynamicMetadataIfExists(getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
 
     if (table->supportsDelete())
@@ -217,6 +221,7 @@ BlockIO InterpreterDeleteQuery::execute()
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "DELETE query is not supported for table {}", table->getStorageID().getFullTableName());
 }
 
+void registerInterpreterDeleteQuery(InterpreterFactory & factory);
 void registerInterpreterDeleteQuery(InterpreterFactory & factory)
 {
     auto create_fn = [](const InterpreterFactory::Arguments & args)

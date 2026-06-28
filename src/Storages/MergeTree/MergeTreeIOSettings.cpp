@@ -34,6 +34,7 @@ namespace Setting
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
+    extern const SettingsUInt64 predicate_statistics_sample_rate;
 }
 
 namespace MergeTreeSetting
@@ -98,7 +99,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , object_shared_data_buckets(isCompactPart(data_part) ? (*storage_settings)[MergeTreeSetting::object_shared_data_buckets_for_compact_part] : (*storage_settings)[MergeTreeSetting::object_shared_data_buckets_for_wide_part])
     , max_buckets_in_map((*storage_settings)[MergeTreeSetting::max_buckets_in_map])
     , map_buckets_strategy((*storage_settings)[MergeTreeSetting::map_buckets_strategy])
-    , map_buckets_coefficient((*storage_settings)[MergeTreeSetting::map_buckets_coefficient])
+    , map_buckets_coefficient(static_cast<double>((*storage_settings)[MergeTreeSetting::map_buckets_coefficient]))
     , map_buckets_min_avg_size((*storage_settings)[MergeTreeSetting::map_buckets_min_avg_size])
     , use_adaptive_write_buffer_for_dynamic_subcolumns((*storage_settings)[MergeTreeSetting::use_adaptive_write_buffer_for_dynamic_subcolumns])
     , min_columns_to_activate_adaptive_write_buffer((*storage_settings)[MergeTreeSetting::min_columns_to_activate_adaptive_write_buffer])
@@ -129,6 +130,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.filesystem_prefetches_limit = settings[Setting::filesystem_prefetches_limit];
     result.enable_analyzer = settings[Setting::allow_experimental_analyzer];
     result.load_marks_asynchronously = settings[Setting::load_marks_asynchronously];
+    result.collect_predicate_statistics = settings[Setting::predicate_statistics_sample_rate] > 0;
     return result;
 }
 

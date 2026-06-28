@@ -22,6 +22,8 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
+#include <Common/setThreadName.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <base/defines.h>
 
 #include <cstddef>
@@ -73,6 +75,7 @@ DiskObjectStorageTransaction::DiskObjectStorageTransaction(
     MetadataStoragePtr metadata_storage_,
     ObjectStorageRouterPtr object_storages_,
     BlobKillerThreadPtr blob_killer_,
+    std::shared_ptr<ThreadPool> copy_object_pool_,
     bool wait_blob_removal_,
     String read_resource_name_,
     String write_resource_name_)
@@ -80,6 +83,7 @@ DiskObjectStorageTransaction::DiskObjectStorageTransaction(
     , metadata_storage(std::move(metadata_storage_))
     , object_storages(std::move(object_storages_))
     , blob_killer(std::move(blob_killer_))
+    , copy_object_pool(std::move(copy_object_pool_))
     , wait_blob_removal(wait_blob_removal_)
     , read_resource_name(std::move(read_resource_name_))
     , write_resource_name(std::move(write_resource_name_))
@@ -94,9 +98,10 @@ MultipleDisksObjectStorageTransaction::MultipleDisksObjectStorageTransaction(
     ClusterConfigurationPtr destination_cluster_,
     MetadataStoragePtr destination_metadata_storage_,
     ObjectStorageRouterPtr destination_object_storages_,
+    std::shared_ptr<ThreadPool> copy_object_pool_,
     std::string read_resource_name_,
     std::string write_resource_name_)
-    : DiskObjectStorageTransaction(destination_cluster_, destination_metadata_storage_, destination_object_storages_, /*blob_killer=*/nullptr, /*wait_blob_removal=*/false, std::move(read_resource_name_), std::move(write_resource_name_))
+    : DiskObjectStorageTransaction(destination_cluster_, destination_metadata_storage_, destination_object_storages_, /*blob_killer=*/nullptr, std::move(copy_object_pool_), /*wait_blob_removal=*/false, std::move(read_resource_name_), std::move(write_resource_name_))
     , source_cluster(std::move(source_cluster_))
     , source_metadata_storage(std::move(source_metadata_storage_))
     , source_object_storages(std::move(source_object_storages_))
@@ -268,7 +273,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support WriteMode::Append");
 
     StoredObject object(metadata_transaction->generateObjectKeyForPath(path).serialize(), path);
-    std::vector<WriteBufferPtr> writers;
+    ForkWriteBuffer::WriteBufferPtrs writers;
     auto enabled_locations = cluster->getEnabledLocations();
     for (const auto & location : enabled_locations)
     {
@@ -453,25 +458,57 @@ void DiskObjectStorageTransaction::createFile(const std::string & path)
     }
 }
 
-void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
+void DiskObjectStorageTransaction::copyFileImpl(
+    const MetadataStoragePtr & src_metadata_storage,
+    const ClusterConfigurationPtr & src_cluster,
+    const ObjectStorageRouterPtr & src_object_storages,
+    const std::string & from_file_path,
+    const std::string & to_file_path,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings)
 {
-    const auto blobs_to_copy = metadata_storage->getStorageObjects(from_file_path);
+    /// Share the enriched settings via shared_ptr so each task lambda captures a cheap refcount bump
+    /// rather than a full copy of ReadSettings / WriteSettings.
+    const auto enriched_read_settings = std::make_shared<const ReadSettings>(
+        updateIOSchedulingSettings(read_settings, read_resource_name, write_resource_name));
+    const auto enriched_write_settings = std::make_shared<const WriteSettings>(
+        updateIOSchedulingSettings(write_settings, read_resource_name, write_resource_name));
+
+    const auto blobs_to_copy = src_metadata_storage->getStorageObjects(from_file_path);
     const auto blobs_to_create = blobs_to_copy
                         | std::views::transform([&](const auto & from) { return StoredObject(metadata_transaction->generateObjectKeyForPath(to_file_path).serialize(), to_file_path, from.bytes_size); })
                         | std::ranges::to<StoredObjects>();
 
     const auto locations_for_writing = cluster->getEnabledLocations();
     const auto missing_locations = cluster->findComplement(locations_for_writing);
-    const auto local_location = cluster->getLocalLocation();
+    const auto src_local_location = src_cluster->getLocalLocation();
+
+    /// Pre-populate `written_blobs` sequentially so the parallel section does not race on it.
+    for (const auto & location : locations_for_writing)
+        for (const auto & dst_blob : blobs_to_create)
+            written_blobs[location].push_back(dst_blob);
+
+    /// Dispatch `copyObjectToAnotherObjectStorage` calls in parallel onto the disk-level pool.
+    /// We can't reuse `IObjectStorage::getThreadPoolWriter()` here because the copy implementation
+    /// itself submits onto that pool via `writeObject`, which would risk pool self-deadlock.
+    /// `ThreadPoolCallbackRunnerLocal` drains tasks in its destructor, so on exception unwinding
+    /// the captured state stays alive until in-flight workers complete.
+    ThreadPoolCallbackRunnerLocal<void> runner(*copy_object_pool, ThreadName::DISK_OBJECT_STORAGE_COPY);
 
     for (const auto & location : locations_for_writing)
     {
         for (const auto [src_blob, dst_blob] : std::views::zip(blobs_to_copy, blobs_to_create))
         {
-            written_blobs[location].push_back(dst_blob);
-            object_storages->takePointingTo(local_location)->copyObjectToAnotherObjectStorage(src_blob, dst_blob, read_settings, write_settings, *object_storages->takePointingTo(location));
+            runner.enqueueAndKeepTrack(
+                [this, src_object_storages, src_blob, dst_blob, location, src_local_location, enriched_read_settings, enriched_write_settings]
+                {
+                    src_object_storages->takePointingTo(src_local_location)->copyObjectToAnotherObjectStorage(
+                        src_blob, dst_blob, *enriched_read_settings, *enriched_write_settings, *object_storages->takePointingTo(location));
+                });
         }
     }
+
+    runner.waitForAllToFinishAndRethrowFirstError();
 
     operations_to_execute.push_back([blobs_to_create, missing_locations, to_file_path](MetadataTransactionPtr tx)
     {
@@ -482,36 +519,14 @@ void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, 
     });
 }
 
+void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
+{
+    copyFileImpl(metadata_storage, cluster, object_storages, from_file_path, to_file_path, read_settings, write_settings);
+}
+
 void MultipleDisksObjectStorageTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
 {
-    auto enriched_read_settings = updateIOSchedulingSettings(read_settings, read_resource_name, write_resource_name);
-    auto enriched_write_settings = updateIOSchedulingSettings(write_settings, read_resource_name, write_resource_name);
-
-    const auto blobs_to_copy = source_metadata_storage->getStorageObjects(from_file_path);
-    const auto blobs_to_create = blobs_to_copy
-                        | std::views::transform([&](const auto & from) { return StoredObject(metadata_transaction->generateObjectKeyForPath(to_file_path).serialize(), to_file_path, from.bytes_size); })
-                        | std::ranges::to<StoredObjects>();
-
-    const auto locations_for_writing = cluster->getEnabledLocations();
-    const auto missing_locations = cluster->findComplement(locations_for_writing);
-    const auto source_local_location = source_cluster->getLocalLocation();
-
-    for (const auto & location : locations_for_writing)
-    {
-        for (const auto [src_blob, dst_blob] : std::views::zip(blobs_to_copy, blobs_to_create))
-        {
-            written_blobs[location].push_back(dst_blob);
-            source_object_storages->takePointingTo(source_local_location)->copyObjectToAnotherObjectStorage(src_blob, dst_blob, enriched_read_settings, enriched_write_settings, *object_storages->takePointingTo(location));
-        }
-    }
-
-    operations_to_execute.push_back([blobs_to_create, missing_locations, to_file_path](MetadataTransactionPtr tx)
-    {
-        for (const auto & blob : blobs_to_create)
-            tx->recordBlobsReplication(blob, missing_locations);
-
-        tx->createMetadataFile(to_file_path, blobs_to_create);
-    });
+    copyFileImpl(source_metadata_storage, source_cluster, source_object_storages, from_file_path, to_file_path, read_settings, write_settings);
 }
 
 void DiskObjectStorageTransaction::commit()

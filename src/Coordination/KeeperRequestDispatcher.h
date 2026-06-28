@@ -61,7 +61,7 @@ namespace DB
 ///    throughout nuraft.
 ///    (All intermediate messages inside nuraft are small, so there's no situation where our
 ///     moderate amount of requests translates to disproportionately large memory usage inside nuraft.)
-///  * After going through nuraft, newly committed requests end up in KeeperStateMachine<Storage>::commit,
+///  * After going through nuraft, newly committed requests end up in KeeperStateMachine::commit,
 ///    which produces responses and passes them to KeeperRequestDispatcher::onResponse.
 ///    From onResponse they go to responses_queue, then to KeeperTCPHandler::responses (through responseThread).
 ///    The total size of responses_queue + all KeeperTCPHandler::responses queues is tracked by
@@ -85,7 +85,13 @@ class KeeperRequestDispatcher
 public:
     explicit KeeperRequestDispatcher(KeeperServer * server_);
 
-    void startup();
+    /// Start response draining before Raft startup. NuRaft can commit catch-up
+    /// entries during `KeeperServer::startup`, before request dispatch is safe.
+    void startupResponseThread();
+
+    /// Start request dispatch after `KeeperServer::startup`, because `dispatchThread`
+    /// uses `raft_instance` to open a client append stream.
+    void startupDispatchThread();
 
     /// closed_all_connections is used just for an assert: if true, we expect that all
     /// onResponseDeallocated calls were made, so the tracked response queue size should be zero.
