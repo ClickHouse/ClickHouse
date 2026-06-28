@@ -162,6 +162,32 @@ QueryTreeNodePtr QueryTreeBuilder::buildQueryTreeNode(ASTPtr query_, ContextPtr 
     return query_tree_node;
 }
 
+/// The global `limit`/`offset` settings are a cap on the whole query result. For a set operation
+/// (UNION/INTERSECT/EXCEPT) they must be applied exactly once over the final result, not folded into
+/// each branch (which for range branches can't be folded at all, and for normal branches would cap
+/// each branch independently). Read the cap from the inherited context and clear it from the context
+/// passed to the children — a branch-local `SETTINGS limit`/`offset` clause is read from the branch's
+/// own SETTINGS, so it is still honored per branch — and return it via out-params so the caller can
+/// store it on the set-operation node for the planner to apply once.
+ContextMutablePtr makeSetOperationChildContext(const ContextPtr & context, UInt64 & settings_limit, UInt64 & settings_offset)
+{
+    auto child_context = Context::createCopy(context);
+    settings_limit = 0;
+    settings_offset = 0;
+
+    if (const auto & settings_ref = child_context->getSettingsRef(); settings_ref[Setting::limit] || settings_ref[Setting::offset])
+    {
+        Settings settings = child_context->getSettingsCopy();
+        settings_limit = settings[Setting::limit];
+        settings_offset = settings[Setting::offset];
+        settings[Setting::limit] = 0;
+        settings[Setting::offset] = 0;
+        child_context->setSettings(settings);
+    }
+
+    return child_context;
+}
+
 QueryTreeNodePtr QueryTreeBuilder::buildSelectOrUnionExpression(
     const ASTPtr & select_or_union_query,
     bool is_subquery,
@@ -197,19 +223,25 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     if (select_lists.children.size() == 1)
         return buildSelectOrUnionExpression(select_lists.children[0], is_subquery, cte_data, aliases, context);
 
-    auto union_node = std::make_shared<UnionNode>(Context::createCopy(context), select_with_union_query_typed.union_mode);
+    UInt64 settings_limit = 0;
+    UInt64 settings_offset = 0;
+    auto child_context = makeSetOperationChildContext(context, settings_limit, settings_offset);
+
+    auto union_node = std::make_shared<UnionNode>(Context::createCopy(child_context), select_with_union_query_typed.union_mode);
     union_node->setIsSubquery(is_subquery);
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
     union_node->setIsMaterialized(cte_data.is_materialized);
     union_node->setOriginalAST(select_with_union_query);
+    union_node->setSettingsLimit(settings_limit);
+    union_node->setSettingsOffset(settings_offset);
 
     size_t select_lists_children_size = select_lists.children.size();
 
     for (size_t i = 0; i < select_lists_children_size; ++i)
     {
         auto & select_list_node = select_lists.children[i];
-        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(select_list_node, false /*is_subquery*/, {} /*cte_name*/, aliases, context);
+        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(select_list_node, false /*is_subquery*/, {} /*cte_name*/, aliases, child_context);
         union_node->getQueries().getNodes().push_back(std::move(query_node));
     }
 
@@ -240,19 +272,25 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "UNION type is not initialized");
 
-    auto union_node = std::make_shared<UnionNode>(Context::createCopy(context), union_mode);
+    UInt64 settings_limit = 0;
+    UInt64 settings_offset = 0;
+    auto child_context = makeSetOperationChildContext(context, settings_limit, settings_offset);
+
+    auto union_node = std::make_shared<UnionNode>(Context::createCopy(child_context), union_mode);
     union_node->setIsSubquery(is_subquery);
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
     union_node->setIsMaterialized(cte_data.is_materialized);
     union_node->setOriginalAST(select_intersect_except_query);
+    union_node->setSettingsLimit(settings_limit);
+    union_node->setSettingsOffset(settings_offset);
 
     size_t select_lists_size = select_lists.size();
 
     for (size_t i = 0; i < select_lists_size; ++i)
     {
         auto & select_list_node = select_lists[i];
-        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(select_list_node, false /*is_subquery*/, {} /*cte_name*/, nullptr /*aliases*/, context);
+        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(select_list_node, false /*is_subquery*/, {} /*cte_name*/, nullptr /*aliases*/, child_context);
         union_node->getQueries().getNodes().push_back(std::move(query_node));
     }
 
@@ -328,6 +366,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     current_query_tree->setIsGroupByWithGroupingSets(select_query_typed.group_by_with_grouping_sets);
     current_query_tree->setIsGroupByAll(select_query_typed.group_by_all);
     current_query_tree->setIsLimitByAll(select_query_typed.limit_by_all);
+    current_query_tree->setIsLimitAfterAll(select_query_typed.limit_after_all);
     /// order_by_all flag in AST is set w/o consideration of `enable_order_by_all` setting
     /// since SETTINGS section has not been parsed yet, - so, check the setting here
     bool order_by_all_enabled = select_query_typed.order_by_all && enable_order_by_all;
@@ -484,6 +523,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     if (select_limit_by)
         current_query_tree->getLimitByNode() = buildExpressionList(select_limit_by, current_context);
 
+    auto select_limit_after = select_query_typed.limitAfter();
+    if (select_limit_after)
+        current_query_tree->getLimitAfter() = buildExpression(select_limit_after, current_context);
+
+    auto select_limit_until = select_query_typed.limitUntil();
+    if (select_limit_until)
+        current_query_tree->getLimitUntil() = buildExpression(select_limit_until, current_context);
+
     /// Combine limit expression with limit and offset settings into final limit expression
     /// The sequence of application is the following - offset expression, limit expression, offset setting, limit setting.
     /// Since offset setting is applied after limit expression, but we want to transfer settings into expression
@@ -504,7 +551,23 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     ///
     /// offset = offset + of_expr
     auto select_limit = select_query_typed.limitLength();
-    if (select_limit)
+    auto select_offset = select_query_typed.limitOffset();
+
+    if (select_limit_after || select_limit_until)
+    {
+        /// With LIMIT AFTER/UNTIL the explicit LIMIT is a per-window length, so the `limit`/`offset`
+        /// settings must not be folded into it. They were stripped from the context above (to keep child
+        /// queries clean) and are stored on the node, so the planner can apply them as an outer global
+        /// cap after the range step. The explicit LIMIT/OFFSET expressions are kept verbatim.
+        if (select_limit)
+            current_query_tree->getLimit() = buildExpression(select_limit, current_context);
+        if (select_offset)
+            current_query_tree->getOffset() = buildExpression(select_offset, current_context);
+
+        current_query_tree->setSettingsLimit(limit);
+        current_query_tree->setSettingsOffset(offset);
+    }
+    else if (select_limit)
     {
         /// Shortcut
         if (offset == 0 && limit == 0)
@@ -545,18 +608,20 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
         current_query_tree->getLimit() = std::make_shared<ConstantNode>(limit);
 
     /// Combine offset expression with offset setting into final offset expression
-    auto select_offset = select_query_typed.limitOffset();
-    if (select_offset && offset)
+    if (!select_limit_after && !select_limit_until)
     {
-        auto function_node = std::make_shared<FunctionNode>("plus");
-        function_node->getArguments().getNodes().push_back(buildExpression(select_offset, current_context));
-        function_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
-        current_query_tree->getOffset() = std::move(function_node);
+        if (select_offset && offset)
+        {
+            auto function_node = std::make_shared<FunctionNode>("plus");
+            function_node->getArguments().getNodes().push_back(buildExpression(select_offset, current_context));
+            function_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
+            current_query_tree->getOffset() = std::move(function_node);
+        }
+        else if (offset)
+            current_query_tree->getOffset() = std::make_shared<ConstantNode>(offset);
+        else if (select_offset)
+            current_query_tree->getOffset() = buildExpression(select_offset, current_context);
     }
-    else if (offset)
-        current_query_tree->getOffset() = std::make_shared<ConstantNode>(offset);
-    else if (select_offset)
-        current_query_tree->getOffset() = buildExpression(select_offset, current_context);
 
     return current_query_tree;
 }

@@ -14,7 +14,8 @@ public:
         size_t limit_, size_t offset_,
         bool always_read_till_end_ = false, /// Read all data even if limit is reached. Needed for totals.
         bool with_ties_ = false, /// Limit with ties.
-        SortDescription description_ = {});
+        SortDescription description_ = {},
+        bool is_limit_for_settings_ = false);
 
     String getName() const override { return "Limit"; }
 
@@ -36,6 +37,7 @@ public:
 
     bool withTies() const { return with_ties; }
     bool alwaysReadTillEnd() const { return always_read_till_end; }
+    bool isLimitForSettings() const { return is_limit_for_settings; }
 
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
@@ -58,6 +60,7 @@ private:
 
     bool with_ties;
     const SortDescription description;
+    bool is_limit_for_settings = false;
 };
 
 }

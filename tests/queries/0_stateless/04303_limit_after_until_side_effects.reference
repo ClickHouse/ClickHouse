@@ -1,0 +1,120 @@
+3
+4
+5
+6
+7
+3
+4
+5
+6
+7
+2
+3
+4
+5
+2
+3
+4
+5
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+		[5],
+		[6],
+		[7]
+	],
+
+	"rows": 3,
+
+	"rows_before_limit_at_least": 10
+}
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+		[5],
+		[6],
+		[7]
+	],
+
+	"rows": 3,
+
+	"rows_before_limit_at_least": 10
+}
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+		[5],
+		[6],
+		[7]
+	],
+
+	"extremes":
+	{
+		"min": [0],
+		"max": [9]
+	},
+
+	"rows": 3,
+
+	"rows_before_limit_at_least": 10
+}
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+		[5],
+		[6],
+		[7]
+	],
+
+	"extremes":
+	{
+		"min": [0],
+		"max": [9]
+	},
+
+	"rows": 3,
+
+	"rows_before_limit_at_least": 10
+}
+5
+6
+7
+5
+6
+5
+6
+7
+5
+6

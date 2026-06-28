@@ -21,7 +21,8 @@ LimitTransform::LimitTransform(
     bool always_read_till_end_,
     bool with_ties_,
     SortDescription description_,
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+    bool is_limit_for_settings_)
     : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
     , limit(limit_)
     , offset(offset_)
@@ -29,6 +30,7 @@ LimitTransform::LimitTransform(
     , with_ties(with_ties_)
     , description(std::move(description_))
     , updater(std::move(updater_))
+    , is_limit_for_settings(is_limit_for_settings_)
 {
     if (num_streams != 1 && with_ties)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot use LimitTransform with multiple ports and ties");

@@ -136,6 +136,14 @@ public:
     ActionsDAG getConstActionsDAG(const ColumnsWithTypeAndName & constant_inputs = {});
     ExpressionActionsPtr getConstActions(const ColumnsWithTypeAndName & constant_inputs = {});
 
+    /// Build ActionsDAG for a boolean filter expression over given columns (e.g. for LIMIT AFTER/UNTIL).
+    /// Returns the DAG and the result column name.
+    static std::pair<ActionsDAG, String> buildFilterActionsDAG(
+        ContextPtr context_,
+        const Block & header,
+        const ASTPtr & expr,
+        PreparedSetsPtr prepared_sets_ = nullptr);
+
     /** Sets that require a subquery to be create.
       * Only the sets needed to perform actions returned from already executed `append*` or `getActions`.
       * That is, you need to call getSetsWithSubqueries after all calls of `append*` or `getActions`
@@ -260,6 +268,9 @@ struct ExpressionAnalysisResult
     ActionsAndProjectInputsFlagPtr before_window;
     ActionsAndProjectInputsFlagPtr before_order_by;
     ActionsAndProjectInputsFlagPtr before_limit_by;
+    ActionsAndProjectInputsFlagPtr before_limit_range;
+    String limit_range_start_column_name;
+    String limit_range_end_column_name;
     ActionsAndProjectInputsFlagPtr final_projection;
 
     /// Columns from the SELECT list, before renaming them to aliases. Used to
@@ -426,6 +437,7 @@ private:
     ActionsAndProjectInputsFlagPtr appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order, ManyExpressionActions &);
     void validateOrderByKeyType(const DataTypePtr & key_type) const;
     bool appendLimitBy(ExpressionActionsChain & chain, bool only_types);
+    bool appendLimitRange(ExpressionActionsChain & chain, bool only_types);
     ///  appendProjectResult
 };
 

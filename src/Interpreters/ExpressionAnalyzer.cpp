@@ -128,6 +128,25 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int UNKNOWN_TYPE_OF_AST_NODE;
     extern const int ILLEGAL_COLUMN;
+    extern const int UNEXPECTED_EXPRESSION;
+}
+
+namespace
+{
+
+bool astContainsArrayJoinFunction(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * function = ast->as<ASTFunction>())
+        if (function->name == "arrayJoin")
+            return true;
+    for (const auto & child : ast->children)
+        if (!child->as<ASTSelectQuery>() && astContainsArrayJoinFunction(child))
+            return true;
+    return false;
+}
+
 }
 
 namespace
@@ -1827,6 +1846,42 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
     return true;
 }
 
+bool SelectQueryExpressionAnalyzer::appendLimitRange(ExpressionActionsChain & chain, bool only_types)
+{
+    const auto * select_query = getSelectQuery();
+
+    if (!select_query->limitAfter() && !select_query->limitUntil())
+        return false;
+
+    ExpressionActionsChainSteps::Step & step = chain.lastStep(aggregated_columns);
+
+    auto analyze_boundary = [&](const ASTPtr & expr, const char * description)
+    {
+        if (!expr)
+            return;
+        if (astContainsArrayJoinFunction(expr))
+            throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "`arrayJoin` is not allowed in LIMIT AFTER/UNTIL expressions");
+        getRootActionsForHaving(expr, only_types, step.actions()->dag);
+        const auto & column_name = expr->getColumnName();
+        if (!only_types)
+        {
+            const auto * node = step.actions()->dag.tryFindInOutputs(column_name);
+            if (node && !node->result_type->canBeUsedInBooleanContext())
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                    "{} expression must be boolean, got {}", description, node->result_type->getName());
+        }
+        step.addRequiredOutput(column_name);
+    };
+
+    analyze_boundary(select_query->limitAfter(), "LIMIT AFTER");
+    analyze_boundary(select_query->limitUntil(), "LIMIT UNTIL");
+
+    for (const auto & column : aggregated_columns)
+        step.addRequiredOutput(column.name);
+
+    return true;
+}
+
 ActionsAndProjectInputsFlagPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) const
 {
     const auto * select_query = getSelectQuery();
@@ -1972,6 +2027,28 @@ ExpressionActionsPtr ExpressionAnalyzer::getConstActions(const ColumnsWithTypeAn
 {
     auto actions = getConstActionsDAG(constant_inputs);
     return std::make_shared<ExpressionActions>(std::move(actions), ExpressionActionsSettings(getContext()));
+}
+
+std::pair<ActionsDAG, String> ExpressionAnalyzer::buildFilterActionsDAG(
+    ContextPtr context_,
+    const Block & header,
+    const ASTPtr & expr,
+    PreparedSetsPtr prepared_sets_)
+{
+    ASTPtr expr_copy = expr->clone();
+    NamesAndTypesList source_columns;
+    for (const auto & col : header)
+        source_columns.emplace_back(col.name, col.type);
+    auto syntax_result = TreeRewriter(context_).analyze(expr_copy, source_columns);
+    ExpressionAnalyzer analyzer(expr_copy, syntax_result, context_, 0, false, false, prepared_sets_);
+    ActionsDAG dag(header.getColumnsWithTypeAndName());
+    analyzer.getRootActions(expr_copy, false, dag);
+    String column_name = expr_copy->getColumnName();
+    const auto & node = dag.findInOutputs(column_name);
+    if (!node.result_type->canBeUsedInBooleanContext())
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+            "LIMIT AFTER/UNTIL expression must be boolean, got {}", node.result_type->getName());
+    return {std::move(dag), std::move(column_name)};
 }
 
 std::unique_ptr<QueryPlan> SelectQueryExpressionAnalyzer::getJoinedPlan()
@@ -2328,6 +2405,14 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         if (query_analyzer.appendLimitBy(chain, only_types || !second_stage))
         {
             before_limit_by = chain.getLastActions();
+            chain.addStep();
+        }
+
+        if (query_analyzer.appendLimitRange(chain, only_types || !second_stage))
+        {
+            before_limit_range = chain.getLastActions();
+            limit_range_start_column_name = query.limitAfter() ? query.limitAfter()->getColumnName() : "";
+            limit_range_end_column_name = query.limitUntil() ? query.limitUntil()->getColumnName() : "";
             chain.addStep();
         }
 

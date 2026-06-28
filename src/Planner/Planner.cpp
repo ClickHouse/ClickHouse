@@ -32,6 +32,7 @@
 #include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
@@ -187,6 +188,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INVALID_LIMIT_EXPRESSION;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
 namespace
@@ -460,6 +462,35 @@ std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const Field & field)
         applyVisitor(FieldVisitorToString(), field));
 }
 
+std::optional<std::pair<ActionsDAG, String>> buildLimitRangeCondition(
+    const SharedHeader & header,
+    const QueryTreeNodePtr & condition_node,
+    const PlannerContextPtr & planner_context,
+    const String & description)
+{
+    if (!condition_node)
+        return std::nullopt;
+
+    auto [condition_actions_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+        condition_node,
+        header->getColumnsWithTypeAndName(),
+        planner_context,
+        {});
+    correlated_subtrees.assertEmpty("in " + description + " expression");
+
+    const auto * output = condition_actions_dag.getOutputs().at(0);
+    if (!output->result_type->canBeUsedInBooleanContext())
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+            "{} expression must be boolean, got {}",
+            description,
+            output->result_type->getName());
+    }
+
+    return std::make_pair(std::move(condition_actions_dag), output->result_name);
+}
+
 class QueryAnalysisResult
 {
 public:
@@ -508,6 +539,8 @@ public:
 
         /// Partial sort can be done if there is LIMIT, but no DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN, NEGATIVE LIMIT, FRACTIONAL LIMIT/OFFSET
         if (limit_length != 0 &&
+            !query_node.hasLimitAfter() &&
+            !query_node.hasLimitUntil() &&
             !query_node.isDistinct() &&
             !query_node.isLimitWithTies() &&
             !query_node.hasLimitBy() &&
@@ -914,7 +947,10 @@ void addDistinctStep(QueryPlan & query_plan,
       * 2. There is no LIMIT BY.
       * Then you can get no more than limit_length + limit_offset of different rows.
       */
-    if ((!query_node.hasOrderBy() || !before_order) && !query_node.hasLimitBy())
+    if ((!query_node.hasOrderBy() || !before_order)
+        && !query_node.hasLimitBy()
+        && !query_node.hasLimitAfter()
+        && !query_node.hasLimitUntil())
     {
         if (limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
             limit_hint_for_distinct = limit_length + limit_offset;
@@ -1165,6 +1201,67 @@ void addLimitByStep(
     }
 }
 
+void addLimitRangeStep(
+    QueryPlan & query_plan,
+    const QueryAnalysisResult & query_analysis_result,
+    const PlannerContextPtr & planner_context,
+    const QueryNode & query_node,
+    UsefulSets & useful_sets)
+{
+    if (query_node.isLimitWithTies())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT WITH TIES is not supported with LIMIT AFTER/UNTIL");
+
+    if (query_node.hasOffset())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "OFFSET is not supported together with LIMIT AFTER/UNTIL");
+
+    if (query_analysis_result.is_limit_length_negative
+        || query_analysis_result.is_limit_offset_negative
+        || query_analysis_result.fractional_limit > 0
+        || query_analysis_result.fractional_offset > 0)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional and negative LIMIT/OFFSET are not supported with LIMIT AFTER/UNTIL");
+    }
+
+    std::optional<UInt64> limit_length;
+    if (query_node.hasLimit())
+        limit_length = query_analysis_result.limit_length;
+
+    auto start_condition = buildLimitRangeCondition(
+        query_plan.getCurrentHeader(),
+        query_node.getLimitAfter(),
+        planner_context,
+        "LIMIT AFTER");
+    auto end_condition = buildLimitRangeCondition(
+        query_plan.getCurrentHeader(),
+        query_node.getLimitUntil(),
+        planner_context,
+        "LIMIT UNTIL");
+
+    if (start_condition)
+        appendSetsFromActionsDAG(start_condition->first, useful_sets);
+
+    if (end_condition)
+        appendSetsFromActionsDAG(end_condition->first, useful_sets);
+
+    const auto & query_context = planner_context->getQueryContext();
+    const Settings & settings = query_context->getSettingsRef();
+    bool always_read_till_end = settings[Setting::exact_rows_before_limit];
+    if (query_node.isGroupByWithTotals() && !query_node.hasOrderBy())
+        always_read_till_end = true;
+    if (!query_node.isGroupByWithTotals() && query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree)
+        always_read_till_end = true;
+
+    auto limit_range_step = std::make_unique<LimitRangeStep>(
+        query_plan.getCurrentHeader(),
+        std::move(start_condition),
+        std::move(end_condition),
+        query_node.isLimitAfterAll(),
+        limit_length,
+        always_read_till_end);
+    limit_range_step->setStepDescription("LIMIT range (AFTER/UNTIL)");
+    query_plan.addStep(std::move(limit_range_step));
+}
+
 void addPreliminaryLimitStep(
     QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
@@ -1254,6 +1351,7 @@ bool addPreliminaryLimitOptimizationStepIfNeeded(QueryPlan & query_plan,
 
     bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;
     bool apply_prelimit = apply_limit && query_node.hasLimit() && !query_node.isLimitWithTies() && !query_node.isGroupByWithTotals()
+        && !query_node.hasLimitAfter() && !query_node.hasLimitUntil()
         && !query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree
         && !query_analysis_result.query_has_array_join_in_join_tree
         && query_analysis_result.fractional_limit == 0
@@ -1351,6 +1449,7 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
 
     /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
     if (query_node.hasLimit() && !query_node.hasLimitByOffset() && !query_node.isLimitWithTies()
+        && !query_node.hasLimitAfter() && !query_node.hasLimitUntil()
         && query_analysis_result.fractional_limit == 0 && query_analysis_result.fractional_offset == 0)
         addPreliminaryLimitStep(query_plan, query_analysis_result, planner_context, true /*do_not_skip_offset*/);
 }
@@ -1953,6 +2052,26 @@ void Planner::buildQueryPlanIfNeeded()
     extendQueryContextAndStoragesLifetime(query_plan, planner_context);
 }
 
+/// A range branch with WITH TOTALS configures its LimitRangeTransform to drain its input so totals are
+/// computed over all rows. A union-level settings cap must not close the pipeline before that drain
+/// completes. Returns true if any branch (recursively through nested set operations) needs draining,
+/// mirroring the per-branch drain condition used in addLimitRangeStep.
+static bool setOperationBranchNeedsTotalsDrain(const QueryTreeNodePtr & node)
+{
+    if (const auto * child_query = node->as<QueryNode>())
+        return (child_query->isGroupByWithTotals() && !child_query->hasOrderBy())
+            || (!child_query->isGroupByWithTotals() && queryHasWithTotalsInAnySubqueryInJoinTree(node));
+
+    if (const auto * child_union = node->as<UnionNode>())
+    {
+        for (const auto & sub : child_union->getQueries().getNodes())
+            if (setOperationBranchNeedsTotalsDrain(sub))
+                return true;
+    }
+
+    return false;
+}
+
 void Planner::buildPlanForUnionNode()
 {
     const auto & union_node = query_tree->as<UnionNode &>();
@@ -2046,6 +2165,38 @@ void Planner::buildPlanForUnionNode()
             query_plan.getCurrentHeader()->getNames(),
             false /*pre distinct*/);
         query_plan.addStep(std::move(distinct_step));
+    }
+
+    /// Global `limit`/`offset` settings cap for a union whose branches use LIMIT AFTER/UNTIL. It was
+    /// moved off the branch nodes (see buildSelectWithUnionExpression) so it is applied here exactly
+    /// once over the merged union result, rather than once per branch.
+    const UInt64 union_settings_limit = union_node.getSettingsLimit();
+    const UInt64 union_settings_offset = union_node.getSettingsOffset();
+    if (union_settings_limit > 0)
+    {
+        bool always_read_till_end = settings[Setting::exact_rows_before_limit];
+
+        /// The union cap must not close the pipeline before a range branch that drains for WITH TOTALS
+        /// has produced its totals.
+        for (const auto & child : union_node.getQueries().getNodes())
+        {
+            if (setOperationBranchNeedsTotalsDrain(child))
+            {
+                always_read_till_end = true;
+                break;
+            }
+        }
+
+        auto step = std::make_unique<LimitStep>(
+            query_plan.getCurrentHeader(), union_settings_limit, union_settings_offset, always_read_till_end, false, SortDescription{}, true);
+        step->setStepDescription("LIMIT OFFSET for SETTINGS (UNION)");
+        query_plan.addStep(std::move(step));
+    }
+    else if (union_settings_offset > 0)
+    {
+        auto step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), union_settings_offset);
+        step->setStepDescription("OFFSET for SETTINGS (UNION)");
+        query_plan.addStep(std::move(step));
     }
 
     /// Each child of the UNION/INTERSECT/EXCEPT may independently add a DelayedMaterializingCTEsStep
@@ -2614,12 +2765,16 @@ void Planner::buildPlanForQueryNode()
         /// either stage because OFFSET means skipping rows from the entire query result, not from each
         /// shard individually.
         const bool apply_offset = !query_processing_info.isToAggregationState();
-        if (query_node.hasLimit() && query_node.isLimitWithTies() && apply_limit && apply_offset)
+        const bool has_limit_range = query_node.hasLimitAfter() || query_node.hasLimitUntil();
+
+        /// WITH TIES needs ORDER BY columns that are removed by projection, so it must run before extremes.
+        if (!has_limit_range && query_node.hasLimit() && query_node.isLimitWithTies() && apply_limit && apply_offset)
             addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
 
+        /// Extremes are computed before the final LIMIT, matching normal LIMIT semantics.
         addExtremesStepIfNeeded(query_plan, planner_context);
 
-        bool limit_applied = applied_prelimit || (query_node.isLimitWithTies() && apply_offset);
+        bool limit_applied = applied_prelimit || (has_limit_range && apply_limit && apply_offset) || (query_node.isLimitWithTies() && apply_offset);
 
         /** Limit is no longer needed if there is prelimit.
           *
@@ -2627,7 +2782,50 @@ void Planner::buildPlanForQueryNode()
           * This is the case for various optimizations for distributed queries,
           * and when LIMIT cannot be applied it will be applied on the initiator anyway.
           */
-        if (query_node.hasLimit() && apply_limit && !limit_applied && apply_offset)
+        if (has_limit_range && apply_limit && apply_offset)
+        {
+            /// Keep the AFTER/UNTIL boundary columns (which may not be selected) available for the range
+            /// step, since it runs before "Project names" would drop them.
+            if (expression_analysis_result.hasLimitRange())
+                addExpressionStep(
+                    planner_context,
+                    query_plan,
+                    expression_analysis_result.getLimitRange().before_limit_range_actions,
+                    /*correlated_subtrees=*/{},
+                    select_query_options,
+                    "Before LIMIT range (AFTER/UNTIL)",
+                    useful_sets);
+
+            addLimitRangeStep(query_plan, query_analysis_result, planner_context, query_node, useful_sets);
+
+            /// The `limit`/`offset` settings are a global cap on the whole result, not a per-window
+            /// length. They are intentionally kept out of the range window length and off the query
+            /// context (see QueryTreeBuilder), carried on the node, and applied here as an outer step
+            /// after the range step.
+            const UInt64 settings_limit = query_node.getSettingsLimit();
+            const UInt64 settings_offset = query_node.getSettingsOffset();
+            if (settings_limit > 0)
+            {
+                bool settings_always_read_till_end = settings[Setting::exact_rows_before_limit];
+                if (query_node.isGroupByWithTotals() && !query_node.hasOrderBy())
+                    settings_always_read_till_end = true;
+                if (!query_node.isGroupByWithTotals()
+                    && query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree)
+                    settings_always_read_till_end = true;
+
+                auto step = std::make_unique<LimitStep>(
+                    query_plan.getCurrentHeader(), settings_limit, settings_offset, settings_always_read_till_end, false, SortDescription{}, true);
+                step->setStepDescription("LIMIT OFFSET for SETTINGS");
+                query_plan.addStep(std::move(step));
+            }
+            else if (settings_offset > 0)
+            {
+                auto step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), settings_offset);
+                step->setStepDescription("OFFSET for SETTINGS");
+                query_plan.addStep(std::move(step));
+            }
+        }
+        else if (query_node.hasLimit() && !has_limit_range && apply_limit && !limit_applied && apply_offset)
             addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
         else if (!limit_applied && apply_offset && query_node.hasOffset())
             addOffsetStep(query_plan, query_analysis_result);

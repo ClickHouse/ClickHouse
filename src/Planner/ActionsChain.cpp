@@ -27,6 +27,7 @@ void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input
     child_required_output_columns_names.clear();
 
     auto child_input_columns_copy = child_input_columns;
+    child_input_columns_copy.insert(actions->force_output_columns.begin(), actions->force_output_columns.end());
 
     std::unordered_set<std::string_view> output_nodes_names;
     output_nodes_names.reserve(actions->dag.getOutputs().size());

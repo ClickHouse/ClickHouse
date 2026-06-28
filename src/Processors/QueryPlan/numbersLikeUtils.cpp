@@ -114,7 +114,9 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSe
         /// For the analyzer, window will be deleted from AST, so we should not use query.window()
         && !query_info.has_window
         && !query_info.additional_filter_ast
-        && !query.limit_with_ties;
+        && !query.limit_with_ties
+        && !query.limitAfter()
+        && !query.limitUntil();
 }
 
 }

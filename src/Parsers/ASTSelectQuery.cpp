@@ -52,6 +52,7 @@ void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     hash_state.update(group_by_all);
     hash_state.update(order_by_all);
     hash_state.update(limit_by_all);
+    hash_state.update(limit_after_all);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -248,17 +249,40 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         }
     }
 
-    if (limitLength())
+    if (limitLength() || limitAfter() || limitUntil())
     {
-        ostr << s.nl_or_ws << indent_str << "LIMIT ";
+        ostr << s.nl_or_ws << indent_str << "LIMIT";
         if (limitOffset())
         {
+            ostr << " ";
             limitOffset()->format(ostr, s, state, frame);
             ostr << ", ";
         }
-        limitLength()->format(ostr, s, state, frame);
+        else if (limitLength())
+        {
+            ostr << " ";
+        }
+        if (limitLength())
+            limitLength()->format(ostr, s, state, frame);
         if (limit_with_ties)
             ostr << s.nl_or_ws << indent_str << " WITH TIES";
+        if (limitAfter())
+        {
+            ostr << s.nl_or_ws << indent_str << " AFTER ";
+            limitAfter()->format(ostr, s, state, frame);
+            if (limit_after_all)
+                ostr << " ALL";
+            if (limitUntil())
+            {
+                ostr << s.nl_or_ws << indent_str << " UNTIL ";
+                limitUntil()->format(ostr, s, state, frame);
+            }
+        }
+        else if (limitUntil())
+        {
+            ostr << s.nl_or_ws << indent_str << " UNTIL ";
+            limitUntil()->format(ostr, s, state, frame);
+        }
     }
     else if (limitOffset())
     {
@@ -555,6 +579,8 @@ void ASTSelectQuery::normalizeChildrenOrder()
         Expression::LIMIT_BY,
         Expression::LIMIT_OFFSET,
         Expression::LIMIT_LENGTH,
+        Expression::LIMIT_AFTER,
+        Expression::LIMIT_UNTIL,
         Expression::SETTINGS,
         Expression::INTERPOLATE,
     };

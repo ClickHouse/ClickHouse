@@ -17,6 +17,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/HashUtils.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/WindowNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/InterpolateNode.h>
@@ -42,6 +43,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNEXPECTED_EXPRESSION;
 }
 
 namespace
@@ -628,6 +630,69 @@ LimitByAnalysisResult analyzeLimitBy(const QueryNode & query_node,
     return LimitByAnalysisResult{std::move(before_limit_by_actions), std::move(limit_by_column_names)};
 }
 
+/** Construct LIMIT AFTER/UNTIL analysis result.
+  * The boundary expressions may reference columns that are not in the SELECT list. The LimitRangeStep runs
+  * before "Project names" in the plan, but those columns would otherwise be pruned during chain finalize
+  * (the step is not part of the chain). This adds a pass-through step that keeps the referenced columns alive
+  * up to the LimitRangeStep, which rebuilds its conditions from the header.
+  */
+LimitRangeAnalysisResult analyzeLimitRange(const QueryNode & query_node,
+    const ColumnsWithTypeAndName & input_columns,
+    const PlannerContextPtr & planner_context,
+    const ColumnNodePtrWithHashSet & correlated_columns_set,
+    ActionsChain & actions_chain)
+{
+    NameSet required_column_names;
+
+    auto collect_required_columns = [&](const QueryTreeNodePtr & boundary_node)
+    {
+        if (!boundary_node)
+            return;
+
+        if (hasFunctionNode(boundary_node, "arrayJoin"))
+            throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "`arrayJoin` is not allowed in LIMIT AFTER/UNTIL expressions");
+
+        auto [boundary_actions_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+            boundary_node,
+            input_columns,
+            planner_context,
+            correlated_columns_set);
+        correlated_subtrees.assertEmpty("in LIMIT AFTER/UNTIL expression");
+
+        for (const auto & required_column_name : boundary_actions_dag.getRequiredColumnsNames())
+            required_column_names.insert(required_column_name);
+    };
+
+    collect_required_columns(query_node.getLimitAfter());
+    collect_required_columns(query_node.getLimitUntil());
+
+    auto before_limit_range_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+    before_limit_range_actions->dag = ActionsDAG(input_columns);
+    before_limit_range_actions->force_output_columns = required_column_names;
+    auto & before_limit_range_outputs = before_limit_range_actions->dag.getOutputs();
+
+    /// Keep all current stream columns and ensure boundary-predicate columns are also present.
+    /// The step must not project the stream down — it only prevents chain finalization from
+    /// pruning columns that the LimitRangeStep boundary expressions need.
+    NameSet existing_output_names;
+    for (const auto * output_node : before_limit_range_outputs)
+        existing_output_names.insert(output_node->result_name);
+
+    for (const auto * input_node : before_limit_range_actions->dag.getInputs())
+    {
+        if (required_column_names.contains(input_node->result_name) && !existing_output_names.contains(input_node->result_name))
+        {
+            before_limit_range_outputs.push_back(input_node);
+            existing_output_names.insert(input_node->result_name);
+        }
+    }
+
+    auto actions_step_before_limit_range = std::make_unique<ActionsChainStep>(before_limit_range_actions);
+    actions_chain.addStep(std::move(actions_step_before_limit_range));
+
+    return LimitRangeAnalysisResult{std::move(before_limit_range_actions)};
+}
+
 }
 
 PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNodePtr & query_tree,
@@ -787,6 +852,25 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
         current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
     }
 
+    /** LIMIT AFTER/UNTIL boundary columns may not be in the SELECT list. The LimitRangeStep runs before
+      * "Project names" in the plan, so keep its referenced columns alive past the projection by adding a
+      * dedicated step here. This must also run when producing a mergeable aggregation state on a shard:
+      * the range step itself is applied later on the initiator, but the shard must still carry the boundary
+      * columns in its output (the Projection would otherwise prune them, leaving the initiator unable to
+      * evaluate the range over a non-selected column in a distributed query).
+      */
+    std::optional<LimitRangeAnalysisResult> limit_range_analysis_result_optional;
+    if (query_node.hasLimitAfter() || query_node.hasLimitUntil())
+    {
+        limit_range_analysis_result_optional = analyzeLimitRange(
+            query_node,
+            current_output_columns,
+            planner_context,
+            correlated_columns_set,
+            actions_chain);
+        current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+    }
+
     const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
     auto project_names_input = chain_available_output_columns ? *chain_available_output_columns : current_output_columns;
 
@@ -904,6 +988,9 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
 
     if (limit_by_analysis_result_optional)
         expressions_analysis_result.addLimitBy(std::move(*limit_by_analysis_result_optional));
+
+    if (limit_range_analysis_result_optional)
+        expressions_analysis_result.addLimitRange(std::move(*limit_range_analysis_result_optional));
 
     return expressions_analysis_result;
 }

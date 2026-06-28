@@ -2793,6 +2793,20 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     query_node->getLimitByNode() = limit_by_node;
                 }
 
+                if (query_node->hasLimitAfter())
+                {
+                    auto limit_after_node = query_node->getLimitAfter();
+                    replace_identifiers_in_node(limit_after_node);
+                    query_node->getLimitAfter() = limit_after_node;
+                }
+
+                if (query_node->hasLimitUntil())
+                {
+                    auto limit_until_node = query_node->getLimitUntil();
+                    replace_identifiers_in_node(limit_until_node);
+                    query_node->getLimitUntil() = limit_until_node;
+                }
+
                 if (query_node->hasWindow())
                 {
                     auto window_node = query_node->getWindowNode();
@@ -5947,6 +5961,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasLimit())
         visitor.visit(query_node_typed.getLimit());
 
+    if (query_node_typed.hasLimitAfter())
+        visitor.visit(query_node_typed.getLimitAfter());
+
+    if (query_node_typed.hasLimitUntil())
+        visitor.visit(query_node_typed.getLimitUntil());
+
     if (query_node_typed.hasOffset())
         visitor.visit(query_node_typed.getOffset());
 
@@ -6133,6 +6153,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         resolveExpressionNode(query_node_typed.getLimit(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
         convertLimitOffsetExpression(query_node_typed.getLimit(), "LIMIT", scope);
     }
+
+    if (query_node_typed.hasLimitAfter())
+        resolveExpressionNode(query_node_typed.getLimitAfter(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+    if (query_node_typed.hasLimitUntil())
+        resolveExpressionNode(query_node_typed.getLimitUntil(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     if (query_node_typed.hasOffset())
     {

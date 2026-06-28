@@ -45,7 +45,8 @@ void OptimizeTrivialGroupByLimitPass::run(QueryTreeNodePtr & query_tree_node, Co
 
     auto * query = query_tree_node->as<QueryNode>();
     if (!query || !query->hasGroupBy() || !query->hasLimit() || query->hasHaving() || query->hasOrderBy() || query->hasWindow()
-        || query->hasLimitBy() || query->isGroupByWithTotals() || query->isGroupByWithRollup() || query->isGroupByWithCube()
+        || query->hasLimitBy() || query->hasLimitAfter() || query->hasLimitUntil()
+        || query->isGroupByWithTotals() || query->isGroupByWithRollup() || query->isGroupByWithCube()
         || query->isGroupByWithGroupingSets() || hasAggregateFunctionNodes(query->getProjectionNode()))
         return;
 

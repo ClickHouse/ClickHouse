@@ -73,6 +73,29 @@ public:
         is_subquery = is_subquery_value;
     }
 
+    /// Global `limit`/`offset` settings cap for the whole union result. For UNION branches that use
+    /// LIMIT AFTER/UNTIL, these settings are moved off the branch nodes and stored here so the planner
+    /// applies them once after the union, not once per branch. 0 means "not set".
+    UInt64 getSettingsLimit() const
+    {
+        return settings_limit;
+    }
+
+    void setSettingsLimit(UInt64 settings_limit_value)
+    {
+        settings_limit = settings_limit_value;
+    }
+
+    UInt64 getSettingsOffset() const
+    {
+        return settings_offset;
+    }
+
+    void setSettingsOffset(UInt64 settings_offset_value)
+    {
+        settings_offset = settings_offset_value;
+    }
+
     /// Returns true if union node is CTE, false otherwise
     bool isCTE() const
     {
@@ -225,6 +248,8 @@ protected:
 private:
     bool is_subquery = false;
     bool is_cte = false;
+    UInt64 settings_limit = 0;
+    UInt64 settings_offset = 0;
     bool is_materialized = false;
     bool is_recursive_cte = false;
     std::optional<RecursiveCTETable> recursive_cte_table;

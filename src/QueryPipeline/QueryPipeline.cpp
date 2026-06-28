@@ -14,6 +14,7 @@
 #include <Processors/IProcessor.h>
 #include <Processors/ISource.h>
 #include <Processors/LimitTransform.h>
+#include <Processors/LimitRangeTransform.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NullSink.h>
@@ -195,6 +196,24 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         if ((typeid_cast<RemoteSource *>(processor) || typeid_cast<DelayedSource *>(processor)) && !limit_processor)
         {
             processors.emplace_back(processor);
+            continue;
+        }
+
+        if (typeid_cast<LimitRangeTransform *>(processor))
+        {
+            has_limit = true;
+            /// LimitRangeTransform is a single-input simple transform that keeps its own counter
+            /// over all rows it reads (i.e. rows before the AFTER/UNTIL range is applied). It must
+            /// own the counter even when a settings LimitStep sits downstream (LIMIT ... AFTER ...
+            /// SETTINGS limit = N); otherwise that outer limit would shadow it and report rows after
+            /// the range instead of the total scanned, diverging from normal LIMIT semantics.
+            if (!limit_processor || limit_processor->isLimitForSettings())
+            {
+                processors.emplace_back(processor);
+                if (limit_processor)
+                    limit_candidates.erase(limit_processor);
+                continue;
+            }
             continue;
         }
 

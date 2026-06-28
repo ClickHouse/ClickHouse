@@ -61,6 +61,7 @@ private:
     size_t num_finished_port_pairs = 0;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+    bool is_limit_for_settings = false;
 
     Chunk makeChunkWithPreviousRow(const Chunk & current_chunk, UInt64 row_num) const;
     ColumnRawPtrs extractSortColumns(const Columns & columns) const;
@@ -75,7 +76,8 @@ public:
         bool always_read_till_end_ = false,
         bool with_ties_ = false,
         SortDescription description_ = {},
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr,
+        bool is_limit_for_settings_ = false);
 
     String getName() const override { return "Limit"; }
 
@@ -86,6 +88,8 @@ public:
 
     InputPort & getInputPort() { return inputs.front(); }
     OutputPort & getOutputPort() { return outputs.front(); }
+
+    bool isLimitForSettings() const { return is_limit_for_settings; }
 
     void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { rows_before_limit_at_least.swap(counter); }
     void setInputPortHasCounter(size_t pos) { ports_data[pos].input_port_has_counter = true; }

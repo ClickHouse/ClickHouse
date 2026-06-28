@@ -51,6 +51,7 @@ public:
 
 private:
     std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;
+    ContextMutablePtr context_for_children;
 
     static Block getCommonHeaderForUnion(const SharedHeaders & headers);
 

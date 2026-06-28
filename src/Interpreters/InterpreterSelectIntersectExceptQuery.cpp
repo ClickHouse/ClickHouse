@@ -8,6 +8,9 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/getTableExpressions.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -31,6 +34,7 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsBool optimize_distinct_in_order;
+    extern const SettingsBool exact_rows_before_limit;
 }
 
 namespace ErrorCodes
@@ -175,6 +179,48 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
             false);
 
         query_plan.addStep(std::move(distinct_step));
+    }
+
+    /// The `limit`/`offset` settings cap the whole set-operation result. The wrapping
+    /// InterpreterSelectWithUnionQuery (single child) folds them into this query's LIMIT/OFFSET and marks
+    /// settings_limit_offset_done, but unlike InterpreterSelectQuery this interpreter never applied them,
+    /// so the cap was silently dropped. Apply it here as one final step after the set-operation step,
+    /// matching the analyzer and the UNION path. An explicit LIMIT/OFFSET on the set operation is honored
+    /// the same way.
+    UInt64 limit_length = 0;
+    UInt64 limit_offset = 0;
+    if (const ASTPtr limit_offset_ast = query.limitOffset())
+        limit_offset = evaluateConstantExpressionAsLiteral(limit_offset_ast, context)->as<ASTLiteral &>().value.safeGet<UInt64>();
+    if (const ASTPtr limit_length_ast = query.limitLength())
+        limit_length = evaluateConstantExpressionAsLiteral(limit_length_ast, context)->as<ASTLiteral &>().value.safeGet<UInt64>();
+
+    if (limit_length || limit_offset)
+    {
+        /// A range operand using WITH TOTALS configures LimitRangeTransform to drain its input for totals;
+        /// the final LimitStep must not close the pipeline before that drain completes.
+        bool always_read_till_end = settings[Setting::exact_rows_before_limit];
+        for (const auto & child : query.getListOfSelects())
+        {
+            if (rangeBranchNeedsTotalsDrain(child))
+            {
+                always_read_till_end = true;
+                break;
+            }
+        }
+
+        if (limit_length)
+        {
+            auto limit = std::make_unique<LimitStep>(
+                query_plan.getCurrentHeader(), limit_length, limit_offset, always_read_till_end, false, SortDescription{}, true);
+            limit->setStepDescription("LIMIT OFFSET for SETTINGS");
+            query_plan.addStep(std::move(limit));
+        }
+        else
+        {
+            auto offset = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), limit_offset);
+            offset->setStepDescription("OFFSET for SETTINGS");
+            query_plan.addStep(std::move(offset));
+        }
     }
 
     addAdditionalPostFilter(query_plan);
