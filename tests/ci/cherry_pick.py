@@ -228,7 +228,8 @@ close it.
         if not self.cherrypick_pr:
             if dry_run:
                 logging.info(
-                    "DRY RUN: Would create cherrypick PR for #%s", self.pr.number
+                    "DRY RUN: Would create cherry-pick or backport PR for #%s",
+                    self.pr.number,
                 )
                 return
             self.create_cherrypick()
@@ -297,42 +298,26 @@ close it.
             f"{self.cherrypick_branch} {self.pr.merge_commit_sha}"
         )
 
-        # Try to merge backport_branch into cherrypick_branch locally. When it
-        # succeeds, the merge commit (with rename detection etc. resolved) is
-        # baked into cherrypick_branch, so GitHub's merge of the cherry-pick PR
-        # becomes trivial - backport_branch is an ancestor of cherrypick_branch
-        # via the merge commit. This avoids a failure mode where files renamed
-        # between the release branch and master produce conflicts in GitHub's
-        # merge even though local `git merge` resolves them via rename
-        # detection. The rename limit is raised to prevent git from silently
-        # disabling rename detection on large diffs.
+        # Merge backport_branch into cherrypick_branch locally to find out
+        # whether the cherry-pick applies cleanly. The rename limit is raised
+        # so git does not silently disable rename detection on large diffs
+        # (files renamed between the release branch and master would otherwise
+        # show up as spurious conflicts).
         #
-        # On conflict, cherrypick_branch stays at pr.merge_commit_sha (the
-        # merge --abort restores HEAD), and conflicts are surfaced on the
-        # GitHub PR for manual resolution by the assigned engineer.
+        # - No conflicts: cherrypick_branch now holds the fully resolved tree,
+        #   so the backport PR can be created directly from it and the
+        #   intermediate cherry-pick PR is skipped (see
+        #   create_backport_from_resolved_tree).
+        # - Conflicts: `merge --abort` restores cherrypick_branch to
+        #   pr.merge_commit_sha and we fall back to opening a cherry-pick PR
+        #   for manual resolution by the assigned engineer.
+        merged_cleanly = False
         try:
             git_runner(
                 f"{GIT_PREFIX} -c merge.renameLimit=999999 "
                 f"merge --no-ff --no-edit {self.backport_branch}"
             )
-            # The merge succeeded. If it produced no tree change vs
-            # backport_branch, the PR is effectively already backported to
-            # the release branch - either "Already up to date" (no merge
-            # commit at all) or an empty merge commit whose resolution
-            # collapsed onto backport_branch's tree (e.g. the PR was
-            # manually applied with equivalent content). In either case,
-            # skip creating an empty cherry-pick PR.
-            if not git_runner(
-                f"{GIT_PREFIX} diff --name-only "
-                f"{self.backport_branch} {self.cherrypick_branch}"
-            ):
-                logging.info(
-                    "Release branch %s already contain changes from %s",
-                    self.name,
-                    self.pr.number,
-                )
-                self._backported = True
-                return
+            merged_cleanly = True
         except CalledProcessError:
             try:
                 git_runner(f"{GIT_PREFIX} merge --abort")
@@ -344,7 +329,34 @@ close it.
                 # PRs in the same run are not poisoned.
                 recover_git_state()
 
-        # Push, create the cherry-pick PR and label it
+        if merged_cleanly:
+            # If the merge produced no tree change vs backport_branch, the PR
+            # is effectively already backported to the release branch - either
+            # "Already up to date" (no merge commit at all) or an empty merge
+            # commit whose resolution collapsed onto backport_branch's tree
+            # (e.g. the PR was manually applied with equivalent content). In
+            # either case, skip creating an empty PR.
+            if not git_runner(
+                f"{GIT_PREFIX} diff --name-only "
+                f"{self.backport_branch} {self.cherrypick_branch}"
+            ):
+                logging.info(
+                    "Release branch %s already contain changes from %s",
+                    self.name,
+                    self.pr.number,
+                )
+                self._backported = True
+                return
+            # A clean cherry-pick needs no manual conflict resolution, so the
+            # intermediate cherry-pick PR carries no value. Create the backport
+            # PR directly from the already resolved tree and skip it entirely.
+            self.create_backport_from_resolved_tree()
+            return
+
+        # There are conflicts: cherrypick_branch stays at pr.merge_commit_sha
+        # (merge --abort restored HEAD). Push both branches and open the
+        # cherry-pick PR so the conflicts are surfaced on GitHub for manual
+        # resolution by the assigned engineer.
         for branch in [self.cherrypick_branch, self.backport_branch]:
             git_runner(f"{GIT_PREFIX} push -f {self.REMOTE} {branch}:{branch}")
 
@@ -380,11 +392,42 @@ close it.
         title = f"Backport #{self.pr.number} to {self.name}: {self.pr.title}"
         git_runner(f"{GIT_PREFIX} commit --allow-empty -F -", input=title)
 
-        # Push with force, create the backport PR, lable and assign it
+        # Push with force, create the backport PR, label and assign it
         git_runner(
             f"{GIT_PREFIX} push -f {self.REMOTE} "
             f"{self.backport_branch}:{self.backport_branch}"
         )
+        self._finalize_backport_pr(title)
+
+    def create_backport_from_resolved_tree(self):
+        # Fast path for a conflict-free cherry-pick: the merge done in
+        # create_cherrypick already produced the fully resolved tree in
+        # cherrypick_branch. Materialize it as a single commit on top of the
+        # release branch tip - exactly what create_backport produces after a
+        # cherry-pick PR is merged - and open the backport PR directly, without
+        # the intermediate cherry-pick PR and the extra run it needs (the
+        # cherry-pick PR is created in one run and only merged in a later one,
+        # once GitHub has computed its mergeable state).
+        logging.info(
+            "Creating backport directly for PR #%s (no conflicts)", self.pr.number
+        )
+        resolved_tree = git_runner(f"git rev-parse {self.cherrypick_branch}^{{tree}}")
+        title = f"Backport #{self.pr.number} to {self.name}: {self.pr.title}"
+        commit = git_runner(
+            f"{GIT_PREFIX} commit-tree {resolved_tree} "
+            f"-p {self.REMOTE}/{self.name} -F -",
+            input=title,
+        )
+        git_runner(f"{GIT_PREFIX} branch -f {self.backport_branch} {commit}")
+        git_runner(
+            f"{GIT_PREFIX} push -f {self.REMOTE} "
+            f"{self.backport_branch}:{self.backport_branch}"
+        )
+        self._finalize_backport_pr(title)
+        # A backport PR now exists, so the original PR is fully processed.
+        self._backported = True
+
+    def _finalize_backport_pr(self, title: str) -> None:
         try:
             self.backport_pr = self.repo.create_pull(
                 title=title,
