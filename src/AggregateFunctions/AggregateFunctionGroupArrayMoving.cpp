@@ -112,7 +112,7 @@ public:
         this->data(place).add(static_cast<ResultT>(value), arena);
     }
 
-    void NO_SANITIZE_UNDEFINED merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void NO_SANITIZE_UNDEFINED mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & cur_elems = this->data(place);
         auto & rhs_elems = this->data(rhs);
@@ -291,6 +291,7 @@ AggregateFunctionPtr createAggregateFunctionMoving(
 }
 
 
+void registerAggregateFunctionMoving(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMoving(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };

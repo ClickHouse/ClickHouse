@@ -58,8 +58,8 @@ ALWAYS_INLINE size_t selectorIndexAt(const Selector & selector, size_t k)
 template <typename PrefetchAction>
 struct JoinPrefetcher
 {
-    bool use_prefetch;
-    size_t total;
+    bool use_prefetch = false;
+    size_t total = 0;
     PrefetchAction prefetch_action;
     PrefetchingHelper prefetching{};
     size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
@@ -150,7 +150,9 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     for (size_t i = 0; i < onexprs.size(); ++i)
     {
         const auto & key_names = !is_join_get ? onexprs[i].key_names_left : onexprs[i].key_names_right;
-        join_on_keys.emplace_back(block, key_names, onexprs[i].condColumnNames().first, join.key_sizes[i]);
+        join_on_keys.emplace_back(
+            block, key_names, onexprs[i].condColumnNames().first, join.key_sizes[i],
+            HashJoin::isLowCardinalityType(join.data->type));
     }
 
 
@@ -616,7 +618,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 
         if (!skip_row)
         {
-            bool row_acceptable;
+            bool row_acceptable = false;
             if constexpr (join_mask_kind == JoinCommon::JoinMask::Kind::AllFalse)
                 row_acceptable = false;
             else if constexpr (join_mask_kind == JoinCommon::JoinMask::Kind::AllTrue)
@@ -747,7 +749,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 
             if (!skip_row)
             {
-                bool row_acceptable;
+                bool row_acceptable = false;
                 if constexpr (join_mask_kind == JoinCommon::JoinMask::Kind::AllFalse)
                     row_acceptable = false;
                 else if constexpr (join_mask_kind == JoinCommon::JoinMask::Kind::AllTrue)

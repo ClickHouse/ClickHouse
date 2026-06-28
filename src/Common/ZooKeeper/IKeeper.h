@@ -2,6 +2,7 @@
 
 #include <base/defines.h>
 #include <base/types.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 
@@ -9,6 +10,7 @@
 #include <limits>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -27,6 +29,11 @@
   * - ZooKeeper emulation layer on top of Etcd, FoundationDB, whatever.
   */
 
+namespace ProfileEvents
+{
+    extern const Event ZooKeeperWatchTriggeredOther;
+}
+
 namespace Coordination
 {
 
@@ -42,7 +49,7 @@ struct ACL
     static constexpr int32_t Admin = 16;
     static constexpr int32_t All = 0x1F;
 
-    int32_t permissions;
+    int32_t permissions{};
     String scheme;
     String id;
 
@@ -179,6 +186,7 @@ using WatchCallback = std::function<void(const WatchResponse &)>;
 using WatchCallbackPtr = std::shared_ptr<WatchCallback>;
 using EventPtr = std::shared_ptr<Poco::Event>;
 struct TestKeeperRequest;
+
 struct WatchCallbackPtrOrEventPtr
 {
 private:
@@ -189,6 +197,8 @@ private:
 
     WatchCallbackPtr callback;
     EventPtr event;
+    /// The ProfileEvent incremented when this watch is triggered, identifying the subsystem that owns the callback.
+    ProfileEvents::Event triggered_event = ProfileEvents::ZooKeeperWatchTriggeredOther;
 
     void operator()(WatchResponse response) const
     {
@@ -203,6 +213,15 @@ public:
 
     WatchCallbackPtrOrEventPtr(WatchCallbackPtr callback_) : callback(std::move(callback_)) {} // NOLINT(google-explicit-constructor)
     WatchCallbackPtrOrEventPtr(EventPtr event_) : event(std::move(event_)) {} // NOLINT(google-explicit-constructor)
+    WatchCallbackPtrOrEventPtr(WatchCallbackPtr callback_, ProfileEvents::Event triggered_event_)
+        : callback(std::move(callback_)), triggered_event(triggered_event_) {} // NOLINT(google-explicit-constructor)
+    WatchCallbackPtrOrEventPtr(EventPtr event_, ProfileEvents::Event triggered_event_)
+        : event(std::move(event_)), triggered_event(triggered_event_) {} // NOLINT(google-explicit-constructor)
+
+    ProfileEvents::Event getTriggeredEvent() const { return triggered_event; }
+    void setTriggeredEvent(ProfileEvents::Event triggered_event_) { triggered_event = triggered_event_; }
+
+    void invoke(WatchResponse response) const { (*this)(std::move(response)); }
 
     WatchCallbackPtrOrEventPtr(WatchCallbackPtrOrEventPtr &&) = default;
     WatchCallbackPtrOrEventPtr(const WatchCallbackPtrOrEventPtr &) = default;
@@ -282,7 +301,7 @@ struct CheckWatchRequest : virtual Request
     };
 
     String path;
-    CheckWatchType type;
+    CheckWatchType type{};
 
     String getPath() const override { return path; }
     void addRootPath(const String & root_path) override { path = root_path; }
@@ -307,7 +326,7 @@ struct RemoveWatchRequest : virtual Request
         PERSISTENT = 4,
         PERSISTENTRECURSIVE = 5,
         ANY = 3
-    } type;
+    } type{};
 
     String getPath() const override { return path; }
     void addRootPath(const String & root_path) override { path = root_path; }
@@ -331,7 +350,7 @@ struct AddWatchRequest : virtual Request
     };
 
     String path;
-    AddWatchMode mode;
+    AddWatchMode mode{};
 
     String getPath() const override { return path; }
     void addRootPath(const String & root_path) override { path = root_path; }
@@ -348,7 +367,7 @@ struct AddWatchResponse : virtual Response
 
 struct SetWatchesRequest : virtual Request
 {
-    int64_t zxid;
+    int64_t zxid{};
     std::vector<String> child_watches;
     std::vector<String> exist_watches;
     std::vector<String> data_watches;
@@ -408,6 +427,8 @@ struct CreateRequest : virtual Request
     bool is_sequential = false;
     ACLs acls;
     bool include_stats = false;
+    bool include_ttl = false;
+    int64_t ttl = 0;
 
     /// should it succeed if node already exists
     bool not_exists = false;
@@ -415,8 +436,14 @@ struct CreateRequest : virtual Request
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
-    size_t bytesSize() const override { return path.size() + data.size()
-            + sizeof(is_ephemeral) + sizeof(is_sequential) + acls.size() * sizeof(ACL); }
+    size_t bytesSize() const override
+    {
+        auto base_size = path.size() + data.size()
+            + sizeof(is_ephemeral) + sizeof(is_sequential) + acls.size() * sizeof(ACL);
+        if (include_ttl)
+            base_size += sizeof(ttl);
+        return base_size;
+    }
 };
 
 struct CreateResponse : virtual Response
@@ -542,10 +569,17 @@ struct ListRequest : virtual Request
 {
     String path;
 
+    /// FILTERED_LIST extension.
+    std::optional<ListRequestType> list_request_type;
+
+    /// LIST_WITH_STAT_AND_DATA extension.
+    std::optional<bool> with_stat;
+    std::optional<bool> with_data;
+
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
-    size_t bytesSize() const override { return path.size(); }
+    size_t bytesSize() const override { return path.size() + sizeof(list_request_type) + sizeof(with_stat) + sizeof(with_data); }
 };
 
 struct ListResponse : virtual Response
@@ -620,7 +654,7 @@ struct ReconfigRequest : virtual Request
     String joining;
     String leaving;
     String new_members;
-    int32_t version;
+    int32_t version{};
 
     String getPath() const final { return keeper_config_path; }
 

@@ -296,7 +296,7 @@ ObjectStorageQueueSource::FileIterator::next()
                 }
 
                 Coordination::Responses responses;
-                Coordination::Error code;
+                Coordination::Error code = {};
                 zk_retry.retryLoop([&]
                 {
                     auto zk_client = metadata->getZooKeeper();
@@ -1293,6 +1293,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                     .storage_id = storage_id,
                     .size = object_metadata->size_bytes,
                     .last_modified = object_metadata->last_modified,
+                    .etag = &(object_metadata->etag),
                 },
                 getContext(),
                 format_settings);
@@ -1657,7 +1658,7 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
 
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     const auto & settings = getContext()->getSettingsRef();
-    Coordination::Error code;
+    Coordination::Error code = {};
     size_t try_num = 0;
     zk_retry.retryLoop([&]
     {
