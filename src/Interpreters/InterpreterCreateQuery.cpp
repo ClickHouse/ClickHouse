@@ -2594,7 +2594,15 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(co
         snapshot = source->getStorageSnapshot(source_metadata, populate_context);
     }
 
+    /// Pin the snapshot so the population's SELECT reads exactly the captured data. The population's
+    /// SELECT is analyzed and executed under contexts derived from the shared query context
+    /// (`getQueryContext()`), so the pin must live there: a pin stored only on `populate_context` (a
+    /// copy) is not seen by those reads, which would then take a fresh snapshot of the source and read
+    /// rows inserted concurrently with the population - rows that are also delivered to the view live,
+    /// duplicating them. Set it on `populate_context` too (harmless) for any read that uses it directly.
     populate_context->setPinnedStorageSnapshot(source_uuid, snapshot);
+    if (populate_context->hasQueryContext())
+        populate_context->getQueryContext()->setPinnedStorageSnapshot(source_uuid, snapshot);
 
     auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};

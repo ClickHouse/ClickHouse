@@ -11015,8 +11015,15 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
 {
     /// A pinned snapshot is captured in advance for atomic `CREATE MATERIALIZED VIEW ... POPULATE`,
     /// so the population reads exactly the data that existed when the view was subscribed to new inserts.
+    /// The pin is stored on the query context, so consult it as well: the population's read runs under
+    /// contexts derived from the query context rather than the exact context the pin was set on.
     if (auto pinned = query_context->getPinnedStorageSnapshot(getStorageID().uuid))
         return pinned;
+    if (query_context->hasQueryContext())
+    {
+        if (auto pinned = query_context->getQueryContext()->getPinnedStorageSnapshot(getStorageID().uuid))
+            return pinned;
+    }
 
     /// Inject artificial delay when taking storage snapshot.
     /// Useful for simulating concurrent mutations during snapshot acquisition.
