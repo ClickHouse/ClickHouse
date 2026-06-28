@@ -656,6 +656,18 @@ ProcessList::EntryPtr ProcessList::insert(
             watch_start_nanoseconds,
             is_internal);
 
+        /// Pre-create the per-query-kind map keys before the query is registered in `processes`, so the
+        /// counter updates below cannot allocate. `query_kind_amounts` and `query_kind_pending_teardowns`
+        /// are only ever grown together and never erase keys, so seeding both here keeps them in lockstep
+        /// and makes the post-registration `increaseQueryKindAmount` allocation-free. Throwing here is
+        /// safe: nothing has been registered yet, so there is nothing to roll back (the `admission_rollback`
+        /// guard still releases the admission slot).
+        if (!is_internal)
+        {
+            query_kind_amounts.try_emplace(query_kind, 0);
+            query_kind_pending_teardowns.try_emplace(query_kind, 0);
+        }
+
         auto process_it = processes.emplace(
             processes.end(),
             query);
@@ -667,9 +679,26 @@ ProcessList::EntryPtr ProcessList::insert(
             increaseQueryKindAmount(query_kind);
         }
 
+        /// Until the owning `ProcessListEntry` is constructed below, nothing rolls back this `processes`
+        /// entry or the counters just incremented for it. A throwing allocation in `appendTask` or in the
+        /// `Entry` construction would otherwise leave `system.processes` and the secondary concurrency
+        /// counters inflated for a query that has no `ProcessListEntry` to clean it up. Guard that window;
+        /// the increments above are allocation-free (keys pre-seeded), so the rollback undoes them exactly
+        /// once. Dismissed as soon as the `Entry` takes ownership of the cleanup.
+        scope_guard registration_rollback([&]
+        {
+            if (!is_internal)
+            {
+                decreaseQueryKindAmount(query_kind);
+                --non_internal_processes;
+            }
+            processes.erase(process_it);
+        });
+
         bool registered_in_cancellation_checker = CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef()[Setting::max_execution_time].totalMilliseconds(), query_context->getSettingsRef()[Setting::timeout_overflow_mode]);
 
         res = std::make_shared<Entry>(*this, process_it, registered_in_cancellation_checker);
+        registration_rollback.release();
 
         (*process_it)->setUserProcessList(&user_process_list);
         (*process_it)->setProcessListEntry(res);
@@ -1319,12 +1348,13 @@ void ProcessList::increaseQueryKindAmount(const IAST::QueryKind & query_kind)
     else
         found->second += 1;
 
-    /// Grow `query_kind_pending_teardowns` in lockstep with `query_kind_amounts`: both maps are only ever
-    /// grown here and neither erases keys, so they share one key set. Creating the key now — on the normal
-    /// registration path, where throwing `bad_alloc` is fine (the `admission_rollback` guard in `insert`
-    /// releases the slot) — guarantees it already exists by the time the query releases its admission slot.
-    /// That lets `increaseAdmissionPendingTeardowns` be allocation-free, which is required because it runs
-    /// from cleanup/destructor paths (`BlockIO::~BlockIO`), where a throw would call `std::terminate`.
+    /// Keep `query_kind_pending_teardowns` in lockstep with `query_kind_amounts`: both maps are only ever
+    /// grown together and neither erases keys, so they share one key set. On the registration path in
+    /// `insert` both keys are pre-seeded before the query is counted, so this `try_emplace` does not
+    /// allocate there; it stays as the canonical lockstep grow-point and guarantees the key exists by the
+    /// time the query releases its admission slot. That lets `increaseAdmissionPendingTeardowns` be
+    /// allocation-free, which is required because it runs from cleanup/destructor paths (`BlockIO::~BlockIO`),
+    /// where a throw would call `std::terminate`.
     query_kind_pending_teardowns.try_emplace(query_kind, 0);
 }
 
