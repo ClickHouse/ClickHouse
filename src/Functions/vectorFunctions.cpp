@@ -2073,7 +2073,7 @@ Returns the sum of the products of the corresponding elements.
         {"vector1", "First vector.", {"Array(T)", "Tuple(T)"}},
         {"vector2", "Second vector. Must be the same size as the first vector.", {"Array(T)", "Tuple(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_dotProduct = {"Returns the dot product of the two vectors.", {"(U)Int*", "Float*", "Decimal"}};
+    FunctionDocumentation::ReturnedValue returned_value_dotProduct = {"Returns the dot product of the two vectors. Two `BFloat16` arrays accumulate in and return `Float32`.", {"(U)Int*", "Float*", "Decimal"}};
     FunctionDocumentation::Examples examples_dotProduct = {
         {"Basic usage", "SELECT dotProduct((1, 2), (3, 4))", "11"}
     };

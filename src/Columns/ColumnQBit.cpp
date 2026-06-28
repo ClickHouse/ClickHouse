@@ -39,7 +39,7 @@ std::string ColumnQBit::getName() const
 {
     /// The tuple holds element_size * num_strides FixedString columns, so divide by the number of stride groups to recover the element size.
     const size_t element_size = getBitsCount() / getNumStrides();
-    const char * element_name = element_size == 16 ? "BFloat16" : element_size == 32 ? "Float32" : "Float64";
+    const char * element_name = element_size == 8 ? "Int8" : element_size == 16 ? "BFloat16" : element_size == 32 ? "Float32" : "Float64";
     if (stride == dimension)
         return fmt::format("QBit({}, {})", element_name, dimension);
     return fmt::format("QBit({}, {}, {})", element_name, dimension, stride);

@@ -27,11 +27,11 @@ DataTypeQBit::DataTypeQBit(const DataTypePtr & element_type_, const size_t dimen
     , stride(stride_)
 {
     /// Prevents maliciously crafted byte streams from being deserialized into illegal types, which could be exploited to crash the server
-    if (element_type_->getTypeId() != TypeIndex::BFloat16 && element_type_->getTypeId() != TypeIndex::Float32
-        && element_type_->getTypeId() != TypeIndex::Float64)
+    if (element_type_->getTypeId() != TypeIndex::Int8 && element_type_->getTypeId() != TypeIndex::BFloat16
+        && element_type_->getTypeId() != TypeIndex::Float32 && element_type_->getTypeId() != TypeIndex::Float64)
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "QBit data type only supports BFloat16, Float32, or Float64 as element type. Got: {}",
+            "QBit data type only supports Int8, BFloat16, Float32, or Float64 as element type. Got: {}",
             element_type_->getName());
 
     if (stride == 0 || stride > dimension || dimension % stride != 0)
@@ -142,10 +142,11 @@ static DataTypePtr create(const ASTPtr & arguments)
     const DataTypePtr type = DataTypeFactory::instance().get(arguments->children[0]);
     const auto * argument = arguments->children[1]->as<ASTLiteral>();
 
-    if (type->getTypeId() != TypeIndex::BFloat16 && type->getTypeId() != TypeIndex::Float32 && type->getTypeId() != TypeIndex::Float64)
+    if (type->getTypeId() != TypeIndex::Int8 && type->getTypeId() != TypeIndex::BFloat16 && type->getTypeId() != TypeIndex::Float32
+        && type->getTypeId() != TypeIndex::Float64)
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "QBit data type only supports BFloat16, Float32, or Float64 as element type. Got: {}",
+            "QBit data type only supports Int8, BFloat16, Float32, or Float64 as element type. Got: {}",
             type->getName());
 
     if (!argument || argument->value.getType() != Field::Types::UInt64 || argument->value.safeGet<UInt64>() == 0)
@@ -186,7 +187,7 @@ To declare a column of `QBit` type, use the following syntax:
 column_name QBit(element_type, dimension[, stride])
 ```
 
-* `element_type` – the type of each vector element. The allowed types are `BFloat16`, `Float32` and `Float64`
+* `element_type` – the type of each vector element. The allowed types are `Int8`, `BFloat16`, `Float32` and `Float64`
 * `dimension` – the number of elements in each vector
 * `stride` – optional. The number of dimensions stored together in one group of streams. When omitted it defaults to `dimension` (a single group). When provided, `dimension` must be a multiple of `stride`, and, when `stride` is smaller than `dimension`, `stride` must be a multiple of 8. The `dimension` dimensions are split into `dimension / stride` contiguous groups, and each group's bit planes are stored in separate streams. This lets a search over the first `D` dimensions (with `D` a multiple of `stride`) read only the streams of the groups that cover those dimensions, which is useful for Matryoshka embeddings.
 
@@ -227,6 +228,7 @@ SELECT bin(vec.1) FROM test;
 
 The number of accessible subcolumns depends on the element type (and, when strided, on the number of stride groups):
 
+* `Int8`: 8 subcolumns per stride group (1-8)
 * `BFloat16`: 16 subcolumns per stride group (1-16)
 * `Float32`: 32 subcolumns per stride group (1-32)
 * `Float64`: 64 subcolumns per stride group (1-64)
