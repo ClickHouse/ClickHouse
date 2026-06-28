@@ -1560,15 +1560,18 @@ std::optional<UInt128> IStorageURLBase::getModificationHash(const StorageSnapsho
         return {};
     }
 
-    /// If the server reports neither an ETag, nor a size, nor a modification time, we cannot tell
-    /// whether the data changed.
-    if (file_info.etag.empty() && !file_info.file_size.has_value() && !file_info.last_modified.has_value())
+    /// A strong validator is required: size and modification time are weak (a server can rewrite
+    /// same-size content within the same second), so we only trust a non-weak `ETag`. Without it we
+    /// cannot guarantee detection of changes, so fail closed (return nullopt). A weak ETag (prefixed
+    /// with `W/`) is also insufficient.
+    if (file_info.etag.empty() || file_info.etag.starts_with("W/"))
         return {};
 
     SipHash hash;
     hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
     hash.update(uri);
     hash.update(file_info.etag);
+    /// Mix in size and modification time as well - they only strengthen the strong ETag.
     hash.update(file_info.file_size.value_or(0));
     hash.update(file_info.last_modified.value_or(0));
     return hash.get128();

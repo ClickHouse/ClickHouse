@@ -1828,9 +1828,20 @@ static BlockIO executeQueryImpl(
                     }
 
                     res = interpreter->execute();
+                    /// Guard against a race between the read probe (when `referenced_tables_modification_hash`
+                    /// was computed) and execution (which snapshots the tables later): recompute the hash now
+                    /// and only store the entry if the referenced tables are still in the same state. Otherwise
+                    /// the cached result would not match the data state encoded in its key.
+                    bool consistent_cache_still_valid = true;
+                    if (query_cache_only_when_data_unchanged)
+                    {
+                        auto write_time_hash = computeQueryReferencedTablesModificationHash(out_ast, context);
+                        consistent_cache_still_valid = write_time_hash.has_value() && write_time_hash == referenced_tables_modification_hash;
+                    }
+
                     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
                     /// top of the pipeline which stores the result in the query cache.
-                    if (checkCanWriteQueryResultCache(out_ast, context) && can_use_consistent_query_result_cache)
+                    if (checkCanWriteQueryResultCache(out_ast, context) && can_use_consistent_query_result_cache && consistent_cache_still_valid)
                     {
                             auto created_at = std::chrono::system_clock::now();
                             auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());

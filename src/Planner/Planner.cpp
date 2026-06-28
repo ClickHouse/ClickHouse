@@ -2688,6 +2688,16 @@ void Planner::buildPlanForQueryNode()
     /// When should_cache is true but the outer query didn't set use_query_cache (explicit subquery opt-in),
     /// skip the context flag check in checkCanWriteQueryResultCache while still respecting safety checks.
     bool skip_context_check = should_cache && !can_use_query_result_cache;
+
+    /// Guard against a race between the read probe and execution (which snapshots the tables later):
+    /// recompute the referenced-tables hash and only store the entry if the tables are still unchanged.
+    if (should_cache && settings[Setting::query_cache_use_only_when_data_was_not_changed])
+    {
+        auto write_time_hash = computeQueryReferencedTablesModificationHash(ast, query_context);
+        if (!write_time_hash.has_value() || write_time_hash != referenced_tables_modification_hash)
+            should_cache = false;
+    }
+
     if (should_cache && checkCanWriteQueryResultCache(ast, query_context, skip_context_check))
     {
         auto created_at = std::chrono::system_clock::now();

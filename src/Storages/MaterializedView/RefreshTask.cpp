@@ -400,6 +400,10 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
 
         refresh_schedule = RefreshSchedule(new_strategy);
         refresh_if_changed = new_strategy.if_changed;
+        /// The remembered source hash refers to the previous refresh's query. After changing the refresh
+        /// params (including toggling IF CHANGED, or changing the query via separate ALTER) it may no longer
+        /// correspond to the target's current contents, so forget it and let the next refresh recompute.
+        last_refresh_source_hash.reset();
         std::vector<StorageID> deps = parseRefreshDependencies(
             new_strategy, view ? view->getStorageID().database_name : String{});
 
@@ -1148,6 +1152,16 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                     throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
 
                 /// `executor` must be destroyed before `pipeline`!
+            }
+
+            /// Recompute the source hash now that the refresh query has finished reading the source, so the
+            /// value we remember for the next IF CHANGED comparison matches the data the new table was
+            /// actually built from (not the state sampled before the read started).
+            if (if_changed)
+            {
+                auto view_metadata = view->getInMemoryMetadataPtr(refresh_context, false);
+                if (auto select_ast = view_metadata->select.select_query)
+                    out_source_hash = computeQueryReferencedTablesModificationHash(select_ast, refresh_context);
             }
 
             logQueryFinish(*query_log_elem, refresh_context, refresh_query, std::move(pipeline), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, /*internal=*/internal);
