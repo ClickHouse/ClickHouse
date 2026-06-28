@@ -5,6 +5,11 @@ SELECT 'Basic QBit -> Array, same element type';
 SELECT CAST([1, 2, 3, 4]::QBit(Float64, 4) AS Array(Float64));
 SELECT CAST([1, 2, 3, 4]::QBit(Float32, 4) AS Array(Float32));
 SELECT CAST([1, 2, 3, 4]::QBit(BFloat16, 4) AS Array(BFloat16));
+SELECT CAST([1, 2, 3, 4]::QBit(Int8, 4) AS Array(Int8));
+
+SELECT 'Int8 round trip, including negative and boundary values, is lossless';
+SELECT [-128, -1, 0, 1, 127]::QBit(Int8, 5)::Array(Int8);
+SELECT [-128, -1, 0, 1, 127]::QBit(Int8, 5)::Array(Int8) = [-128, -1, 0, 1, 127]::Array(Int8);
 
 SELECT 'Operator-style cast';
 SELECT [10, 20, 30]::QBit(Float64, 3)::Array(Float64);

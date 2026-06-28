@@ -2,6 +2,10 @@ Basic QBit -> Array, same element type
 [1,2,3,4]
 [1,2,3,4]
 [1,2,3,4]
+[1,2,3,4]
+Int8 round trip, including negative and boundary values, is lossless
+[-128,-1,0,1,127]
+1
 Operator-style cast
 [10,20,30]
 Round-trip Array -> QBit -> Array is lossless for Float32/Float64
