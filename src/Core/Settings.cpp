@@ -6431,26 +6431,36 @@ Result:
 Sets the page number for paginated results. Equivalent to `offset = limit * (page - 1)`. Can only be specified when `limit` is set and `offset` is not. Pages are 1-based. Inherits the same negative/fractional support as `limit` and `offset`.
 
 This is a query-construction setting applied by the engine on the parsed query (wrapping it as a derived table), so it composes with the existing query and works on every protocol: it can be supplied via the HTTP URL parameter, an in-query `SETTINGS` clause, or a user profile.
+
+It shapes result-producing `SELECT` / `UNION` queries. For a write query (`INSERT … SELECT`, `CREATE … AS SELECT`) it takes effect only when the source `SELECT` carries it in its own `SETTINGS` clause; a value inherited from a profile or session, or set on the `INSERT` / `CREATE` statement itself, does not propagate into the source `SELECT` — the same non-propagation rule that applies to any other setting.
 )", 0) \
     DECLARE(String, select, "", R"(
-Wraps the query as a subquery with an explicit `SELECT` expression list. When non-empty, every query is wrapped as `SELECT <expr_list> FROM (<query>)`.
+Wraps the query as a subquery with an explicit `SELECT` expression list. When non-empty, the result-producing query is wrapped as `SELECT <expr_list> FROM (<query>)`.
 
 This is a query-construction setting applied by the engine on the parsed query (wrapping it as a derived table), so it composes with the existing query and works on every protocol: it can be supplied via the HTTP URL parameter, an in-query `SETTINGS` clause, or a user profile.
+
+It shapes result-producing `SELECT` / `UNION` queries. For a write query (`INSERT … SELECT`, `CREATE … AS SELECT`) it takes effect only when the source `SELECT` carries it in its own `SETTINGS` clause; a value inherited from a profile or session, or set on the `INSERT` / `CREATE` statement itself, does not propagate into the source `SELECT` — the same non-propagation rule that applies to any other setting.
 )", 0) \
     DECLARE(String, order, "", R"(
 Adds an `ORDER BY` clause to the query as a wrapping subquery. Accepts an arbitrary expression list.
 
 This is a query-construction setting applied by the engine on the parsed query (wrapping it as a derived table), so it composes with the existing query and works on every protocol: it can be supplied via the HTTP URL parameter, an in-query `SETTINGS` clause, or a user profile.
+
+It shapes result-producing `SELECT` / `UNION` queries. For a write query (`INSERT … SELECT`, `CREATE … AS SELECT`) it takes effect only when the source `SELECT` carries it in its own `SETTINGS` clause; a value inherited from a profile or session, or set on the `INSERT` / `CREATE` statement itself, does not propagate into the source `SELECT` — the same non-propagation rule that applies to any other setting.
 )", 0) \
     DECLARE(String, sort, "", R"(
 Adds a simple `ORDER BY` clause to the query as a wrapping subquery. Accepts a comma-separated list of identifiers or positional column references (positive integers) with an optional `+` (ASC) or `-` (DESC) prefix. Example: `sort=a,-b` orders by `a` ascending and `b` descending; `sort=1,-2` orders by the first column ascending and the second descending. Cannot be combined with `order`.
 
 This is a query-construction setting applied by the engine on the parsed query (wrapping it as a derived table), so it composes with the existing query and works on every protocol: it can be supplied via the HTTP URL parameter, an in-query `SETTINGS` clause, or a user profile.
+
+It shapes result-producing `SELECT` / `UNION` queries. For a write query (`INSERT … SELECT`, `CREATE … AS SELECT`) it takes effect only when the source `SELECT` carries it in its own `SETTINGS` clause; a value inherited from a profile or session, or set on the `INSERT` / `CREATE` statement itself, does not propagate into the source `SELECT` — the same non-propagation rule that applies to any other setting.
 )", 0) \
     DECLARE(String, filter, "", R"(
 Adds a `WHERE` clause to the query as a wrapping subquery. Multiple filters are combined with AND. The HTTP interface allows multiple `filter` URL parameters which are combined with AND in order, and with the value of this setting.
 
 This is a query-construction setting applied by the engine on the parsed query (wrapping it as a derived table), so it composes with the existing query and works on every protocol: it can be supplied via the HTTP URL parameter, an in-query `SETTINGS` clause, or a user profile.
+
+It shapes result-producing `SELECT` / `UNION` queries. For a write query (`INSERT … SELECT`, `CREATE … AS SELECT`) it takes effect only when the source `SELECT` carries it in its own `SETTINGS` clause; a value inherited from a profile or session, or set on the `INSERT` / `CREATE` statement itself, does not propagate into the source `SELECT` — the same non-propagation rule that applies to any other setting.
 
 :::danger
 `filter` is **not** an access-control mechanism and must not be used as a substitute for [row-level security policies](/operations/access-rights#row-policy-management) or the `additional_table_filters` setting. It only adds a `WHERE` over the wrapping subquery, so the underlying data is still read and processed before the filter is applied — a query can observe the filtered-out rows during processing (for example with `throwIf` to leak information through the error path). Use row-level security or `additional_table_filters` when the goal is to restrict which rows a user may access.
