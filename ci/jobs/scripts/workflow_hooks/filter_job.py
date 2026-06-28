@@ -82,6 +82,16 @@ def _has_keeper_stress_changes(changed_files):
 
 _info_cache = None
 
+# Labels that mark a PR as a bug fix (set by the `pr_labels_and_category.py`
+# pre-hook from the changelog category). Gating Bugfix Validation on labels
+# rather than a free-text scan of the PR body avoids accidentally enabling or
+# failing the check on ordinary PR text that merely mentions "Bug Fix".
+_BUGFIX_LABELS = (Labels.PR_BUGFIX, Labels.PR_CRITICAL_BUGFIX)
+
+
+def _is_bugfix_pr():
+    return any(lb in _info_cache.pr_labels for lb in _BUGFIX_LABELS)
+
 
 def should_skip_job(job_name):
     global _info_cache
@@ -186,14 +196,18 @@ def should_skip_job(job_name):
             "Skipped, labeled with 'ci-performance' - run performance jobs only",
         )
 
-    if " Bug Fix" not in _info_cache.pr_body and "Bugfix" in job_name:
+    if not _is_bugfix_pr() and "Bugfix" in job_name:
         # Don't skip if the corresponding test job file was changed
         skip = True
-        if job_name == JobNames.BUGFIX_VALIDATE_FT and any(
-            f.endswith("jobs/functional_tests.py") for f in changed_files
-        ):
+        if job_name in (
+            JobNames.BUGFIX_VALIDATE_FT_AMD,
+            JobNames.BUGFIX_VALIDATE_FT_ARM,
+        ) and any(f.endswith("jobs/functional_tests.py") for f in changed_files):
             skip = False
-        elif job_name == JobNames.BUGFIX_VALIDATE_IT and any(
+        elif job_name in (
+            JobNames.BUGFIX_VALIDATE_IT_AMD,
+            JobNames.BUGFIX_VALIDATE_IT_ARM,
+        ) and any(
             f.endswith("jobs/integration_test_job.py") for f in changed_files
         ):
             skip = False
@@ -227,18 +241,28 @@ def should_skip_job(job_name):
         ):
             return True, "Skipped, no integration tests updates"
 
-    # Skip bug fix validation jobs even for bufgfix prs if no corresponding updates are found.
-    #  ci/jobs/scripts/workflow_hooks/new_tests_check.py hook validates whether at list one type of tests has updates
+    # Skip bug fix validation jobs even for bugfix PRs if no corresponding updates are found.
+    #  ci/jobs/scripts/workflow_hooks/new_tests_check.py hook validates whether at least one type of tests has updates
+    #
+    # On a Bug-Fix PR that only touches integration tests, the per-arch
+    # functional-test jobs would otherwise run anyway, find nothing to validate
+    # against, and report FAIL even though they should not have been running.
     if (
-        " Bug Fix" in _info_cache.pr_body
-        and job_name == JobNames.BUGFIX_VALIDATE_FT
+        _is_bugfix_pr()
+        and job_name in (
+            JobNames.BUGFIX_VALIDATE_FT_AMD,
+            JobNames.BUGFIX_VALIDATE_FT_ARM,
+        )
         and not has_new_functional_tests(_info_cache.get_changed_files())
     ):
         return True, "Skipped, no functional tests updates"
 
     if (
-        " Bug Fix" in _info_cache.pr_body
-        and job_name == JobNames.BUGFIX_VALIDATE_IT
+        _is_bugfix_pr()
+        and job_name in (
+            JobNames.BUGFIX_VALIDATE_IT_AMD,
+            JobNames.BUGFIX_VALIDATE_IT_ARM,
+        )
         and not has_new_integration_tests(_info_cache.get_changed_files())
     ):
         return True, "Skipped, no integration tests updates"
