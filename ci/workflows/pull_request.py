@@ -167,10 +167,9 @@ workflow = Workflow.Config(
         JobConfigs.sqlstorm_test_job.set_run_after(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
-        *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
-            for job in _SQLANCER_PR_VALIDATION_JOBS
-        ],
+        # No set_run_after: the requires=[CH_ARM_ASAN_UBSAN] edge already orders
+        # this after the build, so it starts as soon as the build is ready.
+        *_SQLANCER_PR_VALIDATION_JOBS,
         # Keeper stress (PR): 3 no-fault scenarios (prod-mix, read-multi, write-multi),
         # default backend only, 15 min each. Runs when src/Coordination or stress test files change.
         JobConfigs.keeper_stress_job
