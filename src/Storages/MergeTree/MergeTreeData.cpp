@@ -1329,10 +1329,19 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
     bool has_date_column = false;
     bool has_datetime_column = false;
 
+    /// Old-syntax tables (`ENGINE = MergeTree(date, ...)`) encode the part's min/max date into the
+    /// part name and therefore require a real, non-`Nullable` `Date` column: an all-`NULL` part
+    /// cannot form a valid part name, and the old-format write path in `MergeTreeDataWriter`
+    /// dereferences the bound with `safeGet<UInt64>`. Only unwrap `Nullable` for new-syntax tables,
+    /// where a `Nullable(Date)` / `Nullable(DateTime[64])` partition key should populate the minmax
+    /// index. For old-syntax tables keep the strict check so such a column is rejected at creation
+    /// ("Could not find Date column") instead of throwing `BAD_GET` on an all-`NULL` `INSERT`.
+    const bool unwrap_nullable = format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+
     Int64 i = 0;
     for (const auto & [_, type] : minmax_columns)
     {
-        if (isDate(type))
+        if (isDate(unwrap_nullable ? removeNullable(type) : type))
         {
             if (!has_date_column)
             {
@@ -1352,7 +1361,8 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
         i = 0;
         for (const auto & [_, type] : minmax_columns)
         {
-            if (isDateTime(type) || isDateTime64(type))
+            const auto effective_type = unwrap_nullable ? removeNullable(type) : type;
+            if (isDateTime(effective_type) || isDateTime64(effective_type))
             {
                 if (!has_datetime_column)
                 {

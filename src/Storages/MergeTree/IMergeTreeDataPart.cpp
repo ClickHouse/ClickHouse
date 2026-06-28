@@ -652,6 +652,27 @@ std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
     if (storage.minmax_idx_date_column_pos != -1 && getMinMaxIndex()->initialized && !info.isPatch())
     {
         const auto & hyperrectangle = getMinMaxIndex()->hyperrectangle[storage.minmax_idx_date_column_pos];
+
+        /// `ColumnNullable::getExtremesNullLast` returns `POSITIVE_INFINITY` (a `Null`
+        /// sentinel) for the bound that points "past the end" of real values:
+        ///   * all-`NULL` parts: both `left` and `right` are `POSITIVE_INFINITY`;
+        ///   * mixed `NULL` / non-`NULL` parts (NullLast): `left` is the real min,
+        ///     but `right` is `POSITIVE_INFINITY` because `NULL` sorts last.
+        /// In both cases, dereferencing the bound as `UInt64` would throw `BAD_GET`,
+        /// so collapse to an empty range and let the non-Nullable `system.parts.min_date` /
+        /// `max_date` columns surface as epoch (`0`).
+        if (hyperrectangle.left.isNull() || hyperrectangle.right.isNull())
+            return {};
+
+        /// Same protection as `getMinMaxTime`: after `ALTER MODIFY COLUMN ... AFTER`
+        /// reorders a partition-key column, the cached `minmax_idx_date_column_pos`
+        /// can point at a column of some other (non-`Date`) type whose bounds are
+        /// stored as `Int64` etc. `safeGet<UInt64>` would throw `BAD_GET`. Return
+        /// an empty range instead, matching the `pos == -1` and `Null` paths.
+        if (hyperrectangle.left.getType() != Field::Types::UInt64
+            || hyperrectangle.right.getType() != Field::Types::UInt64)
+            return {};
+
         return {
             DayNum(static_cast<DayNum::UnderlyingType>(hyperrectangle.left.safeGet<UInt64>())),
             DayNum(static_cast<DayNum::UnderlyingType>(hyperrectangle.right.safeGet<UInt64>()))};
@@ -665,17 +686,31 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
     {
         const auto & hyperrectangle = getMinMaxIndex()->hyperrectangle[storage.minmax_idx_time_column_pos];
 
-        /// The case of DateTime
-        if (hyperrectangle.left.getType() == Field::Types::UInt64)
+        /// See `getMinMaxDate` for why both bounds need to be checked: all-`NULL` parts
+        /// have both bounds set to `POSITIVE_INFINITY`, but mixed `NULL` / non-`NULL`
+        /// NullLast parts have only `right` set to `POSITIVE_INFINITY` while `left`
+        /// holds the real minimum.
+        if (hyperrectangle.left.isNull() || hyperrectangle.right.isNull())
+            return {};
+
+        /// The case of DateTime (stored as UInt64).
+        /// Both bounds must be `UInt64`. Merging a pre-`ALTER` part (whose stale slot
+        /// still holds a `DateTime` bound, i.e. `UInt64`) with a post-`ALTER` part (whose
+        /// slot at the same position now holds a reordered column of another type) via
+        /// `MinMaxIndex::merge` can yield a range with mismatched bound types — for example
+        /// `left` is `UInt64` while `right` is `Int64`. Calling `safeGet<UInt64>` on such a
+        /// `right` would throw `BAD_GET`, so require both bounds to match before reading them
+        /// and otherwise fall through to the empty range below.
+        if (hyperrectangle.left.getType() == Field::Types::UInt64
+            && hyperrectangle.right.getType() == Field::Types::UInt64)
         {
-            chassert(hyperrectangle.right.getType() == Field::Types::UInt64);
             return {hyperrectangle.left.safeGet<UInt64>(), hyperrectangle.right.safeGet<UInt64>()};
         }
-        /// The case of DateTime64
-        if (hyperrectangle.left.getType() == Field::Types::Decimal64)
+        /// The case of DateTime64 (stored as Decimal64). Both bounds must match for the same
+        /// reason as above.
+        if (hyperrectangle.left.getType() == Field::Types::Decimal64
+            && hyperrectangle.right.getType() == Field::Types::Decimal64)
         {
-            chassert(hyperrectangle.right.getType() == Field::Types::Decimal64);
-
             auto left = hyperrectangle.left.safeGet<DecimalField<Decimal64>>();
             auto right = hyperrectangle.right.safeGet<DecimalField<Decimal64>>();
 
@@ -683,7 +718,22 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 
             return {left.getValue() / left.getScaleMultiplier(), right.getValue() / right.getScaleMultiplier()};
         }
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part minmax index by time is neither DateTime or DateTime64");
+
+        /// Issue #92834: when `ALTER TABLE ... MODIFY COLUMN ... AFTER` reorders a
+        /// partition-key column, the metadata's minmax-column expression is rebuilt
+        /// in the new column order, but `storage.minmax_idx_time_column_pos` (cached
+        /// at table creation/attach) is not. Subsequent `INSERT`s build the per-part
+        /// `hyperrectangle` in the new order while readers of `system.parts.min_time`
+        /// / `max_time` dereference the slot at the stale position — landing on a
+        /// column of some other type. Historically this threw `LOGICAL_ERROR`
+        /// "Part minmax index by time is neither DateTime or DateTime64", surfacing
+        /// as a fatal-looking exception to the user even though the table itself is
+        /// fine. Treat any unexpected `Field` type as "no usable time bounds for
+        /// this part" and return an empty range — matching the `pos == -1` and the
+        /// `Null` bound paths. The deeper stale-position fix is a separate change
+        /// (it requires per-part column-order persistence to be concurrency-safe
+        /// with concurrent `SELECT`s).
+        return {};
     }
     return {};
 }
