@@ -1,6 +1,6 @@
 #include <Common/Scheduler/createResourceManager.h>
-#include <Common/Scheduler/Nodes/CustomResourceManager.h>
-#include <Common/Scheduler/Nodes/WorkloadResourceManager.h>
+#include <Common/Scheduler/CustomResourceManager.h>
+#include <Common/Scheduler/WorkloadResourceManager.h>
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -116,7 +116,7 @@ ResourceManagerPtr createResourceManager(const ContextMutablePtr & global_contex
 
     // NOTE: if the same resource is described by both managers, then manager added earlier will be used.
     dispatcher->addManager(std::make_shared<CustomResourceManager>());
-    dispatcher->addManager(std::make_shared<WorkloadResourceManager>(global_context->getWorkloadEntityStorage()));
+    dispatcher->addManager(std::make_shared<WorkloadResourceManager>(global_context->getWorkloadEntityStoragePtr()));
 
     return dispatcher;
 }
