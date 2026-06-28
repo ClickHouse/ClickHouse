@@ -44,6 +44,11 @@ namespace
     };
     template <class... Ts>
     Overloaded(Ts...) -> Overloaded<Ts...>;
+
+    bool canUseFilesystemCache(const StoredObject & object)
+    {
+        return object.bytes_size != StoredObject::UnknownSize;
+    }
 }
 
 void ReadPipeline::setSource(ObjectStoragePtr object_storage, StoredObjects objects, const ReadSettings & read_settings, std::optional<size_t> read_hint)
@@ -306,6 +311,9 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
                 bool restricted_seek, const StoredObject & object) mutable
                 -> std::unique_ptr<ReadBufferFromFileBase>
         {
+            if (!canUseFilesystemCache(object))
+                return prev_creator(restricted_seek, object);
+
             auto cache_key = custom_key.value_or(FileCacheKey::fromPath(object.remote_path));
             auto origin = custom_origin.value_or(cache->getCommonOriginWithSegmentKeyType(object.local_path));
 
@@ -483,7 +491,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
 #endif
 
     /// -- Stages 1+2: Source + FilesystemCache(s) (single-object, no DC, no gather) --
-    if (!filesystem_caches.empty())
+    if (!filesystem_caches.empty() && canUseFilesystemCache(object))
     {
         /// The impl buffer (source reader inside the cache) must always use external buffer mode.
         /// CachedOnDiskReadBufferFromFile couples with its impl via set() — passing the working

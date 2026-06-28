@@ -3,12 +3,27 @@
 #include <IO/ReadPipeline.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
+#include <base/scope_guard.h>
 
 #include <cstring>
+#include <filesystem>
 #include <map>
 
 
 using namespace DB;
+namespace fs = std::filesystem;
+
+namespace DB::FileCacheSetting
+{
+    extern const FileCacheSettingsString path;
+    extern const FileCacheSettingsUInt64 max_size;
+    extern const FileCacheSettingsUInt64 max_elements;
+    extern const FileCacheSettingsUInt64 max_file_segment_size;
+    extern const FileCacheSettingsUInt64 boundary_alignment;
+    extern const FileCacheSettingsUInt64 background_download_threads;
+}
 
 namespace
 {
@@ -89,6 +104,25 @@ StoredObject testObject(const String & path, size_t size)
 StoredObject testObject(size_t size = 100)
 {
     return StoredObject("test/object", "local/object", size);
+}
+
+FileCachePtr createTestFileCache(const String & name)
+{
+    const auto cache_path = fs::current_path() / (name + "_cache");
+    fs::remove_all(cache_path);
+    fs::create_directories(cache_path);
+
+    FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_path / "";
+    settings[FileCacheSetting::max_size] = 1024 * 1024;
+    settings[FileCacheSetting::max_elements] = 100;
+    settings[FileCacheSetting::boundary_alignment] = 0;
+    settings[FileCacheSetting::max_file_segment_size] = 1024 * 1024;
+    settings[FileCacheSetting::background_download_threads] = 0;
+
+    auto cache = FileCacheFactory::instance().getOrCreate(name, settings, "");
+    cache->initialize();
+    return cache;
 }
 
 }
@@ -261,6 +295,34 @@ TEST(ReadPipeline, DescribeMultipleStages)
     pipeline.needFilesystemCache(nullptr, FilesystemCacheSettings{});
     pipeline.needGather();
     EXPECT_EQ(pipeline.describe(), "Source(Custom) -> FilesystemCache -> Gather");
+}
+
+
+TEST(ReadPipeline, FilesystemCacheSkipsUnknownSizeObject)
+try
+{
+    const String data = "unknown size data";
+    const String cache_name = "read_pipeline_unknown_size";
+    auto cache = createTestFileCache(cache_name);
+    SCOPE_EXIT({
+        FileCacheFactory::instance().clear();
+        fs::remove_all(fs::current_path() / (cache_name + "_cache"));
+    });
+
+    ReadPipeline pipeline;
+    pipeline.setSource(memoryCreator(data), StoredObjects{testObject(StoredObject::UnknownSize)}, ReadSettings{});
+    pipeline.needFilesystemCache(cache, FilesystemCacheSettings{});
+
+    auto buf = pipeline.build();
+    ASSERT_TRUE(buf != nullptr);
+
+    String result;
+    readStringUntilEOF(result, *buf);
+    EXPECT_EQ(result, data);
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
 }
 
 
