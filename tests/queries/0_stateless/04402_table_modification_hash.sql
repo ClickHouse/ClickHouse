@@ -4,6 +4,7 @@
 DROP TABLE IF EXISTS t_mt;
 DROP TABLE IF EXISTS t_mem;
 DROP TABLE IF EXISTS t_log;
+DROP TABLE IF EXISTS t_sample;
 DROP TABLE IF EXISTS t_url_glob;
 DROP TABLE IF EXISTS t_url_failover;
 DROP TABLE IF EXISTS hashes;
@@ -34,12 +35,21 @@ INSERT INTO hashes SELECT 'log_a', modification_hash FROM system.tables WHERE da
 INSERT INTO t_log VALUES (2);
 INSERT INTO hashes SELECT 'log_b', modification_hash FROM system.tables WHERE database = currentDatabase() AND name = 't_log';
 
+-- MergeTree: the sampling key affects which rows a SAMPLE query returns, so a metadata-only
+-- ALTER of the sampling key (which does not rewrite parts) must still change the hash.
+CREATE TABLE t_sample (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY (a, b) SAMPLE BY a;
+INSERT INTO t_sample SELECT number, number FROM numbers(8);
+INSERT INTO hashes SELECT 'samp_a', modification_hash FROM system.tables WHERE database = currentDatabase() AND name = 't_sample';
+ALTER TABLE t_sample REMOVE SAMPLE BY;
+INSERT INTO hashes SELECT 'samp_b', modification_hash FROM system.tables WHERE database = currentDatabase() AND name = 't_sample';
+
 SELECT 'mt not null', (SELECT v FROM hashes WHERE k = 'mt_a') IS NOT NULL;
 SELECT 'mt stable', (SELECT v FROM hashes WHERE k = 'mt_a') = (SELECT v FROM hashes WHERE k = 'mt_a2');
 SELECT 'mt changed on insert', (SELECT v FROM hashes WHERE k = 'mt_a') != (SELECT v FROM hashes WHERE k = 'mt_b');
 SELECT 'mt changed on merge', (SELECT v FROM hashes WHERE k = 'mt_b') != (SELECT v FROM hashes WHERE k = 'mt_c');
 SELECT 'mem changed on insert', (SELECT v FROM hashes WHERE k = 'mem_a') != (SELECT v FROM hashes WHERE k = 'mem_b');
 SELECT 'log changed on insert', (SELECT v FROM hashes WHERE k = 'log_a') != (SELECT v FROM hashes WHERE k = 'log_b');
+SELECT 'sample key change', (SELECT v FROM hashes WHERE k = 'samp_a') != (SELECT v FROM hashes WHERE k = 'samp_b');
 
 -- URL tables expand glob (`{a,b}`) and `|`-failover patterns into several
 -- concrete URLs at read time, so a single probe of the literal pattern string
@@ -69,5 +79,6 @@ DROP TABLE hashes;
 DROP TABLE t_mt;
 DROP TABLE t_mem;
 DROP TABLE t_log;
+DROP TABLE t_sample;
 DROP TABLE t_url_glob;
 DROP TABLE t_url_failover;

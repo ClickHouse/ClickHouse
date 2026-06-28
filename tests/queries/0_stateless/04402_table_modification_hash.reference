@@ -4,6 +4,7 @@ mt changed on insert	1
 mt changed on merge	1
 mem changed on insert	1
 log changed on insert	1
+sample key change	1
 url glob null	1
 url failover null	1
 ordinary memory null	1
