@@ -34,16 +34,20 @@ void GroupingAggregatedTransform::pushData(Chunks chunks, Int32 bucket, bool is_
     info->chunks = std::make_shared<Chunks>(std::move(chunks));
 
     /// Buckets may be emitted out of order here, so stamp every still-pending bucket (buffered
-    /// in `chunks_map`, or flagged delayed by an input in `out_of_order_buckets`) except the one
-    /// being pushed. Mirrors ConvertingAggregatedToChunksTransform so a downstream re-merge layer
-    /// keeps the delayed-bucket signal and does not push a bucket twice.
+    /// in `chunks_map`, or still owed by an input in `out_of_order_buckets`) except the one being
+    /// pushed. Mirrors ConvertingAggregatedToChunksTransform so a downstream re-merge layer keeps
+    /// the delayed-bucket signal and does not push a bucket twice.
+    /// A bucket is owed only while its delaying count is positive: `out_of_order_buckets` keeps
+    /// zero-count entries (an input declared a bucket delayed, then resolved it empty so it was
+    /// never buffered in `chunks_map`), and stamping those would tell the next layer this input
+    /// still owes a bucket it never will, holding back real data for it until the stream ends.
     if (bucket >= 0)
     {
         for (const auto & [pending_bucket, chunks_for_bucket] : chunks_map)
             if (pending_bucket != bucket)
                 info->out_of_order_buckets.push_back(pending_bucket);
         for (const auto & [delayed_bucket, num_inputs_delaying] : out_of_order_buckets)
-            if (delayed_bucket != bucket && !chunks_map.contains(delayed_bucket))
+            if (delayed_bucket != bucket && num_inputs_delaying > 0 && !chunks_map.contains(delayed_bucket))
                 info->out_of_order_buckets.push_back(delayed_bucket);
         std::ranges::sort(info->out_of_order_buckets);
     }

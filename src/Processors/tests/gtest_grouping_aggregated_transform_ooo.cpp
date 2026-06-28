@@ -653,3 +653,200 @@ TEST(GroupingAggregatedOOO, TwoLayerDistMetadataFuzz)
     }
     std::cerr << "TwoLayerDistMetadataFuzz iterations checked: " << total << std::endl;
 }
+
+/// =====================================================================================
+/// SPARSE / EMPTY DELAYED BUCKET (review follow-up).
+///
+/// The OUT-OF-ORDER optimization lets an input declare a bucket delayed and then resolve
+/// it EMPTY: the producer (ConvertingAggregatedToChunksTransform) postpones a bucket, finds
+/// it has no rows, and drops it WITHOUT ever sending it - erasing it from the pending set
+/// before stamping the next chunk (AggregatingTransform.cpp:592-600,633-639). The consumer
+/// mirrors this in `addChunk`: the bucket's count in `out_of_order_buckets` is decremented
+/// back to 0, but the map entry is NOT erased (it is erased only on the OOO push path,
+/// cpp:91-94) and the bucket is never buffered in `chunks_map`. So a zero-count entry for an
+/// empty-resolved bucket lingers.
+///
+/// When stamping metadata for a downstream re-merge layer, such zero-count entries must NOT
+/// be forwarded: a sparse two-level layout (only some of 0..255 present) routinely leaves
+/// them, and advertising one as "still owed" makes the next layer hold back the real chunk
+/// for that bucket from every other input until the stream finishes, breaking the
+/// memory-efficient merge contract (and re-introducing the very double-push this fix removes).
+/// =====================================================================================
+
+/// What an inner dist-layer shard stamps when it had a delayed-then-empty bucket.
+/// input: (0, ooo=[1]) then (2, ooo=[]) - declare 1 delayed while sending 0, then resolve 1
+/// empty and send 2 (bucket 1 is NEVER delivered). Bucket 1 ends up as a zero-count zombie in
+/// the shard's out_of_order_buckets. The stamped metadata on the shard's pushed chunks (0 and
+/// 2) must NOT list bucket 1 - it is not owed by anyone, the shard simply skipped it.
+TEST(GroupingAggregatedOOO, EmptyDelayedBucketNotStampedAsOwed)
+{
+    auto inputs = buildInputs({
+        {{0, {1}}, {2, {}}},   // single shard: postpone 1, resolve it empty, emit 2
+    });
+    ManualGroupingDriver d(std::move(inputs));
+    const auto & pushed = d.runPushed();
+
+    /// All buckets must still be pushed exactly once.
+    std::vector<Int32> bucket_order;
+    for (const auto & p : pushed)
+        bucket_order.push_back(p.bucket);
+    expectEachBucketOnce(bucket_order);
+
+    for (const auto & p : pushed)
+    {
+        EXPECT_EQ(std::ranges::count(p.ooo, 1), 0)
+            << "bucket 1 was resolved empty (never delivered), it must not be stamped as still-owed "
+            << "on the push of bucket " << p.bucket
+            << " - forwarding a zero-count entry breaks the downstream memory-efficient merge";
+        /// Sanity: a bucket is never owed to itself.
+        EXPECT_EQ(std::ranges::count(p.ooo, p.bucket), 0);
+    }
+}
+
+/// End-to-end: a downstream initiator must still merge real bucket-1 data once a sibling shard
+/// supplies it, NOT buffer it to the end of the stream.
+///   - shard A: postpones 1, resolves it EMPTY, emits 0 and 2 (its stamped metadata models the
+///     fixed re-merge path: bucket 1 must NOT appear as owed).
+///   - shard B: delivers buckets 0,1,2 in order, with real data for bucket 1.
+/// The initiator must push 0,1,2 each exactly once. If shard A wrongly advertised bucket 1 as
+/// owed, the initiator would withhold shard B's bucket 1 (its in-order path skips owed buckets,
+/// cpp:99-107) until the stream finishes - and then could double-push it on the finish drain.
+TEST(GroupingAggregatedOOO, EmptyDelayedBucketDownstreamMergesRealData)
+{
+    /// Run shard A through a real GroupingAggregatedTransform and forward its STAMPED metadata,
+    /// exactly as MergingAggregatedBucketTransform would in a multi-layer query.
+    std::vector<PushedBucket> shard_a;
+    {
+        auto inputs = buildInputs({{{0, {1}}, {2, {}}}});
+        ManualGroupingDriver da(std::move(inputs));
+        shard_a = da.runPushed();
+    }
+
+    /// The fix makes shard A NOT advertise the empty bucket 1 as owed. (Pre-fix it does, which
+    /// is what holds back shard B's real bucket 1 until the stream ends.)
+    for (const auto & p : shard_a)
+        EXPECT_EQ(std::ranges::count(p.ooo, 1), 0)
+            << "shard A stamped empty bucket 1 as owed on its push of bucket " << p.bucket;
+
+    std::vector<std::deque<Chunk>> outer(2);
+    for (const auto & p : shard_a)
+        outer[0].push_back(makeBucketChunk(p.bucket, p.ooo));
+    for (Int32 b : {0, 1, 2})
+        outer[1].push_back(makeBucketChunk(b, {}));
+
+    ManualGroupingDriver d(std::move(outer));
+    expectEachBucketOnce(d.run());
+}
+
+/// Faithful producer model EXTENDED to resolve postponed buckets EMPTY at random: when a
+/// postponed bucket is "flushed", with some probability it is dropped (empty) instead of
+/// emitted - exactly the producer's empty-bucket path. The stamped snapshot then naturally
+/// excludes a bucket the moment it is resolved (emitted OR dropped), so forwarding the inner
+/// shard's stamped metadata downstream must never duplicate a bucket - including across the
+/// sparse/empty cases the prior fuzz never produced.
+namespace
+{
+std::vector<std::pair<Int32, std::vector<Int32>>> genProducerStreamWithEmpties(pcg64 & rng, Int32 num_buckets)
+{
+    std::vector<std::pair<Int32, std::vector<Int32>>> out;
+    std::vector<Int32> pending; // postponed-but-not-yet-resolved, kept sorted
+    Int32 cur = 0;
+
+    auto emit = [&](Int32 b)
+    {
+        std::vector<Int32> snap;
+        for (auto p : pending)
+            if (p != b)
+                snap.push_back(p);
+        out.emplace_back(b, snap);
+    };
+
+    while (cur < num_buckets || !pending.empty())
+    {
+        bool can_postpone = cur < num_buckets && pending.size() < 4;
+        bool resolve_pending = !pending.empty()
+            && (cur >= num_buckets || (std::uniform_int_distribution<int>(0, 2)(rng) == 0));
+
+        if (resolve_pending)
+        {
+            size_t k = std::uniform_int_distribution<size_t>(0, pending.size() - 1)(rng);
+            Int32 b = pending[k];
+            pending.erase(pending.begin() + k);
+            /// Resolve it: 1/3 of the time the postponed bucket turns out EMPTY -> dropped,
+            /// never emitted (but already removed from the pending snapshot, like the producer).
+            if (std::uniform_int_distribution<int>(0, 2)(rng) != 0)
+                emit(b);
+        }
+        else if (can_postpone && std::uniform_int_distribution<int>(0, 1)(rng) == 0)
+        {
+            pending.push_back(cur);
+            std::sort(pending.begin(), pending.end());
+            ++cur;
+        }
+        else if (cur < num_buckets)
+        {
+            /// In-order buckets can also be empty and skipped entirely.
+            if (std::uniform_int_distribution<int>(0, 4)(rng) != 0)
+                emit(cur);
+            ++cur;
+        }
+    }
+    return out;
+}
+
+std::vector<PushedBucket> runRemoteShardWithEmpties(pcg64 & rng, size_t num_inner, Int32 num_buckets)
+{
+    std::vector<std::deque<Chunk>> inputs;
+    for (size_t i = 0; i < num_inner; ++i)
+    {
+        auto stream = genProducerStreamWithEmpties(rng, num_buckets);
+        std::deque<Chunk> q;
+        for (auto & [bucket, ooo] : stream)
+            q.push_back(makeBucketChunk(bucket, ooo));
+        inputs.push_back(std::move(q));
+    }
+    ManualGroupingDriver d(std::move(inputs));
+    return d.runPushed();
+}
+}
+
+TEST(GroupingAggregatedOOO, TwoLayerDistSparseEmptyBucketFuzz)
+{
+    pcg64 rng(0x5A4E12340E47ULL);
+    int total = 0;
+    for (int iter = 0; iter < 40000; ++iter)
+    {
+        size_t num_outer = std::uniform_int_distribution<size_t>(2, 4)(rng);
+        Int32 num_buckets = std::uniform_int_distribution<Int32>(3, 12)(rng);
+
+        std::vector<std::deque<Chunk>> outer_inputs;
+        for (size_t s = 0; s < num_outer; ++s)
+        {
+            size_t num_inner = std::uniform_int_distribution<size_t>(2, 3)(rng);
+            auto shard_out = runRemoteShardWithEmpties(rng, num_inner, num_buckets);
+            std::deque<Chunk> q;
+            for (const auto & p : shard_out)
+                q.push_back(makeBucketChunk(p.bucket, p.ooo)); // metadata forwarded by MergingAggregatedBucketTransform
+
+            /// Sanity: a bucket is never owed to itself. (The exact minimal "empty-resolved bucket
+            /// must not be stamped as owed" case is pinned by EmptyDelayedBucketNotStampedAsOwed;
+            /// this fuzz is the broad end-to-end no-duplicate safety net across sparse/empty shapes.)
+            for (const auto & p : shard_out)
+                for (auto owed : p.ooo)
+                    ASSERT_NE(owed, p.bucket) << "iter " << iter << ": bucket owed to itself";
+            outer_inputs.push_back(std::move(q));
+        }
+
+        ManualGroupingDriver d(std::move(outer_inputs));
+        auto pushed = d.run();
+
+        std::map<Int32, int> counts;
+        for (auto b : pushed)
+            counts[b]++;
+        for (auto [bucket, c] : counts)
+            ASSERT_EQ(c, 1) << "iter " << iter << ": bucket " << bucket << " pushed " << c
+                            << " times (outer_inputs=" << num_outer << ", buckets=" << num_buckets << ")";
+        ++total;
+    }
+    std::cerr << "TwoLayerDistSparseEmptyBucketFuzz iterations checked: " << total << std::endl;
+}
