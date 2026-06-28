@@ -9,6 +9,8 @@
 #include <vector>
 #include <filesystem>
 
+#include <Common/VectorWithMemoryTracking.h>
+
 namespace
 {
 
@@ -57,6 +59,7 @@ std::pair<std::string_view, MainFunc> examples[] =
     {"encrypt_decrypt", mainEntryExampleEncryptDecrypt},
 #endif
     {"check_pointer_valid", mainEntryExampleCheckPointerValid},
+    {"memory_tracker_benchmark", mainEntryExampleMemoryTrackerBenchmark},
 #if USE_ICU
     {"utf8_upper_lower", mainEntryExampleUtf8UpperLower},
 #endif
@@ -130,7 +133,7 @@ void printHelp()
 
 int main(int argc, char ** argv)
 {
-    std::vector<char *> args(argv, argv + argc);
+    DB::VectorWithMemoryTracking<char *> args(argv, argv + argc);
 
     if (args.empty())
     {
