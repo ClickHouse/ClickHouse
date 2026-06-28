@@ -48,6 +48,9 @@ struct ObjectInfo
 
     virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
 
+    /// Create a polymorphic copy. Subclasses must override to avoid object slicing.
+    virtual ObjectInfoPtr clone() const { return std::make_shared<ObjectInfo>(*this); }
+
     std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
     void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
 

@@ -170,19 +170,19 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
             auto file_bucket_infos = splitter->splitToBuckets(bucket_size, *buffer, format_settings);
             for (const auto & file_bucket : file_bucket_infos)
             {
-                auto copy_object_info = *last_object_info;
+                auto cloned = last_object_info->clone();
                 if (has_cache_entry)
                 {
                     auto filtered = file_bucket->filterByMatchingRowGroups(matching_row_groups);
                     if (!filtered)
                         continue;
-                    copy_object_info.file_bucket_info = std::move(filtered);
+                    cloned->file_bucket_info = std::move(filtered);
                 }
                 else
                 {
-                    copy_object_info.file_bucket_info = file_bucket;
+                    cloned->file_bucket_info = file_bucket;
                 }
-                pending_objects_info.push(std::make_shared<ObjectInfo>(copy_object_info));
+                pending_objects_info.push(std::move(cloned));
             }
         }
     }
