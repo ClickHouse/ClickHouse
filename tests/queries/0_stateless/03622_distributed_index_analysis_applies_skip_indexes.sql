@@ -1,4 +1,5 @@
 -- Tags: long
+SET explain_query_plan_default = 'legacy';
 
 drop table if exists test_1m;
 -- -min_bytes_for_wide_part -- wide parts are different (they respect index_granularity completely, unlike compact parts) -- FIXME

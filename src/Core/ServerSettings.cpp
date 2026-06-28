@@ -69,6 +69,19 @@ namespace
         return 0;
 #endif
     }
+
+    constexpr double getDefaultMemoryWorkerRssSpeculativeReserveRatio() {
+#if defined(SANITIZER)
+        /// Under sanitizers (`ASan`, `UBSan`, `MSan`, `TSan`) the gap between observed
+        /// RSS and the global `MemoryTracker` is dominated by shadow-memory / runtime
+        /// overhead rather than tracker bookkeeping lag, so a non-zero ratio would
+        /// push the tracker past `max_server_memory_usage` for ordinary, non-stress
+        /// queries. Disable the speculation in sanitizer builds.
+        return 0.0;
+#else
+        return 1.0;
+#endif
+    }
 }
 
 // clang-format off
@@ -1229,6 +1242,24 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     Whether background memory worker should correct internal memory tracker based on the information from external sources like jemalloc and cgroups
     )", 0) \
     DECLARE(Bool, memory_worker_use_cgroup, true, "Use current cgroup memory usage information to correct memory tracking.", 0) \
+    DECLARE(Double, memory_worker_rss_speculative_reserve_ratio, getDefaultMemoryWorkerRssSpeculativeReserveRatio(), R"(
+    On each `MemoryWorker` tick, reserve an additional
+    `ratio * min(resident - previous_resident, resident - tracked)` on top of
+    the observed RSS, on the assumption that the next tick may grow by the same
+    amount as the last one (`resident - previous_resident` is the RSS growth
+    over the last tick). The growth is capped by `resident - tracked`, the part
+    of RSS not visible to the global memory tracker, because growth that is
+    already tracked is handled by the ordinary hard-limit check. The reservation
+    is applied to the `rss` counter that the global hard-limit check consults
+    via `MemoryTracker::allocImpl`, so when the extrapolated value crosses
+    `max_server_memory_usage`, subsequent allocations throw
+    `MEMORY_LIMIT_EXCEEDED` before the kernel OOM-killer fires. A value of `0`
+    disables speculation (falling back to `rss = resident`); the default `1`
+    reserves one full growth delta of headroom for the next interval. Under
+    sanitizers (`ASan`, `UBSan`, `MSan`, `TSan`) the default is `0`, because the
+    `resident - tracked` gap is dominated by sanitizer shadow / runtime overhead
+    rather than tracker bookkeeping lag.
+    )", 0) \
     DECLARE(Bool, memory_worker_dynamic_hard_limit, true, R"(
     Whether the background memory worker periodically recomputes the server's hard memory limit at runtime as `(resident memory + system available memory) * max_server_memory_usage_to_ram_ratio`, so the server leaves headroom for other processes running on the same host.
 
