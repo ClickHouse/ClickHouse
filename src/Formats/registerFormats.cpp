@@ -20,7 +20,6 @@ void registerFileSegmentationEngineHiveText(FormatFactory & factory);
 #endif
 void registerFileSegmentationEngineLineAsString(FormatFactory & factory);
 void registerFileSegmentationEngineBSONEachRow(FormatFactory & factory);
-void registerFileSegmentationEnginePGN(FormatFactory & factory);
 
 /// Formats for both input/output.
 
@@ -181,7 +180,6 @@ void registerFormats()
 #endif
     registerFileSegmentationEngineLineAsString(factory);
     registerFileSegmentationEngineBSONEachRow(factory);
-    registerFileSegmentationEnginePGN(factory);
 
 
     registerInputFormatNative(factory);

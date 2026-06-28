@@ -51,3 +51,39 @@ $CLICKHOUSE_LOCAL -q "SELECT
     event, site, date, round, white, black, result, white_elo, black_elo, 
     LENGTH(moves) > 0 as has_moves 
 FROM file('$CURDIR/data_pgn/simple_games.pgn', PGN)"
+
+# Test 8: Exact moves with compact move-number notation
+echo "=== Test 8: Exact moves ==="
+$CLICKHOUSE_LOCAL -q "SELECT white, moves FROM file('$CURDIR/data_pgn/simple_games.pgn', PGN, 'white String, moves String')"
+
+# Test 9: Parallel parsing setting should not split games into tag fragments
+echo "=== Test 9: Parallel parsing settings ==="
+$CLICKHOUSE_LOCAL -q "
+SELECT COUNT(), arraySort(groupArray(event))
+FROM file('$CURDIR/data_pgn/simple_games.pgn', PGN, 'event String')
+SETTINGS max_parsing_threads=4, input_format_parallel_parsing=1, min_chunk_bytes_for_parallel_parsing=1, max_block_size=1"
+
+# Test 10: Unknown target columns should use table DEFAULT expressions
+echo "=== Test 10: Target table defaults ==="
+$CLICKHOUSE_LOCAL -q "
+CREATE TABLE pgn_defaults
+(
+    event String,
+    white String,
+    source String DEFAULT 'lichess'
+) ENGINE = Memory;
+
+INSERT INTO pgn_defaults FROM INFILE '$CURDIR/data_pgn/simple_games.pgn' FORMAT PGN;
+
+SELECT event, white, source FROM pgn_defaults ORDER BY event;
+
+CREATE TABLE pgn_missing_tag_defaults
+(
+    event String DEFAULT 'unknown',
+    white String
+) ENGINE = Memory;
+
+INSERT INTO pgn_missing_tag_defaults FROM INFILE '$CURDIR/data_pgn/edge_cases.pgn' FORMAT PGN;
+
+SELECT countIf(event = 'unknown'), count() FROM pgn_missing_tag_defaults;
+"

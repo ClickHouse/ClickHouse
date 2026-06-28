@@ -25,3 +25,12 @@ Player C	0-1
 === Test 7: All columns ===
 Test Event	Test Site	2024.01.01	1	Player A	Player B	1-0	2500	2400	1
 Test Event 2	Test Site 2	2024.01.02	2	Player C	Player D	0-1	2600	2550	1
+=== Test 8: Exact moves ===
+Player A	e4 e5 Nf3 Nc6
+Player C	d4 d5 c4 dxc4
+=== Test 9: Parallel parsing settings ===
+2	['Test Event','Test Event 2']
+=== Test 10: Target table defaults ===
+Test Event	Player A	lichess
+Test Event 2	Player C	lichess
+4	4

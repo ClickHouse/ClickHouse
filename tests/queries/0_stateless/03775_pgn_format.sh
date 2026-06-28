@@ -27,7 +27,7 @@ $CLICKHOUSE_LOCAL -q "DESCRIBE file('$CURDIR/data_pgn/test_games.pgn', PGN)" 2>&
 
 # Test 6: Aggregation query
 echo "Test 6: Aggregation - Count by result"
-$CLICKHOUSE_LOCAL -q "SELECT result, COUNT(*) as count FROM file('$CURDIR/data_pgn/test_games.pgn', PGN, 'result String') GROUP BY result" 2>&1
+$CLICKHOUSE_LOCAL -q "SELECT result, COUNT(*) as count FROM file('$CURDIR/data_pgn/test_games.pgn', PGN, 'result String') GROUP BY result ORDER BY result" 2>&1
 
 # Test 7: Test with minimal columns (event, white, black only)
 echo "Test 7: Minimal columns"
@@ -39,7 +39,7 @@ $CLICKHOUSE_LOCAL -q "SELECT white, black, white_elo, black_elo FROM file('$CURD
 
 # Test 9: Test site extraction
 echo "Test 9: Group by site"
-$CLICKHOUSE_LOCAL -q "SELECT site, COUNT(*) as games FROM file('$CURDIR/data_pgn/test_games.pgn', PGN, 'site String') GROUP BY site" 2>&1
+$CLICKHOUSE_LOCAL -q "SELECT site, COUNT(*) as games FROM file('$CURDIR/data_pgn/test_games.pgn', PGN, 'site String') GROUP BY site ORDER BY site" 2>&1
 
 # Test 10: Test round extraction
 echo "Test 10: Sort by round"

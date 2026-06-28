@@ -13,3 +13,11 @@ Test 3: Group by result
 Test 4: Missing ELO values
 Player A	0	0
 Player C	0	0
+Test 5: Review regression cases
+Review Event	Review Site	1-0	e4 e5 Nf3 Nc6 0-0 0-0 d4 d6 0-0-0
+Test 6: Incompatible schema
+Column 'white_elo' must have type Int32 for PGN format
+Test 7: Malformed PGN
+Invalid PGN tag
+Test 8: Unterminated comment
+Invalid PGN: unterminated comment

@@ -1,0 +1,10 @@
+[Event"Review Event"]
+[Site"Review Site"]
+[Date "2026.01.01"]
+[Round "1"]
+[White "Alice"]
+[Black "Bob"]
+[WhiteElo "123"]
+[BlackElo "456"]
+
+1.e4 {comment} (1... c5 {comment with ) parenthesis}) e5 2.Nf3 Nc6 3.0-0 0-0 4.d4 d6 5.0-0-0 1-0

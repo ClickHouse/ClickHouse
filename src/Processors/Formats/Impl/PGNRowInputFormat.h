@@ -23,10 +23,7 @@ public:
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 
-    bool readGame(MutableColumns & columns);
-    void skipWhitespaceAndComments();
-    bool readTag(String & key, String & value);
-    bool readMoves(String & moves_str);
+    bool readGame(MutableColumns & columns, RowReadExtension & ext);
 
     bool eof_reached = false;
 };
