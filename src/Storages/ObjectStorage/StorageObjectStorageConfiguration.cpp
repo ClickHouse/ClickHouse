@@ -127,15 +127,14 @@ void StorageObjectStorageConfiguration::initialize(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `partition_strategy` argument is incompatible with data lakes");
         }
     }
-    else if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE)
+    else if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE
+        && configuration_to_initialize.getRawPath().hasPartitionWildcard()
+        && local_context->getSettingsRef()[Setting::file_like_engine_default_partition_strategy].value
+            == FileLikeEngineDefaultPartitionStrategy::WILDCARD)
     {
-        if (configuration_to_initialize.getRawPath().hasPartitionWildcard())
-        {
-            // Promote to wildcard in case it is not data lake to make it backwards compatible
-            configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
-        }
+        /// Backwards compatibility: promote to WILDCARD only when it is the effective default strategy.
+        configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
     }
-
     if (configuration_to_initialize.format == "auto")
     {
         if (configuration_to_initialize.isDataLakeConfiguration())
