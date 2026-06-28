@@ -120,11 +120,11 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (arm)' --workflow "NightlyFuzzers" --ci --timestamp
 
-  build_arm_fuzzers:
-    runs-on: [self-hosted, arm-large]
+  build_amd_fuzzers:
+    runs-on: [self-hosted, amd-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9mdXp6ZXJzKQ==') }}
-    name: "Build (arm_fuzzers)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9mdXp6ZXJzKQ==') }}
+    name: "Build (amd_fuzzers)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -153,11 +153,11 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_fuzzers)' --workflow "NightlyFuzzers" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_fuzzers)' --workflow "NightlyFuzzers" --ci --timestamp
 
   libfuzzer_tests:
-    runs-on: [self-hosted, arm-medium]
-    needs: [build_arm_fuzzers, config_workflow, dockers_build_amd, dockers_build_arm]
+    runs-on: [self-hosted, amd-medium]
+    needs: [build_amd_fuzzers, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'bGliRnV6emVyIHRlc3Rz') }}
     name: "libFuzzer tests"
     outputs:
@@ -192,7 +192,7 @@ jobs:
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [build_arm_fuzzers, config_workflow, dockers_build_amd, dockers_build_arm, libfuzzer_tests]
+    needs: [build_amd_fuzzers, config_workflow, dockers_build_amd, dockers_build_arm, libfuzzer_tests]
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:
