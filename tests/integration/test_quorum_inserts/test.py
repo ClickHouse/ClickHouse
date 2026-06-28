@@ -518,78 +518,88 @@ def test_insert_quorum_with_keeper_fail_during_unknown_status(started_cluster):
                     },
                 )
             )
+            try:
+                zk = cluster.get_kazoo_client("zoo1")
 
-            zk = cluster.get_kazoo_client("zoo1")
-
-            # Ensure that part had been committed to keeper
-            retries = 0
-            while True:
-                if zk.exists(
-                    f"/clickhouse/tables/{table_name}/replicas/zero/parts/all_0_0_0"
-                ):
-                    break
-                print("replica still did not create all_0_0_0")
-                time.sleep(1)
-                retries += 1
-                if retries == 120:
-                    raise Exception("Can not wait for all_0_0_0 part")
-
-            with PartitionManager() as pm:
-                pm.drop_instance_zk_connections(zero)
-
+                # Ensure that part had been committed to keeper
                 retries = 0
                 while True:
-                    if (
-                        zk.exists(
-                            f"/clickhouse/tables/{table_name}/replicas/zero/is_active"
-                        )
-                        is None
+                    if zk.exists(
+                        f"/clickhouse/tables/{table_name}/replicas/zero/parts/all_0_0_0"
                     ):
                         break
-                    print("replica is still active")
+                    print("replica still did not create all_0_0_0")
                     time.sleep(1)
                     retries += 1
                     if retries == 120:
-                        raise Exception("Can not wait cluster replica inactive")
+                        raise Exception("Can not wait for all_0_0_0 part")
 
-                first.query("SYSTEM ENABLE FAILPOINT finish_set_quorum_failed_parts")
-                quorum_fail_future = executor.submit(
-                    lambda: first.query(
-                        "SYSTEM WAIT FAILPOINT finish_set_quorum_failed_parts",
-                        timeout=300,
+                with PartitionManager() as pm:
+                    pm.drop_instance_zk_connections(zero)
+
+                    retries = 0
+                    while True:
+                        if (
+                            zk.exists(
+                                f"/clickhouse/tables/{table_name}/replicas/zero/is_active"
+                            )
+                            is None
+                        ):
+                            break
+                        print("replica is still active")
+                        time.sleep(1)
+                        retries += 1
+                        if retries == 120:
+                            raise Exception("Can not wait cluster replica inactive")
+
+                    first.query("SYSTEM ENABLE FAILPOINT finish_set_quorum_failed_parts")
+                    quorum_fail_future = executor.submit(
+                        lambda: first.query(
+                            "SYSTEM WAIT FAILPOINT finish_set_quorum_failed_parts",
+                            timeout=300,
+                        )
                     )
-                )
-                first.query(f"SYSTEM START FETCHES {table_name}")
+                    first.query(f"SYSTEM START FETCHES {table_name}")
 
-                concurrent.futures.wait([quorum_fail_future])
-                assert quorum_fail_future.exception() is None
+                    concurrent.futures.wait([quorum_fail_future])
+                    assert quorum_fail_future.exception() is None
 
-                # The restarting thread of "zero" discards the failed-quorum part, which is
-                # still PreActive and owned by the recovering insert transaction.
-                zero.query("SYSTEM ENABLE FAILPOINT finish_clean_quorum_failed_parts")
-                clean_quorum_fail_parts_future = executor.submit(
-                    lambda: zero.query(
-                        "SYSTEM WAIT FAILPOINT finish_clean_quorum_failed_parts",
-                        timeout=300,
+                    # The restarting thread of "zero" discards the failed-quorum part, which is
+                    # still PreActive and owned by the recovering insert transaction.
+                    zero.query("SYSTEM ENABLE FAILPOINT finish_clean_quorum_failed_parts")
+                    clean_quorum_fail_parts_future = executor.submit(
+                        lambda: zero.query(
+                            "SYSTEM WAIT FAILPOINT finish_clean_quorum_failed_parts",
+                            timeout=300,
+                        )
                     )
-                )
-                pm.restore_instance_zk_connections(zero)
-                concurrent.futures.wait([clean_quorum_fail_parts_future])
-                assert clean_quorum_fail_parts_future.exception() is None
+                    pm.restore_instance_zk_connections(zero)
+                    concurrent.futures.wait([clean_quorum_fail_parts_future])
+                    assert clean_quorum_fail_parts_future.exception() is None
 
-                # Let the recovery give up; it must report UNKNOWN_STATUS_OF_INSERT, not abort.
+                    # Let the recovery give up; it must report UNKNOWN_STATUS_OF_INSERT, not abort.
+                    zero.query(
+                        "SYSTEM DISABLE FAILPOINT replicated_merge_tree_insert_retry_pause"
+                    )
+                    concurrent.futures.wait([insert_future])
+                    insert_exception = insert_future.exception()
+                    assert insert_exception is not None
+                    # The contract preserved by the fix: the client gets UNKNOWN_STATUS_OF_INSERT, not a
+                    # different error (e.g. TABLE_IS_READ_ONLY, a raw Keeper error) and not a logical error.
+                    assert "UNKNOWN_STATUS_OF_INSERT" in str(insert_exception), str(
+                        insert_exception
+                    )
+                    assert not zero.contains_in_log("LOGICAL_ERROR")
+            finally:
+                # Release the paused insert before the ThreadPoolExecutor is joined on block
+                # exit. Otherwise, if an assertion above fails while the insert is still paused at
+                # `replicated_merge_tree_insert_retry_pause`, leaving the `with` block would call
+                # `executor.shutdown(wait=True)`, which blocks forever on the paused insert and turns
+                # the failure into a hang instead of a clean failure (the outer `finally` that
+                # disables the failpoint only runs after the executor is joined).
                 zero.query(
                     "SYSTEM DISABLE FAILPOINT replicated_merge_tree_insert_retry_pause"
                 )
-                concurrent.futures.wait([insert_future])
-                insert_exception = insert_future.exception()
-                assert insert_exception is not None
-                # The contract preserved by the fix: the client gets UNKNOWN_STATUS_OF_INSERT, not a
-                # different error (e.g. TABLE_IS_READ_ONLY, a raw Keeper error) and not a logical error.
-                assert "UNKNOWN_STATUS_OF_INSERT" in str(insert_exception), str(
-                    insert_exception
-                )
-                assert not zero.contains_in_log("LOGICAL_ERROR")
     finally:
         zero.query(
             "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault"
