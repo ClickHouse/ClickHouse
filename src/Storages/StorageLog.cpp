@@ -1164,7 +1164,7 @@ std::optional<UInt64> StorageLog::totalBytes(ContextPtr) const
     return total_bytes;
 }
 
-std::optional<UInt128> StorageLog::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr local_context) const
+std::optional<UInt128> StorageLog::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr) const
 {
     /// The hash relies on the table UUID to distinguish incarnations of a same-named table together with
     /// the monotonic `data_version`. Without a UUID (e.g. a table in an `Ordinary` database) DROP + CREATE
@@ -1174,12 +1174,18 @@ std::optional<UInt128> StorageLog::getModificationHash(const StorageSnapshotPtr 
         return {};
 
     /// Sample under the read lock so the hash observes the same committed state a normal read would.
-    /// An in-progress INSERT/TRUNCATE holds `rwlock` exclusively and may have already changed the
-    /// files without yet publishing the new `data_version`/totals. Without this lock the hash could be
-    /// sampled pre-write while a read starting at the same moment blocks on `rwlock` and then sees
-    /// post-write data, letting `query_cache_use_only_when_data_was_not_changed` serve a stale result.
-    /// If a write currently holds the lock, fail closed (return nullopt) rather than serve a stale hash.
-    ReadLock lock{rwlock, getLockTimeout(local_context)};
+    /// An in-progress INSERT/TRUNCATE holds `rwlock` exclusively and may have already changed the files
+    /// without yet publishing the new `data_version`/totals; sampling without the lock could read the
+    /// pre-write state while a read starting at the same moment would see post-write data, letting
+    /// `query_cache_use_only_when_data_was_not_changed` serve a stale result.
+    ///
+    /// The lock must be non-blocking: `getModificationHash` is called while scanning `system.tables`,
+    /// which can happen while this very table is being written - e.g. `CREATE ... ENGINE = Log AS SELECT
+    /// * FROM system.tables` holds the write lock during its INSERT and `system.tables` then computes the
+    /// new table's hash. A blocking lock would self-deadlock there. So if a write currently holds the
+    /// lock, fail closed (return nullopt): a write is in progress, so we conservatively treat the data as
+    /// changed rather than risk a stale-but-consistent sample.
+    ReadLock lock{rwlock, std::try_to_lock};
     if (!lock)
         return {};
 
