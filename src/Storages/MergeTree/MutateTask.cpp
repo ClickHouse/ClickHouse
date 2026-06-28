@@ -1950,6 +1950,7 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
             auto merge_task = std::make_unique<MergeTextIndexesTask>(
                 std::move(segments),
                 ctx->new_data_part,
+                (*ctx->mutate_entry)->rows_written,
                 index,
                 /*merged_part_offsets=*/ nullptr,
                 reader_settings,

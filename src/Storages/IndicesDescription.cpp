@@ -270,9 +270,9 @@ ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const Col
     return analyzeExpressionToActions(combined_expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()), context);
 }
 
-Names IndicesDescription::getAllRegisteredNames() const
+VectorWithMemoryTracking<String> IndicesDescription::getAllRegisteredNames() const
 {
-    Names result;
+    VectorWithMemoryTracking<String> result;
     for (const auto & index : *this)
     {
         result.emplace_back(index.name);
