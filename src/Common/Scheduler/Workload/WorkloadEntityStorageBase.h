@@ -117,7 +117,8 @@ private:
         std::optional<Event> change = {});
 
     /// Creates all workload entities accumulated from a backup (see restore()) in a proper order, in a single data restore task.
-    void restoreEntitiesAccumulatedFromBackup(const ContextMutablePtr & context, const UUID & restore_id);
+    /// throw_if_exists / replace_if_exists are derived from the create_workloads_and_resources restore setting.
+    void restoreEntitiesAccumulatedFromBackup(const ContextMutablePtr & context, const UUID & restore_id, bool throw_if_exists, bool replace_if_exists);
 
     struct Handlers
     {

@@ -62,4 +62,51 @@ $CLICKHOUSE_CLIENT -q "SELECT name, create_query FROM system.workloads ORDER BY 
 echo '--- resources after restore (must match before) ---'
 $CLICKHOUSE_CLIENT -q "SELECT name, create_query FROM system.resources ORDER BY name"
 
+# --- Access control during restore ---
+# RESTORE creates WORKLOAD/RESOURCE entities via storeEntity(), bypassing the interpreters' own access
+# checks, so the privileges are enforced in RestorerFromBackup::checkAccessForObjectsFoundInBackup. A user
+# that can restore these system tables but lacks CREATE WORKLOAD / CREATE RESOURCE must be rejected.
+user="user04409_${CLICKHOUSE_DATABASE}"
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${user}"
+$CLICKHOUSE_CLIENT -q "CREATE USER ${user} NOT IDENTIFIED"
+
+# Drop the entities so that a successful RESTORE below actually re-creates them.
+$CLICKHOUSE_CLIENT -m -q "
+    DROP WORKLOAD development;
+    DROP WORKLOAD production;
+    DROP WORKLOAD all;
+    DROP RESOURCE 04409_io;
+    DROP RESOURCE 04409_query;
+    DROP RESOURCE 04409_mem;
+"
+
+echo '--- restore without CREATE WORKLOAD/RESOURCE is denied (missing grants reported) ---'
+$CLICKHOUSE_CLIENT --user "${user}" -q "RESTORE TABLE system.workloads, TABLE system.resources FROM ${backup_name}" 2>&1 \
+    | grep -o -E "CREATE WORKLOAD|CREATE RESOURCE" | sort -u
+
+echo '--- after granting CREATE WORKLOAD and CREATE RESOURCE, restore succeeds ---'
+$CLICKHOUSE_CLIENT -q "GRANT CREATE WORKLOAD, CREATE RESOURCE ON *.* TO ${user}"
+$CLICKHOUSE_CLIENT --user "${user}" -q "RESTORE TABLE system.workloads, TABLE system.resources FROM ${backup_name}" | cut -f2
+
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${user}"
+
+# --- create_workloads_and_resources gates how RESTORE treats already-existing entities ---
+# WORKLOAD and RESOURCE entities are intertwined and restored together, so a single mode governs both.
+# At this point all entities exist (restored just above).
+echo '--- create_workloads_and_resources=create fails when entities already exist ---'
+$CLICKHOUSE_CLIENT -q "RESTORE TABLE system.workloads, TABLE system.resources FROM ${backup_name} SETTINGS create_workloads_and_resources = 'create'" 2>&1 \
+    | grep -o -E "already exists" | head -1
+
+echo '--- create_workloads_and_resources=if-not-exists skips existing entities ---'
+$CLICKHOUSE_CLIENT -q "RESTORE TABLE system.workloads, TABLE system.resources FROM ${backup_name} SETTINGS create_workloads_and_resources = 'if-not-exists'" | cut -f2
+
+# Locally change a workload, then show 'replace' restores it back to the backed-up definition.
+$CLICKHOUSE_CLIENT -q "CREATE OR REPLACE WORKLOAD development IN all SETTINGS priority = 1, weight = 5"
+echo '--- development after local change (weight = 5) ---'
+$CLICKHOUSE_CLIENT -q "SELECT create_query FROM system.workloads WHERE name = 'development'"
+echo '--- create_workloads_and_resources=replace overwrites existing entities ---'
+$CLICKHOUSE_CLIENT -q "RESTORE TABLE system.workloads, TABLE system.resources FROM ${backup_name} SETTINGS create_workloads_and_resources = 'replace'" | cut -f2
+echo '--- development after replace-restore (weight back to 1) ---'
+$CLICKHOUSE_CLIENT -q "SELECT create_query FROM system.workloads WHERE name = 'development'"
+
 cleanup

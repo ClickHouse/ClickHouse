@@ -21,3 +21,18 @@ production	CREATE WORKLOAD production IN `all` SETTINGS priority = 1, weight = 9
 04409_io	CREATE RESOURCE `04409_io` (WRITE DISK `04409_disk`, READ DISK `04409_disk`)
 04409_mem	CREATE RESOURCE `04409_mem` (MEMORY RESERVATION)
 04409_query	CREATE RESOURCE `04409_query` (QUERY)
+--- restore without CREATE WORKLOAD/RESOURCE is denied (missing grants reported) ---
+CREATE RESOURCE
+CREATE WORKLOAD
+--- after granting CREATE WORKLOAD and CREATE RESOURCE, restore succeeds ---
+RESTORED
+--- create_workloads_and_resources=create fails when entities already exist ---
+already exists
+--- create_workloads_and_resources=if-not-exists skips existing entities ---
+RESTORED
+--- development after local change (weight = 5) ---
+CREATE WORKLOAD development IN `all` SETTINGS priority = 1, weight = 5
+--- create_workloads_and_resources=replace overwrites existing entities ---
+RESTORED
+--- development after replace-restore (weight back to 1) ---
+CREATE WORKLOAD development IN `all` SETTINGS priority = 1, weight = 1

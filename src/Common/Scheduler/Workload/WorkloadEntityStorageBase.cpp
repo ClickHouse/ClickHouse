@@ -1101,7 +1101,13 @@ void WorkloadEntityStorageBase::restore(
     /// restore UUID instead of being kept as shared storage state; otherwise two concurrent restores would mix
     /// their entities or drop one another's task. Adding the task only once per restore operation is enough: by the
     /// time data restore tasks run, restore() has already been called for both tables of that operation.
-    const UUID restore_id = restorer.getRestoreSettings().restore_uuid.value();
+    const auto & restore_settings = restorer.getRestoreSettings();
+    const UUID restore_id = restore_settings.restore_uuid.value();
+    /// WORKLOAD and RESOURCE entities share a single creation mode (create_workloads_and_resources): they are
+    /// intertwined and always restored together, so handling pre-existing entities differently per type makes no
+    /// sense. kCreateIfNotExists (default) skips existing entities, kCreate fails the RESTORE, kReplace overwrites.
+    const bool throw_if_exists = (restore_settings.create_workloads_and_resources == RestoreWorkloadsAndResourcesCreationMode::kCreate);
+    const bool replace_if_exists = (restore_settings.create_workloads_and_resources == RestoreWorkloadsAndResourcesCreationMode::kReplace);
     bool should_add_restore_task = false;
     {
         std::lock_guard lock{mutex};
@@ -1116,11 +1122,13 @@ void WorkloadEntityStorageBase::restore(
     {
         auto restore_context = restorer.getContext();
         restorer.addDataRestoreTask(
-            [this, restore_context, restore_id] { restoreEntitiesAccumulatedFromBackup(restore_context, restore_id); });
+            [this, restore_context, restore_id, throw_if_exists, replace_if_exists]
+            { restoreEntitiesAccumulatedFromBackup(restore_context, restore_id, throw_if_exists, replace_if_exists); });
     }
 }
 
-void WorkloadEntityStorageBase::restoreEntitiesAccumulatedFromBackup(const ContextMutablePtr & context, const UUID & restore_id)
+void WorkloadEntityStorageBase::restoreEntitiesAccumulatedFromBackup(
+    const ContextMutablePtr & context, const UUID & restore_id, bool throw_if_exists, bool replace_if_exists)
 {
     std::unordered_map<String, ASTPtr> to_restore;
     {
@@ -1140,14 +1148,15 @@ void WorkloadEntityStorageBase::restoreEntitiesAccumulatedFromBackup(const Conte
     /// (workload parent, FOR resource) is already created by the time it is needed.
     for (const auto & event : orderEntities(to_restore))
     {
-        /// Use CREATE-IF-NOT-EXISTS semantics: skip entities that already exist rather than failing the whole RESTORE.
+        /// throw_if_exists / replace_if_exists come from the create_workloads_and_resources restore setting and are
+        /// applied uniformly to every workload and resource (see restore()).
         storeEntity(
             context,
             event.type,
             event.name,
             event.entity,
-            /* throw_if_exists = */ false,
-            /* replace_if_exists = */ false,
+            throw_if_exists,
+            replace_if_exists,
             context->getSettingsRef());
     }
 }
