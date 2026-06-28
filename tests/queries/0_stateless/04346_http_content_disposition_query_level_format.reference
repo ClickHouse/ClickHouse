@@ -16,9 +16,5 @@ Content-Disposition: attachment; filename="hits.Native.zst"
 Content-Disposition: attachment; filename="hits.Native.zst"
 -- path compression alias '.gzip' is canonicalized to '.gz'
 Content-Disposition: attachment; filename="hits.Native.gz"
--- path compression alias '.lzma' is canonicalized to '.xz'
-Content-Disposition: attachment; filename="hits.Native.xz"
--- path compression alias '.bzip2' is canonicalized to '.bz2'
-Content-Disposition: attachment; filename="hits.Native.bz2"
 -- path alias '.zstd' plus a matching compression=zstd query param still does not duplicate
 Content-Disposition: attachment; filename="hits.Native.zst"

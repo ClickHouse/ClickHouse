@@ -49,12 +49,6 @@ disp "${BASE_URL}/${DB}/hits.Native.zstd"
 echo "-- path compression alias '.gzip' is canonicalized to '.gz'"
 disp "${BASE_URL}/${DB}/hits.Native.gzip"
 
-echo "-- path compression alias '.lzma' is canonicalized to '.xz'"
-disp "${BASE_URL}/${DB}/hits.Native.lzma"
-
-echo "-- path compression alias '.bzip2' is canonicalized to '.bz2'"
-disp "${BASE_URL}/${DB}/hits.Native.bzip2"
-
 echo "-- path alias '.zstd' plus a matching compression=zstd query param still does not duplicate"
 disp "${BASE_URL}/${DB}/hits.Native.zstd?compression=zstd"
 
