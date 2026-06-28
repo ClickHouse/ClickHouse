@@ -76,9 +76,9 @@ def start_cluster():
 
 def check_data(_sum: int, count: int) -> None:
     res = "{}\t{}\n".format(_sum, count)
-    assert_eq_with_retry(node_1, "SELECT sum(n), count() FROM test", res)
-    assert_eq_with_retry(node_2, "SELECT sum(n), count() FROM test", res)
-    assert_eq_with_retry(node_3, "SELECT sum(n), count() FROM test", res)
+    assert_eq_with_retry(node_1, "SELECT sum(n), count() FROM test SETTINGS use_uncompressed_cache = 0", res)
+    assert_eq_with_retry(node_2, "SELECT sum(n), count() FROM test SETTINGS use_uncompressed_cache = 0", res)
+    assert_eq_with_retry(node_3, "SELECT sum(n), count() FROM test SETTINGS use_uncompressed_cache = 0", res)
 
 
 def check_after_restoration():

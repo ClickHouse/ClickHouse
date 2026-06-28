@@ -441,7 +441,7 @@ def test_local_read_throttling_reload():
     """
     )
     # without bandwidth limit
-    _, took = elapsed(node, "select * from data")
+    _, took = elapsed(node, "select * from data SETTINGS use_uncompressed_cache = 0")
     assert_took(took, 0)
 
     # add bandwidth limit and reload config on fly
@@ -451,7 +451,7 @@ def test_local_read_throttling_reload():
     node.query("SYSTEM RELOAD CONFIG")
 
     # reading 1e6*8 bytes with 2M default bandwidth should take (8-2)/2=3 seconds
-    _, took = elapsed(node, "select * from data")
+    _, took = elapsed(node, "select * from data SETTINGS use_uncompressed_cache = 0")
     assert_took(took, 3)
 
     # update bandwidth back to 0
@@ -460,7 +460,7 @@ def test_local_read_throttling_reload():
     )
     node.query("SYSTEM RELOAD CONFIG")
 
-    _, took = elapsed(node, "select * from data")
+    _, took = elapsed(node, "select * from data SETTINGS use_uncompressed_cache = 0")
     assert took < 3
 
 @pytest.mark.parametrize(
