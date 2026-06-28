@@ -100,6 +100,11 @@ struct BlockIO
     /// because pipeline threads hold raw pointers to `MemoryReservation`.
     void releaseMemoryReservation() const;
 
+    /// Release the admission slot at the same timing as the query slot, so that protocols
+    /// going through `BlockIO` (native TCP, Arrow Flight, ...) do not keep the slot until
+    /// `ProcessListEntry` destruction.
+    void releaseAdmissionSlot() const;
+
     void resetPipeline(bool cancel);
 
 private:

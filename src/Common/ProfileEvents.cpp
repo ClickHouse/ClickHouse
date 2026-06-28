@@ -47,6 +47,7 @@
     M(SelectQueryTimeMicroseconds, "Total time of SELECT queries.", ValueType::Microseconds) \
     M(InsertQueryTimeMicroseconds, "Total time of INSERT queries.", ValueType::Microseconds) \
     M(OtherQueryTimeMicroseconds, "Total time of queries that are not SELECT or INSERT.", ValueType::Microseconds) \
+    M(QueryAdmissionQueueWaitMicroseconds, "Total time queries spent waiting in the FIFO admission queue for a free execution slot.", ValueType::Microseconds) \
     M(FileOpen, "Number of files opened.", ValueType::Number) \
     M(Seek, "Number of times the 'lseek' function was called.", ValueType::Number) \
     M(ReadBufferFromFileDescriptorRead, "Number of reads (read/pread) from a file descriptor. Does not include sockets.", ValueType::Number) \

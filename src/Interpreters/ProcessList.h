@@ -23,6 +23,7 @@
 #include <base/defines.h>
 
 #include <condition_variable>
+#include <deque>
 #include <list>
 #include <memory>
 #include <mutex>
@@ -109,6 +110,18 @@ protected:
     /// Acquired workload resources
     QuerySlotPtr query_slot;
     MemoryReservationPtr memory_reservation;
+
+    /// Whether this query holds an admission slot (for early release).
+    /// Compound updates (e.g. transferring the slot to a FIFO waiter) happen under `ProcessList::mutex`,
+    /// but `releaseAdmissionSlot` reads this flag once on the lock-free fast path before deciding whether
+    /// to take the mutex at all (so the default, admission-queue-disabled path stays lock-free). It is
+    /// therefore `std::atomic` to make that unlocked read well-defined; the under-lock double-check
+    /// remains the authoritative decision point.
+    std::atomic<bool> holds_admission_slot = false;
+
+    /// Whether the admission slot was released early (before `ProcessListEntry` destruction);
+    /// used to maintain `ProcessList::admission_pending_teardowns`. Protected by ProcessList::mutex.
+    bool admission_slot_released_early = false;
 
     /// Info about all threads involved in query execution
     ThreadGroupPtr thread_group;
@@ -212,6 +225,7 @@ public:
         QueryPriorities::Handle && priority_handle_,
         QuerySlotPtr && query_slot_,
         MemoryReservationPtr && memory_reservation_,
+        bool holds_admission_slot_,
         ThreadGroupPtr && thread_group_,
         IAST::QueryKind query_kind_,
         const Settings & query_settings_,
@@ -304,6 +318,9 @@ public:
     /// running: pipeline threads hold raw pointers to `MemoryReservation` (see `WorkloadResources`
     /// in `PipelineExecutor`) and would race with its destruction.
     void releaseMemoryReservation();
+
+    /// Manually release admission slot (if any). Acquires ProcessList::mutex.
+    void releaseAdmissionSlot();
 };
 
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
@@ -331,6 +348,12 @@ struct ProcessListForUser
     using QueryToElement = std::unordered_map<String, QueryStatusPtr>;
     QueryToElement queries;
     size_t non_internal_queries = 0;
+
+    /// Number of this user's queries that released their admission slot early but whose
+    /// `ProcessListEntry` is not destroyed yet, so they still count toward `non_internal_queries`.
+    /// Lets a `max_concurrent_queries_for_user` waiter holding an admission slot wait only for
+    /// teardowns that can actually decrement *this* user's counter (see `ProcessList::insert`).
+    size_t admission_pending_teardowns = 0;
 
     ProfileEvents::Counters user_performance_counters{VariableContext::User, &ProfileEvents::global_counters};
     /// Limit and counter for memory of all simultaneously running queries of single user.
@@ -379,6 +402,8 @@ public:
 
     QueryStatusPtr getQueryStatus() { return *it; }
     QueryStatusPtr getQueryStatus() const { return *it; }
+
+    ProcessList & getProcessList() { return parent; }
 };
 
 /** List of currently executing queries.
@@ -409,11 +434,13 @@ public:
 
 protected:
     friend class ProcessListEntry;
+    friend class QueryStatus;
     friend struct ::OvercommitTracker;
     friend struct ::UserOvercommitTracker;
     friend struct ::GlobalOvercommitTracker;
 
-    mutable std::condition_variable have_space;        /// Number of currently running queries has become less than maximum.
+    /// Notified when any query finishes; used by replace_running_query.
+    mutable std::condition_variable query_finished;
     mutable Mutex mutex;
 
     /// List of queries
@@ -422,6 +449,49 @@ protected:
 
     /// Notify about cancelled queries (done with ProcessListBase::mutex acquired).
     mutable std::condition_variable cancelled_cv;
+
+    /// --- Admission control (FIFO deque, per-waiter CV) ---
+    /// All fields below are protected by `mutex`.
+    ///
+    /// `admission_running` tracks queries holding a slot — separate from
+    /// `non_internal_processes` because unlimited queries skip admission
+    /// and slots can be released early via `releaseAdmissionSlot`. Whenever the
+    /// feature is enabled a tracked (non-internal, non-unlimited) query holds a
+    /// slot for its whole lifetime, including while `max_concurrent_queries == 0`
+    /// (unlimited), so the count stays accurate across a runtime `0 -> N` reload
+    /// — the wait at `insert` is only entered for a finite limit.
+    ///
+    /// When all slots are occupied, new queries join a FIFO deque. Each waiter
+    /// waits on its own CV. On release, the front waiter receives the slot
+    /// directly (transferred, not freed-then-reacquired) and is notified via
+    /// `notify_one` on its own CV.
+
+    /// Stack-allocated by the waiting thread; pointer lives in `admission_queue`.
+    struct AdmissionWaiter
+    {
+        bool granted = false;
+        std::condition_variable cv;
+    };
+
+    size_t admission_running = 0;
+    std::deque<AdmissionWaiter *> admission_queue;
+
+    /// Number of queries that released their admission slot early (via `releaseAdmissionSlot`)
+    /// but whose `ProcessListEntry` is not destroyed yet, so they still count toward
+    /// `non_internal_processes`. The `max_concurrent_queries_for_all_users` check in `insert`
+    /// (which tests the global `non_internal_processes`) waits for this to drain before trusting it.
+    /// The per-kind and per-user limits use the scoped counters `query_kind_pending_teardowns` and
+    /// `ProcessListForUser::admission_pending_teardowns` instead, so that an unrelated teardown does
+    /// not keep a query parked at a secondary limit while it hoards a global admission slot.
+    size_t admission_pending_teardowns = 0;
+
+    /// When disabled, falls back to legacy `non_internal_processes` counting.
+    /// Set once at server startup; not reloadable to avoid mode-transition races.
+    bool admission_queue_enabled = false;
+
+    /// Grant the front waiter (if any) or decrement `admission_running`.
+    /// Caller must hold `mutex`.
+    void releaseAdmissionSlotLocked(Lock & acquired_lock);
 
     size_t max_size = 0;        /// 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
 
@@ -455,6 +525,13 @@ protected:
     /// amount of queries by query kind, excludes internal queries
     QueryKindAmounts query_kind_amounts;
 
+    /// Per-query-kind analogue of `ProcessListForUser::admission_pending_teardowns`: counts
+    /// early-released queries of each kind whose teardown has not completed yet. Scopes the wait of a
+    /// query-kind secondary-limit check (`max_insert_queries_amount` / `max_select_queries_amount`) to
+    /// teardowns of the same kind, which are the only ones that can decrement `query_kind_amounts` for
+    /// that kind.
+    QueryKindAmounts query_kind_pending_teardowns;
+
     /// limit for waiting queries. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
     std::atomic<UInt64> max_waiting_queries_amount{0};
 
@@ -462,6 +539,13 @@ protected:
     void increaseQueryKindAmount(const IAST::QueryKind & query_kind);
     void decreaseQueryKindAmount(const IAST::QueryKind & query_kind);
     QueryAmount getQueryKindAmount(const IAST::QueryKind & query_kind) const;
+
+    /// Maintain the early-release teardown counters for a query of `query_kind` belonging to `user`,
+    /// scoped per-kind and per-user plus the global `admission_pending_teardowns` (see their comments).
+    /// Increase on early slot release; decrease when the query's `ProcessListEntry` is destroyed.
+    /// Caller must hold `mutex`.
+    void increaseAdmissionPendingTeardowns(const IAST::QueryKind & query_kind, const String & user);
+    void decreaseAdmissionPendingTeardowns(const IAST::QueryKind & query_kind, const String & user);
 
 public:
     using EntryPtr = std::shared_ptr<ProcessListEntry>;
@@ -491,16 +575,22 @@ public:
         return mutex;
     }
 
-    void setMaxSize(size_t max_size_)
-    {
-        Lock lock(mutex);
-        max_size = max_size_;
-    }
+    /// Updates the limit and drains the admission queue if the new value
+    /// frees up slots (covers reloads to a larger value or to 0/unlimited
+    /// — without this the queued waiters could be stranded until timeout).
+    void setMaxSize(size_t max_size_);
 
     size_t getMaxSize() const
     {
         Lock lock(mutex);
         return max_size;
+    }
+
+    /// Called once at server startup. Not reloadable — see `admission_queue_enabled`.
+    void setEnableAdmissionQueue(bool value)
+    {
+        Lock lock(mutex);
+        admission_queue_enabled = value;
     }
 
     void setMaxInsertQueriesAmount(size_t max_insert_queries_amount_)

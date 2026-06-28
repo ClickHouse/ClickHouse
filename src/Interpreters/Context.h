@@ -379,6 +379,9 @@ protected:
     using InteractiveCancelCallback = std::function<bool()>;
     InteractiveCancelCallback interactive_cancel_callback; /// Callback for usage in interactive sessions with CompletedPipelineExecutor
 
+    using ConnectionAliveCheckCallback = std::function<bool()>;
+    ConnectionAliveCheckCallback connection_alive_check; /// For admission queue wait
+
     std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
     bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
     struct InsertionTableInfo
@@ -909,6 +912,7 @@ public:
     /// Only the query slot is released, not the memory reservation: pipeline threads still hold raw
     /// pointers to it, so it is released later by `BlockIO::onFinish` after the pipeline is finalized.
     void releaseQuerySlot() const;
+    void releaseAdmissionSlot() const;
     String getMergeWorkload() const;
     void setMergeWorkload(const String & value);
     String getLicenseFile() const;
@@ -1329,6 +1333,9 @@ public:
 
     void setInteractiveCancelCallback(InteractiveCancelCallback && callback) { interactive_cancel_callback = callback; }
     InteractiveCancelCallback getInteractiveCancelCallback() const { return interactive_cancel_callback; }
+
+    void setConnectionAliveCheck(ConnectionAliveCheckCallback && callback) { connection_alive_check = std::move(callback); }
+    ConnectionAliveCheckCallback getConnectionAliveCheck() const { return connection_alive_check; }
 
     /** Set in executeQuery and InterpreterSelectQuery. Then it is used in QueryPipeline,
       *  to update and monitor information about the total number of resources spent for the query.

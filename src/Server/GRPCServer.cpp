@@ -1032,6 +1032,9 @@ namespace
             return block;
         });
 
+        /// For admission queue disconnect detection.
+        query_context->setConnectionAliveCheck([this]() -> bool { return !want_to_cancel.load(); });
+
         /// Start executing the query.
         const auto * query_end = end;
         if (insert_query && insert_query->data)

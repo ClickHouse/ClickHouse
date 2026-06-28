@@ -1,5 +1,6 @@
 #include <memory>
 #include <Server/PostgreSQLHandler.h>
+#include <Server/SocketAliveCheck.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -451,6 +452,9 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
         QueryScope query_scope = QueryScope::create(query_context);
 
+        /// For admission queue disconnect detection.
+        query_context->setConnectionAliveCheck(makeSocketAliveCheckCallback(socket()));
+
         String columns_to_insert;
         if (!copy_query->column_names.empty())
         {
@@ -547,6 +551,9 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
 
         QueryScope query_scope = QueryScope::create(query_context);
 
+        /// For admission queue disconnect detection.
+        query_context->setConnectionAliveCheck(makeSocketAliveCheckCallback(socket()));
+
         String columns_to_select = "*";
         if (!copy_query->column_names.empty())
         {
@@ -624,6 +631,9 @@ void PostgreSQLHandler::processQuery()
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
 
+        /// For admission queue disconnect detection.
+        query_context->setConnectionAliveCheck(makeSocketAliveCheckCallback(socket()));
+
         if (should_init_system_tables)
         {
             initializeSystemTables(query_context);
@@ -694,6 +704,9 @@ UInt64 PostgreSQLHandler::executeQueryWithTracking(
     std::atomic<UInt64> result_rows {0};
     std::atomic<UInt64> written_rows {0};
     query_context->setProgressCallback(createProgressCallback(query_context, result_rows, written_rows));
+
+    /// For admission queue disconnect detection.
+    query_context->setConnectionAliveCheck(makeSocketAliveCheckCallback(socket()));
 
     // Execute query with PostgreSQLWire output format
     auto read_buf = std::make_unique<ReadBufferFromOwnString>(std::move(sql_query));
