@@ -921,7 +921,7 @@ public:
         /// skipped. Splitting at the FIRST dot after `__tableN` (not the last) keeps a backquoted column name that
         /// itself contains a dot, such as `` `__table1.k` ``, intact.
         static constexpr std::string_view prefix = "__table";
-        if (identifier->compare(0, prefix.size(), prefix) != 0)
+        if (!identifier->starts_with(prefix))
             return;
         size_t digit_end = prefix.size();
         while (digit_end < identifier->size() && isNumericASCII((*identifier)[digit_end]))
