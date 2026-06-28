@@ -84,6 +84,14 @@ struct ReplaceRegexpImpl
 
     static constexpr int max_captures = 10;
 
+    static re2::RE2::Options createRegexpOptions()
+    {
+        re2::RE2::Options regexp_options;
+        regexp_options.set_log_errors(false); /// don't write error messages to stderr
+        regexp_options.set_dot_nl(true);
+        return regexp_options;
+    }
+
     /// The replacement string references must not contain non-existing capturing groups.
     static void checkSubstitutions(std::string_view replacement, int num_captures)
     {
@@ -433,8 +441,7 @@ struct ReplaceRegexpImpl
         res_data.reserve(haystack_data.size());
         res_offsets.resize(input_rows_count);
 
-        re2::RE2::Options regexp_options;
-        regexp_options.set_log_errors(false); /// don't write error messages to stderr
+        auto regexp_options = createRegexpOptions();
 
         re2::RE2 searcher(needle, regexp_options);
         if (!searcher.ok())
@@ -503,8 +510,7 @@ struct ReplaceRegexpImpl
         res_data.reserve(haystack_data.size());
         res_offsets.resize(input_rows_count);
 
-        re2::RE2::Options regexp_options;
-        regexp_options.set_log_errors(false); /// don't write error messages to stderr
+        auto regexp_options = createRegexpOptions();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -560,8 +566,7 @@ struct ReplaceRegexpImpl
         res_data.reserve(haystack_data.size());
         res_offsets.resize(input_rows_count);
 
-        re2::RE2::Options regexp_options;
-        regexp_options.set_log_errors(false); /// don't write error messages to stderr
+        auto regexp_options = createRegexpOptions();
 
         re2::RE2 searcher(needle, regexp_options);
         if (!searcher.ok())
@@ -605,8 +610,7 @@ struct ReplaceRegexpImpl
         res_data.reserve(haystack_data.size());
         res_offsets.resize(input_rows_count);
 
-        re2::RE2::Options regexp_options;
-        regexp_options.set_log_errors(false); /// don't write error messages to stderr
+        auto regexp_options = createRegexpOptions();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -667,8 +671,7 @@ struct ReplaceRegexpImpl
         res_data.reserve(haystack_data.size());
         res_offsets.resize(input_rows_count);
 
-        re2::RE2::Options regexp_options;
-        regexp_options.set_log_errors(false); /// don't write error messages to stderr
+        auto regexp_options = createRegexpOptions();
 
         re2::RE2 searcher(needle, regexp_options);
         if (!searcher.ok())
