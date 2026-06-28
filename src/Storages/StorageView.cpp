@@ -1037,15 +1037,19 @@ SinkToStoragePtr StorageView::write(
     DatabaseAndTableWithAlias target_table_ref;
     auto target_table = getViewTargetTable(select, getStorageID(), context, &target_table_ref);
 
-    /// The target of an insertable view must be a real storage, not another regular view. A view as
-    /// the target would break the "omitted columns receive the target table's defaults" contract,
-    /// because the intermediate view carries no column `DEFAULT`s: an omitted column would be
-    /// materialized as a type default here and the final storage's `DEFAULT` expression would never
-    /// apply. For example, with `CREATE TABLE t (a UInt8, b UInt8 DEFAULT 42)`,
-    /// `CREATE VIEW v1 AS SELECT * FROM t`, `CREATE VIEW v2 AS SELECT * FROM v1`, the statement
-    /// `INSERT INTO v2 (a) VALUES (1)` would store `b = 0` instead of `42`. Reject such chains
-    /// instead of silently storing diverging values.
-    if (target_table->as<StorageView>())
+    /// The target of an insertable view must be a real storage, not another view (regular,
+    /// materialized, or otherwise). A view as the target would break the "omitted columns receive
+    /// the target table's defaults" contract, because the intermediate view carries no column
+    /// `DEFAULT`s: an omitted column would be materialized as a type default here and the final
+    /// storage's `DEFAULT` expression would never apply. For example, with
+    /// `CREATE TABLE t (a UInt8, b UInt8 DEFAULT 42)`, `CREATE VIEW v1 AS SELECT * FROM t`,
+    /// `CREATE VIEW v2 AS SELECT * FROM v1`, the statement `INSERT INTO v2 (a) VALUES (1)` would
+    /// store `b = 0` instead of `42`. The same divergence happens when the target is a materialized
+    /// view: with `CREATE MATERIALIZED VIEW mv TO t AS SELECT a, b FROM src` and
+    /// `CREATE VIEW v AS SELECT a, b FROM mv`, forwarding a full `INSERT INTO mv (a, b)` hides the
+    /// omitted `b` from `t`'s `DEFAULT`. Reject any view target via `isView` instead of silently
+    /// storing diverging values.
+    if (target_table->isView())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Cannot INSERT into view {} because its target {} is itself a view; "
             "inserting through a chain of views is not supported",
