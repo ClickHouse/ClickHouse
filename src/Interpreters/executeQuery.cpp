@@ -2577,10 +2577,6 @@ void executeQuery(
         /// 2. When handling HTTP requests, in `HTTPHandler::processQuery`, there is `query_finish_callback` which is invoked before `onFinish`.
         /// It releases the session and finalizes the output. The client might use the same session to query other queries. Hence, the transaction must be committed before `query_finish_callback`.
         /// Refer: https://github.com/ClickHouse/ClickHouse/issues/80428
-        ///
-        /// It must also be committed before the AST fuzzer runs: the fuzzer resets the transaction stored
-        /// in the session and query contexts (see executeASTFuzzerQueries), which would otherwise leave the
-        /// executor's running flag set while `context->getCurrentTransaction()` is already gone.
         if (implicit_tcl_executor->transactionRunning())
             implicit_tcl_executor->commit(context);
 
