@@ -5,7 +5,7 @@ namespace DB
 
 MutableColumns deserializeColumnsFromKeys(
     const DictionaryStructure & dictionary_structure,
-    const PaddedPODArray<std::string_view> & keys,
+    const PaddedPODArray<StringRef> & keys,
     size_t start,
     size_t end)
 {
@@ -18,7 +18,7 @@ MutableColumns deserializeColumnsFromKeys(
     for (size_t index = start; index < end; ++index)
     {
         const auto & key = keys[index];
-        ReadBufferFromString in(key);
+        ReadBufferFromString in({key.data, key.size});
 
         for (auto & result_column : result_columns)
             result_column->deserializeAndInsertFromArena(in, nullptr);
@@ -29,7 +29,7 @@ MutableColumns deserializeColumnsFromKeys(
 
 ColumnsWithTypeAndName deserializeColumnsWithTypeAndNameFromKeys(
     const DictionaryStructure & dictionary_structure,
-    const PaddedPODArray<std::string_view> & keys,
+    const PaddedPODArray<StringRef> & keys,
     size_t start,
     size_t end)
 {

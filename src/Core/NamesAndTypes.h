@@ -1,11 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <DataTypes/IDataType.h>
 #include <base/types.h>
-#include <Common/ListWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <initializer_list>
 #include <list>
@@ -16,8 +12,9 @@
 namespace DB
 {
 
+class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = VectorWithMemoryTracking<DataTypePtr>;
+using DataTypes = std::vector<DataTypePtr>;
 
 class ReadBuffer;
 class WriteBuffer;
@@ -76,17 +73,17 @@ std::tuple_element_t<I, NameAndTypePair> & get(NameAndTypePair & name_and_type)
         return name_and_type.type;
 }
 
-using NamesAndTypes = VectorWithMemoryTracking<NameAndTypePair>;
+using NamesAndTypes = std::vector<NameAndTypePair>;
 
-class NamesAndTypesList : public ListWithMemoryTracking<NameAndTypePair>
+class NamesAndTypesList : public std::list<NameAndTypePair>
 {
 public:
     NamesAndTypesList() = default;
 
-    NamesAndTypesList(std::initializer_list<NameAndTypePair> init) : ListWithMemoryTracking<NameAndTypePair>(init) {}
+    NamesAndTypesList(std::initializer_list<NameAndTypePair> init) : std::list<NameAndTypePair>(init) {}
 
     template <typename Iterator>
-    NamesAndTypesList(Iterator begin, Iterator end) : ListWithMemoryTracking<NameAndTypePair>(begin, end) {}
+    NamesAndTypesList(Iterator begin, Iterator end) : std::list<NameAndTypePair>(begin, end) {}
 
     void readText(ReadBuffer & buf, bool check_eof = true);
     void writeText(WriteBuffer & buf) const;
@@ -109,7 +106,7 @@ public:
     DataTypes getTypes() const;
 
     /// Creates a mapping from name to the type
-    UnorderedMapWithMemoryTracking<std::string, DataTypePtr> getNameToTypeMap() const;
+    std::unordered_map<std::string, DataTypePtr> getNameToTypeMap() const;
 
     /// Remove columns which names are not in the `names`.
     void filterColumns(const NameSet & names);
@@ -143,7 +140,7 @@ public:
     void writeTextWithNamesInStorage(WriteBuffer & buf) const;
 };
 
-using NamesAndTypesLists = VectorWithMemoryTracking<NamesAndTypesList>;
+using NamesAndTypesLists = std::vector<NamesAndTypesList>;
 
 }
 

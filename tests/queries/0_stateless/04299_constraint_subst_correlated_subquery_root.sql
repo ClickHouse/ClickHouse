@@ -13,7 +13,9 @@ CREATE TABLE t_constraint_corr_root
     d String,
     CONSTRAINT c1 ASSUME (a <= b) AND (b <= c) AND (c <= d) AND (d <= a)
 )
-ENGINE = TinyLog;
+-- A read step that cannot be cloned (e.g. `TinyLog`) makes correlated-subquery decorrelation
+-- fail with `NOT_IMPLEMENTED` on this version, so use `MergeTree`, whose read step is cloneable.
+ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO t_constraint_corr_root VALUES ('1', '2', '3', '4');
 

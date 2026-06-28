@@ -1,6 +1,5 @@
 #include <Storages/buildQueryTreeForShard.h>
 
-#include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Analyzer/FunctionNode.h>
@@ -8,36 +7,23 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
-#include <Core/Block.h>
-#include <Planner/PlannerActionsVisitor.h>
-
-#include <optional>
-#include <string>
-#include <unordered_map>
-#include <vector>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/PreparedSets.h>
 #include <IO/WriteHelpers.h>
 #include <Planner/PlannerContext.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/Sinks/EmptySink.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <QueryPipeline/SizeLimits.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Analyzer/UnionNode.h>
-
-#include <stack>
 
 
 namespace DB
@@ -46,16 +32,11 @@ namespace DB
 namespace Setting
 {
     extern const SettingsDistributedProductMode distributed_product_mode;
-    extern const SettingsUInt64 interactive_delay;
-    extern const SettingsUInt64 max_bytes_to_transfer;
-    extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsUInt64 min_external_table_block_size_rows;
     extern const SettingsUInt64 min_external_table_block_size_bytes;
     extern const SettingsBool parallel_replicas_prefer_local_join;
     extern const SettingsBool prefer_global_in_and_join;
     extern const SettingsBool enable_add_distinct_to_in_subqueries;
-    extern const SettingsInt64 optimize_const_name_size;
-    extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
 namespace ErrorCodes
@@ -273,120 +254,6 @@ private:
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
 };
 
-/** Replaces large constant values with `__getScalar` function calls to avoid
-  * serializing them directly in the query text sent to remote shards.
-  *
-  * When a query contains large constants (e.g., large arrays or strings),
-  * sending them as literals in the query text is inefficient. Instead, we store
-  * the constant in a scalar context and replace it with a `__getScalar('hash')`
-  * function call. The remote shard will retrieve the actual value from the scalar context.
-  *
-  * The `optimize_const_name_size` setting controls the threshold for this optimization.
-  */
-class ReplaceLongConstWithScalarVisitor : public InDepthQueryTreeVisitorWithContext<ReplaceLongConstWithScalarVisitor>
-{
-public:
-    using Base = InDepthQueryTreeVisitorWithContext<ReplaceLongConstWithScalarVisitor>;
-    using Base::Base;
-
-    explicit ReplaceLongConstWithScalarVisitor(const ContextPtr & context, Int64 max_size_)
-        : Base(context)
-        , max_size(max_size_)
-    {}
-
-    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
-    {
-        if (auto * function_node = parent->as<FunctionNode>())
-        {
-            /// Do not traverse into `__getScalar` - it's already been processed.
-            if (function_node->getFunctionName() == "__getScalar")
-                return false;
-
-            /// Do not visit parameters node.
-            if (function_node->getParametersNode() == child)
-                return false;
-        }
-
-        if (auto * query_node = parent->as<QueryNode>())
-        {
-            /// Do not replace constants in LIMIT, OFFSET, LIMIT BY LIMIT, and LIMIT BY OFFSET clauses.
-            /// These must remain as `ConstantNode` because the query planner accesses their values
-            /// directly via `as<ConstantNode &>()`. Replacing them with `__getScalar` function nodes
-            /// would cause a bad cast exception during query planning.
-            if (query_node->hasLimit() && query_node->getLimit() == child)
-                return false;
-            if (query_node->hasOffset() && query_node->getOffset() == child)
-                return false;
-            if (query_node->hasLimitByLimit() && query_node->getLimitByLimit() == child)
-                return false;
-            if (query_node->hasLimitByOffset() && query_node->getLimitByOffset() == child)
-                return false;
-        }
-
-        return true;
-    }
-
-    void enterImpl(QueryTreeNodePtr & node)
-    {
-        // Do not visit second argument of "in" functions
-        if (!in_second_argument.empty() && in_second_argument.top() == node)
-        {
-            in_second_argument.pop();
-            return;
-        }
-
-        if (auto * function_node = node->as<FunctionNode>(); function_node && isNameOfInFunction(function_node->getFunctionName()))
-        {
-            in_second_argument.push(function_node->getArguments().getNodes()[1]);
-            return;
-        }
-
-        auto * constant_node = node->as<ConstantNode>();
-
-        if (!constant_node)
-            return;
-
-        const auto * col_const = typeid_cast<const ColumnConst *>(constant_node->getColumn().get());
-
-        if (max_size > 0)
-        {
-            WriteBufferFromOwnString name_buf;
-            IColumn::Options options {.optimize_const_name_size = max_size};
-            col_const->getValueNameImpl(name_buf, 0, options);
-            if (options.notFull(name_buf))
-                return;
-        }
-
-        const auto & context = getContext();
-
-        auto node_without_alias = constant_node->clone();
-        node_without_alias->removeAlias();
-
-        QueryTreeNodePtrWithHash node_with_hash(node_without_alias);
-        auto str_hash = DB::toString(node_with_hash.hash);
-
-        Block scalar_block({{constant_node->getColumn(), constant_node->getResultType(), "_constant"}});
-
-        context->getQueryContext()->addScalar(str_hash, scalar_block);
-
-        auto scalar_query_hash_string = DB::toString(node_with_hash.hash);
-
-        auto scalar_query_hash_constant_node = std::make_shared<ConstantNode>(std::move(scalar_query_hash_string), std::make_shared<DataTypeString>());
-
-        auto get_scalar_function_node = std::make_shared<FunctionNode>("__getScalar");
-        get_scalar_function_node->getArguments().getNodes().push_back(std::move(scalar_query_hash_constant_node));
-
-        auto get_scalar_function = FunctionFactory::instance().get("__getScalar", context);
-        get_scalar_function_node->resolveAsFunction(get_scalar_function->build(get_scalar_function_node->getArgumentColumns()));
-
-        node = std::move(get_scalar_function_node);
-    }
-
-private:
-    Int64 max_size = 0;
-    std::stack<QueryTreeNodePtr> in_second_argument;
-};
-
 // Helper function to add DISTINCT to all QueryNode objects inside a query/union subtree
 void addDistinctRecursively(const QueryTreeNodePtr & node)
 {
@@ -430,8 +297,6 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     }
 
     auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth, true /*is_subquery*/);
-    /// Force materialization of CTEs in subqueries, if they used in the subquery.
-    subquery_options.forceMaterializeCTE();
     auto context_copy = Context::createCopy(mutable_context);
     updateContextForSubqueryExecution(context_copy);
 
@@ -446,8 +311,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
         auto actions_dag = ActionsDAG::makeConvertingActions(
             query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
             sample_block_with_unique_names.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position,
-            context_copy);
+            ActionsDAG::MatchColumnsMode::Position);
         auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(actions_dag));
         query_plan.addStep(std::move(converting_step));
     }
@@ -457,7 +321,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 
     auto external_storage_holder = TemporaryTableHolder(
         mutable_context,
-        ColumnsDescription(columns),
+        ColumnsDescription{columns},
         ConstraintsDescription{},
         nullptr /*query*/,
         true /*create_for_global_subquery*/);
@@ -465,6 +329,8 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     StoragePtr external_storage = external_storage_holder.getTable();
     auto temporary_table_expression_node = std::make_shared<TableNode>(external_storage, mutable_context);
     temporary_table_expression_node->setTemporaryTableName(temporary_table_name);
+
+    auto table_out = external_storage->write({}, external_storage->getInMemoryMetadataPtr(), mutable_context, /*async_insert=*/false);
 
     QueryPlanOptimizationSettings optimization_settings(mutable_context);
     BuildQueryPipelineSettings build_pipeline_settings(mutable_context);
@@ -477,39 +343,10 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     builder->resize(1);
     builder->addTransform(std::move(squashing));
 
-    /// Fill the temporary table for the `GLOBAL IN` / `GLOBAL JOIN` subquery and at the
-    /// same time enforce `max_rows_to_transfer` / `max_bytes_to_transfer` — see Issue
-    /// #103333. We reuse `CreatingSetsTransform` (the same transform the old analyzer
-    /// uses inside `DelayedCreatingSetsStep`): with `set_and_key->set` left null it
-    /// only writes the materialized rows into `external_table` and applies
-    /// `network_transfer_limits` after `materializeBlock`, raising
-    /// `SET_SIZE_LIMIT_EXCEEDED` with the `"IN/JOIN external table"` reason on
-    /// `THROW` and stopping the input on `BREAK`. This keeps the new analyzer
-    /// behaviour in lockstep with the old analyzer.
-    const auto & subquery_settings = mutable_context->getSettingsRef();
-    SizeLimits network_transfer_limits(
-        subquery_settings[Setting::max_rows_to_transfer],
-        subquery_settings[Setting::max_bytes_to_transfer],
-        subquery_settings[Setting::transfer_overflow_mode]);
-
-    auto set_and_key = std::make_shared<SetAndKey>();
-    set_and_key->external_table = external_storage;
-
-    builder->addCreatingSetsTransform(
-        std::make_shared<const Block>(Block{}),
-        std::move(set_and_key),
-        network_transfer_limits,
-        /* prepared_sets_cache = */ nullptr);
-
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
 
-    pipeline.complete(std::make_shared<EmptySink>(pipeline.getSharedHeader()));
+    pipeline.complete(std::move(table_out));
     CompletedPipelineExecutor executor(pipeline);
-    if (mutable_context->hasQueryContext())
-    {
-        if (auto cancel_callback = mutable_context->getQueryContext()->getInteractiveCancelCallback())
-            executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), mutable_context->getSettingsRef()[Setting::interactive_delay] / 1000));
-    }
     executor.execute();
     mutable_context->addExternalTable(temporary_table_name, std::move(external_storage_holder));
 
@@ -533,57 +370,6 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
         auto columns_it = column_source_to_columns.find(join_table_expression);
         const NamesAndTypes & columns = columns_it != column_source_to_columns.end() ? columns_it->second.columns : NamesAndTypes();
         subquery_node = buildSubqueryToReadColumnsFromTableExpression(columns, join_table_expression, context);
-    }
-    else if (join_table_expression_node_type == QueryTreeNodeType::ARRAY_JOIN)
-    {
-        /// ARRAY_JOIN columns have multiple sources: the ARRAY_JOIN itself provides
-        /// the array-joined columns, while the inner table provides pass-through columns.
-        /// We must preserve per-source attribution for correct resolution.
-        QueryTreeNodes subquery_projection_nodes;
-        NamesAndTypes projection_columns;
-        NameSet seen_column_names;
-
-        std::vector<QueryTreeNodePtr> nodes_to_visit = {join_table_expression};
-        while (!nodes_to_visit.empty())
-        {
-            auto current = nodes_to_visit.back();
-            nodes_to_visit.pop_back();
-
-            auto columns_it = column_source_to_columns.find(current);
-            if (columns_it != column_source_to_columns.end())
-            {
-                for (const auto & col : columns_it->second.columns)
-                {
-                    if (seen_column_names.insert(col.name).second)
-                    {
-                        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(col, current));
-                        projection_columns.push_back(col);
-                    }
-                }
-            }
-
-            for (const auto & child : current->getChildren())
-                if (child)
-                    nodes_to_visit.push_back(child);
-        }
-
-        if (subquery_projection_nodes.empty())
-        {
-            auto constant_data_type = std::make_shared<DataTypeUInt64>();
-            subquery_projection_nodes.push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
-            projection_columns.push_back({"1", std::move(constant_data_type)});
-        }
-
-        auto context_copy = Context::createCopy(context);
-        updateContextForSubqueryExecution(context_copy);
-
-        auto query_node = std::make_shared<QueryNode>(std::move(context_copy));
-        query_node->getProjection().getNodes() = std::move(subquery_projection_nodes);
-        query_node->resolveProjectionColumns(std::move(projection_columns));
-        query_node->getJoinTree() = join_table_expression;
-        query_node->setIsSubquery(true);
-
-        subquery_node = query_node;
     }
     else
     {
@@ -641,29 +427,6 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                 global_in_or_join_node.subquery_depth);
             temporary_table_expression_node->setAlias(join_table_expression->getAlias());
 
-            /** When a compound node like ARRAY_JOIN is replaced, its descendants (e.g., the inner TABLE)
-              * are not traversed by cloneAndReplace. Column nodes that reference these descendants
-              * as their source would get dangling weak pointers when the original tree is released.
-              * Map all descendants of the replaced node to the temporary table so that
-              * weak pointer updates in cloneAndReplace can find them.
-              */
-            std::vector<const IQueryTreeNode *> descendants_to_map;
-            for (const auto & child : join_table_expression->getChildren())
-                if (child)
-                    descendants_to_map.push_back(child.get());
-
-            while (!descendants_to_map.empty())
-            {
-                const auto * descendant = descendants_to_map.back();
-                descendants_to_map.pop_back();
-
-                replacement_map.emplace(descendant, temporary_table_expression_node);
-
-                for (const auto & child : descendant->getChildren())
-                    if (child)
-                        descendants_to_map.push_back(child.get());
-            }
-
             replacement_map.emplace(join_table_expression.get(), std::move(temporary_table_expression_node));
             continue;
         }
@@ -714,6 +477,8 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     if (!replacement_map.empty())
         query_tree_to_modify = query_tree_to_modify->cloneAndReplace(replacement_map);
 
+    removeGroupingFunctionSpecializations(query_tree_to_modify);
+
     createUniqueAliasesIfNecessary(query_tree_to_modify, planner_context->getQueryContext());
 
     // Get rid of the settings clause so we don't send them to remote. Thus newly non-important
@@ -721,13 +486,6 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     // are written into the query context and will be sent by the query pipeline.
     if (auto * query_node = query_tree_to_modify->as<QueryNode>())
         query_node->clearSettingsChanges();
-
-    auto max_const_name_size = planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size];
-    if (max_const_name_size >= 0)
-    {
-        ReplaceLongConstWithScalarVisitor scalar_visitor(planner_context->getQueryContext(), max_const_name_size);
-        scalar_visitor.visit(query_tree_to_modify);
-    }
 
     return query_tree_to_modify;
 }
@@ -742,14 +500,6 @@ public:
     {
         if (auto * table_node = node->as<TableNode>())
             storages.push_back(table_node->getStorage());
-        else if (auto * table_func_node = node->as<TableFunctionNode>())
-        {
-            /// See https://github.com/ClickHouse/ClickHouse/issues/77990
-            /// Now that parallel replicas support TableFunctionRemote, GlobalJoin also needs to support TableFunctionRemote.
-            const auto & name = table_func_node->getTableFunctionName();
-            if (name == "cluster" || name == "clusterAllReplicas" || name == "remote" || name == "remoteSecure")
-                storages.push_back(table_func_node->getStorage());
-        }
     }
 
     std::vector<StoragePtr> storages;
@@ -797,171 +547,6 @@ void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr c
 {
     RewriteJoinToGlobalJoinVisitor visitor(context);
     visitor.visit(query_tree_to_modify);
-}
-
-namespace
-{
-
-/// Replace ALIAS column nodes with their defining expression. The action name computed afterwards then matches the name
-/// the shard's ActionsDAG assigns (the shard works on the inlined query tree).
-class InlineAliasColumnsForNamingVisitor : public InDepthQueryTreeVisitor<InlineAliasColumnsForNamingVisitor>
-{
-    static QueryTreeNodePtr getColumnNodeAliasExpression(const QueryTreeNodePtr & node)
-    {
-        const auto * column_node = node->as<ColumnNode>();
-        if (!column_node || !column_node->hasExpression())
-            return nullptr;
-
-        const auto & column_source = column_node->getColumnSourceOrNull();
-        if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
-                           || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
-                           || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
-            return nullptr;
-
-        auto column_expression = column_node->getExpression();
-        column_expression->setAlias(column_node->getColumnName());
-        return column_expression;
-    }
-
-public:
-    void visitImpl(QueryTreeNodePtr & node)
-    {
-        if (auto column_expression = getColumnNodeAliasExpression(node))
-            node = column_expression;
-    }
-};
-
-String actionNameAfterAliasInlining(const QueryTreeNodePtr & node, const PlannerContext & planner_context)
-{
-    auto node_clone = node->clone();
-    InlineAliasColumnsForNamingVisitor visitor;
-    visitor.visit(node_clone);
-
-    /// `buildQueryTreeForShard` performs one more naming-relevant rewrite after inlining ALIAS columns:
-    /// `ReplaceLongConstWithScalarVisitor` turns over-threshold constants into `__getScalar('<hash>')` calls
-    /// (controlled by `optimize_const_name_size`). Mirror it here with the same guard so the computed action
-    /// name matches the shard header for duplicate constant ALIAS expressions that exceed the threshold.
-    const auto max_const_name_size = planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size];
-    if (max_const_name_size >= 0)
-    {
-        ReplaceLongConstWithScalarVisitor scalar_visitor(planner_context.getQueryContext(), max_const_name_size);
-        scalar_visitor.visit(node_clone);
-    }
-
-    return calculateActionNodeName(node_clone, planner_context, /*use_column_identifier_as_action_node_name=*/true);
-}
-
-/// Build a map from every expression node's identifier-based action name (the name the initiator uses) to its action
-/// name after inlining ALIAS columns (the name the shard uses). Nested subqueries are skipped: their columns live in a
-/// different scope.
-class CollectAliasNameTranslationVisitor : public InDepthQueryTreeVisitor<CollectAliasNameTranslationVisitor>
-{
-public:
-    CollectAliasNameTranslationVisitor(const PlannerContext & planner_context_, std::unordered_map<String, String> & translation_)
-        : planner_context(planner_context_)
-        , translation(translation_)
-    {
-    }
-
-    void visitImpl(QueryTreeNodePtr & node)
-    {
-        auto node_type = node->getNodeType();
-        if (node_type != QueryTreeNodeType::COLUMN && node_type != QueryTreeNodeType::FUNCTION && node_type != QueryTreeNodeType::CONSTANT)
-            return;
-
-        auto identifier_name = calculateActionNodeName(node, planner_context, /*use_column_identifier_as_action_node_name=*/true);
-        if (translation.contains(identifier_name))
-            return;
-
-        translation.emplace(std::move(identifier_name), actionNameAfterAliasInlining(node, planner_context));
-    }
-
-    static bool needChildVisit(const QueryTreeNodePtr & /*parent*/, const QueryTreeNodePtr & child)
-    {
-        return child->getNodeType() != QueryTreeNodeType::QUERY && child->getNodeType() != QueryTreeNodeType::UNION;
-    }
-
-private:
-    const PlannerContext & planner_context;
-    std::unordered_map<String, String> & translation;
-};
-
-}
-
-std::optional<ActionsDAG> buildShardCollapseFanOut(
-    const QueryTreeNodePtr & query_tree,
-    const PlannerContextPtr & planner_context,
-    const Block & shard_header,
-    const Block & expected_header)
-{
-    if (!planner_context || !query_tree)
-        return {};
-
-    /// The shard-side deduplication can only remove columns, so a recognized collapse has a strictly smaller shard header.
-    if (shard_header.columns() == 0 || shard_header.columns() >= expected_header.columns())
-        return {};
-
-    std::unordered_map<String, String> identifier_to_inlined_name;
-    {
-        QueryTreeNodePtr query_tree_for_visit = query_tree;
-        CollectAliasNameTranslationVisitor visitor(*planner_context, identifier_to_inlined_name);
-        visitor.visit(query_tree_for_visit);
-    }
-
-    std::unordered_map<String, size_t> shard_name_to_index;
-    shard_name_to_index.reserve(shard_header.columns());
-    for (size_t i = 0; i < shard_header.columns(); ++i)
-        shard_name_to_index.emplace(shard_header.getByPosition(i).name, i);
-
-    std::vector<size_t> shard_index_for_expected(expected_header.columns());
-    std::vector<bool> shard_column_used(shard_header.columns(), false);
-    bool collapse_detected = false;
-
-    for (size_t i = 0; i < expected_header.columns(); ++i)
-    {
-        const auto & expected_name = expected_header.getByPosition(i).name;
-
-        String inlined_name = expected_name;
-        if (auto it = identifier_to_inlined_name.find(expected_name); it != identifier_to_inlined_name.end())
-            inlined_name = it->second;
-
-        auto shard_it = shard_name_to_index.find(inlined_name);
-        if (shard_it == shard_name_to_index.end())
-            return {}; /// Cannot explain this column; let the caller fall back to its default reconciliation.
-
-        shard_index_for_expected[i] = shard_it->second;
-        shard_column_used[shard_it->second] = true;
-        if (inlined_name != expected_name)
-            collapse_detected = true;
-    }
-
-    if (!collapse_detected)
-        return {};
-
-    for (bool used : shard_column_used)
-        if (!used)
-            return {}; /// Some shard column is unaccounted for; fall back to be safe.
-
-    ActionsDAG dag;
-    std::vector<const ActionsDAG::Node *> shard_input_nodes;
-    shard_input_nodes.reserve(shard_header.columns());
-    for (size_t i = 0; i < shard_header.columns(); ++i)
-    {
-        const auto & column = shard_header.getByPosition(i);
-        shard_input_nodes.push_back(&dag.addInput(column.name, column.type));
-    }
-
-    ActionsDAG::NodeRawConstPtrs outputs;
-    outputs.reserve(expected_header.columns());
-    for (size_t i = 0; i < expected_header.columns(); ++i)
-    {
-        const auto & expected_name = expected_header.getByPosition(i).name;
-        const auto * source_node = shard_input_nodes[shard_index_for_expected[i]];
-        outputs.push_back(&dag.addAlias(*source_node, expected_name));
-    }
-
-    dag.getOutputs() = std::move(outputs);
-    return dag;
 }
 
 }

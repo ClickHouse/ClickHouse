@@ -6,9 +6,10 @@
 #include <limits>
 #include <bit>
 #include <span>
+
 #include <type_traits>
 
-#include <Common/FramePointers.h>
+#include <Common/StackTrace.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
@@ -24,13 +25,11 @@
 
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
-#include <Common/Concepts.h>
 #include <Common/StringUtils.h>
 #include <Common/exp10_i32.h>
 
 #include <Formats/FormatSettings.h>
 
-#include <IO/IsTriviallySerializable.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
@@ -101,31 +100,23 @@ inline void readChar(char & x, ReadBuffer & buf)
 }
 
 
-/// Read bytes from buffer
-inline void readNBytes(char * output, size_t size, ReadBuffer & buf)
-{
-    /// If the whole value fits in buffer do not call readStrict and copy with
-    /// __builtin_memcpy since it is faster than generic memcpy for small copies.
-    /// Use a difference-based check to avoid pointer overflow UB when `size` is large
-    /// (e.g. when reading a whole vector at once via readVectorBinary).
-    if (buf.position() && size <= static_cast<size_t>(buf.buffer().end() - buf.position())) [[likely]]
-    {
-        __builtin_memcpy(output, buf.position(), size);
-        buf.position() += size;
-    }
-    else
-    {
-        buf.readStrict(output, size);
-    }
-}
-
-
 /// Read POD-type in native format
 template <typename T>
 inline void readPODBinary(T & x, ReadBuffer & buf)
 {
     static constexpr size_t size = sizeof(T); /// NOLINT
-    readNBytes(reinterpret_cast<char *>(&x), size, buf);
+
+    /// If the whole value fits in buffer do not call readStrict and copy with
+    /// __builtin_memcpy since it is faster than generic memcpy for small copies.
+    if (buf.position() && buf.position() + size <= buf.buffer().end()) [[likely]]
+    {
+        __builtin_memcpy(reinterpret_cast<char *>(&x), buf.position(), size);
+        buf.position() += size;
+    }
+    else
+    {
+        buf.readStrict(reinterpret_cast<char *>(&x), size);
+    }
 }
 
 inline void readUUIDBinary(UUID & x, ReadBuffer & buf)
@@ -147,11 +138,7 @@ inline void readFloatBinary(T & x, ReadBuffer & buf)
     readPODBinary(x, buf);
 }
 
-/// Templated on the allocator so this works with both `std::string` and
-/// `StringWithMemoryTracking` (and any other `std::basic_string<char>` with
-/// a custom allocator).
-template <typename Allocator>
-inline void readStringBinary(std::basic_string<char, std::char_traits<char>, Allocator> & s, ReadBuffer & buf, size_t max_string_size = DEFAULT_MAX_STRING_SIZE)
+inline void readStringBinary(std::string & s, ReadBuffer & buf, size_t max_string_size = DEFAULT_MAX_STRING_SIZE)
 {
     size_t size = 0;
     readVarUInt(size, buf);
@@ -186,11 +173,9 @@ inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
     buf.readStrict(reinterpret_cast<char*>(&ip.toUnderType()), size);
 }
 
-template <StdVector V>
-void readVectorBinary(V & v, ReadBuffer & buf)
+template <typename T>
+void readVectorBinary(std::vector<T> & v, ReadBuffer & buf)
 {
-    using T = typename V::value_type;
-
     size_t size = 0;
     readVarUInt(size, buf);
 
@@ -199,13 +184,8 @@ void readVectorBinary(V & v, ReadBuffer & buf)
                         "Too large array size (maximum: {})", DEFAULT_MAX_STRING_SIZE);
 
     v.resize(size);
-
-    /// std::vector<bool> is bit-packed and has no contiguous element storage, so it cannot use the bulk path.
-    if constexpr (is_trivially_serializable<T> && !std::is_same_v<T, bool>)
-        readNBytes(reinterpret_cast<char *>(v.data()), size * sizeof(T), buf);
-    else
-        for (size_t i = 0; i < size; ++i)
-            readBinary(v[i], buf);
+    for (size_t i = 0; i < size; ++i)
+        readBinary(v[i], buf);
 }
 
 
@@ -217,7 +197,7 @@ void assertNotEOF(ReadBuffer & buf);
 
 inline bool checkChar(char c, ReadBuffer & buf)
 {
-    char a = 0;
+    char a;
     if (!buf.peek(a) || a != c)
         return false;
     buf.ignore();
@@ -235,7 +215,7 @@ inline void assertChar(char symbol, ReadBuffer & buf)
 
 inline bool checkCharCaseInsensitive(char c, ReadBuffer & buf)
 {
-    char a = 0;
+    char a;
     if (!buf.peek(a) || !equalsCaseInsensitive(a, c))
         return false;
     buf.ignore();
@@ -422,7 +402,6 @@ void skipStringUntilWhitespace(ReadBuffer & buf);
 
 void readStringUntilAmpersand(String & s, ReadBuffer & buf);
 void readStringUntilEquals(String & s, ReadBuffer & buf);
-void readStringUntilColon(String & s, ReadBuffer & buf);
 
 
 /** Read string in CSV format.
@@ -566,8 +545,8 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf, const cha
             return error();
 
         UInt16 year = (pos[0] - '0') * 1000 + (pos[1] - '0') * 100 + (pos[2] - '0') * 10 + (pos[3] - '0');
-        UInt8 month = 0;
-        UInt8 day = 0;
+        UInt8 month;
+        UInt8 day;
         pos += 5;
 
         if (isNumericASCII(pos[-1]))
@@ -591,7 +570,7 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf, const cha
             month = pos[0] - '0';
             if (isNumericASCII(pos[1]))
             {
-                month = static_cast<UInt8>(month * 10 + pos[1] - '0');
+                month = month * 10 + pos[1] - '0';
                 pos += 3;
             }
             else
@@ -606,7 +585,7 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf, const cha
             day = pos[0] - '0';
             if (isNumericASCII(pos[1]))
             {
-                day = static_cast<UInt8>(day * 10 + pos[1] - '0');
+                day = day * 10 + pos[1] - '0';
                 pos += 2;
             }
             else
@@ -622,20 +601,20 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf, const cha
 
 inline void convertToDayNum(DayNum & date, ExtendedDayNum & from)
 {
-    if (from < 0) [[unlikely]]
+    if (unlikely(from < 0))
         date = 0;
-    else if (from > 0xFFFF) [[unlikely]]
+    else if (unlikely(from > 0xFFFF))
         date = 0xFFFF;
     else
-        date = static_cast<UInt16>(from);
+        date = from;
 }
 
 inline bool tryToConvertToDayNum(DayNum & date, ExtendedDayNum & from)
 {
-    if (from < 0 || from > 0xFFFF) [[unlikely]]
+    if (unlikely(from < 0 || from > 0xFFFF))
         return false;
 
-    date = static_cast<UInt16>(from);
+    date = from;
     return true;
 }
 
@@ -727,7 +706,6 @@ inline bool tryReadDateText(ExtendedDayNum & date, ReadBuffer & buf, const DateL
 }
 
 UUID parseUUID(std::span<const UInt8> src);
-bool tryParseUUID(std::span<const UInt8> src, UUID & uuid);
 
 template <typename ReturnType = void>
 inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
@@ -745,7 +723,7 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
 
             if (size != 36)
             {
-                s[std::min(size, size_t(35))] = 0;
+                s[size] = 0;
 
                 if constexpr (throw_exception)
                 {
@@ -758,19 +736,11 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
             }
         }
 
-        if constexpr (throw_exception)
-        {
-            uuid = parseUUID({reinterpret_cast<const UInt8 *>(s), size});
-        }
-        else
-        {
-            if (!tryParseUUID({reinterpret_cast<const UInt8 *>(s), size}, uuid))
-                return ReturnType(false);
-        }
+        uuid = parseUUID({reinterpret_cast<const UInt8 *>(s), size});
         return ReturnType(true);
     }
 
-    s[std::min(size, size_t(35))] = 0;
+    s[size] = 0;
 
     if constexpr (throw_exception)
     {
@@ -799,7 +769,7 @@ inline ReturnType readIPv4TextImpl(IPv4 & ip, ReadBuffer & buf)
         return ReturnType(true);
 
     if constexpr (std::is_same_v<ReturnType, void>)
-        throw Exception(ErrorCodes::CANNOT_PARSE_IPV4, "Cannot parse IPv4 {}", std::string_view(buf.position(), std::min(buf.available(), 15uz))); /// 15 = max IPv4 address length
+        throw Exception(ErrorCodes::CANNOT_PARSE_IPV4, "Cannot parse IPv4 {}", std::string_view(buf.position(), buf.available()));
     else
         return ReturnType(false);
 }
@@ -821,8 +791,7 @@ inline ReturnType readIPv6TextImpl(IPv6 & ip, ReadBuffer & buf)
         return ReturnType(true);
 
     if constexpr (std::is_same_v<ReturnType, void>)
-        throw Exception(ErrorCodes::CANNOT_PARSE_IPV6, "Cannot parse IPv6 {}", std::string_view(buf.position(), std::min(buf.available(), 45uz))); /// 45 = max IPv6 address length
-                                                                                                                                                   /// https://stackoverflow.com/a/166157
+        throw Exception(ErrorCodes::CANNOT_PARSE_IPV6, "Cannot parse IPv6 {}", std::string_view(buf.position(), buf.available()));
     else
         return ReturnType(false);
 }
@@ -1474,9 +1443,9 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    int16_t hours = 0;
-    int16_t minutes = 0;
-    int16_t seconds = 0;
+    int16_t hours;
+    int16_t minutes;
+    int16_t seconds;
 
     readIntText(hours, buf);
 
@@ -1509,7 +1478,7 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf)
 template <typename ReturnType>
 inline ReturnType readTimeTextImpl(Decimal64 & time64, UInt32 scale, ReadBuffer & buf)
 {
-    time_t whole = 0;
+    time_t whole;
     if (!readTimeTextImpl<bool>(whole, buf))
     {
         return ReturnType(false);
@@ -1561,7 +1530,8 @@ inline void readTime64Text(Decimal64 & time64, UInt32 scale, ReadBuffer & buf)
 }
 
 /// Generic methods to read value in native binary format.
-template <is_trivially_serializable T>
+template <typename T>
+requires is_arithmetic_v<T>
 inline void readBinary(T & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 inline void readBinary(bool & x, ReadBuffer & buf)
@@ -1574,6 +1544,13 @@ inline void readBinary(bool & x, ReadBuffer & buf)
 }
 
 inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }
+inline void readBinary(Decimal32 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(Decimal64 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(Decimal256 & x, ReadBuffer & buf) { readPODBinary(x.value, buf); }
+inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(IPv4 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(IPv6 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 inline void readBinary(UUID & x, ReadBuffer & buf)
 {
@@ -1586,7 +1563,7 @@ inline void readBinary(CityHash_v1_0_2::uint128 & x, ReadBuffer & buf)
     readPODBinary(x.high64, buf);
 }
 
-inline void readBinary(FramePointers & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(StackTrace::FramePointers & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 template <std::endian endian, typename T>
 inline void readBinaryEndian(T & x, ReadBuffer & buf)
@@ -1660,7 +1637,7 @@ inline bool tryReadText(LocalDate & x, ReadBuffer & buf) { return tryReadDateTex
 inline void readText(LocalDateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }
 inline bool tryReadText(LocalDateTime & x, ReadBuffer & buf)
 {
-    time_t time = 0;
+    time_t time;
     if (!tryReadDateTimeText(time, buf))
         return false;
     x = LocalDateTime(time, DateLUT::instance());
@@ -1865,8 +1842,8 @@ inline bool tryReadCSV(UInt256 & x, ReadBuffer & buf) { return readCSVSimple<UIn
 inline void readCSV(Int256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline bool tryReadCSV(Int256 & x, ReadBuffer & buf) { return readCSVSimple<Int256, bool>(x, buf); }
 
-template <StdVector V>
-void readBinary(V & x, ReadBuffer & buf)
+template <typename T>
+void readBinary(std::vector<T> & x, ReadBuffer & buf)
 {
     size_t size = 0;
     readVarUInt(size, buf);
@@ -1879,8 +1856,8 @@ void readBinary(V & x, ReadBuffer & buf)
         readBinary(x[i], buf);
 }
 
-template <StdVector V>
-void readQuoted(V & x, ReadBuffer & buf)
+template <typename T>
+void readQuoted(std::vector<T> & x, ReadBuffer & buf)
 {
     bool first = true;
     assertChar('[', buf);
@@ -1896,14 +1873,14 @@ void readQuoted(V & x, ReadBuffer & buf)
 
         first = false;
 
-        x.emplace_back();
+        x.push_back(T());
         readQuoted(x.back(), buf);
     }
     assertChar(']', buf);
 }
 
-template <StdVector V>
-void readDoubleQuoted(V & x, ReadBuffer & buf)
+template <typename T>
+void readDoubleQuoted(std::vector<T> & x, ReadBuffer & buf)
 {
     bool first = true;
     assertChar('[', buf);
@@ -1919,14 +1896,14 @@ void readDoubleQuoted(V & x, ReadBuffer & buf)
 
         first = false;
 
-        x.emplace_back();
+        x.push_back(T());
         readDoubleQuoted(x.back(), buf);
     }
     assertChar(']', buf);
 }
 
-template <StdVector V>
-void readText(V & x, ReadBuffer & buf)
+template <typename T>
+void readText(std::vector<T> & x, ReadBuffer & buf)
 {
     readQuoted(x, buf);
 }
@@ -1972,7 +1949,7 @@ static inline const char * tryReadIntText(T & x, const char * pos, const char * 
 template <typename T>
 inline T parse(const char * data, size_t size)
 {
-    T res{};
+    T res;
     ReadBufferFromMemory buf(data, size);
     readText(res, buf);
     assertEOF(buf);
@@ -2126,10 +2103,6 @@ inline void skipBOMIfExists(ReadBuffer & buf)
 
 /// Skip to next character after next \n. If no \n in stream, skip to end.
 void skipToNextLineOrEOF(ReadBuffer & buf);
-
-/// Skip whitespace and SQL-style comments (-- to end of line, /* */ blocks).
-/// Used so that trailing comments after the last row in VALUES format do not cause parse errors.
-void skipWhitespaceAndSQLComments(ReadBuffer & buf);
 
 /// Skip to next character after next \r. If no \r in stream, skip to end.
 void skipToCarriageReturnOrEOF(ReadBuffer & buf);
