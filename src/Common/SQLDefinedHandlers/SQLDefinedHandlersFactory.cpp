@@ -168,15 +168,15 @@ void SQLDefinedHandlersFactory::createFromSQL(const ASTCreateHandlerQuery & quer
     std::lock_guard lock(mutex);
     loadIfNot(lock);
 
-    /// Build first (validates the query and computes the canonical statement), then check ambiguity, then persist.
-    auto handler = makeSQLDefinedHandler(query);
-
     if (metadata_storage->isReplicated())
     {
-        createReplicated(query, handler, lock);
+        createReplicated(query, lock);
         return;
     }
 
+    /// Check existence before building so that `CREATE HANDLER IF NOT EXISTS` is a true no-op on an
+    /// existing handler: it must not fail while validating the unused replacement (an invalid regexp or
+    /// unsupported TYPE in the new query). Mirrors `NamedCollectionFactory::createFromSQL`.
     if (loaded_handlers.contains(query.handler_name))
     {
         if (query.if_not_exists)
@@ -184,6 +184,8 @@ void SQLDefinedHandlersFactory::createFromSQL(const ASTCreateHandlerQuery & quer
         throw Exception(ErrorCodes::HANDLER_ALREADY_EXISTS, "A handler `{}` already exists", query.handler_name);
     }
 
+    /// Build (validates the query and computes the canonical statement), then check ambiguity, then persist.
+    auto handler = makeSQLDefinedHandler(query);
     checkAmbiguity(*handler, loaded_handlers);
 
     metadata_storage->store(query.handler_name, handler->create_statement, /* replace */ false);
@@ -191,7 +193,7 @@ void SQLDefinedHandlersFactory::createFromSQL(const ASTCreateHandlerQuery & quer
     rebuildSnapshot(lock);
 }
 
-void SQLDefinedHandlersFactory::createReplicated(const ASTCreateHandlerQuery & query, const SQLDefinedHandlerPtr & handler, std::lock_guard<std::mutex> & lock)
+void SQLDefinedHandlersFactory::createReplicated(const ASTCreateHandlerQuery & query, std::lock_guard<std::mutex> & lock)
 {
     /// Re-read the whole set from Keeper at a known root version, check ambiguity against it, then persist
     /// the new handler conditionally on that version. If another replica changed the set in between, the
@@ -211,6 +213,9 @@ void SQLDefinedHandlersFactory::createReplicated(const ASTCreateHandlerQuery & q
             throw Exception(ErrorCodes::HANDLER_ALREADY_EXISTS, "A handler `{}` already exists", query.handler_name);
         }
 
+        /// Build only after confirming the handler does not already exist, so `IF NOT EXISTS` is a true
+        /// no-op and never fails validating the unused replacement query.
+        auto handler = makeSQLDefinedHandler(query);
         checkAmbiguity(*handler, current);
 
         if (metadata_storage->store(query.handler_name, handler->create_statement, /* replace */ false, version))
