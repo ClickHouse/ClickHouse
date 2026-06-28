@@ -46,6 +46,19 @@ WHERE ts = fromUnixTimestamp64Nano(1698543000000000000, 'Europe/Berlin');
 
 DROP TABLE t_04409_dstamb;
 
+-- A non-decimal DateTime('Europe/Berlin') boundary at the DST overlap must also be pushed down exactly.
+-- The pushed constant keeps its raw Unix-timestamp literal; serializing it as local date-time text would
+-- be ambiguous (both rows below render as 2023-10-29 02:30:00) and match the wrong occurrence.
+DROP TABLE IF EXISTS t_04409_dt_dst;
+CREATE TABLE t_04409_dt_dst (ts DateTime('Europe/Berlin')) ENGINE = MergeTree ORDER BY ts;
+INSERT INTO t_04409_dt_dst VALUES (1698539400), (1698543000);
+
+SELECT DISTINCT toUnixTimestamp(ts)
+FROM (SELECT ts FROM remote('127.0.0.{1,2}', currentDatabase(), t_04409_dt_dst))
+WHERE ts = toDateTime(1698543000, 'Europe/Berlin');
+
+DROP TABLE t_04409_dt_dst;
+
 -- The original #94612 boundary (DateTime64 epoch) must not raise CANNOT_PARSE_DATETIME.
 DROP TABLE IF EXISTS t_04409_94612;
 CREATE TABLE t_04409_94612 (device_id UInt32, data_time DateTime64(3, 'UTC'), data_value UInt64)
