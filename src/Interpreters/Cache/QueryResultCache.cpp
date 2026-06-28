@@ -35,6 +35,7 @@
 #include <IO/WriteHelpers.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
 
@@ -606,9 +607,17 @@ QueryResultCache::Key::Key(
 /// `query_id` is client-provided, so a value containing a newline or tab (both valid input) must round-trip
 /// through the newline-terminated metadata format instead of truncating the field and getting the whole entry
 /// discarded as broken on reload.
-static constexpr UInt64 QUERY_RESULT_CACHE_DISK_FORMAT_VERSION = 2;
+///
+/// Version 3: the payload (`results.bin` / `totals.bin` / `extremes.bin`) is written with the current server's
+/// Native protocol revision instead of revision `0`, and that revision is persisted in `key_metadata.txt`
+/// (`native_revision`) so the payload is read back with the exact revision it was written with. Revision `0`
+/// took the old-client compatibility branches of `NativeWriter`/`NativeReader` and could downgrade type
+/// metadata (e.g. it strips the timezone parameter of `DateTime('tz')`), so a restored entry could be served
+/// with the wrong result type.
+static constexpr UInt64 QUERY_RESULT_CACHE_DISK_FORMAT_VERSION = 3;
 
 static constexpr auto * token_format_version = "format_version: ";
+static constexpr auto * token_native_revision = "native_revision: ";
 static constexpr auto * token_user_id = "user_id: ";
 static constexpr auto * token_current_user_roles = "current_user_roles: ";
 static constexpr auto * token_is_shared = "is_shared: ";
@@ -624,6 +633,12 @@ void QueryResultCache::Key::serialize(WriteBuffer & buf) const
 {
     writeText(token_format_version, buf);
     writeText(std::to_string(QUERY_RESULT_CACHE_DISK_FORMAT_VERSION), buf);
+    writeText("\n", buf);
+
+    /// Native protocol revision the payload (`results.bin` etc.) was written with. Persisted so it is read back
+    /// with the same revision, preserving full type metadata across server upgrades (see the format-version note).
+    writeText(token_native_revision, buf);
+    writeText(std::to_string(native_revision), buf);
     writeText("\n", buf);
 
     writeText(token_user_id, buf);
@@ -688,6 +703,10 @@ void QueryResultCache::Key::deserialize(ReadBuffer & buf)
             "Unsupported query result cache on-disk format version: {} (expected {})",
             format_version,
             QUERY_RESULT_CACHE_DISK_FORMAT_VERSION);
+
+    assertString(token_native_revision, buf);
+    readText(native_revision, buf);
+    assertChar('\n', buf);
 
     assertString(token_user_id, buf);
     UUID uid;
@@ -1540,7 +1559,7 @@ void QueryResultCache::serializeEntry(const Key & key, const QueryResultCache::C
     {
         auto out = disk->writeFile(entry_path / "results.bin");
         auto compress_out = std::make_unique<CompressedWriteBuffer>(*out, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
-        NativeWriter writer(*compress_out, 0, key.header);
+        NativeWriter writer(*compress_out, key.native_revision, key.header);
 
         /// A cached query that produced zero result rows has no chunks (empty chunks are rejected in
         /// `QueryResultCacheWriter::buffer`). Persist a single header-only (zero-row) block so the result
@@ -1565,7 +1584,7 @@ void QueryResultCache::serializeEntry(const Key & key, const QueryResultCache::C
     {
         auto out = disk->writeFile(entry_path / "totals.bin");
         auto compress_out = std::make_unique<CompressedWriteBuffer>(*out, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
-        NativeWriter writer(*compress_out, 0, key.header);
+        NativeWriter writer(*compress_out, key.native_revision, key.header);
         write_chunk(*entry->totals, writer);
         compress_out->finalize();
         out->finalize();
@@ -1576,7 +1595,7 @@ void QueryResultCache::serializeEntry(const Key & key, const QueryResultCache::C
     {
         auto out = disk->writeFile(entry_path / "extremes.bin");
         auto compress_out = std::make_unique<CompressedWriteBuffer>(*out, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
-        NativeWriter writer(*compress_out, 0, key.header);
+        NativeWriter writer(*compress_out, key.native_revision, key.header);
         write_chunk(*entry->extremes, writer);
         compress_out->finalize();
         out->finalize();
@@ -1594,7 +1613,7 @@ std::tuple<Block, QueryResultCache::Cache::MappedPtr, QueryResultCache::DiskCach
         auto result_path = key_path / "results.bin";
         auto in = disk->readFile(result_path, {});
         auto compress_in = std::make_shared<CompressedReadBuffer>(*in);
-        NativeReader reader(*compress_in, 0);
+        NativeReader reader(*compress_in, key.native_revision);
 
         while (!compress_in->eof())
         {
@@ -1619,7 +1638,7 @@ std::tuple<Block, QueryResultCache::Cache::MappedPtr, QueryResultCache::DiskCach
     if (auto in = disk->readFileIfExists(totals_path, {}))
     {
         auto compress_in = std::make_shared<CompressedReadBuffer>(*in);
-        NativeReader reader(*compress_in, 0);
+        NativeReader reader(*compress_in, key.native_revision);
         Block res = reader.read();
 
         entry->totals.emplace(res.getColumns(), res.rows());
@@ -1630,7 +1649,7 @@ std::tuple<Block, QueryResultCache::Cache::MappedPtr, QueryResultCache::DiskCach
     if (auto in = disk->readFileIfExists(extremes_path, {}))
     {
         auto compress_in = std::make_shared<CompressedReadBuffer>(*in);
-        NativeReader reader(*compress_in, 0);
+        NativeReader reader(*compress_in, key.native_revision);
         Block res = reader.read();
 
         entry->extremes.emplace(res.getColumns(), res.rows());
@@ -1653,7 +1672,7 @@ std::pair<Block, size_t> QueryResultCache::loadDiskEntryHeaderAndSize(const Key 
         auto result_path = key_path / "results.bin";
         auto in = disk->readFile(result_path, {});
         auto compress_in = std::make_shared<CompressedReadBuffer>(*in);
-        NativeReader reader(*compress_in, 0);
+        NativeReader reader(*compress_in, key.native_revision);
 
         /// Reading the first block is enough to recover the result schema (every persisted entry, including a
         /// zero-row one, has at least one block). The remaining blocks are not materialized: the full result

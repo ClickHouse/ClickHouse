@@ -2,6 +2,7 @@
 
 #include <Common/CacheBase.h>
 #include <Common/logger_useful.h>
+#include <Core/ProtocolDefines.h>
 #include <Interpreters/Cache/QueryResultCacheUsage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IASTHash.h>
@@ -111,6 +112,13 @@ public:
         /// Not const: it is part of the key identity (see `KeyHasher`/`operator==`) and is restored from disk
         /// metadata in `deserialize` when the cache is loaded on startup.
         bool is_subquery;
+
+        /// Native protocol revision used to (de)serialize the on-disk payload (`results.bin` / `totals.bin` /
+        /// `extremes.bin`). Defaults to the current server revision for a freshly written entry; it is persisted
+        /// in `key_metadata.txt` and restored in `deserialize` so the payload is read back with the exact
+        /// revision it was written with, preserving full type metadata (e.g. a `DateTime` timezone) across
+        /// server upgrades. Not part of the key identity.
+        UInt64 native_revision = DBMS_TCP_PROTOCOL_VERSION;
 
         /// Ctor to construct a Key for writing into query result cache.
         Key(ASTPtr ast_,

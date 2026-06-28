@@ -5,6 +5,7 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
+    main_configs=["configs/timezone.xml"],
     user_configs=["configs/users.xml"],
     stay_alive=True,
 )
@@ -393,6 +394,49 @@ def test_disk_cache_tag_with_special_chars_survives_restart(start_cluster):
             "query_cache_tag": tag,
         },
     )
+    assert res == expected
+    assert disk_hits_for(query_id) == 1
+
+
+def test_disk_cache_preserves_datetime_timezone_after_restart(start_cluster):
+    # The on-disk payload must be (de)serialized with a real (non-zero) Native protocol revision. Revision 0
+    # takes the old-client compatibility branch of `NativeWriter`, which strips the explicit timezone parameter
+    # of `DateTime('tz')`. With that bug, after a restart the reloaded entry's result header becomes a plain
+    # `DateTime` (the server timezone, here Asia/Shanghai), so a cached `SELECT toDateTime(..., 'UTC')` is served
+    # with the wrong timezone. Persisting and reusing the write-time revision keeps the exact result type.
+    node.query("SYSTEM DROP QUERY CACHE")
+
+    query = "SELECT toDateTime('2023-06-15 12:00:00', 'UTC') AS dt"
+    expected = "2023-06-15 12:00:00"
+
+    # Sanity check: without the cache the value renders in UTC even though the server timezone is non-UTC.
+    assert node.query(query).strip() == expected
+
+    # Populate the disk cache with the entry.
+    node.query(
+        query,
+        settings={
+            "use_query_cache": 1,
+            "enable_writes_to_query_cache_disk": 1,
+            "enable_reads_from_query_cache_disk": 1,
+            # Keep the entry fresh across the (potentially slow) restart so the post-restart read is a hit.
+            "query_cache_ttl": 600,
+        },
+    )
+    assert node.query("SELECT count() FROM system.query_cache WHERE type = 'Disk'").strip() == "1"
+
+    # A restart drops the in-memory cache; the entry and its result header are reloaded from disk.
+    node.restart_clickhouse(kill=True)
+    assert node.query("SELECT count() FROM system.query_cache WHERE type = 'Disk'").strip() == "1"
+
+    # The disk hit must return the original value in UTC, not shifted into the server timezone (which would be
+    # "2023-06-15 20:00:00" if the timezone parameter had been stripped during on-disk serialization).
+    query_id = "qrc_on_disk_datetime_tz"
+    res = node.query(
+        query,
+        query_id=query_id,
+        settings={"use_query_cache": 1, "enable_reads_from_query_cache_disk": 1},
+    ).strip()
     assert res == expected
     assert disk_hits_for(query_id) == 1
 
