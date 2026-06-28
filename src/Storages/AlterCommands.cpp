@@ -43,6 +43,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndexTableLookup.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
@@ -60,6 +61,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_codecs;
+    extern const SettingsBool allow_experimental_lookup_index;
     extern const SettingsBool allow_experimental_json_lazy_type_hints;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_suspicious_codecs;
@@ -80,6 +82,7 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
@@ -98,6 +101,16 @@ namespace MergeTreeSetting
 
 namespace
 {
+
+void checkExperimentalLookupIndexIsEnabled(ContextPtr context)
+{
+    if (!context->getSettingsRef()[Setting::allow_experimental_lookup_index])
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Experimental `LOOKUP INDEX` is not enabled (the setting 'allow_experimental_lookup_index')");
+    }
+}
 
 AlterCommand::RemoveProperty removePropertyFromString(const String & property)
 {
@@ -339,6 +352,24 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
+    if (command_ast->type == ASTAlterCommand::ADD_LOOKUP_INDEX)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.index_decl = command_ast->index_decl->clone();
+        command.type = AlterCommand::ADD_LOOKUP_INDEX;
+
+        const auto & ast_index_decl = command_ast->index_decl->as<ASTIndexDeclaration &>();
+        command.index_name = ast_index_decl.name;
+
+        if (command_ast->index)
+            command.after_index_name = command_ast->index->as<ASTIdentifier &>().name();
+
+        command.if_not_exists = command_ast->if_not_exists;
+        command.first = command_ast->first;
+
+        return command;
+    }
     if (command_ast->type == ASTAlterCommand::ADD_STATISTICS)
     {
         AlterCommand command;
@@ -426,6 +457,15 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (command_ast->partition)
             command.partition = command_ast->partition->clone();
 
+        return command;
+    }
+    if (command_ast->type == ASTAlterCommand::DROP_LOOKUP_INDEX)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::DROP_LOOKUP_INDEX;
+        command.index_name = command_ast->index->as<ASTIdentifier &>().name();
+        command.if_exists = command_ast->if_exists;
         return command;
     }
     if (command_ast->type == ASTAlterCommand::DROP_STATISTICS)
@@ -733,7 +773,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == ADD_INDEX)
     {
-        if (std::any_of(
+        if (metadata.lookup_indices.has(index_name)
+            || std::any_of(
                 metadata.secondary_indices.cbegin(),
                 metadata.secondary_indices.cend(),
                 [this](const auto & index)
@@ -785,10 +826,60 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             ++insert_it;
         }
 
-        metadata.secondary_indices.emplace(
-            insert_it,
-            IndexDescription::getIndexFromAST(
-                index_decl, metadata.columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
+        auto index = IndexDescription::getIndexFromAST(
+            index_decl, metadata.columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context);
+        if (isLookupIndexType(index.type))
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Index type '{}' must be declared with `ADD LOOKUP INDEX`, not `ADD INDEX`",
+                index.type);
+        }
+
+        metadata.secondary_indices.emplace(insert_it, std::move(index));
+    }
+    else if (type == ADD_LOOKUP_INDEX)
+    {
+        checkExperimentalLookupIndexIsEnabled(context);
+
+        auto name_exists = metadata.lookup_indices.has(index_name) || metadata.secondary_indices.has(index_name);
+        if (name_exists)
+        {
+            if (if_not_exists)
+                return;
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add lookup index {}: index with this name already exists", index_name);
+        }
+
+        auto insert_it = metadata.lookup_indices.end();
+
+        if (first)
+            insert_it = metadata.lookup_indices.begin();
+
+        if (!after_index_name.empty())
+        {
+            insert_it = std::find_if(
+                metadata.lookup_indices.begin(),
+                metadata.lookup_indices.end(),
+                [this](const auto & index)
+                {
+                    return index.name == after_index_name;
+                });
+
+            if (insert_it == metadata.lookup_indices.end())
+            {
+                auto hints = metadata.lookup_indices.getHints(after_index_name);
+                auto hints_string = !hints.empty() ? ", may be you meant: " + toString(hints) : "";
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong lookup index name. Cannot find index {} to insert after{}",
+                    backQuote(after_index_name), hints_string);
+            }
+
+            ++insert_it;
+        }
+
+        auto index = IndexDescription::getIndexFromAST(
+            index_decl, metadata.columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context);
+        validateLookupIndex(index);
+        metadata.lookup_indices.emplace(insert_it, std::move(index));
     }
     else if (type == DROP_INDEX)
     {
@@ -806,6 +897,13 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             {
                 if (if_exists)
                     return;
+                if (metadata.lookup_indices.has(index_name))
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Wrong index name. Cannot find skip index {} to drop. Use `DROP LOOKUP INDEX` for lookup indices",
+                        backQuote(index_name));
+                }
                 auto hints = metadata.secondary_indices.getHints(index_name);
                 auto hints_string = !hints.empty() ? ", may be you meant: " + toString(hints) : "";
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong index name. Cannot find index {} to drop{}",
@@ -814,6 +912,35 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
             metadata.secondary_indices.erase(erase_it);
         }
+    }
+    else if (type == DROP_LOOKUP_INDEX)
+    {
+        auto erase_it = std::find_if(
+            metadata.lookup_indices.begin(),
+            metadata.lookup_indices.end(),
+            [this](const auto & index)
+            {
+                return index.name == index_name;
+            });
+
+        if (erase_it == metadata.lookup_indices.end())
+        {
+            if (if_exists)
+                return;
+            if (metadata.secondary_indices.has(index_name))
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Wrong lookup index name. Cannot find lookup index {} to drop. Use `DROP INDEX` for skip indices",
+                    backQuote(index_name));
+            }
+            auto hints = metadata.lookup_indices.getHints(index_name);
+            auto hints_string = !hints.empty() ? ", may be you meant: " + toString(hints) : "";
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong lookup index name. Cannot find index {} to drop{}",
+                backQuote(index_name), hints_string);
+        }
+
+        metadata.lookup_indices.erase(erase_it);
     }
     else if (type == ADD_STATISTICS)
     {
@@ -1075,6 +1202,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             else
                 rename_visitor.visit(index.definition_ast);
         }
+
+        for (auto & index : metadata.lookup_indices)
+            rename_visitor.visit(index.definition_ast);
     }
     else if (type == MODIFY_SQL_SECURITY)
         metadata.setSQLSecurity(sql_security->as<ASTSQLSecurity &>());
@@ -1425,6 +1555,20 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
         catch (const Exception & exception)
         {
             throw Exception(exception.code(), "Cannot apply ALTER because it breaks skip index {}: {}", index.name, exception.message());
+        }
+    }
+
+    for (auto & index : metadata_copy.lookup_indices)
+    {
+        try
+        {
+            index = IndexDescription::getIndexFromAST(
+                index.definition_ast, metadata_copy.columns, index.isImplicitlyCreated(), index.escape_filenames, context);
+            validateLookupIndex(index);
+        }
+        catch (const Exception & exception)
+        {
+            throw Exception(exception.code(), "Cannot apply ALTER because it breaks lookup index {}: {}", index.name, exception.message());
         }
     }
 

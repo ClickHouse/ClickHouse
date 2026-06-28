@@ -60,6 +60,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_lookup_index;
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsBool join_any_take_last_row;
     extern const SettingsBool join_use_nulls;
@@ -74,6 +75,8 @@ namespace Setting
     extern const SettingsBool allow_dynamic_type_in_join_keys;
     extern const SettingsUInt64 max_bytes_before_external_join;
     extern const SettingsDouble max_bytes_ratio_before_external_join;
+    extern const SettingsUInt64 max_rows_in_join;
+    extern const SettingsUInt64 max_bytes_in_join;
 }
 
 namespace ServerSetting
@@ -1044,6 +1047,102 @@ void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::sh
         table_join->setStorageJoin(storage_key_value);
 }
 
+PreparedJoinStorage tryGetLookupJoinStorage(
+    const Names & right_key_names,
+    const QueryTreeNodePtr & table_expression,
+    const PlannerContextPtr & planner_context)
+{
+    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+
+    if (!settings[Setting::allow_experimental_lookup_index])
+        return {};
+
+    auto * table_node = table_expression->as<TableNode>();
+    if (!table_node)
+        return {};
+
+    if (const auto & table_expression_modifiers = table_node->getTableExpressionModifiers();
+        table_expression_modifiers
+        && (table_expression_modifiers->hasFinal()
+            || table_expression_modifiers->hasSampleSizeRatio()
+            || table_expression_modifiers->hasSampleOffsetRatio()
+            || table_expression_modifiers->hasStream()))
+        return {};
+
+    auto storage = std::dynamic_pointer_cast<MergeTreeData>(table_node->getStorage());
+    if (!storage)
+        return {};
+
+    /// A `SELECT_FILTER` row policy on the right table would be applied during regular
+    /// join planning; the filled direct join built from the lookup index bypasses the
+    /// right query plan, so reject this optimization to preserve visibility.
+    if (getEffectiveRowPolicyFilter(storage, planner_context->getQueryContext()))
+        return {};
+
+    /// `additional_table_filters` are applied by the regular right-side plan; the lookup
+    /// direct join replaces that plan with a prebuilt entity and would ignore them.
+    if (hasAdditionalTableFilterForStorage(storage, table_expression->getOriginalAlias(), planner_context->getQueryContext()))
+        return {};
+
+    /// The regular join build enforces the per-query right-side size limits while constructing the
+    /// hash table; the lookup fast path reads and caches the whole right table (and later cache hits
+    /// reuse it without re-checking), so it cannot honor `max_rows_in_join` / `max_bytes_in_join`.
+    /// Fall back to the regular join path when either limit is active.
+    if (settings[Setting::max_rows_in_join] != 0 || settings[Setting::max_bytes_in_join] != 0)
+        return {};
+
+    PreparedJoinStorage result;
+    if (const auto * table_expression_data = planner_context->getTableExpressionDataOrNull(table_expression))
+    {
+        /// The lookup-join entity (`MergeTreeTableJoinEntity`) is built from physical columns only
+        /// (`getAllPhysicalColumnsForLookupJoin`). If the right table expression reads `ALIAS` columns,
+        /// the regular plan computes them from the physical columns, but the direct lookup join would
+        /// request them from the physical-only entity and fail with `Cannot find column ... in table
+        /// lookup cache`. Fall back to the regular join path so the alias is computed.
+        if (!table_expression_data->getAliasColumnExpressions().empty())
+            return {};
+
+        result.column_mapping = table_expression_data->getColumnIdentifierToColumnName();
+
+        /// The lookup-join entity (`MergeTreeTableJoinEntity`) only contains the top-level physical
+        /// columns (`getAllPhysicalColumnsForLookupJoin`). The analyzer can still map a right-side
+        /// column identifier to a subcolumn (e.g. `m.keys`) or a virtual column (e.g. `_part`), which
+        /// is neither an alias expression nor present in that set. The regular plan materializes such
+        /// a column, but the direct lookup join would request it from the physical-only entity and
+        /// fail with `Cannot find column ... in table lookup cache`. Fall back to the regular join
+        /// path unless every mapped right-side column is served by the lookup entity.
+        NameSet lookup_entity_columns;
+        for (const auto & column : table_node->getStorageSnapshot()->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysical)))
+            lookup_entity_columns.insert(column.name);
+
+        for (const auto & [_, storage_column_name] : result.column_mapping)
+            if (!lookup_entity_columns.contains(storage_column_name))
+                return {};
+    }
+    else
+    {
+        for (const auto & column : table_node->getStorageSnapshot()->metadata->getColumns().getOrdinary())
+            result.column_mapping.emplace(column.name, column.name);
+    }
+
+    Names storage_key_names;
+    storage_key_names.reserve(right_key_names.size());
+    for (const auto & right_key_name : right_key_names)
+    {
+        auto table_column_name_it = result.column_mapping.find(right_key_name);
+        if (table_column_name_it == result.column_mapping.end())
+            return {};
+
+        storage_key_names.push_back(table_column_name_it->second);
+    }
+
+    result.storage_key_value = storage->tryGetLookupJoin(storage_key_names, planner_context->getQueryContext());
+    if (!result.storage_key_value)
+        return {};
+
+    return result;
+}
+
 static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoin> & table_join,
     const PreparedJoinStorage & right_table_expression,
     SharedHeader & right_table_expression_header)
@@ -1055,7 +1154,8 @@ static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<T
     if (!storage)
         return {};
 
-    bool allowed_inner = isInner(table_join->kind()) && table_join->strictness() == JoinStrictness::All;
+    bool allowed_inner = isInner(table_join->kind()) && (table_join->strictness() == JoinStrictness::All
+        || table_join->strictness() == JoinStrictness::Any);
     bool allowed_left = isLeft(table_join->kind()) && (table_join->strictness() == JoinStrictness::Any ||
                                                           table_join->strictness() == JoinStrictness::All ||
                                                           table_join->strictness() == JoinStrictness::Semi ||
@@ -1064,28 +1164,32 @@ static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<T
         return {};
 
     const auto & clauses = table_join->getClauses();
-    bool only_one_key = clauses.size() == 1 &&
-        clauses[0].key_names_left.size() == 1 &&
-        clauses[0].key_names_right.size() == 1 &&
+    bool only_lookup_keys = clauses.size() == 1 &&
+        !clauses[0].key_names_left.empty() &&
+        clauses[0].key_names_left.size() == clauses[0].key_names_right.size() &&
         !clauses[0].on_filter_condition_left &&
         !clauses[0].on_filter_condition_right &&
         clauses[0].analyzer_left_filter_condition_column_name.empty() &&
         clauses[0].analyzer_right_filter_condition_column_name.empty();
 
-    if (!only_one_key)
+    if (!only_lookup_keys)
         return {};
 
-    const String & key_name = clauses[0].key_names_right[0];
+    Names storage_key_names;
+    storage_key_names.reserve(clauses[0].key_names_right.size());
+    for (const auto & key_name : clauses[0].key_names_right)
+    {
+        auto table_column_name_it = right_table_expression.column_mapping.find(key_name);
+        if (table_column_name_it == right_table_expression.column_mapping.end())
+            return {};
 
-    auto table_column_name_it = right_table_expression.column_mapping.find(key_name);
-    if (table_column_name_it == right_table_expression.column_mapping.end())
+        storage_key_names.push_back(table_column_name_it->second);
+    }
+
+    if (storage->getPrimaryKey() != storage_key_names)
         return {};
 
-    const auto & storage_primary_key = storage->getPrimaryKey();
-    if (storage_primary_key.size() != 1 || storage_primary_key[0] != table_column_name_it->second)
-        return {};
-
-    /// Verify the right join key type matches the storage primary key type.
+    /// Verify each right join key type matches the corresponding storage primary key type.
     ///
     /// `tryDirectJoin` chooses `DirectKeyValueJoin` based on the right key NAME matching the
     /// storage's primary key name. The legacy `JOIN ... USING` planner path
@@ -1099,20 +1203,25 @@ static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<T
     ///
     /// We strip `Nullable` and `LowCardinality` wrappers on both sides to match the
     /// equivalence semantics used by `getByKeys` itself (e.g. `StorageEmbeddedRocksDB::getByKeys`).
-    if (!right_table_expression_header->has(key_name))
-        return {};
-
     const auto storage_sample_block = storage->getSampleBlock({});
-    if (!storage_sample_block.has(table_column_name_it->second))
-        return {};
+    for (size_t i = 0; i < clauses[0].key_names_right.size(); ++i)
+    {
+        const String & key_name = clauses[0].key_names_right[i];
+        const String & storage_column_name = storage_key_names[i];
 
-    auto right_key_type = removeNullable(recursiveRemoveLowCardinality(
-        right_table_expression_header->getByName(key_name).type));
-    auto storage_primary_key_type = removeNullable(recursiveRemoveLowCardinality(
-        storage_sample_block.getByName(table_column_name_it->second).type));
+        if (!right_table_expression_header->has(key_name))
+            return {};
+        if (!storage_sample_block.has(storage_column_name))
+            return {};
 
-    if (!right_key_type->equals(*storage_primary_key_type))
-        return {};
+        auto right_key_type = removeNullable(recursiveRemoveLowCardinality(
+            right_table_expression_header->getByName(key_name).type));
+        auto storage_primary_key_type = removeNullable(recursiveRemoveLowCardinality(
+            storage_sample_block.getByName(storage_column_name).type));
+
+        if (!right_key_type->equals(*storage_primary_key_type))
+            return {};
+    }
 
     /** For right table expression during execution columns have unique name.
       * Direct key value join implementation during storage querying must use storage column names.

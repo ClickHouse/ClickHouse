@@ -43,6 +43,7 @@ ASTPtr ASTIndexDeclaration::clone() const
 
     auto res = make_intrusive<ASTIndexDeclaration>(expr, type, name);
     res->granularity = granularity;
+    res->is_lookup_index = is_lookup_index;
 
     return res;
 }
@@ -97,8 +98,11 @@ void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         type->format(ostr, s, state, frame);
     }
 
-    /// Always emit so AST round-trip is invariant for every granularity (zero included).
-    ostr << " GRANULARITY " << granularity;
+    /// Lookup indexes never carry a GRANULARITY clause (the parser rejects it), so emitting
+    /// it would break the format/parse round-trip. For skip indexes always emit it, so the
+    /// AST round-trip is invariant for every granularity (zero included).
+    if (!is_lookup_index)
+        ostr << " GRANULARITY " << granularity;
 }
 
 UInt64 getSecondaryIndexGranularity(const boost::intrusive_ptr<ASTFunction> & type, const ASTPtr & granularity)

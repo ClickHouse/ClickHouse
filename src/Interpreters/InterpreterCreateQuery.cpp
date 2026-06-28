@@ -36,6 +36,7 @@
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
@@ -45,6 +46,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeIndexTableLookup.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -120,6 +122,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
+    extern const SettingsBool allow_experimental_lookup_index;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
@@ -190,6 +193,26 @@ namespace ErrorCodes
 }
 
 namespace fs = std::filesystem;
+
+namespace
+{
+
+bool hasNonEmptyLookupIndices(const ASTColumns * columns)
+{
+    return columns && columns->lookup_indices && !columns->lookup_indices->children.empty();
+}
+
+void checkExperimentalLookupIndexIsEnabled(ContextPtr context)
+{
+    if (!context->getSettingsRef()[Setting::allow_experimental_lookup_index])
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Experimental `LOOKUP INDEX` is not enabled (the setting 'allow_experimental_lookup_index')");
+    }
+}
+
+}
 
 InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
     : WithMutableContext(context_), query_ptr(query_ptr_)
@@ -275,7 +298,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         create.storage->set(create.storage->engine, engine);
     }
     else if ((create.columns_list
-              && ((create.columns_list->indices && !create.columns_list->indices->children.empty())
+              && ((create.columns_list->lookup_indices && !create.columns_list->lookup_indices->children.empty())
+                  || (create.columns_list->indices && !create.columns_list->indices->children.empty())
                   || (create.columns_list->projections && !create.columns_list->projections->children.empty()))))
     {
         /// Currently, there are no database engines, that support any arguments.
@@ -510,6 +534,25 @@ ASTPtr InterpreterCreateQuery::formatIndices(const IndicesDescription & indices)
     for (const auto & index : indices)
         if (!index.isImplicitlyCreated())
             res->children.push_back(index.definition_ast->clone());
+
+    return res;
+}
+
+ASTPtr InterpreterCreateQuery::formatLookupIndices(const IndicesDescription & lookup_indices)
+{
+    auto res = make_intrusive<ASTExpressionList>();
+
+    for (const auto & lookup_index : lookup_indices)
+    {
+        auto definition_ast = lookup_index.definition_ast->clone();
+        if (auto * index_ast = typeid_cast<ASTIndexDeclaration *>(definition_ast.get()))
+        {
+            index_ast->granularity = 0;
+            index_ast->is_lookup_index = true;
+        }
+
+        res->children.push_back(std::move(definition_ast));
+    }
 
     return res;
 }
@@ -761,8 +804,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
     if (create.columns_list)
     {
-        if (create.as_table_function && (create.columns_list->indices || create.columns_list->constraints))
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Indexes and constraints are not supported for table functions");
+        if (create.as_table_function && (hasNonEmptyLookupIndices(create.columns_list) || create.columns_list->indices || create.columns_list->constraints))
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Indexes, lookup indices and constraints are not supported for table functions");
 
         /// Dictionaries have dictionary_attributes_list instead of columns_list
         chassert(!create.is_dictionary);
@@ -770,6 +813,14 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (create.columns_list->columns)
         {
             properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), mode, is_restore_from_backup);
+        }
+
+        if (hasNonEmptyLookupIndices(create.columns_list))
+        {
+            if (mode <= LoadingStrictnessLevel::CREATE)
+                checkExperimentalLookupIndexIsEnabled(getContext());
+
+            properties.lookup_indices = getLookupIndicesFromAST(create.columns_list->lookup_indices, properties.columns, getContext());
         }
 
         if (create.columns_list->indices)
@@ -780,7 +831,16 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 constexpr bool escape_index_filenames = true; /// We don't care about this value because it won't be used
                 IndexDescription index_desc = IndexDescription::getIndexFromAST(
                     index->clone(), properties.columns, is_implicitly_created, escape_index_filenames, getContext());
+                if (isLookupIndexType(index_desc.type))
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Index type '{}' must be declared with `LOOKUP INDEX`, not `INDEX`",
+                        index_desc.type);
+                }
                 if (properties.indices.has(index_desc.name))
+                    throw Exception(ErrorCodes::ILLEGAL_INDEX, "Duplicated index name {} is not allowed. Please use a different index name", backQuoteIfNeed(index_desc.name));
+                if (properties.lookup_indices.has(index_desc.name))
                     throw Exception(ErrorCodes::ILLEGAL_INDEX, "Duplicated index name {} is not allowed. Please use a different index name", backQuoteIfNeed(index_desc.name));
 
                 const auto & settings = getContext()->getSettingsRef();
@@ -824,6 +884,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             for (const auto & index : indices)
                 if (!index.isImplicitlyCreated())
                     properties.indices.push_back(index);
+
+            properties.lookup_indices = as_storage_metadata->getLookupIndices();
+            if (mode <= LoadingStrictnessLevel::CREATE && !properties.lookup_indices.empty())
+                checkExperimentalLookupIndexIsEnabled(getContext());
 
             /// Copy projections.
             properties.projections = as_storage_metadata->getProjections().clone();
@@ -1023,11 +1087,18 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         create.set(create.columns_list, make_intrusive<ASTColumns>());
 
     ASTPtr new_columns = formatColumns(properties.columns);
+    ASTPtr new_lookup_indices;
+    if (!properties.lookup_indices.empty())
+        new_lookup_indices = formatLookupIndices(properties.lookup_indices);
     ASTPtr new_indices = formatIndices(properties.indices);
     ASTPtr new_constraints = formatConstraints(properties.constraints);
     ASTPtr new_projections = formatProjections(properties.projections);
 
     create.columns_list->setOrReplace(create.columns_list->columns, new_columns);
+    if (new_lookup_indices)
+        create.columns_list->setOrReplace(create.columns_list->lookup_indices, new_lookup_indices);
+    else
+        create.columns_list->reset(create.columns_list->lookup_indices);
     create.columns_list->setOrReplace(create.columns_list->indices, new_indices);
     create.columns_list->setOrReplace(create.columns_list->constraints, new_constraints);
     create.columns_list->setOrReplace(create.columns_list->projections, new_projections);

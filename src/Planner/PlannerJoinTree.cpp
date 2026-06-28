@@ -106,6 +106,7 @@ namespace Setting
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_unaligned_array_join;
+    extern const SettingsBool join_any_take_last_row;
     extern const SettingsBool join_use_nulls;
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsNonZeroUInt64 max_block_size;
@@ -140,6 +141,7 @@ namespace Setting
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool parallel_replicas_allow_materialized_views;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
+    extern const SettingsBool serialize_query_plan;
 }
 
 namespace ErrorCodes
@@ -311,22 +313,6 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
         result = ExpressionActions::getSmallestColumn(column_names_and_types);
 
     return result;
-}
-
-/// Returns the effective row policy filter for the table, or nullptr if the
-/// table has no row policies for the current user or the combined filter is
-/// always-true. Mirrors the effective-filter check used by
-/// buildRowPolicyFilterIfNeeded.
-RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const ContextPtr & query_context)
-{
-    auto storage_id = storage->getStorageID();
-    if (!storage_id.hasDatabase())
-        return nullptr;
-    auto row_policy_filter = query_context->getRowPolicyFilter(
-        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-    if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
-        return nullptr;
-    return row_policy_filter;
 }
 
 bool applyTrivialCountIfPossible(
@@ -1835,6 +1821,59 @@ void tryMakeDirectJoinWithMergeTree(const JoinOperator & join_operator,
     right_query_plan.addStep(std::move(join_lookup_step));
 }
 
+std::optional<Names> tryExtractLookupJoinRightKeys(const JoinOperator & join_operator, bool join_any_take_last_row)
+{
+    bool allowed_inner = isInner(join_operator.kind) && (join_operator.strictness == JoinStrictness::All
+        || join_operator.strictness == JoinStrictness::Any);
+    bool allowed_left = isLeft(join_operator.kind) && (join_operator.strictness == JoinStrictness::Any
+        || join_operator.strictness == JoinStrictness::All
+        || join_operator.strictness == JoinStrictness::Semi
+        || join_operator.strictness == JoinStrictness::Anti);
+    if (!allowed_inner && !allowed_left)
+        return {};
+
+    /// The lookup-index join (like every key-value direct join) always returns the first stored
+    /// right row for a key. `join_any_take_last_row` instead asks an `ANY` join to keep the last
+    /// duplicate-key right row, which only `HashJoin` honors. Decline the lookup fast path for
+    /// `ANY` strictness when the setting is enabled, so the regular join path keeps the configured
+    /// semantics instead of silently returning the first row.
+    if (join_operator.strictness == JoinStrictness::Any && join_any_take_last_row)
+        return {};
+
+    if (!join_operator.residual_filter.empty() || join_operator.expression.empty())
+        return {};
+
+    Names right_key_names;
+    right_key_names.reserve(join_operator.expression.size());
+    for (const auto & predicate : join_operator.expression)
+    {
+        auto [predicate_type, lhs, rhs] = predicate.asBinaryPredicate();
+        if (predicate_type != JoinConditionOperator::Equals)
+            return {};
+
+        if (lhs.fromRight() && rhs.fromLeft())
+            std::swap(lhs, rhs);
+        else if (!lhs.fromLeft() || !rhs.fromRight())
+            return {};
+
+        /// The lookup-index join (`MergeTreeTableJoinEntity`) hashes the left probe key
+        /// columns against a cache built from the stored (right) key columns using
+        /// `HashMethodHashed`. Identical values hash equally only when the column types are
+        /// identical: e.g. a `Nullable(UInt64)` or `LowCardinality(UInt64)` left key hashes
+        /// differently from a `UInt64` stored key (the null map / dictionary indexes are
+        /// hashed too), and a different underlying type (`Int32` vs `UInt64`) hashes
+        /// differently as well. In all such cases the regular join path inserts a cast to a
+        /// common supertype, which this fast path bypasses. Decline the lookup join when the
+        /// left and right key types are not exactly equal, so it falls back to `HashJoin`.
+        if (!lhs.getType()->equals(*rhs.getType()))
+            return {};
+
+        right_key_names.push_back(rhs.getColumnName());
+    }
+
+    return right_key_names;
+}
+
 JoinTreeQueryPlan buildQueryPlanForJoinNode(
     const QueryTreeNodePtr & join_table_expression,
     JoinTreeQueryPlan left_join_tree_query_plan,
@@ -1859,12 +1898,28 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         join_node,
         planner_context);
 
+    /// `JoinStepLogicalLookup` is not serializable, so it cannot be used when the query plan
+    /// is going to be serialized: either for execution with parallel replicas on the initiator,
+    /// or when `serialize_query_plan` is enabled (e.g. for distributed queries).
+    bool allow_lookup_join = !query_context->canUseParallelReplicasOnInitiator()
+        && !settings[Setting::serialize_query_plan];
     PreparedJoinStorage prepared_join;
     bool allow_storage_join = right_join_tree_query_plan.used_row_policies.empty()
         && right_join_tree_query_plan.stage == QueryProcessingStage::FetchColumns
         && right_join_tree_query_plan.useful_sets.empty();
     if (allow_storage_join)
         prepared_join = tryGetStorageInTableJoin(join_node.getRightTableExpression(), planner_context);
+    /// Skip the eager lookup index lookup when `join_algorithm` does not permit `direct` join.
+    /// Without this gate we would pay the cost of building the lookup cache during planning and then
+    /// still fall back to `HashJoin` (or another algorithm) in `chooseJoinAlgorithm`, leaving the cache unused.
+    const auto & join_algorithms = settings[Setting::join_algorithm].value;
+    bool direct_join_enabled = TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::DIRECT)
+        || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::DEFAULT);
+    if (!prepared_join && allow_storage_join && allow_lookup_join && direct_join_enabled)
+    {
+        if (auto right_key_names = tryExtractLookupJoinRightKeys(join_step_logical->getJoinOperator(), settings[Setting::join_any_take_last_row]))
+            prepared_join = tryGetLookupJoinStorage(*right_key_names, join_node.getRightTableExpression(), planner_context);
+    }
     if (prepared_join)
     {
         bool use_nulls = settings[Setting::join_use_nulls] && isLeftOrFull(join_node.getKind());

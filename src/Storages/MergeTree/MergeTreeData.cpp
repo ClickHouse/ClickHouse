@@ -47,11 +47,14 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/MergeTreeTableJoinEntity.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/Set.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/convertFieldToType.h>
@@ -65,12 +68,17 @@
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -91,6 +99,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
+#include <Storages/MergeTree/MergeTreeIndexTableLookup.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -206,6 +215,189 @@ namespace
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_lookup_index;
+    extern const SettingsNonZeroUInt64 max_block_size;
+}
+
+namespace
+{
+
+struct LookupReadResult
+{
+    Block block;
+    int32_t metadata_version = -1;
+    String schema_signature;
+    Names part_names;
+    bool cacheable = true;
+};
+
+struct LookupTableState
+{
+    int32_t metadata_version = -1;
+    String schema_signature;
+    Names part_names;
+    bool cacheable = true;
+};
+
+LookupTableState getLookupTableState(
+    const StorageSnapshotPtr & storage_snapshot,
+    const ContextPtr & query_context,
+    const Names & columns_to_read);
+
+String serializeLookupKey(std::string_view prefix, const Names & key_names)
+{
+    String result(prefix);
+    result.push_back(':');
+    result += boost::algorithm::join(key_names, "\x1F");
+    return result;
+}
+
+const IndexDescription * findLookupIndex(const IndicesDescription & indices, std::string_view type, const Names & key_names)
+{
+    for (const auto & index : indices)
+    {
+        if (index.type == type && index.column_names == key_names)
+            return &index;
+    }
+
+    return nullptr;
+}
+
+bool hasLookupIndexType(const IndicesDescription & indices, std::string_view type)
+{
+    return std::ranges::any_of(indices, [&](const auto & index) { return index.type == type; });
+}
+
+void appendBlock(Block & result_block, const Block & block)
+{
+    if (result_block.columns() != block.columns())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Table lookup cache block structure mismatch. Expected {}, got {}",
+            result_block.dumpStructure(),
+            block.dumpStructure());
+
+    for (size_t column_position = 0; column_position < result_block.columns(); ++column_position)
+    {
+        result_block.getByPosition(column_position).column->assumeMutableRef().insertRangeFrom(
+            *block.getByPosition(column_position).column,
+            0,
+            block.rows());
+    }
+}
+
+LookupReadResult readLookupIndexColumns(
+    const MergeTreeData & storage,
+    const Names & columns_to_read,
+    const ContextPtr & query_context)
+{
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(query_context, false);
+    auto storage_snapshot = storage.getStorageSnapshot(metadata_snapshot, query_context);
+
+    LookupReadResult result;
+    result.block = storage_snapshot->getSampleBlockForColumns(columns_to_read).cloneEmpty();
+    auto lookup_table_state = getLookupTableState(storage_snapshot, query_context, columns_to_read);
+    result.metadata_version = lookup_table_state.metadata_version;
+    result.schema_signature = lookup_table_state.schema_signature;
+    result.part_names = lookup_table_state.part_names;
+    result.cacheable = lookup_table_state.cacheable;
+
+    SelectQueryInfo query_info;
+    query_info.query = new ASTSelectQuery();
+    QueryPlan plan;
+    auto & mutable_storage = const_cast<MergeTreeData &>(storage);
+    mutable_storage.read(
+        plan,
+        columns_to_read,
+        storage_snapshot,
+        query_info,
+        query_context,
+        QueryProcessingStage::FetchColumns,
+        query_context->getSettingsRef()[Setting::max_block_size],
+        1);
+
+    if (!plan.isInitialized())
+        return result;
+
+    auto pipeline_builder = plan.buildQueryPipeline(
+        QueryPlanOptimizationSettings(query_context),
+        BuildQueryPipelineSettings(query_context),
+        false);
+    QueryPipeline pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
+    PullingPipelineExecutor executor(pipeline);
+
+    Block block;
+    while (executor.pull(block))
+        appendBlock(result.block, block);
+
+    return result;
+}
+
+LookupTableState getLookupTableState(
+    const StorageSnapshotPtr & storage_snapshot,
+    const ContextPtr & query_context,
+    const Names & columns_to_read)
+{
+    const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+
+    LookupTableState result;
+    result.metadata_version = storage_snapshot->metadata->getMetadataVersion();
+    result.schema_signature = storage_snapshot->getSampleBlockForColumns(columns_to_read).dumpStructure();
+    result.part_names.reserve(snapshot_data.parts->size());
+
+    for (const auto & ranges_in_part : *snapshot_data.parts)
+    {
+        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges_in_part.data_part, snapshot_data.mutations_snapshot, query_context);
+
+        result.part_names.push_back(ranges_in_part.data_part->name);
+        if (ranges_in_part.data_part->hasLightweightDelete() || alter_conversions->hasLightweightDelete()
+            || alter_conversions->hasMutations() || alter_conversions->hasPatches())
+        {
+            result.cacheable = false;
+        }
+    }
+
+    return result;
+}
+
+template <typename CacheEntry>
+bool isLookupCacheEntryValid(const CacheEntry & cache_entry, const LookupTableState & lookup_table_state)
+{
+    return cache_entry.metadata_version == lookup_table_state.metadata_version
+        && cache_entry.schema_signature == lookup_table_state.schema_signature
+        && cache_entry.part_names == lookup_table_state.part_names;
+}
+
+SetPtr buildLookupSet(const Block & block, bool transform_null_in)
+{
+    auto set = std::make_shared<Set>(SizeLimits{}, 0, transform_null_in);
+    set->setHeader(block.getColumnsWithTypeAndName());
+    set->fillSetElements();
+    if (block.rows() != 0)
+        set->insertFromBlock(block.getColumnsWithTypeAndName());
+    set->finishInsert();
+    return set;
+}
+
+Names getAllPhysicalColumnsForLookupJoin(const StorageSnapshotPtr & storage_snapshot)
+{
+    auto columns_list = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysical));
+    Names result;
+    result.reserve(columns_list.size());
+    for (const auto & column : columns_list)
+        result.push_back(column.name);
+    return result;
+}
+
+}
+
 namespace Setting
 {
     extern const SettingsBool allow_drop_detached;
@@ -232,6 +424,7 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsBool apply_patch_parts;
+    extern const SettingsBool transform_null_in;
     extern const SettingsUInt64 max_table_size_to_drop;
     extern const SettingsBool use_statistics;
     extern const SettingsBool use_statistics_cache;
@@ -341,7 +534,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_UNEXPECTED_DATA_PARTS;
     extern const int DUPLICATE_DATA_PART;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
-    extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int CORRUPTED_DATA;
@@ -1032,9 +1224,10 @@ void MergeTreeData::checkProperties(
                 new_virtuals_sample_block.dumpStructure(), old_virtuals_sample_block.dumpStructure());
     }
 
+    std::unordered_set<String> indices_names;
+
     if (!new_metadata.secondary_indices.empty())
     {
-        std::unordered_set<String> indices_names;
         std::unordered_set<String> columns_with_text_indexes;
 
         for (const auto & index : new_metadata.secondary_indices)
@@ -1078,6 +1271,27 @@ void MergeTreeData::checkProperties(
 
                 columns_with_text_indexes.insert(column);
             }
+        }
+    }
+
+    if (!new_metadata.lookup_indices.empty())
+    {
+        for (const auto & index : new_metadata.lookup_indices)
+        {
+            try
+            {
+                validateLookupIndex(index);
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("When validating lookup index {}", backQuote(index.name));
+                throw;
+            }
+
+            if (indices_names.contains(index.name))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with name {} already exists", backQuote(index.name));
+
+            indices_names.insert(index.name);
         }
     }
 
@@ -1241,6 +1455,14 @@ void MergeTreeData::setProperties(
         local_context);
 
     setInMemoryMetadata(new_metadata);
+
+    /// Lookup-index caches are derived from table metadata and data parts, so
+    /// metadata changes must drop stale in-memory snapshots eagerly.
+    {
+        std::lock_guard lock(table_lookup_indices_mutex);
+        lookup_sets_cache.clear();
+        lookup_joins_cache.clear();
+    }
 
     std::lock_guard lock(patch_parts_metadata_mutex);
     patch_parts_metadata_cache.clear();
@@ -5265,6 +5487,14 @@ void MergeTreeData::changeSettings(
         }
 
         setInMemoryMetadata(new_metadata);
+
+        /// Lookup-index caches are derived from table metadata and data parts, so
+        /// metadata changes must drop stale in-memory snapshots eagerly.
+        {
+            std::lock_guard lock(table_lookup_indices_mutex);
+            lookup_sets_cache.clear();
+            lookup_joins_cache.clear();
+        }
 
         if (has_storage_policy_changed)
             startBackgroundMovesIfNeeded();
@@ -11042,6 +11272,114 @@ StorageSnapshotPtr
 MergeTreeData::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
     return createStorageSnapshot(metadata_snapshot, query_context, true);
+}
+
+bool MergeTreeData::hasLookupSetIndex() const
+{
+    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    return hasLookupIndexType(metadata_snapshot->getLookupIndices(), TABLE_SET_INDEX_TYPE);
+}
+
+bool MergeTreeData::hasLookupJoinIndex() const
+{
+    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    return hasLookupIndexType(metadata_snapshot->getLookupIndices(), TABLE_JOIN_INDEX_TYPE);
+}
+
+SetPtr MergeTreeData::tryGetLookupSet(const Names & key_names, const ContextPtr & query_context) const
+{
+    if (!query_context->getSettingsRef()[Setting::allow_experimental_lookup_index])
+        return {};
+
+    const auto & metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
+    if (!findLookupIndex(metadata_snapshot->getLookupIndices(), TABLE_SET_INDEX_TYPE, key_names))
+        return {};
+
+    const bool transform_null_in = query_context->getSettingsRef()[Setting::transform_null_in];
+    const auto cache_key = serializeLookupKey(transform_null_in ? "table_set_1" : "table_set_0", key_names);
+    auto storage_snapshot = getStorageSnapshot(metadata_snapshot, query_context);
+    auto lookup_table_state = getLookupTableState(storage_snapshot, query_context, key_names);
+
+    if (lookup_table_state.cacheable)
+    {
+        std::lock_guard lock(table_lookup_indices_mutex);
+        if (auto cache_it = lookup_sets_cache.find(cache_key); cache_it != lookup_sets_cache.end())
+        {
+            if (isLookupCacheEntryValid(cache_it->second, lookup_table_state))
+                return cache_it->second.set;
+        }
+    }
+
+    auto lookup_result = readLookupIndexColumns(*this, key_names, query_context);
+    auto set = buildLookupSet(lookup_result.block, transform_null_in);
+    if (!lookup_result.cacheable)
+        return set;
+
+    std::lock_guard lock(table_lookup_indices_mutex);
+    if (auto cache_it = lookup_sets_cache.find(cache_key); cache_it != lookup_sets_cache.end())
+    {
+        if (cache_it->second.metadata_version == lookup_result.metadata_version
+            && cache_it->second.schema_signature == lookup_result.schema_signature
+            && cache_it->second.part_names == lookup_result.part_names)
+            return cache_it->second.set;
+    }
+
+    lookup_sets_cache[cache_key] = LookupSetCacheEntry
+    {
+        lookup_result.metadata_version,
+        lookup_result.schema_signature,
+        std::move(lookup_result.part_names),
+        set,
+    };
+    return set;
+}
+
+std::shared_ptr<const IKeyValueEntity> MergeTreeData::tryGetLookupJoin(const Names & key_names, const ContextPtr & query_context) const
+{
+    if (!query_context->getSettingsRef()[Setting::allow_experimental_lookup_index])
+        return {};
+
+    const auto & metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
+    if (!findLookupIndex(metadata_snapshot->getLookupIndices(), TABLE_JOIN_INDEX_TYPE, key_names))
+        return {};
+
+    const auto cache_key = serializeLookupKey("table_join", key_names);
+    auto storage_snapshot = getStorageSnapshot(metadata_snapshot, query_context);
+    auto lookup_columns = getAllPhysicalColumnsForLookupJoin(storage_snapshot);
+    auto lookup_table_state = getLookupTableState(storage_snapshot, query_context, lookup_columns);
+
+    if (lookup_table_state.cacheable)
+    {
+        std::lock_guard lock(table_lookup_indices_mutex);
+        if (auto cache_it = lookup_joins_cache.find(cache_key); cache_it != lookup_joins_cache.end())
+        {
+            if (isLookupCacheEntryValid(cache_it->second, lookup_table_state))
+                return cache_it->second.entity;
+        }
+    }
+
+    auto lookup_result = readLookupIndexColumns(*this, lookup_columns, query_context);
+    auto entity = std::make_shared<MergeTreeTableJoinEntity>(key_names, std::move(lookup_result.block));
+    if (!lookup_result.cacheable)
+        return entity;
+
+    std::lock_guard lock(table_lookup_indices_mutex);
+    if (auto cache_it = lookup_joins_cache.find(cache_key); cache_it != lookup_joins_cache.end())
+    {
+        if (cache_it->second.metadata_version == lookup_result.metadata_version
+            && cache_it->second.schema_signature == lookup_result.schema_signature
+            && cache_it->second.part_names == lookup_result.part_names)
+            return cache_it->second.entity;
+    }
+
+    lookup_joins_cache[cache_key] = LookupJoinCacheEntry
+    {
+        lookup_result.metadata_version,
+        lookup_result.schema_signature,
+        std::move(lookup_result.part_names),
+        entity,
+    };
+    return entity;
 }
 
 void MergeTreeData::incrementInsertedPartsProfileEvent(MergeTreeDataPartType type)
