@@ -1775,9 +1775,26 @@ std::optional<UInt128> StorageDistributed::getModificationHash(const StorageSnap
 
         const StorageID remote_table_id{remote_database, remote_table};
 
-        std::vector<UInt128> shard_hashes;
-        for (const auto & shard_info : cluster->getShardsInfo())
+        const auto & shards_info = cluster->getShardsInfo();
+        const auto & shards_addresses = cluster->getShardsAddresses();
+
+        SipHash hash;
+        hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+        hash.update(remote_database);
+        hash.update(remote_table);
+        hash.update(shards_info.size());
+
+        /// Combine the per-shard hashes in stable cluster order (the order of `getShardsInfo`, which is the
+        /// configured shard order), and fold each shard's identity together with its hash. We must NOT sort
+        /// or otherwise discard the placement: sorting makes shard placement invisible, so exchanging the
+        /// data between two shards would leave the combined hash unchanged even though a query whose result
+        /// depends on placement (`optimize_skip_unused_shards`, reading `_shard_num`, ...) now reads a
+        /// different shard. Folding `shard_num` (and the probed replica's address) per shard keeps the
+        /// combined value sensitive to which shard produced which hash.
+        for (size_t i = 0; i < shards_info.size(); ++i)
         {
+            const auto & shard_info = shards_info[i];
+
             /// We probe a single replica per shard (`GET_ONE`). With more than one replica, a different
             /// query may read from another replica, which - during replication lag - can hold different
             /// data than the one we probed. We cannot guarantee consistency in that case, so fail closed.
@@ -1787,19 +1804,14 @@ std::optional<UInt128> StorageDistributed::getModificationHash(const StorageSnap
             auto shard_hash = getModificationHashOfRemoteTableInShard(*cluster, shard_info, remote_table_id, query_context);
             if (!shard_hash)
                 return {}; /// A shard cannot tell whether it changed - assume the worst for the whole table.
-            shard_hashes.push_back(*shard_hash);
+
+            /// Shard identity: its configured number and the address(es) of the probed replica.
+            hash.update(shard_info.shard_num);
+            if (i < shards_addresses.size())
+                for (const auto & address : shards_addresses[i])
+                    hash.update(address.readableString());
+            hash.update(*shard_hash);
         }
-
-        /// Combine in a deterministic, order-independent way.
-        std::sort(shard_hashes.begin(), shard_hashes.end());
-
-        SipHash hash;
-        hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
-        hash.update(remote_database);
-        hash.update(remote_table);
-        hash.update(shard_hashes.size());
-        for (const auto & shard_hash : shard_hashes)
-            hash.update(shard_hash);
         return hash.get128();
     }
     catch (...)
